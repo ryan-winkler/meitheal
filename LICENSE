@@ -1,3 +1,30 @@
+Meitheal — The cooperative task and life engine for your home.
+Copyright (C) 2026 Ryan Winkler
+
+This program is dual-licensed:
+
+  1. GNU Affero General Public License v3.0 (see below)
+  2. Commercial License (see COMMERCIAL.md)
+
+You may use, modify, and redistribute this software under the terms of
+the AGPL-3.0. Alternatively, a commercial license is available for
+organizations that cannot comply with the AGPL's copyleft requirements.
+Contact licensing@meitheal.io or see COMMERCIAL.md for details.
+
+API / Plugin Exception:
+
+  Interacting with Meitheal strictly via its published REST, WebSocket,
+  or MCP APIs does not constitute creating a "derivative work" or
+  "modified version" under the AGPL. You are free to write external
+  clients, webhooks, plugins, and integrations under any license you
+  choose, provided they communicate with Meitheal only through these
+  published network interfaces.
+
+  This exception does not grant permission to embed, link, or
+  include Meitheal source code directly in your own software.
+
+===========================================================================
+
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
