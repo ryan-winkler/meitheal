@@ -325,6 +325,15 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
 
   .tree-goal-root { padding-left: 0; }
   .tree-project-root { padding-left: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tree-chevron,
+    .tree-toggle,
+    .tree-project,
+    .hierarchy-tree-action {
+      transition: none;
+    }
+  }
 </style>
 
 <script>
@@ -373,5 +382,66 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
         save();
       });
     });
+
+    // Keyboard navigation for tree (Arrow keys, Enter, Space per WAI-ARIA TreeView)
+    const tree = document.getElementById("hierarchy-tree");
+    if (tree) {
+      const focusables = () =>
+        Array.from(tree.querySelectorAll<HTMLElement>(
+          '.tree-toggle, .tree-project'
+        )).filter((el) => {
+          // Only include visible elements
+          return el.offsetParent !== null;
+        });
+
+      tree.addEventListener("keydown", (e: KeyboardEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target.matches('.tree-toggle, .tree-project')) return;
+
+        const items = focusables();
+        const idx = items.indexOf(target);
+        if (idx === -1) return;
+
+        switch (e.key) {
+          case "ArrowDown":
+            e.preventDefault();
+            if (idx < items.length - 1) items[idx + 1]!.focus();
+            break;
+          case "ArrowUp":
+            e.preventDefault();
+            if (idx > 0) items[idx - 1]!.focus();
+            break;
+          case "ArrowRight":
+            // If collapsible and collapsed, expand it
+            if (target.matches('.tree-toggle') && target.getAttribute('aria-expanded') === 'false') {
+              e.preventDefault();
+              target.click();
+            }
+            break;
+          case "ArrowLeft":
+            // If collapsible and expanded, collapse it
+            if (target.matches('.tree-toggle') && target.getAttribute('aria-expanded') === 'true') {
+              e.preventDefault();
+              target.click();
+            }
+            break;
+          case "Enter":
+          case " ":
+            if (target.matches('.tree-project')) {
+              e.preventDefault();
+              (target as HTMLAnchorElement).click();
+            }
+            break;
+          case "Home":
+            e.preventDefault();
+            if (items.length > 0) items[0]!.focus();
+            break;
+          case "End":
+            e.preventDefault();
+            if (items.length > 0) items[items.length - 1]!.focus();
+            break;
+        }
+      });
+    }
   })();
 </script>

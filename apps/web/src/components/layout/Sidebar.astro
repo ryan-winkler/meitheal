@@ -101,6 +101,7 @@ let sidebarConfig: SidebarConfig = {
 const ff = await getFeatureFlags();
 const gamificationEnabled = ff.gamification !== false;
 const habitsEnabled = ff.habits !== false;
+const hierarchyEnabled = ff.hierarchy !== false;
 
 /** Fetch streak data for sidebar badge */
 let currentStreak = 0;
@@ -180,6 +181,7 @@ const navItems = order
     // Feature flag: hide gamification nav when disabled
     if (key === "gamification" && !gamificationEnabled) return false
     if (key === "habits" && !habitsEnabled) return false
+    if (key === "projects" && !hierarchyEnabled) return false
     return true
   })
   .map((key) => {
@@ -257,7 +259,7 @@ const navItems = order
 
   <div class="sidebar-scroll">
     <SidebarNavList navItems={navItems} taskCounts={taskCounts} />
-    <SidebarHierarchyTree />
+    {hierarchyEnabled && <SidebarHierarchyTree />}
     <SidebarBoardSwitcher locale={locale} />
   </div>
 

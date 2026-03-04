@@ -254,6 +254,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["a2a", "mcp", "webmcp", "protocols"],
   },
   {
+    id: "field-bot-proposals",
+    label: "Bot Proposals",
+    anchorId: "bot-allow-proposals",
+    sectionId: "automation-ai-settings",
+    keywords: ["bot", "proposals", "handoff", "agent", "accept", "lock"],
+  },
+  {
     id: "field-export",
     label: "Export & Import",
     anchorId: "export-json-btn",

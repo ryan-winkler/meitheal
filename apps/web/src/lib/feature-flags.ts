@@ -78,6 +78,13 @@ export const FEATURE_DEFAULTS: Record<string, FeatureDefinition> = {
     description: "Extract dates, priorities, labels, and assignees from natural language task titles",
     icon: "🧠",
   },
+  hierarchy: {
+    default: true,
+    category: "productivity",
+    label: "Hierarchy Navigation",
+    description: "Show Area → Goal → Project tree in the sidebar for structured planning",
+    icon: "📁",
+  },
 } as const
 
 /** Resolved feature flag state */
