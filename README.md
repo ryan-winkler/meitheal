@@ -118,9 +118,20 @@ curl http://localhost:3333/api/health
 
 ## Legal and Licensing
 
-Meitheal uses a dual-track strategy:
+Meitheal uses a **dual-licensing** strategy:
 
-- `meitheal-core`: clean-room Astro-native implementation.
-- `meitheal-vikunja-adapter`: AGPL-compatible migration/bridge layer.
+| Component | License | Rationale |
+|-----------|---------|-----------|
+| Core (`apps/`, `packages/`, `meitheal-hub/`) | [AGPL-3.0](LICENSE) | OSI-approved, closes the SaaS loophole |
+| HA integration (`integrations/home-assistant/`) | [Apache 2.0](integrations/home-assistant/LICENSE) | Frictionless for the HA ecosystem |
+| Node-RED flows (`integrations/nodered/`) | [Apache 2.0](integrations/nodered/LICENSE) | Frictionless for Node-RED users |
+| Vikunja compat layer | AGPL-3.0 only | Third-party copyright, cannot relicense |
 
-License: AGPL-3.0. See `docs/decisions/0001-legal-and-naming-strategy.md`.
+**For businesses:** A commercial license is available for organizations hosting Meitheal as a SaaS or embedding it in proprietary software. See [COMMERCIAL.md](COMMERCIAL.md).
+
+**For plugin developers:** Interacting with Meitheal via its published REST/WebSocket/MCP APIs does not create a derivative work. Build freely under any license.
+
+**For contributors:** All PRs require signing our [CLA](.github/CLA.md). See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+See `docs/decisions/0013-dual-licensing-strategy.md` for the full rationale.
+

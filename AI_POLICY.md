@@ -4,7 +4,7 @@
 
 ## License
 
-- **Code:** Apache 2.0 (or project license)
+- **Code:** AGPL-3.0-or-later (dual-licensed; see [COMMERCIAL.md](COMMERCIAL.md))
 - **Documentation:** CC BY 4.0
 
 ## AI-Friendly Design

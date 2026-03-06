@@ -175,6 +175,23 @@ E2E_BASE_URL=http://localhost:3000 pnpm --filter @meitheal/tests test e2e/pages.
 - Persistence tests use temp SQLite files — no shared state between specs
 - Browser-dependent tests must include `test.skip(shouldSkipBrowserSpecs(), ...)`
 
+## Contributor License Agreement (CLA)
+
+Meitheal is [dual-licensed](COMMERCIAL.md) under AGPL-3.0 and a commercial license. To maintain this, we require all contributors to sign a **Contributor License Agreement** before their first PR can be merged.
+
+**What it does:**
+- Grants the maintainer (Ryan Winkler) the rights to offer your contribution under both the AGPL and commercial terms
+- You **retain copyright** to your contribution
+- You are **not** transferring ownership — just granting a broad license
+
+**How it works:**
+1. Open a pull request
+2. A bot will comment asking you to sign the CLA
+3. Reply with: `I have read the CLA Document and I hereby sign the CLA.`
+4. Done — you won't be asked again for future PRs
+
+Read the full CLA text: [`.github/CLA.md`](.github/CLA.md).
+
 ## Pull Request Process
 
 ### Branch Naming
