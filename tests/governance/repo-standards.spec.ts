@@ -13,6 +13,7 @@ const requiredFiles = [
   "SECURITY.md",
   "CONTRIBUTING.md",
   "AI_POLICY.md",
+  "COMMERCIAL.md",
   "repository.yaml",
   ".coderabbit.yaml",
   ".zeroclaw/soul.md",

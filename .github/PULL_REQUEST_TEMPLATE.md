@@ -4,6 +4,7 @@
 
 ## Checklist
 
+- [ ] I have read and agree to the [CLA](.github/CLA.md)
 - [ ] `pnpm check` passes with 0 errors
 - [ ] `pnpm --filter @meitheal/tests test` passes
 - [ ] New behavior has corresponding tests

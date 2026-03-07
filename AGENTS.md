@@ -155,11 +155,30 @@ Changes **must** be verified in the correct environment tier before completion.
 - ADRs capture architectural and legal/security decisions
 - Error messages should support self-service debugging
 
+## Licensing Boundaries
+
+Meitheal uses a dual-licensing strategy. Agents must respect these boundaries:
+
+| Scope | License | Notes |
+|-------|---------|-------|
+| Root (`apps/`, `packages/`, `meitheal-hub/`) | AGPL-3.0 + Commercial | Dual-licensed; see `COMMERCIAL.md` |
+| `integrations/home-assistant/` | Apache 2.0 | API client boundary — no AGPL contamination |
+| `integrations/nodered/` | Apache 2.0 | API client boundary — no AGPL contamination |
+| `apps/web/src/domains/integrations/vikunja-compat/` | AGPL-3.0 only | Third-party copyright — cannot be commercially relicensed |
+
+**Rules:**
+- All PRs require a signed CLA (enforced by `.github/workflows/cla.yml`)
+- Do not move AGPL-only code (e.g. vikunja-compat) into directories covered by the commercial license
+- Integration code in `integrations/` must only communicate with the core via network APIs (REST/WebSocket/MCP)
+- When creating new integration directories, include an explicit `LICENSE` file
+
 ## Required Files (CI Enforced)
 
 - `README.md`, `AGENTS.md`, `SKILL.md`, `WEBMCP.md`
+- `COMMERCIAL.md`
 - `.coderabbit.yaml`
 - `.skills/core-workflows/SKILL.md`
 - `.zeroclaw/soul.md`
 - `docs/decisions/*.md`, `docs/kcs/*.md`
 - `public/.well-known/mcp.json`, `public/.well-known/jsondoc.json`
+
