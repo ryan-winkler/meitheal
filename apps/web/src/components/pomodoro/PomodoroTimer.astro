@@ -15,8 +15,16 @@
  * All interactions are client-side via fetch to /api/pomodoro.
  * Timer display updates every second via setInterval polling of local countdown.
  */
+
+interface Props {
+  /** When false, renders nothing (feature flag off) */
+  enabled?: boolean
+}
+
+const { enabled = true } = Astro.props
 ---
 
+<div id="pomodoro-wrapper" {...(!enabled ? { hidden: true } : {})}>
 <button
   type="button"
   id="pomodoro-pill"
@@ -60,6 +68,7 @@
     <span class="pomodoro-sessions__sep">·</span>
     <span id="pomodoro-today-minutes">0</span> min today
   </div>
+</div>
 </div>
 
 <style>
