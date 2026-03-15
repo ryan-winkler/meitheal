@@ -321,6 +321,45 @@ export class TaskRepository {
     return result.rows as TaskRow[];
   }
 
+  /**
+   * Suggested tasks — high-priority (p1-p2) tasks due within 3 days,
+   * or unscheduled high-priority tasks. Excludes tasks already due today
+   * and already shown in overdue section.
+   * Used by Smart Today (SMT-01).
+   */
+  async getSuggestedTasks(todayStr: string, limit = 10): Promise<TaskRow[]> {
+    // Calculate end date (3 days from today)
+    const endDate = new Date(todayStr)
+    endDate.setDate(endDate.getDate() + 3)
+    const endStr = endDate.toISOString().split("T")[0]!
+
+    const result = await this.client.execute({
+      sql: `SELECT * FROM tasks
+            WHERE status NOT IN (?)
+              AND (
+                (due_date > ? AND due_date <= ? AND priority <= 2)
+                OR (due_date IS NULL AND priority <= 2)
+              )
+            ORDER BY priority ASC, due_date ASC NULLS LAST
+            LIMIT ${limit}`,
+      args: [STATUS.COMPLETE, todayStr, endStr],
+    });
+    return result.rows as TaskRow[];
+  }
+
+  /** Count tasks completed today (status=complete AND updated_at today) — SMT-03 */
+  async getCompletedTodayCount(todayStr: string): Promise<number> {
+    // today timestamps: midnight to midnight (epoch ms)
+    const startMs = new Date(todayStr).getTime()
+    const endMs = startMs + 86400000
+    const result = await this.client.execute({
+      sql: `SELECT COUNT(*) as cnt FROM tasks
+            WHERE status = ? AND updated_at >= ? AND updated_at < ?`,
+      args: [STATUS.COMPLETE, startMs, endMs],
+    });
+    return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+  }
+
   // ── Upcoming (upcoming.astro) ───────────────────────────────────────
 
   /** Tasks within a date range (non-complete) for upcoming view */

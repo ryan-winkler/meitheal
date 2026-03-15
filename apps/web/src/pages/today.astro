@@ -11,6 +11,8 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 let overdueTasks: Record<string, unknown>[] = [];
 let todayTasks: Record<string, unknown>[] = [];
 let noDueTasks: Record<string, unknown>[] = [];
+let suggestedTasks: Record<string, unknown>[] = [];
+let completedTodayCount = 0;
 
 try {
   await ensureSchema();
@@ -20,6 +22,8 @@ try {
   overdueTasks = await repo.getOverdueTasks(today);
   todayTasks = await repo.getTasksDueOn(today);
   noDueTasks = await repo.getUnscheduledTasks(10);
+  suggestedTasks = await repo.getSuggestedTasks(today, 8);
+  completedTodayCount = await repo.getCompletedTodayCount(today);
 } catch {
   /* DB not available */
 }
@@ -42,6 +46,26 @@ const typeIcons: Record<string, string> = {
     <button type="button" class="btn btn-primary" id="create-task-btn"
       >+ New Task</button
     >
+  </div>
+
+  <!-- SMT-03: Daily Summary Stats -->
+  <div class="daily-stats" id="daily-stats">
+    <div class="stat-item">
+      <span class="stat-value">{todayTasks.length}</span>
+      <span class="stat-label">Due Today</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{completedTodayCount}</span>
+      <span class="stat-label">Completed</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{overdueTasks.length}</span>
+      <span class="stat-label stat-danger">Overdue</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{todayTasks.length + overdueTasks.length - completedTodayCount}</span>
+      <span class="stat-label">Remaining</span>
+    </div>
   </div>
 
   <!-- Persona 10: Quick-add inline -->
@@ -383,6 +407,97 @@ const typeIcons: Record<string, string> = {
       </div>
     )
   }
+
+  {/* SMT-01: Suggested Tasks — high-priority due within 3 days */}
+  {
+    suggestedTasks.length > 0 && (
+      <div
+        class="card"
+        style="margin-bottom: 16px; border-left: 3px solid var(--accent);"
+      >
+        <div class="card-header" style="padding: 12px 16px;">
+          <div>
+            <div class="card-title" style="font-size: 14px; color: var(--accent);">
+              💡 Suggested ({suggestedTasks.length})
+            </div>
+            <div class="card-subtitle" style="font-size: 12px;">
+              High-priority tasks due soon or unscheduled
+            </div>
+          </div>
+        </div>
+        <div class="task-list">
+          {suggestedTasks.map((task) => {
+            const p = Number(task.priority ?? 3);
+            const tt = String(task.task_type ?? "task");
+            const status = String(task.status ?? "pending");
+            const dueDate = task.due_date ? String(task.due_date) : null;
+            return (
+              <div
+                class="task-item"
+                data-id={String(task.id)}
+                style="cursor:pointer; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s;"
+                role="button"
+                tabindex="0"
+                aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}${dueDate ? `, due ${dueDate}` : ', no due date'}`}
+              >
+                <input
+                  type="checkbox"
+                  class="task-checkbox"
+                  data-id={String(task.id)}
+                  aria-label={`Complete ${String(task.title)}`}
+                />
+                <span
+                  style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
+                  title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
+                >
+                  ●
+                </span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    <span style="margin-right: 4px; font-size: 12px;">
+                      {typeIcons[tt] ?? ""}
+                    </span>
+                    {String(task.title)}
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    {dueDate ? `Due: ${dueDate}` : "No due date"}
+                  </div>
+                  <LabelBadges labels={task.labels as string} compact max={3} />
+                </div>
+                {/* SMT-02: Focus Today button */}
+                <button
+                  class="btn btn-sm focus-today-btn"
+                  data-id={String(task.id)}
+                  title="Set due date to today"
+                  aria-label={`Focus today: ${String(task.title)}`}
+                >
+                  ➕ Today
+                </button>
+                <span class={`status-badge status-badge--${status}`}>
+                  {status === "active"
+                    ? "Active"
+                    : status === "backlog"
+                      ? "Backlog"
+                      : "Pending"}
+                </span>
+                {task.assigned_to && (
+                  <span
+                    class="assignee-badge"
+                    title={`Assigned to ${String(task.assigned_to)}`}
+                  >
+                    {String(task.assigned_to)
+                      .replace(/^(ha_|custom_)/, "")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )
+  }
 </Layout>
 
 <style>
@@ -418,6 +533,61 @@ const typeIcons: Record<string, string> = {
   .status-badge--backlog {
     background: rgba(148, 163, 184, 0.12);
     color: #94a3b8;
+  }
+
+  /* SMT-03: Daily Summary Stats */
+  .daily-stats {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+  }
+  .stat-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px;
+    gap: 2px;
+  }
+  .stat-item:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat-danger {
+    color: var(--danger);
+  }
+
+  /* SMT-02: Focus Today button */
+  .focus-today-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm, 4px);
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .focus-today-btn:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: var(--accent);
   }
 </style>
 
@@ -517,5 +687,24 @@ const typeIcons: Record<string, string> = {
     } else {
       quickFeedback.style.display = "none";
     }
+  });
+
+  // SMT-02: Focus Today — set due_date to today and reload
+  document.querySelectorAll<HTMLButtonElement>(".focus-today-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (!id) return;
+      btn.disabled = true;
+      btn.textContent = "...";
+      try {
+        const todayStr = new Date().toISOString().split("T")[0]!;
+        await taskApi.updateTask(id, { due_date: todayStr });
+        window.location.reload();
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "➕ Today";
+      }
+    });
   });
 </script>
