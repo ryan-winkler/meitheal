@@ -1,119 +1,113 @@
 # Coding Conventions
 
-> Last refreshed: 2026-03-15
+**Analysis Date:** 2026-03-15
 
-## File Naming
+## Naming Patterns
 
-| Type | Convention | Example |
-|---|---|---|
-| Files | kebab-case | `task-sync-service.ts`, `ha-connection.ts` |
-| CSS partials | underscore prefix | `_kanban.css`, `_tokens.css` |
-| Test specs | `*.spec.ts` | `ha-calendar-adapter.spec.ts` |
-| Components | PascalCase | `TaskTypeIcon.astro`, `NewTaskModal.astro` |
+**Files:**
+- kebab-case for all TypeScript/CSS: `task-modal-controller.ts`, `filter-engine.ts`
+- PascalCase for Astro components: `FilterToolbar.astro`, `TaskTypeIcon.astro`
+- Underscore prefix for CSS partials: `_kanban.css`, `_tokens.css`
+
+**Functions:**
+- camelCase: `createTask()`, `resolveIntegrationOutcome()`, `getHAConnectionStatus()`
+- Prefix verbs: `get`, `create`, `update`, `delete`, `init`, `resolve`, `build`, `ensure`
+
+**Variables:**
+- camelCase: `rateLimitMap`, `ingressPath`
+- UPPER_SNAKE for constants: `RATE_LIMIT`, `RATE_WINDOW_MS`, `INGRESS_PATH`
+
+**Types/Interfaces:**
+- PascalCase: `TaskAggregate`, `CalendarSyncState`, `MiddlewareHandler`
+- Suffix patterns: `*Config`, `*State`, `*Options`, `*Result`
+- Discriminated unions: `{ ok: true, data: T } | { ok: false, errorCode: string }`
 
 ## Code Style
 
-| Rule | Standard |
-|---|---|
-| Semicolons | None |
-| Quotes | Double |
-| Indent | 2 spaces |
-| Exports | Named only — no default exports |
-| Max line | Not enforced, but ~120 chars recommended |
+**Formatting:**
+- No semicolons
+- Double quotes for strings
+- 2-space indent
+- Enforced by project convention (no Prettier/ESLint config files detected)
 
-## Import Order
+**Linting:**
+- `astro check` (via `@astrojs/check`) — Astro-specific type checking
+- `tsc --noEmit` in each package
+- CSS brace balance check in CI (`ci.yml` governance job)
 
-1. Node builtins (`node:fs`, `node:path`)
-2. Framework (`astro`, `@astrojs/*`)
-3. External packages (`date-fns`, `zod`, `marked`)
-4. Workspace packages (`@meitheal/domain-tasks`, `@meitheal/integration-core`)
-5. Relative imports (`./`, `../`)
+## Import Organization
 
-**Path aliases:**
-- `@domains/` → `apps/web/src/domains/`
+**Order:**
+1. Node builtins (`node:fs`, `node:http`)
+2. Framework imports (`astro`, `astro/config`)
+3. External packages (`date-fns`, `drizzle-orm`, `zod`)
+4. Workspace packages (`@meitheal/domain-tasks`, `@meitheal/domain-observability`)
+5. Path-aliased local imports (`@domains/ha/`, `@lib/`)
+6. Relative imports (`./`, `../`)
 
-## Naming Conventions
+**Path Aliases:**
+- `@domains/*` → `apps/web/src/domains/*`
+- `@lib/*` → `apps/web/src/lib/*`
+- `@i18n/*` → `apps/web/src/i18n/*`
 
-| Category | Convention | Example |
-|---|---|---|
-| Functions | camelCase | `createTask()`, `resolveIngressContext()` |
-| Types/Interfaces | PascalCase | `TaskAggregate`, `CalendarSyncState` |
-| Constants | UPPER_SNAKE | `RATE_LIMIT`, `MAX_RATE_ENTRIES` |
-| CSS tokens | kebab-case with `--` prefix | `--bg-primary`, `--accent` |
-| HTML IDs | kebab-case with context prefix | `td-title`, `td-status`, `cp-search` |
+## Export Patterns
+
+**Named exports only** — no default exports anywhere in the codebase.
+
+**Barrel exports** via `index.ts` in each domain:
+```typescript
+// apps/web/src/domains/ha/index.ts
+export { initHAIntegrations } from "./ha-startup"
+export { getHAConnection, getHAConnectionStatus } from "./ha-connection"
+```
 
 ## Error Handling
 
-### API Routes
-
-Discriminated unions pattern:
+**API Routes:**
+- Return discriminated unions, never throw:
 ```typescript
-// Success
-return new Response(JSON.stringify({ ok: true, data: result }))
-
-// Error
-return new Response(JSON.stringify({ ok: false, errorCode: "NOT_FOUND" }), { status: 404 })
+return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_ERROR" }), { status: 400 })
 ```
 
-### Client-side
+**Client-side:**
+- `@lib/safe-fetch.ts` wraps `fetch()` with error normalization
+- `@lib/toast.ts` for user-visible error notifications
+- Try/catch with structured logging in bridge services
 
-`safe-fetch.ts` wraps all API calls with error handling and toast notifications.
+## Logging
 
-## Patterns
+**Framework:** `@meitheal/domain-observability` (`createLogger()`)
 
-### Repository Pattern
+**Patterns:**
+- One JSON object per line to stdout (Loki-compatible)
+- Schema: `{ ts, level, event, domain, component, request_id, message, metadata }`
+- Redact secrets via `defaultRedactionPatterns`
+- Do NOT use high-cardinality labels (user IDs, task IDs, URLs)
 
-All database access goes through typed repositories in `domains/tasks/persistence/`:
-```typescript
-const repo = new TaskRepository(getPersistenceClient())
-const tasks = await repo.getRecentTasks(10)
-```
+## Comments
 
-### Singleton Services
+**When to Comment:**
+- KCS requirement: all domain boundaries, non-obvious patterns, workarounds
+- `@kcs` tag for KCS-relevant documentation
+- JSDoc for bridge services and utility functions
+- `// Bounded context: {name}` label in domain files
 
-Database client, HA connection, and logger all use lazy-initialized singletons:
-```typescript
-let clientSingleton: Client | null = null
-function getClient(): Client {
-  if (clientSingleton) return clientSingleton
-  clientSingleton = createClient({ url: resolveDbUrl() })
-  return clientSingleton
-}
-```
+**Style:**
+- Line comments for inline explanations
+- Block comments for module-level documentation
+- CSS comments for section headers in partials
 
-### Controller Pattern
+## Module Design
 
-Client-side view controllers initialize in `<script>` blocks within Astro pages:
-```astro
-<script>
-  import { initKanbanBoard } from "../lib/kanban-controller"
-  document.addEventListener("DOMContentLoaded", () => initKanbanBoard())
-</script>
-```
+**Size guidance:**
+- Controllers can be large (1,000–3,000 lines) — they're page-specific
+- Domain services should be <500 lines
+- Components should be <200 lines (favoring composition)
 
-### CSS Architecture
+**Parameters:**
+- Prefer options objects over positional parameters for >2 args
+- Use Zod schemas for validation at API boundaries
 
-Partials imported via `global.css`:
-```css
-@import "./_tokens.css";
-@import "./_base.css";
-@import "./_layout.css";
-/* ... all 18 partials */
-```
+---
 
-Design tokens in `_tokens.css` define CSS custom properties consumed by all partials.
-
-Tailwind v4 utility classes coexist with custom CSS partials.
-
-### Logging
-
-Single JSON object per line to stdout (Loki-compatible):
-```json
-{ "ts": "...", "level": "info", "event": "task_created", "domain": "tasks", "component": "api", "message": "..." }
-```
-
-Secrets auto-redacted via `defaultRedactionPatterns` in `@meitheal/domain-observability`.
-
-### Validation
-
-Zod schemas for API input validation. Raw SQL parameterized queries for database access.
+*Convention analysis: 2026-03-15*

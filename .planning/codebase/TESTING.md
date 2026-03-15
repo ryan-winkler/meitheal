@@ -1,155 +1,160 @@
-# Testing
+# Testing Patterns
 
-> Last refreshed: 2026-03-15
+**Analysis Date:** 2026-03-15
 
-## Framework
+## Test Framework
 
-- **Playwright** ^1.58.2 — E2E testing
-- **@axe-core/playwright** ^4.11.1 — Accessibility testing
-- **Workspace**: `tests/` (`@meitheal/tests`)
-- **Config**: `tests/playwright.config.ts`
+**Runner:**
+- Playwright 1.58.2
+- Config: `tests/playwright.config.ts`
+- Package: `@meitheal/tests` (separate workspace package)
 
-## Running Tests
+**Assertion Library:**
+- Playwright's built-in `expect()` + custom matchers
 
-| Command | Scope |
-|---|---|
-| `pnpm --filter @meitheal/tests test` | All E2E tests |
-| `pnpm --filter @meitheal/tests test <file>` | Specific spec |
-| `pnpm check` | Typecheck all packages |
+**Accessibility:**
+- `@axe-core/playwright` 4.11.1 for automated a11y validation
+
+**Run Commands:**
+```bash
+pnpm --filter @meitheal/tests test          # Run all tests
+pnpm --filter @meitheal/tests test <file>   # Specific spec
+pnpm check                                  # Typecheck all packages
+```
+
+## Test File Organization
+
+**Location:**
+- All tests in dedicated `tests/` package (NOT co-located with source)
+- Separate from app code to maintain clean domain boundaries
+
+**Naming:**
+- Pattern: `{feature}.spec.ts`
+- Helpers: `_helpers.ts` (underscore prefix)
+
+**Structure:**
+```
+tests/
+├── e2e/                    # 49 integration/E2E specs
+│   ├── _helpers.ts         # Shared test utilities
+│   ├── pages.spec.ts
+│   ├── api.spec.ts
+│   ├── kanban-backlog-mode.spec.ts
+│   ├── ha-calendar-adapter.spec.ts
+│   └── ... (46 more)
+├── governance/             # 2 governance/standards specs
+│   ├── iqs-platinum.spec.ts
+│   └── repo-standards.spec.ts
+├── unit/                   # 1 unit spec
+│   └── todo-status-mapper.spec.ts
+├── scripts/                # Test utilities
+├── types/                  # Test type definitions
+├── playwright.config.ts
+├── package.json
+└── tsconfig.json
+```
 
 ## Test Structure
 
+**Suite Organization:**
+```typescript
+import { test, expect } from "@playwright/test"
+
+test.describe("Feature Name", () => {
+  test("should do expected behavior", async ({ request }) => {
+    const response = await request.get("/api/endpoint")
+    expect(response.ok()).toBe(true)
+    const body = await response.json()
+    expect(body.ok).toBe(true)
+  })
+})
 ```
-tests/
-├── e2e/               ← 48 E2E test specs
-├── governance/         ← 2 governance compliance specs
-├── unit/              ← 1 unit test
-└── scripts/           ← Verification scripts
-```
 
-## E2E Test Categories (48 specs)
-
-### API & Data
-
-| Spec | Coverage |
-|---|---|
-| `api.spec.ts` | Core API endpoint validation |
-| `task-sync-domain.spec.ts` | Task sync domain logic |
-| `task-sync-persistence.spec.ts` | Task persistence layer |
-| `task-type-api.spec.ts` | Task type API validation |
-| `subtask-hierarchy.spec.ts` | Parent-child task relationships |
-| `ticket-number.spec.ts` | Ticket numbering system |
-| `status-consistency.spec.ts` | Status value consistency |
-| `user-assignment.spec.ts` | User assignment flows |
-
-### Security
-
-| Spec | Coverage |
-|---|---|
-| `security-headers.spec.ts` | CSP, HSTS, X-Frame-Options |
-| `phase5-security.spec.ts` | Phase 5 security hardening |
-| `ha-security-hardening.spec.ts` | HA-specific security |
-| `rate-limiter.spec.ts` | Rate limiting enforcement |
-| `auth-passkey.spec.ts` | Passkey authentication |
-
-### HA Integration
-
-| Spec | Coverage |
-|---|---|
-| `ha-calendar-adapter.spec.ts` | Calendar entity sync |
-| `ha-llm-api.spec.ts` | LLM API integration |
-| `ha-backup-platform.spec.ts` | Backup/restore flows |
-
-### Ingress
-
-| Spec | Coverage |
-|---|---|
-| `ingress-header-validation.spec.ts` | Ingress header handling |
-| `ingress-state-persistence.spec.ts` | State persistence across ingress |
-| `middleware-ingress-behavior.spec.ts` | Middleware rewriting |
-| `layout-ingress-client-router.spec.ts` | Client-side routing under ingress |
-
-### UI & Navigation
-
-| Spec | Coverage |
-|---|---|
-| `pages.spec.ts` | Page rendering |
-| `navigation.spec.ts` | Navigation flows |
-| `accessibility.spec.ts` | Axe accessibility audit |
-| `branding.spec.ts` | Brand consistency |
-| `seo.spec.ts` | SEO meta tags |
-| `kanban-backlog-mode.spec.ts` | Kanban backlog functionality |
-
-### Integrations
-
-| Spec | Coverage |
-|---|---|
-| `integrations.spec.ts` | Integration status |
-| `grocy-adapter.spec.ts` | Grocy API adapter |
-| `vikunja-compat.spec.ts` | Vikunja v1 compatibility |
-| `vikunja-compat-auth.spec.ts` | Vikunja auth compat |
-| `vikunja-compat-calendar-sync.spec.ts` | Calendar sync compat |
-| `vikunja-compat-calendar-timezone.spec.ts` | Timezone handling |
-| `webhook-signer.spec.ts` | Webhook signature verification |
-| `webmcp-a2a.spec.ts` | A2A protocol |
-
-### Offline & PWA
-
-| Spec | Coverage |
-|---|---|
-| `offline-sync.spec.ts` | Offline data sync |
-| `offline-attachments.spec.ts` | Offline attachment handling |
-| `pwa-offline.spec.ts` | PWA offline mode |
-
-### Observability
-
-| Spec | Coverage |
-|---|---|
-| `logging-observability.spec.ts` | Structured logging |
-| `logger-redaction.spec.ts` | Secret redaction |
-
-### Settings & Config
-
-| Spec | Coverage |
-|---|---|
-| `theme-settings.spec.ts` | Theme switching |
-| `agent-protocol-settings.spec.ts` | Agent config |
-
-### Other
-
-| Spec | Coverage |
-|---|---|
-| `cloud-runtime.spec.ts` | Cloud runtime compat |
-| `export-service.spec.ts` | Export functionality |
-| `notification-deeplinks.spec.ts` | Notification deep links |
-| `rename-sweep-regression.spec.ts` | Rename regression |
-| `migration-splitter.spec.mjs` | DB migration splitting |
-| `well-known.spec.ts` | .well-known endpoints |
-
-## Governance Tests (2 specs)
-
-| Spec | Coverage |
-|---|---|
-| `iqs-platinum.spec.ts` | IQS platinum quality standards |
-| `repo-standards.spec.ts` | Repository file & structure standards |
-
-## Unit Tests (1 spec)
-
-| Spec | Coverage |
-|---|---|
-| `todo-status-mapper.spec.ts` | HA todo status value mapping |
-
-## Testing Conventions
-
-- Tests import domain logic directly from workspace packages
+**Patterns:**
+- Tests import domain logic directly from workspace packages when testing pure logic
 - HA tests use local HTTP server harness to simulate HA API
-- Persistence tests use temp SQLite (`file:${tmpdir}/...`)
-- No shared state between specs — no external mocking framework
-- Helper utilities in `tests/e2e/_helpers.ts`
-- CI enforces all tests pass via `pnpm --filter @meitheal/tests test`
+- Persistence tests use temp SQLite databases (`file:${tmpdir}/...`)
+- No shared state between specs
 
-## CI Pipeline (`.github/workflows/ci.yml`)
+## Mocking
 
-Two jobs:
-1. **governance** — File existence checks, CSS brace balance, version sync
-2. **typecheck-and-tests** — `pnpm check` + `pnpm --filter @meitheal/tests test`
+**Framework:** No external mocking framework — custom harnesses only
+
+**Patterns:**
+- Local HTTP servers for HA API simulation (in `_helpers.ts`)
+- Temp SQLite databases for persistence isolation
+- Environment variable manipulation for config testing
+
+**What to Mock:**
+- External APIs (HA Supervisor, Grocy)
+- Database connections (use temp files)
+- Time-dependent operations
+
+**What NOT to Mock:**
+- Domain logic — test directly
+- Astro rendering — test via HTTP requests to running server
+- File system operations in persistence layer
+
+## Fixtures and Factories
+
+**Test Data:**
+- Inline task objects in each test
+- No centralized factory/faker pattern
+- `_helpers.ts` provides utility functions (server setup, auth headers)
+
+## Coverage
+
+**Requirements:** Not enforced via configuration
+**Current state:** No coverage report tooling configured
+
+## Test Types
+
+**E2E / Integration Tests (49 specs):**
+- Test against running Astro server via Playwright's `request` API
+- Cover: pages, API endpoints, security headers, SEO, ingress behavior, Vikunja compat, webhooks, offline sync, accessibility
+- Examples: `pages.spec.ts`, `api.spec.ts`, `security-headers.spec.ts`, `vikunja-compat.spec.ts`
+
+**Governance Tests (2 specs):**
+- Validate repository standards (required files, naming conventions)
+- `iqs-platinum.spec.ts` — Internal Quality Score checks
+- `repo-standards.spec.ts` — File existence, structure validation
+
+**Unit Tests (1 spec):**
+- `todo-status-mapper.spec.ts` — Pure function testing
+- Tests import directly from source, no server needed
+
+## Common Patterns
+
+**API Testing:**
+```typescript
+test("POST /api/tasks creates a task", async ({ request }) => {
+  const response = await request.post("/api/tasks", {
+    data: { title: "Test task", status: "todo" }
+  })
+  expect(response.status()).toBe(200)
+  const body = await response.json()
+  expect(body.ok).toBe(true)
+})
+```
+
+**Header Testing:**
+```typescript
+test("CSP header present", async ({ request }) => {
+  const response = await request.get("/")
+  const csp = response.headers()["content-security-policy"]
+  expect(csp).toContain("default-src 'self'")
+})
+```
+
+## Verification Tiers (from AGENTS.md)
+
+| Change Type | Required Tier | How |
+|-------------|---------------|-----|
+| CSS, layout, UI, client JS | 🔧 Tier 1 | `npm run dev` in `apps/web/` |
+| Ingress, middleware, serve.mjs | 🏠 Tier 2 | `./scripts/devcontainer-up.sh` |
+| HA API, WebSocket, domains/ha/ | 🏠 Tier 2 | HA devcontainer |
+| Final acceptance | 🌐 Tier 3 | Production HA (`ha.internal`) |
+
+---
+
+*Testing analysis: 2026-03-15*

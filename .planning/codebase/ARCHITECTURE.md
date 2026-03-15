@@ -1,104 +1,157 @@
 # Architecture
 
-> Last refreshed: 2026-03-15
+**Analysis Date:** 2026-03-15
 
-## Pattern
+## Pattern Overview
 
-**DDD monorepo** with Astro SSR web app + shared domain packages + event-driven HA integration.
+**Overall:** Domain-Driven Design (DDD) monorepo with Astro SSR
 
-```
-meitheal/
-├── apps/web/          ← Astro SSR application (the product)
-├── packages/          ← Shared domain logic (pure TS)
-├── tests/             ← Standalone Playwright test workspace
-├── meitheal-hub/      ← HA add-on manifest + Docker config
-├── integrations/      ← Astro integrations
-├── scripts/           ← Build/deploy helpers
-└── .planning/         ← GSD planning artifacts
-```
+**Key Characteristics:**
+- Strict bounded contexts: domain packages (`packages/domain-*`) + in-app domains (`apps/web/src/domains/`)
+- Server-side rendered pages with progressive client-side enhancement (`is:inline` scripts)
+- Event-driven HA integration via WebSocket
+- HTTP wrapper (`serve.mjs`) normalizes requests before Astro processes them
+- Middleware chain handles auth, CSP, CSRF, rate limiting, HTML rewriting
 
-## Layers (Top → Bottom)
+## Layers
 
-### 1. Presentation Layer — `apps/web/src/pages/`
+**Domain Packages (`packages/`):**
+- Purpose: Pure domain logic shared across apps. No framework dependencies.
+- Location: `packages/domain-auth/`, `packages/domain-tasks/`, `packages/domain-strategy/`, `packages/domain-observability/`, `packages/integration-core/`
+- Contains: Type definitions, business rules, interfaces
+- Depends on: Nothing (standalone)
+- Used by: `apps/web/` via workspace imports (`@meitheal/domain-*`)
 
-Astro pages serve SSR HTML. Two categories:
-- **View pages** (11): `index.astro`, `kanban.astro`, `table.astro`, `today.astro`, `upcoming.astro`, `calendar.astro`, `habits.astro`, `gamification.astro`, `gantt.astro`, `settings.astro`, `offline.astro`
-- **API routes** (65+): Under `pages/api/` — RESTful endpoints for tasks, boards, labels, settings, integrations, export, HA, etc.
-- **Error pages**: `404.astro`, `500.astro`
+**In-App Domains (`apps/web/src/domains/`):**
+- Purpose: Application-specific domain logic tightly coupled to Astro/HA runtime
+- Location: `apps/web/src/domains/{ai,auth,calendar,gamification,grocy,ha,habits,integrations,labels,notifications,offline,pomodoro,strategy,tasks,todo}/`
+- Contains: Bridge services, persistence, sync engines, HA adapters
+- Depends on: Domain packages, `@lib/*`, HA WebSocket API
+- Used by: Pages, API routes, middleware
 
-### 2. Component Layer — `apps/web/src/components/`
+**Presentation Layer (`apps/web/src/pages/`):**
+- Purpose: Astro pages (SSR) rendering HTML + mounting client scripts
+- Location: `apps/web/src/pages/*.astro`
+- Contains: `index.astro`, `kanban.astro`, `table.astro`, `today.astro`, `upcoming.astro`, `calendar.astro`, `habits.astro`, `gamification.astro`, `gantt.astro`, `settings.astro`, `tasks.astro`, `offline.astro`
+- Depends on: Domains, lib, components, layouts
+- Used by: Browser (end-user)
 
-42 Astro components organized by domain:
-- `layout/` — Sidebar, TopNavigation, BoardSwitcher, SidebarFooter, SidebarNavList
-- `tasks/` — NewTaskModal, StrategicEvaluator, TaskViewTabs
-- `settings/` — SettingsGeneral, SettingsLabels, SettingsIntegrations, SettingsSystem, SettingsAgents, SettingsShellNav, SettingsSummaryCard
-- `ui/` — Reusable: Icon, StatusBadge, PriorityLabel, TaskTypeIcon, LabelPicker, FilterToolbar, EmptyState, Skeleton, RiceBadge, etc.
-- `ha/` — AskAssistModal, TypingIndicator
-- `gamification/` — Confetti, GamificationWidget, StreakBadge
-- `pomodoro/` — PomodoroTimer
-- `pwa/` — PwaInstallBanner
+**API Layer (`apps/web/src/pages/api/`):**
+- Purpose: REST endpoints for client-side fetch, external integrations (MCP, A2A, NFC), webhooks
+- Location: `apps/web/src/pages/api/` (30+ route files across 15 subdirectories)
+- Contains: Task CRUD, board management, label management, backup/export, HA proxy, SSE, Vikunja compat
+- Depends on: Domains, lib
+- Used by: Client-side controllers, external agents
 
-### 3. Client Controller Layer — `apps/web/src/lib/`
+**Component Layer (`apps/web/src/components/`):**
+- Purpose: Reusable Astro components (server-rendered)
+- Location: `apps/web/src/components/{ui,layout,settings,ha,tasks,gamification,pomodoro,pwa}/`
+- Contains: `FilterToolbar.astro`, `TaskTypeIcon.astro`, `StatusBadge.astro`, `Sidebar.astro`, `TopNavigation.astro`, etc.
+- Depends on: Lib utilities
+- Used by: Pages
 
-49 TypeScript modules. Heavy client-side logic:
-- **View controllers** (largest files):
-  - `settings-controller.ts` (3205 lines) — Settings page orchestration
-  - `task-modal-controller.ts` (2417 lines) — Task detail modal logic
-  - `kanban-controller.ts` (2019 lines) — Kanban board interactions, drag/drop, lanes
-  - `table-controller.ts` (1336 lines) — Table view with sorting, filtering
-  - `layout-controller.ts` (532 lines) — Sidebar, theme, layout state
-  - `dashboard-controller.ts` (247 lines) — Dashboard widget management
-- **Infrastructure libs**: `safe-fetch.ts`, `toast.ts`, `ingress-fetch.ts`, `filter-engine.ts`, `filter-state.ts`, `task-api-client.ts`, `focus-trap.ts`, `validation.ts`, `rate-limit.ts`, etc.
+**Client Controllers (`apps/web/src/lib/`):**
+- Purpose: Client-side TypeScript modules for page interactivity
+- Location: `apps/web/src/lib/` (50+ modules)
+- Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `settings-controller.ts` (3,205), `dashboard-controller.ts`
+- Depends on: Browser APIs, `@domains/offline/`, `@lib/task-api-client.ts`
+- Used by: Pages via `<script>` imports
 
-### 4. Domain Layer — `apps/web/src/domains/`
+**Middleware (`apps/web/src/middleware.ts`):**
+- Purpose: Request pipeline — auth, security headers, CSRF, rate limiting, HTML rewriting for ingress
+- Location: `apps/web/src/middleware.ts`
+- Depends on: `@domains/auth/`, `@meitheal/domain-observability`, `@domains/tasks/persistence/`, `@domains/ha/`
 
-In-app domain services (16 modules across 11 bounded contexts):
-- `tasks/persistence/` — TaskRepository, BoardRepository, LaneRepository, SettingsRepository, TemplateRepository, UserRepository, store
-- `auth/` — `ingress.ts`, `ingress-policy.ts`
-- `ha/` — `ha-connection.ts`, `ha-entities.ts`, `ha-events.ts`, `ha-services.ts`, `ha-users.ts`, `ha-startup.ts`
-- `calendar/` — `calendar-bridge.ts`, `caldav-client.ts`, `resolve-calendar-entities.ts`
-- `todo/` — `todo-bridge.ts`, `todo-status-mapper.ts`
-- `ai/` — `ai-context-service.ts`, `ha-assist-service.ts`
-- `labels/` — `label-store.ts`, `label-color-resolver.ts`
-- `habits/` — `habit-service.ts`
-- `pomodoro/` — `pomodoro-service.ts`, `pomodoro-types.ts`
-- `gamification/` — `achievement-engine.ts`, `streak-tracker.ts`
-- `grocy/` — `grocy-bridge.ts`, `grocy-mapper.ts`
-- `offline/` — `offline-store.ts`, `sync-engine.ts`, `sw-register.ts`, `connectivity.ts`, `tab-sync.ts`, `sync-lock.ts`
-- `notifications/` — `due-date-reminders.ts`
-- `integrations/vikunja-compat/` — v1 API compatibility layer
-
-### 5. Shared Domain Packages — `packages/`
-
-Pure TypeScript, no framework dependencies:
-- `domain-auth/` — Ingress detection, CSRF, session policy
-- `domain-tasks/` — Task type definitions, vertical slice exports
-- `domain-strategy/` — RICE scoring, strategic lens framework
-- `domain-observability/` — Structured JSON logging, redaction, audit
-- `integration-core/` — Calendar adapter interfaces, HA bridge, webhook emitter, A2A handler, rate limiter
-
-### 6. Infrastructure
-
-- **Middleware** (`apps/web/src/middleware.ts`, 270 lines): Rate limiting, CSRF, security headers, ingress path rewriting, DB schema init, HA integration init
-- **Ingress wrapper** (`apps/web/scripts/serve.mjs`): HTTP server normalizing `//` → `/`, injecting `X-Ingress-Path` header before Astro processes requests
-- **HA add-on config** (`meitheal-hub/config.yaml`): Defines the Home Assistant add-on manifest
+**Ingress Wrapper (`apps/web/scripts/serve.mjs`):**
+- Purpose: HTTP server normalizing `//` paths, injecting `X-Ingress-Path` header
+- Location: `apps/web/scripts/serve.mjs`
+- Depends on: Node.js `http` module, `INGRESS_PATH` env var
 
 ## Data Flow
 
-```
-Browser → [HA Ingress Proxy] → serve.mjs (normalize //) → Astro middleware
-  → Security (CSRF, CSP, rate limit) → Route handler → TaskRepository → SQLite
-  ← SSR HTML | JSON response ← Browser
-```
+**Task CRUD:**
+1. User action → client controller (e.g., `task-modal-controller.ts`)
+2. Client calls `@lib/task-api-client.ts` → `fetch()` to `/api/tasks`
+3. API route validates with Zod → calls `TaskRepository`
+4. `TaskRepository` → Drizzle ORM → SQLite
+5. Optional: Webhook dispatch, SSE broadcast, HA todo sync
 
-Client-side: Layout.astro monkey-patches `window.fetch()` to auto-prefix API calls with the ingress path.
+**HA Integration:**
+1. `middleware.ts` → `initHAIntegrations()` on first request
+2. `ha-startup.ts` establishes WebSocket via `home-assistant-js-websocket`
+3. `ha-services.ts` wraps HA service calls
+4. `todo-bridge.ts` syncs tasks ↔ HA todo entities
+5. `calendar-bridge.ts` syncs tasks ↔ HA calendar entities
 
-## Key Entry Points
+**Page Rendering (SSR):**
+1. Request → `serve.mjs` (normalize) → Astro middleware
+2. Middleware resolves ingress context, builds security headers
+3. Astro SSR renders page with data from `TaskRepository`
+4. Layout.astro monkey-patches `fetch()` for ingress prefix
+5. Client controllers hydrate interactivity
 
-| Entry | File | Purpose |
-|---|---|---|
-| Web app | `apps/web/src/layouts/Layout.astro` (1255 lines) | Master layout — sidebar, task modal, command palette, all global UI |
-| Server entry | `apps/web/scripts/serve.mjs` | HTTP server with ingress normalization |
-| Middleware | `apps/web/src/middleware.ts` | Request processing pipeline |
-| DB | `apps/web/src/domains/tasks/persistence/store.ts` | Database singleton |
-| HA connection | `apps/web/src/domains/ha/ha-connection.ts` | WebSocket to HA |
+**State Management:**
+- Server: SQLite via Drizzle ORM (single source of truth)
+- Client: `@domains/offline/offline-store.ts` (IndexedDB for offline)
+- Sync: `@domains/offline/sync-engine.ts` (background sync + conflict resolution)
+- Tab coordination: `@domains/offline/tab-sync.ts`
+
+## Key Abstractions
+
+**TaskRepository:**
+- Purpose: CRUD + query for tasks
+- Location: `@domains/tasks/persistence/task-repository.ts`
+- Pattern: Repository pattern over Drizzle ORM
+
+**Bridge Services:**
+- Purpose: Bidirectional sync between Meitheal tasks and external systems
+- Examples: `@domains/todo/todo-bridge.ts`, `@domains/calendar/calendar-bridge.ts`, `@domains/grocy/grocy-bridge.ts`
+- Pattern: Adapter (maps external API → domain model)
+
+**Client Controllers:**
+- Purpose: Page-specific client-side interactivity
+- Examples: `@lib/kanban-controller.ts`, `@lib/table-controller.ts`, `@lib/task-modal-controller.ts`
+- Pattern: Imperative DOM manipulation (no framework — Astro-native)
+
+**Discriminated Union Results:**
+- Pattern: `{ ok: true, data } | { ok: false, errorCode }` for all API responses
+- Used in: API routes, lib modules
+
+## Entry Points
+
+**HTTP Server:**
+- Location: `apps/web/scripts/serve.mjs`
+- Triggers: `node serve.mjs` (via `meitheal-hub/run.sh`)
+- Responsibilities: URL normalization, ingress header injection, Astro handler delegation
+
+**Astro Dev Server:**
+- Location: `apps/web/astro.config.mjs`
+- Triggers: `pnpm dev` / `astro dev`
+- Responsibilities: HMR, SSR, Vite plugins
+
+**Middleware:**
+- Location: `apps/web/src/middleware.ts`
+- Triggers: Every HTTP request
+- Responsibilities: Auth, rate limiting, CSP, CSRF, HTML rewriting
+
+## Error Handling
+
+**Strategy:** Discriminated unions for API layer, try/catch with structured logging elsewhere
+
+**Patterns:**
+- API routes return `{ ok: false, errorCode: string }` — never throw
+- `@lib/safe-fetch.ts` wraps `fetch()` with error normalization
+- Logger redacts secrets via `defaultRedactionPatterns`
+- `@lib/toast.ts` for client-side error notification
+
+## Cross-Cutting Concerns
+
+**Logging:** `@meitheal/domain-observability` — structured JSON, Loki-compatible, auto-redaction
+**Validation:** Zod schemas in API routes
+**Authentication:** HA Supervisor token + ingress context resolution
+**Rate Limiting:** In-memory map in middleware (300 req/min/IP, capped entries)
+**Security Headers:** CSP, CSRF, X-Frame-Options, Referrer-Policy via `ingress-policy.ts`
+
+---
+
+*Architecture analysis: 2026-03-15*

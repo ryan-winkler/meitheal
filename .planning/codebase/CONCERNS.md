@@ -1,120 +1,108 @@
-# Concerns & Technical Debt
+# Codebase Concerns
 
-> Last refreshed: 2026-03-15
+**Analysis Date:** 2026-03-15
 
-## Critical Concerns
+## Tech Debt
 
-### 1. Monolithic Layout.astro (1255 lines)
+**`@ts-nocheck` in `kanban-controller.ts`:**
+- Issue: Entire 2,019-line controller has `@ts-nocheck` — extracted from inline `<script>` (PGD-01) without progressive typing
+- Files: `apps/web/src/lib/kanban-controller.ts`
+- Impact: No type safety on the most complex client controller. Refactoring risks runtime errors.
+- Fix approach: Gradually add types file-section-by-file-section, removing `@ts-nocheck` when 100% typed
 
-`Layout.astro` is the app's single layout file containing:
-- Global sidebar
-- Task detail modal (two-column layout with all properties)
-- Command palette
-- All client-side script initialization
-- Fetch monkey-patching for ingress
+**Oversized Controllers:**
+- Issue: Several client controllers are >2,000 lines with mixed concerns
+- Files: `apps/web/src/lib/settings-controller.ts` (3,205 LoC), `apps/web/src/lib/task-modal-controller.ts` (2,417 LoC), `apps/web/src/lib/kanban-controller.ts` (2,019 LoC)
+- Impact: Difficult to navigate, test, and maintain. High cognitive load for contributors.
+- Fix approach: Decompose into focused sub-modules per domain concern (e.g., `settings-integrations-controller.ts`, `kanban-drag-controller.ts`)
 
-**Risk**: Any change to the task modal, sidebar, or command palette touches this massive file. High merge conflict probability.
+**Duplicated Type Icon Config:**
+- Issue: SVG path data for task types (epic, story, task, bug) is duplicated across `TaskTypeIcon.astro`, `kanban-controller.ts`, and `task-modal-controller.ts`
+- Files: `apps/web/src/components/ui/TaskTypeIcon.astro`, `apps/web/src/lib/task-modal-controller.ts`
+- Impact: Inconsistency risk when updating icons. Maintenance burden.
+- Fix approach: Extract shared `TYPE_ICON_CONFIG` to a single `@lib/type-icon-config.ts` module
 
-**Recommendation**: Extract task detail modal and command palette into standalone Astro components.
+## Known Bugs
 
-### 2. Oversized Client Controllers
-
-| Controller | Lines | Concern |
-|---|---|---|
-| `settings-controller.ts` | 3205 | Single file managing all settings tabs |
-| `task-modal-controller.ts` | 2417 | Monolithic modal state management |
-| `kanban-controller.ts` | 2019 | Drag/drop + lanes + rendering in one file |
-| `table-controller.ts` | 1336 | Table sorting/filtering/rendering |
-
-**Risk**: Hard to reason about, test, or modify incrementally. Each is a God Object.
-
-**Recommendation**: Split per-concern (e.g., `kanban-drag.ts`, `kanban-lanes.ts`, `kanban-render.ts`).
-
-### 3. Inline SQL in TaskRepository
-
-`TaskRepository` uses raw SQL strings (not Drizzle typed queries) for most operations. While parameterized, they bypass Drizzle's type safety and schema validation.
-
-**Risk**: Schema drift undetected until runtime. No compile-time column validation.
-
-**Recommendation**: Migrate critical queries to Drizzle's query builder for type safety.
-
-## Architecture Debt
-
-### 4. CSS Dual System
-
-The codebase uses **both** Tailwind v4 utility classes AND custom CSS partials (18 files). The boundary is unclear — some components use Tailwind, others use custom classes, many use both.
-
-**Risk**: Style conflicts, maintenance confusion, inconsistent design system.
-
-### 5. Vikunja Compatibility Layer
-
-`api/v1/` routes maintain backward compatibility with Vikunja's API format. This adds maintenance burden for a legacy concern.
-
-**Risk**: Dead code if no Vikunja clients are actively used. Adds API surface to secure.
-
-### 6. Domain Boundary Violations
-
-Some files in `lib/` directly import from `domains/` bypassing package boundaries. The `@domains/` alias makes cross-domain imports easy but hard to track.
-
-## Performance Concerns
-
-### 7. No Client-Side Bundling Strategy
-
-All `<script>` blocks in Astro pages compile to individual JS files. No shared chunks for common utilities (toast, filter engine, safe-fetch).
-
-**Risk**: Duplicate code across page bundles. Each view page re-bundles shared utilities.
-
-### 8. Large Modal DOM
-
-The task detail modal in `Layout.astro` renders ~400 lines of HTML with all properties, even when the modal is hidden. This DOM is present on every page.
-
-**Risk**: Unnecessary initial DOM weight. Memory pressure from hidden interactive elements.
+**Manage Swimlanes Modal Blocking:**
+- Symptoms: Swimlanes modal can get stuck, blocking UI interaction with other modals
+- Files: `apps/web/src/lib/kanban-controller.ts`, `apps/web/src/pages/kanban.astro`
+- Trigger: Opening swimlane management when another modal overlay is active
+- Workaround: Page reload
 
 ## Security Considerations
 
-### 9. Dependency Overrides
+**Rate Limiter Memory Growth:**
+- Risk: In-memory rate limit map grows unbounded under distributed attacks from many IPs
+- Files: `apps/web/src/middleware.ts`
+- Current mitigation: `MAX_ENTRIES` cap with FIFO eviction
+- Recommendations: Consider external rate limiting (HA proxy, Cloudflare) for production
 
-Five packages have version overrides in root `package.json` for security:
-- `lodash` >=4.17.23
-- `svgo` >=4.0.1  
-- `undici` >=7.24.3
-- `devalue` >=5.6.4
-- `esbuild` >=0.25.0
+**No Standalone Auth:**
+- Risk: Application has no standalone authentication — relies entirely on HA Supervisor token
+- Files: `apps/web/src/domains/auth/ingress.ts`
+- Current mitigation: Only accessible behind HA ingress (by design)
+- Recommendations: Document clearly that standalone deployment is NOT supported
 
-**Action**: Monitor Dependabot for new advisories. Some overrides may be stale.
+## Performance Bottlenecks
 
-### 10. Rate Limiter Memory
+**Large Page Initial Renders:**
+- Problem: `kanban.astro` (1,404 LoC) and `Layout.astro` (1,255 LoC) are SSR-heavy
+- Files: `apps/web/src/pages/kanban.astro`, `apps/web/src/layouts/Layout.astro`
+- Cause: Many conditional blocks, inline component rendering, large CSS injection
+- Improvement path: Further component extraction, lazy loading non-critical sections
 
-The in-memory rate limiter in `middleware.ts` caps at 10,000 entries (~800KB). Under sustained attack from many unique IPs, this could grow before eviction kicks in.
+**Client Bundle Size (Controllers):**
+- Problem: 3 controllers total ~7,600 LoC of client-side JS shipped on page load
+- Files: `apps/web/src/lib/kanban-controller.ts`, `apps/web/src/lib/table-controller.ts`, `apps/web/src/lib/task-modal-controller.ts`
+- Cause: Monolithic controllers with all features loaded upfront
+- Improvement path: Dynamic imports, code splitting per interaction mode
 
-## Testing Gaps
+## Fragile Areas
 
-### 11. Unit Test Coverage
+**Ingress Path Handling:**
+- Files: `apps/web/scripts/serve.mjs`, `apps/web/src/middleware.ts`, `apps/web/src/layouts/Layout.astro`
+- Why fragile: Three separate layers all handle path rewriting — `serve.mjs` normalizes URLs, middleware rewrites HTML attributes, `Layout.astro` monkey-patches `fetch()`. A change in any one layer can break the others.
+- Safe modification: Always test all three layers together (Tier 2 devcontainer required)
+- Test coverage: `tests/e2e/middleware-ingress-behavior.spec.ts`, `tests/e2e/ingress-header-validation.spec.ts`, `tests/e2e/ingress-state-persistence.spec.ts`
 
-Only 1 unit test exists (`todo-status-mapper.spec.ts`). All other testing is E2E via Playwright. Domain logic in packages/ has no unit tests.
+**CSS Partial System:**
+- Files: `apps/web/src/styles/*.css` (18 files, some >500 LoC)
+- Why fragile: No CSS scoping — all partials are global. Class name collisions possible. CI only checks brace balance.
+- Safe modification: Use unique prefixes per partial domain (e.g., `.kanban-`, `.table-`)
+- Test coverage: CSS brace balance check in CI only
 
-**Risk**: Slow feedback loop. E2E tests can't isolate domain logic regressions.
+## Scaling Limits
 
-### 12. No Visual Regression Testing
+**SQLite:**
+- Current capacity: Single-user homelab usage (hundreds to low thousands of tasks)
+- Limit: Concurrent writes (SQLite WAL mode), no multi-instance support
+- Scaling path: Designed for single HA instance — acceptable tradeoff per product scope
 
-No screenshot comparison testing. UI changes are verified manually or via browser subagent screenshots (ephemeral, not tracked).
+## Dependencies at Risk
 
-## Documentation Debt
+**No critical risks identified.** All dependencies are actively maintained. Security overrides in root `package.json` mitigate known vulnerabilities.
 
-### 13. Stale Theme Settings Failures
+## Test Coverage Gaps
 
-Test results in `tests/test-results/` show persistent `e2e-theme-settings` failures with error-context.md files. These may indicate flaky tests or genuine regressions.
+**Unit Tests:**
+- What's not tested: Only 1 unit test file (`todo-status-mapper.spec.ts`). Core domain logic in `domain-tasks`, `domain-strategy`, `domain-auth` packages have NO unit tests.
+- Files: `packages/domain-tasks/src/`, `packages/domain-strategy/src/rice.ts`
+- Risk: Business rule regressions undetected
+- Priority: Medium — E2E tests provide some coverage but miss edge cases
 
-## Deferred Items
+**Client Controllers:**
+- What's not tested: `kanban-controller.ts`, `table-controller.ts`, `task-modal-controller.ts` have NO test coverage
+- Files: `apps/web/src/lib/*-controller.ts`
+- Risk: UI regressions in drag-and-drop, filtering, modal behavior
+- Priority: Medium — these are the most complex client-side modules
 
-### 14. Gantt View
+**Offline/Sync:**
+- What's not tested: `offline-store.ts`, `sync-engine.ts`, `tab-sync.ts` have basic E2E coverage but no unit tests for conflict resolution logic
+- Files: `apps/web/src/domains/offline/`
+- Risk: Data loss during sync conflicts
+- Priority: High
 
-`gantt.astro` exists but functionality maturity is unclear.
+---
 
-### 15. Offline Sync Engine
-
-Full offline support exists (`domains/offline/`) with IndexedDB store, sync engine, tab sync, and service worker registration. Maturity and edge case handling need verification.
-
-### 16. Gamification System
-
-Achievement engine and streak tracker exist but integration depth with core task flow is uncertain.
+*Concerns audit: 2026-03-15*
