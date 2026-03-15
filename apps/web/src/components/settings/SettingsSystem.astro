@@ -368,18 +368,19 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     </SettingsPanelCard>
 
     <!-- About -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">{t("settings.about_title", locale)}</div>
-          <div class="card-subtitle">
-            {t("settings.about_subtitle", locale)}
-          </div>
-        </div>
-      </div>
+    <SettingsPanelCard
+      title="App Readiness & Companion"
+      subtitle="Installability, offline health, browser handoff, and Home Assistant companion reopening."
+      tone="accent"
+    >
       <div
         style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
       >
+        <SettingsCallout title="Recommended path" icon="📲" tone="info">
+          Install from a standalone browser tab when you want the full PWA prompt.
+          Use Companion and x-callback links when you need to reopen the same section
+          inside the Home Assistant app, Siri Shortcuts, or automations.
+        </SettingsCallout>
         <p>
           <a
             href="https://en.wiktionary.org/wiki/meitheal"
@@ -597,8 +598,8 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           </div>
         </div>
       </div>
-      <div
-        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; gap: 12px; flex-wrap: wrap;"
+      <SettingsActionRow
+        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
       >
         <a
           href="https://github.com/Coolock-Village/meitheal/issues/new/choose"
@@ -624,31 +625,18 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
           >⭐ Star on GitHub</a
         >
-      </div>
-    </div>
+      </SettingsActionRow>
+    </SettingsPanelCard>
 
     <!-- Help & Support -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Help & Support</div>
-          <div class="card-subtitle">
-            Documentation, guides, and community resources.
-          </div>
-        </div>
-      </div>
+    <SettingsPanelCard
+      title="Help & Support"
+      subtitle="Documentation, guides, and community resources."
+    >
       <div
         style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
       >
-        <details open>
-          <summary
-            style="font-weight: 600; font-size: 14px; cursor: pointer; color: var(--text-primary); list-style: none; display: flex; align-items: center; gap: 6px;"
-          >
-            📖 Getting Started
-          </summary>
-          <div
-            style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);"
-          >
+        <SettingsDisclosure title="📖 Getting Started" open={true}>
             <p style="margin: 0 0 8px 0;">
               <strong>Meitheal</strong> is a local-first task and life management
               engine built for Home Assistant. Your data lives on your device. No
@@ -669,17 +657,8 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
               </li>
               <li>All data is exportable as JSON, CSV, or raw SQLite</li>
             </ul>
-          </div>
-        </details>
-        <details style="margin-top: 12px;">
-          <summary
-            style="font-weight: 600; font-size: 14px; cursor: pointer; color: var(--text-primary); list-style: none; display: flex; align-items: center; gap: 6px;"
-          >
-            🏗️ Architecture
-          </summary>
-          <div
-            style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);"
-          >
+        </SettingsDisclosure>
+        <SettingsDisclosure title="🏗️ Architecture">
             <p style="margin: 0 0 8px 0;">Meitheal is built with:</p>
             <ul style="margin: 0; padding-left: 20px; line-height: 2;">
               <li><strong>Astro</strong> for SSR and static generation</li>
@@ -697,11 +676,10 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
                 <strong>Domain-Driven Design</strong> with bounded contexts per feature
               </li>
             </ul>
-          </div>
-        </details>
+        </SettingsDisclosure>
       </div>
-      <div
-        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; gap: 12px; flex-wrap: wrap;"
+      <SettingsActionRow
+        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
       >
         <a
           href="https://github.com/Coolock-Village/meitheal#readme"
@@ -727,8 +705,8 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
           >📋 Changelog</a
         >
-      </div>
-    </div>
+      </SettingsActionRow>
+    </SettingsPanelCard>
     </div>
   </section>
 
@@ -737,30 +715,20 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     class="settings-shell__section settings-shell__section--nested"
     data-settings-shell-section
   >
-    <div class="settings-shell__section-intro">
-      <span class="settings-shell__section-icon">⚠</span>
-      <div>
-        <h2>Danger Zone</h2>
-        <p>
-          Protected destructive actions stay isolated here so resets and purges
-          never compete with day-to-day preference changes.
-        </p>
-      </div>
-    </div>
+    <SettingsSectionIntro section={dangerZoneSection} />
     <div class="settings-grid">
     <!-- Danger Zone -->
-    <div class="card" style="border-color: var(--danger); border-width: 2px;">
-      <div class="card-header">
-        <div>
-          <div class="card-title" style="color: var(--danger);">
-            {t("settings.danger_title", locale)}
-          </div>
-          <div class="card-subtitle">
-            {t("settings.danger_subtitle", locale)}
-          </div>
-        </div>
-      </div>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <SettingsPanelCard
+      title={t("settings.danger_title", locale)}
+      subtitle={t("settings.danger_subtitle", locale)}
+      tone="danger"
+    >
+      <SettingsCallout title="Protected actions" icon="⚠" tone="danger">
+        These actions are intentionally separated from everyday settings because
+        they remove data or revert behavior globally. Double-check exports before
+        using them.
+      </SettingsCallout>
+      <SettingsActionRow style="margin-top: 16px;">
         <button
           class="btn"
           id="purge-tasks"
@@ -773,8 +741,8 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           style="border-color: var(--danger); color: var(--danger);"
           >🔄 Reset Settings</button
         >
-      </div>
-    </div>
+      </SettingsActionRow>
+    </SettingsPanelCard>
     </div>
   </section>
 </div>

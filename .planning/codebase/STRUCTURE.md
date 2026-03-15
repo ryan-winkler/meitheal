@@ -96,8 +96,8 @@ meitheal/
 - Contains: `FilterToolbar.astro` (640 LoC), `StatusBadge.astro`, `TaskTypeIcon.astro`, `EmptyState.astro`, `LabelPicker.astro`
 
 **`apps/web/src/components/settings/`:**
-- Purpose: Settings shell navigation, summaries, and grouped section panels
-- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro`, `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
+- Purpose: Settings shell navigation, summaries, shared UX primitives, and grouped section panels
+- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsSectionIntro.astro`, `SettingsPanelCard.astro`, `SettingsCallout.astro`, `SettingsActionRow.astro`, `SettingsDisclosure.astro`, `SettingsStatusChip.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro`, `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
 
 **`apps/web/src/styles/`:**
 - Purpose: CSS design system via partials

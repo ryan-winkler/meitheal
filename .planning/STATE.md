@@ -3,8 +3,8 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, and 4 are complete. Phase 3 is only partially complete (`PGD-01` landed; newer settings/search decomposition work is being carried by parallel phases instead of the original per-tab plan).
-**Active Tracks:** Parallel Phase 08 (Settings full redesign closeout) and Parallel Phase 09 (search hub stabilization)
-**Last Completed Local Work:** Settings/search hardening follow-up, security cleanup, and doc sync — 2026-03-15
+**Active Tracks:** Parallel Phase 08.1 (Settings UX polish closeout) and Parallel Phase 09 (search hub stabilization)
+**Last Completed Local Work:** Settings UX polish, search hardening follow-up, security cleanup, and doc sync — 2026-03-15
 **Session Date:** 2026-03-15
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
@@ -25,6 +25,24 @@
 - Tier 1: Real Settings screenshots captured from the local Astro server into `public/pwa/screenshots/`.
 - Tier 2: Attempted `./scripts/devcontainer-up.sh status`, but Docker socket access is blocked on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).
 - Repo-wide `pnpm check` now passes locally after follow-up cleanup; Tier 2 HA verification remains pending.
+
+## Parallel Phase 08.1 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
+
+**Objective:** Deep UI/UX polish for the redesigned Settings shell so summary, rail, search, mobile, App/PWA, and destructive flows feel intentional and product-grade.
+
+### Delivered on 2026-03-15
+- Extended `settings-registry.ts` with UI-only metadata for differentiated rail detail, section intros, and common-task chips.
+- Added shared settings primitives: `SettingsSectionIntro`, `SettingsPanelCard`, `SettingsCallout`, `SettingsActionRow`, `SettingsDisclosure`, and `SettingsStatusChip`.
+- Kept the summary strip visible in detail mode and promoted it into the persistent quick-jump/live-status surface.
+- Upgraded settings search with result metadata, visible clear/reset, and arrow-key selection.
+- Reworked Personal, Workflow, Integrations, App & PWA, and Danger Zone presentation around shared primitives and clearer guided copy.
+- Expanded browser coverage for search reset, keyboard navigation, and mobile quick-jump behavior.
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/web build` — passed.
+- Tier 1: `pnpm check` — passed with repo-wide hints only, 0 errors.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/settings-shell.spec.ts` — 8 passed.
+- Tier 2: `./scripts/devcontainer-up.sh status` — still blocked by Docker socket permission on this workstation.
 
 ### HEART Targets
 - Happiness: make any setting discoverable from one search box and visible summaries.
@@ -78,6 +96,7 @@
 ## Active Follow-ups
 
 - Phase 08: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
+- Phase 08.1: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
 
 ## Phase 7 Summary (IN PROGRESS)

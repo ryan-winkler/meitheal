@@ -58,6 +58,7 @@
 - Depends on: Browser APIs, `@domains/offline/`, `@lib/task-api-client.ts`
 - Used by: Pages via `<script>` imports
 - Settings-specific composition now flows through `settings-page.ts` → `settings-shell-controller.ts` + `settings-store.ts` + `settings-registry.ts`, while `settings-controller.ts` remains the legacy behavior layer for existing save flows.
+- Phase 08.1 adds a presentation layer of shared settings primitives (`SettingsSectionIntro`, `SettingsPanelCard`, `SettingsCallout`, `SettingsActionRow`, `SettingsDisclosure`, `SettingsStatusChip`) so shell IA and panel UX reuse one visual language instead of repeated bespoke wrappers.
 
 **Middleware (`apps/web/src/middleware.ts`):**
 - Purpose: Request pipeline — auth, security headers, CSRF, rate limiting, HTML rewriting for ingress
@@ -104,7 +105,7 @@
 - Client: `@domains/offline/offline-store.ts` (IndexedDB for offline)
 - Sync: `@domains/offline/sync-engine.ts` (background sync + conflict resolution)
 - Tab coordination: `@domains/offline/tab-sync.ts`
-- Settings shell: `settings-store.ts` caches `/api/settings` reads and preserves existing persisted keys while the shell manages summaries, deep links, and companion actions client-side.
+- Settings shell: `settings-store.ts` caches `/api/settings` reads and preserves existing persisted keys while the shell manages summaries, quick jumps, detail-mode state, deep links, and companion actions client-side.
 - Search hub: `SearchHub.astro` ships a static registry for pages/actions/settings while `/api/search` supplies live task/board/filter results.
 
 ## Key Abstractions

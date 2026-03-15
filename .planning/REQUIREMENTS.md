@@ -65,6 +65,10 @@
 - [x] **SET-06**: Update the dynamic manifest with real Settings screenshots and a Settings shortcut
 - [x] **SET-07**: Add/refresh browser coverage for shell search, theme flows, and App & PWA contract checks
 - [ ] **SET-08**: Verify ingress, companion, and PWA behavior in the HA devcontainer Tier 2 environment
+- [x] **SET-09**: Differentiate summary, rail, and section intro roles using registry-backed UX metadata and shared settings primitives
+- [x] **SET-10**: Improve settings search with visible reset, result metadata, and keyboard navigation
+- [x] **SET-11**: Add mobile quick-jump UX plus guided App & PWA and Danger Zone trust surfaces
+- [ ] **SET-12**: Re-run Tier 2 HA verification for the polished Settings UX once Docker access is available
 
 ## Scope
 
@@ -86,6 +90,6 @@ All above — 28 requirements (reduced from 35 after audit)
 | 2 | SQL-01→05 |
 | 3 | PGD-01→05 |
 | 4 | SMT-01→03, VER-01→03 |
-| 8 | SET-01→08 |
+| 8 | SET-01→12 |
 
 *Requirements revised: 2026-03-15 — delivered work and active gaps reconciled*

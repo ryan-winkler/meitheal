@@ -26,6 +26,7 @@ This index normalizes existing persona-loop artifacts without deleting historica
 | `phase-6/` | exploratory | Full loop files exist but mapped to phase-06 draft planning, not execution completion. |
 | `phase-7/` | exploratory | Partial iteration artifact set. |
 | `phase-8/` | exploratory | Audit/cycle artifacts from prior agent flow. |
+| `phase-08.1/` | execution-linked | Canonical 7-file iteration for Settings UI/UX polish closeout and verification. |
 | `phase-09/` | execution-linked | Canonical search-hub iteration covering universal search parity and HA search unification. |
 | `phase-9/` | exploratory | Gap-analysis snapshots, not canonical execution loops. |
 | `phase-10/` | historical import | Single cycle-decision snapshot from prior workflow variant. |

@@ -39,6 +39,21 @@
 
 **Dependencies:** None for local delivery. Tier 2 closeout depends on Docker access for the HA devcontainer.
 
+## Parallel Phase 08.1: Settings UI/UX Polish
+
+**Status:** 🟡 Local implementation complete, Tier 2 HA verification blocked by environment
+
+**Goal:** Polish the redesigned Settings shell so it feels intentionally navigable on desktop, mobile, Home Assistant ingress, and PWA/companion surfaces.
+
+**Success Criteria:**
+1. Summary strip stays visible as the primary quick-jump/live-status surface in detail mode.
+2. Search supports result metadata, arrow-key navigation, and a visible clear/reset path.
+3. Mobile uses a compact section-picker quick-jump surface instead of a shrunken desktop rail.
+4. Shared settings primitives reduce repeated card/callout/disclosure markup across the settings panels.
+5. App & PWA and Danger Zone present guided trust surfaces instead of raw control clusters.
+6. Tier 1 browser verification covers reset, keyboard, and mobile navigation flows.
+7. Tier 2 HA verification confirms ingress-safe behavior once Docker access is available.
+
 ## Parallel Phase 09: Search Hub Upgrade
 
 **Status:** 🟡 Local implementation complete, Tier 2 HA verification blocked by environment

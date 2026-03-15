@@ -20,8 +20,17 @@ All navigation is hash-based so it stays inside Home Assistant ingress, companio
 1. Open `Settings`.
 2. Use the search field at the top of the page.
 3. Press `Enter` to jump directly to the best match.
+4. Use `Clear` or press `Esc` if you want to remove the temporary muted-section filtering.
 
 The search now prefers direct field hits such as `Theme` over broad section matches.
+
+### Move between sections on mobile
+
+1. Open a Settings section.
+2. Use the horizontal `Section picker` quick-jump strip near the top.
+3. Tap the target section card to jump there without leaving the current Settings route.
+
+Desktop keeps the left rail as the persistent directory; mobile uses the quick-jump strip instead.
 
 ### Reopen Settings in Home Assistant Companion
 

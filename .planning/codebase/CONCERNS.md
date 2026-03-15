@@ -14,7 +14,7 @@
 - Issue: Several client controllers are >2,000 lines with mixed concerns
 - Files: `apps/web/src/lib/settings-controller.ts` (3,205 LoC), `apps/web/src/lib/task-modal-controller.ts` (2,417 LoC), `apps/web/src/lib/kanban-controller.ts` (2,019 LoC)
 - Impact: Difficult to navigate, test, and maintain. High cognitive load for contributors.
-- Fix approach: Decompose into focused sub-modules per domain concern (e.g., `settings-integrations-controller.ts`, `kanban-drag-controller.ts`). The new Settings shell/store/registry split reduces page-level duplication, but `settings-controller.ts` is still oversized.
+- Fix approach: Decompose into focused sub-modules per domain concern (e.g., `settings-integrations-controller.ts`, `kanban-drag-controller.ts`). The new Settings shell/store/registry split plus shared UI primitives reduce page-level duplication, but `settings-controller.ts` is still oversized.
 
 ## Known Bugs
 
@@ -63,7 +63,7 @@
 **HA Verification Access:**
 - Files: `./scripts/devcontainer-up.sh`, Docker daemon access on the contributor machine
 - Why fragile: HA-native and ingress-sensitive work can only be closed out correctly when the devcontainer stack is reachable.
-- Current blocker: Docker socket permission denied on this workstation, so Tier 2 verification is pending even though Tier 1 browser checks passed.
+- Current blocker: Docker socket permission denied on this workstation, so Tier 2 verification is pending even though Tier 1 browser checks passed for both Phase 08 and Phase 08.1 Settings work.
 
 **CSS Partial System:**
 - Files: `apps/web/src/styles/*.css` (18 files, some >500 LoC)

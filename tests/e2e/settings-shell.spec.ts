@@ -40,6 +40,43 @@ test.describe("Settings Shell", () => {
     await expect(page.locator("#app-pwa-settings")).toBeVisible()
   })
 
+  test("search clear resets results and removes muted section state", async ({ page }) => {
+    const searchInput = page.locator("#settings-search-input")
+    const clearButton = page.locator("#settings-search-clear")
+    const workflowSection = page.locator("#workflow-settings")
+
+    await searchInput.fill("companion")
+
+    await expect(clearButton).toBeVisible()
+    await expect(page.locator("#settings-search-results")).toBeVisible()
+    await expect(workflowSection).toHaveClass(/settings-shell__section--muted/)
+
+    await clearButton.click()
+
+    await expect(searchInput).toHaveValue("")
+    await expect(page.locator("#settings-search-results")).toBeHidden()
+    await expect(workflowSection).not.toHaveClass(/settings-shell__section--muted/)
+  })
+
+  test("keyboard search navigation highlights results before jumping", async ({ page }) => {
+    const searchInput = page.locator("#settings-search-input")
+
+    await searchInput.fill("companion")
+    await searchInput.press("ArrowDown")
+
+    await expect(
+      page.locator("#settings-search-results .settings-search-results__item").first(),
+    ).toHaveClass(/is-active/)
+
+    await searchInput.press("Enter")
+
+    await expect(page).toHaveURL(/#(app-pwa-settings|pwa-companion-open)$/)
+    await expect(page.locator('[data-settings-nav="app-pwa-settings"]').first()).toHaveAttribute(
+      "aria-current",
+      "location",
+    )
+  })
+
   test("webhooks callout uses the canonical automation and ai section id", async ({ page }) => {
     await page.goto("/settings#integrations-settings")
     await page.waitForLoadState("networkidle")
@@ -84,5 +121,21 @@ test.describe("Settings Shell", () => {
     await expect(page).toHaveURL(/#danger-zone-settings$/)
     await expect(page.locator("#danger-zone-settings")).toBeVisible()
     await expect(page.locator("#reset-settings")).toBeVisible()
+  })
+
+  test("mobile nav works as a compact quick-jump surface", async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 932 })
+    await page.goto("/settings#workflow-settings")
+    await page.waitForLoadState("networkidle")
+
+    const mobileNavLink = page.locator(
+      '[data-settings-nav="app-pwa-settings"][data-settings-nav-variant="mobile"]',
+    )
+
+    await expect(mobileNavLink).toBeVisible()
+    await mobileNavLink.click()
+
+    await expect(page).toHaveURL(/#app-pwa-settings$/)
+    await expect(page.locator("#app-pwa-settings")).toBeVisible()
   })
 })

@@ -116,6 +116,7 @@ test.describe("Feature Name", () => {
 - Test against running Astro server via Playwright's `request` API
 - Cover: pages, API endpoints, security headers, SEO, ingress behavior, Vikunja compat, webhooks, offline sync, accessibility, search hub flows, and Settings shell regressions
 - Examples: `pages.spec.ts`, `api.spec.ts`, `security-headers.spec.ts`, `vikunja-compat.spec.ts`, `search-hub.spec.ts`, `settings-shell.spec.ts`, `theme-settings.spec.ts`
+- Settings shell focus now includes summary quick-jumps, search reset behavior, keyboard result navigation, canonical settings cross-links, companion/x-callback affordances, and mobile quick-jump behavior.
 
 **Governance Tests (2 specs):**
 - Validate repository standards (required files, naming conventions)
