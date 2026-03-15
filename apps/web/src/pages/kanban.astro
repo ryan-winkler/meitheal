@@ -2707,11 +2707,11 @@ const typeConfig: Record<
     flex-shrink: 0;
   }
   /* Priority color classes — single source of truth: priority-config.ts */
-  .priority-dot.priority-critical, .priority-label.priority-critical { --prio-color: #ef4444; }
-  .priority-dot.priority-high, .priority-label.priority-high { --prio-color: #f59e0b; }
-  .priority-dot.priority-medium, .priority-label.priority-medium { --prio-color: #3b82f6; }
-  .priority-dot.priority-low, .priority-label.priority-low { --prio-color: #6366F1; }
-  .priority-dot.priority-minimal, .priority-label.priority-minimal { --prio-color: #6b7280; }
+  .priority-dot.priority-critical, .priority-label.priority-critical { --prio-color: var(--prio-critical); }
+  .priority-dot.priority-high, .priority-label.priority-high { --prio-color: var(--prio-high); }
+  .priority-dot.priority-medium, .priority-label.priority-medium { --prio-color: var(--prio-medium); }
+  .priority-dot.priority-low, .priority-label.priority-low { --prio-color: var(--prio-low); }
+  .priority-dot.priority-minimal, .priority-label.priority-minimal { --prio-color: var(--prio-none); }
   .priority-dot[class*="priority-"] { background: var(--prio-color); }
   .priority-label {
     font-size: 11px;
@@ -3182,9 +3182,9 @@ const typeConfig: Record<
     display: inline-block;
     flex-shrink: 0;
   }
-  .type-dot-epic { background: #8b5cf6; }
-  .type-dot-story { background: #3b82f6; }
-  .type-dot-task { background: #6366F1; }
+  .type-dot-epic { background: var(--type-epic); }
+  .type-dot-story { background: var(--type-story); }
+  .type-dot-task { background: var(--type-task); }
   .type-group-btn.active {
     background: var(--accent-light);
     border-color: var(--accent);
@@ -3204,9 +3204,9 @@ const typeConfig: Record<
     flex-shrink: 0;
     line-height: 1;
   }
-  .type-badge-epic { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; border-color: rgba(139, 92, 246, 0.25); }
-  .type-badge-story { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.25); }
-  .type-badge-task { background: rgba(99, 102, 241, 0.12); color: #6366F1; border-color: rgba(99, 102, 241, 0.25); }
+  .type-badge-epic { background: color-mix(in srgb, var(--type-epic) 12%, transparent); color: var(--type-epic); border-color: color-mix(in srgb, var(--type-epic) 25%, transparent); }
+  .type-badge-story { background: color-mix(in srgb, var(--type-story) 12%, transparent); color: var(--type-story); border-color: color-mix(in srgb, var(--type-story) 25%, transparent); }
+  .type-badge-task { background: color-mix(in srgb, var(--type-task) 12%, transparent); color: var(--type-task); border-color: color-mix(in srgb, var(--type-task) 25%, transparent); }
 
   /* Phase 20: Swimlane groups */
   .swimlane-group {

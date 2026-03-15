@@ -179,6 +179,18 @@
       --focus-ring: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent);
       --transition: 200ms ease;
       --sidebar-width: 240px;
+
+      /* Semantic: task type colors */
+      --type-epic: #8b5cf6;
+      --type-story: #3b82f6;
+      --type-task: #6366F1;
+
+      /* Semantic: priority colors */
+      --prio-critical: #ef4444;
+      --prio-high: #f97316;
+      --prio-medium: #3b82f6;
+      --prio-low: #22c55e;
+      --prio-none: #64748b;
   }
 
     /* Light theme overrides */
@@ -218,6 +230,18 @@
       --info-rgb: 37 99 235;
       --border-rgb: 203 213 225;
         --border-focus-rgb: 79 70 229;
+
+      /* Semantic: task type colors — light adjustments */
+      --type-epic: #7c3aed;
+      --type-story: #2563eb;
+      --type-task: #4F46E5;
+
+      /* Semantic: priority colors — light adjustments */
+      --prio-critical: #dc2626;
+      --prio-high: #ea580c;
+      --prio-medium: #2563eb;
+      --prio-low: #16a34a;
+      --prio-none: #64748b;
     }
 
     /* Auto theme — follows OS preference */
@@ -258,6 +282,18 @@
         --info-rgb: 37 99 235;
         --border-rgb: 203 213 225;
           --border-focus-rgb: 79 70 229;
+
+        /* Semantic: task type colors — auto light */
+        --type-epic: #7c3aed;
+        --type-story: #2563eb;
+        --type-task: #4F46E5;
+
+        /* Semantic: priority colors — auto light */
+        --prio-critical: #dc2626;
+        --prio-high: #ea580c;
+        --prio-medium: #2563eb;
+        --prio-low: #16a34a;
+        --prio-none: #64748b;
       }
     }
 
