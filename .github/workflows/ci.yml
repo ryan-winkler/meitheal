@@ -40,6 +40,8 @@ jobs:
           else
             exit 1
           fi
+      - name: Version sync check (VER-02)
+        run: node scripts/check-version-sync.mjs
 
   typecheck-and-tests:
     runs-on: ubuntu-latest
