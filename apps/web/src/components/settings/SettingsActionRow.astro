@@ -1,4 +1,12 @@
-<div class="settings-action-row">
+---
+interface Props {
+  style?: string
+}
+
+const { style } = Astro.props
+---
+
+<div class="settings-action-row" style={style}>
   <slot />
 </div>
 

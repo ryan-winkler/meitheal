@@ -272,7 +272,7 @@ function initSearch(): void {
     pageLifecycle.on(clearButton, "click", () => {
       clearSearchState()
     })
-  })
+  }
 }
 
 function initSectionLinks(): void {

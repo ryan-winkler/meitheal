@@ -1,26 +1,23 @@
 ---
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 interface Props {
-  locale: Locale;
+  locale: Locale
 }
-const { locale } = Astro.props;
+const { locale } = Astro.props
 ---
 
 <div class="settings-shell-panel">
   <div class="settings-grid">
     <!-- Sidebar Config -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Sidebar Configuration</div>
-          <div class="card-subtitle">
-            Configure visibility, order, and custom labels for navigation items.
-          </div>
-        </div>
-      </div>
-      <div style="padding: 16px;">
+    <SettingsPanelCard
+      title="Sidebar Configuration"
+      subtitle="Configure visibility, order, and custom labels for navigation items."
+    >
+      <div>
         <div
           id="sidebar-item-list"
           style="display: flex; flex-direction: column; gap: 8px;"
@@ -40,7 +37,7 @@ const { locale } = Astro.props;
             >+ Add Custom Link</button
           >
         </div>
-        <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <SettingsActionRow style="margin-top: 16px;">
           <button
             type="button"
             class="btn btn-primary"
@@ -53,25 +50,19 @@ const { locale } = Astro.props;
             id="reset-sidebar"
             style="font-size: 13px;">Reset to Default</button
           >
-        </div>
+        </SettingsActionRow>
       </div>
-    </div>
+    </SettingsPanelCard>
 
     <!-- Custom Fields -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">
-            {t("settings.custom_fields_title", locale)}
-          </div>
-          <div class="card-subtitle">
-            {t("settings.custom_fields_subtitle", locale)}
-          </div>
-        </div>
-        <button type="button" class="btn btn-ghost" id="add-custom-field"
-          >+ Add Field</button
-        >
-      </div>
+    <SettingsPanelCard
+      title={t("settings.custom_fields_title", locale)}
+      subtitle={t("settings.custom_fields_subtitle", locale)}
+      padded={false}
+    >
+      <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
+        >+ Add Field</button
+      >
       <div id="custom-fields-list">
         <div class="custom-field-row">
           <input
@@ -108,29 +99,20 @@ const { locale } = Astro.props;
           >
         </div>
       </div>
-    </div>
+    </SettingsPanelCard>
 
     <!-- Strategic Lenses — Contextual Mapping -->
-    <div class="card" style="position: relative;">
-      <div class="card-header">
-        <div>
-          <div
-            class="card-title"
-            style="display: flex; align-items: center; gap: 8px;"
-          >
-            Strategic Lenses
-            <button
-              type="button"
-              id="strategic-lenses-help-btn"
-              style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-muted); font-size: 12px; cursor: pointer; transition: all 150ms ease; flex-shrink: 0;"
-              title="What are Strategic Lenses?">?</button
-            >
-          </div>
-          <div class="card-subtitle">
-            Map evaluation frameworks contextually by Task Type.
-          </div>
-        </div>
-      </div>
+    <div style="position: relative;">
+      <SettingsPanelCard
+        title="Strategic Lenses"
+        subtitle="Map evaluation frameworks contextually by Task Type."
+      >
+        <button type="button" class="btn btn-ghost"
+          slot="actions"
+          id="strategic-lenses-help-btn"
+          style="width: 22px; height: 22px; border-radius: 50%; padding: 0; min-height: 22px;"
+          title="What are Strategic Lenses?">?</button
+        >
 
       <!-- Helper Popup -->
       <div
@@ -408,22 +390,15 @@ const { locale } = Astro.props;
           </select>
         </div>
       </div>
+      </SettingsPanelCard>
     </div>
 
     <!-- Users & Assignment -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">👤 Users & Assignment</div>
-          <div class="card-subtitle">
-            Manage task assignees. Home Assistant users are discovered
-            automatically. Add custom users for non-HA household members.
-          </div>
-        </div>
-      </div>
-      <div
-        style="padding: 16px; display: flex; flex-direction: column; gap: 16px;"
-      >
+    <SettingsPanelCard
+      title="👤 Users & Assignment"
+      subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
+    >
+      <div style="display: flex; flex-direction: column; gap: 16px;">
         <!-- Default Assignee -->
         <div>
           <label
@@ -482,7 +457,7 @@ const { locale } = Astro.props;
             style="display: flex; flex-direction: column; gap: 6px;"
           >
           </div>
-          <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <SettingsActionRow style="margin-top: 10px;">
             <input
               type="text"
               id="new-custom-user-name"
@@ -497,26 +472,18 @@ const { locale } = Astro.props;
               id="add-custom-user-btn"
               style="font-size: 13px;">+ Add User</button
             >
-          </div>
+          </SettingsActionRow>
         </div>
       </div>
-    </div>
+    </SettingsPanelCard>
   </div>
 
   <!-- Kanban Board -->
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <div class="card-title">📊 Kanban Board</div>
-        <div class="card-subtitle">
-          Configure Kanban board behaviour, including backlog visibility and
-          completed task retention.
-        </div>
-      </div>
-    </div>
-    <div
-      style="padding: 16px; display: flex; flex-direction: column; gap: 16px;"
-    >
+  <SettingsPanelCard
+    title="📊 Kanban Board"
+    subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px;">
       <!-- Backlog Mode -->
       <div>
         <label
@@ -524,7 +491,7 @@ const { locale } = Astro.props;
           style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;"
           >Backlog lane</label
         >
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <SettingsActionRow>
           <select
             id="backlog-mode-select"
             class="form-select"
@@ -541,7 +508,7 @@ const { locale } = Astro.props;
             id="save-backlog-mode"
             style="font-size: 13px;">Save</button
           >
-        </div>
+        </SettingsActionRow>
         <div
           id="backlog-mode-help"
           style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"
@@ -560,7 +527,7 @@ const { locale } = Astro.props;
           style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;"
           >Completed task retention</label
         >
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <SettingsActionRow>
           <select
             id="completed-retention-select"
             class="form-select"
@@ -578,29 +545,21 @@ const { locale } = Astro.props;
             id="save-completed-retention"
             style="font-size: 13px;">Save</button
           >
-        </div>
+        </SettingsActionRow>
         <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
           Done tasks older than this will be hidden from the Kanban board but
           remain in Table view.
         </p>
       </div>
     </div>
-  </div>
+  </SettingsPanelCard>
 
   <!-- Notifications -->
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <div class="card-title">🔔 Notifications</div>
-        <div class="card-subtitle">
-          Control how Meitheal sends notifications to Home Assistant. Toggle
-          globally or per user.
-        </div>
-      </div>
-    </div>
-    <div
-      style="padding: 16px; display: flex; flex-direction: column; gap: 16px;"
-    >
+  <SettingsPanelCard
+    title="🔔 Notifications"
+    subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
+  >
+    <div style="display: flex; flex-direction: column; gap: 16px;">
       <!-- Global toggle -->
       <div style="display: flex; align-items: center; gap: 12px;">
         <label class="toggle-switch" style="flex-shrink: 0;">
@@ -740,23 +699,17 @@ const { locale } = Astro.props;
         Save notification preferences
       </button>
     </div>
-  </div>
+  </SettingsPanelCard>
 
   <!-- Optional Features -->
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <div class="card-title">⚡ Optional Features</div>
-        <div class="card-subtitle">
-          Enable or disable optional features. Disabled features are hidden from
-          the UI and their APIs return 404. Core task management is never affected.
-        </div>
-      </div>
-    </div>
-    <div id="feature-toggles-container" style="padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+  <SettingsPanelCard
+    title="⚡ Optional Features"
+    subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
+  >
+    <div id="feature-toggles-container" style="display: flex; flex-direction: column; gap: 10px;">
       <span style="color: var(--text-muted); font-size: 12px; font-style: italic;">Loading features…</span>
     </div>
-  </div>
+  </SettingsPanelCard>
 </div>
 
 <script is:inline>
