@@ -290,7 +290,18 @@
 }
 
 .search-input {
-  @apply w-full bg-bg-input border border-border rounded-md px-3 py-2 text-sm text-text-primary outline-none transition-colors;
+  @apply w-full bg-bg-input border border-border rounded-md py-2 pl-10 pr-16 text-sm text-text-primary outline-none transition-colors;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.search-input::-webkit-search-decoration,
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-results-button,
+.search-input::-webkit-search-results-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+  display: none;
 }
 
 .search-input::placeholder {
