@@ -120,9 +120,14 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
           style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
         >
           <div
-            style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between;`}
+            class="day-header"
+            style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
+            role="button"
+            tabindex="0"
+            aria-expanded="true"
           >
             <div style="display: flex; align-items: center; gap: 8px;">
+              <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
               <span
                 style={`font-size: 13px; font-weight: ${day.isToday || day.isTomorrow ? "600" : "500"}; color: ${day.isToday ? "var(--accent)" : "var(--text-primary)"};`}
               >
@@ -233,6 +238,28 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
 </Layout>
 
 <style>
+  .day-header {
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  .day-header:hover {
+    background: var(--bg-hover);
+  }
+  .day-header[aria-expanded="false"] .chevron-icon {
+    transform: rotate(-90deg);
+  }
+  .task-list {
+    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 2000px;
+    opacity: 1;
+    overflow: hidden;
+  }
+  .task-list.collapsed {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .day-empty {
     opacity: 0.6;
   }
@@ -279,47 +306,92 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
   import { taskApi } from "../lib/task-api-client"
   import { onTaskCompleted } from "../lib/gamification-hook"
 
-  // Task checkbox completion
-  document
-    .querySelectorAll<HTMLInputElement>(".task-checkbox")
-    .forEach((cb) => {
-      cb.addEventListener("change", async () => {
-        const id = cb.dataset.id;
-        if (!id) return;
-        try {
-          await taskApi.updateTask(id, {
-            status: cb.checked ? "complete" : "pending",
-          });
-          const item = cb.closest(".task-item") as HTMLElement | null;
-          if (cb.checked && item) {
-            onTaskCompleted();
-            item.style.opacity = "0.4";
-            item.style.transition = "opacity 0.3s";
-            setTimeout(() => item.remove(), 800);
+  function setupUpcomingPage() {
+    // Task checkbox completion
+    document
+      .querySelectorAll<HTMLInputElement>(".task-checkbox:not([data-initialized])")
+      .forEach((cb) => {
+        cb.dataset.initialized = 'true';
+        cb.addEventListener("change", async () => {
+          const id = cb.dataset.id;
+          if (!id) return;
+          try {
+            await taskApi.updateTask(id, {
+              status: cb.checked ? "complete" : "pending",
+            });
+            const item = cb.closest(".task-item") as HTMLElement | null;
+            if (cb.checked && item) {
+              onTaskCompleted();
+              item.style.opacity = "0.4";
+              item.style.transition = "opacity 0.3s";
+              setTimeout(() => item.remove(), 800);
+            }
+          } catch {
+            /* retry silently */
           }
-        } catch {
-          /* retry silently */
-        }
+        });
       });
-    });
 
-  // Click to open task detail
-  document.querySelectorAll<HTMLElement>(".task-item").forEach((item) => {
-    item.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
-      const id = item.dataset.id;
-      if (id)
-        window.location.href =
-          (window.__ingress_path || "") + `/tasks#task-${id}`;
-    });
-    item.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        const id = (e.target as HTMLElement).dataset?.id;
+    // Click to open task detail
+    document.querySelectorAll<HTMLElement>(".task-item:not([data-initialized])").forEach((item) => {
+      item.dataset.initialized = 'true';
+      item.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).tagName === "INPUT") return;
+        const id = item.dataset.id;
         if (id)
           window.location.href =
             (window.__ingress_path || "") + `/tasks#task-${id}`;
-      }
+      });
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          const id = (e.target as HTMLElement).dataset?.id;
+          if (id)
+            window.location.href =
+              (window.__ingress_path || "") + `/tasks#task-${id}`;
+        }
+      });
     });
-  });
+  }
+
+  // Initialize on full page load
+  setupUpcomingPage();
+
+  // Re-initialize on Astro View Transition navigation
+  document.addEventListener('astro:page-load', setupUpcomingPage);
+</script>
+
+<script is:inline>
+  function initUpcomingAccordions() {
+    document.querySelectorAll('.day-header:not([data-accordion-init])').forEach(header => {
+      header.setAttribute('data-accordion-init', 'true');
+      header.addEventListener('click', () => {
+        const isExpanded = header.getAttribute('aria-expanded') === 'true';
+        header.setAttribute('aria-expanded', String(!isExpanded));
+        const list = header.nextElementSibling;
+        if (list && list.classList.contains('task-list')) {
+          if (isExpanded) {
+             list.classList.add('collapsed');
+          } else {
+             list.classList.remove('collapsed');
+          }
+        }
+      });
+
+      header.addEventListener('keydown', (e) => {
+         if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            header.click();
+         }
+      });
+    });
+  }
+
+  // Run on first load and on astro navigation
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initUpcomingAccordions);
+  } else {
+    initUpcomingAccordions();
+  }
+  document.addEventListener('astro:page-load', initUpcomingAccordions);
 </script>

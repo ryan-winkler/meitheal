@@ -3,6 +3,8 @@ import SettingsLabels from "../components/settings/SettingsLabels.astro"
 import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
 import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
+import SettingsCallout from "../components/settings/SettingsCallout.astro"
+import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import SettingsSummaryCard from "../components/settings/SettingsSummaryCard.astro"
 import SettingsSystem from "../components/settings/SettingsSystem.astro"
@@ -13,6 +15,9 @@ import { SETTINGS_SECTIONS } from "../lib/settings-registry"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+const workflowSection = SETTINGS_SECTIONS.find((section) => section.id === "workflow-settings")!
+const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "integrations-settings")!
+const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "automation-ai-settings")!
 ---
 
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
@@ -31,16 +36,31 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
       <div class="settings-shell__search">
         <label class="form-label" for="settings-search-input">Find a setting</label>
-        <input
-          id="settings-search-input"
-          class="form-input"
-          type="search"
-          placeholder="Theme, labels, calendar sync, companion links…"
-          autocomplete="off"
-        />
+        <div class="settings-shell__search-input-row">
+          <input
+            id="settings-search-input"
+            class="form-input"
+            type="search"
+            placeholder="Theme, labels, calendar sync, companion links…"
+            autocomplete="off"
+          />
+          <button
+            id="settings-search-clear"
+            class="settings-shell__search-clear"
+            type="button"
+            hidden
+          >
+            Clear
+          </button>
+        </div>
+        <p class="settings-shell__search-hint">
+          Search by section, setting, or integration. Press <kbd>Enter</kbd> to jump and
+          <kbd>Esc</kbd> to reset.
+        </p>
         <div
           id="settings-search-results"
           class="settings-search-results"
+          role="listbox"
           hidden
           aria-live="polite"
         >
@@ -48,27 +68,50 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
       </div>
     </section>
 
-    <div class="settings-shell__summary">
-      {SETTINGS_SECTIONS.map((section) => (
-        <SettingsSummaryCard section={section} />
-      ))}
-    </div>
+    <section class="settings-shell__surface settings-shell__summary-surface">
+      <div class="settings-shell__surface-header">
+        <div>
+          <span class="settings-shell__surface-eyebrow">Quick jumps</span>
+          <h2>Live status and fast navigation</h2>
+        </div>
+        <p>Open the section you need without scanning every settings card first.</p>
+      </div>
+      <div class="settings-shell__summary">
+        {SETTINGS_SECTIONS.map((section) => (
+          <SettingsSummaryCard section={section} />
+        ))}
+      </div>
+    </section>
 
-    <div class="settings-shell__mobile-nav">
-      <SettingsShellNav sections={SETTINGS_SECTIONS} />
-    </div>
+    <section class="settings-shell__mobile-nav settings-shell__surface">
+      <div class="settings-shell__surface-header settings-shell__surface-header--compact">
+        <div>
+          <span class="settings-shell__surface-eyebrow">Section picker</span>
+          <h2>Move between settings on smaller screens</h2>
+        </div>
+      </div>
+      <SettingsShellNav sections={SETTINGS_SECTIONS} variant="mobile" />
+    </section>
 
     <div class="settings-shell__layout">
       <aside class="settings-shell__sidebar">
         <div class="settings-shell__sidebar-sticky">
-          <SettingsShellNav sections={SETTINGS_SECTIONS} />
-          <div class="card settings-shell__sidebar-note">
-            <strong>Ingress-safe navigation</strong>
-            <p>
-              All jumps use hashes so Settings stays inside the Home Assistant
-              iframe, companion webview, and PWA scope.
-            </p>
-          </div>
+          <a href="#" class="btn btn-ghost" style="margin-bottom: 8px; justify-content: flex-start; gap: 8px; width: 100%;" id="settings-home-btn">
+            <span style="font-size: 16px;">←</span> Settings Home
+          </a>
+          <section class="settings-shell__surface settings-shell__surface--sidebar">
+            <div class="settings-shell__surface-header settings-shell__surface-header--compact">
+              <div>
+                <span class="settings-shell__surface-eyebrow">Directory</span>
+                <h2>Persistent settings rail</h2>
+              </div>
+            </div>
+            <SettingsShellNav sections={SETTINGS_SECTIONS} />
+          </section>
+          <SettingsCallout title="Ingress-safe navigation" icon="🏠">
+            All jumps stay hash-based so Settings remains inside the Home Assistant
+            iframe, companion webview, and PWA scope.
+          </SettingsCallout>
         </div>
       </aside>
 
@@ -78,16 +121,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
           class="settings-shell__section"
           data-settings-shell-section
         >
-          <div class="settings-shell__section-intro">
-            <span class="settings-shell__section-icon">🧭</span>
-            <div>
-              <h2>Workflow</h2>
-              <p>
-                Tune how tasks behave day to day: sidebar structure, custom
-                fields, labels, frameworks, notifications, and defaults.
-              </p>
-            </div>
-          </div>
+          <SettingsSectionIntro section={workflowSection} />
           <SettingsGeneral locale={locale} />
           <SettingsLabels locale={locale} />
         </section>
@@ -97,16 +131,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
           class="settings-shell__section"
           data-settings-shell-section
         >
-          <div class="settings-shell__section-intro">
-            <span class="settings-shell__section-icon">🔌</span>
-            <div>
-              <h2>Integrations</h2>
-              <p>
-                Connect Home Assistant, calendars, todo lists, Grocy, n8n, and
-                outgoing automations without leaving Meitheal.
-              </p>
-            </div>
-          </div>
+          <SettingsSectionIntro section={integrationsSection} />
           <SettingsIntegrations locale={locale} />
         </section>
 
@@ -115,16 +140,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
           class="settings-shell__section"
           data-settings-shell-section
         >
-          <div class="settings-shell__section-intro">
-            <span class="settings-shell__section-icon">🤖</span>
-            <div>
-              <h2>Automation &amp; AI</h2>
-              <p>
-                Choose conversation agents, configure external AI providers, and
-                expose protocols like A2A, MCP, and WebMCP.
-              </p>
-            </div>
-          </div>
+          <SettingsSectionIntro section={automationAiSection} />
           <SettingsAgents locale={locale} />
         </section>
 
@@ -147,11 +163,19 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
   </script>
 </Layout>
 
-<style>
+  <style>
   .settings-shell {
     display: flex;
     flex-direction: column;
     gap: 20px;
+  }
+  .settings-shell:not(.is-detail-view) .settings-shell__layout,
+  .settings-shell:not(.is-detail-view) .settings-shell__mobile-nav {
+    display: none;
+  }
+  .settings-shell.is-detail-view .settings-shell__hero,
+  .settings-shell.is-detail-view .settings-shell__search {
+    display: none;
   }
   .settings-shell__hero {
     display: grid;
@@ -202,6 +226,34 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     border-radius: 18px;
     background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
   }
+  .settings-shell__search-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+  }
+  .settings-shell__search-clear {
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  }
+  .settings-shell__search-clear:hover,
+  .settings-shell__search-clear:focus-visible {
+    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
+    color: var(--text-primary);
+  }
+  .settings-shell__search-hint {
+    margin: -2px 0 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
   .settings-search-results {
     display: flex;
     flex-direction: column;
@@ -223,15 +275,86 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     cursor: pointer;
     transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
   }
+  .settings-search-results__item.is-active {
+    border-color: color-mix(in srgb, var(--accent) 78%, var(--border));
+    background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 10%);
+    box-shadow: 0 10px 24px rgba(5, 10, 25, 0.12);
+  }
   .settings-search-results__item:hover {
     transform: translateY(-1px);
     border-color: var(--accent);
     background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 8%);
   }
-  .settings-search-results__item span,
+  .settings-search-results__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .settings-search-results__type,
+  .settings-search-results__section {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1;
+  }
+  .settings-search-results__type {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .settings-search-results__section {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+  }
+  .settings-search-results__description,
   .settings-search-results__empty {
     font-size: 12px;
     color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .settings-search-results__empty {
+    padding: 14px;
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+  }
+  .settings-shell__surface {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .settings-shell__surface--sidebar {
+    gap: 10px;
+  }
+  .settings-shell__surface-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+  }
+  .settings-shell__surface-header h2 {
+    margin: 2px 0 0;
+    font-size: 18px;
+  }
+  .settings-shell__surface-header p {
+    margin: 0;
+    max-width: 44ch;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .settings-shell__surface-header--compact h2 {
+    font-size: 15px;
+  }
+  .settings-shell__surface-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
   }
   .settings-shell__summary {
     display: grid;
@@ -365,25 +488,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     font-size: 12px;
     line-height: 1.45;
   }
-  .settings-shell-nav__status {
+  .settings-shell-nav__meta {
     display: inline-flex;
-    align-items: center;
-    padding: 4px 8px;
-    border-radius: 999px;
-    font-size: 11px;
-    color: var(--text-secondary);
-    background: var(--bg-secondary);
-    white-space: nowrap;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
   }
-  .settings-shell__sidebar-note {
-    padding: 16px;
-    border-radius: 18px;
-  }
-  .settings-shell__sidebar-note p {
-    margin: 8px 0 0;
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.55;
+  .settings-shell-nav__jump {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
   }
   .settings-shell__content {
     display: flex;
@@ -399,35 +515,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
   .settings-shell__section--muted {
     opacity: 0.42;
     filter: saturate(0.8);
-  }
-  .settings-shell__section-intro {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-    padding: 18px 20px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: linear-gradient(135deg, var(--bg-card), color-mix(in srgb, var(--bg-card) 86%, var(--accent) 8%));
-  }
-  .settings-shell__section-intro h2 {
-    margin: 0 0 4px;
-    font-size: 22px;
-  }
-  .settings-shell__section-intro p {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 1.55;
-  }
-  .settings-shell__section-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    font-size: 20px;
   }
   .settings-grid {
     display: grid;
@@ -582,16 +669,34 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     .settings-shell__mobile-nav .settings-shell-nav__list {
       flex-direction: row;
       overflow-x: auto;
-      padding-bottom: 4px;
+      gap: 10px;
+      padding-bottom: 6px;
+      scroll-snap-type: x proximity;
     }
     .settings-shell__mobile-nav .settings-shell-nav__link {
-      min-width: 220px;
+      min-width: 200px;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      scroll-snap-align: start;
+    }
+    .settings-shell__mobile-nav .settings-shell-nav__icon {
+      padding-top: 0;
+      font-size: 20px;
+    }
+    .settings-shell__mobile-nav .settings-shell-nav__meta {
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-direction: row;
     }
   }
   @media (max-width: 768px) {
     .settings-shell__hero {
       grid-template-columns: 1fr;
       padding: 18px;
+    }
+    .settings-shell__surface-header {
+      flex-direction: column;
+      align-items: flex-start;
     }
     .settings-shell__summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -609,6 +714,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     }
     .settings-shell__mobile-nav .settings-shell-nav__link {
       min-width: 180px;
+    }
+    .settings-shell__search-input-row {
+      grid-template-columns: 1fr;
     }
   }
 </style>

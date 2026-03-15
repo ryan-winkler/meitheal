@@ -1,33 +1,43 @@
 ---
 import type { SettingsSectionDescriptor } from "../../lib/settings-registry"
+import SettingsStatusChip from "./SettingsStatusChip.astro"
 
 interface Props {
   sections: SettingsSectionDescriptor[]
+  variant?: "rail" | "mobile"
 }
 
-const { sections } = Astro.props
+const {
+  sections,
+  variant = "rail",
+} = Astro.props
 ---
 
-<nav class="settings-shell-nav" aria-label="Settings navigation">
+<nav
+  class:list={["settings-shell-nav", `settings-shell-nav--${variant}`]}
+  aria-label={variant === "mobile" ? "Settings quick jumps" : "Settings directory"}
+>
   <div class="settings-shell-nav__list" role="list">
     {sections.map((section) => (
       <a
         href={`#${section.id}`}
         class="settings-shell-nav__link"
         data-settings-nav={section.id}
+        data-settings-nav-variant={variant}
         data-settings-section-link
       >
         <span class="settings-shell-nav__icon" aria-hidden="true">{section.icon}</span>
         <span class="settings-shell-nav__content">
           <strong>{section.label}</strong>
-          <small>{section.description}</small>
+          <small>{section.navDetail}</small>
         </span>
-        <span
-          class="settings-shell-nav__status"
-          id={`nav-status-${section.id}`}
-          data-settings-nav-status={section.id}
-        >
-          {section.statusLabel}
+        <span class="settings-shell-nav__meta">
+          {variant === "mobile" && <span class="settings-shell-nav__jump">Jump</span>}
+          <SettingsStatusChip
+            id={`nav-status-${section.id}`}
+            text={section.statusLabel}
+            dataSettingsNavStatus={section.id}
+          />
         </span>
       </a>
     ))}

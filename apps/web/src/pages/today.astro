@@ -51,22 +51,27 @@ const typeIcons: Record<string, string> = {
   </div>
 
   <!-- SMT-03: Daily Summary Stats -->
-  <div class="daily-stats" id="daily-stats">
-    <a href="#due-today" class="stat-item" style="text-decoration: none; color: inherit;">
-      <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
-      <span class="stat-label">Open Today</span>
-    </a>
-    <div class="stat-item">
-      <span class="stat-value">{completedTodayCount}</span>
-      <span class="stat-label">Completed</span>
+  <div class="daily-stats-container" id="daily-stats-container">
+    <div class="daily-stats" id="daily-stats">
+      <a href="#due-today" class="stat-item" style="text-decoration: none; color: inherit;">
+        <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
+        <span class="stat-label">Open Today</span>
+      </a>
+      <div class="stat-item">
+        <span class="stat-value">{completedTodayCount}</span>
+        <span class="stat-label">Completed</span>
+      </div>
+      <a href="#overdue" class="stat-item" style="text-decoration: none; color: inherit;">
+        <span class="stat-value">{overdueTasks.length}</span>
+        <span class="stat-label stat-danger">Overdue</span>
+      </a>
+      <div class="stat-item">
+        <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
+        <span class="stat-label">Remaining</span>
+      </div>
     </div>
-    <a href="#overdue" class="stat-item" style="text-decoration: none; color: inherit;">
-      <span class="stat-value">{overdueTasks.length}</span>
-      <span class="stat-label stat-danger">Overdue</span>
-    </a>
-    <div class="stat-item">
-      <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
-      <span class="stat-label">Remaining</span>
+    <div class="daily-stats-progress-bar">
+      <div class="daily-stats-progress-fill" style={`width: ${(completedTodayCount / Math.max(1, completedTodayCount + todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length)) * 100}%`}></div>
     </div>
   </div>
 
@@ -527,14 +532,28 @@ const typeIcons: Record<string, string> = {
   }
 
   /* SMT-03: Daily Summary Stats */
-  .daily-stats {
+  .daily-stats-container {
     display: flex;
-    gap: 2px;
+    flex-direction: column;
     margin-bottom: 16px;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
     overflow: hidden;
+  }
+  .daily-stats {
+    display: flex;
+    gap: 2px;
+  }
+  .daily-stats-progress-bar {
+    height: 4px;
+    width: 100%;
+    background: var(--bg-hover);
+  }
+  .daily-stats-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s;
   }
   .stat-item {
     flex: 1;

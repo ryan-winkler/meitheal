@@ -334,7 +334,7 @@ export function initSettingsController(): void {
               "display: flex; gap: 8px; align-items: center; background: var(--bg-secondary); padding: 8px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 4px;";
 
             row.innerHTML = `
-            <div class="drag-handle" style="cursor: grab; color: var(--text-muted); padding: 2px 4px; user-select: none;">☰</div>
+            <div class="drag-handle" title="Drag to reorder" style="cursor: grab; color: var(--text-muted); padding: 4px 8px; user-select: none; border-radius: 4px; transition: color 0.15s, background 0.15s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)'" onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent'">☰</div>
             <input type="checkbox" class="sidebar-visible-cb" data-key="${key}" ${isVisible ? "checked" : ""} />
             <span style="min-width: 100px; font-weight: 500;">${SIDEBAR_LABELS[key] || key}</span>
             <input type="text" class="form-input sidebar-label-input" data-key="${key}" value="${labelStr}" placeholder="Custom Label" style="flex: 1; max-width: 240px;" />

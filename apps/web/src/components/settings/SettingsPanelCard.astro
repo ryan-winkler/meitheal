@@ -1,0 +1,117 @@
+---
+interface Props {
+  id?: string
+  title: string
+  subtitle: string
+  tone?: "default" | "accent" | "danger"
+  padded?: boolean
+}
+
+const {
+  id,
+  title,
+  subtitle,
+  tone = "default",
+  padded = true,
+} = Astro.props
+
+const hasActions = Astro.slots.has("actions")
+---
+
+<div id={id} class:list={["card", "settings-panel-card", `settings-panel-card--${tone}`]}>
+  <div class="card-header settings-panel-card__header">
+    <div class="settings-panel-card__heading">
+      <div class="card-title settings-panel-card__title">{title}</div>
+      <div class="card-subtitle settings-panel-card__subtitle">{subtitle}</div>
+    </div>
+
+    {hasActions && (
+      <div class="settings-panel-card__actions">
+        <slot name="actions" />
+      </div>
+    )}
+  </div>
+
+  <div class:list={["settings-panel-card__body", padded && "settings-panel-card__body--padded"]}>
+    <slot />
+  </div>
+</div>
+
+<style>
+  .settings-panel-card {
+    overflow: clip;
+    border-radius: 20px;
+  }
+
+  .settings-panel-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 18px 20px 0;
+  }
+
+  .settings-panel-card__heading {
+    min-width: 0;
+  }
+
+  .settings-panel-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .settings-panel-card__subtitle {
+    max-width: 56ch;
+    line-height: 1.5;
+  }
+
+  .settings-panel-card__actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  .settings-panel-card__body--padded {
+    padding: 18px 20px 20px;
+  }
+
+  .settings-panel-card--accent {
+    border-color: color-mix(in srgb, var(--border) 68%, var(--accent));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bg-card) 94%, var(--accent) 5%),
+        var(--bg-card)
+      );
+  }
+
+  .settings-panel-card--danger {
+    border-width: 2px;
+    border-color: color-mix(in srgb, var(--danger) 75%, var(--border));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bg-card) 94%, var(--danger) 5%),
+        var(--bg-card)
+      );
+  }
+
+  .settings-panel-card--danger .settings-panel-card__title {
+    color: var(--danger);
+  }
+
+  @media (max-width: 720px) {
+    .settings-panel-card__header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .settings-panel-card__actions {
+      justify-content: flex-start;
+    }
+  }
+</style>

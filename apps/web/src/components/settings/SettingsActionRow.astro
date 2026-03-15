@@ -1,0 +1,28 @@
+<div class="settings-action-row">
+  <slot />
+</div>
+
+<style>
+  .settings-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .settings-action-row :global(.btn),
+  .settings-action-row :global(label.btn) {
+    justify-content: center;
+  }
+
+  @media (max-width: 560px) {
+    .settings-action-row {
+      align-items: stretch;
+    }
+
+    .settings-action-row :global(.btn),
+    .settings-action-row :global(label.btn) {
+      width: 100%;
+    }
+  }
+</style>

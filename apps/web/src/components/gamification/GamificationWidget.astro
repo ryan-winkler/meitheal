@@ -111,26 +111,33 @@ function dayLabel(dateStr: string): string {
   {/* Weekly bar chart */}
   <div class="gam-weekly">
     <div class="gam-weekly__title">This Week</div>
-    <div class="gam-weekly__chart">
-      {weekly.map(day => {
-        const height = maxCompleted > 0 ? (day.completedCount / maxCompleted) * 100 : 0
-        const isToday = day.date === new Date().toISOString().split("T")[0]
-        return (
-          <div class="gam-bar-col">
-            <div class="gam-bar-wrapper">
-              <div
-                class={`gam-bar ${isToday ? "gam-bar--today" : ""}`}
-                style={`height: ${Math.max(height, 4)}%;`}
-                title={`${dayLabel(day.date)}: ${day.completedCount} task${day.completedCount !== 1 ? "s" : ""}`}
-              />
+    {maxCompleted === 0 || maxCompleted === dailyGoal && weekly.every(d => d.completedCount === 0) ? (
+      <div class="gam-weekly__empty" style="height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-muted); font-size: 0.75rem;">
+        <span style="font-size: 1.25rem; opacity: 0.5; margin-bottom: 4px;">📊</span>
+        <p style="margin: 0; line-height: 1.2;">No tasks yet.<br/>You got this!</p>
+      </div>
+    ) : (
+      <div class="gam-weekly__chart">
+        {weekly.map(day => {
+          const height = maxCompleted > 0 ? (day.completedCount / maxCompleted) * 100 : 0
+          const isToday = day.date === new Date().toISOString().split("T")[0]
+          return (
+            <div class="gam-bar-col">
+              <div class="gam-bar-wrapper">
+                <div
+                  class={`gam-bar ${isToday ? "gam-bar--today" : ""}`}
+                  style={`height: ${Math.max(height, 4)}%;`}
+                  title={`${dayLabel(day.date)}: ${day.completedCount} task${day.completedCount !== 1 ? "s" : ""}`}
+                />
+              </div>
+              <span class={`gam-bar-label ${isToday ? "gam-bar-label--today" : ""}`}>
+                {dayLabel(day.date)}
+              </span>
             </div>
-            <span class={`gam-bar-label ${isToday ? "gam-bar-label--today" : ""}`}>
-              {dayLabel(day.date)}
-            </span>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+    )}
   </div>
 </div>
 

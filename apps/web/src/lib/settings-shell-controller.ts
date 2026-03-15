@@ -1,17 +1,32 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import {
   SETTINGS_SECTIONS,
+  getSettingsSection,
   searchSettingsRegistry,
   type SettingsSectionId,
 } from "@lib/settings-registry"
 import { showToast } from "@lib/toast"
 
+function setShellDetailView(isDetailView: boolean): void {
+  const shell = document.getElementById("settings-shell")
+  if (!shell) return
+
+  shell.classList.toggle("is-detail-view", isDetailView)
+}
+
 function scrollToAnchor(anchorId: string, behavior: ScrollBehavior = "smooth"): void {
   const target = document.getElementById(anchorId)
   if (!target) return
 
+  const sectionId = resolveSectionId(anchorId)
+  setShellDetailView(Boolean(sectionId))
+
   target.scrollIntoView({ behavior, block: "start" })
   history.replaceState(null, "", `#${anchorId}`)
+
+  if (sectionId) {
+    updateActiveSectionState(sectionId)
+  }
 }
 
 function resolveSectionId(anchorId: string): SettingsSectionId | null {
@@ -114,9 +129,14 @@ function clearSearchState(): void {
     "settings-search-input",
   ) as HTMLInputElement | null
   const results = document.getElementById("settings-search-results")
+  const clearButton = document.getElementById(
+    "settings-search-clear",
+  ) as HTMLButtonElement | null
 
   if (input) input.value = ""
   if (results) results.hidden = true
+  if (results) results.innerHTML = ""
+  if (clearButton) clearButton.hidden = true
   revealAllSections()
 }
 
@@ -125,20 +145,50 @@ function initSearch(): void {
     "settings-search-input",
   ) as HTMLInputElement | null
   const results = document.getElementById("settings-search-results")
+  const clearButton = document.getElementById(
+    "settings-search-clear",
+  ) as HTMLButtonElement | null
   if (!input || !results) return
 
-  pageLifecycle.on(input, "input", () => {
-    const matches = searchSettingsRegistry(input.value)
-    const visibleSections = new Set(matches.map((match) => match.sectionId))
+  let matches = searchSettingsRegistry("")
+  let activeResultIndex = -1
 
+  const setActiveResult = (index: number): void => {
+    activeResultIndex = index
+    results
+      .querySelectorAll<HTMLElement>(".settings-search-results__item")
+      .forEach((item, itemIndex) => {
+        const active = itemIndex === index
+        item.classList.toggle("is-active", active)
+        item.setAttribute("aria-selected", active ? "true" : "false")
+      })
+  }
+
+  const selectMatch = (matchIndex: number): void => {
+    const match = matches[matchIndex]
+    if (!match) return
+
+    clearSearchState()
+    scrollToAnchor(match.anchorId)
+  }
+
+  const renderMatches = (): void => {
+    const term = input.value.trim()
+    matches = searchSettingsRegistry(term)
+    activeResultIndex = -1
     results.innerHTML = ""
 
-    if (!input.value.trim()) {
+    if (clearButton) {
+      clearButton.hidden = term.length === 0
+    }
+
+    if (!term) {
       results.hidden = true
       revealAllSections()
       return
     }
 
+    const visibleSections = new Set(matches.map((match) => match.sectionId))
     SETTINGS_SECTIONS.forEach((section) => {
       const element = document.getElementById(section.id)
       if (!element) return
@@ -150,43 +200,78 @@ function initSearch(): void {
 
     if (matches.length === 0) {
       results.hidden = false
-      results.innerHTML =
-        '<div class="settings-search-results__empty">No matching settings yet</div>'
+      results.innerHTML = `<div class="settings-search-results__empty">No matching settings for "${term}" yet. Press Esc or Clear to reset.</div>`
       return
     }
 
-    matches.forEach((match) => {
+    matches.forEach((match, index) => {
       const button = document.createElement("button")
       button.type = "button"
       button.className = "settings-search-results__item"
+      button.setAttribute("role", "option")
+      button.setAttribute("aria-selected", "false")
       button.innerHTML = `
+        <span class="settings-search-results__meta">
+          <span class="settings-search-results__type">${match.type === "field" ? "Setting" : "Section"}</span>
+          <span class="settings-search-results__section">${getSettingsSection(match.sectionId)?.label ?? match.sectionId}</span>
+        </span>
         <strong>${match.label}</strong>
-        <span>${match.description}</span>
+        <span class="settings-search-results__description">${match.description}</span>
       `
 
       pageLifecycle.on(button, "click", () => {
-        clearSearchState()
-        scrollToAnchor(match.anchorId)
-        updateActiveSectionState(match.sectionId)
+        selectMatch(index)
+      })
+      pageLifecycle.on(button, "mouseenter", () => {
+        setActiveResult(index)
       })
 
       results.appendChild(button)
     })
 
     results.hidden = false
+  }
+
+  pageLifecycle.on(input, "input", () => {
+    renderMatches()
   })
 
   pageLifecycle.on(input, "keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent
+    if (keyboardEvent.key === "ArrowDown") {
+      keyboardEvent.preventDefault()
+      if (!matches.length) return
+      setActiveResult((activeResultIndex + 1 + matches.length) % matches.length)
+      return
+    }
+
+    if (keyboardEvent.key === "ArrowUp") {
+      keyboardEvent.preventDefault()
+      if (!matches.length) return
+      setActiveResult((activeResultIndex - 1 + matches.length) % matches.length)
+      return
+    }
+
+    if (keyboardEvent.key === "Escape") {
+      keyboardEvent.preventDefault()
+      clearSearchState()
+      return
+    }
+
     if (keyboardEvent.key !== "Enter") return
 
-    const firstMatch = searchSettingsRegistry(input.value)[0]
+    const matchIndex = activeResultIndex >= 0 ? activeResultIndex : 0
+    const firstMatch = matches[matchIndex]
     if (!firstMatch) return
 
     keyboardEvent.preventDefault()
-    clearSearchState()
-    scrollToAnchor(firstMatch.anchorId)
-    updateActiveSectionState(firstMatch.sectionId)
+    selectMatch(matchIndex)
+  })
+
+  if (clearButton) {
+    pageLifecycle.on(clearButton, "click", () => {
+      clearSearchState()
+    })
   })
 }
 
@@ -201,10 +286,6 @@ function initSectionLinks(): void {
 
         clearSearchState()
         scrollToAnchor(targetId)
-        const sectionId = resolveSectionId(targetId)
-        if (sectionId) {
-          updateActiveSectionState(sectionId)
-        }
       })
     })
 }
@@ -292,10 +373,17 @@ function initCompanionLinks(): void {
 
 function syncActiveSectionFromHash(): void {
   const hash = window.location.hash.replace("#", "")
-  if (!hash) return
+
+  if (!hash) {
+    setShellDetailView(false)
+    clearSearchState()
+    return
+  }
 
   const sectionId = resolveSectionId(hash)
   if (sectionId) {
+    clearSearchState()
+    setShellDetailView(true)
     updateActiveSectionState(sectionId)
   }
 }
@@ -317,12 +405,23 @@ export function initSettingsShell(): void {
   const hashTargetId = hash ? document.getElementById(hash)?.id || null : null
   const activeSectionId = hash ? resolveSectionId(hash) : null
 
-  if (activeSectionId) {
-    updateActiveSectionState(activeSectionId)
-  } else if (document.getElementById("workflow-settings")) {
-    updateActiveSectionState("workflow-settings")
+  if (hash) {
+    setShellDetailView(true)
+    if (activeSectionId) {
+      updateActiveSectionState(activeSectionId)
+    }
   } else {
-    updateActiveSectionState("personal-settings")
+    setShellDetailView(false)
+  }
+
+  const homeBtn = document.getElementById("settings-home-btn")
+  if (homeBtn) {
+    pageLifecycle.on(homeBtn, "click", (e) => {
+      e.preventDefault()
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+      syncActiveSectionFromHash()
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    })
   }
 
   if (hashTargetId) {

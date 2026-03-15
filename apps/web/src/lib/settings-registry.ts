@@ -19,9 +19,13 @@ export interface SettingsSectionDescriptor {
   label: string
   icon: string
   description: string
+  navDetail: string
   statusLabel: string
   summaryTitle: string
   summaryDetail: string
+  introTitle: string
+  introDescription: string
+  featuredTasks: string[]
   statusTargetId?: string
   keywords: string[]
 }
@@ -41,9 +45,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "Personal",
     icon: "🎨",
     description: "Theme, language, timezone, and everyday preferences",
+    navDetail: "Appearance, locale, shortcuts, and date defaults",
     statusLabel: "Theme",
     summaryTitle: "Appearance",
     summaryDetail: "Theme",
+    introTitle: "Make Meitheal feel like your workspace",
+    introDescription:
+      "Tune appearance, language, timezone, shortcuts, and the daily defaults that should follow you across Home Assistant, mobile, and standalone sessions.",
+    featuredTasks: ["Theme and accent", "Language and timezone", "Keyboard shortcuts"],
     statusTargetId: "settings-summary-theme",
     keywords: ["theme", "language", "timezone", "date", "appearance", "accent", "shortcuts"],
   },
@@ -52,9 +61,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "Workflow",
     icon: "🧭",
     description: "Sidebar, fields, labels, notifications, backlog, and task logic",
+    navDetail: "Sidebar, labels, custom fields, defaults, and notifications",
     statusLabel: "Labels",
     summaryTitle: "Task model",
     summaryDetail: "Ready to customize",
+    introTitle: "Shape how work moves through the day",
+    introDescription:
+      "Control sidebar structure, custom fields, labels, strategic lenses, notifications, and the workflow defaults that turn Meitheal into your operating system.",
+    featuredTasks: ["Sidebar setup", "Labels and fields", "Defaults and notifications"],
     statusTargetId: "settings-summary-workflow",
     keywords: ["labels", "custom fields", "sidebar", "notifications", "backlog", "retention", "users", "frameworks"],
   },
@@ -63,9 +77,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "Integrations",
     icon: "🔌",
     description: "Home Assistant, calendar, todo, Grocy, n8n, and webhooks",
+    navDetail: "Home Assistant, calendars, todo lists, Grocy, n8n, and webhooks",
     statusLabel: "HA",
     summaryTitle: "Home Assistant",
     summaryDetail: "Checking",
+    introTitle: "Connect the services around your work",
+    introDescription:
+      "Bring Home Assistant, calendars, todo lists, Grocy, n8n, and outgoing automations into one control surface without losing ingress-safe behavior.",
+    featuredTasks: ["Connect Home Assistant", "Sync calendars and todos", "Expose outbound automations"],
     statusTargetId: "ha-connection-badge",
     keywords: ["home assistant", "calendar", "todo", "grocy", "n8n", "node-red", "webhooks", "sync"],
   },
@@ -74,9 +93,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "Automation & AI",
     icon: "🤖",
     description: "Conversation agents, external AI, and protocol exposure",
+    navDetail: "Assist agents, providers, and protocol exposure",
     statusLabel: "Protocols",
     summaryTitle: "Agents",
     summaryDetail: "Available",
+    introTitle: "Choose how Meitheal talks to other systems",
+    introDescription:
+      "Configure Home Assistant conversation agents, external AI providers, and protocol exposure so assistants and automations can meet your workflow safely.",
+    featuredTasks: ["Conversation agent", "External AI provider", "A2A, MCP, and WebMCP"],
     statusTargetId: "agent-protocols-status",
     keywords: ["ai", "assist", "agent", "a2a", "mcp", "webmcp", "provider", "ollama", "claude", "chatgpt"],
   },
@@ -85,9 +109,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "App & PWA",
     icon: "📲",
     description: "Exports, installability, offline, companion links, and support",
+    navDetail: "Installability, companion handoff, exports, and recovery",
     statusLabel: "PWA",
     summaryTitle: "Offline readiness",
     summaryDetail: "Checking",
+    introTitle: "Keep Meitheal dependable across browser, PWA, and companion",
+    introDescription:
+      "Monitor installability, export data, troubleshoot offline behavior, and hand off cleanly to the Home Assistant companion app without escaping ingress scope.",
+    featuredTasks: ["Install and update", "Companion handoff", "Export and recovery"],
     statusTargetId: "pwa-compact-badge",
     keywords: ["pwa", "offline", "install", "export", "import", "companion", "x-callback", "url handler"],
   },
@@ -96,9 +125,14 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     label: "Danger Zone",
     icon: "⚠",
     description: "Purge and reset operations",
+    navDetail: "Protected reset and purge operations",
     statusLabel: "Protected",
     summaryTitle: "Protected",
     summaryDetail: "Protected actions",
+    introTitle: "Keep destructive actions isolated and deliberate",
+    introDescription:
+      "Resets and purges live here behind clear warnings so they never blend into everyday preference changes or mobile quick taps.",
+    featuredTasks: ["Review consequences", "Purge all tasks", "Reset settings"],
     keywords: ["reset", "purge", "delete", "danger", "factory reset"],
   },
 ]

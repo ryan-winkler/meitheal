@@ -484,6 +484,16 @@ const treeRows = buildTreeRows(tasks);
     display: flex;
     align-items: center;
     gap: 4px;
+    position: relative;
+  }
+  .subtask-row .task-title-cell::before {
+    content: '';
+    position: absolute;
+    left: calc(var(--subtask-depth, 1) * 20px - 14px);
+    top: 50%;
+    width: 10px;
+    height: 1px;
+    background: var(--border);
   }
   .subtree-toggle {
     background: none;
@@ -500,6 +510,8 @@ const treeRows = buildTreeRows(tasks);
     padding: 0;
     border-radius: var(--radius-sm);
     transition: background 0.15s, color 0.15s;
+    position: relative;
+    z-index: 1;
   }
   .subtree-toggle:hover {
     background: var(--bg-input);
@@ -514,6 +526,8 @@ const treeRows = buildTreeRows(tasks);
     justify-content: center;
     flex-shrink: 0;
     opacity: 0.5;
+    position: relative;
+    z-index: 1;
   }
   .subtask-row {
     border-left: 2px solid var(--accent);
@@ -550,8 +564,24 @@ const treeRows = buildTreeRows(tasks);
   .table-row:hover td {
     background: var(--bg-hover);
   }
+  .delete-row {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    transition: opacity 0.2s ease, visibility 0.2s ease, color 0.15s;
+  }
+  tr:hover .delete-row,
+  .delete-row:focus-visible {
+    visibility: visible !important;
+    opacity: 0.6 !important;
+  }
+  tr .delete-row:hover {
+    visibility: visible !important;
+    opacity: 1 !important;
+    color: var(--danger) !important;
+  }
   .cell-center {
     text-align: center;
+    vertical-align: middle;
   }
   .cell-description {
     font-size: 11px;

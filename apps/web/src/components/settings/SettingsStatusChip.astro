@@ -1,0 +1,37 @@
+---
+interface Props {
+  id?: string
+  text: string
+  dataSettingsNavStatus?: string
+}
+
+const {
+  id,
+  text,
+  dataSettingsNavStatus,
+} = Astro.props
+---
+
+<span
+  id={id}
+  class="settings-status-chip"
+  data-settings-nav-status={dataSettingsNavStatus}
+>
+  {text}
+</span>
+
+<style>
+  .settings-status-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+</style>
