@@ -7,6 +7,7 @@ import { ClientRouter } from "astro:transitions";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
 import Sidebar from "../components/layout/Sidebar.astro";
+import SearchHub from "../components/layout/SearchHub.astro";
 import TopNavigation from "../components/layout/TopNavigation.astro";
 import StrategicEvaluator from "../components/tasks/StrategicEvaluator.astro";
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
@@ -525,7 +526,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <div
       id="task-detail-overlay"
       class="modal-overlay z-[200]"
-      style="display:none;position:fixed;"
       role="dialog"
       aria-modal="true"
       aria-label="Task detail"
@@ -541,6 +541,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             <div class="flex flex-col flex-1 min-w-0">
               <a href="#" id="td-parent" class="text-xs text-text-muted hidden hover:text-accent hover:underline mb-0.5 truncate"></a>
               <div class="flex items-center gap-2 text-text-muted">
+                <span id="td-type-icon" class="flex items-center justify-center shrink-0" style="width:16px;height:16px"></span>
                 <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
                 <span id="td-created" class="text-[10px] hidden md:inline"></span>
                 <span class="text-border hidden md:inline">•</span>
@@ -897,114 +898,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         </div>
       </div>
 
-    <!-- Command Palette -->
-      <div
-        id="command-palette-overlay"
-        class="fixed inset-0 bg-black/60 z-60 hidden"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-      >
-        <div class="flex justify-center pt-[15vh]">
-          <div
-            id="command-palette"
-            class="w-full max-w-lg bg-bg-card border border-border rounded-xl shadow-lg overflow-hidden animate-fade-in"
-          >
-            <div class="px-4 py-3 border-b border-border">
-              <input
-                id="cp-search"
-                type="text"
-                class="w-full bg-transparent text-text-primary text-lg outline-none"
-                placeholder="Type a command or search..."
-                autocomplete="off"
-              />
-              <p class="text-[10px] text-text-muted mt-1">
-                Search tasks, or use quick actions
-              </p>
-            </div>
-            <div id="cp-results" class="max-h-[50vh] overflow-y-auto">
-              <div
-                class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-              >
-                Commands
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="new-task"
-              >
-                New task
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="new-board"
-              >
-                New board
-              </div>
-              <div
-                class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-              >
-                Navigate
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-dashboard"
-              >
-                📊 Go to Dashboard
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-kanban"
-              >
-                📋 Go to Kanban Board
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-table"
-              >
-                📄 Go to Table View
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-settings"
-              >
-                ⚙ Go to Settings
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-today"
-              >
-                ☀️ Go to Today
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-upcoming"
-              >
-                📅 Go to Upcoming
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="go-calendar"
-              >
-                🗓️ Go to Calendar
-              </div>
-              <div
-                class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
-                data-action="export-csv"
-              >
-                📥 Export Tasks CSV
-              </div>
-              <div id="cp-tasks-section" class="hidden">
-                <div
-                  class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-                >
-                  Tasks
-                </div>
-                <div id="cp-tasks"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SearchHub locale={locale} />
 
       <!-- Global Notifications / Tooltips -->
       <div
@@ -1020,6 +914,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
       <script>
         import "@lib/layout-controller";
+      </script>
+
+      <script>
+        import "@lib/search-hub-controller";
       </script>
 
       <script>

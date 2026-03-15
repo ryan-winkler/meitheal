@@ -31,7 +31,7 @@
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
 
         function closeTD() {
-          tdOverlay?.classList.add("hidden");
+          tdOverlay?.classList.remove("active");
           currentTaskId = null;
           // Always reset body overflow to restore page scrolling
           document.body.style.overflow = "";
@@ -49,7 +49,7 @@
           _previouslyFocused = document.activeElement;
           currentTaskId = taskId;
           _isPopulating = true;
-          tdOverlay.classList.remove("hidden");
+          tdOverlay.classList.add("active");
           // Lock body scroll while panel is open (closeTD restores it)
           document.body.style.overflow = "hidden";
           // Set dynamic aria-label for screen readers
@@ -740,7 +740,12 @@
           } catch (e) {
             console.error("Failed to load task detail", e);
             _isPopulating = false;
-            closeTD()
+            // Show error state in modal instead of closing — better UX for transient errors
+            const titleEl = document.getElementById("td-title") as HTMLTextAreaElement | null;
+            if (titleEl) {
+              titleEl.value = "⚠ Failed to load task";
+              titleEl.readOnly = true;
+            }
           }
         }
 
