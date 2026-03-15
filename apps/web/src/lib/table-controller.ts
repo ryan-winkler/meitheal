@@ -356,8 +356,9 @@ function applyAllFilters() {
     if (visible) visibleCount++
   })
 
-  // Update group counts
+  // Update group counts and summary rows
   updateGroupCounts()
+  renderSummaryRows()
 
   // Show/hide no-results row
   const noResults = document.querySelector<HTMLElement>(".no-results-row")
@@ -648,6 +649,95 @@ function updateGroupCounts() {
       header.classList.remove("group-empty")
     }
   })
+}
+
+/**
+ * Render per-group summary rows (task count + avg RICE)
+ * and a grand total row at the bottom.
+ */
+function renderSummaryRows() {
+  const tbody = document.querySelector<HTMLElement>("#task-table tbody")
+  if (!tbody) return
+
+  // Remove existing summary/total rows
+  tbody.querySelectorAll(".group-summary-row, .grand-total-row").forEach(el => el.remove())
+
+  // Only render when grouping is active
+  if (currentGroupBy === "none") return
+
+  const colCount = document.querySelectorAll("#task-table thead th").length
+  const headers = tbody.querySelectorAll<HTMLElement>(".group-header-row:not(.sub-group-header-row)")
+
+  let grandTotalTasks = 0
+  let grandTotalRice = 0
+  let grandTotalRiceCount = 0
+
+  headers.forEach((header) => {
+    if (header.classList.contains("group-empty")) return
+
+    let taskCount = 0
+    let riceSum = 0
+    let riceEntries = 0
+    let lastRow: Element | null = null
+
+    let sibling = header.nextElementSibling
+    while (sibling && (!sibling.classList.contains("group-header-row") || sibling.classList.contains("sub-group-header-row"))) {
+      if (sibling.classList.contains("table-row") && !sibling.classList.contains("filtered-out")) {
+        taskCount++
+        const riceVal = Number((sibling as HTMLElement).dataset.rice ?? "")
+        if (!isNaN(riceVal) && (sibling as HTMLElement).dataset.rice !== "") {
+          riceSum += riceVal
+          riceEntries++
+        }
+      }
+      lastRow = sibling
+      sibling = sibling.nextElementSibling
+    }
+
+    grandTotalTasks += taskCount
+    grandTotalRice += riceSum
+    grandTotalRiceCount += riceEntries
+
+    if (taskCount === 0) return
+
+    const summaryRow = document.createElement("tr")
+    summaryRow.className = "group-summary-row"
+    const td = document.createElement("td")
+    td.setAttribute("colspan", String(colCount))
+    td.className = "group-summary-cell"
+
+    const avgRice = riceEntries > 0 ? (riceSum / riceEntries).toFixed(1) : "\u2014"
+    td.innerHTML = `
+      <span class="summary-label">${taskCount} task${taskCount !== 1 ? "s" : ""}</span>
+      <span class="summary-separator">\u00b7</span>
+      <span class="summary-rice">Avg RICE: ${avgRice}</span>
+    `
+    summaryRow.appendChild(td)
+
+    if (lastRow && lastRow.nextElementSibling) {
+      tbody.insertBefore(summaryRow, lastRow.nextElementSibling)
+    } else if (lastRow) {
+      tbody.appendChild(summaryRow)
+    }
+  })
+
+  // Grand total row
+  if (grandTotalTasks > 0) {
+    const totalRow = document.createElement("tr")
+    totalRow.className = "grand-total-row"
+    const td = document.createElement("td")
+    td.setAttribute("colspan", String(colCount))
+    td.className = "grand-total-cell"
+
+    const avgRice = grandTotalRiceCount > 0 ? (grandTotalRice / grandTotalRiceCount).toFixed(1) : "\u2014"
+    td.innerHTML = `
+      <span class="summary-label">Total: ${grandTotalTasks} task${grandTotalTasks !== 1 ? "s" : ""}</span>
+      <span class="summary-separator">\u00b7</span>
+      <span class="summary-rice">Avg RICE: ${avgRice}</span>
+    `
+    totalRow.appendChild(td)
+    tbody.appendChild(totalRow)
+  }
 }
 
 function updateGroupHeaderLabels() {

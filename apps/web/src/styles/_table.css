@@ -353,6 +353,54 @@ tr.sub-group-header-row td {
   accent-color: var(--accent);
 }
 
+/* =============================================================================
+ * Group Summary / Subtotal Rows
+ * ============================================================================= */
+
+.group-summary-row td {
+  background: var(--bg-primary);
+  border-top: 1px dashed var(--border);
+  padding: 4px 12px;
+}
+
+.group-summary-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.summary-separator {
+  opacity: 0.4;
+}
+
+.summary-rice {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Grand total at bottom */
+.grand-total-row td {
+  background: var(--bg-secondary);
+  border-top: 2px solid var(--border);
+  padding: 6px 12px;
+}
+
+.grand-total-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.grand-total-cell .summary-rice {
+  color: var(--accent, #6366f1);
+}
+
 /* Collapsed group rows are hidden — !important needed to override table-row display */
 tr.group-collapsed-row {
   display: none !important;
