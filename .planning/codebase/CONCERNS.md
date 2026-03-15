@@ -1,50 +1,40 @@
 # Codebase Concerns
 
-> Last mapped: 2026-03-15 — 50-persona audit + design token migration
+> Last mapped: 2026-03-15 — Post design-token-migration + PGD audit
 
-## ~~Critical: Script Monolith~~ → Medium: Script Size
+## Critical: Kanban Script Monolith
 
-**File:** `apps/web/src/pages/kanban.astro` (3,303 lines)
-- ~1,800 lines of inline `<script>` — now unified with shared `_qa` popover utility
-- Quick actions refactored: shared close/toast/open, single consolidated click/keydown listener
-- **Remaining:** Extract to `apps/web/src/lib/kanban-quick-actions.ts` for tree-shaking
+**File:** `apps/web/src/pages/kanban.astro` (3,318 lines total, 1,970 lines inline `<script>`)
+- Defeats Astro's island architecture — all JS loads for every visitor
+- Makes HMR unpredictable, prevents tree-shaking
+- Contains: drag-and-drop, quick actions (`_qa` popover), filter/swimlane logic, inline-add, context menu
+- **Fix:** Extract to `apps/web/src/lib/kanban-controller.ts` (PGD-01)
+- **Priority:** P0 — largest remaining tech debt
 
-## ~~Critical: Design Token Violations~~ → Resolved ✅
-
-**Migrated to `_tokens.css` design tokens:**
-- `--type-epic`, `--type-story`, `--type-task` (dark + light + auto)
-- `--prio-critical`, `--prio-high`, `--prio-medium`, `--prio-low`, `--prio-none`
-- `.priority-dot.*`, `.type-dot-*`, `.type-badge-*` all use `var()` references
-- `color-mix(in srgb)` for type badge backgrounds with alpha
-
-## ~~High: Accessibility Gaps~~ → Resolved ✅
-
-**Addressed in user's `_qa` refactor:**
-- `role="dialog"` + `aria-label` on popovers
-- Arrow key navigation (ArrowUp/Down) within popover items
-- `role="menuitem"` on assign items
-- `role="radiogroup"` + `aria-checked` on color swatches
-- Focus management (first interactive element on open)
-
-## ~~High: Performance — Document Listeners~~ → Resolved ✅
-
-- Single consolidated `_qa` click/keydown listener replaces 3 per-popover listeners
-- `astro:before-swap` cleanup for Astro navigation
-
-## ~~Medium: UX Gaps~~ → Resolved ✅
-
-- Child task always `"pending"` (not inheriting parent status)
-- Active color indicator (`swatch-active` class + checkmark `::after`)
-- Loading skeleton for assign popover
-- Optimistic updates for assign + color
-- Popover exit animation (`popover-exiting`)
-- Scroll restore after child task creation
-
-## Medium: Other Monoliths
+## Medium: Other Large Files
 
 | File | Lines | Concern |
 |------|-------|---------|
-| `settings-controller.ts` | 3,202 | Largest file in codebase |
-| `task-modal-controller.ts` | 2,348 | Complex modal logic |
-| `Layout.astro` | 1,484 | Large layout with inline logic |
-| `table-controller.ts` | 1,337 | Growing table logic (summary rows + sub-grouping added) |
+| `settings-controller.ts` | 3,206 | Already extracted (PGD-04 ✅), but very large |
+| `task-modal-controller.ts` | 2,353 | Large modal logic, works but hard to maintain |
+| `table-controller.ts` | 1,336 | Growing but reasonable, recently got summary rows |
+| `tasks.astro` | 814 | Has some inline script that could use extraction |
+
+## Medium: Missing Functionality
+
+**Smart Today (SMT):**
+- Today page has overdue section but no "Suggested" tasks (high-priority, soon-due)
+- No one-click "add to today" from other views
+- No daily summary stats (completed/remaining/overdue counts)
+
+**Version Tooling (VER):**
+- No `check-version-sync.mjs` script
+- No `bump-version.mjs` script
+- No CI version validation
+
+## Low: Previously Resolved ✅
+
+- ~~Design Token Violations~~ — migrated to `var(--type-*)`, `var(--prio-*)` tokens
+- ~~Accessibility Gaps~~ — `_qa` popover has ARIA roles, keyboard nav, focus management
+- ~~Performance Listeners~~ — consolidated to single `_qa` click/keydown listener
+- ~~UX Gaps~~ — optimistic updates, loading skeletons, exit animations, swatch indicators

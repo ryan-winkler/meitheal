@@ -538,7 +538,7 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
 function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
   if (groupBy === "board" && boardMap[key]) {
     const b = boardMap[key]
-    return { label: b.title, icon: b.icon ?? "📋", color: b.color ?? "#6366F1" }
+    return { label: b.title, icon: b.icon ?? "📋", color: b.color ?? (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#6366F1") }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -750,7 +750,7 @@ function updateGroupHeaderLabels() {
       const dot = header.querySelector<HTMLElement>(".group-dot")
       if (label) label.textContent = boardMap[key].title
       if (icon) icon.textContent = boardMap[key].icon ?? "📋"
-      if (dot) dot.style.background = boardMap[key].color ?? "#6366F1"
+      if (dot) dot.style.background = boardMap[key].color ?? (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#6366F1")
     }
   })
 }
