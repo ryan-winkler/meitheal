@@ -14,6 +14,7 @@ import {
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import StatusBadge from "../components/ui/StatusBadge.astro";
+import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 
 const {
   ingressPath,
@@ -156,11 +157,12 @@ const priorityLabels: Record<number, string> = {
 // Phase 20: Agile type metadata
 const typeConfig: Record<
   string,
-  { icon: string; label: string; color: string }
+  { label: string; color: string }
 > = {
-  epic: { icon: "🎯", label: "Epic", color: "#8b5cf6" },
-  story: { icon: "📖", label: "Story", color: "#3b82f6" },
-  task: { icon: "✅", label: "Task", color: "#6366F1" },
+  epic: { label: "Epic", color: "#8b5cf6" },
+  story: { label: "Story", color: "#3b82f6" },
+  task: { label: "Task", color: "#6366F1" },
+  bug: { label: "Bug", color: "#ef4444" },
 };
 ---
 
@@ -278,7 +280,6 @@ const typeConfig: Record<
               {/* Swimlane group containers (hidden by default, JS-driven grouping) */}
               {["epic", "story", "task"].map((type) => {
                 const tc = typeConfig[type] ?? {
-                  icon: "📋",
                   label: type,
                   color: "var(--text-muted)",
                 };
@@ -292,12 +293,9 @@ const typeConfig: Record<
                   >
                     <div class="swimlane-header" data-type={type}>
                       <span class="swimlane-toggle">▼</span>
-                      <span
-                        class="swimlane-type-dot"
-                        style={`background: ${tc.color};`}
-                      />
+                      <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">
-                        {tc.icon} {tc.label}
+                        {tc.label}
                       </span>
                       <span class="swimlane-count">{count}</span>
                     </div>
@@ -378,12 +376,7 @@ const typeConfig: Record<
                       <div
                         class="kanban-card-title"
                       >
-                        <span
-                          class={`type-badge type-badge-${tt}`}
-                          title={tc.label}
-                        >
-                          {tc.icon}
-                        </span>
+                        <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
                         <span
                           class="kanban-ticket-key"
                         >
@@ -883,13 +876,18 @@ const typeConfig: Record<
     border-top: 1px solid var(--border);
     opacity: 0;
     transition: opacity 150ms;
+    background: color-mix(in srgb, var(--bg-card) 85%, transparent);
+    backdrop-filter: blur(4px);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    margin: 8px -12px -12px;
+    padding: 8px 12px;
   }
   .kanban-card:hover .kanban-card-actions {
     opacity: 1;
   }
   .card-action-btn {
-    background: none;
-    border: 1px solid transparent;
+    background: var(--bg-hover);
+    border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
     cursor: pointer;
     font-size: 12px;
     padding: 3px 8px;
@@ -920,6 +918,20 @@ const typeConfig: Record<
     color: var(--warning);
   }
   .card-action-btn svg {
+    display: block;
+  }
+
+  /* Task type icon vertical alignment in card header */
+  .kanban-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+  .kanban-type-icon svg {
     display: block;
   }
 
