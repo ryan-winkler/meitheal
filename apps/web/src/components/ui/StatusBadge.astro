@@ -1,30 +1,29 @@
 ---
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
+import { normalizeStatus, STATUS_LABELS } from "../../lib/status-config";
 
 interface Props {
-  status: string;
+  status: string | null | undefined;
 }
 
 const { status } = Astro.props;
-
-// i18n: resolve locale from cookie
-const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
-const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
-
-const isDone = status === "complete" || status === "cancelled";
-const statusLabels: Record<string, string> = {
-  backlog: t("task_status.backlog", locale),
-  pending: t("task_status.pending", locale),
-  active: t("task_status.active", locale),
-  complete: t("task_status.complete", locale),
-  cancelled: t("task_status.cancelled", locale),
-};
-
-const label = statusLabels[status] ?? status;
-const badgeClass = isDone ? "complete" : status;
+const normalizedStatus = normalizeStatus(status || "");
+const label = STATUS_LABELS[normalizedStatus] || STATUS_LABELS.backlog;
 ---
 
-<span class={`task-badge badge-${badgeClass}`}>
+<span
+  class:list={[
+    "status-badge inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium transition-colors border max-w-fit w-fit",
+    {
+      "bg-[rgba(100,116,139,0.1)] text-text-muted border-[rgba(100,116,139,0.2)] hover:bg-[rgba(100,116,139,0.15)]":
+        normalizedStatus === "backlog",
+      "bg-[rgba(59,130,246,0.1)] text-info border-[rgba(59,130,246,0.2)] hover:bg-[rgba(59,130,246,0.15)]":
+        normalizedStatus === "pending",
+      "bg-[rgba(99,102,241,0.1)] text-accent border-[rgba(99,102,241,0.2)] hover:bg-[rgba(99,102,241,0.15)]":
+        normalizedStatus === "active",
+      "bg-[rgba(34,197,94,0.1)] text-[rgba(34,197,94,0.9)] border-[rgba(34,197,94,0.2)] hover:bg-[rgba(34,197,94,0.15)]":
+        normalizedStatus === "complete",
+    },
+  ]}
+>
   {label}
 </span>

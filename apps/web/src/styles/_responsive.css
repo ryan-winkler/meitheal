@@ -232,7 +232,7 @@
 
 /* Mobile: search results — full-width overlay with safe scrolling */
 .search-results {
-  max-height: 70vh !important;
+  max-height: 70dvh !important;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }

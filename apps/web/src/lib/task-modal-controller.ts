@@ -320,8 +320,16 @@
               tdIdEl.classList.remove("hidden");
             }
 
-            (document.getElementById("td-title") as HTMLInputElement).value =
-              String(t.title ?? "");
+            const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
+            if (titleEl) {
+              titleEl.value = String(t.title ?? "");
+              // Trigger auto-resize inline
+              titleEl.style.height = "auto";
+              // Brief timeout to ensure DOM layout is updated before scrollHeight is read
+              setTimeout(() => {
+                titleEl.style.height = titleEl.scrollHeight + "px";
+              }, 10);
+            }
             // Update aria-label with actual task title for screen readers
             tdOverlay?.setAttribute("aria-label", `Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -882,19 +890,31 @@
           "td-description",
         ) as HTMLTextAreaElement;
 
+        const activeClasses = ["bg-bg-tertiary", "text-text-primary", "shadow-sm"];
+        const inactiveClasses = ["text-text-muted", "hover:bg-bg-tertiary/50", "hover:text-text-primary"];
+
         descEditBtn?.addEventListener("click", () => {
           descEditContainer?.classList.remove("hidden");
           descPreviewContainer?.classList.add("hidden");
-          descEditBtn.classList.add("bg-(--bg-hover)");
-          descPreviewBtn?.classList.remove("bg-(--bg-hover)");
+          
+          descEditBtn.classList.remove(...inactiveClasses);
+          descEditBtn.classList.add(...activeClasses);
+          
+          descPreviewBtn?.classList.remove(...activeClasses);
+          descPreviewBtn?.classList.add(...inactiveClasses);
+          
           tdDescription?.focus();
         });
 
         descPreviewBtn?.addEventListener("click", () => {
           descEditContainer?.classList.add("hidden");
           descPreviewContainer?.classList.remove("hidden");
-          descPreviewBtn.classList.add("bg-(--bg-hover)");
-          descEditBtn?.classList.remove("bg-(--bg-hover)");
+          
+          descPreviewBtn.classList.remove(...inactiveClasses);
+          descPreviewBtn.classList.add(...activeClasses);
+          
+          descEditBtn?.classList.remove(...activeClasses);
+          descEditBtn?.classList.add(...inactiveClasses);
 
           if (descPreview && tdDescription) {
             const rawMarkdown = tdDescription.value;
@@ -912,6 +932,16 @@
         });
 
         // Auto-save on change
+        const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
+        if (tdTitleInput) {
+          tdTitleInput.addEventListener("blur", (e) =>
+            saveTD("title", (e.target as HTMLTextAreaElement).value),
+          );
+          tdTitleInput.addEventListener("input", function() {
+            this.style.height = "auto";
+            this.style.height = this.scrollHeight + "px";
+          });
+        }
         document
           .getElementById("td-title")
           ?.addEventListener("blur", (e) =>

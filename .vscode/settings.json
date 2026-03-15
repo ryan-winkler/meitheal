@@ -1,5 +1,6 @@
 {
   "css.lint.unknownAtRules": "ignore",
   "css.lint.propertyIgnoredDueToDisplay": "ignore",
-  "git.autofetch": "all"
+  "git.autofetch": "all",
+  "chatgpt.openOnStartup": true
 }

@@ -298,10 +298,33 @@
     }
 
   /* --- HA Theme Passthrough --- */
+  /* These variables will only apply when loaded via the HA Supervisor Ingress iframe */
   body.ha-ingress {
+    /* Backgrounds */
+    --bg-primary: var(--primary-background-color, #0F172A);
+    --bg-secondary: var(--secondary-background-color, #1E293B);
+    --bg-card: var(--card-background-color, #1E293B);
+    --bg-hover: var(--secondary-background-color, #334155);
+    
+    /* Text */
+    --text-primary: var(--primary-text-color, #F1F5F9);
+    --text-secondary: var(--secondary-text-color, #94A3B8);
+    --text-muted: var(--disabled-text-color, #64748B);
+    
+    /* Accents & States */
     --accent: var(--primary-color, #6366F1);
-      --accent-hover: var(--primary-color, #4F46E5);
-      --border-focus: var(--primary-color, #6366F1);
+    --accent-hover: var(--dark-primary-color, #4F46E5);
+    --accent-light: var(--light-primary-color, rgba(99, 102, 241, 0.12));
+    
+    /* Statuses (Map HA's state colors) */
+    --danger: var(--error-color, #EF4444);
+    --warning: var(--warning-color, #F59E0B);
+    --info: var(--info-color, #3B82F6);
+    --color-success: var(--success-color, #22c55e);
+    
+    /* Borders */
+    --border: var(--divider-color, #334155);
+    --border-focus: var(--primary-color, #6366F1);
   }
 
   /* --- A11Y-07: High Contrast Mode --- */

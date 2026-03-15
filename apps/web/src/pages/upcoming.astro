@@ -69,6 +69,7 @@ import {
   PRIORITY_LABELS as priorityLabels,
   PRIORITY_COLORS as priorityColors,
 } from "../lib/priority-config";
+import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 
 const typeIcons: Record<string, string> = {
@@ -173,11 +174,11 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
                         </span>
                         {String(task.title)}
                       </div>
-                      <LabelBadges labels={task.labels as string} compact max={3} />
+                      <div class="flex items-center gap-2 mt-2">
+                        <LabelBadges labels={task.labels as string} compact max={3} />
+                      </div>
                     </div>
-                    <span class={`status-badge status-badge--${status}`}>
-                      {STATUS_LABELS[status]}
-                    </span>
+                    <StatusBadge status={String(task.status)} />
                     {task.color && (
                       <span
                         style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}

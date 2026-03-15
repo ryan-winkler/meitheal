@@ -1,5 +1,10 @@
-    import { exportLocalDataAsJson } from "@domains/offline/export-service";
-    import { confirmDialog } from "@lib/confirm-dialog";
+import { exportLocalDataAsJson } from "@domains/offline/export-service";
+import { confirmDialog } from "@lib/confirm-dialog";
+import { showToast } from "@lib/toast";
+import {
+import type { ThemeMode } from "@lib/theme-watcher";
+
+export function initSettingsController(): void {
 
     document
       .getElementById("export-json-btn")
@@ -69,12 +74,9 @@
       });
     }
 
-    import { showToast } from "@lib/toast";
-    import {
       setTheme as importedSetTheme,
       applyCustomTheme as importedApplyCustomTheme,
     } from "@lib/theme-watcher";
-    import type { ThemeMode } from "@lib/theme-watcher";
 
     /** Max custom theme CSS file size in bytes */
     const MAX_THEME_SIZE = 51200; // 50KB
@@ -3204,3 +3206,5 @@
 
     // Init
     loadSettings();
+
+}

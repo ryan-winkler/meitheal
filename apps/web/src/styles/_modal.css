@@ -29,26 +29,57 @@
   opacity: 1;
 }
 
+/* --- Base Dialog resets --- */
+dialog {
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  overflow: visible;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: modalBackdropFadeIn 0.2s ease-out forwards;
+}
+
 .modal-content {
-  background: var(--bg-card);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  width: 90vw;
+  max-width: 1000px;
+  max-height: 90dvh; /* dvh for mobile/HA safety */
+  border-radius: var(--radius-xl, 12px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-    animation: modal-content-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  /* Transform for animation */
+  transform: scale(0.98) translateY(10px);
+  opacity: 0;
+}
+
+dialog[open] .modal-content {
+  animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* --- Animations --- */
+@keyframes modalBackdropFadeIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(4px); }
+}
+
+@keyframes modalFadeIn {
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
   }
-  
-  /* B2: Modal entrance animation — scale + translate */
-  @keyframes modal-content-in {
-    from {
-      opacity: 0;
-      transform: translateY(16px) scale(0.97);
-    }
-  
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
+}
   
   /* B2: Command palette scale animation */
   @keyframes cp-enter {
@@ -88,10 +119,19 @@
     }
 }
 
+/* --- Modal Header --- */
 .modal-header {
+  min-height: 60px;
+  padding: var(--spacing-4) var(--spacing-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-4);
 }
 
 .modal-title {
@@ -182,4 +222,64 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+
+/* Task Detail Specific Styling */
+#task-detail-panel {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+#task-detail-panel header {
+  background: var(--color-bg-card);
+  backdrop-filter: blur(12px);
+}
+
+/* Auto-resizing textarea hiding scrollbar */
+#td-title::-webkit-scrollbar {
+  display: none;
+}
+#td-title {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Clean up description rendering */
+#td-desc-preview-container .prose {
+  color: var(--color-text-primary);
+}
+#td-desc-preview-container .prose p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Strategic Lens Button Animation */
+#td-evaluate-btn:hover svg.text-accent {
+  transform: rotate(15deg) scale(1.1);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Transitions for inputs/selects on hover/focus */
+.modal-content input[type="text"]:not(:focus),
+.modal-content input[type="date"]:not(:focus),
+.modal-content input[type="number"]:not(:focus),
+.modal-content input[type="datetime-local"]:not(:focus),
+.modal-content textarea:not(:focus),
+.modal-content select:not(:focus) {
+  border-color: transparent;
+  background-color: var(--color-bg-input);
+}
+
+.modal-content input:hover:not(:focus),
+.modal-content select:hover:not(:focus),
+.modal-content textarea:hover:not(:focus) {
+  background-color: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+
+/* Specific styling for the priority dot */
+.td-priority-dot {
+  text-shadow: 0 0 10px currentColor;
 }

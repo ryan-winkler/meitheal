@@ -13,6 +13,10 @@ import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
 
+import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
+import outfit700Woff2 from '@fontsource/outfit/files/outfit-latin-700-normal.woff2?url';
+
 import dtEn from "../i18n/en.json";
 import dtGa from "../i18n/ga.json";
 
@@ -371,6 +375,12 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
+    
+    <!-- Resource Hints: Preload critical fonts to prevent layout shift -->
+    <link rel="preload" href={geistWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={outfit600Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={outfit700Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <ClientRouter fallback="swap" />}
     <!-- Inject localization and settings maps into the window for client-scripts like toast.ts -->
@@ -400,14 +410,19 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- Wire Astro view transitions to loading bar -->
     <script is:inline>
-      document.addEventListener("astro:before-preparation", function () {
-        document.documentElement.classList.add("is-loading");
-      });
-      document.addEventListener("astro:after-swap", function () {
-        document.documentElement.classList.remove("is-loading");
-      });
-      document.addEventListener("astro:page-load", function () {
-        document.documentElement.classList.remove("is-loading");
+      function showLoading() { document.documentElement.classList.add("is-loading"); }
+      function hideLoading() { document.documentElement.classList.remove("is-loading"); }
+
+      document.addEventListener("astro:before-preparation", showLoading);
+      document.addEventListener("astro:after-swap", hideLoading);
+      document.addEventListener("astro:page-load", hideLoading);
+
+      // Fallback: show loading bar for standard browser navigation (like in HA ingress without ViewTransitions)
+      window.addEventListener("beforeunload", showLoading);
+
+      // Clear loading state if page is restored from bfcache
+      window.addEventListener("pageshow", function(e) {
+        if (e.persisted) hideLoading();
       });
     </script>
 
@@ -506,627 +521,383 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Task Detail Slide-out Panel -->
+    <!-- Task Detail Centered Panel -->
     <div
       id="task-detail-overlay"
-      class="fixed inset-0 bg-black/60 z-50 hidden"
+      class="modal-overlay z-[200]"
+      style="display:none;position:fixed;"
       role="dialog"
       aria-modal="true"
       aria-label="Task detail"
     >
       <div
         id="task-detail-panel"
-        class="absolute right-0 top-0 h-full w-full max-w-4xl bg-bg-secondary border-l border-border shadow-2xl overflow-y-auto animate-slide-in"
+        class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-primary border border-border shadow-2xl rounded-xl flex flex-col overflow-hidden animate-slide-in relative m-4 md:m-8"
       >
-        <div class="px-6 lg:px-8 pt-6 pb-2">
-          <a
-            href="#"
-            id="td-parent"
-            class="text-xs text-info hidden hover:underline items-center gap-1 mb-1"
-          ></a>
-          <div
-            class="flex items-center justify-between pb-2 border-b border-border"
-          >
-            <div class="flex items-center gap-4 w-full mr-0 lg:mr-32">
-              <span
-                id="td-priority-dot"
-                class="td-priority-dot text-xl"
-                title="Priority">●</span
-              >
-              <input
+        <!-- Sticky Header Bar -->
+        <header class="flex-none px-6 py-4 border-b border-border bg-bg-card flex justify-between items-center z-20 sticky top-0">
+          <div class="flex items-center gap-3 w-full mr-4">
+            <span id="td-priority-dot" class="td-priority-dot text-lg" title="Priority">●</span>
+            <div class="flex flex-col flex-1 min-w-0">
+              <a href="#" id="td-parent" class="text-xs text-text-muted hidden hover:text-accent hover:underline mb-0.5 truncate"></a>
+              <div class="flex items-center gap-2 text-text-muted">
+                <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
+                <span id="td-created" class="text-[10px] hidden md:inline"></span>
+                <span class="text-border hidden md:inline">•</span>
+                <span id="td-updated" class="text-[10px] hidden md:inline"></span>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-2 items-center flex-none">
+            <button id="td-toggle-favorite" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" title="Favorite">⭐</button>
+            <button id="td-duplicate" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" title="Duplicate">📋</button>
+            <button id="td-ask-ai" class="p-1.5 hover:bg-bg-hover hover:text-primary text-text-muted rounded transition-colors" title="Ask AI">🤖</button>
+            <button id="td-delete" class="p-1.5 hover:bg-bg-hover hover:text-red-400 text-text-muted rounded transition-colors" title="Delete Task">🗑️</button>
+            <div class="w-px h-5 bg-border mx-1"></div>
+            <button id="td-close" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" aria-label="Close detail">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Progress bar -->
+        <div id="td-progress-bar-container" class="w-full h-1 bg-bg-input hidden">
+          <div id="td-progress-bar-fill" class="h-full bg-accent transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div id="td-due-row" class="hidden">
+           <!-- Hidden but kept for backwards compat with controller -->
+           <span id="td-due-display"></span>
+        </div>
+
+        <div class="flex flex-1 overflow-hidden flex-col md:flex-row relative">
+          
+          <!-- MAIN CONTENT COLUMN -->
+          <main class="flex-1 overflow-y-auto px-6 py-6 lg:px-10 space-y-8 bg-bg-primary min-w-0">
+            
+            <!-- Title -->
+            <div class="relative group">
+              <textarea
                 id="td-title"
-                class="form-input bg-transparent border border-transparent hover:border-border hover:bg-bg-hover focus:bg-bg-input focus:border-border focus:ring-1 focus:ring-accent text-2xl font-bold px-2 py-1 -ml-2 rounded transition-colors leading-tight"
+                class="w-full bg-transparent border border-transparent hover:bg-bg-hover focus:bg-bg-input focus:border-border focus:ring-1 focus:ring-accent text-3xl font-bold py-2 px-3 -ml-3 rounded-lg transition-colors leading-tight resize-none text-text-primary overflow-hidden"
+                rows="1"
                 placeholder="Task title"
-              />
-              <span
-                id="td-id"
-                class="hidden"
-                style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--accent);background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);padding:4px 10px;border-radius:6px;white-space:nowrap;cursor:help;flex-shrink:0;"
-                title="Task ID"></span>
-            </div>
-            <button
-              type="button"
-              id="td-close"
-              class="btn-secondary px-3 py-1.5 text-sm"
-              aria-label="Close detail">✕</button
-            >
-          </div>
-          <!-- Progress bar -->
-          <div id="td-progress-bar-container" class="td-progress-bar-container">
-            <div
-              id="td-progress-bar-fill"
-              class="td-progress-bar-fill"
-              style="width: 0%"
-            >
-            </div>
-          </div>
-          <!-- Due date -->
-          <div id="td-due-row" class="td-due-row hidden">
-            <span class="text-[10px] text-text-muted uppercase tracking-wider"
-              >Due</span
-            >
-            <span
-              id="td-due-display"
-              class="text-xs text-text-muted font-medium"></span>
-          </div>
-
-          <div class="flex flex-col lg:flex-row min-h-0">
-            <!-- Left: Content -->
-            <div class="flex-1 min-w-0 px-6 lg:px-8 py-6 space-y-8 overflow-y-auto">
-              <!-- Status + Board -->
-              <div class="flex items-center gap-3">
-                <select id="td-status" class="inline-select">
-                  <option value="backlog">Backlog</option>
-                  <option value="pending">Pending</option>
-                  <option value="active">Active</option>
-                  <option value="complete">Complete</option>
-                </select>
-                <select
-                  id="td-task-type"
-                  class="inline-select"
-                  title="Work item type"
-                >
-                  <option value="task">✅ Task</option>
-                  <option value="story">📖 Story</option>
-                  <option value="epic">🎯 Epic</option>
-                </select>
-                <select id="td-board" class="inline-select" title="Board"
-                ></select>
-              </div>
-
-              <!-- Description (Markdown Editor) -->
-              <div class="mb-5">
-                <div class="flex items-center justify-between mb-3">
-                  <label
-                    class="text-sm text-text-muted font-semibold uppercase tracking-wider block"
-                  >
-                    Description
-                  </label>
-                  <div class="flex gap-2">
-                    <button
-                      id="td-desc-edit-btn"
-                      class="btn btn-ghost text-xs px-2 py-1 bg-(--bg-hover)"
-                      type="button">Edit</button
-                    >
-                    <button
-                      id="td-desc-preview-btn"
-                      class="btn btn-ghost text-xs px-2 py-1"
-                      type="button">Preview</button
-                    >
-                  </div>
-                </div>
-                <div id="td-desc-edit-container">
-                  <textarea
-                    id="td-description"
-                    class="form-input min-h-[160px] resize-y text-base w-full"
-                    placeholder="Add a description (Markdown supported)..."
-                  ></textarea>
-                </div>
-                <div
-                  id="td-desc-preview-container"
-                  class="hidden min-h-[160px] p-4 bg-(--bg-input) border border-border rounded-md text-base mt-2 text-(--text-primary)"
-                  style="max-width: 100%;"
-                >
-                  <div
-                    class="prose prose-sm dark:prose-invert max-w-none wrap-break-word"
-                    id="td-desc-preview"
-                  >
-                  </div>
-                </div>
-              </div>
-
-              <!-- Checklists (Phase 31) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 flex items-center justify-between"
-                >
-                  <span>Checklists</span>
-                  <button
-                    type="button"
-                    id="td-add-checklist-item"
-                    class="text-xs text-accent hover:text-accent-hover transition-colors"
-                    >+ Add Item</button
-                  >
-                </label>
-                <div id="td-checklists" class="space-y-1"></div>
-                <div
-                  id="td-checklist-progress"
-                  class="text-[10px] text-text-muted mt-1"
-                  style="display:none;"
-                >
-                  <span id="td-checklist-done">0</span>/<span
-                    id="td-checklist-total">0</span
-                  > complete
-                </div>
-              </div>
-
-              <!-- Recurrence (Phase 31) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 block"
-                  >Recurrence</label
-                >
-                <div class="flex items-center gap-2">
-                  <select
-                    id="td-recurrence"
-                    class="inline-select flex-1"
-                    title="Recurrence pattern"
-                  >
-                    <option value="">None</option>
-                    <option value="FREQ=DAILY">Every day</option>
-                    <option value="FREQ=WEEKLY">Every week</option>
-                    <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-                      >Every weekday</option
-                    >
-                    <option value="FREQ=MONTHLY">Every month</option>
-                    <option value="FREQ=YEARLY">Every year</option>
-                    <option value="FREQ=WEEKLY;INTERVAL=2">Every 2 weeks</option
-                    >
-                  </select>
-                  <span
-                    id="td-recurrence-desc"
-                    class="text-[10px] text-text-muted"></span>
-                </div>
-              </div>
-
-              <!-- Ticket Linking (Parent / Children) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 block"
-                  >Linked Tickets</label
-                >
-                <div class="space-y-2">
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-text-muted w-14">Parent:</span>
-                    <div
-                      id="td-link-parent-display"
-                      class="flex-1 flex items-center gap-1"
-                    >
-                      <span class="text-xs text-text-muted italic">None</span>
-                    </div>
-                  </div>
-                  <div class="relative">
-                    <input
-                      id="td-link-parent-search"
-                      class="form-input text-sm py-1.5"
-                      placeholder="Search for parent (Epic/Story)..."
-                      autocomplete="off"
-                    />
-                    <div
-                      id="td-link-parent-results"
-                      class="absolute z-10 left-0 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto"
-                      style="display:none;"
-                    >
-                    </div>
-                  </div>
-                  <div>
-                    <span class="text-xs text-text-muted">Children:</span>
-                    <div id="td-link-children" class="space-y-1 mt-1"></div>
-                    <!-- Subtask progress bar (Phase 1: SUB-03) -->
-                    <div id="td-subtask-progress" class="hidden mt-2">
-                      <div class="flex items-center justify-between text-[10px] text-text-muted mb-0.5">
-                        <span>Subtask progress</span>
-                        <span id="td-subtask-progress-label">0/0</span>
-                      </div>
-                      <div class="w-full h-1.5 bg-bg-input rounded-full overflow-hidden">
-                        <div id="td-subtask-progress-bar" class="h-full bg-accent rounded-full transition-all duration-300" style="width:0%"></div>
-                      </div>
-                    </div>
-                    <!-- Add subtask inline form (Phase 1: SUB-02) -->
-                    <div id="td-add-subtask" class="mt-2">
-                      <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1">
-                        <span>➕</span> Add subtask
-                      </button>
-                      <div id="td-add-subtask-form" class="hidden mt-1 gap-1">
-                        <input
-                          id="td-add-subtask-input"
-                          class="form-input text-sm py-1 flex-1"
-                          placeholder="Subtask title..."
-                          autocomplete="off"
-                        />
-                        <button type="button" id="td-add-subtask-submit" class="btn-primary text-xs px-2 py-1">Add</button>
-                        <button type="button" id="td-add-subtask-cancel" class="btn-secondary text-xs px-2 py-1">✕</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Related Links (Jira-style issue linking) -->
-                  <div
-                    class="mt-3 pt-3"
-                    style="border-top: 1px solid var(--border);"
-                  >
-                    <span class="text-xs text-text-muted font-semibold"
-                      >Related Links <span
-                        id="td-link-count"
-                        class="text-text-muted opacity-70"></span>:</span
-                    >
-                    <div id="td-related-links" class="space-y-1 mt-1">
-                      <div
-                        id="td-links-empty"
-                        class="text-xs text-text-muted italic py-1"
-                      >
-                        No related links. Use the search below to link tasks.
-                      </div>
-                    </div>
-                    <!-- ARIA live region for screen reader announcements (#30) -->
-                    <div id="td-link-live" aria-live="polite" class="sr-only">
-                    </div>
-                    <div class="mt-2 flex gap-1 items-center">
-                      <select
-                        id="td-link-type-select"
-                        class="form-input text-xs py-1"
-                        style="width: auto; min-width: 120px;"
-                        aria-label="Link type"
-                      >
-                        <option value="related_to"
-                          >{t("link_types.related_to", locale)}</option
-                        >
-                        <option value="blocked_by"
-                          >{t("link_types.blocked_by", locale)}</option
-                        >
-                        <option value="blocks"
-                          >{t("link_types.blocks", locale)}</option
-                        >
-                        <option value="duplicates"
-                          >{t("link_types.duplicates", locale)}</option
-                        >
-                        <option value="duplicated_by"
-                          >{t("link_types.duplicated_by", locale)}</option
-                        >
-                      </select>
-                      <div class="relative flex-1">
-                        <input
-                          id="td-link-search"
-                          class="form-input text-xs py-1"
-                          placeholder="Search task to link…"
-                          autocomplete="off"
-                          aria-label="Search for a task to link"
-                          role="combobox"
-                          aria-expanded="false"
-                          aria-controls="td-link-search-results"
-                        />
-                        <div
-                          id="td-link-search-results"
-                          class="absolute z-10 left-0 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-32 overflow-y-auto"
-                          style="display:none;"
-                          role="listbox"
-                        >
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Labels (interactive) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 block"
-                  >Labels</label
-                >
-                <div id="td-labels" class="flex flex-wrap gap-1 mb-2"></div>
-                <input
-                  id="td-label-input"
-                  class="form-input text-sm py-1.5"
-                  placeholder="Type a label and press Enter..."
-                />
-              </div>
-
-              <!-- Custom Fields (interactive) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 block"
-                  >Custom Fields</label
-                >
-                <div id="td-custom-fields" class="space-y-2"></div>
-                <div class="relative mt-2">
-                  <button
-                    id="td-add-cf"
-                    type="button"
-                    class="text-xs text-accent hover:text-accent-hover transition-colors"
-                    >+ Add Field</button
-                  >
-                  <div
-                    id="td-add-cf-dropdown"
-                    class="absolute z-10 left-0 bg-bg-card border border-border rounded-md shadow-lg min-w-[200px] py-1"
-                    style="display:none;"
-                  >
-                    <div class="px-2 py-1">
-                      <input
-                        id="td-add-cf-search"
-                        class="form-input text-xs py-1 w-full"
-                        placeholder="Field name..."
-                        autocomplete="off"
-                      />
-                    </div>
-                    <div
-                      id="td-add-cf-options"
-                      class="max-h-32 overflow-y-auto"
-                    >
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Attachments (Phase 23) -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 flex items-center justify-between"
-                >
-                  <span>Attachments</span>
-                  <label
-                    class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0"
-                  >
-                    + Add Image
-                    <input
-                      type="file"
-                      id="td-attachment-input"
-                      accept="image/*"
-                      class="hidden"
-                    />
-                  </label>
-                </label>
-                <div id="td-attachments" class="flex flex-wrap gap-3 mt-2">
-                </div>
-              </div>
-
-              <!-- Comments -->
-              <div>
-                <label
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide mb-2 block"
-                  >Comments</label
-                >
-                <div id="td-comments" class="space-y-3 mb-4"></div>
-                <div class="flex gap-2">
-                  <input
-                    id="td-comment-input"
-                    class="form-input flex-1"
-                    placeholder="Add a comment..."
-                  />
-                  <button
-                    type="button"
-                    id="td-comment-submit"
-                    class="btn-primary px-4">Comment</button
-                  >
-                </div>
-              </div>
-
-              <!-- Activity Log (ADR-0011) -->
-              <details class="mt-4">
-                <summary
-                  class="text-xs text-text-muted font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-text-secondary transition-colors"
-                >
-                  Activity Log
-                </summary>
-                <div
-                  id="td-activity"
-                  class="space-y-1 mt-2 max-h-48 overflow-y-auto text-xs"
-                >
-                </div>
-              </details>
+              ></textarea>
             </div>
 
-            <!-- Right: Action Sidebar -->
-            <div
-              class="w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-border px-6 lg:px-8 py-6 space-y-5 overflow-y-auto"
-            >
-              <div class="space-y-1">
-                <button
-                  id="td-toggle-done"
-                  class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-bg-hover transition-colors"
-                  >✓ Mark as Done</button
-                >
-                <button
-                  id="td-toggle-favorite"
-                  class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-bg-hover transition-colors"
-                  >⭐ Add to Favorites</button
-                >
-                <button
-                  id="td-duplicate"
-                  class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-bg-hover transition-colors"
-                  >📋 Duplicate Task</button
-                >
-              </div>
-
-              <div class="border-t border-border pt-3">
-                <span
-                  class="text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-                  >Organization</span
-                >
-                <div class="mt-2 space-y-2">
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Priority</label
-                    >
-                    <select id="td-priority" class="inline-select w-full">
-                      <option value="1">1 — Lowest</option>
-                      <option value="2">2 — Low</option>
-                      <option value="3">3 — Medium</option>
-                      <option value="4">4 — High</option>
-                      <option value="5">5 — Highest</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Progress</label
-                    >
-                    <div class="flex items-center gap-2">
-                      <input
-                        id="td-progress"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value="0"
-                        class="flex-1 accent-accent"
-                      />
-                      <span
-                        id="td-progress-value"
-                        class="text-xs text-text-muted w-8 text-right">0%</span
-                      >
+            <!-- Description -->
+            <section class="mb-5">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider flex justify-between w-full pr-1">
+                    <span>Description</span>
+                    <div class="flex gap-2">
+                      <button id="td-desc-edit-btn" class="text-xs text-accent hover:underline hidden" type="button">Edit</button>
+                      <button id="td-desc-preview-btn" class="hidden text-xs text-text-muted hover:text-text-primary" type="button">Preview</button>
                     </div>
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Color</label
-                    >
-                    <input
-                      id="td-color"
-                      type="color"
-                      value="#6366F1"
-                      class="w-8 h-8 rounded cursor-pointer border-none"
-                    />
-                  </div>
+                </h3>
+              </div>
+              <div class="group relative">
+                <div id="td-desc-preview-container" class="prose prose-sm dark:prose-invert max-w-none wrap-break-word p-3 -ml-3 rounded-lg hover:bg-bg-hover border border-transparent transition-colors cursor-text min-h-[60px] text-base group-hover:bg-bg-hover">
+                  <div id="td-desc-preview" class="empty:after:content-['Add_a_description...'] empty:after:text-text-muted empty:after:italic"></div>
+                </div>
+                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button id="td-desc-edit-btn-hover" class="bg-bg-primary border border-border shadow-sm text-text-secondary hover:text-text-primary px-2 py-1 rounded text-xs" type="button">Edit</button>
                 </div>
               </div>
-
-              <!-- Assigned To -->
-              <div class="border-t border-border pt-3">
-                <span
-                  class="text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-                  >Assigned To</span
-                >
-                <div class="mt-2">
-                  <select
-                    id="td-assigned-to"
-                    class="inline-select w-full"
-                    aria-label="Assign task to user"
-                  >
-                    <option value="">Unassigned</option>
-                  </select>
+              <div id="td-desc-edit-container" class="hidden">
+                <textarea
+                  id="td-description"
+                  class="form-input min-h-[160px] resize-y text-sm w-full focus:ring-1 focus:ring-accent font-mono leading-relaxed"
+                  placeholder="Add a detailed description (Markdown supported)..."
+                ></textarea>
+                <div class="flex justify-end mt-2 gap-2">
+                    <button class="btn btn-primary text-xs px-3 py-1.5 shadow-sm" type="button" onclick="document.getElementById('td-desc-preview-btn').click()">Save</button>
                 </div>
               </div>
+            </section>
 
-              <div class="border-t border-border pt-3">
-                <span
-                  class="text-[10px] uppercase tracking-wide text-text-muted font-semibold"
-                  >Date & Time</span
-                >
-                <div class="mt-2 space-y-2">
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Due Date</label
-                    >
-                    <input
-                      id="td-due-date"
-                      type="date"
-                      class="form-input text-sm py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Start Date</label
-                    >
-                    <input
-                      id="td-start-date"
-                      type="date"
-                      class="form-input text-sm py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >End Date</label
-                    >
-                    <input
-                      id="td-end-date"
-                      type="date"
-                      class="form-input text-sm py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Time Tracked (min)</label
-                    >
-                    <input
-                      id="td-time-tracked"
-                      type="number"
-                      min="0"
-                      step="1"
-                      value="0"
-                      class="form-input text-sm py-1.5 w-full"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-text-secondary block mb-1"
-                      >Reminder</label
-                    >
-                    <input
-                      id="td-reminder"
-                      type="datetime-local"
-                      class="form-input text-sm py-1.5 w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div class="border-t border-border pt-3">
-                <div id="td-strategic-badge" class="mb-2 hidden"></div>
-                <button
-                  id="td-evaluate-btn"
-                  class="w-full text-left px-3 py-2 text-sm text-accent rounded-md hover:bg-accent/10 transition-colors flex justify-between items-center"
-                >
-                  <span>⚖️ Add Strategic Lens</span>
-                  <span
-                    id="td-active-framework-name"
-                    class="text-[10px] uppercase font-bold text-text-muted px-2 py-0.5 rounded bg-bg-hover hidden"
-                  ></span>
+            <!-- Checklists -->
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Checklists</h3>
+                <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
+                    <span>➕ Add Item</span>
                 </button>
               </div>
+              <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
+                  <div class="w-full mr-3 h-1.5 bg-bg-card rounded-full overflow-hidden border border-border">
+                    <div id="td-checklist-progress-bar" class="h-full bg-accent transition-all duration-300" style="width:0%"></div>
+                  </div>
+                  <span class="whitespace-nowrap"><span id="td-checklist-done">0</span>/<span id="td-checklist-total">0</span></span>
+              </div>
+              <div id="td-checklists" class="space-y-1"></div>
+            </section>
 
-              <div class="border-t border-border pt-3 space-y-2">
-                <button
-                  id="td-ask-ai"
-                  class="w-full text-left px-3 py-2 text-sm text-primary rounded-md hover:bg-primary/10 transition-colors"
-                  >🤖 Ask AI</button
-                >
-                <label
-                  class="w-full block text-left px-3 py-2 text-sm text-secondary rounded-md hover:bg-secondary/10 transition-colors cursor-pointer m-0"
-                >
-                  🖼️ Attach Image
-                  <input
-                    type="file"
-                    id="td-attach-image"
-                    accept="image/png, image/jpeg, image/webp, image/gif"
-                    style="display: none;"
-                  />
+            <!-- Attachments -->
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Attachments</h3>
+                <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
+                  <span>➕ Add Image</span>
+                  <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
                 </label>
-                <button
-                  id="td-delete"
-                  class="w-full text-left px-3 py-2 text-sm text-danger rounded-md hover:bg-danger/10 transition-colors"
-                  >🗑 Delete</button
-                >
+              </div>
+              <div id="td-attachments" class="flex flex-wrap gap-3 mt-2"></div>
+            </section>
+
+            <!-- Linking & Subtasks -->
+            <section class="border border-border rounded-xl p-5 bg-bg-card/50">
+              <h3 class="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                  Relationships
+              </h3>
+              <div class="space-y-5">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <!-- Parent -->
+                  <div>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Epic/Story</span>
+                    <div id="td-link-parent-display" class="flex items-center gap-1 mb-2">
+                      <span class="text-xs text-text-muted italic">None</span>
+                    </div>
+                    <div class="relative">
+                      <input id="td-link-parent-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
+                      <div id="td-link-parent-results" class="absolute z-10 left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
+                    </div>
+                  </div>
+                  <!-- Children -->
+                  <div>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Subtasks</span>
+                    <div id="td-link-children" class="space-y-1.5 mb-2"></div>
+                    <div id="td-subtask-progress" class="hidden mb-3">
+                      <div class="flex items-center justify-between text-[10px] text-text-muted mb-1">
+                        <span id="td-subtask-progress-label">0/0</span>
+                      </div>
+                      <div class="w-full h-1.5 bg-bg-input rounded-full overflow-hidden border border-border/50">
+                        <div id="td-subtask-progress-bar" class="h-full bg-accent transition-all duration-300 rounded-full" style="width:0%"></div>
+                      </div>
+                    </div>
+                    <div id="td-add-subtask">
+                      <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
+                        <span>➕ Add subtask</span>
+                      </button>
+                      <div id="td-add-subtask-form" class="hidden mt-2 gap-2 flex">
+                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
+                        <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
+                        <button type="button" id="td-add-subtask-cancel" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5">✕</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="h-px bg-border w-full"></div>
+                
+                <!-- Related Links -->
+                <div>
+                  <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">
+                    <span>Related Links <span id="td-link-count" class="text-text-muted opacity-70 ml-1"></span></span>
+                  </span>
+                  <div id="td-related-links" class="space-y-1.5 mb-3">
+                    <div id="td-links-empty" class="text-xs text-text-muted italic py-1">No related links. Use the search to link tasks.</div>
+                  </div>
+                  <div id="td-link-live" aria-live="polite" class="sr-only"></div>
+                  <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <select id="td-link-type-select" class="form-select text-sm py-1.5 bg-bg-input w-full sm:w-40 shrink-0">
+                      <option value="related_to">Related to</option>
+                      <option value="blocked_by">Blocked by</option>
+                      <option value="blocks">Blocks</option>
+                      <option value="duplicates">Duplicates</option>
+                      <option value="duplicated_by">Duplicated by</option>
+                    </select>
+                    <div class="relative flex-1 w-full">
+                      <input id="td-link-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
+                      <div id="td-link-search-results" class="absolute z-10 left-0 bottom-full mb-1 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-32 overflow-y-auto" style="display:none;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Comments -->
+            <section class="border-t border-border pt-8 mt-8">
+              <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider mb-5 flex items-center gap-2">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="text-text-muted" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path></svg>
+                 Comments
+              </h3>
+              <div id="td-comments" class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
+              <div class="flex gap-3 items-start relative mt-6">
+                <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
+                <div class="flex-1">
+                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-all" placeholder="Add a comment... Press Cmd+Enter to submit"></textarea>
+                    <div class="flex justify-end mt-2">
+                      <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>
+                    </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Activity Log -->
+            <details class="group border-t border-border pt-6 mt-6 pb-8">
+              <summary class="text-xs text-text-muted font-bold uppercase tracking-wider cursor-pointer hover:text-text-primary transition-colors flex items-center outline-none">
+                <svg class="w-4 h-4 mr-1 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                Activity Log
+              </summary>
+              <div id="td-activity" class="space-y-3 mt-5 ml-5 relative before:absolute before:inset-y-0 before:left-[-11px] before:w-px before:bg-border/50 text-xs text-text-secondary"></div>
+            </details>
+
+          </main>
+
+          <!-- SIDEBAR (PROPERTIES) COLUMN -->
+          <aside class="w-full md:w-[320px] bg-bg-card border-t md:border-t-0 md:border-l border-border px-6 py-6 flex-none overflow-y-auto flex flex-col gap-6">
+            
+            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5" style="border: 1px solid rgba(255,255,255,0.1)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Mark as Done
+            </button>
+
+            <!-- Essential Properties -->
+            <div class="space-y-3 text-sm">
+               
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Status</span>
+                 <select id="td-status" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="backlog">Backlog</option>
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="complete">Complete</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Type</span>
+                 <select id="td-task-type" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="task">Task</option>
+                    <option value="story">Story</option>
+                    <option value="epic">Epic</option>
+                 </select>
+               </div>
+               
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Priority</span>
+                 <select id="td-priority" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="1">Urgent</option>
+                    <option value="2">High</option>
+                    <option value="3">Medium</option>
+                    <option value="4">Low</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Assignee</span>
+                 <select id="td-assigned-to" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="">Unassigned</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Board</span>
+                 <select id="td-board" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full"></select>
+               </div>
+
+            </div>
+
+             <hr class="border-border">
+
+            <!-- Timing Properties -->
+            <div class="space-y-4">
+               <div>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Dates & Metrics</span>
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-secondary">Due</span>
+                    <input id="td-due-date" type="date" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full cursor-pointer" />
+                 </div>
+                 
+                 <!-- Hidden structural compat -->
+                 <input id="td-start-date" type="date" class="hidden" />
+                 <input id="td-end-date" type="date" class="hidden" />
+                 
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-secondary">Progress</span>
+                    <div class="flex items-center gap-2 px-2 h-7 group-hover:bg-bg-hover rounded transition-colors border border-transparent group-hover:border-border">
+                        <input id="td-progress" type="range" min="0" max="100" class="flex-1 accent-accent h-1.5 bg-bg-input rounded-lg cursor-pointer appearance-none" />
+                        <span id="td-progress-value" class="text-xs font-mono text-text-primary w-8 text-right font-medium">0%</span>
+                    </div>
+                 </div>
+
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-secondary">Tracked (min)</span>
+                    <input id="td-time-tracked" type="number" min="0" step="1" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full font-mono placeholder-text-muted" placeholder="0" />
+                 </div>
+               </div>
+
+               <div>
+                  <span class="text-xs text-text-secondary mb-1.5 block">Recurrence Pattern</span>
+                  <select id="td-recurrence" class="form-select text-xs py-1.5 px-2 bg-bg-input hover:border-border transition-colors w-full cursor-pointer font-medium">
+                    <option value="">None (One-time)</option>
+                    <option value="FREQ=DAILY">Every day</option>
+                    <option value="FREQ=WEEKLY">Every week</option>
+                    <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday</option>
+                    <option value="FREQ=MONTHLY">Every month</option>
+                    <option value="FREQ=YEARLY">Every year</option>
+                  </select>
+                  <span id="td-recurrence-desc" class="text-[10px] text-text-muted mt-1 hidden block"></span>
+               </div>
+               
+               <div>
+                 <span class="text-xs text-text-secondary mb-1.5 block">Reminder Time</span>
+                 <input id="td-reminder" type="datetime-local" class="form-input text-xs py-1.5 bg-bg-input hover:border-border transition-colors w-full cursor-pointer" />
+               </div>
+            </div>
+
+            <hr class="border-border">
+
+            <!-- Context Properties -->
+            <div class="space-y-5">
+              
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Labels</span>
+                    <input id="td-color" type="color" class="w-6 h-6 rounded cursor-pointer border border-border/50 bg-transparent p-0 tooltip" title="Task Color" />
+                </div>
+                <div id="td-labels" class="flex flex-wrap gap-1.5 mb-2 min-h-[24px]"></div>
+                <input id="td-label-input" class="form-input text-xs py-1.5 bg-bg-input hover:border-border w-full transition-colors" placeholder="Add label (press enter)..." autocomplete="off" />
               </div>
 
-              <div class="text-[10px] text-text-muted mt-4">
-                <div id="td-created"></div>
-                <div id="td-updated"></div>
+              <div>
+                <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-2 block">Custom Fields</span>
+                <div id="td-custom-fields" class="space-y-2 mb-2"></div>
+                <div class="relative">
+                  <button id="td-add-cf" type="button" class="text-xs text-text-secondary px-3 py-1.5 rounded bg-bg-input hover:bg-bg-hover border border-border outline-dashed outline-1 outline-transparent hover:outline-border transition-all w-full text-left flex items-center gap-2">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      Add Field
+                  </button>
+                  <div id="td-add-cf-dropdown" class="absolute z-10 w-full mt-1 bg-bg-card border border-border rounded-md shadow-lg py-1" style="display:none;">
+                    <div class="px-2 py-1">
+                      <input id="td-add-cf-search" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
+                    </div>
+                    <div id="td-add-cf-options" class="max-h-32 overflow-y-auto mt-1"></div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+
+            <!-- Strategic Actions -->
+            <div class="mt-auto pt-6">
+                 <div id="td-strategic-badge" class="mb-3 hidden"></div>
+                 <button id="td-evaluate-btn" class="w-full text-left px-3 py-2.5 text-sm rounded-lg bg-bg-input hover:bg-bg-hover border border-border/50 hover:border-border transition-all flex justify-between items-center group shadow-sm text-text-primary">
+                   <div class="flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        <span class="font-medium">Strategic Lens</span>
+                   </div>
+                   <span id="td-active-framework-name" class="text-[9px] uppercase font-bold text-bg-primary px-1.5 py-0.5 rounded bg-accent hidden shadow-sm group-hover:scale-105 transition-transform"></span>
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-text-muted group-hover:text-text-primary transition-colors opacity-0 group-hover:opacity-100 hidden"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                 </button>
+            </div>
+
+          </aside>
+
         </div>
       </div>
 
-      <!-- Command Palette -->
+    <!-- Command Palette -->
       <div
         id="command-palette-overlay"
         class="fixed inset-0 bg-black/60 z-60 hidden"
