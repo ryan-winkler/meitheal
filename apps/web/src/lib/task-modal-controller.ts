@@ -1182,14 +1182,19 @@
           chip.className = "label-chip";
           chip.style.cssText =
             "cursor:pointer;display:inline-flex;align-items:center;gap:4px;";
-          chip.innerHTML = `${label}<span class="td-label-remove" style="font-size:14px;line-height:1;opacity:0.6;">&times;</span>`;
-          chip
-            .querySelector(".td-label-remove")!
-            .addEventListener("click", () => {
+          // Use textContent to prevent XSS from user-provided label values
+          const labelText = document.createTextNode(label);
+          chip.appendChild(labelText);
+          const removeBtn = document.createElement("span");
+          removeBtn.className = "td-label-remove";
+          removeBtn.style.cssText = "font-size:14px;line-height:1;opacity:0.6;";
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", () => {
               currentLabels = currentLabels.filter((l) => l !== label);
               chip.remove();
               saveTD("labels", JSON.stringify(currentLabels));
             });
+          chip.appendChild(removeBtn);
           labelsDiv.appendChild(chip);
         }
 

@@ -38,7 +38,8 @@ export const GET: APIRoute = async () => {
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ services: [], error: String(err) }), {
+    console.error("[api/ha/services] Error fetching HA services:", err);
+    return new Response(JSON.stringify({ services: [], error: "Failed to fetch HA services" }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });

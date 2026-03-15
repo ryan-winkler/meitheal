@@ -42,8 +42,7 @@ export const POST: APIRoute = async ({ request }) => {
     )
   } catch (err: unknown) {
     logApiError("POST", "/api/tasks/reorder", err)
-    const message = err instanceof Error ? err.message : String(err)
-    return new Response(JSON.stringify({ error: message }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "content-type": "application/json" },
     })

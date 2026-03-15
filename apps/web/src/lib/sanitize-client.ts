@@ -29,13 +29,18 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 /** Allowed URL schemes for href/src. */
 const ALLOWED_SCHEMES = new Set(["http:", "https:", "ftp:", "mailto:"])
 
+/** Dangerous URI schemes to block (case-insensitive). */
+const BLOCKED_SCHEMES = /^\s*(javascript|vbscript|data|blob):/i
+
 function isAllowedUrl(value: string): boolean {
+  // Block dangerous schemes first (case-insensitive to prevent bypass)
+  if (BLOCKED_SCHEMES.test(value)) return false
   try {
     const url = new URL(value, window.location.origin)
     return ALLOWED_SCHEMES.has(url.protocol)
   } catch {
-    // Relative URLs are fine
-    return !value.startsWith("javascript:") && !value.startsWith("data:")
+    // Relative URLs that didn't parse are fine (e.g. "#anchor", "/path")
+    return true
   }
 }
 

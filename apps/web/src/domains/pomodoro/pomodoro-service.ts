@@ -89,7 +89,7 @@ let timerInterval: ReturnType<typeof setInterval> | null = null
 let config: PomodoroConfig = { ...DEFAULT_POMODORO_CONFIG }
 
 function generateId(): string {
-  return `pom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `pom_${crypto.randomUUID()}`
 }
 
 // ── Timer Control ───────────────────────────────────────────────

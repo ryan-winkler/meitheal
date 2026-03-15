@@ -1975,10 +1975,12 @@
       card.className = "cal-toggle-card cal-toggle-card--active";
       card.dataset.entity = entityId;
       card.style.cursor = "pointer";
+      // Escape entityId to prevent XSS from user-provided input
+      const safeId = entityId.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
       card.innerHTML = `
         <div class="cal-toggle-card__info">
-          <span class="cal-toggle-card__name">${entityId}</span>
-          <span class="cal-toggle-card__entity">${entityId}</span>
+          <span class="cal-toggle-card__name">${safeId}</span>
+          <span class="cal-toggle-card__entity">${safeId}</span>
           <div class="cal-toggle-card__direction">
             <select class="cal-direction-select" data-entity-dir="${entityId}" aria-label="Sync direction for ${entityId}">
               <option value="bidirectional" selected>↔ Bidirectional</option>
@@ -2528,14 +2530,16 @@
         const card = document.createElement("div");
         card.className = "cal-toggle-card cal-toggle-card--active";
         card.dataset.entity = entityId;
+        // Escape entityId to prevent XSS from user-provided input
+        const safeEntityId = entityId.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         card.innerHTML = `
           <div class="cal-toggle-card__info">
-            <span class="cal-toggle-card__name">${entityId}</span>
-            <span class="cal-toggle-card__entity">${entityId}</span>
+            <span class="cal-toggle-card__name">${safeEntityId}</span>
+            <span class="cal-toggle-card__entity">${safeEntityId}</span>
             <span class="cal-toggle-card__state">manually added</span>
           </div>
           <label class="toggle-label">
-            <input type="checkbox" class="todo-entity-toggle" value="${entityId}" checked />
+            <input type="checkbox" class="todo-entity-toggle" value="${safeEntityId}" checked />
             <span class="toggle-slider"></span>
           </label>`;
         card
