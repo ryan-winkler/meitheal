@@ -1,0 +1,247 @@
+---
+/**
+ * CardCustomizer — Field visibility control for Kanban cards
+ *
+ * @domain tasks
+ * @bounded-context tasks/ui
+ *
+ * Emits `meitheal:card-fields-change` CustomEvent when visibility changes.
+ */
+interface Props {
+  class?: string
+}
+const { class: className } = Astro.props
+---
+
+<div class={`card-customizer ${className ?? ''}`}>
+  <button
+    type="button"
+    class="card-customizer__toggle btn btn-ghost"
+    id="card-customizer-toggle"
+    title="Customize Cards"
+    aria-label="Customize visible fields"
+    aria-expanded="false"
+    aria-controls="card-customizer-panel"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-template"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+    <span class="card-customizer__label hide-mobile">Fields</span>
+  </button>
+
+  <div class="card-customizer__panel hidden" id="card-customizer-panel" role="region" aria-label="Card Visibility">
+    <div class="card-customizer__header">
+      <h4>Visible Fields</h4>
+      <button type="button" class="btn-icon" id="card-customizer-close" aria-label="Close panel">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+
+    <ul class="card-customizer__list" id="card-customizer-list">
+      <!-- Populated by JS -->
+    </ul>
+
+    <div class="card-customizer__footer">
+      <button type="button" class="btn text-xs" id="card-customizer-reset">
+        Reset Defaults
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Reusing column-customizer styles but scoped */
+.card-customizer {
+  position: relative;
+  display: inline-block;
+}
+.card-customizer__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card-customizer__panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  width: 200px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.card-customizer__panel.hidden {
+  display: none;
+}
+.card-customizer__header {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.card-customizer__header h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.card-customizer__list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.card-customizer__item {
+  padding: 0.25rem 0;
+}
+.card-customizer__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text);
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+}
+.card-customizer__label:hover {
+  background: var(--surface-hover);
+}
+.card-customizer__label input:disabled ~ span {
+  opacity: 0.5;
+}
+.card-customizer__footer {
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+  background: var(--surface-raised);
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+</style>
+
+<script>
+  const FIELD_PREFS_KEY = "meitheal-kanban-fields-preferences"
+
+  // IDs correspond to CSS classes that will be toggled on the board: hide-field-{id}
+  const ALL_FIELDS = [
+    { id: "key", label: "Ticket Key", alwaysVisible: false, defaultVisible: true },
+    { id: "type", label: "Task Type", alwaysVisible: false, defaultVisible: true },
+    { id: "priority", label: "Priority", alwaysVisible: false, defaultVisible: true },
+    { id: "due-date", label: "Due Date", alwaysVisible: false, defaultVisible: true },
+    { id: "rice", label: "RICE Score", alwaysVisible: false, defaultVisible: true },
+    { id: "sync", label: "Sync Status", alwaysVisible: false, defaultVisible: true },
+    { id: "subtasks", label: "Subtasks", alwaysVisible: false, defaultVisible: true }
+  ]
+
+  function loadFieldPrefs(): Record<string, boolean> {
+    try {
+      return JSON.parse(localStorage.getItem(FIELD_PREFS_KEY) ?? "{}")
+    } catch {
+      return {}
+    }
+  }
+
+  function saveFieldPrefs(prefs: Record<string, boolean>) {
+    localStorage.setItem(FIELD_PREFS_KEY, JSON.stringify(prefs))
+  }
+
+  function applyFieldVisibility() {
+    const prefs = loadFieldPrefs()
+    const board = document.querySelector(".kanban-board")
+    if (!board) return
+
+    ALL_FIELDS.forEach(field => {
+      const isVisible = field.alwaysVisible || (prefs[field.id] !== undefined ? prefs[field.id] : field.defaultVisible)
+      board.classList.toggle(`hide-field-${field.id}`, !isVisible)
+    })
+  }
+
+  function renderFieldList() {
+    const list = document.getElementById("card-customizer-list")
+    if (!list) return
+    list.innerHTML = ""
+
+    const prefs = loadFieldPrefs()
+
+    ALL_FIELDS.forEach(field => {
+      const li = document.createElement("li")
+      li.className = "card-customizer__item"
+
+      const label = document.createElement("label")
+      label.className = "card-customizer__label"
+
+      const checkbox = document.createElement("input")
+      checkbox.type = "checkbox"
+      checkbox.dataset.fieldId = field.id
+      checkbox.checked = field.alwaysVisible || (prefs[field.id] !== undefined ? Boolean(prefs[field.id]) : field.defaultVisible)
+      checkbox.disabled = field.alwaysVisible
+
+      const span = document.createElement("span")
+      span.textContent = field.label
+      if (field.alwaysVisible) {
+        span.classList.add("text-text-muted")
+      }
+
+      checkbox.addEventListener("change", () => {
+        const currentPrefs = loadFieldPrefs()
+        currentPrefs[field.id] = checkbox.checked
+        saveFieldPrefs(currentPrefs)
+        applyFieldVisibility()
+      })
+
+      label.append(checkbox, span)
+      li.appendChild(label)
+      list.appendChild(li)
+    })
+  }
+
+  document.addEventListener("astro:page-load", () => {
+    const toggleBtn = document.getElementById("card-customizer-toggle")
+    const closeBtn = document.getElementById("card-customizer-close")
+    const resetBtn = document.getElementById("card-customizer-reset")
+    const panel = document.getElementById("card-customizer-panel")
+
+    if (!toggleBtn || !panel) return
+
+    renderFieldList()
+    applyFieldVisibility() // Apply initial state on load
+
+    toggleBtn.addEventListener("click", () => {
+      const isHidden = panel.classList.toggle("hidden")
+      toggleBtn.setAttribute("aria-expanded", String(!isHidden))
+    })
+
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        panel.classList.add("hidden")
+        toggleBtn.setAttribute("aria-expanded", "false")
+      })
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        localStorage.removeItem(FIELD_PREFS_KEY)
+        renderFieldList()
+        applyFieldVisibility()
+      })
+    }
+
+    // Close on clicking outside
+    document.addEventListener("click", (e) => {
+      if (
+        !panel.classList.contains("hidden") &&
+        !panel.contains(e.target as Node) &&
+        !toggleBtn.contains(e.target as Node)
+      ) {
+        panel.classList.add("hidden")
+        toggleBtn.setAttribute("aria-expanded", "false")
+      }
+    })
+  })
+</script>

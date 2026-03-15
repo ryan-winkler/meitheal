@@ -1,0 +1,364 @@
+- generic [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - navigation "Main Navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "Meitheal Home" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img [ref=e6]
+        - text: Meitheal
+      - generic [ref=e14]: /ˈmʲɛhəlˠ/
+    - generic [ref=e15]:
+      - list [ref=e16]:
+        - listitem [ref=e17]:
+          - link "Dashboard" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img [ref=e20]:
+              - img [ref=e21]
+            - text: Dashboard
+        - listitem [ref=e26]:
+          - link "Kanban Board" [ref=e27] [cursor=pointer]:
+            - /url: /kanban
+            - img [ref=e29]
+            - text: Kanban Board
+        - listitem [ref=e34]:
+          - link "Table" [ref=e35] [cursor=pointer]:
+            - /url: /table
+            - img [ref=e37]
+            - text: Table
+        - listitem [ref=e42]:
+          - link "Today" [ref=e43] [cursor=pointer]:
+            - /url: /today
+            - img [ref=e45]
+            - text: Today
+        - listitem [ref=e48]:
+          - link "Tasks List" [ref=e49] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e51]
+            - text: Tasks List
+            - generic [ref=e58]: "9"
+        - listitem [ref=e59]:
+          - link "Upcoming" [ref=e60] [cursor=pointer]:
+            - /url: /upcoming
+            - img [ref=e62]
+            - text: Upcoming
+        - listitem [ref=e68]:
+          - link "Calendar" [ref=e69] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e71]
+            - text: Calendar
+        - listitem [ref=e82]:
+          - link "Gamification" [ref=e83] [cursor=pointer]:
+            - /url: /gamification
+            - img [ref=e85]
+            - text: Gamification
+        - listitem [ref=e92]:
+          - link "Habits" [ref=e93] [cursor=pointer]:
+            - /url: /habits
+            - img [ref=e95]
+            - text: Habits
+        - listitem [ref=e99]:
+          - link "Good (opens in new tab)" [ref=e100] [cursor=pointer]:
+            - /url: https://google.com
+            - img [ref=e102]
+            - text: Good
+            - generic [ref=e105]: ↗
+      - region "Board selector" [ref=e106]:
+        - generic [ref=e107]: Board
+        - generic [ref=e108]:
+          - combobox "Select active board" [ref=e109] [cursor=pointer]:
+            - option "🗂 All Boards" [selected]
+            - option "📋 Default"
+            - option "📋 lol"
+            - option "📋 test2"
+          - generic:
+            - img
+        - button "Create new board" [ref=e110] [cursor=pointer]: New Board
+    - generic [ref=e112]:
+      - status [ref=e113]:
+        - generic [ref=e115]: Connected
+      - link "Settings" [ref=e116] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e118]
+        - text: Settings
+  - button "Toggle sidebar (Ctrl+B)" [ref=e121] [cursor=pointer]:
+    - img [ref=e122]
+  - generic [ref=e124]:
+    - banner [ref=e125]:
+      - heading "Settings" [level=1] [ref=e127]
+      - generic [ref=e129]:
+        - generic:
+          - img
+        - searchbox "Search tasks..." [ref=e130]
+        - generic:
+          - generic: Cmd K
+      - button "Ask Home Assistant" [ref=e132] [cursor=pointer]:
+        - img [ref=e133]
+    - main [ref=e135]:
+      - tablist "Settings sections" [ref=e136]:
+        - tab "General" [ref=e137] [cursor=pointer]
+        - tab "Labels" [ref=e138] [cursor=pointer]
+        - tab "Integrations" [ref=e139] [cursor=pointer]
+        - tab "Agents & AI" [active] [selected] [ref=e140] [cursor=pointer]
+        - tab "System & Danger" [ref=e141] [cursor=pointer]
+      - generic [ref=e410]:
+        - button "✅ Todo Sync Bridge HA todo lists with Meitheal" [expanded] [ref=e411] [cursor=pointer]:
+          - generic [ref=e412]:
+            - generic [ref=e413]: ✅
+            - generic [ref=e414]:
+              - strong [ref=e415]: Todo Sync
+              - generic [ref=e416]: Bridge HA todo lists with Meitheal
+        - button "What is Todo Sync?" [ref=e417] [cursor=pointer]: ℹ️
+        - generic [ref=e418]: No lists
+        - text: ▸
+      - generic [ref=e419]:
+        - generic [ref=e420]:
+          - strong [ref=e421]: 🔗 HA Bridge
+          - generic [ref=e422]:
+            - text: Bridges Home Assistant's built-in todo lists with Meitheal. Enable this so your HA dashboards and automations that use
+            - code [ref=e423]: todo.*
+            - text: entities stay in sync with tasks managed here.
+        - generic [ref=e654]:
+          - generic [ref=e655]:
+            - generic [ref=e656]:
+              - generic [ref=e657]: Your Todo Lists
+              - text: 0 of 0 enabled
+            - generic [ref=e658]:
+              - button "Enable All" [ref=e659] [cursor=pointer]
+              - button "Disable All" [ref=e660] [cursor=pointer]
+          - paragraph [ref=e661]: Toggle each todo list on or off. Only enabled lists sync tasks with Meitheal.
+          - generic [ref=e662]:
+            - generic [ref=e663]: 📭
+            - generic [ref=e664]: No todo lists detected. Make sure Home Assistant has todo entities (e.g. Shopping List).
+        - group [ref=e424]:
+          - generic "⌨ Manual Entity ID For todo lists not auto-detected" [ref=e425] [cursor=pointer]:
+            - generic [ref=e426]: ⌨ Manual Entity ID
+            - generic [ref=e427]: For todo lists not auto-detected
+        - generic [ref=e428]:
+          - generic [ref=e429]:
+            - generic [ref=e430]:
+              - generic [ref=e431]: Enable Todo Sync
+              - button "Help" [ref=e433] [cursor=pointer]: "?"
+            - generic [ref=e434]:
+              - checkbox "Enable or disable todo list sync" [checked] [ref=e436]
+              - generic [ref=e437]: On — syncing with HA
+          - generic [ref=e438]:
+            - generic [ref=e439]:
+              - generic [ref=e440]: Sync Direction
+              - button "Help" [ref=e442] [cursor=pointer]: "?"
+            - combobox "Sync Direction" [ref=e443] [cursor=pointer]:
+              - option "Import HA → Meitheal"
+              - option "Export Meitheal → HA"
+              - option "Bidirectional sync" [selected]
+          - generic [ref=e444]:
+            - button "Save Todo Settings" [ref=e445] [cursor=pointer]
+            - button "Sync Now" [ref=e446] [cursor=pointer]
+      - generic [ref=e447]:
+        - button "🛒 Grocy Chores, tasks & shopping list sync" [ref=e448] [cursor=pointer]:
+          - generic [ref=e449]:
+            - generic [ref=e450]: 🛒
+            - generic [ref=e451]:
+              - strong [ref=e452]: Grocy
+              - generic [ref=e453]: Chores, tasks & shopping list sync
+        - button "What is Grocy integration?" [ref=e454] [cursor=pointer]: ℹ️
+        - generic [ref=e455]: Not configured
+        - text: ▸
+      - generic [ref=e456]:
+        - generic [ref=e457]:
+          - generic [ref=e458]:
+            - generic [ref=e459]: Grocy URL
+            - button [ref=e461] [cursor=pointer]: "?"
+          - textbox [ref=e462]:
+            - /placeholder: http://homeassistant.local:9192
+        - generic [ref=e463]:
+          - generic [ref=e464]:
+            - generic [ref=e465]: API Key
+            - button [ref=e467] [cursor=pointer]: "?"
+          - generic [ref=e468]:
+            - textbox [ref=e469]:
+              - /placeholder: ••••••••
+            - button [ref=e470] [cursor=pointer]: ⚡ Auto
+        - generic [ref=e471]:
+          - generic [ref=e472]:
+            - generic [ref=e473]: Sync Mode
+            - button [ref=e475] [cursor=pointer]: "?"
+          - combobox [ref=e476] [cursor=pointer]
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]: Sync Interval
+            - button [ref=e481] [cursor=pointer]: "?"
+          - combobox [ref=e482] [cursor=pointer]
+        - generic [ref=e483]:
+          - button [ref=e484] [cursor=pointer]: Test Connection
+          - button [ref=e485] [cursor=pointer]: Save Grocy Settings
+      - generic [ref=e486]:
+        - button "⚙ n8n / Node-RED Automation workflow triggers" [ref=e487] [cursor=pointer]:
+          - generic [ref=e488]:
+            - generic [ref=e489]: ⚙
+            - generic [ref=e490]:
+              - strong [ref=e491]: n8n / Node-RED
+              - generic [ref=e492]: Automation workflow triggers
+        - button "What is n8n / Node-RED integration?" [ref=e493] [cursor=pointer]: ℹ️
+        - generic [ref=e494]: Not configured
+        - text: ▸
+      - generic [ref=e495]:
+        - generic [ref=e496]: Integration Mode
+        - generic [ref=e497]:
+          - button [ref=e498] [cursor=pointer]: 🏠 HA Addon (auto)
+          - button [ref=e499] [cursor=pointer]: 🌐 Standalone
+      - generic [ref=e500]:
+        - generic [ref=e501]:
+          - strong [ref=e502]: 🔗 Automatic via WebSocket
+          - generic [ref=e503]: Node-RED and n8n addons communicate with Meitheal automatically through the HA WebSocket. Select which events to broadcast below.
+        - generic [ref=e504]:
+          - generic [ref=e505]: Trigger Events
+          - generic [ref=e506]:
+            - generic [ref=e507] [cursor=pointer]:
+              - checkbox [checked] [ref=e508]
+              - text: Created
+            - generic [ref=e509] [cursor=pointer]:
+              - checkbox [checked] [ref=e510]
+              - text: Updated
+            - generic [ref=e511] [cursor=pointer]:
+              - checkbox [checked] [ref=e512]
+              - text: Completed
+            - generic [ref=e513] [cursor=pointer]:
+              - checkbox [ref=e514]
+              - text: Deleted
+            - generic [ref=e515] [cursor=pointer]:
+              - checkbox [checked] [ref=e516]
+              - text: Overdue
+        - generic [ref=e517]:
+          - button [ref=e518] [cursor=pointer]: Save n8n Settings
+          - button [ref=e519] [cursor=pointer]: 🔌 Test Event Bus
+        - generic [ref=e520]:
+          - strong [ref=e521]: 📦 Node-RED Example Flows
+          - generic [ref=e522]: Import pre-built flows for task notifications, overdue alerts, and more.
+          - button [ref=e523] [cursor=pointer]: 📋 Copy Flow JSON
+      - generic [ref=e524]:
+        - button "🔔 Webhooks Generic outgoing event webhooks" [ref=e525] [cursor=pointer]:
+          - generic [ref=e526]:
+            - generic [ref=e527]: 🔔
+            - generic [ref=e528]:
+              - strong [ref=e529]: Webhooks
+              - generic [ref=e530]: Generic outgoing event webhooks
+        - button "What are Webhooks?" [ref=e531] [cursor=pointer]: ℹ️
+        - generic [ref=e532]: Not configured
+        - text: ▸
+      - generic [ref=e533]:
+        - strong [ref=e534]: 📌 Webhooks vs Agents & AI
+        - generic [ref=e535]:
+          - text: Webhooks send task events to external services and automations (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A, MCP, and WebMCP, see the
+          - link [ref=e536] [cursor=pointer]:
+            - /url: "#"
+            - text: Agents & AI
+          - text: tab.
+      - generic [ref=e537]:
+        - generic [ref=e538]:
+          - generic [ref=e539]:
+            - generic [ref=e540]: Endpoint URL
+            - button [ref=e542] [cursor=pointer]: "?"
+          - textbox [ref=e543]:
+            - /placeholder: https://your-service.com/webhook
+        - generic [ref=e544]:
+          - generic [ref=e545]:
+            - generic [ref=e546]: Signing Secret (optional)
+            - button [ref=e548] [cursor=pointer]: "?"
+          - textbox [ref=e549]:
+            - /placeholder: ••••••••
+        - generic [ref=e550]:
+          - generic [ref=e551]: Payload Format
+          - combobox [ref=e552] [cursor=pointer]
+        - generic [ref=e553]:
+          - button [ref=e554] [cursor=pointer]: Save Webhook
+          - button [ref=e555] [cursor=pointer]: Send Test
+      - tabpanel "Agents & AI" [ref=e667]:
+        - generic [ref=e669]:
+          - generic [ref=e671]:
+            - generic [ref=e672]: Agents & AI
+            - generic [ref=e673]: Configure Home Assistant conversation agents, external AI providers, and agent-to-agent protocols.
+          - generic [ref=e674]:
+            - generic [ref=e675]:
+              - generic [ref=e676]:
+                - strong [ref=e677]: 🏠 HA Conversation Agent
+                - generic [ref=e678]: Select which Home Assistant conversation agent powers the "Ask Assistant" chat (✦ button). This connects to HA's built-in Assist pipeline or any configured LLM agent (Google AI, OpenAI, Ollama).
+              - generic [ref=e679]: Default
+            - generic [ref=e680]:
+              - generic [ref=e681]:
+                - generic [ref=e682]: Conversation Agent
+                - combobox "Conversation Agent" [ref=e683] [cursor=pointer]:
+                  - option "Default (built-in Assist)" [selected]
+                - generic [ref=e684]: Agents are registered in HA → Settings → Voice Assistants. Add Google Generative AI, OpenAI, or Ollama integrations to see more options here.
+              - generic [ref=e685]:
+                - button "Save Agent Setting" [ref=e686] [cursor=pointer]
+                - button "Test" [ref=e687] [cursor=pointer]
+          - separator [ref=e688]
+          - generic [ref=e689]:
+            - generic [ref=e690]:
+              - generic [ref=e691]:
+                - strong [ref=e692]: 🤖 External AI Provider
+                - generic [ref=e693]: Configure which external AI service the "Ask AI" button sends tasks to (separate from HA Assist). Generates a pre-filled prompt with task context for analysis.
+              - generic [ref=e694]: ChatGPT
+            - generic [ref=e695]:
+              - generic [ref=e696]:
+                - generic [ref=e697]: Provider
+                - combobox "Provider" [ref=e698] [cursor=pointer]:
+                  - option "ChatGPT" [selected]
+                  - option "Claude"
+                  - option "Google Gemini"
+                  - option "Ollama (local)"
+                  - option "Home Assistant (LLM)"
+                  - option "Custom URL"
+              - button "Save AI Settings" [ref=e699] [cursor=pointer]
+          - separator [ref=e700]
+          - generic [ref=e701]:
+            - generic [ref=e702]:
+              - generic [ref=e703]:
+                - strong [ref=e704]: 🔗 Agent Protocols
+                - generic [ref=e705]: Expose Meitheal tools to AI agents via A2A, WebMCP, and MCP protocols. Enable agent-to-agent collaboration, browser agent tools, and tool discovery.
+              - generic [ref=e706]: Active
+            - generic [ref=e707]:
+              - generic [ref=e709]:
+                - checkbox [checked] [ref=e711]
+                - generic [ref=e712]:
+                  - strong [ref=e713]: A2A (Agent-to-Agent)
+                  - generic [ref=e714]:
+                    - text: Serve an Agent Card at
+                    - code [ref=e715]: /.well-known/agent-card.json
+                    - text: so other AI agents can discover and delegate tasks to Meitheal.
+                    - link "View Agent Card →" [ref=e716] [cursor=pointer]:
+                      - /url: /api/a2a/agent-card
+              - generic [ref=e718]:
+                - checkbox [checked] [ref=e720]
+                - generic [ref=e721]:
+                  - strong [ref=e722]: WebMCP (Browser Agent)
+                  - text: Experimental
+                  - generic [ref=e723]: Register Meitheal tools with your browser's AI assistant (Chrome EPP). Allows browser agents to create tasks, search, and navigate boards.
+              - generic [ref=e725]:
+                - checkbox [checked] [ref=e727]
+                - generic [ref=e728]:
+                  - strong [ref=e729]: MCP Discovery
+                  - generic [ref=e730]:
+                    - text: Serve tool definitions at
+                    - code [ref=e731]: /.well-known/mcp.json
+                    - text: for MCP-compatible clients.
+                    - link "View MCP manifest →" [ref=e732] [cursor=pointer]:
+                      - /url: /.well-known/mcp.json
+              - button "Save Agent Protocol Settings" [ref=e733] [cursor=pointer]
+      - status
+  - status [ref=e556]
+  - generic [ref=e559]:
+    - button "Menu" [ref=e560]:
+      - img [ref=e562]
+      - generic: Menu
+    - button "Inspect" [ref=e566]:
+      - img [ref=e568]
+      - generic: Inspect
+    - button "Audit" [ref=e570]:
+      - generic [ref=e571]:
+        - img [ref=e572]
+        - img [ref=e734]
+      - generic: Audit
+    - button "Settings" [ref=e578]:
+      - img [ref=e580]
+      - generic: Settings

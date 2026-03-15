@@ -82,6 +82,9 @@ const defaultGroupByOptions = view === "table"
       { value: "type", label: t("kanban.group_type", locale) },
       { value: "board", label: t("kanban.group_board", locale) },
       { value: "priority", label: t("kanban.group_priority", locale) },
+      { value: "assigned", label: t("kanban.group_assignee", locale) || "Group by Assignee" },
+      { value: "status", label: t("kanban.group_status", locale) || "Group by Status" },
+      { value: "rice", label: t("kanban.group_rice", locale) || "Group by RICE" },
     ]
 
 const groupOptions = groupByOptions ?? defaultGroupByOptions

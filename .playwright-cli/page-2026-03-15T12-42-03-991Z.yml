@@ -1,0 +1,485 @@
+- generic [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - navigation "Main Navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "Meitheal Home" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img [ref=e6]
+        - text: Meitheal
+      - generic [ref=e14]: /ˈmʲɛhəlˠ/
+    - generic [ref=e15]:
+      - list [ref=e16]:
+        - listitem [ref=e17]:
+          - link "Dashboard" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img [ref=e20]:
+              - img [ref=e21]
+            - text: Dashboard
+        - listitem [ref=e26]:
+          - link "Kanban Board" [ref=e27] [cursor=pointer]:
+            - /url: /kanban
+            - img [ref=e29]
+            - text: Kanban Board
+        - listitem [ref=e34]:
+          - link "Table" [ref=e35] [cursor=pointer]:
+            - /url: /table
+            - img [ref=e37]
+            - text: Table
+        - listitem [ref=e42]:
+          - link "Today" [ref=e43] [cursor=pointer]:
+            - /url: /today
+            - img [ref=e45]
+            - text: Today
+        - listitem [ref=e48]:
+          - link "Tasks List" [ref=e49] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e51]
+            - text: Tasks List
+            - generic [ref=e58]: "9"
+        - listitem [ref=e59]:
+          - link "Upcoming" [ref=e60] [cursor=pointer]:
+            - /url: /upcoming
+            - img [ref=e62]
+            - text: Upcoming
+        - listitem [ref=e68]:
+          - link "Calendar" [ref=e69] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e71]
+            - text: Calendar
+        - listitem [ref=e82]:
+          - link "Gamification" [ref=e83] [cursor=pointer]:
+            - /url: /gamification
+            - img [ref=e85]
+            - text: Gamification
+        - listitem [ref=e92]:
+          - link "Habits" [ref=e93] [cursor=pointer]:
+            - /url: /habits
+            - img [ref=e95]
+            - text: Habits
+        - listitem [ref=e99]:
+          - link "Good (opens in new tab)" [ref=e100] [cursor=pointer]:
+            - /url: https://google.com
+            - img [ref=e102]
+            - text: Good
+            - generic [ref=e105]: ↗
+      - region "Board selector" [ref=e106]:
+        - generic [ref=e107]: Board
+        - generic [ref=e108]:
+          - combobox "Select active board" [ref=e109] [cursor=pointer]:
+            - option "🗂 All Boards" [selected]
+            - option "📋 Default"
+            - option "📋 lol"
+            - option "📋 test2"
+          - generic:
+            - img
+        - button "Create new board" [ref=e110] [cursor=pointer]: New Board
+    - generic [ref=e112]:
+      - status [ref=e113]:
+        - generic [ref=e115]: Connected
+      - link "Settings" [ref=e116] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e118]
+        - text: Settings
+  - button "Toggle sidebar (Ctrl+B)" [ref=e121] [cursor=pointer]:
+    - img [ref=e122]
+  - generic [ref=e124]:
+    - banner [ref=e125]:
+      - heading "Settings" [level=1] [ref=e127]
+      - generic [ref=e129]:
+        - generic:
+          - img
+        - searchbox "Search tasks..." [ref=e130]
+        - generic:
+          - generic: Cmd K
+      - button "Ask Home Assistant" [ref=e132] [cursor=pointer]:
+        - img [ref=e133]
+    - main [ref=e135]:
+      - tablist "Settings sections" [ref=e136]:
+        - tab "General" [ref=e137] [cursor=pointer]
+        - tab "Labels" [ref=e138] [cursor=pointer]
+        - tab "Integrations" [ref=e139] [cursor=pointer]
+        - tab "Agents & AI" [ref=e140] [cursor=pointer]
+        - tab "System & Danger" [active] [selected] [ref=e141] [cursor=pointer]
+      - generic [ref=e410]:
+        - button "✅ Todo Sync Bridge HA todo lists with Meitheal" [expanded] [ref=e411] [cursor=pointer]:
+          - generic [ref=e412]:
+            - generic [ref=e413]: ✅
+            - generic [ref=e414]:
+              - strong [ref=e415]: Todo Sync
+              - generic [ref=e416]: Bridge HA todo lists with Meitheal
+        - button "What is Todo Sync?" [ref=e417] [cursor=pointer]: ℹ️
+        - generic [ref=e418]: No lists
+        - text: ▸
+      - generic [ref=e419]:
+        - generic [ref=e420]:
+          - strong [ref=e421]: 🔗 HA Bridge
+          - generic [ref=e422]:
+            - text: Bridges Home Assistant's built-in todo lists with Meitheal. Enable this so your HA dashboards and automations that use
+            - code [ref=e423]: todo.*
+            - text: entities stay in sync with tasks managed here.
+        - generic [ref=e654]:
+          - generic [ref=e655]:
+            - generic [ref=e656]:
+              - generic [ref=e657]: Your Todo Lists
+              - text: 0 of 0 enabled
+            - generic [ref=e658]:
+              - button "Enable All" [ref=e659] [cursor=pointer]
+              - button "Disable All" [ref=e660] [cursor=pointer]
+          - paragraph [ref=e661]: Toggle each todo list on or off. Only enabled lists sync tasks with Meitheal.
+          - generic [ref=e662]:
+            - generic [ref=e663]: 📭
+            - generic [ref=e664]: No todo lists detected. Make sure Home Assistant has todo entities (e.g. Shopping List).
+        - group [ref=e424]:
+          - generic "⌨ Manual Entity ID For todo lists not auto-detected" [ref=e425] [cursor=pointer]:
+            - generic [ref=e426]: ⌨ Manual Entity ID
+            - generic [ref=e427]: For todo lists not auto-detected
+        - generic [ref=e428]:
+          - generic [ref=e429]:
+            - generic [ref=e430]:
+              - generic [ref=e431]: Enable Todo Sync
+              - button "Help" [ref=e433] [cursor=pointer]: "?"
+            - generic [ref=e434]:
+              - checkbox "Enable or disable todo list sync" [checked] [ref=e436]
+              - generic [ref=e437]: On — syncing with HA
+          - generic [ref=e438]:
+            - generic [ref=e439]:
+              - generic [ref=e440]: Sync Direction
+              - button "Help" [ref=e442] [cursor=pointer]: "?"
+            - combobox "Sync Direction" [ref=e443] [cursor=pointer]:
+              - option "Import HA → Meitheal"
+              - option "Export Meitheal → HA"
+              - option "Bidirectional sync" [selected]
+          - generic [ref=e444]:
+            - button "Save Todo Settings" [ref=e445] [cursor=pointer]
+            - button "Sync Now" [ref=e446] [cursor=pointer]
+      - generic [ref=e447]:
+        - button "🛒 Grocy Chores, tasks & shopping list sync" [ref=e448] [cursor=pointer]:
+          - generic [ref=e449]:
+            - generic [ref=e450]: 🛒
+            - generic [ref=e451]:
+              - strong [ref=e452]: Grocy
+              - generic [ref=e453]: Chores, tasks & shopping list sync
+        - button "What is Grocy integration?" [ref=e454] [cursor=pointer]: ℹ️
+        - generic [ref=e455]: Not configured
+        - text: ▸
+      - generic [ref=e456]:
+        - generic [ref=e457]:
+          - generic [ref=e458]:
+            - generic [ref=e459]: Grocy URL
+            - button [ref=e461] [cursor=pointer]: "?"
+          - textbox [ref=e462]:
+            - /placeholder: http://homeassistant.local:9192
+        - generic [ref=e463]:
+          - generic [ref=e464]:
+            - generic [ref=e465]: API Key
+            - button [ref=e467] [cursor=pointer]: "?"
+          - generic [ref=e468]:
+            - textbox [ref=e469]:
+              - /placeholder: ••••••••
+            - button [ref=e470] [cursor=pointer]: ⚡ Auto
+        - generic [ref=e471]:
+          - generic [ref=e472]:
+            - generic [ref=e473]: Sync Mode
+            - button [ref=e475] [cursor=pointer]: "?"
+          - combobox [ref=e476] [cursor=pointer]
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]: Sync Interval
+            - button [ref=e481] [cursor=pointer]: "?"
+          - combobox [ref=e482] [cursor=pointer]
+        - generic [ref=e483]:
+          - button [ref=e484] [cursor=pointer]: Test Connection
+          - button [ref=e485] [cursor=pointer]: Save Grocy Settings
+      - generic [ref=e486]:
+        - button "⚙ n8n / Node-RED Automation workflow triggers" [ref=e487] [cursor=pointer]:
+          - generic [ref=e488]:
+            - generic [ref=e489]: ⚙
+            - generic [ref=e490]:
+              - strong [ref=e491]: n8n / Node-RED
+              - generic [ref=e492]: Automation workflow triggers
+        - button "What is n8n / Node-RED integration?" [ref=e493] [cursor=pointer]: ℹ️
+        - generic [ref=e494]: Not configured
+        - text: ▸
+      - generic [ref=e495]:
+        - generic [ref=e496]: Integration Mode
+        - generic [ref=e497]:
+          - button [ref=e498] [cursor=pointer]: 🏠 HA Addon (auto)
+          - button [ref=e499] [cursor=pointer]: 🌐 Standalone
+      - generic [ref=e500]:
+        - generic [ref=e501]:
+          - strong [ref=e502]: 🔗 Automatic via WebSocket
+          - generic [ref=e503]: Node-RED and n8n addons communicate with Meitheal automatically through the HA WebSocket. Select which events to broadcast below.
+        - generic [ref=e504]:
+          - generic [ref=e505]: Trigger Events
+          - generic [ref=e506]:
+            - generic [ref=e507] [cursor=pointer]:
+              - checkbox [checked] [ref=e508]
+              - text: Created
+            - generic [ref=e509] [cursor=pointer]:
+              - checkbox [checked] [ref=e510]
+              - text: Updated
+            - generic [ref=e511] [cursor=pointer]:
+              - checkbox [checked] [ref=e512]
+              - text: Completed
+            - generic [ref=e513] [cursor=pointer]:
+              - checkbox [ref=e514]
+              - text: Deleted
+            - generic [ref=e515] [cursor=pointer]:
+              - checkbox [checked] [ref=e516]
+              - text: Overdue
+        - generic [ref=e517]:
+          - button [ref=e518] [cursor=pointer]: Save n8n Settings
+          - button [ref=e519] [cursor=pointer]: 🔌 Test Event Bus
+        - generic [ref=e520]:
+          - strong [ref=e521]: 📦 Node-RED Example Flows
+          - generic [ref=e522]: Import pre-built flows for task notifications, overdue alerts, and more.
+          - button [ref=e523] [cursor=pointer]: 📋 Copy Flow JSON
+      - generic [ref=e524]:
+        - button "🔔 Webhooks Generic outgoing event webhooks" [ref=e525] [cursor=pointer]:
+          - generic [ref=e526]:
+            - generic [ref=e527]: 🔔
+            - generic [ref=e528]:
+              - strong [ref=e529]: Webhooks
+              - generic [ref=e530]: Generic outgoing event webhooks
+        - button "What are Webhooks?" [ref=e531] [cursor=pointer]: ℹ️
+        - generic [ref=e532]: Not configured
+        - text: ▸
+      - generic [ref=e533]:
+        - strong [ref=e534]: 📌 Webhooks vs Agents & AI
+        - generic [ref=e535]:
+          - text: Webhooks send task events to external services and automations (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A, MCP, and WebMCP, see the
+          - link [ref=e536] [cursor=pointer]:
+            - /url: "#"
+            - text: Agents & AI
+          - text: tab.
+      - generic [ref=e537]:
+        - generic [ref=e538]:
+          - generic [ref=e539]:
+            - generic [ref=e540]: Endpoint URL
+            - button [ref=e542] [cursor=pointer]: "?"
+          - textbox [ref=e543]:
+            - /placeholder: https://your-service.com/webhook
+        - generic [ref=e544]:
+          - generic [ref=e545]:
+            - generic [ref=e546]: Signing Secret (optional)
+            - button [ref=e548] [cursor=pointer]: "?"
+          - textbox [ref=e549]:
+            - /placeholder: ••••••••
+        - generic [ref=e550]:
+          - generic [ref=e551]: Payload Format
+          - combobox [ref=e552] [cursor=pointer]
+        - generic [ref=e553]:
+          - button [ref=e554] [cursor=pointer]: Save Webhook
+          - button [ref=e555] [cursor=pointer]: Send Test
+      - tabpanel "System & Danger" [ref=e736]:
+        - generic [ref=e737]:
+          - generic [ref=e738]:
+            - generic [ref=e740]:
+              - generic [ref=e741]: ⌨ Keyboard Shortcuts
+              - generic [ref=e742]: Navigate quickly through the app
+            - generic [ref=e743]:
+              - generic [ref=e744]:
+                - generic [ref=e745]: "n"
+                - generic [ref=e746]: New task
+              - generic [ref=e747]:
+                - generic [ref=e748]: /
+                - generic [ref=e749]: Search
+              - generic [ref=e750]:
+                - generic [ref=e751]: Ctrl
+                - text: +
+                - generic [ref=e752]: B
+                - generic [ref=e753]: Toggle sidebar
+              - generic [ref=e754]:
+                - generic [ref=e755]: Ctrl
+                - text: +
+                - generic [ref=e756]: K
+                - generic [ref=e757]: Command palette
+              - generic [ref=e758]:
+                - generic [ref=e759]: l
+                - generic [ref=e760]: List view
+              - generic [ref=e761]:
+                - generic [ref=e762]: k
+                - generic [ref=e763]: Kanban view
+              - generic [ref=e764]:
+                - generic [ref=e765]: t
+                - generic [ref=e766]: Table view
+              - generic [ref=e767]:
+                - generic [ref=e768]: "y"
+                - generic [ref=e769]: Today view
+              - generic [ref=e770]:
+                - generic [ref=e771]: u
+                - generic [ref=e772]: Upcoming view
+              - generic [ref=e773]:
+                - generic [ref=e774]: c
+                - generic [ref=e775]: Calendar view
+              - generic [ref=e776]:
+                - generic [ref=e777]: Esc
+                - generic [ref=e778]: Close modal
+              - generic [ref=e779]:
+                - generic [ref=e780]: "?"
+                - generic [ref=e781]: Show shortcuts
+          - generic [ref=e782]:
+            - generic [ref=e784]:
+              - generic [ref=e785]: 🌐 Language
+              - generic [ref=e786]: Interface language — content stays in its original language
+            - generic [ref=e787]:
+              - generic [ref=e788]: Display Language
+              - combobox "Display Language" [ref=e789] [cursor=pointer]:
+                - option "English" [selected]
+                - option "Gaeilge"
+            - generic [ref=e790]:
+              - generic [ref=e791]: 🎨 Theme
+              - combobox "🎨 Theme" [ref=e792] [cursor=pointer]:
+                - option "Dark"
+                - option "Light" [selected]
+                - option "Auto (System)"
+                - option "Custom"
+            - generic [ref=e793]:
+              - generic [ref=e794]: 🎨 Accent Color
+              - generic [ref=e795]:
+                - button "Indigo (Default)" [ref=e796] [cursor=pointer]
+                - button "Teal" [ref=e797] [cursor=pointer]
+                - button "Blue" [ref=e798] [cursor=pointer]
+                - button "Violet" [ref=e799] [cursor=pointer]
+                - button "Pink" [ref=e800] [cursor=pointer]
+                - button "Amber" [ref=e801] [cursor=pointer]
+                - button "Red" [ref=e802] [cursor=pointer]
+                - textbox "Custom color" [ref=e803] [cursor=pointer]: "#6366f1"
+                - button "Reset" [ref=e804] [cursor=pointer]
+              - generic [ref=e805]: Changes apply immediately across all pages.
+            - generic [ref=e806]:
+              - generic [ref=e807]: Timezone
+              - combobox "Timezone" [ref=e808] [cursor=pointer]:
+                - option "Europe/Dublin" [selected]
+                - option "Europe/London"
+                - option "Europe/Berlin"
+                - option "Europe/Paris"
+                - option "America/New_York"
+                - option "America/Chicago"
+                - option "America/Denver"
+                - option "America/Los_Angeles"
+                - option "Asia/Tokyo"
+                - option "Asia/Shanghai"
+                - option "Australia/Sydney"
+                - option "UTC"
+            - generic [ref=e809]:
+              - generic [ref=e810]: Week Starts On
+              - combobox "Week Starts On" [ref=e811] [cursor=pointer]:
+                - option "Monday" [selected]
+                - option "Sunday"
+                - option "Saturday"
+            - generic [ref=e812]:
+              - generic [ref=e813]: Date Display Format
+              - combobox "Date Display Format" [ref=e814] [cursor=pointer]:
+                - option "Relative (e.g. \"2 days ago\")" [selected]
+                - option "Absolute ISO (2026-03-01)"
+                - option "Absolute EU (01/03/2026)"
+                - option "Absolute US (03/01/2026)"
+          - generic [ref=e815]:
+            - generic [ref=e817]:
+              - generic [ref=e818]: 💾 Data Portability
+              - generic [ref=e819]: Meitheal is local-first. You own your data.
+            - generic [ref=e820]:
+              - generic [ref=e821]: Export Tasks
+              - generic [ref=e822]:
+                - link "📥 Download JSON" [ref=e823] [cursor=pointer]:
+                  - /url: "#"
+                - link "📊 Download CSV" [ref=e824] [cursor=pointer]:
+                  - /url: /api/export/tasks.csv
+                - button "🗄️ Raw DB" [ref=e825] [cursor=pointer]
+              - generic [ref=e826]: Export your tasks to JSON/CSV, or download the entire raw SQLite database file for full local-first data sovereignty.
+            - generic [ref=e827]:
+              - generic [ref=e828]: Settings Configuration
+              - generic [ref=e829]:
+                - link "⚙️ Export Config" [ref=e830] [cursor=pointer]:
+                  - /url: /api/export/settings.json
+                - generic [ref=e831] [cursor=pointer]: 🔄 Import Config
+              - generic [ref=e832]: Backup or restore your tokens, shortcuts, UI layouts, and active integrations. Restoring will trigger a page reload.
+          - generic [ref=e833]:
+            - generic [ref=e835]:
+              - generic [ref=e836]: ℹ About Meitheal
+              - generic [ref=e837]: The cooperative task and life engine
+            - generic [ref=e838]:
+              - paragraph [ref=e839]:
+                - link "Meitheal" [ref=e840] [cursor=pointer]:
+                  - /url: https://en.wiktionary.org/wiki/meitheal
+                - text: "(IPA: /ˈmɛhəl/) — from Irish: a cooperative work party where neighbours come together to help with farming, harvesting, or building. The tradition reflects a core principle:"
+                - emphasis [ref=e841]: work shared is work halved
+                - text: .
+              - paragraph [ref=e842]: A Home Assistant-native, Astro-first task and life management engine — built for people who think in systems.
+              - paragraph [ref=e843]:
+                - text: "Version:"
+                - code [ref=e844]: 0.2.11
+              - generic [ref=e845]:
+                - generic [ref=e846]:
+                  - status "PWA status indicator" [ref=e847]
+                  - generic [ref=e848]: "PWA: Active"
+                  - generic [ref=e849]: Active
+                  - generic [ref=e850]: ·
+                  - link "open in browser ↗" [ref=e851] [cursor=pointer]:
+                    - /url: "#"
+                  - generic [ref=e852]: ·
+                  - link "uninstall" [ref=e853] [cursor=pointer]:
+                    - /url: "#"
+                - group [ref=e854]: troubleshooting
+            - generic [ref=e855]:
+              - link "🐛 Report an Issue" [ref=e856] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal/issues/new/choose
+              - link "💬 Discussions" [ref=e857] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal/discussions
+              - link "⭐ Star on GitHub" [ref=e858] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal
+          - generic [ref=e859]:
+            - generic [ref=e861]:
+              - generic [ref=e862]: Help & Support
+              - generic [ref=e863]: Documentation, guides, and community resources.
+            - generic [ref=e864]:
+              - group [ref=e865]:
+                - generic "📖 Getting Started" [ref=e866] [cursor=pointer]
+                - generic [ref=e867]:
+                  - paragraph [ref=e868]:
+                    - strong [ref=e869]: Meitheal
+                    - text: is a local-first task and life management engine built for Home Assistant. Your data lives on your device. No cloud required.
+                  - list [ref=e870]:
+                    - listitem [ref=e871]:
+                      - text: Create tasks with
+                      - generic [ref=e872]: "n"
+                      - text: or the + button
+                    - listitem [ref=e873]: "Switch views: Kanban, Table, Calendar, Today, Upcoming"
+                    - listitem [ref=e874]: Drag and drop to reorder, prioritize, and schedule
+                    - listitem [ref=e875]: Configure integrations (Calendar, Todo, Grocy) in the Integrations tab
+                    - listitem [ref=e876]: All data is exportable as JSON, CSV, or raw SQLite
+              - group [ref=e877]:
+                - generic "🏗️ Architecture" [ref=e878] [cursor=pointer]
+            - generic [ref=e879]:
+              - link "📄 Full README" [ref=e880] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal#readme
+              - link "📚 Wiki" [ref=e881] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal/wiki
+              - link "📋 Changelog" [ref=e882] [cursor=pointer]:
+                - /url: https://github.com/Coolock-Village/meitheal/blob/main/CHANGELOG.md
+          - generic [ref=e883]:
+            - generic [ref=e885]:
+              - generic [ref=e886]: ⚠ Danger Zone
+              - generic [ref=e887]: Irreversible actions — proceed with caution
+            - generic [ref=e888]:
+              - button "🗑 Purge All Tasks" [ref=e889] [cursor=pointer]
+              - button "🔄 Reset Settings" [ref=e890] [cursor=pointer]
+      - status
+  - status [ref=e556]
+  - generic [ref=e559]:
+    - button "Menu" [ref=e560]:
+      - img [ref=e562]
+      - generic: Menu
+    - button "Inspect" [ref=e566]:
+      - img [ref=e568]
+      - generic: Inspect
+    - button "Audit" [ref=e570]:
+      - generic [ref=e571]:
+        - img [ref=e572]
+        - img [ref=e891]
+      - generic: Audit
+    - button "Settings" [ref=e578]:
+      - img [ref=e580]
+      - generic: Settings

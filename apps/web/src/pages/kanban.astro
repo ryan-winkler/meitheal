@@ -3,6 +3,7 @@ import Layout from "../layouts/Layout.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
+import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
 import { formatRegionalDate } from "../lib/date";
@@ -165,6 +166,7 @@ const typeConfig: Record<
 <Layout title={`Meitheal — ${t("kanban.title", locale)}`}>
   <span slot="page-title">{t("kanban.title", locale)}</span>
   <div slot="actions" class="kanban-actions-slot">
+    <CardCustomizer />
     <button
       type="button"
       class="btn btn-ghost"
@@ -367,8 +369,9 @@ const typeConfig: Record<
                     data-board={String(task.board_id ?? "default")}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
-
-                    style={`border-left: 4px solid ${task.color ? String(task.color) : tc.color};`}
+                    data-task-id={task.id}
+                    data-board-id={task.project_id}
+                    style={`--card-accent: ${task.color ? String(task.color) : tc.color};`}
                   >
                     <div class="kanban-card-header">
                       <div
@@ -673,6 +676,14 @@ const typeConfig: Record<
       min-height: auto;
       gap: 12px;
     }
+    .user-filters { /* Responsive layout for user filters */
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .user-filters > * {
+      width: 100%;
+      margin-bottom: 8px;
+    }
   }
 
   /* Tablet: horizontal scroll with minimum column widths */
@@ -723,6 +734,34 @@ const typeConfig: Record<
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
+  .kanban-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: var(--shadow-sm);
+    cursor: grab;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .kanban-card::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0;
+    inset-block-end: 0;
+    width: 4px;
+    background-color: var(--card-accent, var(--accent));
+  }
+  .kanban-card:active {
+    cursor: grabbing;
+    transform: scale(0.98);
+    box-shadow: var(--shadow-md);
+  }
   .kanban-card-title {
     font-size: 13px;
     font-weight: 500;
@@ -1150,6 +1189,17 @@ const typeConfig: Record<
     padding-left: 12px;
     margin-left: 4px;
   }
+  @media (max-width: 768px) {
+    .user-filters {
+      border-left: none;
+      padding-left: 0;
+      margin-left: 0;
+      width: 100%;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+  }
   .filter-toolbar__user-btn {
     display: inline-flex;
     align-items: center;
@@ -1242,12 +1292,20 @@ const typeConfig: Record<
   .type-badge-story { background: color-mix(in srgb, var(--type-story) 12%, transparent); color: var(--type-story); border-color: color-mix(in srgb, var(--type-story) 25%, transparent); }
   .type-badge-task { background: color-mix(in srgb, var(--type-task) 12%, transparent); color: var(--type-task); border-color: color-mix(in srgb, var(--type-task) 25%, transparent); }
 
+  /* Hide actions visually to prevent overlapping with content */
+  .kanban-quick-actions[aria-hidden="true"] {
+    display: none;
+  }
+
   /* Phase 20: Swimlane groups */
   .swimlane-group {
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    overflow: hidden;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0px;
   }
   .swimlane-header {
     display: flex;

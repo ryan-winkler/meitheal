@@ -32,6 +32,7 @@ import {
   PRIORITY_LABELS as priorityLabels,
   PRIORITY_COLORS as priorityColors,
 } from "../lib/priority-config";
+import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 
 const typeIcons: Record<string, string> = {
   epic: "🎯",
@@ -50,20 +51,20 @@ const typeIcons: Record<string, string> = {
 
   <!-- SMT-03: Daily Summary Stats -->
   <div class="daily-stats" id="daily-stats">
-    <div class="stat-item">
-      <span class="stat-value">{todayTasks.length}</span>
-      <span class="stat-label">Due Today</span>
-    </div>
+    <a href="#due-today" class="stat-item" style="text-decoration: none; color: inherit;">
+      <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
+      <span class="stat-label">Open Today</span>
+    </a>
     <div class="stat-item">
       <span class="stat-value">{completedTodayCount}</span>
       <span class="stat-label">Completed</span>
     </div>
-    <div class="stat-item">
+    <a href="#overdue" class="stat-item" style="text-decoration: none; color: inherit;">
       <span class="stat-value">{overdueTasks.length}</span>
       <span class="stat-label stat-danger">Overdue</span>
-    </div>
+    </a>
     <div class="stat-item">
-      <span class="stat-value">{todayTasks.length + overdueTasks.length - completedTodayCount}</span>
+      <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
       <span class="stat-label">Remaining</span>
     </div>
   </div>
@@ -99,6 +100,7 @@ const typeIcons: Record<string, string> = {
     overdueTasks.length > 0 && (
       <div
         class="card"
+        id="overdue"
         style="margin-bottom: 16px; border-left: 3px solid var(--danger);"
       >
         <div class="card-header" style="padding: 12px 16px;">
@@ -115,7 +117,7 @@ const typeIcons: Record<string, string> = {
           {overdueTasks.map((task) => {
             const p = Number(task.priority ?? 3);
             const tt = String(task.task_type ?? "task");
-            const status = String(task.status ?? "pending");
+            const status = normalizeStatus(String(task.status ?? "pending"));
             return (
               <div
                 class="task-item"
@@ -150,11 +152,7 @@ const typeIcons: Record<string, string> = {
                   <LabelBadges labels={task.labels as string} compact max={3} />
                 </div>
                 <span class={`status-badge status-badge--${status}`}>
-                  {status === "active"
-                    ? "Active"
-                    : status === "backlog"
-                      ? "Backlog"
-                      : "Pending"}
+                  {STATUS_LABELS[status] ?? "Unknown"}
                 </span>
                 {task.recurrence_rule && (
                   <span
@@ -201,7 +199,7 @@ const typeIcons: Record<string, string> = {
     )
   }
 
-  <div class="card" style="margin-bottom: 16px;">
+  <div class="card" id="due-today" style="margin-bottom: 16px;">
     <div class="card-header" style="padding: 12px 16px;">
       <div>
         <div class="card-title" style="font-size: 14px;">
@@ -232,7 +230,7 @@ const typeIcons: Record<string, string> = {
             const p = Number(task.priority ?? 3);
             const tt = String(task.task_type ?? "task");
             const progress = Number(task.progress ?? 0);
-            const status = String(task.status ?? "pending");
+            const status = normalizeStatus(String(task.status ?? "pending"));
             return (
               <div
                 class="task-item"
@@ -282,11 +280,7 @@ const typeIcons: Record<string, string> = {
                   />
                 )}
                 <span class={`status-badge status-badge--${status}`}>
-                  {status === "active"
-                    ? "Active"
-                    : status === "backlog"
-                      ? "Backlog"
-                      : "Pending"}
+                  {STATUS_LABELS[status] ?? "Unknown"}
                 </span>
                 {task.recurrence_rule && (
                   <span
@@ -350,7 +344,7 @@ const typeIcons: Record<string, string> = {
           {noDueTasks.map((task) => {
             const p = Number(task.priority ?? 3);
             const tt = String(task.task_type ?? "task");
-            const status = String(task.status ?? "pending");
+            const status = normalizeStatus(String(task.status ?? "pending"));
             return (
               <div
                 class="task-item"
@@ -382,11 +376,7 @@ const typeIcons: Record<string, string> = {
                   <LabelBadges labels={task.labels as string} compact max={3} />
                 </div>
                 <span class={`status-badge status-badge--${status}`}>
-                  {status === "active"
-                    ? "Active"
-                    : status === "backlog"
-                      ? "Backlog"
-                      : "Pending"}
+                  {STATUS_LABELS[status]}
                 </span>
                 {task.assigned_to && (
                   <span
@@ -429,7 +419,7 @@ const typeIcons: Record<string, string> = {
           {suggestedTasks.map((task) => {
             const p = Number(task.priority ?? 3);
             const tt = String(task.task_type ?? "task");
-            const status = String(task.status ?? "pending");
+            const status = normalizeStatus(String(task.status ?? "pending"));
             const dueDate = task.due_date ? String(task.due_date) : null;
             return (
               <div
@@ -474,11 +464,7 @@ const typeIcons: Record<string, string> = {
                   ➕ Today
                 </button>
                 <span class={`status-badge status-badge--${status}`}>
-                  {status === "active"
-                    ? "Active"
-                    : status === "backlog"
-                      ? "Backlog"
-                      : "Pending"}
+                  {STATUS_LABELS[status]}
                 </span>
                 {task.assigned_to && (
                   <span
@@ -533,6 +519,10 @@ const typeIcons: Record<string, string> = {
   .status-badge--backlog {
     background: rgba(148, 163, 184, 0.12);
     color: #94a3b8;
+  }
+  .status-badge--complete {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--color-green-500, #22c55e);
   }
 
   /* SMT-03: Daily Summary Stats */

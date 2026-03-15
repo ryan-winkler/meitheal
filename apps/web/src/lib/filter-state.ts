@@ -370,25 +370,26 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
   switch (groupBy) {
     case "type":
       return {
-        epic: { label: "Epic", icon: "🎯", color: "#8b5cf6" },
-        story: { label: "Story", icon: "📖", color: "#3b82f6" },
-        task: { label: "Task", icon: "✅", color: "#6366F1" },
-      }[key] ?? { label: key, icon: "📋", color: "#6b7280" }
+        epic: { label: "Epic", icon: "🎯", color: "var(--type-epic, #8b5cf6)" },
+        story: { label: "Story", icon: "📖", color: "var(--type-story, #3b82f6)" },
+        task: { label: "Task", icon: "✅", color: "var(--type-task, #6366F1)" },
+      }[key] ?? { label: key, icon: "📋", color: "var(--text-muted, #6b7280)" }
     case "priority":
       return {
-        "1": { label: "Critical", icon: "🔴", color: "#ef4444" },
-        "2": { label: "High", icon: "🟠", color: "#f97316" },
-        "3": { label: "Medium", icon: "🟡", color: "#eab308" },
-        "4": { label: "Low", icon: "🟢", color: "#22c55e" },
-        "5": { label: "Minimal", icon: "⚪", color: "#6b7280" },
-      }[key] ?? { label: `P${key}`, icon: "⬜", color: "#6b7280" }
+        "1": { label: "Critical", icon: "🔴", color: "var(--prio-critical, #ef4444)" },
+        "2": { label: "High", icon: "🟠", color: "var(--prio-high, #f97316)" },
+        "3": { label: "Medium", icon: "🟡", color: "var(--prio-medium, #eab308)" },
+        "4": { label: "Low", icon: "🟢", color: "var(--prio-low, #22c55e)" },
+        "5": { label: "Minimal", icon: "⚪", color: "var(--prio-none, #6b7280)" },
+      }[key] ?? { label: `P${key}`, icon: "⬜", color: "var(--text-muted, #6b7280)" }
     case "status":
       return {
-        backlog: { label: "Backlog", icon: "📥", color: "#6b7280" },
-        pending: { label: "Todo", icon: "📋", color: "#eab308" },
-        active: { label: "In Progress", icon: "⚡", color: "#3b82f6" },
-        complete: { label: "Done", icon: "✅", color: "#22c55e" },
-      }[key] ?? { label: key, icon: "📋", color: "#6b7280" }
+        backlog: { label: "Backlog", icon: "📥", color: "var(--text-muted, #6b7280)" },
+        pending: { label: "Todo", icon: "📋", color: "var(--warning, #eab308)" },
+        active: { label: "In Progress", icon: "⚡", color: "var(--info, #3b82f6)" },
+        complete: { label: "Done", icon: "✅", color: "var(--success, #22c55e)" },
+        cancelled: { label: "Cancelled", icon: "❌", color: "var(--danger, #ef4444)" },
+      }[key] ?? { label: key, icon: "📋", color: "var(--text-muted, #6b7280)" }
     case "rice":
       return {
         high: { label: "RICE: High (≥15)", icon: "🔥", color: "#ef4444" },

@@ -526,7 +526,10 @@ export function initKanbanBoard(): void {
         const rect = btn.getBoundingClientRect();
         popover.style.position = "fixed";
         popover.style.top = `${rect.bottom + 4}px`;
-        popover.style.left = `${rect.left}px`;
+        
+        // P6-1: Use CSS logical properties for popover positioning
+        const INLINE_START_PROP = "insetInlineStart" in popover.style ? "insetInlineStart" : "left";
+        popover.style[INLINE_START_PROP] = `${rect.left}px`;
         popover.style.zIndex = "9999";
         document.body.appendChild(popover);
         activePopover = popover;
@@ -535,7 +538,7 @@ export function initKanbanBoard(): void {
         requestAnimationFrame(() => {
           const popRect = popover.getBoundingClientRect();
           if (popRect.right > window.innerWidth) {
-            popover.style.left = `${window.innerWidth - popRect.width - 8}px`;
+            popover.style[INLINE_START_PROP] = `${window.innerWidth - popRect.width - 8}px`;
           }
           if (popRect.bottom > window.innerHeight) {
             popover.style.top = `${rect.top - popRect.height - 4}px`;
@@ -1303,6 +1306,26 @@ export function initKanbanBoard(): void {
       const board = document.querySelector(".kanban-board");
       if (!board) return;
 
+      // Swimlane collapse event delegation
+      board.addEventListener("click", (e) => {
+        const header = e.target.closest(".swimlane-header");
+        if (header && !e.target.closest("button")) {
+          const group = header.closest(".swimlane-group");
+          if (!group) return;
+          const cardsEl = group.querySelector(".swimlane-cards");
+          const toggle = header.querySelector(".swimlane-toggle");
+          if (!cardsEl) return;
+          const isCollapsed = cardsEl.classList.toggle("collapsed");
+          if (toggle) {
+            toggle.classList.toggle("collapsed", isCollapsed);
+            toggle.textContent = isCollapsed ? "▶" : "▼";
+          }
+          group.classList.toggle("swimlane-collapsed", isCollapsed);
+          const type = group.dataset.swimlaneType || group.dataset.swimlaneValue || "dynamic";
+          localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded");
+        }
+      });
+
       let focusedCard = null;
 
       board.addEventListener("keydown", (e) => {
@@ -1445,7 +1468,7 @@ export function initKanbanBoard(): void {
 
         // 2. Swimlane group counts (both static + dynamic)
         document.querySelectorAll(".swimlane-group").forEach((group) => {
-          const countEl = group.querySelector(".swimlane-count")
+          const countEl = group.querySelector(".swimlane-count-val") || group.querySelector(".swimlane-count")
           if (!countEl) return
           const visible = Array.from(
             group.querySelectorAll(".kanban-card"),
@@ -1624,20 +1647,7 @@ export function initKanbanBoard(): void {
 
               // Collapse toggle — matches static swimlane CSS class pattern
               header.style.cursor = "pointer"
-              header.addEventListener("click", () => {
-                const cardsEl = group.querySelector(".swimlane-cards")
-                const toggle = header.querySelector(".swimlane-toggle")
-                if (!cardsEl) return
-                const isCollapsed = cardsEl.classList.toggle("collapsed")
-                if (toggle) {
-                  toggle.classList.toggle("collapsed", isCollapsed)
-                  toggle.textContent = isCollapsed ? "▶" : "▼"
-                }
-                group.classList.toggle("swimlane-collapsed", isCollapsed)
-                // Persist collapse state
-                const collapseKey = `meitheal-swimlane-dyn-${key}`
-                localStorage.setItem(collapseKey, isCollapsed ? "collapsed" : "expanded")
-              });
+              // Add a generic collapse listener to the kanban board instead of here
 
               const swimlaneCards = document.createElement("div");
               swimlaneCards.className = "swimlane-cards";

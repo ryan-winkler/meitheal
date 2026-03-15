@@ -330,15 +330,15 @@
               "td-priority-dot",
             ) as HTMLElement;
             const priorityColors: Record<string, string> = {
-              "1": "#ef4444",
-              "2": "#f97316",
-              "3": "#eab308",
-              "4": "#22c55e",
-              "5": "#6b7280",
+              "1": "var(--prio-critical, #ef4444)",
+              "2": "var(--prio-high, #f97316)",
+              "3": "var(--prio-medium, #eab308)",
+              "4": "var(--prio-low, #22c55e)",
+              "5": "var(--prio-none, #6b7280)",
             };
             const pVal = String(t.priority ?? 3);
             if (priorityDot) {
-              priorityDot.style.color = priorityColors[pVal] || "#eab308";
+              priorityDot.style.color = priorityColors[pVal] || "var(--prio-medium, #eab308)";
               priorityDot.title = `Priority ${pVal}`;
             }
 

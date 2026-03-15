@@ -13,6 +13,7 @@ import type { Locale } from "../lib/locale";
 import { formatRegionalDate } from "../lib/date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { getTasksForView } from "../lib/task-queries";
+import { STATUS_CONFIG } from "../lib/status-config";
 
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -292,21 +293,14 @@ const treeRows = buildTreeRows(tasks);
                         data-id={task.id}
                         aria-label={`Status for ${task.title}`}
                       >
-                        <option
-                          value="pending"
-                          selected={task.status === "pending"}
-                        >
-                          {t("task_status.pending", locale)}
-                        </option>
-                        <option
-                          value="active"
-                          selected={task.status === "active"}
-                        >
-                          {t("task_status.active", locale)}
-                        </option>
-                        <option value="complete" selected={task.is_done}>
-                          {t("task_status.complete", locale)}
-                        </option>
+                        {STATUS_CONFIG.map((s) => (
+                          <option
+                            value={s.canonical}
+                            selected={task.status === s.canonical || (s.canonical === "complete" && task.is_done)}
+                          >
+                            {t(s.i18nKey as any, locale)}
+                          </option>
+                        ))}
                       </select>
                     </td>
                     <td>
@@ -446,9 +440,9 @@ const treeRows = buildTreeRows(tasks);
     <span class="bulk-divider">|</span>
     <select class="form-select bulk-select" id="bulk-status">
       <option value="">{t("table.change_status", locale)}</option>
-      <option value="pending">{t("task_status.pending", locale)}</option>
-      <option value="active">{t("task_status.active", locale)}</option>
-      <option value="complete">{t("task_status.complete", locale)}</option>
+      {STATUS_CONFIG.map((s) => (
+        <option value={s.canonical}>{t(s.i18nKey as any, locale)}</option>
+      ))}
     </select>
     <select class="form-select bulk-select" id="bulk-priority">
       <option value="">Priority</option>

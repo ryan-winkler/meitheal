@@ -1,0 +1,361 @@
+- generic [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - navigation "Main Navigation" [ref=e3]:
+    - generic [ref=e4]:
+      - link "Meitheal Home" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img [ref=e6]
+        - text: Meitheal
+      - generic [ref=e14]: /ˈmʲɛhəlˠ/
+    - generic [ref=e15]:
+      - list [ref=e16]:
+        - listitem [ref=e17]:
+          - link "Dashboard" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - img [ref=e20]:
+              - img [ref=e21]
+            - text: Dashboard
+        - listitem [ref=e26]:
+          - link "Kanban Board" [ref=e27] [cursor=pointer]:
+            - /url: /kanban
+            - img [ref=e29]
+            - text: Kanban Board
+        - listitem [ref=e34]:
+          - link "Table" [ref=e35] [cursor=pointer]:
+            - /url: /table
+            - img [ref=e37]
+            - text: Table
+        - listitem [ref=e42]:
+          - link "Today" [ref=e43] [cursor=pointer]:
+            - /url: /today
+            - img [ref=e45]
+            - text: Today
+        - listitem [ref=e48]:
+          - link "Tasks List" [ref=e49] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e51]
+            - text: Tasks List
+            - generic [ref=e58]: "9"
+        - listitem [ref=e59]:
+          - link "Upcoming" [ref=e60] [cursor=pointer]:
+            - /url: /upcoming
+            - img [ref=e62]
+            - text: Upcoming
+        - listitem [ref=e68]:
+          - link "Calendar" [ref=e69] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e71]
+            - text: Calendar
+        - listitem [ref=e82]:
+          - link "Gamification" [ref=e83] [cursor=pointer]:
+            - /url: /gamification
+            - img [ref=e85]
+            - text: Gamification
+        - listitem [ref=e92]:
+          - link "Habits" [ref=e93] [cursor=pointer]:
+            - /url: /habits
+            - img [ref=e95]
+            - text: Habits
+        - listitem [ref=e99]:
+          - link "Good (opens in new tab)" [ref=e100] [cursor=pointer]:
+            - /url: https://google.com
+            - img [ref=e102]
+            - text: Good
+            - generic [ref=e105]: ↗
+      - region "Board selector" [ref=e106]:
+        - generic [ref=e107]: Board
+        - generic [ref=e108]:
+          - combobox "Select active board" [ref=e109] [cursor=pointer]:
+            - option "🗂 All Boards" [selected]
+            - option "📋 Default"
+            - option "📋 lol"
+            - option "📋 test2"
+          - generic:
+            - img
+        - button "Create new board" [ref=e110] [cursor=pointer]: New Board
+    - generic [ref=e112]:
+      - status [ref=e113]:
+        - generic [ref=e115]: Connected
+      - link "Settings" [ref=e116] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e118]
+        - text: Settings
+  - button "Toggle sidebar (Ctrl+B)" [ref=e121] [cursor=pointer]:
+    - img [ref=e122]
+  - generic [ref=e124]:
+    - banner [ref=e125]:
+      - heading "Settings" [level=1] [ref=e127]
+      - generic [ref=e129]:
+        - generic:
+          - img
+        - searchbox "Search tasks..." [ref=e130]
+        - generic:
+          - generic: Cmd K
+      - button "Ask Home Assistant" [ref=e132] [cursor=pointer]:
+        - img [ref=e133]
+    - main [ref=e135]:
+      - tablist "Settings sections" [ref=e136]:
+        - tab "General" [ref=e137] [cursor=pointer]
+        - tab "Labels" [ref=e138] [cursor=pointer]
+        - tab "Integrations" [active] [selected] [ref=e139] [cursor=pointer]
+        - tab "Agents & AI" [ref=e140] [cursor=pointer]
+        - tab "System & Danger" [ref=e141] [cursor=pointer]
+      - tabpanel "Integrations" [ref=e583]:
+        - generic [ref=e584]:
+          - generic [ref=e586]:
+            - heading "🔗 Integrations" [level=2] [ref=e587]
+            - paragraph [ref=e588]: Connect Meitheal to external services for automation, sync, and enhanced workflows
+          - generic [ref=e589]:
+            - button "🏠 Home Assistant Connection and integration settings" [ref=e590] [cursor=pointer]:
+              - generic [ref=e591]:
+                - generic [ref=e592]: 🏠
+                - generic [ref=e593]:
+                  - strong [ref=e594]: Home Assistant
+                  - generic [ref=e595]: Connection and integration settings
+            - button "What is Home Assistant integration?" [ref=e596] [cursor=pointer]: ℹ️
+            - generic [ref=e597]: Disconnected
+            - text: ▸
+          - generic [ref=e602]:
+            - generic [ref=e603]: Not connected
+            - generic [ref=e604]: standalone
+          - button [ref=e607] [cursor=pointer]: Test Connection
+          - group [ref=e608]:
+            - generic [ref=e609] [cursor=pointer]:
+              - generic [ref=e610]: ⚙ Advanced — Standalone Mode
+              - generic [ref=e611]: Only needed if running outside Home Assistant
+        - generic [ref=e612]:
+          - button "📅 Calendar Sync Bidirectional sync with HA calendars" [ref=e613] [cursor=pointer]:
+            - generic [ref=e614]:
+              - generic [ref=e615]: 📅
+              - generic [ref=e616]:
+                - strong [ref=e617]: Calendar Sync
+                - generic [ref=e618]: Bidirectional sync with HA calendars
+          - button "What is Calendar Sync?" [ref=e619] [cursor=pointer]: ℹ️
+          - generic [ref=e620]: No calendars
+          - text: ▸
+        - generic [ref=e621]:
+          - generic [ref=e622]:
+            - generic [ref=e623]:
+              - generic [ref=e624]: Your Calendars
+              - text: 0 of 0 enabled
+            - generic [ref=e625]:
+              - button [ref=e626] [cursor=pointer]: Enable All
+              - button [ref=e627] [cursor=pointer]: Disable All
+          - paragraph [ref=e628]: Toggle each calendar on or off. Only enabled calendars sync events with Meitheal.
+          - generic [ref=e629]:
+            - generic [ref=e630]: 📭
+            - generic [ref=e631]: No calendars detected. Make sure your Home Assistant integration is connected and has calendar entities.
+        - generic [ref=e632]:
+          - group [ref=e633]:
+            - generic [ref=e634] [cursor=pointer]:
+              - generic [ref=e635]: ⌨ Manual Entity ID
+              - generic [ref=e636]: For calendars not auto-detected
+          - group [ref=e637]:
+            - generic [ref=e638] [cursor=pointer]:
+              - generic [ref=e639]: 📡 External Calendar (CalDAV)
+              - generic [ref=e640]: For Nextcloud, Radicale, Baikal — not needed for HA calendars
+          - generic [ref=e641]:
+            - generic [ref=e642]: Default Sync Direction
+            - combobox [ref=e643] [cursor=pointer]
+            - text: Default for new calendars. Override per calendar using the direction selector on each card.
+          - generic [ref=e644]:
+            - generic [ref=e645] [cursor=pointer]:
+              - checkbox [ref=e646]
+              - generic [ref=e647]: Write back — sync completed tasks to calendar
+            - text: When enabled, task completions update the corresponding calendar event. Only applies to Export and Bidirectional modes.
+          - generic [ref=e648]:
+            - generic [ref=e649]: Sync Interval
+            - combobox [ref=e650] [cursor=pointer]
+            - text: How often Meitheal auto-syncs events from enabled calendars. "Manual only" syncs only when you click Sync Now.
+          - generic [ref=e651]:
+            - button [ref=e652] [cursor=pointer]: Save Calendar Settings
+            - button [ref=e653] [cursor=pointer]: Sync Now
+      - generic [ref=e410]:
+        - button "✅ Todo Sync Bridge HA todo lists with Meitheal" [expanded] [ref=e411] [cursor=pointer]:
+          - generic [ref=e412]:
+            - generic [ref=e413]: ✅
+            - generic [ref=e414]:
+              - strong [ref=e415]: Todo Sync
+              - generic [ref=e416]: Bridge HA todo lists with Meitheal
+        - button "What is Todo Sync?" [ref=e417] [cursor=pointer]: ℹ️
+        - generic [ref=e418]: No lists
+        - text: ▸
+      - generic [ref=e419]:
+        - generic [ref=e420]:
+          - strong [ref=e421]: 🔗 HA Bridge
+          - generic [ref=e422]:
+            - text: Bridges Home Assistant's built-in todo lists with Meitheal. Enable this so your HA dashboards and automations that use
+            - code [ref=e423]: todo.*
+            - text: entities stay in sync with tasks managed here.
+        - generic [ref=e654]:
+          - generic [ref=e655]:
+            - generic [ref=e656]:
+              - generic [ref=e657]: Your Todo Lists
+              - text: 0 of 0 enabled
+            - generic [ref=e658]:
+              - button "Enable All" [ref=e659] [cursor=pointer]
+              - button "Disable All" [ref=e660] [cursor=pointer]
+          - paragraph [ref=e661]: Toggle each todo list on or off. Only enabled lists sync tasks with Meitheal.
+          - generic [ref=e662]:
+            - generic [ref=e663]: 📭
+            - generic [ref=e664]: No todo lists detected. Make sure Home Assistant has todo entities (e.g. Shopping List).
+        - group [ref=e424]:
+          - generic "⌨ Manual Entity ID For todo lists not auto-detected" [ref=e425] [cursor=pointer]:
+            - generic [ref=e426]: ⌨ Manual Entity ID
+            - generic [ref=e427]: For todo lists not auto-detected
+        - generic [ref=e428]:
+          - generic [ref=e429]:
+            - generic [ref=e430]:
+              - generic [ref=e431]: Enable Todo Sync
+              - button "Help" [ref=e433] [cursor=pointer]: "?"
+            - generic [ref=e434]:
+              - checkbox "Enable or disable todo list sync" [checked] [ref=e436]
+              - generic [ref=e437]: On — syncing with HA
+          - generic [ref=e438]:
+            - generic [ref=e439]:
+              - generic [ref=e440]: Sync Direction
+              - button "Help" [ref=e442] [cursor=pointer]: "?"
+            - combobox "Sync Direction" [ref=e443] [cursor=pointer]:
+              - option "Import HA → Meitheal"
+              - option "Export Meitheal → HA"
+              - option "Bidirectional sync" [selected]
+          - generic [ref=e444]:
+            - button "Save Todo Settings" [ref=e445] [cursor=pointer]
+            - button "Sync Now" [ref=e446] [cursor=pointer]
+      - generic [ref=e447]:
+        - button "🛒 Grocy Chores, tasks & shopping list sync" [ref=e448] [cursor=pointer]:
+          - generic [ref=e449]:
+            - generic [ref=e450]: 🛒
+            - generic [ref=e451]:
+              - strong [ref=e452]: Grocy
+              - generic [ref=e453]: Chores, tasks & shopping list sync
+        - button "What is Grocy integration?" [ref=e454] [cursor=pointer]: ℹ️
+        - generic [ref=e455]: Not configured
+        - text: ▸
+      - generic [ref=e456]:
+        - generic [ref=e457]:
+          - generic [ref=e458]:
+            - generic [ref=e459]: Grocy URL
+            - button [ref=e461] [cursor=pointer]: "?"
+          - textbox [ref=e462]:
+            - /placeholder: http://homeassistant.local:9192
+        - generic [ref=e463]:
+          - generic [ref=e464]:
+            - generic [ref=e465]: API Key
+            - button [ref=e467] [cursor=pointer]: "?"
+          - generic [ref=e468]:
+            - textbox [ref=e469]:
+              - /placeholder: ••••••••
+            - button [ref=e470] [cursor=pointer]: ⚡ Auto
+        - generic [ref=e471]:
+          - generic [ref=e472]:
+            - generic [ref=e473]: Sync Mode
+            - button [ref=e475] [cursor=pointer]: "?"
+          - combobox [ref=e476] [cursor=pointer]
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]: Sync Interval
+            - button [ref=e481] [cursor=pointer]: "?"
+          - combobox [ref=e482] [cursor=pointer]
+        - generic [ref=e483]:
+          - button [ref=e484] [cursor=pointer]: Test Connection
+          - button [ref=e485] [cursor=pointer]: Save Grocy Settings
+      - generic [ref=e486]:
+        - button "⚙ n8n / Node-RED Automation workflow triggers" [ref=e487] [cursor=pointer]:
+          - generic [ref=e488]:
+            - generic [ref=e489]: ⚙
+            - generic [ref=e490]:
+              - strong [ref=e491]: n8n / Node-RED
+              - generic [ref=e492]: Automation workflow triggers
+        - button "What is n8n / Node-RED integration?" [ref=e493] [cursor=pointer]: ℹ️
+        - generic [ref=e494]: Not configured
+        - text: ▸
+      - generic [ref=e495]:
+        - generic [ref=e496]: Integration Mode
+        - generic [ref=e497]:
+          - button [ref=e498] [cursor=pointer]: 🏠 HA Addon (auto)
+          - button [ref=e499] [cursor=pointer]: 🌐 Standalone
+      - generic [ref=e500]:
+        - generic [ref=e501]:
+          - strong [ref=e502]: 🔗 Automatic via WebSocket
+          - generic [ref=e503]: Node-RED and n8n addons communicate with Meitheal automatically through the HA WebSocket. Select which events to broadcast below.
+        - generic [ref=e504]:
+          - generic [ref=e505]: Trigger Events
+          - generic [ref=e506]:
+            - generic [ref=e507] [cursor=pointer]:
+              - checkbox [checked] [ref=e508]
+              - text: Created
+            - generic [ref=e509] [cursor=pointer]:
+              - checkbox [checked] [ref=e510]
+              - text: Updated
+            - generic [ref=e511] [cursor=pointer]:
+              - checkbox [checked] [ref=e512]
+              - text: Completed
+            - generic [ref=e513] [cursor=pointer]:
+              - checkbox [ref=e514]
+              - text: Deleted
+            - generic [ref=e515] [cursor=pointer]:
+              - checkbox [checked] [ref=e516]
+              - text: Overdue
+        - generic [ref=e517]:
+          - button [ref=e518] [cursor=pointer]: Save n8n Settings
+          - button [ref=e519] [cursor=pointer]: 🔌 Test Event Bus
+        - generic [ref=e520]:
+          - strong [ref=e521]: 📦 Node-RED Example Flows
+          - generic [ref=e522]: Import pre-built flows for task notifications, overdue alerts, and more.
+          - button [ref=e523] [cursor=pointer]: 📋 Copy Flow JSON
+      - generic [ref=e524]:
+        - button "🔔 Webhooks Generic outgoing event webhooks" [ref=e525] [cursor=pointer]:
+          - generic [ref=e526]:
+            - generic [ref=e527]: 🔔
+            - generic [ref=e528]:
+              - strong [ref=e529]: Webhooks
+              - generic [ref=e530]: Generic outgoing event webhooks
+        - button "What are Webhooks?" [ref=e531] [cursor=pointer]: ℹ️
+        - generic [ref=e532]: Not configured
+        - text: ▸
+      - generic [ref=e533]:
+        - strong [ref=e534]: 📌 Webhooks vs Agents & AI
+        - generic [ref=e535]:
+          - text: Webhooks send task events to external services and automations (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A, MCP, and WebMCP, see the
+          - link [ref=e536] [cursor=pointer]:
+            - /url: "#"
+            - text: Agents & AI
+          - text: tab.
+      - generic [ref=e537]:
+        - generic [ref=e538]:
+          - generic [ref=e539]:
+            - generic [ref=e540]: Endpoint URL
+            - button [ref=e542] [cursor=pointer]: "?"
+          - textbox [ref=e543]:
+            - /placeholder: https://your-service.com/webhook
+        - generic [ref=e544]:
+          - generic [ref=e545]:
+            - generic [ref=e546]: Signing Secret (optional)
+            - button [ref=e548] [cursor=pointer]: "?"
+          - textbox [ref=e549]:
+            - /placeholder: ••••••••
+        - generic [ref=e550]:
+          - generic [ref=e551]: Payload Format
+          - combobox [ref=e552] [cursor=pointer]
+        - generic [ref=e553]:
+          - button [ref=e554] [cursor=pointer]: Save Webhook
+          - button [ref=e555] [cursor=pointer]: Send Test
+      - status
+  - status [ref=e556]
+  - generic [ref=e559]:
+    - button "Menu" [ref=e560]:
+      - img [ref=e562]
+      - generic: Menu
+    - button "Inspect" [ref=e566]:
+      - img [ref=e568]
+      - generic: Inspect
+    - button "Audit" [ref=e570]:
+      - generic [ref=e571]:
+        - img [ref=e572]
+        - img [ref=e665]
+      - generic: Audit
+    - button "Settings" [ref=e578]:
+      - img [ref=e580]
+      - generic: Settings

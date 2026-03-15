@@ -69,6 +69,7 @@ import {
   PRIORITY_LABELS as priorityLabels,
   PRIORITY_COLORS as priorityColors,
 } from "../lib/priority-config";
+import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 
 const typeIcons: Record<string, string> = {
   epic: "🎯",
@@ -143,7 +144,7 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
               {day.tasks.map((task) => {
                 const p = Number(task.priority ?? 3);
                 const tt = String(task.task_type ?? "task");
-                const status = String(task.status ?? "pending");
+                const status = normalizeStatus(String(task.status ?? "pending"));
                 return (
                   <div
                     class="task-item"
@@ -175,11 +176,7 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
                       <LabelBadges labels={task.labels as string} compact max={3} />
                     </div>
                     <span class={`status-badge status-badge--${status}`}>
-                      {status === "active"
-                        ? "Active"
-                        : status === "backlog"
-                          ? "Backlog"
-                          : "Pending"}
+                      {STATUS_LABELS[status]}
                     </span>
                     {task.color && (
                       <span
@@ -270,6 +267,10 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
   .status-badge--backlog {
     background: rgba(148, 163, 184, 0.12);
     color: #94a3b8;
+  }
+  .status-badge--complete {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--color-green-500, #22c55e);
   }
 </style>
 
