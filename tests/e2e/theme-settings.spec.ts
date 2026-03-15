@@ -5,8 +5,12 @@ test.describe("Theme Settings", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
 
   test.beforeEach(async ({ page }) => {
-    await page.goto("/settings");
+    await page.goto("/settings#personal-settings");
     await page.waitForLoadState("networkidle");
+    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
   });
 
   test("Theme select has all 4 options (Dark, Light, Auto, Custom)", async ({ page }) => {
@@ -88,8 +92,8 @@ test.describe("Theme Settings", () => {
     await themeSelect.selectOption("light");
     await page.waitForTimeout(500);
 
-    // Reload
-    await page.reload();
+    // Re-open the page to verify persistence across a fresh navigation
+    await page.goto("/settings#personal-settings");
     await page.waitForLoadState("networkidle");
 
     // Theme should still be light

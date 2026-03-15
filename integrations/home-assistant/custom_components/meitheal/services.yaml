@@ -40,11 +40,11 @@ sync_todo:
 
 search_tasks:
   name: Search Tasks
-  description: Search tasks by keyword. Returns matching tasks from Meitheal.
+  description: Search tasks by keyword, status, priority, labels, custom fields, comments, and task IDs.
   fields:
     query:
       name: Search Query
-      description: Keyword to search in task titles and descriptions
+      description: Keyword to search across task titles, descriptions, labels, custom fields, comments, and IDs
       required: true
       example: "groceries"
       selector:
@@ -60,6 +60,21 @@ search_tasks:
             - "todo"
             - "in_progress"
             - "done"
+    priority:
+      name: Priority Filter
+      description: Filter by task priority
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+    include_completed:
+      name: Include Completed
+      description: Include completed tasks in the results
+      example: false
+      selector:
+        boolean:
 
 get_overdue_tasks:
   name: Get Overdue Tasks

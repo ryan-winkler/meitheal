@@ -241,6 +241,62 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         await self.async_request_refresh()
         return result
 
+    async def async_search_tasks(
+        self,
+        query: str = "",
+        status: str | None = None,
+        priority: int | None = None,
+        include_completed: bool = False,
+    ) -> dict[str, Any]:
+        """Search tasks using Meitheal's universal search contract."""
+        session = await self._ensure_session()
+        params: dict[str, str] = {
+            "scope": "tasks",
+            "limit": "20",
+        }
+        if query:
+            params["q"] = query
+        if status:
+            params["status"] = status
+        if priority is not None:
+            params["priority"] = str(priority)
+        if include_completed:
+            params["include_completed"] = "1"
+
+        async with session.get(
+            f"{self._base_url}/api/search",
+            params=params,
+            headers={"content-type": "application/json"},
+        ) as response:
+            if response.status >= 300:
+                text = await response.text()
+                raise UpdateFailed(f"Search task failed ({response.status}): {text}")
+            payload = await response.json()
+
+        task_section = next(
+            (
+                section
+                for section in payload.get("sections", [])
+                if section.get("id") == "tasks"
+            ),
+            {"items": []},
+        )
+        tasks = []
+        for item in task_section.get("items", []):
+            meta = item.get("meta", {}) or {}
+            tasks.append(
+                {
+                    "id": item.get("taskId") or item.get("id"),
+                    "title": item.get("title", ""),
+                    "status": meta.get("status") or "",
+                    "priority": meta.get("priority") or 3,
+                    "description": item.get("description", ""),
+                    "matched_fields": meta.get("matched_fields", []),
+                }
+            )
+
+        return {"tasks": tasks, "count": len(tasks)}
+
     async def async_delete_task(self, task_id: str) -> None:
         """Delete a task."""
         # Try to resolve title before deletion for logbook

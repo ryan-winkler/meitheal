@@ -8,13 +8,7 @@ interface Props {
 const { locale } = Astro.props;
 ---
 
-<div
-  id="tab-general"
-  class="tab-pane active"
-  role="tabpanel"
-  aria-labelledby="tab-btn-general"
-  style="display: block;"
->
+<div class="settings-shell-panel">
   <div class="settings-grid">
     <!-- Sidebar Config -->
     <div class="card">
@@ -1052,7 +1046,6 @@ const { locale } = Astro.props;
     }
 
     initUsersCard();
-    document.addEventListener("astro:page-load", initUsersCard);
   })();
 </script>
 

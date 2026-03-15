@@ -372,7 +372,11 @@
 
 /* --- Lane management --- */
 .lane-mgmt {
-  @apply fixed inset-0 bg-black/60 z-50 flex items-center justify-center;
+  @apply fixed inset-0 bg-black/60 z-[200] flex items-center justify-center;
+}
+
+.lane-mgmt.hidden {
+  display: none !important;
 }
 
 .lane-mgmt-inner {

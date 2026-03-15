@@ -6,7 +6,7 @@ import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
-import { STATUS } from "../../../lib/status-config"
+import { normalizeStatus, STATUS } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 
@@ -32,7 +32,12 @@ export const GET: APIRoute = async ({ url }) => {
     offset,
   }
   const status = url.searchParams.get("status")
-  if (status) findOpts.status = status
+  if (status) findOpts.status = normalizeStatus(status)
+  const priority = url.searchParams.get("priority")
+  if (priority) {
+    const parsedPriority = Math.min(5, Math.max(1, Number(priority) || 0))
+    if (parsedPriority > 0) findOpts.priority = parsedPriority
+  }
   const boardId = url.searchParams.get("board_id")
   if (boardId) findOpts.boardId = boardId
   if (taskType && VALID_TASK_TYPES.includes(taskType as TaskType)) findOpts.taskType = taskType

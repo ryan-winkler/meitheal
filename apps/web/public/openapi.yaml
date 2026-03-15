@@ -5,7 +5,7 @@ info:
     Local-first task and life management API for Home Assistant.
 
     Meitheal is an Astro-native task engine designed to run as a
-    Home Assistant add-on while also supporting Cloudflare deployment.
+    Home Assistant add-on behind Supervisor ingress.
 
     ## Authentication
     - Home Assistant ingress: `hassio_token` header (validated by Supervisor)
@@ -33,6 +33,8 @@ servers:
 tags:
   - name: Tasks
     description: Task CRUD operations
+  - name: Search
+    description: Universal search across tasks, views, settings, and actions
   - name: Health
     description: System health and connectivity
   - name: Settings
@@ -78,7 +80,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Free-text search across title and description
+          description: Basic free-text search across task title and description
         - name: status
           in: query
           schema:
@@ -138,6 +140,84 @@ paths:
                 $ref: "#/components/schemas/Task"
         "400":
           description: Validation error
+
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Universal search across Meitheal
+      operationId: searchMeitheal
+      description: |
+        Returns sectioned search results for tasks, boards, saved filters,
+        settings, and quick actions used by the global search hub.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query text
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [all, tasks, views, settings, actions]
+            default: all
+          description: Restrict search to one result family
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, updated]
+            default: relevance
+          description: Task ordering strategy
+        - name: task_fields
+          in: query
+          schema:
+            type: string
+          description: Comma-delimited task fields to search (`id,title,description,labels,custom_fields,comments`)
+        - name: include_completed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include completed tasks in task results
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include archived tasks in task results
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Optional task status filter
+        - name: priority
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+          description: Optional task priority filter
+        - name: assigned_to
+          in: query
+          schema:
+            type: string
+          description: Optional task assignee filter
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 8
+          description: Maximum results per section
+      responses:
+        "200":
+          description: Sectioned search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
 
   /api/tasks/{id}:
     get:
@@ -471,6 +551,86 @@ components:
           type: string
           format: date-time
 
+    SearchResultItem:
+      type: object
+      required: [id, kind, title]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [task, board, saved_filter, setting, page, action]
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        href:
+          type: string
+          nullable: true
+        taskId:
+          type: string
+          nullable: true
+        actionId:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+
+    SearchResultSection:
+      type: object
+      required: [id, label, items]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResultItem"
+
+    SearchResponse:
+      type: object
+      required: [query, sections, meta]
+      properties:
+        query:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResultSection"
+        meta:
+          type: object
+          required: [scope, limit, include_completed, include_archived, sort, task_fields]
+          properties:
+            scope:
+              type: string
+              enum: [all, tasks, views, settings, actions]
+            limit:
+              type: integer
+            include_completed:
+              type: boolean
+            include_archived:
+              type: boolean
+            sort:
+              type: string
+              enum: [relevance, updated]
+            task_fields:
+              type: array
+              items:
+                type: string
+
   # --- Data Export & Import Endpoints (Phase 21) ---
 
   /api/export/tasks.json:
@@ -565,4 +725,3 @@ components:
                     type: string
         "400":
           description: Invalid payload or no valid keys
-

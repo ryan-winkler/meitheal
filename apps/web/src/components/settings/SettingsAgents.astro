@@ -17,14 +17,7 @@ interface Props {
 const { locale } = Astro.props;
 ---
 
-<div
-  id="tab-agents"
-  class="tab-pane"
-  role="tabpanel"
-  aria-labelledby="tab-btn-agents"
-  style="display: none;"
-  aria-hidden="true"
->
+<div class="settings-shell-panel">
   <div class="settings-grid">
     <div class="card" style="grid-column: 1 / -1;">
       <div class="card-header">
@@ -440,21 +433,25 @@ const { locale } = Astro.props;
     });
   }
 
-  // Init: Load agents + fix links when the tab is shown
-  // Save/restore is handled by settings.astro's restoreIntegrationSettings()
-  const tabAgents = document.getElementById("tab-agents");
-  if (tabAgents) {
-    const observer = new MutationObserver(() => {
-      if (tabAgents.style.display !== "none") {
-        loadHAAgents();
-        fixProtocolLinks();
-        updateExtAiBadge();
+  function bootAgentsPanel() {
+    loadHAAgents();
+    fixProtocolLinks();
+    updateExtAiBadge();
+  }
+
+  const section = document.getElementById("automation-ai-settings");
+  if (!section) {
+    bootAgentsPanel();
+  } else {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
         observer.disconnect();
-      }
-    });
-    observer.observe(tabAgents, {
-      attributes: true,
-      attributeFilter: ["style"],
-    });
+        bootAgentsPanel();
+      },
+      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
+    );
+
+    observer.observe(section);
   }
 </script>

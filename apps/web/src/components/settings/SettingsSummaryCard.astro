@@ -1,0 +1,16 @@
+---
+interface Props {
+  id: string
+  eyebrow: string
+  title: string
+  detail: string
+}
+
+const { id, eyebrow, title, detail } = Astro.props
+---
+
+<div class="settings-summary-card" id={id}>
+  <span class="settings-summary-card__eyebrow">{eyebrow}</span>
+  <strong class="settings-summary-card__title">{title}</strong>
+  <span class="settings-summary-card__detail">{detail}</span>
+</div>

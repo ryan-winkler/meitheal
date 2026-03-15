@@ -23,7 +23,7 @@ meitheal/
 │           │   ├── layout/     # Sidebar, TopNavigation
 │           │   ├── pomodoro/
 │           │   ├── pwa/
-│           │   ├── settings/   # Settings tab panels
+│           │   ├── settings/   # Settings shell primitives + section panels
 │           │   ├── tasks/
 │           │   └── ui/         # Shared UI (FilterToolbar, StatusBadge, TaskTypeIcon, etc.)
 │           ├── content/        # Astro content collections (frameworks)
@@ -62,7 +62,7 @@ meitheal/
 │   ├── domain-tasks/           # Task aggregate & types
 │   └── integration-core/       # Adapter interfaces & impls
 ├── tests/                      # Test package (@meitheal/tests)
-│   ├── e2e/                    # 49 E2E spec files
+│   ├── e2e/                    # 50 E2E spec files
 │   ├── governance/             # 2 governance spec files
 │   ├── unit/                   # 1 unit spec file
 │   └── scripts/                # Test utilities
@@ -88,11 +88,15 @@ meitheal/
 **`apps/web/src/lib/`:**
 - Purpose: Client-side controllers (page interactivity) and shared utilities
 - Contains: Page controllers (kanban, table, settings, task-modal), API client, filter engine, toast, validation
-- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `settings-controller.ts` (3,205 LoC)
+- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `settings-controller.ts` (3,205 LoC), `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
 
 **`apps/web/src/components/ui/`:**
 - Purpose: Reusable Astro UI components
 - Contains: `FilterToolbar.astro` (640 LoC), `StatusBadge.astro`, `TaskTypeIcon.astro`, `EmptyState.astro`, `LabelPicker.astro`
+
+**`apps/web/src/components/settings/`:**
+- Purpose: Settings shell navigation, summaries, and grouped section panels
+- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro`, `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
 
 **`apps/web/src/styles/`:**
 - Purpose: CSS design system via partials
@@ -106,7 +110,7 @@ meitheal/
 
 **`tests/`:**
 - Purpose: Playwright test suite (separate workspace package)
-- Contains: 49 e2e specs, 2 governance specs, 1 unit spec
+- Contains: 50 e2e specs, 2 governance specs, 1 unit spec
 - Key files: `playwright.config.ts`, `e2e/_helpers.ts`
 
 ## Key File Locations

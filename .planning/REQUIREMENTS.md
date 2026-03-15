@@ -65,6 +65,17 @@
 - [ ] **VER-02**: Add version sync check to CI pipeline
 - [ ] **VER-03**: Create `scripts/bump-version.mjs` — atomic version update
 
+## Settings Full Redesign (SET)
+
+- [x] **SET-01**: Replace hidden Settings tab panes with a searchable shell, grouped navigation, summary cards, and hash deep-links
+- [x] **SET-02**: Introduce `settings-registry.ts`, `settings-store.ts`, and `settings-page.ts` for section metadata, cached IO, and page orchestration
+- [x] **SET-03**: Split Settings system content into canonical `personal`, `app & pwa`, and `danger zone` shell sections
+- [x] **SET-04**: Fix cross-section routing so Webhooks points to `automation-ai-settings`
+- [x] **SET-05**: Add Home Assistant Companion URL handler and x-callback-url affordances in App & PWA
+- [x] **SET-06**: Update the dynamic manifest with real Settings screenshots and a Settings shortcut
+- [x] **SET-07**: Add/refresh browser coverage for shell search, theme flows, and App & PWA contract checks
+- [ ] **SET-08**: Verify ingress, companion, and PWA behavior in the HA devcontainer Tier 2 environment
+
 ## Scope
 
 ### v1 (this sprint)
@@ -85,5 +96,6 @@ All above — 28 requirements (reduced from 35 after audit)
 | 2 | SQL-01→05 |
 | 3 | PGD-01→05 |
 | 4 | SMT-01→03, VER-01→03 |
+| 8 | SET-01→08 |
 
 *Requirements revised: 2026-03-09 — post-audit, actual gaps only*

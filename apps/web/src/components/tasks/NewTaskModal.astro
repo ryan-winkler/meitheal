@@ -410,7 +410,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         due_date: extractedDue,
         assigned_to: assignedTo || null,
         recurrence_rule: (document.getElementById("new-task-recurrence") as HTMLSelectElement)?.value || null,
-        checklists: checklistItems.length > 0 ? JSON.stringify(checklistItems) : null,
+        checklists: checklistItems.length > 0 ? JSON.stringify(checklistItems) : undefined,
       };
 
       const res = await fetch((window.__ingress_path || "") + "/api/tasks", {

@@ -5,7 +5,7 @@
 Important notes:
 - Meitheal runs inside the Home Assistant Supervisor as an addon, not a standalone app
 - Authentication is handled by HA Supervisor ingress — no separate auth required
-- All 13 tools are exposed across 3 surfaces: LLM API, MCP, and A2A
+- All 18 task tools are exposed across MCP and Home Assistant conversation surfaces
 - Voice commands work with HA's built-in Assist without any LLM configured
 - Tasks sync bidirectionally with HA todo entities and calendar entities
 
@@ -15,13 +15,13 @@ Important notes:
 
 ## Agent Protocols
 
-- [MCP Discovery](/.well-known/mcp.json): MCP server discovery with 13 tools
+- [MCP Discovery](/.well-known/mcp.json): MCP server discovery with 18 tools
 - [A2A Agent Card](/api/a2a/agent-card): Dynamic A2A agent card per Google A2A spec §8
 - [MCP Endpoint](/api/mcp): POST endpoint for MCP JSON-RPC tool calls
 
 ## HA Integration
 
-- [HA Services](/llms-full.txt): 6 callable services (create_task, complete_task, sync_todo, search_tasks, get_overdue_tasks, notify_overdue)
+- [HA Services](/llms-full.txt): 6 callable services, including advanced `search_tasks`
 - [Device Triggers](/llms-full.txt): 6 automation triggers (task_created, task_completed, task_updated, task_deleted, task_overdue, board_updated)
 - [Sensors](/llms-full.txt): 3 sensors with rich attributes (active_tasks, overdue_tasks, total_tasks)
 

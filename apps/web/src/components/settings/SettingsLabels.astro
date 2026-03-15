@@ -18,7 +18,7 @@ interface Props {
 const { locale } = Astro.props
 ---
 
-<div class="tab-pane" id="tab-labels" role="tabpanel" aria-labelledby="tab-btn-labels" style="display: none;" aria-hidden="true">
+<div class="settings-shell-panel">
   <div class="card" style="margin-bottom: 16px;">
     <div class="card-header" style="padding: 12px 16px;">
       <div>
@@ -232,15 +232,7 @@ const { locale } = Astro.props
     }
   })
 
-  // Load on tab activation
-  const tabBtn = document.getElementById("tab-btn-labels")
-  tabBtn?.addEventListener("click", () => {
-    if (labels.length === 0) loadLabels()
-  })
-
-  // Also load if tab is already active (deep link)
-  const pane = document.getElementById("tab-labels")
-  if (pane && pane.style.display !== "none") {
+  if (labels.length === 0) {
     loadLabels()
   }
 </script>

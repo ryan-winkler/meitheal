@@ -71,8 +71,21 @@ export const pageLifecycle = {
    * Previous listeners from the callback are auto-cleaned on next navigation.
    */
   onPageLoad(callback: (signal: AbortSignal) => void): void {
-    // Run on initial load
+    // Some modules may load after the first astro:page-load event has already fired.
+    // Use a 0ms fallback so initial page setup still runs once on first render,
+    // while future ViewTransition navigations continue to use astro:page-load.
+    let initialPending = true
+    const fallbackId = globalThis.setTimeout(() => {
+      if (!initialPending) return
+      initialPending = false
+      callback(controller.signal)
+    }, 0)
+
     document.addEventListener("astro:page-load", () => {
+      if (initialPending) {
+        clearTimeout(fallbackId)
+        initialPending = false
+      }
       callback(controller.signal);
     });
   },

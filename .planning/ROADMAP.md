@@ -20,6 +20,40 @@
 | 3 | Page Decomposition | ⬜ Not started | — |
 | 4 | Smart Today + Tooling | ⬜ Not started | — |
 
+## Parallel Phase 08: Settings Full Redesign
+
+**Status:** 🔄 In progress (Tier 1 complete, Tier 2 HA verification blocked by environment)
+
+**Goal:** Replace the legacy Settings tab stack with a searchable, Astro-native shell that works cleanly behind Home Assistant ingress, inside the companion app, and as a PWA.
+
+**Requirements:** SET-01→08
+
+**Success Criteria:**
+1. Settings uses grouped shell navigation with hash deep-links instead of hidden tab panes.
+2. Registry/store/page orchestration removes duplicated client ownership for section metadata and settings IO.
+3. Webhooks → Automation & AI linking uses canonical section ids.
+4. App & PWA exposes installability state plus Home Assistant Companion URL handler and x-callback-url affordances.
+5. Manifest metadata includes real Settings screenshots and a Settings shortcut.
+6. Theme/settings shell Playwright coverage passes locally.
+7. HA devcontainer verification confirms ingress-safe behavior before phase closeout.
+
+**Dependencies:** None for local delivery. Tier 2 closeout depends on Docker access for the HA devcontainer.
+
+## Parallel Phase 09: Search Hub Upgrade
+
+**Status:** ✅ Implemented locally (Tier 1 complete, Tier 2 HA verification blocked by environment)
+
+**Goal:** Replace Meitheal's split task search and command palette with one Astro-native, Home Assistant-native search hub that can search tasks, views, settings, saved filters, and actions.
+
+**Success Criteria:**
+1. The topbar launcher and `Cmd/Ctrl+K` open the same universal search surface.
+2. Task search supports IDs, titles, descriptions, labels, custom fields, comments, completed/archive toggles, and relevance vs updated sorting.
+3. Search can return boards, saved filters, settings anchors, and quick actions.
+4. HA search service, LLM API, and MCP all reuse the upgraded task-search path.
+5. Public contracts, KCS docs, and phase artifacts reflect the new `/api/search` behavior.
+6. Tier 1 browser verification covers hub launch and at least one navigation flow.
+7. Tier 2 HA verification confirms ingress-safe behavior once Docker access is available.
+
 ---
 
 ## Phase 1: Hierarchy + Feature Gaps

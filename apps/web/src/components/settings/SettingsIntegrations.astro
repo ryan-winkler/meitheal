@@ -10,14 +10,7 @@ interface Props {
 const { locale } = Astro.props;
 ---
 
-<div
-  id="tab-integrations"
-  class="tab-pane"
-  role="tabpanel"
-  aria-labelledby="tab-btn-integrations"
-  style="display: none;"
-  aria-hidden="true"
->
+<div class="settings-shell-panel">
   <div class="integrations-layout">
     <div class="integrations-header">
       <div>
@@ -1158,9 +1151,9 @@ const { locale } = Astro.props;
             Webhooks send task events to external services and automations
             (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A,
             MCP, and WebMCP, see the <a
-              href="#"
+              href="#automation-ai-settings"
               class="callout-link"
-              data-tab="agents-ai">Agents &amp; AI</a
+              data-settings-section-link>Agents &amp; AI</a
             > tab.
           </div>
         </div>
@@ -2129,9 +2122,6 @@ const { locale } = Astro.props;
     }
   };
 
-  initIntegrationCards();
-  document.addEventListener("astro:page-load", initIntegrationCards);
-
   /**
    * HA Connection Status Detection
    *
@@ -2195,10 +2185,6 @@ const { locale } = Astro.props;
       badge!.className = "badge badge-error";
     }
   }
-
-  initHAConnectionStatus();
-  document.addEventListener("astro:page-load", initHAConnectionStatus);
-
   /**
    * Integration Explainer Dialog
    *
@@ -2280,10 +2266,6 @@ const { locale } = Astro.props;
       if (e.target === dialog) dialog.close();
     });
   }
-
-  initExplainerDialog();
-  document.addEventListener("astro:page-load", initExplainerDialog);
-
   /**
    * n8n / Node-RED Mode Toggle
    *
@@ -2325,10 +2307,6 @@ const { locale } = Astro.props;
     autoBtn.addEventListener("click", () => setMode("auto"));
     standaloneBtn.addEventListener("click", () => setMode("standalone"));
   }
-
-  initN8nModeToggle();
-  document.addEventListener("astro:page-load", initN8nModeToggle);
-
   /**
    * Calendar Entity Dropdown Population
    *
@@ -2412,10 +2390,6 @@ const { locale } = Astro.props;
       }
     })();
   }
-
-  initCalendarDropdown();
-  document.addEventListener("astro:page-load", initCalendarDropdown);
-
   /**
    * Grocy Auto-Detection
    *
@@ -2488,10 +2462,6 @@ const { locale } = Astro.props;
       console.warn("[Meitheal] Grocy auto-detect failed");
     }
   }
-
-  initGrocyAutoDetect();
-  document.addEventListener("astro:page-load", initGrocyAutoDetect);
-
   /**
    * Node-RED Auto-Detection
    *
@@ -2547,33 +2517,30 @@ const { locale } = Astro.props;
       console.warn("[Meitheal] Node-RED/n8n auto-detect failed");
     }
   }
+  initIntegrationCards();
+  initExplainerDialog();
+  initN8nModeToggle();
 
-  initNodeRedAutoDetect();
-  document.addEventListener("astro:page-load", initNodeRedAutoDetect);
-
-  /**
-   * Callout Jump Links
-   *
-   * Handles click on [data-tab] links to switch settings tabs.
-   */
-  function initCalloutLinks() {
-    document.querySelectorAll(".callout-link[data-tab]").forEach((link) => {
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        const tabId = (link as HTMLElement).dataset.tab;
-        if (!tabId) return;
-        // Find the corresponding tab button and click it
-        const tabBtn = document.querySelector(
-          `[data-settings-tab="${tabId}"]`,
-        ) as HTMLElement | null;
-        if (tabBtn) {
-          tabBtn.click();
-          tabBtn.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      });
-    });
+  function bootIntegrationsDiagnostics() {
+    initHAConnectionStatus();
+    initCalendarDropdown();
+    initGrocyAutoDetect();
+    initNodeRedAutoDetect();
   }
 
-  initCalloutLinks();
-  document.addEventListener("astro:page-load", initCalloutLinks);
+  const integrationsSection = document.getElementById("integrations-settings");
+  if (!integrationsSection) {
+    bootIntegrationsDiagnostics();
+  } else {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        bootIntegrationsDiagnostics();
+      },
+      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
+    );
+
+    observer.observe(integrationsSection);
+  }
 </script>

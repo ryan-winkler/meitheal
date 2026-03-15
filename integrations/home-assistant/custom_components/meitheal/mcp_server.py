@@ -49,13 +49,14 @@ MCP_TOOLS = [
     },
     {
         "name": "searchTasks",
-        "description": "Search tasks by keyword, status, or priority",
+        "description": "Search tasks by keyword, status, priority, labels, custom fields, comments, or task IDs",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search keyword"},
                 "status": {"type": "string", "enum": ["backlog", "todo", "in_progress", "done", "cancelled"]},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5},
+                "include_completed": {"type": "boolean"},
             },
         },
     },
@@ -326,26 +327,14 @@ async def _execute_tool(
         return {"status": "updated", "id": task_id}
 
     elif tool_name == "searchTasks":
-        if not coordinator.data:
+        if not coordinator:
             return {"tasks": []}
-        query = args.get("query", "").lower()
-        status = args.get("status")
-        priority = args.get("priority")
-        results = []
-        for t in coordinator.data.tasks:
-            if status and t.status != status:
-                continue
-            if priority and t.priority != priority:
-                continue
-            if query and query not in t.title.lower() and (
-                not t.description or query not in t.description.lower()
-            ):
-                continue
-            results.append({
-                "id": t.id, "title": t.title, "status": t.status,
-                "priority": t.priority, "due_date": t.due_date,
-            })
-        return {"tasks": results, "count": len(results)}
+        return await coordinator.async_search_tasks(
+            query=args.get("query", ""),
+            status=args.get("status"),
+            priority=args.get("priority"),
+            include_completed=args.get("include_completed", False),
+        )
 
     elif tool_name == "getTask":
         if not coordinator.data:

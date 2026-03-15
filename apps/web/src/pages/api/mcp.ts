@@ -38,7 +38,7 @@ const MCP_TOOLS = [
   },
   {
     name: "searchTasks",
-    description: "Search tasks by keyword, status, or priority",
+    description: "Search tasks by keyword, status, priority, assignee, labels, custom fields, comments, or task IDs",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -46,6 +46,7 @@ const MCP_TOOLS = [
         status: { type: "string", enum: ["backlog", "pending", "active", "complete"] },
         priority: { type: "integer", minimum: 1, maximum: 5 },
         assigned_to: { type: "string", description: "Filter by assigned user ID" },
+        include_completed: { type: "boolean" },
       },
     },
   },
@@ -310,9 +311,26 @@ async function executeTool(
       const params = new URLSearchParams();
       if (args.query) params.set("q", String(args.query));
       if (args.status) params.set("status", String(args.status));
+      if (args.priority) params.set("priority", String(args.priority));
       if (args.assigned_to) params.set("assigned_to", String(args.assigned_to));
-      const res = await fetch(`${baseUrl}/api/tasks?${params}`);
-      return await res.json().catch(() => ({ tasks: [] }));
+      if (args.include_completed) params.set("include_completed", "1");
+      params.set("scope", "tasks");
+      const res = await fetch(`${baseUrl}/api/search?${params}`);
+      const data = (await res.json().catch(() => ({ sections: [] }))) as {
+        sections?: Array<{ id?: string; items?: Array<Record<string, unknown>> }>
+      };
+      const taskSection = data.sections?.find((section) => section.id === "tasks");
+      return {
+        tasks: (taskSection?.items ?? []).map((item) => ({
+          id: item.taskId ?? item.id,
+          title: item.title,
+          description: item.description,
+          status: (item.meta as Record<string, unknown> | undefined)?.status,
+          priority: (item.meta as Record<string, unknown> | undefined)?.priority,
+          matched_fields: (item.meta as Record<string, unknown> | undefined)?.matched_fields ?? [],
+        })),
+        count: taskSection?.items?.length ?? 0,
+      };
     }
 
     case "completeTask": {

@@ -63,12 +63,12 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
 
 
 class SearchTasksTool(Tool):
-    """Search Meitheal tasks by keyword, status, or priority."""
+    """Search Meitheal tasks by keyword, status, priority, and richer task fields."""
 
     name = "meitheal_search_tasks"
     description = (
         "Search tasks in Meitheal, the household task manager. "
-        "You can filter by keyword (matches title and description), "
+        "You can filter by keyword (matches title, description, labels, custom fields, comments, and task IDs), "
         "status (backlog, todo, in_progress, or done), or priority (1=urgent, 5=low). "
         "Use this when the user asks about their tasks, to-do list, or task list."
     )
@@ -83,6 +83,10 @@ class SearchTasksTool(Tool):
                 "priority",
                 description="Filter by priority (1 = highest/urgent, 5 = lowest)",
             ): vol.All(int, vol.Range(min=1, max=5)),
+            vol.Optional(
+                "include_completed",
+                description="Include completed tasks in the results",
+            ): bool,
         }
     )
 
@@ -94,34 +98,15 @@ class SearchTasksTool(Tool):
     ) -> JsonObjectType:
         """Execute task search."""
         coordinator = _get_coordinator(hass)
-        if not coordinator or not coordinator.data:
+        if not coordinator:
             return {"tasks": [], "count": 0, "message": "No tasks available"}
 
-        tasks = coordinator.data.tasks
-        query = tool_input.tool_args.get("query", "").lower()
-        status = tool_input.tool_args.get("status")
-        priority = tool_input.tool_args.get("priority")
-
-        results = []
-        for task in tasks:
-            if query and query not in task.title.lower() and query not in (task.description or "").lower():
-                continue
-            if status and task.status != status:
-                continue
-            if priority and task.priority != priority:
-                continue
-            results.append(
-                {
-                    "id": task.id,
-                    "title": task.title,
-                    "status": task.status,
-                    "priority": task.priority,
-                    "due_date": task.due_date,
-                    "is_overdue": task.is_overdue,
-                }
-            )
-
-        return {"tasks": results, "count": len(results)}
+        return await coordinator.async_search_tasks(
+            query=tool_input.tool_args.get("query", ""),
+            status=tool_input.tool_args.get("status"),
+            priority=tool_input.tool_args.get("priority"),
+            include_completed=tool_input.tool_args.get("include_completed", False),
+        )
 
 
 class GetTaskDetailsTool(Tool):

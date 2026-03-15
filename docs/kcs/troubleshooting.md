@@ -2,6 +2,27 @@
 
 ## Common Issues
 
+### Universal Search Hub
+
+**Symptoms**: `Cmd/Ctrl+K` does nothing, the topbar launcher feels empty, or search is missing settings/views/actions results.
+
+**Fix**:
+
+1. Make sure the page has fully loaded, then click the topbar search field once to open the shared search hub.
+2. Use the scope chips (`All`, `Tasks`, `Views`, `Settings`, `Actions`) to narrow results before assuming the item is missing.
+3. For task-only misses, enable the field toggles you need (`IDs`, `Labels`, `Custom fields`, `Comments`) and decide whether `Completed` or `Archived` should be included.
+4. See `docs/kcs/search-hub-guide.md` for the full search behavior and Home Assistant parity notes.
+
+### Settings Shell Navigation
+
+**Symptoms**: A setting feels hard to find, a companion reopen flow is unclear, or a Settings cross-link lands somewhere unexpected.
+
+**Fix**:
+
+1. Use the Settings search box first — it now jumps directly to fields.
+2. Use `Settings → App & PWA` for companion URL handler and x-callback actions.
+3. See `docs/kcs/settings-troubleshooting.md` for the Settings-specific runbook.
+
 ### IDB Quota Exceeded
 
 **Symptoms**: Tasks fail to save locally, "QuotaExceededError" in console.

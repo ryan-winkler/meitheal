@@ -13,7 +13,7 @@ Python custom component that registers Meitheal as a first-class HA integration.
 | `meitheal.create_task`          | Service        | Create a task                      |
 | `meitheal.complete_task`        | Service        | Mark a task done                   |
 | `meitheal.sync_todo`            | Service        | Manual data refresh                |
-| `meitheal.search_tasks`         | Service        | Search tasks by keyword/status     |
+| `meitheal.search_tasks`         | Service        | Search tasks by IDs, text, status, priority, labels, custom fields, and comments |
 | `meitheal.get_overdue_tasks`    | Service        | List all overdue tasks             |
 | `meitheal.notify_overdue`       | Service        | Push overdue notification to HA    |
 
@@ -31,7 +31,7 @@ When HA 2026.3+ is available, Meitheal registers an LLM API that exposes these t
 
 | Tool | Description |
 | ---- | ----------- |
-| `meitheal_search_tasks` | Search by keyword, status, or priority |
+| `meitheal_search_tasks` | Search by keyword, IDs, labels, custom fields, comments, status, or priority |
 | `meitheal_get_task` | Get full task details by ID |
 | `meitheal_create_task` | Create a new task |
 | `meitheal_complete_task` | Mark a task as done |

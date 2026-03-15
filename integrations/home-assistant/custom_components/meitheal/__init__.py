@@ -157,31 +157,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
     async def handle_search_tasks(call: ServiceCall) -> ServiceResponse:
         """Handle meitheal.search_tasks service call."""
-        query = call.data["query"].lower()
-        status_filter = call.data.get("status")
-
-        if not coordinator.data:
+        if not coordinator:
             return {"tasks": []}
 
-        results = []
-        for task in coordinator.data.tasks:
-            # Filter by status if specified
-            if status_filter and task.status != status_filter:
-                continue
-            # Match query against title and description
-            if query in task.title.lower() or (
-                task.description and query in task.description.lower()
-            ):
-                results.append({
-                    "id": task.id,
-                    "title": task.title,
-                    "status": task.status,
-                    "priority": task.priority,
-                    "due_date": task.due_date,
-                    "description": task.description,
-                })
-
-        return {"tasks": results}
+        return await coordinator.async_search_tasks(
+            query=str(call.data.get("query", "")),
+            status=call.data.get("status"),
+            priority=call.data.get("priority"),
+            include_completed=bool(call.data.get("include_completed", False)),
+        )
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:
         """Handle meitheal.get_overdue_tasks service call."""

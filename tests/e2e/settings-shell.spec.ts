@@ -1,0 +1,74 @@
+import { expect, test } from "@playwright/test"
+import { shouldSkipBrowserSpecs } from "./_helpers"
+
+test.describe("Settings Shell", () => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/settings")
+    await page.waitForLoadState("networkidle")
+  })
+
+  test("search jumps directly to matching anchors", async ({ page }) => {
+    const searchInput = page.locator("#settings-search-input")
+
+    await searchInput.fill("theme")
+    await expect(
+      page.locator("#settings-search-results .settings-search-results__item").first(),
+    ).toContainText("Theme")
+
+    await searchInput.press("Enter")
+
+    await expect(page).toHaveURL(/#theme-select$/)
+    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+      "aria-current",
+      "location",
+    )
+  })
+
+  test("webhooks callout uses the canonical automation and ai section id", async ({ page }) => {
+    await page.goto("/settings#integrations-settings")
+    await page.waitForLoadState("networkidle")
+
+    await page.locator('[aria-controls="integration-webhooks-body"]').click()
+
+    const calloutLink = page.locator("#integration-webhooks-body .callout-link")
+    await expect(calloutLink).toHaveAttribute("href", "#automation-ai-settings")
+
+    await calloutLink.click()
+
+    await expect(page).toHaveURL(/#automation-ai-settings$/)
+    await expect(page.locator('[data-settings-nav="automation-ai-settings"]').first()).toHaveAttribute(
+      "aria-current",
+      "location",
+    )
+  })
+
+  test("app and pwa section exposes companion url handler and x-callback targets", async ({
+    page,
+  }) => {
+    await page.goto("/settings#app-pwa-settings")
+    await page.waitForLoadState("networkidle")
+
+    await expect(page.locator("#app-pwa-settings")).toBeVisible()
+    await expect(page.locator('[data-companion-link="app-pwa-settings"]')).toHaveAttribute(
+      "href",
+      /homeassistant:\/\/navigate.*\/settings#app-pwa-settings/,
+    )
+    await expect(page.locator("[data-companion-xcallback-preview]")).toContainText(
+      "homeassistant://x-callback-url/navigate?path=",
+    )
+    await expect(page.locator("[data-companion-xcallback-preview]")).toContainText(
+      "%2Fsettings%23app-pwa-settings",
+    )
+  })
+
+  test("hash deep links keep the target section addressable", async ({ page }) => {
+    await page.goto("/settings#danger-zone-settings")
+    await page.waitForLoadState("networkidle")
+
+    await expect(page).toHaveURL(/#danger-zone-settings$/)
+    await expect(page.locator("#danger-zone-settings")).toBeVisible()
+    await expect(page.locator("#reset-settings")).toBeVisible()
+  })
+})

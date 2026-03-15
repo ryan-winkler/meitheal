@@ -136,6 +136,40 @@ test.describe("PWA Manifest — Dynamic Endpoint", () => {
     expect(manifest.icons.length).toBeGreaterThanOrEqual(2)
   })
 
+  test("manifest includes desktop and mobile settings screenshots", () => {
+    const screenshots = [
+      {
+        src: "/pwa/screenshots/settings-desktop.png",
+        sizes: "1440x1024",
+        form_factor: "wide",
+      },
+      {
+        src: "/pwa/screenshots/settings-mobile.png",
+        sizes: "430x932",
+        form_factor: "narrow",
+      },
+    ]
+
+    expect(screenshots).toHaveLength(2)
+    expect(screenshots[0]?.form_factor).toBe("wide")
+    expect(screenshots[1]?.form_factor).toBe("narrow")
+  })
+
+  test("manifest shortcuts include settings entry", () => {
+    const shortcuts = [
+      { short_name: "Today", url: "/today" },
+      { short_name: "Calendar", url: "/calendar" },
+      { short_name: "Settings", url: "/settings#app-pwa-settings" },
+    ]
+
+    expect(shortcuts.map((shortcut) => shortcut.short_name)).toEqual([
+      "Today",
+      "Calendar",
+      "Settings",
+    ])
+    expect(shortcuts[2]?.url).toBe("/settings#app-pwa-settings")
+  })
+
   test("manifest URLs are prefixed with ingress path", () => {
     const ingressPath = "/api/hassio_ingress/abc123"
 

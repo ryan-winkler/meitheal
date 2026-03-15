@@ -15,7 +15,7 @@
 
 import type { Client } from "@libsql/client";
 import type { InValue } from "@libsql/client";
-import { STATUS } from "../../../lib/status-config";
+import { normalizeStatus, STATUS } from "../../../lib/status-config";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -435,6 +435,7 @@ export class TaskRepository {
   /** List tasks with optional filters, pagination, and sorting. */
   async findAll(opts: {
     status?: string;
+    priority?: number;
     boardId?: string;
     taskType?: string;
     parentId?: string;
@@ -456,7 +457,8 @@ export class TaskRepository {
     const conditions: string[] = [];
     const args: InValue[] = [];
 
-    if (opts.status) { conditions.push("status = ?"); args.push(opts.status); }
+    if (opts.status) { conditions.push("status = ?"); args.push(normalizeStatus(opts.status)); }
+    if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
     if (opts.boardId) { conditions.push("board_id = ?"); args.push(opts.boardId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
@@ -482,6 +484,113 @@ export class TaskRepository {
 
     const total = Number((countResult.rows[0] as Record<string, unknown>)?.cnt ?? 0);
     return { tasks: result.rows as TaskRow[], total };
+  }
+
+  /** Advanced catalog search used by the universal search hub and HA search bridges. */
+  async searchCatalog(opts: {
+    query?: string;
+    status?: string;
+    priority?: number;
+    assignedTo?: string;
+    includeCompleted?: boolean;
+    includeArchived?: boolean;
+    fields?: readonly string[];
+    sort?: "relevance" | "updated";
+    limit?: number;
+  }): Promise<TaskRow[]> {
+    const query = (opts.query ?? "").trim().toLowerCase();
+    const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"]).map((field) => field.toLowerCase()));
+    const limit = Math.min(50, Math.max(1, opts.limit ?? 12));
+    const rawLimit = Math.min(150, limit * 3);
+
+    const conditions: string[] = [];
+    const args: InValue[] = [];
+
+    const excludedStatuses: string[] = [];
+    if (opts.includeCompleted !== true) excludedStatuses.push(STATUS.COMPLETE);
+    if (opts.includeArchived !== true) excludedStatuses.push("archived");
+    if (excludedStatuses.length === 1) {
+      conditions.push("tasks.status != ?");
+      args.push(excludedStatuses[0]!);
+    } else if (excludedStatuses.length > 1) {
+      conditions.push(`tasks.status NOT IN (${excludedStatuses.map(() => "?").join(", ")})`);
+      args.push(...excludedStatuses);
+    }
+
+    if (opts.status) {
+      conditions.push("tasks.status = ?");
+      args.push(normalizeStatus(opts.status));
+    }
+
+    if (opts.priority != null) {
+      conditions.push("tasks.priority = ?");
+      args.push(opts.priority);
+    }
+
+    if (opts.assignedTo) {
+      conditions.push("tasks.assigned_to = ?");
+      args.push(opts.assignedTo);
+    }
+
+    if (query) {
+      const fieldClauses: string[] = [];
+
+      if (fields.has("id")) {
+        fieldClauses.push("LOWER(tasks.id) LIKE ?");
+        fieldClauses.push("LOWER(COALESCE('mth-' || CAST(tasks.ticket_number AS TEXT), '')) LIKE ?");
+        fieldClauses.push("CAST(COALESCE(tasks.ticket_number, '') AS TEXT) LIKE ?");
+        args.push(`%${query}%`, `%${query}%`, `%${query}%`);
+      }
+      if (fields.has("title")) {
+        fieldClauses.push("LOWER(COALESCE(tasks.title, '')) LIKE ?");
+        args.push(`%${query}%`);
+      }
+      if (fields.has("description")) {
+        fieldClauses.push("LOWER(COALESCE(tasks.description, '')) LIKE ?");
+        args.push(`%${query}%`);
+      }
+      if (fields.has("labels")) {
+        fieldClauses.push("LOWER(COALESCE(tasks.labels, '')) LIKE ?");
+        args.push(`%${query}%`);
+      }
+      if (fields.has("custom_fields")) {
+        fieldClauses.push("LOWER(COALESCE(tasks.custom_fields, '')) LIKE ?");
+        args.push(`%${query}%`);
+      }
+      if (fields.has("comments")) {
+        fieldClauses.push("LOWER(COALESCE(comment_index.comment_blob, '')) LIKE ?");
+        args.push(`%${query}%`);
+      }
+
+      if (fieldClauses.length > 0) {
+        conditions.push(`(${fieldClauses.join(" OR ")})`);
+      }
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const orderBy = opts.sort === "updated"
+      ? "tasks.updated_at DESC, tasks.priority ASC"
+      : "tasks.updated_at DESC";
+
+    const result = await this.client.execute({
+      sql: `SELECT tasks.id, tasks.ticket_number, tasks.title, tasks.description, tasks.status,
+                   tasks.priority, tasks.labels, tasks.custom_fields, tasks.board_id, tasks.task_type,
+                   tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date,
+                   comment_index.comment_blob
+            FROM tasks
+            LEFT JOIN (
+              SELECT task_id, GROUP_CONCAT(content, ' || ') AS comment_blob
+              FROM comments
+              GROUP BY task_id
+            ) AS comment_index
+              ON comment_index.task_id = tasks.id
+            ${where}
+            ORDER BY ${orderBy}
+            LIMIT ${rawLimit}`,
+      args,
+    });
+
+    return result.rows as TaskRow[];
   }
 
   /** Get the next sequential ticket number for MTH-N key assignment */

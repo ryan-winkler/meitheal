@@ -7,6 +7,30 @@
 **Last Completed:** Phase 4B — Version Tooling — 2026-03-15
 **Session Date:** 2026-03-15
 
+## Parallel Phase 08 Summary (IN PROGRESS)
+
+**Objective:** Settings full redesign with Astro-native shell navigation, zero duplicated tab ownership, Home Assistant-native ingress behavior, and stronger PWA/companion affordances.
+
+### Delivered on 2026-03-15
+- Replaced the legacy top-tab shell in `apps/web/src/pages/settings.astro` with a searchable settings shell, sticky desktop rail, mobile nav, summary cards, and hash-based section routing.
+- Added `settings-registry.ts`, `settings-store.ts`, `settings-shell-controller.ts`, and `settings-page.ts` to separate section metadata, cached settings IO, shell behavior, and page bootstrapping.
+- Removed hidden tab-pane wrappers and long-lived `astro:page-load` listeners from the settings section components.
+- Split system content into real `personal-settings`, `app-pwa-settings`, and `danger-zone-settings` sections.
+- Added Home Assistant Companion URL handler and x-callback-url affordances in App & PWA, plus real manifest screenshots and a Settings shortcut.
+- Added Playwright coverage for theme settings, shell search, canonical Webhooks → Automation & AI linking, and App & PWA companion affordances.
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/tests test tests/e2e/theme-settings.spec.ts tests/e2e/settings-shell.spec.ts tests/e2e/pwa-offline.spec.ts` — 27 passed.
+- Tier 1: Real Settings screenshots captured from the local Astro server into `public/pwa/screenshots/`.
+- Tier 2: Attempted `./scripts/devcontainer-up.sh status`, but Docker socket access is blocked on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).
+
+### HEART Targets
+- Happiness: make any setting discoverable from one search box and visible summaries.
+- Engagement: make Settings feel like a guided control surface instead of a tab graveyard.
+- Adoption: ship companion/PWA actions where users already troubleshoot installability and mobile handoff.
+- Retention: persist theme and settings state across reloads and hash deep-links.
+- Task Success: eliminate dead-end cross-links and hidden-section assumptions.
+
 ## Phase 1 Summary (COMPLETE ✅)
 
 4 commits pushed to main, 286 tests pass, 0 regressions.
@@ -153,3 +177,26 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Phase 4B VER-01/02/03: Version tooling scripts + CI integration
 - Tests: 286 passed, 65 skipped
 - TypeCheck: 0 errors, 0 warnings
+
+### 2026-03-15 Session 7
+- Phase 08 iteration 01: Settings shell redesign, registry/store split, App & PWA companion affordances
+- Generated Settings manifest screenshots from the real redesigned page
+- Tier 1 browser verification: 27 targeted tests passed
+- Tier 2 verification blocked by missing Docker socket access on current machine
+
+## Parallel Phase 09 Summary (IMPLEMENTED LOCALLY ✅)
+
+**Objective:** Deliver one Astro-native search hub that upgrades task search, unifies keyboard and topbar launch, and keeps Home Assistant search callers on the same backend contract.
+
+### Delivered on 2026-03-15
+- Replaced the old topbar dropdown plus split command palette behavior with a shared `SearchHub.astro` overlay and `search-hub-controller.ts`.
+- Added a dedicated search domain plus `/api/search` for universal search orchestration across tasks, boards, saved filters, settings, pages, and actions.
+- Upgraded task search to cover IDs/ticket keys, labels, custom fields, comments, completed/archive toggles, and relevance-vs-updated sorting.
+- Reused the shared settings registry for settings results instead of creating a second settings-search source.
+- Routed Home Assistant search service, LLM API, and MCP `searchTasks` calls through the new task-search path for parity.
+- Added search contract and KCS documentation for the upgraded behavior.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: targeted browser verification added for universal search hub launch and navigation.
+- Tier 2: `./scripts/devcontainer-up.sh status` — still blocked by Docker socket permission on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).

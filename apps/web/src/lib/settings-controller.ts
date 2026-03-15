@@ -1,8 +1,12 @@
-import { exportLocalDataAsJson } from "@domains/offline/export-service";
-import { confirmDialog } from "@lib/confirm-dialog";
-import { showToast } from "@lib/toast";
+import { exportLocalDataAsJson } from "@domains/offline/export-service"
+import { confirmDialog } from "@lib/confirm-dialog"
+import { settingsStore } from "@lib/settings-store"
+import { showToast } from "@lib/toast"
 import {
-import type { ThemeMode } from "@lib/theme-watcher";
+  setTheme as importedSetTheme,
+  applyCustomTheme as importedApplyCustomTheme,
+} from "@lib/theme-watcher"
+import type { ThemeMode } from "@lib/theme-watcher"
 
 export function initSettingsController(): void {
 
@@ -66,6 +70,7 @@ export function initSettingsController(): void {
           }
 
           showToast("settings.import_success");
+          settingsStore.invalidate()
           setTimeout(() => window.location.reload(), 1500);
         } catch (error) {
           console.error("Failed to import settings:", error);
@@ -73,10 +78,6 @@ export function initSettingsController(): void {
         }
       });
     }
-
-      setTheme as importedSetTheme,
-      applyCustomTheme as importedApplyCustomTheme,
-    } from "@lib/theme-watcher";
 
     /** Max custom theme CSS file size in bytes */
     const MAX_THEME_SIZE = 51200; // 50KB
@@ -129,11 +130,7 @@ export function initSettingsController(): void {
     // Save a setting to the API
     async function saveSetting(key: string, value: unknown) {
       try {
-        await fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key, value }),
-        });
+        await settingsStore.saveSetting(key, value)
       } catch {
         /* ignore */
       }
@@ -141,12 +138,9 @@ export function initSettingsController(): void {
 
     // Load settings from API on page init
     async function loadSettings() {
-      let settings: Record<string, any> = {};
+      let settings: Record<string, any> = {}
       try {
-        const res = await fetch(
-          (window.__ingress_path || "") + "/api/settings",
-        );
-        settings = await res.json();
+        settings = await settingsStore.load()
       } catch (e) {
         console.error("[Settings] Failed to load settings from API:", e);
         // Fall back to localStorage for locale
@@ -2997,6 +2991,7 @@ export function initSettingsController(): void {
           );
           if (res.ok) {
             showToast("settings.reset_success");
+            settingsStore.invalidate()
             setTimeout(() => window.location.reload(), 1000);
           } else showToast("settings.reset_failed", "error");
         } catch {

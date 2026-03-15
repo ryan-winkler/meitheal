@@ -8,6 +8,21 @@ Meitheal integrates with the Home Assistant Companion App on Android and iOS for
 - Meitheal integration set up (Settings → Devices & Services → Meitheal)
 - HA Companion App installed ([Android](https://play.google.com/store/apps/details?id=io.homeassistant.companion.android) / [iOS](https://apps.apple.com/app/home-assistant/id1099568401))
 
+## URL Handler and X-Callback-URL
+
+The redesigned `Settings → App & PWA` section now surfaces companion-safe deep links directly in the UI:
+
+- `Open in Companion` uses Home Assistant's documented URL handler:
+  `homeassistant://navigate/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings`
+- `Copy x-callback URL` generates the companion x-callback equivalent for Shortcuts and automation flows:
+  `homeassistant://x-callback-url/navigate?path=%2Fapi%2Fhassio_ingress%2F<TOKEN>%2Fsettings%23app-pwa-settings`
+
+Use the Settings copy action when possible so you do not have to hand-encode the ingress path or hash.
+
+**Official references:**
+- URL handler: <https://companion.home-assistant.io/docs/integrations/url-handler>
+- x-callback-url: <https://companion.home-assistant.io/docs/integrations/x-callback-url/>
+
 ## Android Setup
 
 ### Shortcuts
@@ -28,6 +43,7 @@ Create home screen shortcuts to Meitheal:
 | Kanban | `/api/hassio_ingress/<TOKEN>/kanban` |
 | Today | `/api/hassio_ingress/<TOKEN>/today` |
 | Calendar | `/api/hassio_ingress/<TOKEN>/calendar` |
+| Settings | `/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings` |
 
 ### Quick Settings Tile
 

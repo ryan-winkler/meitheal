@@ -11,7 +11,6 @@
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
-        import { escapeHtml } from "@lib/escape-html";
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
@@ -92,88 +91,6 @@
             }
           });
 
-          // Global search — re-query DOM refs on each page load (P0-5)
-          const searchInput = document.getElementById(
-            "global-search",
-          ) as HTMLInputElement;
-          const searchResults = document.getElementById("search-results")!;
-          let searchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-          searchInput?.addEventListener(
-            "input",
-            () => {
-              const q = searchInput.value.trim();
-              if (searchTimeout) clearTimeout(searchTimeout);
-              if (!q) {
-                searchResults.style.display = "none";
-                return;
-              }
-              searchTimeout = setTimeout(async () => {
-                try {
-                  const res = await fetch(
-                    (window.__ingress_path || "") +
-                      `/api/tasks?q=${encodeURIComponent(q)}&limit=8`,
-                  );
-                  const data = (await res.json()) as {
-                    tasks: Array<Record<string, unknown>>;
-                    total: number;
-                  };
-                  if (data.tasks.length === 0) {
-                    searchResults.innerHTML =
-                      '<div class="search-empty">No tasks found</div>';
-                  } else {
-                    searchResults.innerHTML = data.tasks
-                      .map(
-                        (t) =>
-                          `<div class="search-item" data-task-id="${escapeHtml(t.id ?? "")}" style="cursor:pointer;">
-                  <strong>${escapeHtml(t.title ?? "")}</strong>
-                  <span class="search-meta">${escapeHtml(t.status ?? "pending")} · P${escapeHtml(t.priority ?? 3)}</span>
-                </div>`,
-                      )
-                      .join("");
-                  }
-                  searchResults.style.display = "block";
-                } catch {
-                  searchResults.style.display = "none";
-                }
-              }, 300);
-            },
-            { signal },
-          );
-
-          // Click search result → open task detail panel
-          searchResults?.addEventListener(
-            "click",
-            (e) => {
-              const item = (e.target as Element)?.closest(
-                ".search-item",
-              ) as HTMLElement | null;
-              if (!item) return;
-              const taskId = item.dataset.taskId;
-              if (!taskId) return;
-              searchResults.style.display = "none";
-              searchInput.value = "";
-              if (typeof window.openTaskDetail === "function") {
-                window.openTaskDetail(taskId);
-              } else {
-                window.location.href =
-                  (window.__ingress_path || "") + `/tasks#edit-${taskId}`;
-              }
-            },
-            { signal },
-          );
-
-          // Close search on click outside
-          document.addEventListener(
-            "click",
-            (e) => {
-              if (!(e.target as Element)?.closest("#search-container")) {
-                searchResults?.style && (searchResults.style.display = "none");
-              }
-            },
-            { signal },
-          );
-
           // EmptyState "New Task" buttons dispatch this event to open the modal
           document.addEventListener(
             "meitheal:new-task",
@@ -184,7 +101,7 @@
             { signal } as AddEventListenerOptions,
           );
 
-          // "/" to focus search, Escape to blur, "n" for new task
+          // "/" and Cmd/Ctrl+K launch universal search, "n" creates a task
           document.addEventListener(
             "keydown",
             (e) => {
@@ -198,8 +115,8 @@
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
                 );
-                const cpOverlay = document.getElementById(
-                  "command-palette-overlay",
+                const searchHubOverlay = document.getElementById(
+                  "search-hub-overlay",
                 );
                 const shortcutModal = document.getElementById("shortcut-modal");
                 const sidebar = document.getElementById("sidebar");
@@ -217,13 +134,11 @@
                   document.body.style.overflow = "";
                   return;
                 }
-                if (cpOverlay && !cpOverlay.classList.contains("hidden")) {
-                  cpOverlay.classList.add("hidden");
-                  return;
-                }
-                if (document.activeElement === searchInput) {
-                  searchInput?.blur();
-                  searchResults.style.display = "none";
+                if (
+                  searchHubOverlay &&
+                  !searchHubOverlay.classList.contains("hidden")
+                ) {
+                  window.closeSearchHub?.();
                   return;
                 }
                 if (sidebar?.classList.contains("open")) {
@@ -249,21 +164,12 @@
 
               if (e.key === "/" && !e.shiftKey) {
                 e.preventDefault();
-                searchInput?.focus();
+                window.openSearchHub?.();
               }
-              // Ctrl+K / Cmd+K opens command palette
+              // Ctrl+K / Cmd+K opens universal search
               if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                const cpOverlay = document.getElementById(
-                  "command-palette-overlay",
-                );
-                if (cpOverlay) {
-                  cpOverlay.classList.toggle("hidden");
-                  if (!cpOverlay.classList.contains("hidden")) {
-                    const cpInput = cpOverlay.querySelector("input");
-                    cpInput?.focus();
-                  }
-                }
+                window.openSearchHub?.();
                 return;
               }
               if (e.key === "n") {
@@ -308,8 +214,8 @@
               const taskOverlay = document.getElementById(
                 "task-detail-overlay",
               );
-              const cpOverlay = document.getElementById(
-                "command-palette-overlay",
+              const searchHubOverlay = document.getElementById(
+                "search-hub-overlay",
               );
               const shortcutModal = document.getElementById("shortcut-modal");
 
@@ -319,8 +225,11 @@
                 activeOverlay = shortcutModal;
               else if (taskOverlay && !taskOverlay.classList.contains("hidden"))
                 activeOverlay = taskOverlay;
-              else if (cpOverlay && !cpOverlay.classList.contains("hidden"))
-                activeOverlay = cpOverlay;
+              else if (
+                searchHubOverlay &&
+                !searchHubOverlay.classList.contains("hidden")
+              )
+                activeOverlay = searchHubOverlay;
 
               if (activeOverlay && e.key === "Tab") {
                 const focusableElements = activeOverlay.querySelectorAll(

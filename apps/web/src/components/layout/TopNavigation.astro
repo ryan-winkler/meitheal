@@ -45,6 +45,9 @@ const { locale } = Astro.props;
         placeholder={t("topbar.search_placeholder", locale)}
         aria-label={t("topbar.search_placeholder", locale)}
         autocomplete="off"
+        readonly
+        aria-haspopup="dialog"
+        aria-controls="search-hub-overlay"
       />
       <div
         class="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"
@@ -54,11 +57,6 @@ const { locale } = Astro.props;
           >Cmd K</kbd
         >
       </div>
-    </div>
-    <div
-      class="search-results absolute top-full left-0 right-0 mt-2 bg-bg-secondary border border-border rounded-lg shadow-xl overflow-y-auto max-h-96 z-50 text-sm hidden"
-      id="search-results"
-    >
     </div>
   </div>
 
@@ -139,32 +137,3 @@ const { locale } = Astro.props;
     }
   });
 </script>
-
-<style>
-  .search-item {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.5);
-    transition: background-color 200ms ease;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .search-item:hover {
-    background: var(--bg-hover);
-  }
-  .search-item:last-child {
-    border-bottom: none;
-  }
-  .search-meta {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-transform: capitalize;
-  }
-  .search-empty {
-    padding: 1.5rem 1rem;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    font-style: italic;
-  }
-</style>

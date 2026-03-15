@@ -52,26 +52,41 @@ const MANIFEST_BASE = {
   ],
   screenshots: [
     {
-      src: "/icon-512.png",
-      sizes: "512x512",
+      src: "/pwa/screenshots/settings-desktop.png",
+      sizes: "1440x1024",
       type: "image/png",
       form_factor: "wide",
-      label: "Meitheal — Task Dashboard",
+      label: "Meitheal settings shell on desktop",
     },
     {
-      src: "/icon-512.png",
-      sizes: "512x512",
+      src: "/pwa/screenshots/settings-mobile.png",
+      sizes: "430x932",
       type: "image/png",
       form_factor: "narrow",
-      label: "Meitheal — Mobile View",
+      label: "Meitheal settings shell on mobile",
     },
   ],
 };
 
 const SHORTCUTS = [
-  { name: "Today", short_name: "Today", url: "/today" },
-  { name: "Tasks", short_name: "Tasks", url: "/tasks" },
-  { name: "Calendar", short_name: "Calendar", url: "/calendar" },
+  {
+    name: "Today",
+    short_name: "Today",
+    description: "Jump straight into today’s work",
+    url: "/today",
+  },
+  {
+    name: "Calendar",
+    short_name: "Calendar",
+    description: "Review scheduled work and due dates",
+    url: "/calendar",
+  },
+  {
+    name: "Settings",
+    short_name: "Settings",
+    description: "Open the Home Assistant-native settings shell",
+    url: "/settings#app-pwa-settings",
+  },
 ];
 
 export const GET: APIRoute = ({ request }) => {

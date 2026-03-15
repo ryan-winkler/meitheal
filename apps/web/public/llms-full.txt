@@ -41,8 +41,10 @@ All endpoints accept and return JSON.
 ### Search & Filtering
 
 - `GET /api/tasks?status=todo` — Filter by status
-- `GET /api/tasks?q=keyword` — Search by keyword
+- `GET /api/tasks?q=keyword` — Basic task list search across title + description
 - `GET /api/tasks?priority=1` — Filter by priority
+- `GET /api/search?scope=all&q=theme` — Universal search across tasks, boards, saved filters, settings, and actions
+- `GET /api/search?scope=tasks&task_fields=id,title,description,labels,custom_fields,comments&include_completed=1` — Advanced task search
 
 ### Export
 
@@ -73,7 +75,7 @@ All endpoints accept and return JSON.
 ## MCP Tools (18 tools, same across Astro + Python servers)
 
 - `createTask` — Create task (title, description?, priority?, due_date?)
-- `searchTasks` — Search by keyword, status, priority
+- `searchTasks` — Search by keyword, status, priority, assignee, IDs, labels, custom fields, and comments
 - `completeTask` — Mark done by ID or title
 - `updateTask` — Update fields (title, status, priority, due_date, description)
 - `deleteTask` — Delete by ID
@@ -98,7 +100,7 @@ These services can be called from HA automations, scripts, and voice:
 - `meitheal.create_task` — Create a new task (params: title, description?)
 - `meitheal.complete_task` — Mark task done (params: task_id or title)
 - `meitheal.sync_todo` — Force refresh task data
-- `meitheal.search_tasks` — Search tasks (params: query, status?)
+- `meitheal.search_tasks` — Search tasks (params: query, status?, priority?, include_completed?)
 - `meitheal.get_overdue_tasks` — Get all overdue tasks
 - `meitheal.notify_overdue` — Push overdue notification to HA
 
@@ -106,7 +108,7 @@ These services can be called from HA automations, scripts, and voice:
 
 When "Meitheal Tasks" is selected in a conversation agent's LLM APIs:
 
-- `meitheal_search_tasks` — Search by keyword, status, or priority
+- `meitheal_search_tasks` — Search by keyword, IDs, labels, custom fields, comments, status, or priority
 - `meitheal_get_task` — Get full task details by ID
 - `meitheal_create_task` — Create a new task
 - `meitheal_complete_task` — Mark done by ID or title

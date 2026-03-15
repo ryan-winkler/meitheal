@@ -18,15 +18,23 @@ const version =
     : "0.0.0-dev");
 ---
 
-<div
-  id="tab-system"
-  class="tab-pane"
-  role="tabpanel"
-  aria-labelledby="tab-btn-system"
-  style="display: none;"
-  aria-hidden="true"
->
-  <div class="settings-grid">
+<div class="settings-shell-system">
+  <section
+    id="personal-settings"
+    class="settings-shell__section settings-shell__section--nested"
+    data-settings-shell-section
+  >
+    <div class="settings-shell__section-intro">
+      <span class="settings-shell__section-icon">🎨</span>
+      <div>
+        <h2>Personal</h2>
+        <p>
+          Tune appearance, language, timezone, shortcuts, and the daily
+          controls that make Meitheal feel like your workspace.
+        </p>
+      </div>
+    </div>
+    <div class="settings-grid">
     <!-- Keyboard Shortcuts -->
     <div class="card">
       <div class="card-header">
@@ -271,6 +279,26 @@ const version =
       </div>
     </div>
 
+    </div>
+  </section>
+
+  <section
+    id="app-pwa-settings"
+    class="settings-shell__section settings-shell__section--nested"
+    data-settings-shell-section
+  >
+    <div class="settings-shell__section-intro">
+      <span class="settings-shell__section-icon">📲</span>
+      <div>
+        <h2>App &amp; PWA</h2>
+        <p>
+          Export your data, monitor installability, and keep Home Assistant
+          companion handoffs reliable across ingress, mobile webviews, and
+          standalone installs.
+        </p>
+      </div>
+    </div>
+    <div class="settings-grid">
     <!-- Data Portability -->
     <div class="card">
       <div class="card-header">
@@ -538,6 +566,50 @@ const version =
               </div>
             </div>
           </details>
+          <div
+            id="pwa-companion-open"
+            class="settings-companion-card"
+            data-companion-xcallback="app-pwa-settings"
+          >
+            <div class="settings-companion-card__copy">
+              <strong>Open this section in Home Assistant Companion</strong>
+              <p>
+                Use the documented <code>homeassistant://navigate</code> URL
+                handler to jump straight back into this section, or copy an
+                x-callback URL for iOS Shortcuts and automation flows.
+              </p>
+            </div>
+            <div class="settings-companion-card__actions">
+              <a
+                href="#"
+                class="btn btn-primary"
+                data-companion-link="app-pwa-settings"
+                >Open in Companion</a
+              >
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-companion-xcallback-button
+              >
+                Copy x-callback URL
+              </button>
+              <a
+                href="#app-pwa-settings"
+                class="btn btn-ghost"
+                data-settings-section-link
+                >Stay here</a
+              >
+            </div>
+            <code
+              class="settings-companion-card__preview"
+              data-companion-xcallback-preview
+            ></code>
+            <small class="settings-companion-card__hint">
+              Use these companion links in the mobile app, Siri Shortcuts, or
+              HA automation payloads without leaving ingress-safe Settings
+              routes.
+            </small>
+          </div>
         </div>
       </div>
       <div
@@ -672,7 +744,25 @@ const version =
         >
       </div>
     </div>
+    </div>
+  </section>
 
+  <section
+    id="danger-zone-settings"
+    class="settings-shell__section settings-shell__section--nested"
+    data-settings-shell-section
+  >
+    <div class="settings-shell__section-intro">
+      <span class="settings-shell__section-icon">⚠</span>
+      <div>
+        <h2>Danger Zone</h2>
+        <p>
+          Protected destructive actions stay isolated here so resets and purges
+          never compete with day-to-day preference changes.
+        </p>
+      </div>
+    </div>
+    <div class="settings-grid">
     <!-- Danger Zone -->
     <div class="card" style="border-color: var(--danger); border-width: 2px;">
       <div class="card-header">
@@ -700,10 +790,17 @@ const version =
         >
       </div>
     </div>
-  </div>
+    </div>
+  </section>
 </div>
 
 <style is:inline>
+  .settings-shell-system {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
   /* Keyboard Shortcuts — is:inline survives ClientRouter DOM swaps */
   .shortcut-grid {
     display: grid;
@@ -796,6 +893,48 @@ const version =
   .pwa-troubleshoot-btn {
     font-size: 11px !important;
     padding: 4px 10px !important;
+  }
+  .settings-companion-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+    border-radius: 14px;
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent) 9%, transparent),
+        color-mix(in srgb, var(--bg-secondary) 94%, transparent)
+      );
+  }
+  .settings-companion-card__copy p {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+  .settings-companion-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .settings-companion-card__preview {
+    display: block;
+    overflow-wrap: anywhere;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-primary) 82%, black 18%);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .settings-companion-card__hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
   }
 
   /* Accent color swatches */
@@ -915,7 +1054,6 @@ const version =
   }
 
   initPwaCompact();
-  document.addEventListener("astro:page-load", initPwaCompact);
 
   // ── Pop out to browser (escape HA iframe for PWA install) ──
   function initPwaPopout() {
@@ -938,21 +1076,22 @@ const version =
         try {
           const parentOrigin =
             window.top?.location?.origin || window.location.origin;
-          targetUrl = parentOrigin + ingressPath + "/settings#system";
+          targetUrl = parentOrigin + ingressPath + "/settings#app-pwa-settings";
         } catch {
           // Cross-origin: can't read parent origin, use referrer or HA default
           const referrer = document.referrer;
           if (referrer) {
             const refUrl = new URL(referrer);
-            targetUrl = refUrl.origin + ingressPath + "/settings#system";
+            targetUrl =
+              refUrl.origin + ingressPath + "/settings#app-pwa-settings";
           } else {
             // Last resort: just use the ingress path relative
-            targetUrl = ingressPath + "/settings#system";
+            targetUrl = ingressPath + "/settings#app-pwa-settings";
           }
         }
       } else {
         // Standalone mode — same origin
-        targetUrl = window.location.origin + "/settings#system";
+        targetUrl = window.location.origin + "/settings#app-pwa-settings";
       }
 
       window.open(targetUrl, "_blank", "noopener");
@@ -968,7 +1107,6 @@ const version =
   }
 
   initPwaPopout();
-  document.addEventListener("astro:page-load", initPwaPopout);
 
   // ── PWA Troubleshooting Actions ──
   function showTroubleshootResult(msg: string, ok = true) {
@@ -1133,7 +1271,6 @@ const version =
   }
 
   initPwaTroubleshooting();
-  document.addEventListener("astro:page-load", initPwaTroubleshooting);
 
   // Accent color picker
   function initAccentColor() {
@@ -1195,5 +1332,4 @@ const version =
   }
 
   initAccentColor();
-  document.addEventListener("astro:page-load", initAccentColor);
 </script>

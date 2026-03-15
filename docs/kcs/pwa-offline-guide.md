@@ -45,8 +45,9 @@ All APIs use **feature detection** with graceful fallbacks — unsupported brows
 
 The web app manifest (`manifest.webmanifest`) includes:
 
-- **Shortcuts**: New Task, Kanban Board, Settings — appear in long-press/right-click on app icon
-- **Share Target**: Receive shared content from other apps (text → new task)
+- **Shortcuts**: Today, Calendar, Settings — appear in long-press/right-click on the app icon
+- **Screenshots**: Desktop and mobile captures of the redesigned Settings shell for richer install surfaces
+- **App & PWA entry point**: Settings now includes companion handoff actions and install troubleshooting in one place
 
 ### Sync Status Indicator
 
@@ -120,7 +121,7 @@ PWA features (service worker, install prompt, push notifications) require a **se
 | Direct LAN HTTP | ❌ | ❌ |
 | localhost | ✅ implicit | ✅ |
 
-**Graceful degradation**: on insecure origins, Meitheal skips SW registration silently. The app works fully — you just won't get offline caching or the install prompt. Settings > System shows a PWA status card with actionable HTTPS guidance.
+**Graceful degradation**: on insecure origins, Meitheal skips SW registration silently. The app works fully — you just won't get offline caching or the install prompt. Settings > App & PWA shows a status card with actionable HTTPS guidance.
 
 ## Cache Eviction Rules
 
@@ -142,7 +143,7 @@ Eviction runs on SW activation and every 5 minutes during active use. Entries ar
 Meitheal prompts for PWA installation through two paths:
 
 1. **Install Banner** — a fixed bottom banner appears for first-time users on secure contexts. Dismissable with a 7-day cooldown (`localStorage`). Located in `PwaInstallBanner.astro`.
-2. **Settings > System** — the PWA status card includes an Install button when the browser's install prompt is available, plus an Update button when a new SW is waiting.
+2. **Settings > App & PWA** — the PWA status card includes an Install button when the browser's install prompt is available, an Update button when a new SW is waiting, and companion URL handler / x-callback-url actions for mobile reopen flows.
 
 The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `window.__pwa_install_prompt`.
 
@@ -155,4 +156,4 @@ The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `win
 
 ---
 
-Last updated: 2026-03-04 — Phase 59 cache eviction, install flow, update flow
+Last updated: 2026-03-15 — Settings App & PWA shell, manifest screenshots, companion handoff actions

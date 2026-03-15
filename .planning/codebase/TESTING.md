@@ -35,13 +35,15 @@ pnpm check                                  # Typecheck all packages
 **Structure:**
 ```
 tests/
-├── e2e/                    # 49 integration/E2E specs
+├── e2e/                    # 50 integration/E2E specs
 │   ├── _helpers.ts         # Shared test utilities
 │   ├── pages.spec.ts
 │   ├── api.spec.ts
 │   ├── kanban-backlog-mode.spec.ts
 │   ├── ha-calendar-adapter.spec.ts
-│   └── ... (46 more)
+│   ├── theme-settings.spec.ts
+│   ├── settings-shell.spec.ts
+│   └── ... (43 more)
 ├── governance/             # 2 governance/standards specs
 │   ├── iqs-platinum.spec.ts
 │   └── repo-standards.spec.ts
@@ -109,10 +111,10 @@ test.describe("Feature Name", () => {
 
 ## Test Types
 
-**E2E / Integration Tests (49 specs):**
+**E2E / Integration Tests (50 specs):**
 - Test against running Astro server via Playwright's `request` API
-- Cover: pages, API endpoints, security headers, SEO, ingress behavior, Vikunja compat, webhooks, offline sync, accessibility
-- Examples: `pages.spec.ts`, `api.spec.ts`, `security-headers.spec.ts`, `vikunja-compat.spec.ts`
+- Cover: pages, API endpoints, security headers, SEO, ingress behavior, Vikunja compat, webhooks, offline sync, accessibility, and Settings shell regressions
+- Examples: `pages.spec.ts`, `api.spec.ts`, `security-headers.spec.ts`, `vikunja-compat.spec.ts`, `settings-shell.spec.ts`, `theme-settings.spec.ts`
 
 **Governance Tests (2 specs):**
 - Validate repository standards (required files, naming conventions)

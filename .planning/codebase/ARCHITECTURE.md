@@ -35,6 +35,7 @@
 - Contains: `index.astro`, `kanban.astro`, `table.astro`, `today.astro`, `upcoming.astro`, `calendar.astro`, `habits.astro`, `gamification.astro`, `gantt.astro`, `settings.astro`, `tasks.astro`, `offline.astro`
 - Depends on: Domains, lib, components, layouts
 - Used by: Browser (end-user)
+- Note: `settings.astro` now renders a grouped shell with search, summaries, and hash deep-links instead of hidden tab panes.
 
 **API Layer (`apps/web/src/pages/api/`):**
 - Purpose: REST endpoints for client-side fetch, external integrations (MCP, A2A, NFC), webhooks
@@ -56,6 +57,7 @@
 - Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `settings-controller.ts` (3,205), `dashboard-controller.ts`
 - Depends on: Browser APIs, `@domains/offline/`, `@lib/task-api-client.ts`
 - Used by: Pages via `<script>` imports
+- Settings-specific composition now flows through `settings-page.ts` → `settings-shell-controller.ts` + `settings-store.ts` + `settings-registry.ts`, while `settings-controller.ts` remains the legacy behavior layer for existing save flows.
 
 **Middleware (`apps/web/src/middleware.ts`):**
 - Purpose: Request pipeline — auth, security headers, CSRF, rate limiting, HTML rewriting for ingress
@@ -95,6 +97,7 @@
 - Client: `@domains/offline/offline-store.ts` (IndexedDB for offline)
 - Sync: `@domains/offline/sync-engine.ts` (background sync + conflict resolution)
 - Tab coordination: `@domains/offline/tab-sync.ts`
+- Settings shell: `settings-store.ts` caches `/api/settings` reads and preserves existing persisted keys while the shell manages summaries, deep links, and companion actions client-side.
 
 ## Key Abstractions
 
