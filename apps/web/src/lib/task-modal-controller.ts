@@ -10,6 +10,7 @@
         import { sanitizeClient } from "@lib/sanitize-client";
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { createFocusTrap } from "@lib/focus-trap";
+        import { renderTypeIconSvg } from "@lib/type-icon-config";
 
         // Use lifecycle signal for all global listeners in this module
         const __signal = pageLifecycle.signal;
@@ -318,6 +319,14 @@
                 : `#${String(t.id).slice(0, 8)}`;
               tdIdEl.title = `${t.ticket_key ? String(t.ticket_key) + " • " : ""}Full ID: ${t.id}`;
               tdIdEl.classList.remove("hidden");
+            }
+
+            // Render type icon (shared config from @lib/type-icon-config)
+            const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
+            if (typeIconEl) {
+              const tt = String(t.task_type || "task").toLowerCase();
+              typeIconEl.innerHTML = renderTypeIconSvg(tt, 16);
+              typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
             const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
