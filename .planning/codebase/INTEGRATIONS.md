@@ -1,106 +1,127 @@
-# Integrations
+# External Integrations
 
-> Last mapped: 2026-03-09 — v0.1.99
+**Analysis Date:** 2026-03-15
 
-## Home Assistant (Primary)
+## APIs & External Services
 
-### Connection
-- **WebSocket**: `home-assistant-js-websocket` → `domains/ha/ha-connection.ts`
-- **REST API**: `lib/supervisor-fetch.ts` → Supervisor endpoints
-- **Auth**: Trusts `X-Hassio-User-ID` and `X-Ingress-Path` from Supervisor
-- **Startup**: `domains/ha/ha-startup.ts` — auto-detect HA via `SUPERVISOR_TOKEN`
+**Home Assistant (Primary):**
+- WebSocket API — Real-time entity state, events, service calls
+  - Client: `home-assistant-js-websocket` via `@domains/ha/ha-connection.ts`
+  - Auth: `SUPERVISOR_TOKEN` (auto-injected by HA Supervisor)
+  - Services: `@domains/ha/ha-services.ts` (533 lines)
+  - Startup: `@domains/ha/ha-startup.ts` (592 lines)
+  - Users: `@domains/ha/ha-users.ts`
+  - Events: `@domains/ha/ha-events.ts`
 
-### HA Domain Files
+- Supervisor REST API — Add-on info, ingress path discovery
+  - Client: `@lib/supervisor-fetch.ts` + `undici`
+  - Auth: `SUPERVISOR_TOKEN` header
+  - Endpoints used: `/addons/self/info`, `/core/api`
 
-| Integration | Domain | Key Files |
-|-------------|--------|-----------|
-| WebSocket | `domains/ha/` | `ha-connection.ts`, `ha-events.ts` |
-| Entities | `domains/ha/` | `ha-entities.ts` |
-| Services | `domains/ha/` | `ha-services.ts` |
-| Users | `domains/ha/` | `ha-users.ts` |
-| Calendar sync | `domains/calendar/` | `calendar-bridge.ts`, `caldav-client.ts` |
-| Todo lists | `domains/todo/` | `todo-bridge.ts`, `todo-status-mapper.ts` |
-| Notifications | API | `pages/api/tasks/[id].ts` (persistent + mobile) |
-| AI Assist | `domains/ai/` | `ha-assist-service.ts` |
+**HA Todo Lists:**
+- Bidirectional sync with HA todo entities
+  - Bridge: `@domains/todo/todo-bridge.ts` (596 lines)
+  - Status mapping: `@domains/todo/todo-status-mapper.ts`
 
-### HA API Routes
+**HA Calendar:**
+- Calendar entity sync for task scheduling
+  - Bridge: `@domains/calendar/calendar-bridge.ts` (1,028 lines)
+  - CalDAV: `@domains/calendar/caldav-client.ts`
+  - Entity resolver: `@domains/calendar/resolve-calendar-entities.ts`
 
-| Route | Purpose |
-|-------|---------|
-| `GET /api/ha/status` | Connection status |
-| `GET /api/ha/connection` | Establish WebSocket |
-| `GET /api/ha/calendars` | List calendar entities |
-| `GET /api/ha/agents` | List conversation agents |
-| `POST /api/ha/assist` | Send to HA Assist |
-| `GET /api/ha/services` | Available services |
-| `GET /api/ha/addons` | Installed addons |
-| `GET /api/todo` | List todo entities |
-| `POST /api/todo/items` | CRUD todo items |
-| `POST /api/todo/sync` | Sync todo lists |
+**Grocy (Optional):**
+- Chore/task import from Grocy homelab manager
+  - Bridge: `@domains/grocy/grocy-bridge.ts` (738 lines)
+  - Mapper: `@domains/grocy/grocy-mapper.ts`
+  - API routes: `apps/web/src/pages/api/grocy/`
 
-## Vikunja v1 Compatibility
+**AI / LLM:**
+- HA Assist integration for natural language task parsing
+  - Service: `@domains/ai/ha-assist-service.ts`
+  - Context: `@domains/ai/ai-context-service.ts`
+  - Python API: `meitheal-hub/llm_api.py`
+  - API route: `apps/web/src/pages/api/parse-task.ts`
 
-Drop-in API at `/api/v1/*` for Vikunja-compatible clients:
+**Vikunja v1 Compatibility:**
+- Drop-in compatible REST API for Vikunja clients
+  - Store: `@domains/integrations/vikunja-compat/store.ts` (596 lines)
+  - API routes: `apps/web/src/pages/api/v1/`
 
-| Route | Maps To |
-|-------|---------|
-| `GET /api/v1/tasks` | List tasks |
-| `GET /api/v1/projects` | List boards |
-| `POST /api/v1/projects/[id]/tasks` | Create task |
-| `GET /api/v1/labels` | List labels |
-| `GET /api/v1/users` | Current user |
-| `GET /api/v1/tasks/[id]/labels` | Task labels |
-| `GET /api/v1/tasks/[id]/assignees` | Task assignees |
+## Data Storage
 
-## Grocy
+**Database:**
+- SQLite via libsql (`@libsql/client`)
+  - Schema: `apps/web/drizzle/` (Drizzle ORM migrations)
+  - Store: `@domains/tasks/persistence/store.ts` (905 lines)
+  - Repository: `@domains/tasks/persistence/task-repository.ts` (892 lines)
+  - Connection: File-based, path configured via environment
 
-- **Bridge**: `domains/grocy/grocy-bridge.ts`
-- **Mapper**: `domains/grocy/grocy-mapper.ts`
-- **Client**: `lib/grocy-client.ts`
-- **Routes**: `/api/grocy/{settings,sync,test,auto-key}`
+**Offline Storage:**
+- IndexedDB (browser-side) via `@domains/offline/offline-store.ts`
+- Sync engine: `@domains/offline/sync-engine.ts`
+- Tab sync: `@domains/offline/tab-sync.ts`
 
-## Webhooks
+**File Storage:**
+- Local filesystem only (SQLite DB file)
+- Backup: `apps/web/src/pages/api/backup/`
+- Export: `apps/web/src/pages/api/export/` (JSON, CSV, iCal)
 
-- **Dispatcher**: `lib/webhook-dispatcher.ts`
-- **Config**: `packages/integration-core/src/webhook-config.ts`
-- **Emitter**: `packages/integration-core/src/webhook-emitter.ts`
-- **Outbound**: `lib/sync-outbound.ts`
-- Supports: n8n, generic HTTP, HMAC signing
+## Authentication & Identity
 
-## Agent Protocols
+**Auth Provider:**
+- Home Assistant Ingress (primary) — `@domains/auth/ingress.ts`, `@domains/auth/ingress-policy.ts`
+  - `SUPERVISOR_TOKEN` + `X-Ingress-Path` header
+  - User resolved from HA via `getHassUserId()`
+  - Admin check via `isHassAdmin()`
+- CSRF protection in `ingress-policy.ts` via `buildSecurityHeaders()`
+- No standalone auth (HA-first design)
 
-### A2A (Agent-to-Agent)
-- `packages/integration-core/src/a2a-handler.ts`
-- Routes: `/api/a2a/{agent-card,message,tasks/[id]}`
+## Monitoring & Observability
 
-### MCP
-- Discovery: `public/.well-known/mcp.json`
-- Route: `pages/api/mcp.ts`
+**Logging:**
+- `@meitheal/domain-observability` package
+  - `createLogger()` — structured JSON to stdout (Loki-compatible)
+  - Schema: `{ ts, level, event, domain, component, request_id, message, metadata }`
+  - Secret redaction via `defaultRedactionPatterns`
 
-## Node-RED
-- Route: `/api/integrations/nodered/flows`
-- Dev: `.devcontainer/nodered/`
+**Health:**
+- `apps/web/src/pages/api/health.ts` — Health check endpoint
 
-## Export / Import
+**Error Tracking:**
+- No external service — errors logged to stdout
 
-| Route | Format |
-|-------|--------|
-| `GET /api/export/tasks.csv` | CSV |
-| `GET /api/export/tasks.json` | JSON |
-| `GET /api/export/database.sqlite` | Full SQLite |
-| `GET /api/export/settings.json` | Settings |
-| `POST /api/import/settings` | Settings restore |
+## CI/CD & Deployment
 
-## Backup (HA Supervisor)
-- Prepare: `pages/api/backup/prepare.ts`
-- Complete: `pages/api/backup/complete.ts`
-- Hot backup via `meitheal-hub/rootfs/` hooks
+**CI Pipeline:**
+- GitHub Actions (`.github/workflows/ci.yml`)
+  - `governance` job: Required files, CSS brace balance, version sync
+  - `typecheck-and-tests` job: `pnpm check` + `pnpm test`
 
-## Calendar (CalDAV)
-- Client: `domains/calendar/caldav-client.ts`
-- Bridge: `domains/calendar/calendar-bridge.ts`
-- Routes: `/api/integrations/calendar/{caldav-credentials,sync,confirmation}`
+**Deployment:**
+- Push `v*` tag → triggers Docker build
+  - Image: `ghcr.io/coolock-village/meitheal-{arch}`
+  - HA Supervisor auto-updates from GHCR
 
-## Real-Time
-- **SSE**: `pages/api/sse.ts` — Server-sent events for UI updates
-- **PWA**: `public/sw.js` — Service worker (cache-first static, network-first API)
+**Code Review:**
+- CodeRabbitAI enabled via `.coderabbit.yaml`
+
+## Webhooks & Callbacks
+
+**Incoming:**
+- WebMCP: `apps/web/src/pages/api/mcp.ts` (560 lines)
+- A2A (Agent-to-Agent): `apps/web/src/pages/api/a2a/`
+- NFC: `apps/web/src/pages/api/nfc/`
+- Node-RED: `apps/web/src/pages/api/integrations/nodered/`
+
+**Outgoing:**
+- Webhook emitter: `packages/integration-core/src/webhook-emitter.ts`
+- Config: `packages/integration-core/src/webhook-config.ts`
+- Dispatcher: `@lib/webhook-dispatcher.ts`
+
+## SSE (Server-Sent Events)
+
+- `apps/web/src/pages/api/sse.ts` — Real-time task updates to browser
+
+---
+
+*Integration audit: 2026-03-15*

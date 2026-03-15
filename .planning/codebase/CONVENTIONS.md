@@ -1,104 +1,119 @@
 # Coding Conventions
 
-> Last mapped: 2026-03-09 — v0.1.99
+> Last refreshed: 2026-03-15
 
 ## File Naming
 
-| Category | Convention | Example |
-|----------|-----------|---------|
-| Files | kebab-case | `task-sync-service.ts` |
-| Components | PascalCase | `NewTaskModal.astro` |
-| CSS partials | `_` prefix | `_feedback.css` |
+| Type | Convention | Example |
+|---|---|---|
+| Files | kebab-case | `task-sync-service.ts`, `ha-connection.ts` |
+| CSS partials | underscore prefix | `_kanban.css`, `_tokens.css` |
 | Test specs | `*.spec.ts` | `ha-calendar-adapter.spec.ts` |
-| Scripts | kebab-case | `schema-drift-check.mjs` |
+| Components | PascalCase | `TaskTypeIcon.astro`, `NewTaskModal.astro` |
 
 ## Code Style
 
-| Rule | Value |
-|------|-------|
-| Semicolons | No |
-| Quotes | Double `"` |
+| Rule | Standard |
+|---|---|
+| Semicolons | None |
+| Quotes | Double |
 | Indent | 2 spaces |
-| Trailing comma | ES5 |
-| Line length | No hard limit |
-| Module system | ESM (`"type": "module"`) |
+| Exports | Named only — no default exports |
+| Max line | Not enforced, but ~120 chars recommended |
 
-## Naming
+## Import Order
+
+1. Node builtins (`node:fs`, `node:path`)
+2. Framework (`astro`, `@astrojs/*`)
+3. External packages (`date-fns`, `zod`, `marked`)
+4. Workspace packages (`@meitheal/domain-tasks`, `@meitheal/integration-core`)
+5. Relative imports (`./`, `../`)
+
+**Path aliases:**
+- `@domains/` → `apps/web/src/domains/`
+
+## Naming Conventions
 
 | Category | Convention | Example |
-|----------|-----------|---------|
+|---|---|---|
 | Functions | camelCase | `createTask()`, `resolveIngressContext()` |
 | Types/Interfaces | PascalCase | `TaskAggregate`, `CalendarSyncState` |
-| Constants | SCREAMING_SNAKE | `RATE_LIMIT`, `CACHE_VERSION` |
-| DB columns | snake_case | `created_at`, `parent_id`, `recurrence_rule` |
-| CSS classes | kebab-case | `bento-card`, `empty-state-icon` |
-| API routes | kebab-case | `/api/tasks/[id]/comments` |
-| Events | dot-separated | `task.created`, `sync.conflict.resolved` |
-
-## Exports
-
-- **Named exports only** — no `export default`
-- Import order: Node builtins → Framework → External → Workspace → Relative
-- Path alias: `@domains/` → `apps/web/src/domains/`
-
-## API Response Pattern
-
-```typescript
-// Success
-return apiJson({ tasks: rows })
-
-// Error
-return apiError("Failed to load tasks", 500)
-```
-
-All responses use discriminated unions: `{ ok: true, data } | { ok: false, errorCode }`.
+| Constants | UPPER_SNAKE | `RATE_LIMIT`, `MAX_RATE_ENTRIES` |
+| CSS tokens | kebab-case with `--` prefix | `--bg-primary`, `--accent` |
+| HTML IDs | kebab-case with context prefix | `td-title`, `td-status`, `cp-search` |
 
 ## Error Handling
 
-- API routes: `try/catch` with `apiError()` response
-- Domain functions: Return `{ ok, error }` discriminated unions
-- Logging: `createLogger()` from `@meitheal/domain-observability`
-- Redaction: Secrets stripped by `defaultRedactionPatterns`
+### API Routes
 
-## SQL Convention
+Discriminated unions pattern:
+```typescript
+// Success
+return new Response(JSON.stringify({ ok: true, data: result }))
 
-- Raw SQL via `client.execute()` with parameterized queries (`?`)
-- Never interpolate user values into SQL strings
-- Column names validated against allowlists for dynamic ORDER BY
-- Schema managed in `ensureSchema()` — tables created on startup
+// Error
+return new Response(JSON.stringify({ ok: false, errorCode: "NOT_FOUND" }), { status: 404 })
+```
 
-## CSS Convention
+### Client-side
 
-- 17 partials imported via `global.css`
-- Design tokens in `_tokens.css` (CSS custom properties)
-- Responsive: mobile-first with breakpoints in `_responsive.css`
-- Dark mode: `[data-theme="dark"]` selector
-- Reduced motion: `@media (prefers-reduced-motion: reduce)`
-- Tailwind utilities available but CSS partials preferred
+`safe-fetch.ts` wraps all API calls with error handling and toast notifications.
 
-## Component Patterns
+## Patterns
 
-- **Astro-first**: No React/Vue/Svelte. Interactivity via `<script is:inline>`
-- **Page lifecycle**: `pageLifecycle` helper from `lib/page-lifecycle.ts` for ViewTransition-safe cleanup
-- **AbortController**: Window listeners use signal-based cleanup
-- **Fetch monkey-patching**: `Layout.astro` patches `window.fetch` to auto-prefix ingress path
+### Repository Pattern
 
-## Logging Schema
+All database access goes through typed repositories in `domains/tasks/persistence/`:
+```typescript
+const repo = new TaskRepository(getPersistenceClient())
+const tasks = await repo.getRecentTasks(10)
+```
 
-Single JSON line per log entry (Loki-compatible):
+### Singleton Services
 
-```json
-{
-  "ts": "...",
-  "level": "info",
-  "event": "task.created",
-  "domain": "tasks",
-  "component": "task-api",
-  "request_id": "...",
-  "message": "...",
-  "metadata": {}
+Database client, HA connection, and logger all use lazy-initialized singletons:
+```typescript
+let clientSingleton: Client | null = null
+function getClient(): Client {
+  if (clientSingleton) return clientSingleton
+  clientSingleton = createClient({ url: resolveDbUrl() })
+  return clientSingleton
 }
 ```
 
-- No high-cardinality labels (user IDs, task IDs in label position)
-- Secrets redacted by default
+### Controller Pattern
+
+Client-side view controllers initialize in `<script>` blocks within Astro pages:
+```astro
+<script>
+  import { initKanbanBoard } from "../lib/kanban-controller"
+  document.addEventListener("DOMContentLoaded", () => initKanbanBoard())
+</script>
+```
+
+### CSS Architecture
+
+Partials imported via `global.css`:
+```css
+@import "./_tokens.css";
+@import "./_base.css";
+@import "./_layout.css";
+/* ... all 18 partials */
+```
+
+Design tokens in `_tokens.css` define CSS custom properties consumed by all partials.
+
+Tailwind v4 utility classes coexist with custom CSS partials.
+
+### Logging
+
+Single JSON object per line to stdout (Loki-compatible):
+```json
+{ "ts": "...", "level": "info", "event": "task_created", "domain": "tasks", "component": "api", "message": "..." }
+```
+
+Secrets auto-redacted via `defaultRedactionPatterns` in `@meitheal/domain-observability`.
+
+### Validation
+
+Zod schemas for API input validation. Raw SQL parameterized queries for database access.

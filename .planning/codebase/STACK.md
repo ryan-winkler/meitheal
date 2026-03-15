@@ -1,123 +1,97 @@
 # Technology Stack
 
-> Last mapped: 2026-03-15 — v0.2.10
+**Analysis Date:** 2026-03-15
+
+## Languages
+
+**Primary:**
+- TypeScript 5.9.3 — All application logic, domain packages, API routes, tests
+- CSS (Tailwind v4 + vanilla partials) — Styling via 18 partial files in `apps/web/src/styles/`
+
+**Secondary:**
+- JavaScript (ESM) — Build scripts (`scripts/*.mjs`), `serve.mjs` ingress wrapper
+- Bash — `meitheal-hub/run.sh` addon lifecycle, `scripts/devcontainer-up.sh`
+- Python — `meitheal-hub/llm_api.py` HA LLM API integration
+- YAML — HA `config.yaml`, CI workflows, `repository.yaml`
 
 ## Runtime
 
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| Language | TypeScript | 5.9.3 |
-| Runtime | Node.js | 25 |
-| Framework | Astro SSR | 6.0.4 |
-| Node Adapter | @astrojs/node | 10.0.1 |
-| Build Tooling | Vite 7 (Rolldown) | — |
-| Package Manager | pnpm | 10.8.0 |
-| Monorepo | pnpm workspaces | — |
+**Environment:**
+- Node.js 22 (specified in CI `setup-node`)
+- pnpm 10.8.0 (`packageManager` field in root `package.json`)
+- Lockfile: `pnpm-lock.yaml` (present)
 
-## Core Dependencies
+**Production:**
+- Docker (multi-arch: `aarch64`, `amd64`)
+- HA Supervisor addon (ingress on port 3000)
+- `serve.mjs` HTTP wrapper → Astro standalone
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `astro` | ^6.0.4 | SSR framework (pages, API routes, middleware) |
-| `@astrojs/node` | ^10.0.1 | Node.js SSR adapter for standalone server |
-| `@astrojs/mdx` | ^5.0.0 | MDX content support |
-| `@astrojs/sitemap` | ^3.7.0 | Auto-generate sitemap |
-| `@tailwindcss/vite` | ^4.2.1 | Tailwind CSS v4 Vite plugin (replaces @astrojs/tailwind) |
-| `tailwindcss` | ^4.2.1 | Utility-first CSS v4 — CSS-first config via @theme (dev) |
-| `drizzle-orm` | ^0.45.1 | Type-safe ORM (schema definition only) |
-| `drizzle-kit` | ^0.31.9 | Drizzle migration tooling (dev) |
-| `@libsql/client` | ^0.17.0 | SQLite client (libSQL/Turso compatible) |
-| `date-fns` | ^4.1.0 | Date manipulation |
-| `date-fns-tz` | ^3.2.0 | Timezone-aware date handling |
-| `home-assistant-js-websocket` | ^9.6.0 | HA WebSocket client |
-| `ws` | ^8.19.0 | WebSocket server |
-| `zod` | ^4.3.6 | Runtime schema validation |
-| `marked` | ^17.0.4 | Markdown → HTML rendering |
-| `sanitize-html` | ^2.17.1 | XSS prevention for user HTML |
-| `undici` | ^7.24.3 | HTTP client (faster than native fetch) |
+## Frameworks
 
-## Fonts
+**Core:**
+- Astro 6.0.4 — SSR (`output: "server"`), `@astrojs/node` adapter (standalone mode)
+- Tailwind CSS 4.2.1 — Via `@tailwindcss/vite` plugin (NOT `@astrojs/tailwind`)
+- Drizzle ORM 0.45.1 — SQLite persistence (`@libsql/client` 0.17.0)
+- Zod 4.3.6 — Schema validation
 
-| Font | Package | Usage |
-|------|---------|-------|
-| Inter | `@fontsource-variable/inter` | Primary UI font |
-| Geist | `@fontsource-variable/geist` | Monospace alternative |
-| JetBrains Mono | `@fontsource/jetbrains-mono` | Code/ticket numbers |
-| Outfit | `@fontsource/outfit` | Headings |
+**Testing:**
+- Playwright 1.58.2 — E2E + unit test runner (`@meitheal/tests` package)
+- axe-core/playwright 4.11.1 — Accessibility testing
 
-## Workspace Packages
+**Build/Dev:**
+- Vite (bundled with Astro) — Dev server, HMR, custom plugins
+- drizzle-kit 0.31.9 — Migration generation
+- `@astrojs/check` 0.9.7 — Astro-specific type checking
 
-| Package | Path | Purpose |
-|---------|------|---------|
-| `@meitheal/web` | `apps/web/` | Astro SSR app — UI, API, middleware |
-| `@meitheal/api` | `apps/api/` | Cloudflare Workers API (future) |
-| `@meitheal/domain-tasks` | `packages/domain-tasks/` | Task aggregates, vertical slices |
-| `@meitheal/domain-auth` | `packages/domain-auth/` | CSRF, ingress detection, session |
-| `@meitheal/domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic evaluation |
-| `@meitheal/domain-observability` | `packages/domain-observability/` | Structured logger, redaction |
-| `@meitheal/integration-core` | `packages/integration-core/` | Calendar adapters, webhooks, A2A |
-| `@meitheal/tests` | `tests/` | Playwright test suite |
-| `meitheal-dev-nodered` | `.devcontainer/nodered/` | Dev Node-RED flows |
+## Key Dependencies
 
-## Database
+**Critical:**
+- `home-assistant-js-websocket` 9.6.0 — HA WebSocket API client
+- `date-fns` 4.1.0 + `date-fns-tz` 3.2.0 — Date handling
+- `marked` 17.0.4 — Markdown rendering
+- `sanitize-html` 2.17.1 — XSS prevention
+- `ws` 8.19.0 — WebSocket client (server-side HA comms)
+- `undici` 7.24.3 — HTTP client for Supervisor API
 
-| Aspect | Detail |
-|--------|--------|
-| Engine | SQLite via `@libsql/client` |
-| Location | `/data/meitheal.db` (addon), `.data/meitheal.db` (local) |
-| ORM | Raw SQL via `client.execute()` (not Drizzle query builder) |
-| Migrations | `apps/web/scripts/migrate.mjs` |
-| Schema drift | `apps/web/scripts/schema-drift-check.mjs` |
-| Tables | `tasks`, `boards`, `kanban_lanes`, `comments`, `task_activity_log`, `domain_events`, `integration_attempts`, `calendar_confirmations`, `audit_trail`, `settings`, `saved_filters`, `task_templates`, `labels`, `custom_users` |
-| Indexes | 15+ covering task lookups, events, calendar sync |
+**Typography:**
+- `@fontsource-variable/geist` 5.2.8 — Primary UI font
+- `@fontsource-variable/inter` 5.2.8 — Alternate font
+- `@fontsource/jetbrains-mono` 5.2.8 — Monospace / code
+- `@fontsource/outfit` 5.2.8 — Display font
 
-## CSS Architecture
+**Overrides (security):**
+- `lodash` ≥4.17.23, `svgo` ≥4.0.1, `undici` ≥7.24.0, `devalue` ≥5.6.4, `esbuild` ≥0.25.0
 
-Tailwind CSS v4 — CSS-first. 17 partials imported via `global.css`.
-`@import "tailwindcss"` replaces old `@tailwind base/components/utilities` directives.
-Design tokens defined in `@theme` block in `_tokens.css` (replaces `tailwind.config.mjs`).
-No `postcss.config.mjs` — TW4 handles PostCSS internally.
+## Configuration
 
-| File | Purpose |
-|------|---------|
-| `_tokens.css` | Design tokens (colors, spacing, breakpoints) |
-| `_base.css` | Reset, typography, root styles |
-| `_layout.css` | Page layout, sidebar, main content |
-| `_buttons.css` | Button variants |
-| `_cards.css` | Card components |
-| `_feedback.css` | Toasts, skeletons, empty states |
-| `_forms.css` | Form inputs, selects |
-| `_kanban.css` | Kanban board styles |
-| `_labels.css` | Label badges |
-| `_modal.css` | Modal dialogs |
-| `_responsive.css` | Media queries |
-| `_search.css` | Search/command palette |
-| `_table.css` | Table view styles |
-| `_tasks.css` | Task cards, task detail |
-| `_utilities.css` | Utility classes |
-| `_avatar.css` | User avatars |
+**Astro (`apps/web/astro.config.mjs`):**
+- `output: "server"` (full SSR)
+- `trailingSlash: "never"`
+- `compressHTML: true`, `prefetch: true`
+- Custom Vite plugin: `fontsource-relative-paths` (fixes font URLs behind HA ingress)
+- `vite.define`: `__MEITHEAL_ASTRO_FIRST__`, `__MEITHEAL_VERSION__`
 
-## Build & Deploy
+**TypeScript (`apps/web/tsconfig.json`):**
+- Extends `../../tsconfig.base.json`
+- Path aliases: `@domains/*` → `src/domains/*`, `@lib/*` → `src/lib/*`, `@i18n/*` → `src/i18n/*`
 
-| Aspect | Detail |
-|--------|--------|
-| Build | `astro build` → `dist/` |
-| Serve | `scripts/serve.mjs` (custom HTTP wrapper for ingress) |
-| Container | `meitheal-hub/Dockerfile` |
-| Registry | `ghcr.io/coolock-village/meitheal-{arch}` |
-| Architectures | amd64, aarch64 |
-| CI | GitHub Actions: governance, typecheck, tests, HA harness, Docker |
-| Tag deploy | Push `v*` tag → Docker build + publish |
-| Version sync | `config.yaml`, `run.sh`, `sw.js` must all match |
+**Version Management:**
+- Single source of truth: `meitheal-hub/config.yaml` → `version` field
+- `scripts/bump-version.mjs` — Atomic bump across config.yaml, run.sh, package.json
+- `scripts/check-version-sync.mjs` — CI validation
 
-## Dev Tools
+## Platform Requirements
 
-| Tool | Purpose |
-|------|---------|
-| `astro check` | TypeScript type checking |
-| `pnpm check` | Typecheck all packages |
-| `pnpm --filter @meitheal/tests test` | Run Playwright tests |
-| `scripts/perf-budget-check.mjs` | Performance budget validation |
-| `.devcontainer/` | HA devcontainer for integration testing |
-| `scripts/devcontainer-up.sh` | Start HA devcontainer stack |
-| CodeRabbit | Automated PR review |
+**Development:**
+- Node 22, pnpm 10.8+
+- SQLite (via libsql, file-based)
+- Optional: HA devcontainer for Tier 2 testing
+
+**Production:**
+- Home Assistant Supervisor (add-on)
+- Docker multi-arch (`ghcr.io/coolock-village/meitheal-{arch}`)
+- Ingress enabled (port 3000, entry `/`)
+
+---
+
+*Stack analysis: 2026-03-15*

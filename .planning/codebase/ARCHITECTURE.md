@@ -1,130 +1,104 @@
 # Architecture
 
-> Last mapped: 2026-03-09 — v0.1.99
+> Last refreshed: 2026-03-15
 
 ## Pattern
 
-**DDD monorepo** with **Astro SSR** runtime, **domain packages** for pure business logic, **event-driven integration** with Home Assistant.
+**DDD monorepo** with Astro SSR web app + shared domain packages + event-driven HA integration.
 
 ```
-┌───────────────────────────────────────────────────────┐
-│                   HA Supervisor                        │
-│  ┌──────────┐  X-Ingress-Path  ┌────────────────────┐ │
-│  │  Ingress │ ────────────────→│    serve.mjs       │ │
-│  │  Proxy   │                  │ (normalize // → /) │ │
-│  └──────────┘                  └────────┬───────────┘ │
-│                                         │             │
-│  ┌──────────────────────────────────────▼───────────┐ │
-│  │              Astro SSR Runtime                    │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │ │
-│  │  │middleware │  │  Pages   │  │  API Routes    │  │ │
-│  │  │(security,│  │  (.astro)│  │  (/api/*)      │  │ │
-│  │  │ ingress) │  │  12 pages│  │  64 endpoints  │  │ │
-│  │  └────┬─────┘  └────┬─────┘  └──────┬─────────┘  │ │
-│  │       │              │               │            │ │
-│  │  ┌────▼──────────────▼───────────────▼──────────┐ │ │
-│  │  │           In-App Domains (17)                 │ │ │
-│  │  │  ha/ todo/ tasks/ calendar/ gamification/     │ │ │
-│  │  │  labels/ notifications/ ai/ offline/ grocy/   │ │ │
-│  │  └──────────────────┬───────────────────────────┘ │ │
-│  │                     │                             │ │
-│  │  ┌──────────────────▼───────────────────────────┐ │ │
-│  │  │         Workspace Packages (5)                │ │ │
-│  │  │  domain-tasks  domain-auth  domain-strategy   │ │ │
-│  │  │  domain-observability  integration-core       │ │ │
-│  │  └──────────────────┬───────────────────────────┘ │ │
-│  │                     │                             │ │
-│  │               ┌─────▼─────┐                       │ │
-│  │               │  SQLite   │                       │ │
-│  │               │ (libSQL)  │                       │ │
-│  │               └───────────┘                       │ │
-│  └───────────────────────────────────────────────────┘ │
-│                                                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐ │
-│  │ HA WS    │  │ HA REST  │  │ Calendar (CalDAV)    │ │
-│  │(entities)│  │(services)│  │ (two-way sync)       │ │
-│  └──────────┘  └──────────┘  └──────────────────────┘ │
-└───────────────────────────────────────────────────────┘
+meitheal/
+├── apps/web/          ← Astro SSR application (the product)
+├── packages/          ← Shared domain logic (pure TS)
+├── tests/             ← Standalone Playwright test workspace
+├── meitheal-hub/      ← HA add-on manifest + Docker config
+├── integrations/      ← Astro integrations
+├── scripts/           ← Build/deploy helpers
+└── .planning/         ← GSD planning artifacts
 ```
 
-## Layers
+## Layers (Top → Bottom)
 
-### 1. Ingress Layer
-- **`scripts/serve.mjs`** — Custom HTTP server wrapping Astro handler. Normalizes `//` → `/`, injects `X-Ingress-Path`.
-- **`src/middleware.ts`** — Pipeline: rate limiting → CSRF → security headers (CSP/HSTS) → ingress HTML rewriting → user context injection → DB init.
+### 1. Presentation Layer — `apps/web/src/pages/`
 
-### 2. Presentation Layer
-- **12 pages**: `index` (dashboard), `kanban`, `table`, `tasks`, `today`, `upcoming`, `calendar`, `gantt`, `settings`, `offline`, `404`, `500`
-- **34 Astro components**: `layout/`, `tasks/`, `settings/`, `gamification/`, `ha/`, `pwa/`, `ui/`
-- **`Layout.astro`** — Master layout: sidebar, command palette, keyboard shortcuts, health checks, fetch monkey-patching for ingress
+Astro pages serve SSR HTML. Two categories:
+- **View pages** (11): `index.astro`, `kanban.astro`, `table.astro`, `today.astro`, `upcoming.astro`, `calendar.astro`, `habits.astro`, `gamification.astro`, `gantt.astro`, `settings.astro`, `offline.astro`
+- **API routes** (65+): Under `pages/api/` — RESTful endpoints for tasks, boards, labels, settings, integrations, export, HA, etc.
+- **Error pages**: `404.astro`, `500.astro`
 
-### 3. API Layer
-- **64 API routes** in `src/pages/api/`
-- Groups: `tasks/`, `boards/`, `lanes/`, `labels/`, `ha/`, `integrations/`, `export/`, `a2a/`, `v1/`, `todo/`, `grocy/`, `gamification`, `users/`
-- Response helpers: `apiJson()` / `apiError()` from `lib/api-response.ts`
-- Structured logging via `@meitheal/domain-observability`
+### 2. Component Layer — `apps/web/src/components/`
 
-### 4. Domain Layer (In-App)
-17 bounded contexts in `src/domains/`:
+42 Astro components organized by domain:
+- `layout/` — Sidebar, TopNavigation, BoardSwitcher, SidebarFooter, SidebarNavList
+- `tasks/` — NewTaskModal, StrategicEvaluator, TaskViewTabs
+- `settings/` — SettingsGeneral, SettingsLabels, SettingsIntegrations, SettingsSystem, SettingsAgents, SettingsShellNav, SettingsSummaryCard
+- `ui/` — Reusable: Icon, StatusBadge, PriorityLabel, TaskTypeIcon, LabelPicker, FilterToolbar, EmptyState, Skeleton, RiceBadge, etc.
+- `ha/` — AskAssistModal, TypingIndicator
+- `gamification/` — Confetti, GamificationWidget, StreakBadge
+- `pomodoro/` — PomodoroTimer
+- `pwa/` — PwaInstallBanner
 
-| Context | Key Files | Responsibility |
-|---------|-----------|---------------|
-| `ha/` | `ha-connection.ts`, `ha-entities.ts`, `ha-events.ts`, `ha-services.ts`, `ha-users.ts`, `ha-startup.ts` | HA WebSocket, entity state, services |
-| `todo/` | `todo-bridge.ts`, `todo-status-mapper.ts` | HA todo list bridge |
-| `tasks/` | `persistence/store.ts`, `recurrence.ts`, `task-sync-service.ts` | DB schema, task persistence, sync |
-| `calendar/` | `caldav-client.ts`, `calendar-bridge.ts` | CalDAV sync |
-| `labels/` | `label-store.ts`, `label-color-resolver.ts` | Labels CRUD + color |
-| `gamification/` | `index.ts`, `streak-tracker.ts` | XP engine, streaks |
-| `notifications/` | `due-date-reminders.ts` | Overdue alerts |
-| `ai/` | `ai-context-service.ts`, `ha-assist-service.ts` | HA AI Assist |
-| `offline/` | `offline-store.ts`, `sync-engine.ts`, `tab-sync.ts` | PWA offline |
-| `auth/` | `ingress-policy.ts`, `ingress.ts` | Ingress detection |
-| `grocy/` | `grocy-bridge.ts`, `grocy-mapper.ts` | Grocy integration |
+### 3. Client Controller Layer — `apps/web/src/lib/`
 
-### 5. Domain Packages
-| Package | Key Exports |
-|---------|-------------|
-| `domain-tasks` | `TaskAggregate`, vertical slice patterns |
-| `domain-auth` | CSRF validation, session policy |
-| `domain-strategy` | `calculateRICE()`, strategic evaluation |
-| `domain-observability` | `createLogger()`, `defaultRedactionPatterns` |
-| `integration-core` | Calendar adapter, webhook emitter, A2A handler, rate limiter |
+49 TypeScript modules. Heavy client-side logic:
+- **View controllers** (largest files):
+  - `settings-controller.ts` (3205 lines) — Settings page orchestration
+  - `task-modal-controller.ts` (2417 lines) — Task detail modal logic
+  - `kanban-controller.ts` (2019 lines) — Kanban board interactions, drag/drop, lanes
+  - `table-controller.ts` (1336 lines) — Table view with sorting, filtering
+  - `layout-controller.ts` (532 lines) — Sidebar, theme, layout state
+  - `dashboard-controller.ts` (247 lines) — Dashboard widget management
+- **Infrastructure libs**: `safe-fetch.ts`, `toast.ts`, `ingress-fetch.ts`, `filter-engine.ts`, `filter-state.ts`, `task-api-client.ts`, `focus-trap.ts`, `validation.ts`, `rate-limit.ts`, etc.
 
-### 6. Persistence
-- SQLite via `@libsql/client` — single-file database
-- Schema in `src/domains/tasks/persistence/store.ts` — `ensureSchema()` on startup
-- 14+ tables with 15+ indexes
-- Migrations via `scripts/migrate.mjs`
+### 4. Domain Layer — `apps/web/src/domains/`
+
+In-app domain services (16 modules across 11 bounded contexts):
+- `tasks/persistence/` — TaskRepository, BoardRepository, LaneRepository, SettingsRepository, TemplateRepository, UserRepository, store
+- `auth/` — `ingress.ts`, `ingress-policy.ts`
+- `ha/` — `ha-connection.ts`, `ha-entities.ts`, `ha-events.ts`, `ha-services.ts`, `ha-users.ts`, `ha-startup.ts`
+- `calendar/` — `calendar-bridge.ts`, `caldav-client.ts`, `resolve-calendar-entities.ts`
+- `todo/` — `todo-bridge.ts`, `todo-status-mapper.ts`
+- `ai/` — `ai-context-service.ts`, `ha-assist-service.ts`
+- `labels/` — `label-store.ts`, `label-color-resolver.ts`
+- `habits/` — `habit-service.ts`
+- `pomodoro/` — `pomodoro-service.ts`, `pomodoro-types.ts`
+- `gamification/` — `achievement-engine.ts`, `streak-tracker.ts`
+- `grocy/` — `grocy-bridge.ts`, `grocy-mapper.ts`
+- `offline/` — `offline-store.ts`, `sync-engine.ts`, `sw-register.ts`, `connectivity.ts`, `tab-sync.ts`, `sync-lock.ts`
+- `notifications/` — `due-date-reminders.ts`
+- `integrations/vikunja-compat/` — v1 API compatibility layer
+
+### 5. Shared Domain Packages — `packages/`
+
+Pure TypeScript, no framework dependencies:
+- `domain-auth/` — Ingress detection, CSRF, session policy
+- `domain-tasks/` — Task type definitions, vertical slice exports
+- `domain-strategy/` — RICE scoring, strategic lens framework
+- `domain-observability/` — Structured JSON logging, redaction, audit
+- `integration-core/` — Calendar adapter interfaces, HA bridge, webhook emitter, A2A handler, rate limiter
+
+### 6. Infrastructure
+
+- **Middleware** (`apps/web/src/middleware.ts`, 270 lines): Rate limiting, CSRF, security headers, ingress path rewriting, DB schema init, HA integration init
+- **Ingress wrapper** (`apps/web/scripts/serve.mjs`): HTTP server normalizing `//` → `/`, injecting `X-Ingress-Path` header before Astro processes requests
+- **HA add-on config** (`meitheal-hub/config.yaml`): Defines the Home Assistant add-on manifest
 
 ## Data Flow
 
-### Task Creation
 ```
-Client → POST /api/tasks/create → validate (zod) → sanitize
-  → INSERT tasks → emit domain event → webhook dispatch
-  → HA calendar sync (if enabled) → return task JSON
-```
-
-### HA Integration
-```
-Middleware startup → initHAIntegrations()
-  → WebSocket connect → subscribe to state changes
-  → Calendar entity discovery → two-way sync
+Browser → [HA Ingress Proxy] → serve.mjs (normalize //) → Astro middleware
+  → Security (CSRF, CSP, rate limit) → Route handler → TaskRepository → SQLite
+  ← SSR HTML | JSON response ← Browser
 ```
 
-### Ingress Request
-```
-HA Supervisor → serve.mjs (normalize //) → Astro handler
-  → middleware (rate limit → CSRF → context → DB)
-  → page/API route → middleware (rewrite HTML)
-  → response to HA iframe
-```
+Client-side: Layout.astro monkey-patches `window.fetch()` to auto-prefix API calls with the ingress path.
 
-## Key Design Decisions
+## Key Entry Points
 
-1. **Astro SSR, not SPA** — Server-rendered with `is:inline` scripts. No client framework.
-2. **Raw SQL, not ORM queries** — `client.execute()` with parameterized queries. Drizzle for schema only.
-3. **Named exports only** — No default exports anywhere.
-4. **HA handles auth** — Trusts `X-Hassio-User-ID` and `X-Ingress-Path` headers.
-5. **Ingress-first** — All URL handling accounts for ingress prefix across 3 layers.
-6. **Domain events** — Task mutations → events → webhooks → n8n/HA automations.
+| Entry | File | Purpose |
+|---|---|---|
+| Web app | `apps/web/src/layouts/Layout.astro` (1255 lines) | Master layout — sidebar, task modal, command palette, all global UI |
+| Server entry | `apps/web/scripts/serve.mjs` | HTTP server with ingress normalization |
+| Middleware | `apps/web/src/middleware.ts` | Request processing pipeline |
+| DB | `apps/web/src/domains/tasks/persistence/store.ts` | Database singleton |
+| HA connection | `apps/web/src/domains/ha/ha-connection.ts` | WebSocket to HA |
