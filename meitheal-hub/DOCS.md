@@ -23,7 +23,7 @@
 
 ```bash
 # Build from repo root
-podman build --build-arg BUILD_FROM="ghcr.io/home-assistant/amd64-base:3.20" \
+podman build --build-arg BUILD_FROM="ghcr.io/home-assistant/amd64-base:3.23" \
   -f meitheal-hub/Dockerfile -t local/meitheal .
 
 # Run standalone (no Supervisor)

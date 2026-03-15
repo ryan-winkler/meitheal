@@ -1,6 +1,7 @@
 # ── Global build args ──
-# BUILD_FROM is passed by HA Supervisor (e.g. ghcr.io/home-assistant/aarch64-base:3.20)
-ARG BUILD_FROM
+# BUILD_FROM is passed by HA Supervisor/build.json. Keep a valid local default so
+# Docker tooling and GitHub annotations do not treat the runtime FROM as empty.
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.23
 
 # ── Stage 1: Build ──
 # Pinned to $BUILDPLATFORM (host arch) to avoid QEMU crashes on aarch64 cross-builds.
