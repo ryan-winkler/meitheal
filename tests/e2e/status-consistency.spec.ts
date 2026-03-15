@@ -46,6 +46,7 @@ const ALLOWED_FILES = [
   "calendar.astro",                  // Legacy backward compat SQL fallback
   "index.astro",                     // CSS class names for styling
   "todo-bridge.ts",                  // Logger category name "todo"
+  "settings-registry.ts",            // Global search keywords containing "todo"
 ];
 
 // Lines that are allowed to reference legacy statuses (comments, alias maps)
