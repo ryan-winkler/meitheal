@@ -200,3 +200,12 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Tier 1: `pnpm check` — passed.
 - Tier 1: targeted browser verification added for universal search hub launch and navigation.
 - Tier 2: `./scripts/devcontainer-up.sh status` — still blocked by Docker socket permission on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).
+
+## Phase 07 / Ongoing Polish Summary (IMPLEMENTED LOCALLY ✅)
+
+### 2026-03-15 Session 8
+- **Task Type Icons**: Extracted all duplicated SVG config to a shared `@lib/type-icon-config.ts`. Integrated `TaskTypeIcon.astro` cleanly into Kanban cards, swimlane headers, Table rows, and the Task Detail Modal header.
+- **UI/UX Polish**: Added `var(--bg-hover)` backdrops with `blur(4px)` to Kanban card quick actions for readability on busy cards. CSS alignment tweaks for type icons.
+- **Codebase Mapping**: Performed a full refresh of all 7 documents in `.planning/codebase/` (960 lines total). Removed the `Duplicated Type Icon Config` concern from `CONCERNS.md` after fixing it.
+- **Layout Restructure**: Moved `<SearchHub />` overlay into the root of `Layout.astro` exactly alongside the global modals to ensure clean stacking contexts.
+

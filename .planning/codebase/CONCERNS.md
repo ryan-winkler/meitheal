@@ -16,11 +16,6 @@
 - Impact: Difficult to navigate, test, and maintain. High cognitive load for contributors.
 - Fix approach: Decompose into focused sub-modules per domain concern (e.g., `settings-integrations-controller.ts`, `kanban-drag-controller.ts`). The new Settings shell/store/registry split reduces page-level duplication, but `settings-controller.ts` is still oversized.
 
-**Duplicated Type Icon Config:**
-- Issue: SVG path data for task types (epic, story, task, bug) is duplicated across `TaskTypeIcon.astro`, `kanban-controller.ts`, and `task-modal-controller.ts`
-- Files: `apps/web/src/components/ui/TaskTypeIcon.astro`, `apps/web/src/lib/task-modal-controller.ts`
-- Impact: Inconsistency risk when updating icons. Maintenance burden.
-- Fix approach: Extract shared `TYPE_ICON_CONFIG` to a single `@lib/type-icon-config.ts` module
 
 ## Known Bugs
 
