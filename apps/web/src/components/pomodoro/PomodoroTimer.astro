@@ -24,7 +24,7 @@ interface Props {
 const { enabled = true } = Astro.props
 ---
 
-<div id="pomodoro-wrapper" {...(!enabled ? { hidden: true } : {})}>
+<div id="pomodoro-wrapper" style="display: contents" {...(!enabled ? { hidden: true } : {})}>
 <button
   type="button"
   id="pomodoro-pill"

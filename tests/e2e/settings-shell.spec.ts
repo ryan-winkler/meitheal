@@ -26,6 +26,20 @@ test.describe("Settings Shell", () => {
     )
   })
 
+  test("summary cards are clickable quick jumps that sync with section nav", async ({ page }) => {
+    const summaryCard = page.locator('[data-settings-summary="app-pwa-settings"]').first()
+    const navCard = page.locator('[data-settings-nav="app-pwa-settings"]').first()
+
+    await expect(summaryCard).toHaveAttribute("href", "#app-pwa-settings")
+
+    await summaryCard.click()
+
+    await expect(page).toHaveURL(/#app-pwa-settings$/)
+    await expect(summaryCard).toHaveAttribute("aria-current", "location")
+    await expect(navCard).toHaveAttribute("aria-current", "location")
+    await expect(page.locator("#app-pwa-settings")).toBeVisible()
+  })
+
   test("webhooks callout uses the canonical automation and ai section id", async ({ page }) => {
     await page.goto("/settings#integrations-settings")
     await page.waitForLoadState("networkidle")

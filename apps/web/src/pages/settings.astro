@@ -49,42 +49,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     </section>
 
     <div class="settings-shell__summary">
-      <SettingsSummaryCard
-        id="settings-summary-personal"
-        eyebrow="Personal"
-        title="Appearance"
-        detail="Theme"
-      />
-      <SettingsSummaryCard
-        id="settings-summary-workflow"
-        eyebrow="Workflow"
-        title="Task model"
-        detail="Ready to customize"
-      />
-      <SettingsSummaryCard
-        id="settings-summary-integrations"
-        eyebrow="Integrations"
-        title="Home Assistant"
-        detail="Checking"
-      />
-      <SettingsSummaryCard
-        id="settings-summary-ai"
-        eyebrow="Automation & AI"
-        title="Agents"
-        detail="Available"
-      />
-      <SettingsSummaryCard
-        id="settings-summary-pwa"
-        eyebrow="App & PWA"
-        title="Offline readiness"
-        detail="Checking"
-      />
-      <SettingsSummaryCard
-        id="settings-summary-danger"
-        eyebrow="Danger Zone"
-        title="Protected"
-        detail="Protected actions"
-      />
+      {SETTINGS_SECTIONS.map((section) => (
+        <SettingsSummaryCard section={section} />
+      ))}
     </div>
 
     <div class="settings-shell__mobile-nav">
@@ -280,6 +247,45 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     border: 1px solid var(--border);
     border-radius: 18px;
     background: var(--bg-card);
+    color: inherit;
+    text-decoration: none;
+    transition:
+      transform 150ms ease,
+      border-color 150ms ease,
+      background 150ms ease,
+      box-shadow 150ms ease;
+  }
+  .settings-summary-card:hover,
+  .settings-summary-card.is-active,
+  .settings-summary-card:focus-visible {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
+    background: color-mix(in srgb, var(--bg-card) 90%, var(--accent) 9%);
+    box-shadow: 0 12px 28px rgba(5, 10, 25, 0.16);
+  }
+  .settings-summary-card:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+    outline-offset: 2px;
+  }
+  .settings-summary-card__meta,
+  .settings-summary-card__eyebrow-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .settings-summary-card__eyebrow-wrap {
+    justify-content: flex-start;
+  }
+  .settings-summary-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    font-size: 15px;
   }
   .settings-summary-card__eyebrow {
     font-size: 11px;
@@ -295,6 +301,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 1.45;
+  }
+  .settings-summary-card__jump {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
   }
   .settings-shell__layout {
     display: grid;

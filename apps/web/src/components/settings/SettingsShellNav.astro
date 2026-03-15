@@ -25,7 +25,7 @@ const { sections } = Astro.props
         <span
           class="settings-shell-nav__status"
           id={`nav-status-${section.id}`}
-          data-settings-nav-status
+          data-settings-nav-status={section.id}
         >
           {section.statusLabel}
         </span>

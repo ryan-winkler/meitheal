@@ -20,6 +20,8 @@ export interface SettingsSectionDescriptor {
   icon: string
   description: string
   statusLabel: string
+  summaryTitle: string
+  summaryDetail: string
   statusTargetId?: string
   keywords: string[]
 }
@@ -40,6 +42,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "🎨",
     description: "Theme, language, timezone, and everyday preferences",
     statusLabel: "Theme",
+    summaryTitle: "Appearance",
+    summaryDetail: "Theme",
     statusTargetId: "settings-summary-theme",
     keywords: ["theme", "language", "timezone", "date", "appearance", "accent", "shortcuts"],
   },
@@ -49,6 +53,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "🧭",
     description: "Sidebar, fields, labels, notifications, backlog, and task logic",
     statusLabel: "Labels",
+    summaryTitle: "Task model",
+    summaryDetail: "Ready to customize",
     statusTargetId: "settings-summary-workflow",
     keywords: ["labels", "custom fields", "sidebar", "notifications", "backlog", "retention", "users", "frameworks"],
   },
@@ -58,6 +64,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "🔌",
     description: "Home Assistant, calendar, todo, Grocy, n8n, and webhooks",
     statusLabel: "HA",
+    summaryTitle: "Home Assistant",
+    summaryDetail: "Checking",
     statusTargetId: "ha-connection-badge",
     keywords: ["home assistant", "calendar", "todo", "grocy", "n8n", "node-red", "webhooks", "sync"],
   },
@@ -67,6 +75,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "🤖",
     description: "Conversation agents, external AI, and protocol exposure",
     statusLabel: "Protocols",
+    summaryTitle: "Agents",
+    summaryDetail: "Available",
     statusTargetId: "agent-protocols-status",
     keywords: ["ai", "assist", "agent", "a2a", "mcp", "webmcp", "provider", "ollama", "claude", "chatgpt"],
   },
@@ -76,6 +86,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "📲",
     description: "Exports, installability, offline, companion links, and support",
     statusLabel: "PWA",
+    summaryTitle: "Offline readiness",
+    summaryDetail: "Checking",
     statusTargetId: "pwa-compact-badge",
     keywords: ["pwa", "offline", "install", "export", "import", "companion", "x-callback", "url handler"],
   },
@@ -85,6 +97,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     icon: "⚠",
     description: "Purge and reset operations",
     statusLabel: "Protected",
+    summaryTitle: "Protected",
+    summaryDetail: "Protected actions",
     keywords: ["reset", "purge", "delete", "danger", "factory reset"],
   },
 ]

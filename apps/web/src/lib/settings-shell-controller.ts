@@ -14,25 +14,45 @@ function scrollToAnchor(anchorId: string, behavior: ScrollBehavior = "smooth"): 
   history.replaceState(null, "", `#${anchorId}`)
 }
 
-function updateActiveNav(sectionId: string): void {
-  document.querySelectorAll<HTMLElement>("[data-settings-nav]").forEach((link) => {
-    const active = link.dataset.settingsNav === sectionId
-    link.classList.toggle("is-active", active)
-    link.setAttribute("aria-current", active ? "location" : "false")
-  })
+function resolveSectionId(anchorId: string): SettingsSectionId | null {
+  const target = document.getElementById(anchorId)
+  if (!target) return null
+
+  const maybeSectionId =
+    target.closest<HTMLElement>("[data-settings-shell-section]")?.id ||
+    target.id ||
+    null
+
+  if (!SETTINGS_SECTIONS.some((section) => section.id === maybeSectionId)) {
+    return null
+  }
+
+  return maybeSectionId as SettingsSectionId
+}
+
+function updateActiveSectionState(sectionId: SettingsSectionId): void {
+  document
+    .querySelectorAll<HTMLElement>("[data-settings-nav], [data-settings-summary]")
+    .forEach((link) => {
+      const active =
+        link.dataset.settingsNav === sectionId ||
+        link.dataset.settingsSummary === sectionId
+
+      link.classList.toggle("is-active", active)
+      link.setAttribute("aria-current", active ? "location" : "false")
+    })
 }
 
 function syncSummaryStatuses(): void {
   const mappings = [
     {
       sectionId: "personal-settings",
-      summaryId: "settings-summary-personal",
       sourceId: "theme-select",
-      detail: (source: HTMLElement | null) => (source as HTMLSelectElement | null)?.value ?? "Default",
+      detail: (source: HTMLElement | null) =>
+        (source as HTMLSelectElement | null)?.value ?? "Default",
     },
     {
       sectionId: "workflow-settings",
-      summaryId: "settings-summary-workflow",
       sourceId: "labels-list",
       detail: (source: HTMLElement | null) => {
         const count = source?.querySelectorAll(".label-settings-row").length ?? 0
@@ -41,36 +61,39 @@ function syncSummaryStatuses(): void {
     },
     {
       sectionId: "integrations-settings",
-      summaryId: "settings-summary-integrations",
       sourceId: "ha-connection-badge",
-      detail: (source: HTMLElement | null) => source?.textContent?.trim() || "Checking",
+      detail: (source: HTMLElement | null) =>
+        source?.textContent?.trim() || "Checking",
     },
     {
       sectionId: "automation-ai-settings",
-      summaryId: "settings-summary-ai",
       sourceId: "agent-protocols-status",
-      detail: (source: HTMLElement | null) => source?.textContent?.trim() || "Available",
+      detail: (source: HTMLElement | null) =>
+        source?.textContent?.trim() || "Available",
     },
     {
       sectionId: "app-pwa-settings",
-      summaryId: "settings-summary-pwa",
       sourceId: "pwa-compact-badge",
-      detail: (source: HTMLElement | null) => source?.textContent?.trim() || "Checking",
+      detail: (source: HTMLElement | null) =>
+        source?.textContent?.trim() || "Checking",
     },
     {
       sectionId: "danger-zone-settings",
-      summaryId: "settings-summary-danger",
       sourceId: "reset-settings",
       detail: () => "Protected actions",
     },
   ] as const
 
   mappings.forEach((mapping) => {
-    const summary = document.getElementById(mapping.summaryId)
+    const summary = document.querySelector<HTMLElement>(
+      `[data-settings-summary="${mapping.sectionId}"]`,
+    )
     if (!summary) return
 
     const detail = summary.querySelector(".settings-summary-card__detail")
-    const navStatus = document.getElementById(`nav-status-${mapping.sectionId}`)
+    const navStatus = document.querySelector<HTMLElement>(
+      `[data-settings-nav-status="${mapping.sectionId}"]`,
+    )
     const text = mapping.detail(document.getElementById(mapping.sourceId))
 
     if (detail) detail.textContent = text
@@ -78,8 +101,29 @@ function syncSummaryStatuses(): void {
   })
 }
 
+function revealAllSections(): void {
+  document
+    .querySelectorAll<HTMLElement>("[data-settings-shell-section]")
+    .forEach((section) => {
+      section.classList.remove("settings-shell__section--muted")
+    })
+}
+
+function clearSearchState(): void {
+  const input = document.getElementById(
+    "settings-search-input",
+  ) as HTMLInputElement | null
+  const results = document.getElementById("settings-search-results")
+
+  if (input) input.value = ""
+  if (results) results.hidden = true
+  revealAllSections()
+}
+
 function initSearch(): void {
-  const input = document.getElementById("settings-search-input") as HTMLInputElement | null
+  const input = document.getElementById(
+    "settings-search-input",
+  ) as HTMLInputElement | null
   const results = document.getElementById("settings-search-results")
   if (!input || !results) return
 
@@ -91,21 +135,23 @@ function initSearch(): void {
 
     if (!input.value.trim()) {
       results.hidden = true
-      document.querySelectorAll<HTMLElement>("[data-settings-shell-section]").forEach((section) => {
-        section.classList.remove("settings-shell__section--muted")
-      })
+      revealAllSections()
       return
     }
 
     SETTINGS_SECTIONS.forEach((section) => {
       const element = document.getElementById(section.id)
       if (!element) return
-      element.classList.toggle("settings-shell__section--muted", !visibleSections.has(section.id))
+      element.classList.toggle(
+        "settings-shell__section--muted",
+        !visibleSections.has(section.id),
+      )
     })
 
     if (matches.length === 0) {
       results.hidden = false
-      results.innerHTML = '<div class="settings-search-results__empty">No matching settings yet</div>'
+      results.innerHTML =
+        '<div class="settings-search-results__empty">No matching settings yet</div>'
       return
     }
 
@@ -119,13 +165,9 @@ function initSearch(): void {
       `
 
       pageLifecycle.on(button, "click", () => {
-        input.value = ""
-        results.hidden = true
-        document.querySelectorAll<HTMLElement>("[data-settings-shell-section]").forEach((section) => {
-          section.classList.remove("settings-shell__section--muted")
-        })
+        clearSearchState()
         scrollToAnchor(match.anchorId)
-        updateActiveNav(match.sectionId)
+        updateActiveSectionState(match.sectionId)
       })
 
       results.appendChild(button)
@@ -142,26 +184,35 @@ function initSearch(): void {
     if (!firstMatch) return
 
     keyboardEvent.preventDefault()
+    clearSearchState()
     scrollToAnchor(firstMatch.anchorId)
-    updateActiveNav(firstMatch.sectionId)
-    results.hidden = true
+    updateActiveSectionState(firstMatch.sectionId)
   })
 }
 
 function initSectionLinks(): void {
-  document.querySelectorAll<HTMLElement>("[data-settings-section-link]").forEach((link) => {
-    pageLifecycle.on(link, "click", (event) => {
-      event.preventDefault()
-      const targetId = link.getAttribute("href")?.replace("#", "")
-      if (!targetId) return
-      scrollToAnchor(targetId)
-      updateActiveNav(targetId)
+  document
+    .querySelectorAll<HTMLElement>("[data-settings-section-link]")
+    .forEach((link) => {
+      pageLifecycle.on(link, "click", (event) => {
+        event.preventDefault()
+        const targetId = link.getAttribute("href")?.replace("#", "")
+        if (!targetId) return
+
+        clearSearchState()
+        scrollToAnchor(targetId)
+        const sectionId = resolveSectionId(targetId)
+        if (sectionId) {
+          updateActiveSectionState(sectionId)
+        }
+      })
     })
-  })
 }
 
 function initIntersectionTracking(): void {
-  const sections = document.querySelectorAll<HTMLElement>("[data-settings-shell-section]")
+  const sections = document.querySelectorAll<HTMLElement>(
+    "[data-settings-shell-section]",
+  )
   if (!sections.length) return
 
   const observer = new IntersectionObserver(
@@ -171,7 +222,11 @@ function initIntersectionTracking(): void {
         .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
 
       if (!active?.target.id) return
-      updateActiveNav(active.target.id)
+
+      const sectionId = resolveSectionId(active.target.id)
+      if (sectionId) {
+        updateActiveSectionState(sectionId)
+      }
     },
     {
       rootMargin: "-25% 0px -50% 0px",
@@ -180,7 +235,9 @@ function initIntersectionTracking(): void {
   )
 
   sections.forEach((section) => observer.observe(section))
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
+    once: true,
+  })
 }
 
 function buildCompanionNavigateHref(sectionId: SettingsSectionId): string {
@@ -192,33 +249,55 @@ function buildCompanionNavigateHref(sectionId: SettingsSectionId): string {
 function buildCompanionXCallbackHref(sectionId: SettingsSectionId): string {
   const ingressPath = window.__ingress_path || ""
   const path = `${ingressPath}/settings#${sectionId}`
-  return `homeassistant://x-callback-url/navigate?path=${encodeURIComponent(path)}`
+  return `homeassistant://x-callback-url/navigate?path=${encodeURIComponent(
+    path,
+  )}`
 }
 
 function initCompanionLinks(): void {
-  document.querySelectorAll<HTMLAnchorElement>("[data-companion-link]").forEach((link) => {
-    const sectionId = (link.dataset.companionLink || "app-pwa-settings") as SettingsSectionId
-    link.href = buildCompanionNavigateHref(sectionId)
-  })
-
-  document.querySelectorAll<HTMLElement>("[data-companion-xcallback]").forEach((container) => {
-    const sectionId = (container.dataset.companionXcallback || "app-pwa-settings") as SettingsSectionId
-    const xCallbackHref = buildCompanionXCallbackHref(sectionId)
-    const preview = container.querySelector<HTMLElement>("[data-companion-xcallback-preview]")
-    const copyButton = container.querySelector<HTMLButtonElement>("[data-companion-xcallback-button]")
-
-    if (preview) preview.textContent = xCallbackHref
-
-    if (!copyButton) return
-    pageLifecycle.on(copyButton, "click", async () => {
-      try {
-        await navigator.clipboard.writeText(xCallbackHref)
-        showToast("Companion x-callback URL copied", "success")
-      } catch {
-        showToast("Could not copy the companion URL", "error")
-      }
+  document
+    .querySelectorAll<HTMLAnchorElement>("[data-companion-link]")
+    .forEach((link) => {
+      const sectionId = (link.dataset.companionLink ||
+        "app-pwa-settings") as SettingsSectionId
+      link.href = buildCompanionNavigateHref(sectionId)
     })
-  })
+
+  document
+    .querySelectorAll<HTMLElement>("[data-companion-xcallback]")
+    .forEach((container) => {
+      const sectionId = (container.dataset.companionXcallback ||
+        "app-pwa-settings") as SettingsSectionId
+      const xCallbackHref = buildCompanionXCallbackHref(sectionId)
+      const preview = container.querySelector<HTMLElement>(
+        "[data-companion-xcallback-preview]",
+      )
+      const copyButton = container.querySelector<HTMLButtonElement>(
+        "[data-companion-xcallback-button]",
+      )
+
+      if (preview) preview.textContent = xCallbackHref
+
+      if (!copyButton) return
+      pageLifecycle.on(copyButton, "click", async () => {
+        try {
+          await navigator.clipboard.writeText(xCallbackHref)
+          showToast("Companion x-callback URL copied", "success")
+        } catch {
+          showToast("Could not copy the companion URL", "error")
+        }
+      })
+    })
+}
+
+function syncActiveSectionFromHash(): void {
+  const hash = window.location.hash.replace("#", "")
+  if (!hash) return
+
+  const sectionId = resolveSectionId(hash)
+  if (sectionId) {
+    updateActiveSectionState(sectionId)
+  }
 }
 
 export function initSettingsShell(): void {
@@ -230,43 +309,33 @@ export function initSettingsShell(): void {
   initIntersectionTracking()
   initCompanionLinks()
   syncSummaryStatuses()
+  pageLifecycle.on(window, "hashchange", () => {
+    syncActiveSectionFromHash()
+  })
 
   const hash = window.location.hash.replace("#", "")
-  let activeSectionId: SettingsSectionId | null = null
-  let hashTargetId: string | null = null
-
-  if (hash) {
-    const target = document.getElementById(hash)
-    hashTargetId = target?.id || null
-    const maybeSectionId =
-      target?.closest<HTMLElement>("[data-settings-shell-section]")?.id ||
-      target?.id ||
-      null
-
-    if (SETTINGS_SECTIONS.some((section) => section.id === maybeSectionId)) {
-      activeSectionId = maybeSectionId as SettingsSectionId
-    }
-  }
+  const hashTargetId = hash ? document.getElementById(hash)?.id || null : null
+  const activeSectionId = hash ? resolveSectionId(hash) : null
 
   if (activeSectionId) {
-    updateActiveNav(activeSectionId)
+    updateActiveSectionState(activeSectionId)
   } else if (document.getElementById("workflow-settings")) {
-    updateActiveNav("workflow-settings")
+    updateActiveSectionState("workflow-settings")
   } else {
-    updateActiveNav("personal-settings")
+    updateActiveSectionState("personal-settings")
   }
 
   if (hashTargetId) {
     requestAnimationFrame(() => {
-      scrollToAnchor(hashTargetId!, "auto")
+      scrollToAnchor(hashTargetId, "auto")
       if (activeSectionId) {
-        updateActiveNav(activeSectionId)
+        updateActiveSectionState(activeSectionId)
       }
 
       setTimeout(() => {
-        scrollToAnchor(hashTargetId!, "auto")
+        scrollToAnchor(hashTargetId, "auto")
         if (activeSectionId) {
-          updateActiveNav(activeSectionId)
+          updateActiveSectionState(activeSectionId)
         }
       }, 200)
     })
@@ -295,6 +364,8 @@ export function initSettingsShell(): void {
       attributes: true,
     })
 
-    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
+      once: true,
+    })
   })
 }
