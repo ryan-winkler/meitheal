@@ -3,7 +3,7 @@
  * bump-version.mjs — VER-03: Atomic version bump across all sources
  *
  * @domain versioning
- * @kcs Updates version in config.yaml, run.sh, and package.json atomically.
+ * @kcs Updates version in config.yaml, run.sh, package.json, and sw.js atomically.
  *
  * Usage:
  *   node scripts/bump-version.mjs 0.3.0
@@ -23,6 +23,7 @@ const FILES = {
   config: resolve(root, "meitheal-hub/config.yaml"),
   runSh: resolve(root, "meitheal-hub/run.sh"),
   pkg: resolve(root, "apps/web/package.json"),
+  sw: resolve(root, "apps/web/public/sw.js"),
 }
 
 /** Parse semver string into [major, minor, patch] */
@@ -102,6 +103,15 @@ const pkg = JSON.parse(readFileSync(FILES.pkg, "utf8"))
 pkg.version = newVersion
 writeFileSync(FILES.pkg, JSON.stringify(pkg, null, 2) + "\n")
 console.log(`  ✅ apps/web/package.json`)
+
+// 4. service worker fallback version
+let swContent = readFileSync(FILES.sw, "utf8")
+swContent = swContent.replace(
+  /CACHE_VERSION\s*=\s*"[^"]+"/,
+  `CACHE_VERSION = "${newVersion}"`
+)
+writeFileSync(FILES.sw, swContent)
+console.log(`  ✅ apps/web/public/sw.js`)
 
 console.log("─".repeat(50))
 console.log(`✅ All files updated to v${newVersion}`)

@@ -3,7 +3,7 @@
  * check-version-sync.mjs — VER-01: Validate version consistency
  *
  * @domain versioning
- * @kcs Ensures config.yaml, run.sh, and package.json share the same version.
+ * @kcs Ensures config.yaml, run.sh, package.json, and sw.js share the same version.
  *
  * Exits 0 if all versions match, 1 if mismatch detected.
  * Designed for CI pipeline integration (VER-02).
@@ -38,12 +38,20 @@ function getPackageVersion() {
   return pkg.version ?? null
 }
 
+/** Extract CACHE_VERSION fallback from service worker */
+function getServiceWorkerVersion() {
+  const sw = readFileSync(resolve(root, "apps/web/public/sw.js"), "utf8")
+  const match = sw.match(/CACHE_VERSION\s*=\s*"([^"]+)"/)
+  return match?.[1] ?? null
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 
 const sources = [
   { name: "meitheal-hub/config.yaml", version: getConfigVersion() },
   { name: "meitheal-hub/run.sh", version: getRunShVersion() },
   { name: "apps/web/package.json", version: getPackageVersion() },
+  { name: "apps/web/public/sw.js", version: getServiceWorkerVersion() },
 ]
 
 console.log("🔍 Version sync check")
