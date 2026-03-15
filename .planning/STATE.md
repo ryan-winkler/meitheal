@@ -2,10 +2,10 @@
 
 ## Current Position
 
-**Phase:** 2 of 4 — SQL Domain Migration (COMPLETE ✅)
-**Status:** All requirements delivered, verified, 286 tests pass
-**Last Completed:** Phase 2 — SQL Domain Migration — 2026-03-09
-**Session Date:** 2026-03-09
+**Phase:** 4 of 4 — Smart Today + Tooling (COMPLETE ✅)
+**Status:** All phases delivered — PGD-01, SMT-01/02/03, VER-01/02/03
+**Last Completed:** Phase 4B — Version Tooling — 2026-03-15
+**Session Date:** 2026-03-15
 
 ## Phase 1 Summary (COMPLETE ✅)
 
@@ -114,3 +114,42 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - ViewTransitions → ClientRouter test fix
 - Tests: 286 passed, 65 skipped
 
+## Phase 3 Summary (COMPLETE ✅)
+
+| SHA | Description |
+|-----|-------------|
+| `f18ef51` | ♻️ PGD-01: Extract kanban inline script to kanban-controller.ts |
+
+### Delivered
+- kanban.astro: 3,319 → 1,353 lines (59% reduction)
+- kanban-controller.ts: 2,009 lines with `initKanbanBoard()` export
+- Fixed 2 pre-existing TS5076 errors in table-controller.ts
+
+## Phase 4A Summary (COMPLETE ✅)
+
+| SHA | Description |
+|-----|-------------|
+| `44d434b` | ✨ SMT: Smart Today features — stats, suggested tasks, focus button |
+
+### Delivered
+- SMT-01: "Suggested" section — p1-p2 tasks due within 3 days
+- SMT-02: "Focus Today" button — set due_date=today via API
+- SMT-03: Daily stats bar — due today / completed / overdue / remaining
+
+## Phase 4B Summary (COMPLETE ✅)
+
+| SHA | Description |
+|-----|-------------|
+| `52c65b5` | 🔧 VER: Version sync check and bump scripts |
+
+### Delivered
+- VER-01: `scripts/check-version-sync.mjs`
+- VER-02: CI governance job integration
+- VER-03: `scripts/bump-version.mjs`
+
+### 2026-03-15 Session 6
+- Phase 3 PGD-01: Kanban script extraction (1,970 lines → controller)
+- Phase 4A SMT-01/02/03: Smart Today features (stats, suggested, focus)
+- Phase 4B VER-01/02/03: Version tooling scripts + CI integration
+- Tests: 286 passed, 65 skipped
+- TypeCheck: 0 errors, 0 warnings
