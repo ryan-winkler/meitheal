@@ -20,7 +20,7 @@ meitheal/
 │           ├── components/     # Astro components (server-rendered)
 │           │   ├── gamification/
 │           │   ├── ha/         # Home Assistant UI components
-│           │   ├── layout/     # Sidebar, TopNavigation
+│           │   ├── layout/     # Sidebar, TopNavigation, SearchHub
 │           │   ├── pomodoro/
 │           │   ├── pwa/
 │           │   ├── settings/   # Settings shell primitives + section panels
@@ -40,6 +40,7 @@ meitheal/
 │           │   ├── notifications/
 │           │   ├── offline/    # IndexedDB, sync, SW
 │           │   ├── pomodoro/
+│           │   ├── search/     # Universal search orchestration
 │           │   ├── strategy/   # RICE scoring
 │           │   ├── tasks/      # Task persistence, sync
 │           │   └── todo/       # HA todo list sync
@@ -47,7 +48,7 @@ meitheal/
 │           ├── layouts/        # Layout.astro (main layout)
 │           ├── lib/            # Client controllers & utilities (50+ modules)
 │           ├── pages/          # Astro pages + API routes
-│           │   └── api/        # REST API (15+ subdirectories)
+│           │   └── api/        # REST API (15+ subdirectories, including search)
 │           └── styles/         # CSS partials (18 files)
 ├── meitheal-hub/               # HA add-on packaging
 │   ├── config.yaml             # Add-on manifest (version source of truth)
@@ -62,7 +63,7 @@ meitheal/
 │   ├── domain-tasks/           # Task aggregate & types
 │   └── integration-core/       # Adapter interfaces & impls
 ├── tests/                      # Test package (@meitheal/tests)
-│   ├── e2e/                    # 50 E2E spec files
+│   ├── e2e/                    # 48 E2E spec files
 │   ├── governance/             # 2 governance spec files
 │   ├── unit/                   # 1 unit spec file
 │   └── scripts/                # Test utilities
@@ -88,7 +89,7 @@ meitheal/
 **`apps/web/src/lib/`:**
 - Purpose: Client-side controllers (page interactivity) and shared utilities
 - Contains: Page controllers (kanban, table, settings, task-modal), API client, filter engine, toast, validation
-- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `settings-controller.ts` (3,205 LoC), `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
+- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `settings-controller.ts` (3,205 LoC), `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`, `search-hub-controller.ts`
 
 **`apps/web/src/components/ui/`:**
 - Purpose: Reusable Astro UI components
@@ -110,7 +111,7 @@ meitheal/
 
 **`tests/`:**
 - Purpose: Playwright test suite (separate workspace package)
-- Contains: 50 e2e specs, 2 governance specs, 1 unit spec
+- Contains: 48 e2e specs, 2 governance specs, 1 unit spec
 - Key files: `playwright.config.ts`, `e2e/_helpers.ts`
 
 ## Key File Locations
@@ -131,7 +132,7 @@ meitheal/
 - `apps/web/src/lib/task-modal-controller.ts`: Task detail modal behavior
 
 **Layout & Styling:**
-- `apps/web/src/layouts/Layout.astro`: Main layout (1,255 LoC) — includes task modal, search, nav
+- `apps/web/src/layouts/Layout.astro`: Main layout (1,255 LoC) — includes task modal, search hub launcher, nav
 - `apps/web/src/styles/global.css`: CSS entry point importing all partials
 
 ## Naming Conventions

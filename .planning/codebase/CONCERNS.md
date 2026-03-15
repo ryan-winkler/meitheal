@@ -16,7 +16,6 @@
 - Impact: Difficult to navigate, test, and maintain. High cognitive load for contributors.
 - Fix approach: Decompose into focused sub-modules per domain concern (e.g., `settings-integrations-controller.ts`, `kanban-drag-controller.ts`). The new Settings shell/store/registry split reduces page-level duplication, but `settings-controller.ts` is still oversized.
 
-
 ## Known Bugs
 
 **Manage Swimlanes Modal Blocking:**

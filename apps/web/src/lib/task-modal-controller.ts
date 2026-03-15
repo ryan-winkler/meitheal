@@ -20,6 +20,7 @@
           "task-detail-overlay",
         ) as HTMLDivElement;
         let currentTaskId: string | null = null;
+        let _modalAbortController: AbortController | null = null;
         let _isPopulating = false;
         // P3-4/P22: Focus management — restore focus to trigger element on panel close
         let _previouslyFocused: Element | null = null;
@@ -33,6 +34,7 @@
         function closeTD() {
           tdOverlay?.classList.remove("active");
           currentTaskId = null;
+          if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           // Always reset body overflow to restore page scrolling
           document.body.style.overflow = "";
           history.pushState(null, "", window.location.pathname);
@@ -48,6 +50,9 @@
           // P3-4: Store focus origin for restore on close
           _previouslyFocused = document.activeElement;
           currentTaskId = taskId;
+          if (_modalAbortController) _modalAbortController.abort();
+          _modalAbortController = new AbortController();
+          const modalSignal = _modalAbortController.signal;
           _isPopulating = true;
           tdOverlay.classList.add("active");
           // Lock body scroll while panel is open (closeTD restores it)
@@ -62,10 +67,13 @@
             ) as HTMLSelectElement | null;
             try {
               const [lanesRes, modeRes] = await Promise.all([
-                fetch((window.__ingress_path || "") + "/api/lanes"),
+                fetch((window.__ingress_path || "") + "/api/lanes", {
+                  signal: modalSignal,
+                }),
                 fetch(
                   (window.__ingress_path || "") +
                     "/api/settings?key=backlog_mode",
+                  { signal: modalSignal },
                 ),
               ]);
               let backlogMode = "visible";
@@ -100,6 +108,7 @@
 
             const res = await fetch(
               `${window.__ingress_path || ""}/api/tasks/${taskId}`,
+              { signal: modalSignal },
             );
             if (!res.ok) {
               closeTD()
@@ -200,6 +209,7 @@
               try {
                 const childRes = await fetch(
                   `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`,
+                  { signal: modalSignal },
                 );
                 if (childRes.ok) {
                   const childData = await childRes.json();
@@ -254,6 +264,7 @@
                 try {
                   const actRes = await fetch(
                     `${window.__ingress_path || ""}/api/tasks/${taskId}/activity`,
+                    { signal: modalSignal },
                   );
                   if (!actRes.ok) return;
                   const actData = await actRes.json();
@@ -466,6 +477,7 @@
             try {
               const boardRes = await fetch(
                 (window.__ingress_path || "") + "/api/boards",
+                { signal: modalSignal },
               );
               if (boardRes.ok) {
                 const boardData = await boardRes.json();
@@ -509,6 +521,7 @@
               try {
                 const usersRes = await fetch(
                   (window.__ingress_path || "") + "/api/users",
+                  { signal: modalSignal },
                 );
                 if (usersRes.ok) {
                   const usersData = await usersRes.json();
@@ -547,6 +560,7 @@
             try {
               const settingsRes = await fetch(
                 (window.__ingress_path || "") + "/api/settings",
+                { signal: modalSignal },
               );
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
@@ -738,6 +752,9 @@
             // spurious save notifications
             setTimeout(() => { _isPopulating = false }, 100);
           } catch (e) {
+            if ((e as { name?: string })?.name === "AbortError") {
+              return;
+            }
             console.error("Failed to load task detail", e);
             _isPopulating = false;
             // Show error state in modal instead of closing — better UX for transient errors

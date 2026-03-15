@@ -30,7 +30,7 @@ Meitheal is a **task management and strategic planning hub** running as a **Home
 |-------|----------|---------|
 | Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
 | Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
-| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `todo/`, `tasks/`, `integrations/` |
+| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `todo/`, `tasks/`, `integrations/`, `search/` |
 | Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
 | API Layer | `apps/web/src/pages/api/` | Native + Vikunja v1 compat routes |
 | Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
@@ -46,6 +46,7 @@ Meitheal is a **task management and strategic planning hub** running as a **Home
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
 | `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
 | `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
+| `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 
 Cross-context imports must occur through public package APIs, not deep path imports.
@@ -56,7 +57,7 @@ Cross-context imports must occur through public package APIs, not deep path impo
 - `ingress-policy.ts` determines ingress context from `X-Ingress-Path` header
 - `Layout.astro` monkey-patches `fetch()` to prefix API calls with ingress path
 - `middleware.ts` rewrites HTML attributes (`href`, `src`) with ingress prefix
-- ViewTransitions are **disabled** behind ingress to prevent redirect loops
+- ClientRouter/view transitions are **disabled** behind ingress to prevent redirect loops
 - All client-side fetch calls must work behind HA ingress (global fetch wrapper in `Layout.astro`)
 - **Never** issue server-side redirects to bare `/` paths — they escape the ingress iframe
 
@@ -64,6 +65,20 @@ Cross-context imports must occur through public package APIs, not deep path impo
 
 - **Do NOT wrap client-side `fetch()` with `apiUrl()`** — `Layout.astro` already monkey-patches `window.fetch` to auto-prefix. Using `apiUrl()` double-prefixes the path
 - **`getHAConnectionStatus()` is passive** — it only reads in-memory state. Call `await getHAConnection()` first to ensure WebSocket is established
+
+## Settings Shell Patterns (Critical)
+
+- `apps/web/src/lib/settings-registry.ts` is the canonical source for settings section ids, labels, and settings-search metadata
+- Keep Settings navigation hash-based (`#personal-settings`, `#app-pwa-settings`, etc.) so the page stays ingress-safe inside HA and PWA scopes
+- Bootstrap Settings via `apps/web/src/lib/settings-page.ts` and `pageLifecycle`; do not add long-lived component-owned `astro:page-load` listeners back into settings panels
+- `apps/web/src/lib/settings-store.ts` preserves the flat `/api/settings` contract; do not change persisted setting keys in UI refactors
+- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsSystem.astro` and must preserve ingress-scoped paths
+
+## Search Patterns
+
+- Use the shared `apps/web/src/components/layout/SearchHub.astro` + `apps/web/src/lib/search-hub-controller.ts` path for launcher/UI behavior
+- Extend `apps/web/src/domains/search/` and `/api/search` instead of adding page-local search endpoints or duplicate result registries
+- Settings results in search should come from `settings-registry.ts`, not from a second settings-specific search source
 
 ## Coding Conventions
 

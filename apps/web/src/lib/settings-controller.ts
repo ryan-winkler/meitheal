@@ -1971,14 +1971,12 @@ export function initSettingsController(): void {
       card.className = "cal-toggle-card cal-toggle-card--active";
       card.dataset.entity = entityId;
       card.style.cursor = "pointer";
-      // Escape entityId to prevent XSS from user-provided input
-      const safeId = entityId.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
       card.innerHTML = `
         <div class="cal-toggle-card__info">
-          <span class="cal-toggle-card__name">${safeId}</span>
-          <span class="cal-toggle-card__entity">${safeId}</span>
+          <span class="cal-toggle-card__name"></span>
+          <span class="cal-toggle-card__entity"></span>
           <div class="cal-toggle-card__direction">
-            <select class="cal-direction-select" data-entity-dir="${entityId}" aria-label="Sync direction for ${entityId}">
+            <select class="cal-direction-select">
               <option value="bidirectional" selected>↔ Bidirectional</option>
               <option value="import">↓ Import only</option>
               <option value="export">↑ Export only</option>
@@ -1987,9 +1985,20 @@ export function initSettingsController(): void {
           <span class="cal-toggle-card__state">manually added</span>
         </div>
         <label class="toggle-label">
-          <input type="checkbox" class="cal-entity-toggle" value="${entityId}" checked />
+          <input type="checkbox" class="cal-entity-toggle" checked />
           <span class="toggle-slider"></span>
         </label>`;
+      const cardName = card.querySelector<HTMLElement>(".cal-toggle-card__name");
+      if (cardName) cardName.textContent = entityId;
+      const cardEntity = card.querySelector<HTMLElement>(".cal-toggle-card__entity");
+      if (cardEntity) cardEntity.textContent = entityId;
+      const directionSelect = card.querySelector<HTMLSelectElement>(".cal-direction-select");
+      if (directionSelect) {
+        directionSelect.dataset.entityDir = entityId;
+        directionSelect.setAttribute("aria-label", `Sync direction for ${entityId}`);
+      }
+      const entityToggle = card.querySelector<HTMLInputElement>(".cal-entity-toggle");
+      if (entityToggle) entityToggle.value = entityId;
       card
         .querySelector<HTMLInputElement>(".cal-entity-toggle")
         ?.addEventListener("change", function () {
@@ -2526,18 +2535,22 @@ export function initSettingsController(): void {
         const card = document.createElement("div");
         card.className = "cal-toggle-card cal-toggle-card--active";
         card.dataset.entity = entityId;
-        // Escape entityId to prevent XSS from user-provided input
-        const safeEntityId = entityId.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         card.innerHTML = `
           <div class="cal-toggle-card__info">
-            <span class="cal-toggle-card__name">${safeEntityId}</span>
-            <span class="cal-toggle-card__entity">${safeEntityId}</span>
+            <span class="cal-toggle-card__name"></span>
+            <span class="cal-toggle-card__entity"></span>
             <span class="cal-toggle-card__state">manually added</span>
           </div>
           <label class="toggle-label">
-            <input type="checkbox" class="todo-entity-toggle" value="${safeEntityId}" checked />
+            <input type="checkbox" class="todo-entity-toggle" checked />
             <span class="toggle-slider"></span>
           </label>`;
+        const todoName = card.querySelector<HTMLElement>(".cal-toggle-card__name");
+        if (todoName) todoName.textContent = entityId;
+        const todoEntity = card.querySelector<HTMLElement>(".cal-toggle-card__entity");
+        if (todoEntity) todoEntity.textContent = entityId;
+        const todoToggle = card.querySelector<HTMLInputElement>(".todo-entity-toggle");
+        if (todoToggle) todoToggle.value = entityId;
         card
           .querySelector<HTMLInputElement>(".todo-entity-toggle")
           ?.addEventListener("change", function () {

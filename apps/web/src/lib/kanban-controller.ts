@@ -31,6 +31,14 @@ declare global {
  * Called on `astro:page-load` from kanban.astro.
  */
 export function initKanbanBoard(): void {
+    function buildTaskApiUrl(taskId, suffix = "") {
+      const normalizedTaskId = String(taskId ?? "").trim()
+      if (!/^[A-Za-z0-9_-]+$/.test(normalizedTaskId)) {
+        throw new Error("Invalid task id")
+      }
+      return `${window.__ingress_path || ""}/api/tasks/${encodeURIComponent(normalizedTaskId)}${suffix}`
+    }
+
     async function handleDrop(e) {
       e.preventDefault();
       const col = e.currentTarget;
@@ -122,7 +130,7 @@ export function initKanbanBoard(): void {
         if (targetSwimlane) {
           payload.task_type = targetSwimlane.dataset.swimlaneType;
         }
-        await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+        await fetch(buildTaskApiUrl(taskId), {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
@@ -380,7 +388,7 @@ export function initKanbanBoard(): void {
           }
 
           try {
-            const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+            const res = await fetch(buildTaskApiUrl(taskId), {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ title: newTitle }),
@@ -439,9 +447,7 @@ export function initKanbanBoard(): void {
           const dupBtn = btn;
           dupBtn.disabled = true;
           dupBtn.classList.add("btn-loading");
-          const res = await fetch(
-            `${window.__ingress_path || ""}/api/tasks/${id}`,
-          );
+          const res = await fetch(buildTaskApiUrl(id));
           if (!res.ok) {
             dupBtn.disabled = false;
             dupBtn.classList.remove("btn-loading");
@@ -696,7 +702,7 @@ export function initKanbanBoard(): void {
           if (card) card.dataset.assigned = "";
           _qa.close();
           try {
-            const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+            const res = await fetch(buildTaskApiUrl(taskId), {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ assigned_to: null }),
@@ -723,7 +729,7 @@ export function initKanbanBoard(): void {
             if (card) card.dataset.assigned = userId;
             _qa.close();
             try {
-              const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+              const res = await fetch(buildTaskApiUrl(taskId), {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ assigned_to: userId }),
@@ -796,7 +802,7 @@ export function initKanbanBoard(): void {
               btn.dataset.color = color;
               _qa.close();
               try {
-                const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+                const res = await fetch(buildTaskApiUrl(taskId), {
                   method: "PUT",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify({ color }),
@@ -820,7 +826,7 @@ export function initKanbanBoard(): void {
             btn.dataset.color = "";
             _qa.close();
             try {
-              const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${taskId}`, {
+              const res = await fetch(buildTaskApiUrl(taskId), {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ color: null }),
@@ -882,7 +888,7 @@ export function initKanbanBoard(): void {
             if (action === "delete") {
               if (!confirm("Delete this task permanently?")) return;
               try {
-                const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${id}`, { method: "DELETE" });
+                const res = await fetch(buildTaskApiUrl(id), { method: "DELETE" });
                 if (res.ok) {
                   const card = document.querySelector(`.kanban-card[data-id="${id}"]`);
                   if (card) {
@@ -900,7 +906,7 @@ export function initKanbanBoard(): void {
               }
             } else if (action === "archive") {
               try {
-                const res = await fetch(`${window.__ingress_path || ""}/api/tasks/${id}`, {
+                const res = await fetch(buildTaskApiUrl(id), {
                   method: "PUT",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify({ status: "complete" }),
@@ -1238,7 +1244,7 @@ export function initKanbanBoard(): void {
     // T-1905: Lane creation via API
     addLaneBtn?.addEventListener("click", async () => {
       const raw = newLaneInput.value.trim();
-      const name = raw.replace(/<[^>]*>/g, "");
+      const name = raw.replace(/[<>]/g, "");
       if (!name || name.length < 1 || name.length > 50) {
         const t = document.createElement("div");
         t.className = "toast error";

@@ -18,16 +18,17 @@ Centralize your tasks, automate the coordination, and let technology get out of 
 ## Key Features
 
 - **HA-Native Architecture** — Built from the ground up as a [Home Assistant app/add-on](https://www.home-assistant.io/apps/). Ingress proxy, Supervisor lifecycle, WebSocket events, and deep integration with your smart home. Not a wrapper — a native citizen.
-- **Astro-First** — Built on [Astro](https://astro.build) with SSR, ViewTransitions, and a domain-scoped CSS architecture. Strict performance budgets, self-hosted fonts, no external CDN.
+- **Astro-First** — Built on [Astro](https://astro.build) with SSR, Astro 6, `ClientRouter` in standalone mode, and a domain-scoped CSS architecture. Strict performance budgets, self-hosted fonts, no external CDN.
+- **Searchable Settings Shell** — Grouped `Personal`, `Workflow`, `Integrations`, `Automation & AI`, `App & PWA`, and `Danger Zone` sections with direct field search, summary badges, and ingress-safe hash deep links.
 - **Bidirectional Calendar Sync** — Meitheal detects your HA calendar entities and syncs events automatically. Tasks → calendar, calendar → tasks.
 - **Voice & Assist** — 8 LLM tools + 6 voice intents for HA Assist. Works with Gemini, OpenAI, Ollama — any conversation agent. "What's on my plate today?"
 - **MCP Server** — 13 live Model Context Protocol tools at `/api/mcp`. Your AI coding agent can manage tasks directly.
-- **3 Views** — Task list, Kanban board, data table. Drag-and-drop, swimlane management, inline editing.
+- **Multiple Views** — Dashboard, Today, Upcoming, task list, Kanban board, data table, calendar, habits, and Gantt. Drag-and-drop, swimlane management, inline editing.
 - **Smart Notifications** — Multi-channel dispatch: sidebar bell, mobile push (Android/iOS), calendar reminders. Actionable buttons. Due-date scheduler.
 - **Strategic Lenses** — RICE, HEART, and KCS scoring frameworks built into task evaluation.
 - **PWA + Offline** — Service worker with 4 scoped caches. Works offline. Background sync. Web Share, Clipboard, Badging APIs.
 - **Data Portability** — JSON/CSV export, raw SQLite download, settings import/export. Your data is yours.
-- **Companion App** — Android shortcuts/widgets, iOS Siri/Apple Watch/CarPlay integration via HA Companion.
+- **Companion App** — Android shortcuts/widgets, iOS Siri/Apple Watch/CarPlay integration via HA Companion, plus companion-safe Settings reopen flows via URL handler and x-callback-url.
 - **Device Triggers** — Fire HA automations from task events. Node-RED and n8n integration via webhooks.
 - **Grocy Integration** — Auto-detects Grocy add-on. Stock-aware task checklists.
 - **Proactive Reminders** — Configurable due-date reminder window. Push notifications for overdue tasks.
@@ -61,9 +62,9 @@ Meitheal is an Astro-first, local-first execution engine.
 
 | Layer | Stack |
 |-------|-------|
-| Framework | Astro 5 (SSR, Node adapter) |
+| Framework | Astro 6 (SSR, Node adapter, ClientRouter) |
 | Database | SQLite via libSQL + Drizzle ORM |
-| Styling | Domain-scoped CSS partials + Tailwind |
+| Styling | Domain-scoped CSS partials + design tokens + Tailwind 4 tooling |
 | Fonts | Outfit (headings), Geist (body), JetBrains Mono (code) — all self-hosted |
 | Runtime | Node.js 22, Alpine 3.23 |
 | Standards | OpenAPI 3.0.3, MCP, LLMs.txt |

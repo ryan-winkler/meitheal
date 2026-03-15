@@ -8,7 +8,7 @@
 
 **Key Characteristics:**
 - Strict bounded contexts: domain packages (`packages/domain-*`) + in-app domains (`apps/web/src/domains/`)
-- Server-side rendered pages with progressive client-side enhancement (`is:inline` scripts)
+- Server-side rendered pages with progressive client-side enhancement (module scripts, focused inline scripts, and `ClientRouter` in standalone mode)
 - Event-driven HA integration via WebSocket
 - HTTP wrapper (`serve.mjs`) normalizes requests before Astro processes them
 - Middleware chain handles auth, CSP, CSRF, rate limiting, HTML rewriting
@@ -24,8 +24,8 @@
 
 **In-App Domains (`apps/web/src/domains/`):**
 - Purpose: Application-specific domain logic tightly coupled to Astro/HA runtime
-- Location: `apps/web/src/domains/{ai,auth,calendar,gamification,grocy,ha,habits,integrations,labels,notifications,offline,pomodoro,strategy,tasks,todo}/`
-- Contains: Bridge services, persistence, sync engines, HA adapters
+- Location: `apps/web/src/domains/{ai,auth,calendar,gamification,grocy,ha,habits,integrations,labels,notifications,offline,pomodoro,search,strategy,tasks,todo}/`
+- Contains: Bridge services, persistence, sync engines, HA adapters, universal search orchestration
 - Depends on: Domain packages, `@lib/*`, HA WebSocket API
 - Used by: Pages, API routes, middleware
 
@@ -40,21 +40,21 @@
 **API Layer (`apps/web/src/pages/api/`):**
 - Purpose: REST endpoints for client-side fetch, external integrations (MCP, A2A, NFC), webhooks
 - Location: `apps/web/src/pages/api/` (30+ route files across 15 subdirectories)
-- Contains: Task CRUD, board management, label management, backup/export, HA proxy, SSE, Vikunja compat
+- Contains: Task CRUD, board management, label management, backup/export, universal search, HA proxy, SSE, Vikunja compat
 - Depends on: Domains, lib
 - Used by: Client-side controllers, external agents
 
 **Component Layer (`apps/web/src/components/`):**
 - Purpose: Reusable Astro components (server-rendered)
 - Location: `apps/web/src/components/{ui,layout,settings,ha,tasks,gamification,pomodoro,pwa}/`
-- Contains: `FilterToolbar.astro`, `TaskTypeIcon.astro`, `StatusBadge.astro`, `Sidebar.astro`, `TopNavigation.astro`, etc.
+- Contains: `FilterToolbar.astro`, `TaskTypeIcon.astro`, `StatusBadge.astro`, `Sidebar.astro`, `TopNavigation.astro`, `SearchHub.astro`, `SettingsShellNav.astro`, etc.
 - Depends on: Lib utilities
 - Used by: Pages
 
 **Client Controllers (`apps/web/src/lib/`):**
 - Purpose: Client-side TypeScript modules for page interactivity
 - Location: `apps/web/src/lib/` (50+ modules)
-- Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `settings-controller.ts` (3,205), `dashboard-controller.ts`
+- Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `settings-controller.ts` (3,205), `settings-page.ts`, `settings-shell-controller.ts`, `search-hub-controller.ts`, `dashboard-controller.ts`
 - Depends on: Browser APIs, `@domains/offline/`, `@lib/task-api-client.ts`
 - Used by: Pages via `<script>` imports
 - Settings-specific composition now flows through `settings-page.ts` → `settings-shell-controller.ts` + `settings-store.ts` + `settings-registry.ts`, while `settings-controller.ts` remains the legacy behavior layer for existing save flows.
@@ -92,12 +92,20 @@
 4. Layout.astro monkey-patches `fetch()` for ingress prefix
 5. Client controllers hydrate interactivity
 
+**Universal Search:**
+1. `SearchHub.astro` renders the shared overlay shell and static page/action/settings registries
+2. `search-hub-controller.ts` manages keyboard launch, focus trap, scopes, and selection
+3. `/api/search` delegates to `@domains/search/search-service.ts`
+4. `search-service.ts` fans out to `TaskRepository`, `BoardRepository`, `SettingsRepository`, and the shared settings registry
+5. Search results deep-link back into ingress-safe pages and settings hashes
+
 **State Management:**
 - Server: SQLite via Drizzle ORM (single source of truth)
 - Client: `@domains/offline/offline-store.ts` (IndexedDB for offline)
 - Sync: `@domains/offline/sync-engine.ts` (background sync + conflict resolution)
 - Tab coordination: `@domains/offline/tab-sync.ts`
 - Settings shell: `settings-store.ts` caches `/api/settings` reads and preserves existing persisted keys while the shell manages summaries, deep links, and companion actions client-side.
+- Search hub: `SearchHub.astro` ships a static registry for pages/actions/settings while `/api/search` supplies live task/board/filter results.
 
 ## Key Abstractions
 

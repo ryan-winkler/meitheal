@@ -2,12 +2,12 @@
 
 ## Current Position
 
-**Phase:** 4 of 4 — Smart Today + Tooling (COMPLETE ✅)
-**Status:** All phases delivered — PGD-01, SMT-01/02/03, VER-01/02/03
-**Last Completed:** Phase 4B — Version Tooling — 2026-03-15
+**Core Sprint Status:** Phases 1, 2, and 4 are complete. Phase 3 is only partially complete (`PGD-01` landed; newer settings/search decomposition work is being carried by parallel phases instead of the original per-tab plan).
+**Active Tracks:** Parallel Phase 08 (Settings full redesign closeout) and Parallel Phase 09 (search hub stabilization)
+**Last Completed Local Work:** Settings/search hardening follow-up, security cleanup, and doc sync — 2026-03-15
 **Session Date:** 2026-03-15
 
-## Parallel Phase 08 Summary (IN PROGRESS)
+## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
 
 **Objective:** Settings full redesign with Astro-native shell navigation, zero duplicated tab ownership, Home Assistant-native ingress behavior, and stronger PWA/companion affordances.
 
@@ -18,11 +18,13 @@
 - Split system content into real `personal-settings`, `app-pwa-settings`, and `danger-zone-settings` sections.
 - Added Home Assistant Companion URL handler and x-callback-url affordances in App & PWA, plus real manifest screenshots and a Settings shortcut.
 - Added Playwright coverage for theme settings, shell search, canonical Webhooks → Automation & AI linking, and App & PWA companion affordances.
+- Follow-up: `settings-page.ts` now boots through `pageLifecycle.onPageLoad()` instead of a raw page-level `astro:page-load` listener.
 
 ### Verification
 - Tier 1: `pnpm --filter @meitheal/tests test tests/e2e/theme-settings.spec.ts tests/e2e/settings-shell.spec.ts tests/e2e/pwa-offline.spec.ts` — 27 passed.
 - Tier 1: Real Settings screenshots captured from the local Astro server into `public/pwa/screenshots/`.
 - Tier 2: Attempted `./scripts/devcontainer-up.sh status`, but Docker socket access is blocked on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).
+- Repo-wide `pnpm check` now passes locally after follow-up cleanup; Tier 2 HA verification remains pending.
 
 ### HEART Targets
 - Happiness: make any setting discoverable from one search box and visible summaries.
@@ -73,11 +75,10 @@
 ### Verification
 - `.planning/phases/01-hierarchy-feature-gaps/02-VERIFICATION.md` — PASSED (4/4 criteria)
 
-## Next Phase
+## Active Follow-ups
 
-**Phase 3: Page Decomposition** — Extract inline scripts from monolith Astro pages into typed modules
-- PGD-01→05 (5 requirements)
-- Dependencies: Phase 2 complete ✓ (extracted scripts should use domain queries)
+- Phase 08: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
+- Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
 
 ## Phase 7 Summary (IN PROGRESS)
 
@@ -138,7 +139,7 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - ViewTransitions → ClientRouter test fix
 - Tests: 286 passed, 65 skipped
 
-## Phase 3 Summary (COMPLETE ✅)
+## Phase 3 Summary (PARTIAL — PGD-01 COMPLETE)
 
 | SHA | Description |
 |-----|-------------|
@@ -184,7 +185,7 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Tier 1 browser verification: 27 targeted tests passed
 - Tier 2 verification blocked by missing Docker socket access on current machine
 
-## Parallel Phase 09 Summary (IMPLEMENTED LOCALLY ✅)
+## Parallel Phase 09 Summary (IN PROGRESS)
 
 **Objective:** Deliver one Astro-native search hub that upgrades task search, unifies keyboard and topbar launch, and keeps Home Assistant search callers on the same backend contract.
 
@@ -197,8 +198,8 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Added search contract and KCS documentation for the upgraded behavior.
 
 ### Verification
-- Tier 1: `pnpm check` — passed.
 - Tier 1: targeted browser verification added for universal search hub launch and navigation.
+- Tier 1: `pnpm check` — passed after follow-up cleanup across the search hub path.
 - Tier 2: `./scripts/devcontainer-up.sh status` — still blocked by Docker socket permission on this workstation (`permission denied while trying to connect to /var/run/docker.sock`).
 
 ## Phase 07 / Ongoing Polish Summary (IMPLEMENTED LOCALLY ✅)
@@ -208,4 +209,3 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - **UI/UX Polish**: Added `var(--bg-hover)` backdrops with `blur(4px)` to Kanban card quick actions for readability on busy cards. CSS alignment tweaks for type icons.
 - **Codebase Mapping**: Performed a full refresh of all 7 documents in `.planning/codebase/` (960 lines total). Removed the `Duplicated Type Icon Config` concern from `CONCERNS.md` after fixing it.
 - **Layout Restructure**: Moved `<SearchHub />` overlay into the root of `Layout.astro` exactly alongside the global modals to ensure clean stacking contexts.
-

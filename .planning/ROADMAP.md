@@ -3,8 +3,8 @@
 **Project:** Meitheal Core Feature Completion Sprint
 **Phases:** 4 (consolidated from 6 after audit)
 **Requirements:** 28
-**Date:** 2026-03-09
-**Status:** 🔄 IN PROGRESS
+**Date:** 2026-03-15
+**Status:** 🔄 Core phases complete, parallel polish phases active
 
 > Reduced from 6 to 4 phases — Subtask/Recurrence/Checklist merged into Phase 1
 > since most UI already exists and gaps are interconnected.
@@ -17,12 +17,12 @@
 |---|-------|--------|------|
 | 1 | Hierarchy + Feature Gaps | ✅ Complete | 2026-03-09 |
 | 2 | SQL Domain Migration | ✅ Complete | 2026-03-09 |
-| 3 | Page Decomposition | ⬜ Not started | — |
-| 4 | Smart Today + Tooling | ⬜ Not started | — |
+| 3 | Page Decomposition | 🟡 Partial | 2026-03-15 |
+| 4 | Smart Today + Tooling | ✅ Complete | 2026-03-15 |
 
 ## Parallel Phase 08: Settings Full Redesign
 
-**Status:** 🔄 In progress (Tier 1 complete, Tier 2 HA verification blocked by environment)
+**Status:** 🟡 Local implementation complete, Tier 2 HA verification blocked by environment
 
 **Goal:** Replace the legacy Settings tab stack with a searchable, Astro-native shell that works cleanly behind Home Assistant ingress, inside the companion app, and as a PWA.
 
@@ -41,7 +41,7 @@
 
 ## Parallel Phase 09: Search Hub Upgrade
 
-**Status:** ✅ Implemented locally (Tier 1 complete, Tier 2 HA verification blocked by environment)
+**Status:** 🟡 Local implementation complete, Tier 2 HA verification blocked by environment
 
 **Goal:** Replace Meitheal's split task search and command palette with one Astro-native, Home Assistant-native search hub that can search tasks, views, settings, saved filters, and actions.
 
@@ -100,7 +100,7 @@
 
 **Success Criteria:**
 1. Kanban, Table, Dashboard scripts extracted to typed `.ts` modules
-2. Settings tab scripts extracted to per-tab modules
+2. Settings page orchestration extracted into `settings-page.ts` plus shell/store/registry modules, with no duplicated component page-load ownership
 3. Layout.astro scripts extracted to `lib/layout-controller.ts`
 4. All modules type-check via `astro check`
 
@@ -125,4 +125,4 @@
 
 ---
 
-*Roadmap revised: 2026-03-09 — consolidated after deep code audit*
+*Roadmap revised: 2026-03-15 — phase status and parallel tracks refreshed*

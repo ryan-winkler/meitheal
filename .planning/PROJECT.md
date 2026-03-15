@@ -1,47 +1,42 @@
-# Meitheal — Core Feature Completion Sprint
+# Meitheal — Active Delivery Snapshot
 
 ## What This Is
 
-Meitheal is a Home Assistant add-on for task/project management (v0.1.99). The previous sprint delivered Labels + Gamification. This sprint focuses on **surfacing hidden backend capabilities** (subtasks, recurrence, checklists) as user-facing features, **addressing critical architecture debt** (inline SQL, monolith pages), and **closing competitive gaps** identified in the TickTick/Todoist gap analysis.
+Meitheal is a Home Assistant add-on for task/project management. The core feature-completion sprint landed subtasks, recurrence, checklist UX, SQL repository migration, Smart Today, and version tooling. The active parallel work now focuses on **Settings shell quality**, **search/navigation ergonomics**, and **Astro-native maintainability**.
 
 ## Core Value
 
-Unlock the full power of Meitheal's data model — users currently can't access subtasks, recurrence, or checklists without raw API calls. Simultaneously, harden the codebase architecture for maintainability and testability.
+Keep Meitheal competitive as a Home Assistant-native execution engine: make critical controls discoverable, reduce client-controller duplication, preserve ingress safety, and keep the codebase understandable enough to keep shipping.
 
-## Current State (v0.1.99)
+## Current State (2026-03-15)
 
-- **196+ files**, ~23k lines (TypeScript + Astro) — after dead code sweep
-- **275 passing tests** (0 failures)
-- **Build passes**, typecheck clean (0 errors, 5 hints)
-- Subtasks: `parent_id` in DB + API, **no UI**
-- Recurrence: `recurrence_rule` in DB + templates, **no picker UI**
-- Checklists: `checklists` JSON field in DB + templates, **no inline UI**
-- Inline SQL across 64 API routes (P0 concern)
-- Large monolith pages: kanban (1700), settings (2200), table (1000) lines
+- Core sprint: hierarchy/recurrence/checklist work delivered
+- SQL repository migration delivered across task/board/settings-related routes
+- Smart Today and version-tooling phases delivered
+- Settings now uses a searchable shell with grouped navigation, summary cards, App & PWA companion affordances, and real manifest screenshots
+- Universal search hub work is present locally with repo-wide typecheck green; remaining follow-up is Tier 2 HA verification and polish
+- Tier 2 HA verification is currently blocked on this workstation by Docker socket permissions
 
-## Sprint Goals
+## Active Goals
 
-1. **Subtask Tree UI** — Nested/indent display in table/tasks views, subtask badges on kanban cards, "Add subtask" action in task detail
-2. **Recurrence Picker** — UI component to set daily/weekly/monthly/custom recurrence rules in create/edit modals
-3. **Checklist UI** — Inline checkbox items within task detail panel, checklist creation in create/edit flow
-4. **SQL Migration** — Extract inline SQL from API routes into `@meitheal/domain-tasks` query functions
-5. **Page Decomposition** — Extract `is:inline` scripts from monolith pages into typed `.ts` modules
-6. **Smart Today** — "Suggested" section showing overdue + high-priority tasks
-7. **Version Sync Automation** — Build hook to validate version consistency across config.yaml/run.sh/sw.js
+1. **Settings closeout** — complete Tier 2 verification for ingress-safe hashes, companion handoff, and PWA behavior
+2. **Search stabilization** — finish type-clean universal search orchestration through `domains/search/` and `/api/search`
+3. **Controller decomposition** — continue breaking oversized client controllers into lifecycle-safe modules
+4. **Docs/KCS accuracy** — keep README, AGENTS, planning docs, and runbooks synchronized with the shipped UX
 
 ## Tech Stack
 
-- Astro 5.18 SSR (Node adapter) inside HA Supervisor
-- SQLite via @libsql/client (raw SQL, parameterized)
+- Astro 6 SSR (Node adapter) with `ClientRouter` in standalone mode
+- SQLite via `@libsql/client` + Drizzle ORM repositories
 - TypeScript 5.9 strict mode
 - pnpm 10.8 monorepo with 5 domain packages
-- Tailwind 3.4 + 17 CSS partials
+- Tailwind 4 tooling + 18 CSS partials
 
 ## Constraints
 
 - **Astro-native/first** — no React, no SPA patterns
 - **HA Supervisor ingress** — all URLs must be ingress-aware
-- **Zero regressions** — 275 tests must pass after each phase
+- **Tiered verification** — UI work needs Tier 1, ingress/HA/PWA work needs Tier 2 before closeout
 - **DDD boundaries** — new features in appropriate bounded contexts
 - **KCS** — all behavior changes documented inline
 - **Production-quality** — no dummy data, no hardcoded assumptions
