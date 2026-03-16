@@ -232,11 +232,42 @@ for (let week = 0; week < 6; week++) {
                   )}
                 </div>
               )}
+              {/* Inline event preview slots — populated client-side */}
+              <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>
             </div>
           )}
         </div>
       ))
     }
+  </div>
+
+  {/* Day Detail Drawer — slides in when clicking a day */}
+  <div class="day-drawer" id="day-drawer" aria-hidden="true">
+    <div class="day-drawer-backdrop" id="day-drawer-backdrop"></div>
+    <div class="day-drawer-panel">
+      <div class="day-drawer-header">
+        <h3 class="day-drawer-title" id="day-drawer-title"></h3>
+        <button class="day-drawer-close" id="day-drawer-close" aria-label="Close">✕</button>
+      </div>
+      <div class="day-drawer-content">
+        <div class="day-drawer-section">
+          <h4 class="day-drawer-section-title">📅 Calendar Events</h4>
+          <div id="day-drawer-events" class="day-drawer-list">
+            <span class="day-drawer-empty">Loading...</span>
+          </div>
+        </div>
+        <div class="day-drawer-section">
+          <h4 class="day-drawer-section-title">📋 Tasks Due</h4>
+          <div id="day-drawer-tasks" class="day-drawer-list">
+            <span class="day-drawer-empty">Loading...</span>
+          </div>
+        </div>
+        <div class="day-drawer-actions">
+          <button class="btn btn-primary day-drawer-add" id="day-drawer-add-event">+ Add Event</button>
+          <button class="btn btn-ghost day-drawer-add" id="day-drawer-add-task">+ Add Task</button>
+        </div>
+      </div>
+    </div>
   </div>
 </Layout>
 
@@ -401,60 +432,437 @@ for (let week = 0; week < 6; week++) {
       font-size: 11px;
     }
   }
+
+  /* Inline event previews */
+  .cal-inline-events {
+    margin-top: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .cal-inline-event {
+    font-size: 9px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+    line-height: 1.3;
+  }
+  .cal-inline-event.cal-inline-ha {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--info, #38bdf8);
+  }
+  .cal-inline-more {
+    font-size: 9px;
+    color: var(--text-muted);
+    padding: 0 3px;
+  }
+
+  /* Day Detail Drawer */
+  .day-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .day-drawer[aria-hidden="false"] {
+    pointer-events: all;
+    visibility: visible;
+  }
+  .day-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .day-drawer[aria-hidden="false"] .day-drawer-backdrop {
+    opacity: 1;
+  }
+  .day-drawer-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 90vw);
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .day-drawer[aria-hidden="false"] .day-drawer-panel {
+    transform: translateX(0);
+  }
+  .day-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+  }
+  .day-drawer-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .day-drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all 0.15s;
+  }
+  .day-drawer-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .day-drawer-content {
+    padding: 16px 20px;
+    flex: 1;
+  }
+  .day-drawer-section {
+    margin-bottom: 20px;
+  }
+  .day-drawer-section-title {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .day-drawer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .day-drawer-item {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+  }
+  .day-drawer-item:hover {
+    background: var(--bg-hover);
+  }
+  .day-drawer-item-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .day-drawer-item-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .day-drawer-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .day-drawer-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .day-drawer-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 8px 0;
+  }
+  .day-drawer-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .day-drawer-add {
+    flex: 1;
+    font-size: 12px;
+  }
 </style>
 
 <script>
   import { taskApi } from "../lib/task-api-client"
 
-  // Click calendar day to navigate to tasks filtered by date
+  const drawer = document.getElementById("day-drawer")!
+  const drawerTitle = document.getElementById("day-drawer-title")!
+  const drawerEvents = document.getElementById("day-drawer-events")!
+  const drawerTasks = document.getElementById("day-drawer-tasks")!
+  const drawerClose = document.getElementById("day-drawer-close")!
+  const drawerBackdrop = document.getElementById("day-drawer-backdrop")!
+  const drawerAddEvent = document.getElementById("day-drawer-add-event")!
+  const drawerAddTask = document.getElementById("day-drawer-add-task")!
+  let currentDrawerDate = ""
+
+  function openDrawer(dateStr: string) {
+    currentDrawerDate = dateStr
+    const d = new Date(dateStr + "T00:00:00")
+    drawerTitle.textContent = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    drawer.setAttribute("aria-hidden", "false")
+    drawerEvents.innerHTML = '<span class="day-drawer-empty">Loading...</span>'
+    drawerTasks.innerHTML = '<span class="day-drawer-empty">Loading...</span>'
+    document.body.style.overflow = "hidden"
+    loadDrawerData(dateStr)
+  }
+
+  function closeDrawer() {
+    drawer.setAttribute("aria-hidden", "true")
+    document.body.style.overflow = ""
+    currentDrawerDate = ""
+  }
+
+  async function loadDrawerData(dateStr: string) {
+    // Load calendar events
+    try {
+      const nextDay = new Date(dateStr + "T00:00:00")
+      nextDay.setDate(nextDay.getDate() + 1)
+      const endStr = nextDay.toISOString().split("T")[0]
+
+      // Try to get configured calendar entities
+      let entities: string[] = []
+      try {
+        const settRes = await fetch((window.__ingress_path || "") + "/api/settings?key=calendar-entities")
+        if (settRes.ok) {
+          const settData = await settRes.json()
+          entities = settData?.value
+            ? (typeof settData.value === "string" ? JSON.parse(settData.value) : settData.value)
+            : []
+        }
+      } catch { /* no entities configured */ }
+
+      const events: Array<{ summary: string; start: string; end: string; entity_id?: string }> = []
+      for (const eid of entities.slice(0, 5)) {
+        try {
+          const res = await fetch(
+            `${window.__ingress_path || ""}/api/ha/events?entity_id=${encodeURIComponent(eid)}&start=${encodeURIComponent(dateStr)}&end=${encodeURIComponent(endStr!)}`
+          )
+          if (res.ok) {
+            const data = await res.json()
+            if (data?.events) events.push(...data.events.map((e: any) => ({ ...e, entity_id: eid })))
+          }
+        } catch { /* skip entity */ }
+      }
+
+      if (events.length === 0) {
+        drawerEvents.innerHTML = '<span class="day-drawer-empty">No calendar events</span>'
+      } else {
+        drawerEvents.innerHTML = events.map((e) => {
+          const time = e.start.includes("T")
+            ? new Date(e.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+            : "All day"
+          return `<div class="day-drawer-item">
+            <span class="day-drawer-item-icon">📅</span>
+            <div class="day-drawer-item-content">
+              <div class="day-drawer-item-title">${escapeHtml(e.summary)}</div>
+              <div class="day-drawer-item-meta">${time}</div>
+            </div>
+          </div>`
+        }).join("")
+      }
+    } catch {
+      drawerEvents.innerHTML = '<span class="day-drawer-empty">Failed to load events</span>'
+    }
+
+    // Load tasks due on this date
+    try {
+      const res = await fetch(
+        `${window.__ingress_path || ""}/api/tasks?due_date=${encodeURIComponent(dateStr)}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        const tasks = data?.tasks ?? data ?? []
+        if (tasks.length === 0) {
+          drawerTasks.innerHTML = '<span class="day-drawer-empty">No tasks due</span>'
+        } else {
+          drawerTasks.innerHTML = tasks.map((t: any) => {
+            const statusIcon = t.status === "done" ? "✅" : t.status === "in_progress" ? "🔵" : "⬜"
+            return `<div class="day-drawer-item" data-task-id="${t.id}" style="cursor:pointer">
+              <span class="day-drawer-item-icon">${statusIcon}</span>
+              <div class="day-drawer-item-content">
+                <div class="day-drawer-item-title">${escapeHtml(t.title)}</div>
+                <div class="day-drawer-item-meta">${t.status ?? ""} ${t.priority ? "• P" + t.priority : ""}</div>
+              </div>
+            </div>`
+          }).join("")
+          // Click task to navigate
+          drawerTasks.querySelectorAll<HTMLElement>(".day-drawer-item[data-task-id]").forEach((el) => {
+            el.addEventListener("click", () => {
+              const tid = el.dataset.taskId
+              if (tid) window.location.href = (window.__ingress_path || "") + `/tasks#task=${tid}`
+            })
+          })
+        }
+      }
+    } catch {
+      drawerTasks.innerHTML = '<span class="day-drawer-empty">Failed to load tasks</span>'
+    }
+  }
+
+  function escapeHtml(str: string): string {
+    const el = document.createElement("span")
+    el.textContent = str
+    return el.innerHTML
+  }
+
+  // Click calendar day to open drawer instead of navigating
   document
     .querySelectorAll<HTMLElement>(".cal-cell[data-date]")
     .forEach((cell) => {
       const handler = () => {
-        const date = cell.dataset.date;
-        if (date)
-          window.location.href =
-            (window.__ingress_path || "") + `/tasks#due=${date}`;
-      };
-      cell.addEventListener("click", handler);
+        const date = cell.dataset.date
+        if (date) openDrawer(date)
+      }
+      cell.addEventListener("click", handler)
       cell.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handler();
+          e.preventDefault()
+          handler()
         }
-      });
-    });
+      })
+    })
+
+  drawerClose.addEventListener("click", closeDrawer)
+  drawerBackdrop.addEventListener("click", closeDrawer)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && drawer.getAttribute("aria-hidden") === "false") closeDrawer()
+  })
+
+  // Quick-add event
+  drawerAddEvent.addEventListener("click", () => {
+    if (!currentDrawerDate) return
+    // Open new task modal with date pre-filled, flagged as calendar event
+    const createBtn = document.getElementById("create-task-btn")
+    if (createBtn) {
+      window.__prefillTaskDate = currentDrawerDate
+      createBtn.click()
+    }
+  })
+
+  // Quick-add task
+  drawerAddTask.addEventListener("click", () => {
+    if (!currentDrawerDate) return
+    const createBtn = document.getElementById("create-task-btn")
+    if (createBtn) {
+      window.__prefillTaskDate = currentDrawerDate
+      createBtn.click()
+    }
+  })
 
   // Sync Now button handler
   document
     .getElementById("sync-cal-btn")
     ?.addEventListener("click", async () => {
-      const btn = document.getElementById("sync-cal-btn") as HTMLButtonElement;
-      btn.textContent = "⏳ Syncing...";
-      btn.disabled = true;
+      const btn = document.getElementById("sync-cal-btn") as HTMLButtonElement
+      btn.textContent = "⏳ Syncing..."
+      btn.disabled = true
       try {
         const res = await taskApi.raw("/api/integrations/calendar/sync", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "sync" }),
-        });
-        const data = (await res.json()) as { ok: boolean; message?: string };
+        })
+        const data = (await res.json()) as { ok: boolean; message?: string }
         if (data.ok) {
-          // Reload to refresh event counts
-          window.location.reload();
+          window.location.reload()
         } else {
-          btn.textContent = "❌ Failed";
+          btn.textContent = "❌ Failed"
           setTimeout(() => {
-            btn.textContent = "🔄 Sync";
-            btn.disabled = false;
-          }, 2000);
+            btn.textContent = "🔄 Sync"
+            btn.disabled = false
+          }, 2000)
         }
       } catch {
-        btn.textContent = "❌ Failed";
+        btn.textContent = "❌ Failed"
         setTimeout(() => {
-          btn.textContent = "🔄 Sync";
-          btn.disabled = false;
-        }, 2000);
+          btn.textContent = "🔄 Sync"
+          btn.disabled = false
+        }, 2000)
       }
-    });
+    })
+
+  // Load inline event previews on page load
+  async function loadInlineEventPreviews() {
+    let entities: string[] = []
+    try {
+      const settRes = await fetch((window.__ingress_path || "") + "/api/settings?key=calendar-entities")
+      if (settRes.ok) {
+        const settData = await settRes.json()
+        entities = settData?.value
+          ? (typeof settData.value === "string" ? JSON.parse(settData.value) : settData.value)
+          : []
+      }
+    } catch { return }
+    if (entities.length === 0) return
+
+    // Get the visible month range from the grid
+    const cells = document.querySelectorAll<HTMLElement>(".cal-cell[data-date]")
+    const dates = Array.from(cells).map((c) => c.dataset.date).filter(Boolean) as string[]
+    if (dates.length === 0) return
+
+    const start = dates[0]!
+    const lastDate = new Date(dates[dates.length - 1]! + "T00:00:00")
+    lastDate.setDate(lastDate.getDate() + 1)
+    const end = lastDate.toISOString().split("T")[0]!
+
+    // Fetch events for whole month in batch
+    const allEvents: Array<{ summary: string; start: string; end: string }> = []
+    for (const eid of entities.slice(0, 3)) {
+      try {
+        const res = await fetch(
+          `${window.__ingress_path || ""}/api/ha/events?entity_id=${encodeURIComponent(eid)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.events) allEvents.push(...data.events)
+        }
+      } catch { /* skip */ }
+    }
+
+    // Group events by date
+    const byDate = new Map<string, Array<{ summary: string; start: string }>>()
+    for (const evt of allEvents) {
+      const dateKey = evt.start.includes("T") ? evt.start.split("T")[0]! : evt.start
+      if (!byDate.has(dateKey)) byDate.set(dateKey, [])
+      byDate.get(dateKey)!.push(evt)
+    }
+
+    // Render inline previews (max 2 per cell)
+    for (const [dateKey, events] of byDate) {
+      const container = document.querySelector<HTMLElement>(`[data-inline-date="${dateKey}"]`)
+      if (!container) continue
+      const MAX_INLINE = 2
+      const shown = events.slice(0, MAX_INLINE)
+      container.innerHTML = shown.map((e) => {
+        const time = e.start.includes("T")
+          ? new Date(e.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+          : "☀"
+        return `<div class="cal-inline-event cal-inline-ha" title="${escapeHtml(e.summary)}">${time} ${escapeHtml(e.summary)}</div>`
+      }).join("")
+      if (events.length > MAX_INLINE) {
+        container.innerHTML += `<span class="cal-inline-more">+${events.length - MAX_INLINE} more</span>`
+      }
+    }
+  }
+
+  loadInlineEventPreviews()
 </script>

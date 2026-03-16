@@ -177,14 +177,88 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
 }
 
 /**
+ * Fetch today's calendar events for AI context.
+ * Best-effort — returns null if unavailable.
+ */
+async function fetchCalendarContext(): Promise<string | null> {
+  try {
+    // Get configured calendar entities
+    const settingsRes = await fetch(
+      (window.__ingress_path || "") + "/api/settings?key=calendar-entities"
+    );
+    if (!settingsRes.ok) return null;
+    const settingsData = await settingsRes.json();
+    const entities: string[] = settingsData?.value
+      ? (typeof settingsData.value === "string" ? JSON.parse(settingsData.value) : settingsData.value)
+      : [];
+    if (entities.length === 0) return null;
+
+    const today = new Date();
+    const start = today.toISOString().split("T")[0] + "T00:00:00";
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const end = tomorrow.toISOString().split("T")[0] + "T00:00:00";
+
+    const allEvents: Array<{ summary: string; start: string; end: string }> = [];
+    for (const entityId of entities.slice(0, 3)) { // Cap at 3 calendars
+      const res = await fetch(
+        `${window.__ingress_path || ""}/api/ha/events?entity_id=${encodeURIComponent(entityId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.events) allEvents.push(...data.events);
+      }
+    }
+
+    if (allEvents.length === 0) return null;
+    return allEvents
+      .map((e) => `- ${e.summary} (${e.start} → ${e.end})`)
+      .join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch active habit streaks for AI context.
+ * Best-effort — returns null if unavailable.
+ */
+async function fetchHabitContext(): Promise<string | null> {
+  try {
+    const res = await fetch(
+      (window.__ingress_path || "") + "/api/habits"
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const habits = data?.habits ?? data ?? [];
+    if (!Array.isArray(habits) || habits.length === 0) return null;
+
+    return habits
+      .filter((h: { active?: boolean }) => h.active !== false)
+      .map((h: { name: string; currentStreak?: number; completedToday?: boolean; targetCount?: number }) =>
+        `- ${h.name}: ${h.currentStreak ?? 0} day streak${h.completedToday ? " ✅" : ""} (target: ${h.targetCount ?? 1}x/day)`)
+      .join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ask AI about a task — sends to HA Assist with inline response.
+ * Enriched with calendar schedule + habit context for holistic awareness.
  * Falls back to clipboard + external if HA is disconnected.
  */
 export async function askAIForTask(taskId: string): Promise<AIResult> {
   const task = await resolveTask(taskId);
   const type = task.taskType ?? task.task_type ?? "Task";
 
-  const prompt = `I am working on the following ${type} in Meitheal. Help me plan, break down, or solve blocking issues.
+  // Fetch contextual data in parallel (best-effort, non-blocking)
+  const [calendarContext, habitContext] = await Promise.all([
+    fetchCalendarContext(),
+    fetchHabitContext(),
+  ]);
+
+  let prompt = `I am working on the following ${type} in Meitheal. Help me plan, break down, or solve blocking issues.
 
 Title: ${task.title}
 Status: ${task.status}
@@ -192,9 +266,16 @@ Priority: ${task.priority ?? "None"}
 Due Date: ${task.dueDate ?? "No due date"}
 
 Description:
-${task.description || "No description provided."}
+${task.description || "No description provided."}`;
 
-Please act as a senior technical co-pilot. Break this down into actionable sub-tasks or suggest the next step.`;
+  if (calendarContext) {
+    prompt += `\n\nToday's Schedule:\n${calendarContext}`;
+  }
+  if (habitContext) {
+    prompt += `\n\nActive Habits:\n${habitContext}`;
+  }
+
+  prompt += `\n\nPlease act as a senior technical co-pilot. Break this down into actionable sub-tasks or suggest the next step. Consider my schedule and active habits when planning.`;
 
   try {
     const result = await callAssist(prompt);

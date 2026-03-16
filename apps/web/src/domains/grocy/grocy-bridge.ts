@@ -145,6 +145,14 @@ export function getActiveGrocySyncConfig(): GrocySyncConfig | null {
   return state.config;
 }
 
+/**
+ * Get the active Grocy adapter instance (if sync is running).
+ * Used by the stock API endpoint to avoid creating duplicate adapter instances.
+ */
+export function getGrocyAdapter(): GrocyAdapter | null {
+  return state.adapter;
+}
+
 // ═══════ Inbound: Grocy → Meitheal ═══════
 
 const MAX_RETRIES = 2;

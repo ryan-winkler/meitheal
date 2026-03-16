@@ -44,14 +44,19 @@ export function choreToTask(chore: GrocyChore): MeithealTaskData {
     .filter(Boolean)
     .join("\n");
 
+  // Map periodType → boardId for logical grouping (e.g. "daily" → "daily-chores")
+  const boardId = chore.periodType
+    ? `${chore.periodType.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-chores` || "default"
+    : "default";
+
   return {
     title: chore.choreName,
     description: description || null,
-    status: chore.isOverdue ? "pending" : "pending",
+    status: chore.isOverdue ? "in_progress" : "pending",
     priority: chore.isOverdue ? 1 : 3,
     dueDate: chore.nextEstimatedExecutionTime?.split(" ")[0] ?? null,
     labels,
-    boardId: "default",
+    boardId,
   };
 }
 

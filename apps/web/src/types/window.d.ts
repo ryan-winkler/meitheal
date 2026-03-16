@@ -113,6 +113,10 @@ interface MeithealWindowExtensions {
   isCardVisible?: (card: HTMLElement) => boolean;
   /** Filter state loaded flag (set by FilterToolbar) */
   __filterStateLoaded?: boolean;
+
+  // === Calendar ===
+  /** Pre-fill date for new task creation from calendar day drawer */
+  __prefillTaskDate?: string;
 }
 
 /** BeforeInstallPromptEvent — not in lib.dom.d.ts */

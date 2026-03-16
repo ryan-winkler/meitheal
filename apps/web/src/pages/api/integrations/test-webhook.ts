@@ -12,6 +12,7 @@
  */
 import type { APIRoute } from "astro"
 import { logApiError } from "../../../lib/api-logger"
+import { bypassTlsIfNeeded, restoreTls } from "../../../lib/n8n-fetch"
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -96,20 +97,13 @@ export const POST: APIRoute = async ({ request }) => {
       headers["x-meitheal-signature"] = `sha256=${signature}`
     }
 
-    // Send with timeout
+    // Send with timeout + TLS bypass
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
     const startTime = Date.now()
+    const tlsCtx = bypassTlsIfNeeded(targetUrl)
 
     try {
-      const isLocalDev = process.env.NODE_ENV !== "production"
-      const isInternal = targetUrl.includes(".internal")
-      const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-
-      if (isLocalDev && isInternal) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-      }
-
       const response = await fetch(targetUrl, {
         method: "POST",
         signal: controller.signal,
@@ -117,12 +111,21 @@ export const POST: APIRoute = async ({ request }) => {
         body: payloadString,
       })
 
-      if (isLocalDev && isInternal) {
-        if (originalTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTls
+      restoreTls(tlsCtx)
+      const latencyMs = Date.now() - startTime
+
+      // Persist delivery result for UI display (same key as webhook-dispatcher)
+      const deliveryResult = {
+        success: response.ok,
+        status: response.status,
+        timestamp: new Date().toISOString(),
+        latency_ms: latencyMs,
+        error: response.ok ? null : `HTTP ${response.status}`,
       }
 
-      const latencyMs = Date.now() - startTime
+      try {
+        await repo.upsert("n8n_last_delivery", JSON.stringify(deliveryResult))
+      } catch { /* non-critical */ }
 
       return new Response(JSON.stringify({
         success: response.ok,
@@ -130,7 +133,7 @@ export const POST: APIRoute = async ({ request }) => {
         target_url: targetUrl.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@"),
         status_code: response.status,
         latency_ms: latencyMs,
-        timestamp: new Date().toISOString(),
+        timestamp: deliveryResult.timestamp,
         hint: response.ok
           ? `✅ Webhook delivered (${response.status}) in ${latencyMs}ms — check your n8n/webhook receiver for the test payload`
           : `⚠ Webhook returned ${response.status} — the endpoint may not be ready or configured to accept POST requests`,
@@ -139,11 +142,23 @@ export const POST: APIRoute = async ({ request }) => {
         headers: { "content-type": "application/json" },
       })
     } catch (err) {
+      restoreTls(tlsCtx)
       const latencyMs = Date.now() - startTime
 
       const errorMessage = err instanceof Error
         ? (err.name === "AbortError" ? `Timeout after 10s` : err.message)
         : "Unknown error"
+
+      // Persist failure for UI display
+      try {
+        await repo.upsert("n8n_last_delivery", JSON.stringify({
+          success: false,
+          status: null,
+          timestamp: new Date().toISOString(),
+          latency_ms: latencyMs,
+          error: errorMessage,
+        }))
+      } catch { /* non-critical */ }
 
       return new Response(JSON.stringify({
         success: false,

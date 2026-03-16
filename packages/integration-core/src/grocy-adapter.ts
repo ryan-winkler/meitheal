@@ -233,13 +233,15 @@ export class GrocyAdapter {
    * Use query param ?filter=done=0 for incomplete tasks only.
    */
   async getTasks(includeCompleted = false): Promise<GrocyResult<GrocyTask[]>> {
+    // Grocy generic entity filter: ?query%5B%5D=done%3D0 filters to incomplete tasks
     const queryPath = includeCompleted
       ? "/api/tasks"
-      : "/api/tasks"
+      : "/api/tasks?query%5B%5D=done%3D0"
     return this.request<GrocyTask[]>("GET", queryPath, undefined, (raw) => {
       const items = Array.isArray(raw) ? raw : []
       return items
         .filter((item: Record<string, unknown>) =>
+          // Client-side filter as fallback — some Grocy versions ignore query params
           includeCompleted ? true : item.done !== 1 && item.done !== true
         )
         .map((item: Record<string, unknown>) => ({
@@ -534,8 +536,4 @@ export class GrocyAdapter {
   }
 }
 
-/**
- * Backward-compatible alias for the renamed adapter.
- * @deprecated Use GrocyAdapter instead.
- */
-export const GrocyStockAdapter = GrocyAdapter
+// Note: GrocyStockAdapter was a deprecated alias — removed in v0.3.x. Use GrocyAdapter directly.

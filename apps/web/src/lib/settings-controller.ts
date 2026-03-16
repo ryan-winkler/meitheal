@@ -3,6 +3,7 @@ import { createClientLogger } from "@lib/client-logger"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
+import { escapeHtml } from "@lib/escape-html"
 import {
   setTheme as importedSetTheme,
   applyCustomTheme as importedApplyCustomTheme,
@@ -1132,9 +1133,28 @@ export function initSettingsController(): void {
           }
         }
 
-        btn.textContent = "🔌 Test Event Bus";
+        btn.textContent = "🧪 Test Event Bus";
         btn.disabled = false;
       });
+    // ───── Event Count Updaters ─────
+    function updateEventCount(selectorClass: string, countId: string) {
+      const total = document.querySelectorAll(`.${selectorClass}`).length;
+      const checked = document.querySelectorAll(`.${selectorClass}:checked`).length;
+      const el = document.getElementById(countId);
+      if (el) el.textContent = `${checked} of ${total} events enabled`;
+    }
+
+    // Wire up live event count for HA mode
+    document.querySelectorAll(".n8n-event").forEach((cb) => {
+      cb.addEventListener("change", () => updateEventCount("n8n-event", "n8n-event-count-auto"));
+    });
+    updateEventCount("n8n-event", "n8n-event-count-auto");
+
+    // Wire up live event count for Standalone mode
+    document.querySelectorAll(".n8n-event-standalone").forEach((cb) => {
+      cb.addEventListener("change", () => updateEventCount("n8n-event-standalone", "n8n-event-count-standalone"));
+    });
+    updateEventCount("n8n-event-standalone", "n8n-event-count-standalone");
 
     // ───── Copy Node-RED example flows to clipboard ─────
     document
@@ -1170,6 +1190,122 @@ export function initSettingsController(): void {
           }, 2000);
         }
       });
+
+    // ───── Deploy Meitheal flows to Node-RED ─────
+    document
+      .getElementById("deploy-nodered-flows")
+      ?.addEventListener("click", async () => {
+        const btn = document.getElementById("deploy-nodered-flows") as HTMLButtonElement;
+        const resultDiv = document.getElementById("nodered-deploy-result");
+        const msgSpan = document.getElementById("nodered-deploy-message");
+        const badge = document.getElementById("nodered-deploy-badge");
+        if (!btn) return;
+
+        // If already deployed, confirm re-deploy
+        if (badge && badge.classList.contains("badge-success")) {
+          if (!confirm("This will replace existing Meitheal flows in Node-RED. Continue?")) return;
+        }
+
+        btn.textContent = "🔄 Deploying...";
+        btn.disabled = true;
+
+        try {
+          const res = await fetch(
+            (window.__ingress_path || "") + "/api/integrations/nodered/deploy",
+            { method: "POST", headers: { "content-type": "application/json" } },
+          );
+          const data = await res.json() as {
+            success: boolean;
+            message?: string;
+            error?: string;
+            nodeCount?: number;
+          };
+
+          if (resultDiv && msgSpan) {
+            resultDiv.style.display = "block";
+            if (data.success) {
+              resultDiv.className = "integration-callout integration-callout--success";
+              msgSpan.textContent = `✅ ${data.message || "Flows deployed"} (${data.nodeCount || "?"} nodes)`;
+              // Refresh status badge
+              initNodeRedDeployStatus();
+            } else {
+              resultDiv.className = "integration-callout integration-callout--warning";
+              msgSpan.textContent = `⚠ ${data.message || data.error || "Deploy failed"}`;
+            }
+          }
+        } catch (err) {
+          if (resultDiv && msgSpan) {
+            resultDiv.style.display = "block";
+            resultDiv.className = "integration-callout integration-callout--warning";
+            msgSpan.textContent = `❌ Network error: ${err instanceof Error ? err.message : "unknown"}`;
+          }
+        }
+
+        btn.textContent = "🚀 Deploy to Node-RED";
+        btn.disabled = false;
+      });
+
+    // ───── Node-RED Deploy Status Check ─────
+    async function initNodeRedDeployStatus() {
+      const statusDiv = document.getElementById("nodered-deploy-status");
+      const badge = document.getElementById("nodered-deploy-badge");
+      const openLink = document.getElementById("nodered-open-link") as HTMLAnchorElement | null;
+      if (!statusDiv || !badge) return;
+
+      statusDiv.style.display = "flex";
+      statusDiv.style.alignItems = "center";
+      badge.textContent = "Checking...";
+      badge.className = "badge badge-disabled";
+
+      try {
+        const res = await fetch(
+          (window.__ingress_path || "") + "/api/integrations/nodered/status",
+        );
+        const data = await res.json() as {
+          available?: boolean;
+          reachable?: boolean;
+          flowDeployed?: boolean;
+          nodeRedUrl?: string;
+          addonState?: string;
+          reason?: string;
+        };
+
+        if (!data.available) {
+          badge.textContent = "N/A (standalone)";
+          badge.className = "badge badge-disabled";
+          // Hide deploy button in standalone mode
+          const deployBtn = document.getElementById("deploy-nodered-flows");
+          if (deployBtn) deployBtn.style.display = "none";
+          return;
+        }
+
+        if (!data.reachable) {
+          badge.textContent = "Node-RED not running";
+          badge.className = "badge badge-disabled";
+          return;
+        }
+
+        if (data.flowDeployed) {
+          badge.textContent = "✓ Flows deployed";
+          badge.className = "badge badge-success";
+        } else {
+          badge.textContent = "Not deployed";
+          badge.className = "badge badge-disabled";
+        }
+
+        // Show "Open in Node-RED" link with ingress URL
+        if (data.nodeRedUrl && openLink) {
+          openLink.href = data.nodeRedUrl;
+          openLink.style.display = "inline-flex";
+        }
+      } catch {
+        badge.textContent = "Error checking";
+        badge.className = "badge badge-disabled";
+      }
+    }
+
+    // Run status check on load (for HA addon mode)
+    initNodeRedDeployStatus();
 
     // ───── n8n Standalone Save ─────
     document
@@ -1253,6 +1389,17 @@ export function initSettingsController(): void {
               msgSpan.textContent = data.hint || data.error || "Failed to send test webhook";
             }
           }
+
+          // Live-update the last delivery indicator
+          const lastDeliveryEl = document.getElementById("n8n-last-delivery");
+          if (lastDeliveryEl) {
+            const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleString() : "Just now";
+            if (data.success) {
+              lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${data.status_code})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr} · ${data.latency_ms}ms</span>`;
+            } else {
+              lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${data.status_code || data.error || 'Error'})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`;
+            }
+          }
         } catch (err) {
           if (resultDiv && msgSpan) {
             resultDiv.style.display = "block";
@@ -1265,6 +1412,115 @@ export function initSettingsController(): void {
         btn.textContent = "🔌 Test Webhook";
         btn.disabled = false;
       });
+
+    // ───── n8n Diagnostics (Health & Workflows) ─────
+    async function initN8nDiagnostics(forceRefresh: boolean = false) {
+      const healthDetail = document.getElementById("n8n-health-detail");
+      const workflowsList = document.getElementById("n8n-workflows-list");
+      const urlInput = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value;
+      
+      if (!urlInput) return; // Needs at least URL
+
+      if (healthDetail) healthDetail.textContent = "Checking...";
+      if (workflowsList) {
+        workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⏳</span><span>Fetching workflows...</span></div>`;
+      }
+
+      // Fetch health
+      try {
+        const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/health");
+        const data = await res.json();
+        if (healthDetail) {
+          if (data.status === "connected") {
+            healthDetail.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Connected</span>`;
+          } else if (data.status === "unreachable") {
+            healthDetail.innerHTML = `<span style="color: var(--error);">Unreachable</span>`;
+          } else if (data.status === "unconfigured") {
+            healthDetail.innerHTML = `<span style="color: var(--text-muted);">Unconfigured</span>`;
+          } else {
+            healthDetail.innerHTML = `<span style="color: var(--warning);">Error: ${data.code || data.message || "Unknown"}</span>`;
+          }
+        }
+      } catch (err) {
+        if (healthDetail) healthDetail.innerHTML = `<span style="color: var(--error);">Failed to check</span>`;
+      }
+
+      // Fetch workflows
+      try {
+        const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/workflows");
+        const data = await res.json();
+        
+        if (workflowsList) {
+          if (data.success && Array.isArray(data.workflows)) {
+            if (data.workflows.length === 0) {
+              workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>No workflows found.</span></div>`;
+            } else {
+              workflowsList.innerHTML = "";
+              data.workflows.forEach((wf: { id: string, name: string, active: boolean }) => {
+                const el = document.createElement("div");
+                el.className = "cal-entity-card";
+                const safeName = typeof escapeHtml === 'function' ? escapeHtml(wf.name) : wf.name
+                el.innerHTML = `
+                  <div class="cal-entity-card__info" style="flex: 1;">
+                    <strong>${safeName}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                      ID: ${wf.id}
+                    </div>
+                  </div>
+                  <div class="cal-entity-card__toggle">
+                    <span class="badge ${wf.active ? 'badge-active' : 'badge-disabled'}">${wf.active ? 'Active' : 'Inactive'}</span>
+                  </div>
+                `;
+                workflowsList.appendChild(el);
+              });
+            }
+          } else if (data.error === "not_configured") {
+            workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">🔒</span><span>API Key missing or invalid. Workflow discovery requires authentication.</span></div>`;
+          } else if (data.error === "unconfigured") {
+            workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>Configure URL to discover workflows.</span></div>`;
+          } else {
+            workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⚠️</span><span>Failed to load workflows: ${data.message || data.error || 'Unknown error'}</span></div>`;
+          }
+        }
+      } catch (err) {
+        if (workflowsList) workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">❌</span><span>Network error fetching workflows.</span></div>`;
+      }
+    }
+
+    document.getElementById("refresh-n8n-standalone")?.addEventListener("click", () => initN8nDiagnostics(true));
+    document.getElementById("refresh-n8n-status")?.addEventListener("click", () => initN8nDiagnostics(true));
+    document.getElementById("refresh-n8n-workflows")?.addEventListener("click", () => initN8nDiagnostics(true));
+
+    // ───── n8n HA Addon Mode: Event Bus Status ─────
+    async function initHABusStatus() {
+      const busStatusEl = document.getElementById("n8n-ha-bus-status");
+      const haVersionEl = document.getElementById("n8n-ha-version");
+      if (!busStatusEl) return;
+
+      try {
+        const res = await fetch((window.__ingress_path || "") + "/api/integrations/status");
+        const data = await res.json();
+        
+        if (data.ha_connection) {
+          if (data.ha_connection.connected) {
+            busStatusEl.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Connected</span>`;
+          } else if (data.ha_connection.supervisor_token_present) {
+            busStatusEl.innerHTML = `<span style="color: var(--warning);">Disconnected</span>`;
+          } else {
+            busStatusEl.innerHTML = `<span style="color: var(--text-muted);">Not running as HA addon</span>`;
+          }
+          if (haVersionEl && data.ha_connection.version) {
+            haVersionEl.textContent = data.ha_connection.version;
+          }
+        }
+      } catch {
+        if (busStatusEl) busStatusEl.innerHTML = `<span style="color: var(--error);">Failed to check</span>`;
+      }
+    }
+
+    // Auto-load HA bus status on page init
+    setTimeout(() => initHABusStatus(), 300);
+
 
     // ───── Grocy Save ─────
     // Auto-key generation button
@@ -1628,6 +1884,10 @@ export function initSettingsController(): void {
               statusEl.textContent =
                 sync.itemCount > 0 ? `Active (${sync.itemCount})` : "Active";
               statusEl.className = "badge badge-active";
+              // Add version tooltip if we have per-entity counts
+              if (sync.choreCount !== undefined) {
+                statusEl.title = `${sync.choreCount} chores · ${sync.taskCount} tasks · ${sync.shoppingCount} shopping`;
+              }
             }
           }
 
@@ -1654,7 +1914,16 @@ export function initSettingsController(): void {
               }
             }
             if (itemCountEl) {
-              itemCountEl.textContent = `${sync.itemCount} item${sync.itemCount !== 1 ? "s" : ""}`;
+              // Show entity breakdown instead of generic count
+              if (sync.choreCount !== undefined && (sync.choreCount > 0 || sync.taskCount > 0 || sync.shoppingCount > 0)) {
+                const parts: string[] = [];
+                if (sync.choreCount > 0) parts.push(`${sync.choreCount} chore${sync.choreCount !== 1 ? "s" : ""}`);
+                if (sync.taskCount > 0) parts.push(`${sync.taskCount} task${sync.taskCount !== 1 ? "s" : ""}`);
+                if (sync.shoppingCount > 0) parts.push(`${sync.shoppingCount} shopping`);
+                itemCountEl.textContent = parts.join(" · ") || `${sync.itemCount} items`;
+              } else {
+                itemCountEl.textContent = `${sync.itemCount} item${sync.itemCount !== 1 ? "s" : ""}`;
+              }
             }
           }
         }
@@ -2920,6 +3189,31 @@ export function initSettingsController(): void {
         if (s.n8n_signing_secret) {
           (document.getElementById("n8n-secret") as HTMLInputElement).value =
             String(s.n8n_signing_secret);
+        }
+        
+        // Display last delivery result
+        if (s.n8n_last_delivery) {
+          const lastDeliveryEl = document.getElementById("n8n-last-delivery");
+          if (lastDeliveryEl) {
+            try {
+              const res = typeof s.n8n_last_delivery === "string" 
+                ? JSON.parse(s.n8n_last_delivery) 
+                : s.n8n_last_delivery;
+              const timeStr = res.timestamp ? new Date(res.timestamp).toLocaleString() : "Unknown";
+              if (res.success) {
+                lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${res.status})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`;
+              } else {
+                lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${res.status || 'Error'})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`;
+              }
+            } catch (e) {
+              lastDeliveryEl.textContent = "Parse error";
+            }
+          }
+        }
+        
+        // Trigger diagnostics after loading settings
+        if (s.n8n_webhook_url && typeof initN8nDiagnostics === "function") {
+          setTimeout(() => initN8nDiagnostics(), 500);
         }
         // Switch to standalone tab if mode is standalone
         if (s.n8n_mode === "standalone") {

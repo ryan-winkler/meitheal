@@ -35,8 +35,13 @@ export const GET: APIRoute = async () => {
 
     // N8n / Node-RED status
     const n8nMode = settings.n8n_mode ?? (process.env.SUPERVISOR_TOKEN ? "ha_addon" : "standalone");
-    const n8nEvents = Array.isArray(settings.n8n_events) ? settings.n8n_events : [];
-    const defaultEvents = ["task.created", "task.updated", "task.completed", "task.deleted"];
+    let n8nEvents: string[] = []
+    try {
+      const raw = settings.n8n_events
+      if (typeof raw === "string") n8nEvents = JSON.parse(raw)
+      else if (Array.isArray(raw)) n8nEvents = raw
+    } catch { /* default to empty */ }
+    const defaultEvents = ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue"];
 
     // Webhooks status
     const hasGenericWebhook = !!settings.webhook_endpoint;

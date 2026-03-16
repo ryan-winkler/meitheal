@@ -45,21 +45,46 @@ export const POST: APIRoute = async ({ request }) => {
       )
     }
 
-    // Attempt to create an API key
-    const createRes = await fetch(`${grocyUrl.replace(/\/$/, "")}/api/objects/api_keys`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({ key_type: "default" }),
-    })
+    // Attempt to create an API key via Supervisor ingress (authenticated by HA session)
+    // Direct fetch won't work — Grocy requires auth for API key creation
+    let createRes: Response | null = null
+    try {
+      // Try Supervisor-proxied request first (works for HA addon installs)
+      const supervisorRes = await supervisorFetch(
+        `/addons/a0d7b954_grocy/proxy/api/objects/api_keys`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({ key_type: "default" }),
+        }
+      )
+      if (supervisorRes?.ok) {
+        createRes = supervisorRes
+      }
+    } catch { /* Supervisor proxy failed — try direct */ }
 
-    if (!createRes.ok) {
+    // Fallback: direct API call (works if Grocy ingress session is active)
+    if (!createRes) {
+      try {
+        createRes = await fetch(`${grocyUrl.replace(/\/$/, "")}/api/objects/api_keys`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({ key_type: "default" }),
+        })
+      } catch { /* direct fetch also failed */ }
+    }
+
+    if (!createRes || !createRes.ok) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `Failed to create API key: HTTP ${createRes.status}. You may need to create one manually in Grocy → Settings → API Keys.`,
+          error: `Failed to create API key: ${createRes ? `HTTP ${createRes.status}` : "Connection failed"}. Create one manually in Grocy → Settings → API Keys.`,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       )

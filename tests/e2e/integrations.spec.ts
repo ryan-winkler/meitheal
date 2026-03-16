@@ -112,4 +112,47 @@ test.describe("Integration Webhooks", () => {
     expect(payload.payload.status).toBe("done");
     expect(req.headers["x-meitheal-event"]).toBe("task.updated");
   });
+
+  test("test-webhook API endpoint sends test payload and returns success", async () => {
+    const client = getPersistenceClient();
+    const now = Date.now();
+    const secret = "api_test_secret";
+    const apiKey = "api_test_key";
+
+    // Configure settings
+    await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_webhook_url", `"${`http://127.0.0.1:${port}/n8n-test`}"`, now] });
+    await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_api_key", `"${apiKey}"`, now] });
+    await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_signing_secret", `"${secret}"`, now] });
+
+    // Execute the API Route handler directly
+    const { POST } = await import("../../apps/web/src/pages/api/integrations/test-webhook");
+    
+    // Create a mock Request
+    const request = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}) // no override URL passed
+    });
+
+    // We can cast the context needed to roughly match APIRoute Context
+    const res = await POST({ request } as any);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.source).toBe("n8n");
+    expect(json.status_code).toBe(200);
+    expect(typeof json.latency_ms).toBe("number");
+
+    // Verify mock server received the request
+    await expect.poll(() => receivedRequests.length).toBe(1);
+
+    const received = receivedRequests[0]!;
+    expect(received.headers["authorization"]).toBe(`Bearer ${apiKey}`);
+    expect(received.headers["x-meitheal-event"]).toBe("webhook.test");
+    
+    const payload = JSON.parse(received.body);
+    expect(payload.eventType).toBe("webhook.test");
+    expect(payload.payload.task_id).toBe("test-webhook");
+  });
 });

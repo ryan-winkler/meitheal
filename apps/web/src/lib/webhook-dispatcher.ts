@@ -210,6 +210,29 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
           .filter(s => s.events.includes("*") || s.events.includes(eventType))
           .map(async (s) => {
             const res = await emitWebhook(event, s);
+            
+            // Save last n8n delivery result for the UI
+            if (s.id === "n8n-webhook") {
+              try {
+                const client = getPersistenceClient();
+                await client.execute({
+                  sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                  args: [
+                    "n8n_last_delivery",
+                    JSON.stringify({ 
+                      success: res.ok, 
+                      status: res.statusCode, 
+                      timestamp: new Date().toISOString(),
+                      error: res.finalError
+                    }),
+                    Date.now()
+                  ]
+                });
+              } catch (e) {
+                // Non-critical, just for UI
+              }
+            }
+            
             logger.log(res.ok ? "info" : "warn", {
               event: "integration.webhook.dispatched",
               domain: "integrations",
