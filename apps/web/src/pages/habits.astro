@@ -430,7 +430,7 @@ if (!isEnabled) {
   import { createClientLogger } from "@lib/client-logger"
 
   const log = createClientLogger("habits")
-  const ingressPath = (window as any).__ingress_path || ""
+  const ingressPath = window.__ingress_path || ""
 
   interface HabitData {
     id: string

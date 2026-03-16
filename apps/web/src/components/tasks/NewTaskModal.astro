@@ -268,7 +268,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
 
       // Store users for @mention matching
-      (window as any).__meitheal_users = users;
+      window.__meitheal_users = users;
     } catch {
       // Standalone/offline — leave just "Unassigned"
     }
@@ -379,7 +379,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       let assignedTo =
         (document.getElementById("new-task-assigned-to") as HTMLSelectElement)
           ?.value || "";
-      const users = (window as any).__meitheal_users || [];
+      const users = window.__meitheal_users || [];
       finalTitle = finalTitle
         .replace(/@(\w+)/g, (_match: string, mention: string) => {
           if (!assignedTo) {

@@ -29,7 +29,7 @@ document
     const emptyState = taskList?.querySelector(".bento-empty-state")
     if (emptyState) emptyState.remove()
 
-    const activeBoard = (window as any).__activeBoard ?? "default"
+    const activeBoard = window.__activeBoard ?? "default"
     const newCard = document.createElement("div")
     newCard.className = "bento-card"
     newCard.dataset.board = activeBoard === "all" ? "default" : activeBoard
@@ -61,7 +61,7 @@ document
       )
 
     try {
-      const boardId = (window as any).__activeBoard ?? "default"
+      const boardId = window.__activeBoard ?? "default"
       await taskApi.createTask({
         title,
         board_id: boardId === "all" ? "default" : boardId,
@@ -119,13 +119,13 @@ document.querySelectorAll(".task-checkbox").forEach((cb) => {
 
 // ── Header "+ New Task" button → open unified New Task modal ──
 document.getElementById("quick-add-btn")?.addEventListener("click", () => {
-  if (typeof (window as any).openNewTaskModal === "function") {
-    ;(window as any).openNewTaskModal()
+  if (typeof window.openNewTaskModal === "function") {
+    window.openNewTaskModal()
   } else {
     // Retry after a tick — NewTaskModal script may still be loading
     requestAnimationFrame(() => {
-      if (typeof (window as any).openNewTaskModal === "function") {
-        ;(window as any).openNewTaskModal()
+      if (typeof window.openNewTaskModal === "function") {
+        window.openNewTaskModal()
       } else {
         ;(
           document.getElementById("quick-title") as HTMLInputElement
@@ -198,7 +198,7 @@ if (openSelect && openList) {
     }
     // Kanban link carries user filter
     if (kanbanLink) {
-      const bp = (window as any).__ingress_path || ""
+      const bp = window.__ingress_path || ""
       kanbanLink.href =
         val === "all"
           ? `${bp}/kanban`
@@ -221,8 +221,8 @@ document.querySelectorAll(".task-item[data-id]").forEach((el) => {
     const target = e.target as HTMLElement
     if (target.closest("input, button, a")) return
     const id = (el as HTMLElement).dataset.id
-    if (id && typeof (window as any).openTaskDetail === "function") {
-      ;(window as any).openTaskDetail(id)
+    if (id && typeof window.openTaskDetail === "function") {
+      window.openTaskDetail(id)
     }
   }, { signal })
 })
@@ -236,8 +236,8 @@ document.querySelectorAll(".card-edit-btn").forEach((btn) => {
     e.stopPropagation()
     const id = (btn as HTMLElement).dataset.id
     if (!id) return
-    if (typeof (window as any).openTaskDetail === "function") {
-      ;(window as any).openTaskDetail(id)
+    if (typeof window.openTaskDetail === "function") {
+      window.openTaskDetail(id)
     }
   }, { signal })
 })

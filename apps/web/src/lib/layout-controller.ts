@@ -46,10 +46,10 @@
         checkHealth();
         // P0-4: Clear previous interval before creating new one to prevent
         // accumulation across ViewTransition navigations
-        if ((window as any).__healthIntervalId) {
-          clearInterval((window as any).__healthIntervalId);
+        if (window.__healthIntervalId) {
+          clearInterval(window.__healthIntervalId);
         }
-        (window as any).__healthIntervalId = setInterval(checkHealth, 30000);
+        window.__healthIntervalId = setInterval(checkHealth, 30000);
 
         // Global error resilience — catch unhandled errors to prevent blank-page crashes
         // (These are global/permanent — intentionally NOT lifecycle-managed)

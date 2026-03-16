@@ -25,7 +25,7 @@ let lastKnownLevel = 0
  */
 export async function onTaskCompleted(priority = 3): Promise<void> {
   // Feature flag guard — skip gamification when disabled
-  if ((window as any).__featureFlags?.gamification === false) return
+  if (window.__featureFlags?.gamification === false) return
 
   try {
     const res = await fetch("/api/gamification", {

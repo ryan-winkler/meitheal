@@ -69,6 +69,30 @@ interface MeithealWindowExtensions {
   // === Cleanup ===
   /** AbortController cleanup for table resize listener */
   __tableResizeCleanup?: () => void;
+
+  // === Intervals / Singleton Guards ===
+  /** Health check interval ID (prevents accumulation across navigations) */
+  __healthIntervalId?: ReturnType<typeof setInterval>;
+  /** PWA banner event listeners already bound */
+  __pwaBannerListenersBound?: boolean;
+  /** PWA compact install listeners already bound */
+  __pwaCompactListenersBound?: boolean;
+
+  // === Cached Data ===
+  /** Cached users list from API (used by NewTaskModal assignee dropdown) */
+  __meitheal_users?: Array<{ id: string; display_name?: string; name?: string }>;
+  /** Backlog mode setting (visible | hidden | disabled) */
+  __backlog_mode?: string;
+  /** Feature flags from settings */
+  __featureFlags?: Record<string, boolean>;
+
+  // === Cross-Component Functions ===
+  /** Filter visibility check registered by FilterToolbar */
+  __isTaskVisible?: (task: Record<string, unknown>) => boolean;
+  /** Show toast notification */
+  showToast?: (message: string, type?: string) => void;
+  /** Start pomodoro timer for a task */
+  startPomodoro?: (taskId?: string) => void;
 }
 
 /** BeforeInstallPromptEvent — not in lib.dom.d.ts */
