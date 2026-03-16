@@ -1,6 +1,6 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-15
+**Analysis Date:** 2026-03-16
 
 ## Directory Layout
 
@@ -24,6 +24,7 @@ meitheal/
 │           │   ├── pomodoro/
 │           │   ├── pwa/
 │           │   ├── settings/   # Settings shell primitives + section panels
+│           │   │   └── integrations/  # Integration sub-components (HA, Calendar, Todo, etc.)
 │           │   ├── tasks/
 │           │   └── ui/         # Shared UI (FilterToolbar, StatusBadge, TaskTypeIcon, etc.)
 │           ├── content/        # Astro content collections (frameworks)
@@ -89,7 +90,16 @@ meitheal/
 **`apps/web/src/lib/`:**
 - Purpose: Client-side controllers (page interactivity) and shared utilities
 - Contains: Page controllers (kanban, table, settings, task-modal), API client, filter engine, toast, validation
-- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `settings-controller.ts` (3,205 LoC), `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`, `search-hub-controller.ts`
+- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `search-hub-controller.ts`
+- **Settings controllers** (decomposed from monolithic 3,205 LoC file):
+  - `settings-controller.ts` (~120 LoC coordinator, re-exports)
+  - `settings-theme-controller.ts` (appearance/theme)
+  - `settings-sidebar-controller.ts` (navigation layout)
+  - `settings-integrations-controller.ts` (HA/Calendar/Todo/Grocy/n8n/Webhooks)
+  - `settings-ai-controller.ts` (agent & AI config)
+  - `settings-data-controller.ts` (import/export/backup)
+  - `settings-danger-controller.ts` (purge/reset)
+  - `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
 
 **`apps/web/src/components/ui/`:**
 - Purpose: Reusable Astro UI components
@@ -97,7 +107,8 @@ meitheal/
 
 **`apps/web/src/components/settings/`:**
 - Purpose: Settings shell navigation, summaries, shared UX primitives, and grouped section panels
-- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsSectionIntro.astro`, `SettingsPanelCard.astro`, `SettingsCallout.astro`, `SettingsActionRow.astro`, `SettingsDisclosure.astro`, `SettingsStatusChip.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro`, `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
+- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsSectionIntro.astro`, `SettingsPanelCard.astro`, `SettingsCallout.astro`, `SettingsActionRow.astro`, `SettingsDisclosure.astro`, `SettingsStatusChip.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro` (1,403 LoC, composes 6 sub-components), `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
+- **`integrations/`** subdirectory: `IntegrationHA.astro`, `IntegrationCalendar.astro`, `IntegrationTodo.astro`, `IntegrationGrocy.astro`, `IntegrationN8n.astro`, `IntegrationWebhooks.astro`
 
 **`apps/web/src/styles/`:**
 - Purpose: CSS design system via partials
@@ -200,4 +211,4 @@ meitheal/
 
 ---
 
-*Structure analysis: 2026-03-15*
+*Structure analysis: 2026-03-16*

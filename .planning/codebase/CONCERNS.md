@@ -12,9 +12,10 @@
 
 **Oversized Controllers:**
 - Issue: Several client controllers are >2,000 lines with mixed concerns
-- Files: `apps/web/src/lib/settings-controller.ts` (3,218 LoC), `apps/web/src/lib/task-modal-controller.ts` (2,414 LoC), `apps/web/src/lib/kanban-controller.ts` (2,025 LoC)
+- Files: `apps/web/src/lib/task-modal-controller.ts` (2,414 LoC), `apps/web/src/lib/kanban-controller.ts` (2,025 LoC)
 - Impact: Difficult to navigate, test, and maintain. High cognitive load.
 - Fix approach: Decompose into focused sub-modules per domain concern
+- ✅ **Resolved:** `settings-controller.ts` decomposed from 3,218 LoC into 7 domain controllers (2026-03-16)
 
 **Raw `console.*` Calls (67 total):**
 - Issue: 67 raw `console.log/warn/error` calls instead of structured `createLogger()` from `@meitheal/domain-observability`
@@ -28,11 +29,12 @@
 - Impact: No type safety for inter-component contracts. Prone to silent failures.
 - Fix approach: Typed CustomEvent bus + proper `env.d.ts` declarations for legitimate globals like `__ingress_path`, `__featureFlags`
 
-**`window.location.reload()` Anti-Pattern (32 total):**
-- Issue: 32 calls to `window.location.reload()` instead of DOM/state updates
-- Files: `apps/web/src/pages/tasks.astro` (2), `apps/web/src/pages/today.astro` (2), `apps/web/src/pages/upcoming.astro` (2), `apps/web/src/pages/calendar.astro` (2), `apps/web/src/components/tasks/NewTaskModal.astro` (1), plus 23 across other files
+**`window.location.reload()` Anti-Pattern (~28 remaining):**
+- Issue: Multiple calls to `window.location.reload()` instead of DOM/state updates
+- Files: `apps/web/src/pages/tasks.astro` (2), `apps/web/src/pages/today.astro` (2), `apps/web/src/pages/upcoming.astro` (2), `apps/web/src/pages/calendar.astro` (2), `apps/web/src/components/tasks/NewTaskModal.astro` (1), plus others
 - Impact: Full page reloads disrupt user context, cause iframe reload behind HA ingress, waste bandwidth
 - Fix approach: Replace with targeted DOM updates, re-fetch data, or dispatch custom events
+- ✅ **Partially resolved:** Settings reloads reduced to 4 documented legitimate uses (purge/reset/import/locale) in Phase 08.2 (2026-03-16)
 
 ## Known Bugs
 
@@ -71,9 +73,10 @@
 - Improvement path: Dynamic imports, code splitting per interaction mode
 
 **Large Settings Components:**
-- Problem: `SettingsIntegrations.astro` (2,552 LoC), `SettingsGeneral.astro` (1,497 LoC), `SettingsSystem.astro` (1,288 LoC) cause slow initial renders
+- Problem: `SettingsGeneral.astro` (1,497 LoC), `SettingsSystem.astro` (1,288 LoC) are moderately large
 - Files: `apps/web/src/components/settings/Settings*.astro`
 - Improvement path: Lazy-load settings sections, code-split per tab
+- ✅ **Partially resolved:** `SettingsIntegrations.astro` reduced from 2,654 to 1,403 LoC via 6 sub-components in `integrations/` (2026-03-16)
 
 ## Fragile Areas
 

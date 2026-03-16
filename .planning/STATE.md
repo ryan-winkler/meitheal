@@ -3,8 +3,8 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, and 4 are complete. Phase 3 is only partially complete (`PGD-01` landed; newer settings/search decomposition work is being carried by parallel phases instead of the original per-tab plan).
-**Active Tracks:** Parallel Phase 08.2 (Settings Controller Decomposition), Phase 08.1 (Settings UX polish closeout), Phase 09 (search hub stabilization)
-**Last Completed Local Work:** Settings UX polish, search hardening follow-up, security cleanup, and doc sync — 2026-03-15
+**Active Tracks:** Phase 08.2 (Settings Controller Decomposition) complete, Phase 08.1 (Settings UX polish closeout) complete, Phase 09 (search hub stabilization)
+**Last Completed Local Work:** Settings controller decomposition, Astro component extraction, anti-pattern cleanup — 2026-03-16
 **Session Date:** 2026-03-16
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
@@ -228,3 +228,35 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - **UI/UX Polish**: Added `var(--bg-hover)` backdrops with `blur(4px)` to Kanban card quick actions for readability on busy cards. CSS alignment tweaks for type icons.
 - **Codebase Mapping**: Performed a full refresh of all 7 documents in `.planning/codebase/` (960 lines total). Removed the `Duplicated Type Icon Config` concern from `CONCERNS.md` after fixing it.
 - **Layout Restructure**: Moved `<SearchHub />` overlay into the root of `Layout.astro` exactly alongside the global modals to ensure clean stacking contexts.
+
+## Parallel Phase 08.2 Summary (COMPLETE ✅)
+
+**Objective:** Decompose the monolithic `settings-controller.ts` (3,205 LoC) into domain-aligned sub-controllers, eliminate anti-patterns, and extract large Astro components into sub-components.
+
+### Delivered on 2026-03-16
+- Split `settings-controller.ts` into 7 focused controllers: `settings-theme-controller.ts`, `settings-sidebar-controller.ts`, `settings-integrations-controller.ts`, `settings-ai-controller.ts`, `settings-data-controller.ts`, `settings-danger-controller.ts`, plus coordinator.
+- Eliminated `window.location.reload()` anti-patterns — replaced with reactive DOM updates, documented 4 legitimate reloads (purge/reset/import/locale).
+- Extracted 6 integration sub-components from `SettingsIntegrations.astro`: `IntegrationHA.astro`, `IntegrationCalendar.astro`, `IntegrationTodo.astro`, `IntegrationGrocy.astro`, `IntegrationN8n.astro`, `IntegrationWebhooks.astro`.
+- `SettingsIntegrations.astro` reduced from 2,654 to 1,403 LoC (47% reduction).
+- Fixed false positive in `status-consistency.spec.ts` for `IntegrationTodo.astro`.
+- Updated `.planning/codebase/` docs: `STRUCTURE.md`, `ARCHITECTURE.md`, `CONCERNS.md`.
+
+### Verification
+- Tier 1: `pnpm check` — clean build ✅
+- Tier 1: 319 tests passed, 0 failures ✅
+
+### Commits
+
+| SHA | Description |
+|-----|-------------|
+| `68c2417` | Phase 2: anti-pattern elimination |
+| `4653565` | Phase 3: Astro component decomposition |
+| `4c7c463` | Phase 4: test fix |
+
+### 2026-03-16 Session 9
+- Phase 08.2: Settings controller decomposition (3,205 → 7 domain controllers)
+- Phase 08.2: Anti-pattern cleanup (reload → reactive DOM)
+- Phase 08.2: Astro component extraction (SettingsIntegrations → 6 sub-components)
+- `.planning/codebase/` doc sync (STRUCTURE, ARCHITECTURE, CONCERNS)
+- Tests: 319 passed, 85 skipped
+- TypeCheck: 0 errors

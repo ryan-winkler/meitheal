@@ -1,6 +1,6 @@
 # Architecture
 
-**Analysis Date:** 2026-03-15
+**Analysis Date:** 2026-03-16
 
 ## Pattern Overview
 
@@ -54,11 +54,14 @@
 **Client Controllers (`apps/web/src/lib/`):**
 - Purpose: Client-side TypeScript modules for page interactivity
 - Location: `apps/web/src/lib/` (50+ modules)
-- Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `settings-controller.ts` (3,205), `settings-page.ts`, `settings-shell-controller.ts`, `search-hub-controller.ts`, `dashboard-controller.ts`
+- Contains: `kanban-controller.ts` (2,019 lines), `table-controller.ts` (1,336), `task-modal-controller.ts` (2,417), `search-hub-controller.ts`, `dashboard-controller.ts`
 - Depends on: Browser APIs, `@domains/offline/`, `@lib/task-api-client.ts`
 - Used by: Pages via `<script>` imports
-- Settings-specific composition now flows through `settings-page.ts` → `settings-shell-controller.ts` + `settings-store.ts` + `settings-registry.ts`, while `settings-controller.ts` remains the legacy behavior layer for existing save flows.
-- Phase 08.1 adds a presentation layer of shared settings primitives (`SettingsSectionIntro`, `SettingsPanelCard`, `SettingsCallout`, `SettingsActionRow`, `SettingsDisclosure`, `SettingsStatusChip`) so shell IA and panel UX reuse one visual language instead of repeated bespoke wrappers.
+- **Settings controllers** (Phase 08.2 decomposition from monolithic 3,205 LoC file):
+  - `settings-controller.ts` (~120 LoC coordinator, re-exports sub-controllers)
+  - `settings-theme-controller.ts`, `settings-sidebar-controller.ts`, `settings-integrations-controller.ts`, `settings-ai-controller.ts`, `settings-data-controller.ts`, `settings-danger-controller.ts`
+  - Composition: `settings-page.ts` → `settings-shell-controller.ts` + `settings-store.ts` + `settings-registry.ts`
+- Phase 08.1 shared settings primitives (`SettingsSectionIntro`, `SettingsPanelCard`, `SettingsCallout`, `SettingsActionRow`, `SettingsDisclosure`, `SettingsStatusChip`) provide one visual language across all panels.
 
 **Middleware (`apps/web/src/middleware.ts`):**
 - Purpose: Request pipeline — auth, security headers, CSRF, rate limiting, HTML rewriting for ingress
@@ -166,4 +169,4 @@
 
 ---
 
-*Architecture analysis: 2026-03-15*
+*Architecture analysis: 2026-03-16*
