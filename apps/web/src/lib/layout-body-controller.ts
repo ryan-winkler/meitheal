@@ -40,8 +40,8 @@ window.addEventListener("meitheal-sync", async (e: Event) => {
 // ───── Route Transition Cleanup ─────
 window.addEventListener("pagehide", () => {
   const taskOverlay = document.getElementById("task-detail-overlay")
-  if (taskOverlay && !taskOverlay.classList.contains("hidden")) {
-    taskOverlay.classList.add("hidden")
+  if (taskOverlay && taskOverlay.classList.contains("active")) {
+    taskOverlay.classList.remove("active")
     document.body.style.overflow = ""
   }
 })

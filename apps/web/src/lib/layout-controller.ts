@@ -126,8 +126,8 @@
                   shortcutModal.classList.add("hidden");
                   return;
                 }
-                if (taskOverlay && !taskOverlay.classList.contains("hidden")) {
-                  taskOverlay.classList.add("hidden");
+                if (taskOverlay && taskOverlay.classList.contains("active")) {
+                  taskOverlay.classList.remove("active");
                   // Always reset body overflow when closing task detail
                   document.body.style.overflow = "";
                   return;
@@ -149,9 +149,9 @@
 
               // Suppress most shortcuts when task detail overlay is open
               // Allow ?, Escape, and Tab through so users can access help and close/navigate
-              const taskDetailOpen = !document
+              const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
-                ?.classList.contains("hidden");
+                ?.classList.contains("active") ?? false;
               if (
                 taskDetailOpen &&
                 e.key !== "?" &&
@@ -221,7 +221,7 @@
               let activeOverlay: HTMLElement | null = null;
               if (shortcutModal && !shortcutModal.classList.contains("hidden"))
                 activeOverlay = shortcutModal;
-              else if (taskOverlay && !taskOverlay.classList.contains("hidden"))
+              else if (taskOverlay && taskOverlay.classList.contains("active"))
                 activeOverlay = taskOverlay;
               else if (
                 searchHubOverlay &&
@@ -255,7 +255,7 @@
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is open AND user is NOT editing a text field
-              if (taskOverlay && !taskOverlay.classList.contains("hidden")) {
+              if (taskOverlay && taskOverlay.classList.contains("active")) {
                 const tdTag = (e.target as HTMLElement)?.tagName;
                 const tdIsEditing =
                   ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||

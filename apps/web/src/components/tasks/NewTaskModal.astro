@@ -210,7 +210,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   window.openNewTaskModal = () => {
     // If the detail panel is open, close it to avoid dual modal
     document.getElementById("task-detail-panel")?.classList.remove("open");
-    document.getElementById("task-detail-overlay")?.classList.add("hidden");
+    document.getElementById("task-detail-overlay")?.classList.remove("active");
 
     form?.reset();
     overlay?.classList.remove("hidden");

@@ -2191,11 +2191,10 @@
               !hash &&
               currentTaskId &&
               tdOverlay &&
-              !tdOverlay.classList.contains("hidden")
+              tdOverlay.classList.contains("active")
             ) {
               // Hash cleared (back button pressed) → close the detail panel
-              tdOverlay.classList.add("hidden");
-              currentTaskId = null;
+              closeTD();
             }
           } catch (err) {
             log.warn("Hash navigation error", err);
