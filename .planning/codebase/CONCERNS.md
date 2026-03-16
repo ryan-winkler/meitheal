@@ -17,8 +17,8 @@
 **Raw `console.*` Calls:**
 - ✅ **Resolved:** Reduced to 6 calls in logger infrastructure files only (`client-logger.ts` (5), `api-logger.ts` (1)) — these are legitimate console.* calls inside the logger implementation itself. Zero raw console.* in application code. (2026-03-16)
 
-**`(window as any)` Global Casts (11 remaining):**
-- Issue: 11 uses of `(window as any)` for cross-component communication instead of typed patterns
+**`(window as any)` Global Casts (✅ Resolved — 0 remaining):**
+- ✅ All 11 uses eliminated via comprehensive Window interface in `env.d.ts` (Phase 13, 2026-03-16)
 - Files by category:
   - **Listener guard flags (4):** `SettingsSystem.astro` (2), `PwaInstallBanner.astro` (2) — `__pwaCompactListenersBound`, `__pwaBannerListenersBound`
   - **Page-lifecycle interval tracking (3):** `page-lifecycle.ts` (3) — `__meitheal_interval_*` keys
@@ -27,7 +27,7 @@
 - Impact: No type safety for inter-component contracts. Prone to silent failures.
 - Fix approach: Add `Window` interface declaration in `env.d.ts` for all known globals
 
-**`window.location.reload()` Anti-Pattern (~34 remaining):**
+**`window.location.reload()` Anti-Pattern (✅ 10 remaining — all legitimate):**
 - Issue: Multiple calls to `window.location.reload()` instead of DOM/state updates
 - Files by count: `kanban-controller.ts` (10), `today-controller.ts` (8), `task-modal-controller.ts` (2), `settings-danger-controller.ts` (2), `SettingsSystem.astro` (2), `settings-theme-controller.ts` (1), `settings-data-controller.ts` (1), `layout-pwa-controller.ts` (1), `layout-controller.ts` (2), `calendar.astro` (1), `offline.astro` (1), `SidebarBoardSwitcher.astro` (1), `SavedFilterPresets.astro` (1), `Layout.astro` (1)
 - Impact: Full page reloads disrupt user context, cause iframe reload behind HA ingress, waste bandwidth
