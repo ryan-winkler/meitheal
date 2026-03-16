@@ -294,7 +294,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   import { isTaskVisible } from "../../lib/filter-state"
 
   // Expose for Kanban's inline scripts which can't do module imports easily
-  ;(window as any).__isTaskVisible = isTaskVisible
+  ;window.__isTaskVisible = isTaskVisible
 
   /**
    * FilterToolbar client-side controller

@@ -169,7 +169,7 @@ function setupEventDelegation(container: HTMLElement) {
         const todayStr = new Date().toISOString().split("T")[0]!
         await taskApi.updateTask(id, { due_date: todayStr })
         showToast("common.task_updated")
-        window.location.reload()
+        document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-focus" } }))
       } catch {
         btn.disabled = false
         btn.textContent = "➕ Today"
@@ -193,7 +193,7 @@ function setupEventDelegation(container: HTMLElement) {
       try {
         await taskApi.duplicateTask(id)
         showToast("common.task_created")
-        setTimeout(() => window.location.reload(), 500)
+        setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-duplicate" } })), 500)
       } catch {
         showToast("common.failed", "error")
       }
@@ -259,7 +259,7 @@ function setupEventDelegation(container: HTMLElement) {
       try {
         await taskApi.raw("/api/tasks/clear-completed", { method: "POST" })
         showToast("common.tasks_cleared")
-        setTimeout(() => window.location.reload(), 500)
+        setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-clear-completed" } })), 500)
       } catch {
         showToast("common.failed", "error")
       }
@@ -456,7 +456,7 @@ function setupQuickAdd(container: HTMLElement) {
         quickInput.value = ""
         if (quickFeedback) quickFeedback.style.display = "none"
         showToast("common.task_created")
-        window.location.reload()
+        document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-quick-add" } }))
       }
     } catch {
       showToast("common.failed", "error")
@@ -831,7 +831,7 @@ function updateBatchBar(container: HTMLElement) {
       await Promise.all(ids.map(id => taskApi.updateTask(id, { status: "complete" })))
       showToast("common.task_completed")
       ids.forEach(id => onTaskCompleted())
-      setTimeout(() => window.location.reload(), 500)
+      setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-batch-complete" } })), 500)
     } catch { showToast("common.failed", "error") }
   })
 
@@ -844,7 +844,7 @@ function updateBatchBar(container: HTMLElement) {
     try {
       await Promise.all(ids.map(id => taskApi.updateTask(id, { due_date: dateStr })))
       showToast("common.task_snoozed")
-      setTimeout(() => window.location.reload(), 500)
+      setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-batch-snooze" } })), 500)
     } catch { showToast("common.failed", "error") }
   })
 
@@ -861,7 +861,7 @@ function updateBatchBar(container: HTMLElement) {
     try {
       await Promise.all(ids.map(id => taskApi.deleteTask(id)))
       showToast("common.task_deleted")
-      setTimeout(() => window.location.reload(), 500)
+      setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-batch-delete" } })), 500)
     } catch { showToast("common.failed", "error") }
   })
 
@@ -1097,7 +1097,7 @@ function setupEveningReview(container: HTMLElement) {
       await Promise.all(ids.map(id => taskApi.updateTask(id, { due_date: dateStr })))
       showToast("common.task_snoozed")
       localStorage.setItem(EVENING_REVIEW_KEY, todayStr!)
-      setTimeout(() => window.location.reload(), 500)
+      setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-evening-reschedule" } })), 500)
     } catch {
       showToast("common.failed", "error")
     }

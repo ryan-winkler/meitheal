@@ -155,7 +155,7 @@ const { class: className } = Astro.props
 
         window.history.replaceState({}, "", url.toString())
         // Reload to apply all preset filters
-        window.location.reload()
+        document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "filter-preset" } }))
       } catch {
         log.error("Failed to load preset", preset.name)
       }

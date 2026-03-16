@@ -251,8 +251,8 @@
   }
 
   // Window-level listeners — guarded to prevent accumulation across ClientRouter
-  if (!(window as any).__pwaBannerListenersBound) {
-    (window as any).__pwaBannerListenersBound = true;
+  if (!window.__pwaBannerListenersBound) {
+    window.__pwaBannerListenersBound = true;
 
     // Listen for installable event (fires from Layout.astro)
     window.addEventListener("meitheal-pwa-installable", () => {

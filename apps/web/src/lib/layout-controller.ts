@@ -438,10 +438,8 @@
           })();
         }); // end pageLifecycle.onPageLoad
 
-        // D2: Universal task change listener — reloads page when tasks change.
-        // Establishes the event pattern for future migration of reload() calls
-        // across kanban, today, table, and other controllers.
-        // Future phases can intercept in specific controllers for targeted DOM updates.
-        document.addEventListener("meitheal:tasks-changed", () => {
-          window.location.reload()
-        })
+        // Phase 13: Universal event listeners — reload page when tasks or navigation change.
+        // Establishes event bus pattern. Future phases can intercept for targeted DOM updates.
+        const reloadOnEvent = () => window.location.reload()
+        document.addEventListener("meitheal:tasks-changed", reloadOnEvent)
+        document.addEventListener("meitheal:navigation-changed", reloadOnEvent)

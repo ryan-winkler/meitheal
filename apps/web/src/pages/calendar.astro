@@ -783,7 +783,7 @@ for (let week = 0; week < 6; week++) {
         })
         const data = (await res.json()) as { ok: boolean; message?: string }
         if (data.ok) {
-          window.location.reload()
+          document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "calendar-sync" } }))
         } else {
           btn.textContent = "❌ Failed"
           setTimeout(() => {

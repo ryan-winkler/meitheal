@@ -99,12 +99,12 @@ export const pageLifecycle = {
     handler: () => void,
     intervalMs: number,
   ): ReturnType<typeof globalThis.setInterval> {
-    const windowKey = `__interval_${key}` as keyof Window;
-    if ((window as any)[windowKey]) {
-      clearInterval((window as any)[windowKey]);
+    const windowKey = `__meitheal_interval_${key}` as const
+    if (window[windowKey]) {
+      clearInterval(window[windowKey])
     }
     const id = globalThis.setInterval(handler, intervalMs);
-    (window as any)[windowKey] = id;
+    window[windowKey] = id;
     return id;
   },
 };

@@ -152,7 +152,7 @@ const { locale } = Astro.props;
         if (res.ok) {
           const board = await res.json();
           localStorage.setItem("meitheal_active_board", board.id);
-          window.location.reload();
+          document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "board-switch" } }));
         }
       } catch {
         /* ignore */

@@ -2213,12 +2213,12 @@
               // Treat 204 (deleted) and 404 (already gone) as success
               if (res.ok || res.status === 404) {
                 closeTD();
-                window.location.reload();
+                document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
               }
             } catch {
-              // Network error — still close and reload to re-sync
+              // Network error — still close and refresh to re-sync
               closeTD();
-              window.location.reload();
+              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
             }
           });
 

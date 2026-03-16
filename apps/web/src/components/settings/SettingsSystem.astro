@@ -995,8 +995,8 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     }
 
     // Listen for installed event (window-level, guarded to prevent accumulation)
-    if (!(window as any).__pwaCompactListenersBound) {
-      (window as any).__pwaCompactListenersBound = true;
+    if (!window.__pwaCompactListenersBound) {
+      window.__pwaCompactListenersBound = true;
       window.addEventListener("meitheal-pwa-installed", () => {
         const ib = document.getElementById("pwa-install-settings-btn");
         const iBadge = document.getElementById("pwa-installed-badge");

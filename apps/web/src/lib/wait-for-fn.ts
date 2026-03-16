@@ -35,7 +35,7 @@ export function waitForFn<T extends (...args: any[]) => any>(
   callback: (fn: T) => void,
   timeoutMs = 500,
 ): void {
-  const fn = (window as any)[fnName];
+  const fn = (window as unknown as Record<string, unknown>)[fnName];
   if (typeof fn === "function") {
     callback(fn as T);
     return;
@@ -46,7 +46,7 @@ export function waitForFn<T extends (...args: any[]) => any>(
 
   const timer = setInterval(() => {
     elapsed += interval;
-    const fn = (window as any)[fnName];
+    const fn = (window as unknown as Record<string, unknown>)[fnName];
     if (typeof fn === "function") {
       clearInterval(timer);
       callback(fn as T);

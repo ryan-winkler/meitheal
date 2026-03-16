@@ -492,7 +492,7 @@ const { enabled = true } = Astro.props
   })
 
   // Expose global function for other pages to start pomodoro with a task
-  ;(window as any).startPomodoro = (taskId?: string) => {
+  ;window.startPomodoro = (taskId?: string) => {
     togglePanel(true)
     doAction("start", taskId)
   }
