@@ -4,7 +4,7 @@
     <!-- Task Detail Centered Panel -->
     <div
       id="task-detail-overlay"
-      class="modal-overlay z-[200]"
+      class="modal-overlay z-200"
       role="dialog"
       aria-modal="true"
       aria-label="Task detail"
@@ -159,7 +159,7 @@
                       <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
                         <span>➕ Add subtask</span>
                       </button>
-                      <div id="td-add-subtask-form" class="hidden mt-2 gap-2 flex">
+                      <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
                         <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
                         <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
                         <button type="button" id="td-add-subtask-cancel" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5">✕</button>
@@ -318,7 +318,7 @@
                     <option value="FREQ=MONTHLY">Every month</option>
                     <option value="FREQ=YEARLY">Every year</option>
                   </select>
-                  <span id="td-recurrence-desc" class="text-[10px] text-text-muted mt-1 hidden block"></span>
+                  <span id="td-recurrence-desc" class="text-[10px] text-text-muted mt-1 hidden"></span>
                </div>
                
                <div>
