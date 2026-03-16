@@ -69,6 +69,23 @@
 6. Tier 1 browser verification covers hub launch and at least one navigation flow.
 7. Tier 2 HA verification confirms ingress-safe behavior once Docker access is available.
 
+## Parallel Phase 08.2: Settings Controller Decomposition
+
+**Status:** 🔵 In Progress
+
+**Goal:** Decompose the 3,561-line `settings-controller.ts` monolith into 6 domain-aligned controller modules, remove anti-patterns (reload hacks, inline styles), and expand test coverage.
+
+**Requirements:** SET-13→18
+
+**Success Criteria:**
+1. `settings-controller.ts` is ≤200 LoC, acting as a thin orchestrator importing domain controllers.
+2. 6 new controller files (`theme`, `sidebar`, `integrations`, `ai`, `data`, `danger`) each own exactly one settings-registry section.
+3. Shared utilities (`saveSetting`, `loadSettings`) extracted to `settings-utils.ts`.
+4. Zero `window.location.reload()` calls remain — replaced with reactive DOM updates.
+5. Zero type errors in `pnpm check`.
+6. All existing e2e tests pass with no regressions.
+7. Settings page functions identically when accessed via browser, ingress, and PWA.
+
 ---
 
 ## Phase 1: Hierarchy + Feature Gaps
