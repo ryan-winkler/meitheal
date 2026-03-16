@@ -329,7 +329,7 @@ async function initNodeRedDeployStatus() {
   badge.textContent = "Checking..."
   badge.className = "badge badge-disabled"
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/status")
+    const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/status", { signal: pageLifecycle.signal })
     const data = await res.json() as { available?: boolean; reachable?: boolean; flowDeployed?: boolean; nodeRedUrl?: string }
     if (!data.available) {
       badge.textContent = "N/A (standalone)"
