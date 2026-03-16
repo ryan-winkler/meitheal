@@ -17,7 +17,7 @@ export type TaskType = "epic" | "story" | "task"
 export type RuleType = "strategic-lens" | "ai-scope" | "custom"
 
 /** Preset identifiers for zero-config setup */
-export type PresetId = "strategic" | "ux-focused" | "simple"
+export type PresetId = "strategic" | "ux-focused" | "simple" | "agile-delivery" | "balanced"
 
 /**
  * AI scope — defines what AI agents can/should do with a task.
@@ -179,9 +179,82 @@ export const PRESETS: Record<PresetId, { name: string, description: string, rule
       },
     ],
   },
+  "agile-delivery": {
+    name: "Agile Delivery",
+    description: "WSJF for epics, ICE for stories — SAFe-inspired prioritization",
+    rules: [
+      {
+        name: "Epic WSJF Prioritization",
+        description: "Epics use Weighted Shortest Job First for backlog ordering",
+        ruleType: "strategic-lens",
+        taskTypes: ["epic"],
+        tags: [],
+        lensIds: ["wsjf", "ddd"],
+        aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: true, canSuggestLabels: true, customInstructions: "" },
+        constraints: "",
+        priority: 10,
+        enabled: true,
+      },
+      {
+        name: "Story ICE Scoring",
+        description: "Stories use Impact × Confidence × Ease for quick triage",
+        ruleType: "strategic-lens",
+        taskTypes: ["story"],
+        tags: [],
+        lensIds: ["ice", "kcs"],
+        aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true, customInstructions: "" },
+        constraints: "",
+        priority: 10,
+        enabled: true,
+      },
+      {
+        name: "Task Tracking",
+        description: "Tasks get lightweight KCS documentation tracking",
+        ruleType: "strategic-lens",
+        taskTypes: ["task"],
+        tags: [],
+        lensIds: ["kcs"],
+        aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false, customInstructions: "" },
+        constraints: "",
+        priority: 10,
+        enabled: true,
+      },
+    ],
+  },
+  balanced: {
+    name: "Balanced",
+    description: "MoSCoW for epics, RICE for stories — balanced strategic + tactical",
+    rules: [
+      {
+        name: "Epic MoSCoW Classification",
+        description: "Epics use MoSCoW to classify Must/Should/Could/Won't",
+        ruleType: "strategic-lens",
+        taskTypes: ["epic"],
+        tags: [],
+        lensIds: ["moscow", "ddd"],
+        aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true, customInstructions: "" },
+        constraints: "",
+        priority: 10,
+        enabled: true,
+      },
+      {
+        name: "Story RICE Scoring",
+        description: "Stories use RICE for objective prioritization",
+        ruleType: "strategic-lens",
+        taskTypes: ["story"],
+        tags: [],
+        lensIds: ["rice", "kcs"],
+        aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true, customInstructions: "" },
+        constraints: "",
+        priority: 10,
+        enabled: true,
+      },
+    ],
+  },
   simple: {
     name: "Simple",
     description: "No strategic evaluation — tasks are just tasks",
     rules: [],
   },
 }
+

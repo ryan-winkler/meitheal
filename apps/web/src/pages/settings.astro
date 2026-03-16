@@ -77,12 +77,6 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     </section>
 
     <div class="settings-shell__content">
-      <section
-        id="personal-settings"
-        class="settings-shell__section"
-        data-settings-shell-section
-      >
-      </section>
 
       <section
         id="workflow-settings"
@@ -131,6 +125,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     type="button"
     aria-label="Scroll to top"
     title="Back to top (Home key)"
+    aria-keyshortcuts="Home"
     hidden
   >
     ↑
@@ -358,6 +353,13 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding: 0 2px 2px;
+    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+  }
+  .settings-shell__summary:hover,
+  .settings-shell__summary:focus-within {
+    mask-image: none;
+    -webkit-mask-image: none;
   }
   .settings-shell__summary::-webkit-scrollbar {
     display: none;
@@ -367,7 +369,8 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 8px 14px;
+    padding: 10px 16px;
+    min-height: 44px;
     border: 1px solid transparent;
     border-radius: 10px;
     background: transparent;
@@ -435,13 +438,26 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   .settings-shell__content {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
   }
   .settings-shell__section {
     display: flex;
     flex-direction: column;
     gap: 16px;
     scroll-margin-top: 64px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  }
+  .settings-shell__section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  :global(.settings-shell__section--nested) {
+    border-bottom: none;
+    padding-bottom: 0;
   }
   .settings-shell__section--muted {
     opacity: 0.42;
@@ -495,7 +511,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   }
   .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
     gap: 16px;
   }
   .custom-field-row {

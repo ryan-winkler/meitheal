@@ -59,6 +59,23 @@ const PRESET_DEFINITIONS: Record<string, {
       { name: "Task Default", taskTypes: ["task"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
     ],
   },
+  "agile-delivery": {
+    label: "Agile Delivery",
+    description: "WSJF for epics, ICE for stories — SAFe-inspired",
+    rules: [
+      { name: "Epic WSJF", taskTypes: ["epic"], lensIds: ["wsjf", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: true, canSuggestLabels: true } },
+      { name: "Story ICE", taskTypes: ["story"], lensIds: ["ice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
+      { name: "Task Default", taskTypes: ["task"], lensIds: ["kcs"], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+    ],
+  },
+  balanced: {
+    label: "Balanced",
+    description: "MoSCoW for epics, RICE for stories — strategic + tactical",
+    rules: [
+      { name: "Epic MoSCoW", taskTypes: ["epic"], lensIds: ["moscow", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
+      { name: "Story RICE", taskTypes: ["story"], lensIds: ["rice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
+    ],
+  },
 }
 
 /**
@@ -475,7 +492,7 @@ export function initRulesSettings(): void {
     })
   })
 
-  // Export rules
+  // Export rules (v3 format — includes custom framework definitions)
   const exportBtn = document.getElementById("rules-export-btn")
   if (exportBtn) {
     pageLifecycle.on(exportBtn, "click", async () => {
@@ -484,11 +501,16 @@ export function initRulesSettings(): void {
           apiFetch("/api/rules"),
           apiFetch("/api/frameworks"),
         ])
+        const frameworks = (frameworksRes.data ?? []) as Array<{ id: string, source?: string, [key: string]: unknown }>
+        const customFrameworks = frameworks.filter(f => f.source === "user" || f.source === "imported")
+        const builtInOverrides = frameworks.filter(f => f.source === "built-in" || !f.source)
+
         downloadJson({
-          _version: 1,
+          _version: 3,
           _exportedAt: new Date().toISOString(),
           rules: rulesRes.data ?? [],
-          frameworks: frameworksRes.data ?? [],
+          frameworks: builtInOverrides,
+          customFrameworks,
         }, "Rules")
         showToast("settings.rules_exported")
       } catch {
@@ -521,6 +543,7 @@ export function initRulesSettings(): void {
           _version?: number
           rules?: Array<Record<string, unknown>>
           frameworks?: Array<Record<string, unknown>>
+          customFrameworks?: Array<Record<string, unknown>>
         }
 
         if (!payload.rules || !Array.isArray(payload.rules)) {
@@ -545,7 +568,7 @@ export function initRulesSettings(): void {
           })
         }
 
-        // Import framework overrides if present
+        // Import framework overrides if present (v1/v2/v3 compat)
         if (Array.isArray(payload.frameworks)) {
           for (const fw of payload.frameworks as Array<{ id?: string; fields?: Record<string, unknown> }>) {
             if (fw.id && fw.fields) {
@@ -555,6 +578,17 @@ export function initRulesSettings(): void {
                 body: JSON.stringify({ fields: fw.fields }),
               })
             }
+          }
+        }
+
+        // Import custom frameworks if present (v3 format)
+        if (Array.isArray(payload.customFrameworks)) {
+          for (const fw of payload.customFrameworks) {
+            await apiFetch("/api/frameworks", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(fw),
+            })
           }
         }
 

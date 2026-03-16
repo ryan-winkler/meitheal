@@ -445,6 +445,7 @@ export function initSettingsShell(): void {
     }
   } else {
     setShellDetailView(false)
+    updateActiveSectionState("personal-settings")
   }
 
   if (hashTargetId) {
