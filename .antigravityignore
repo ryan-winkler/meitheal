@@ -1,0 +1,36 @@
+# Antigravity index ignore — speeds up workspace embeddings
+# Mirrors .gitignore + adds AI-irrelevant paths
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+.astro/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Data
+.data/
+apps/web/.data/
+
+# Archive
+meitheal-archive/
+
+# Lock files (huge, no semantic value)
+pnpm-lock.yaml
+package-lock.json
+
+# Git internals
+.git/
+
+# Dev environment
+.devcontainer/.env.local
+
+# Planning docs (don't embed meta-work into code context)
+.planning/
