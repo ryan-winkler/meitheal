@@ -1,4 +1,5 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import {
   SETTINGS_SECTIONS,
   getSettingsSection,
@@ -200,7 +201,7 @@ function initSearch(): void {
 
     if (matches.length === 0) {
       results.hidden = false
-      results.innerHTML = `<div class="settings-search-results__empty">No matching settings for "${term}" yet. Press Esc or Clear to reset.</div>`
+      results.innerHTML = `<div class="settings-search-results__empty">No matching settings for "${escapeHtml(term)}" yet. Press Esc or Clear to reset.</div>`
       return
     }
 

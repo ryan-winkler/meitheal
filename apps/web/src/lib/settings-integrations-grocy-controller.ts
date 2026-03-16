@@ -151,7 +151,7 @@ export function initGrocySettings(): void {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        resultEl.innerHTML = `<strong>✗ Network error</strong><div class="integration-callout__detail">${err instanceof Error ? err.message : "Unknown"}</div>`
+        resultEl.innerHTML = `<strong>✗ Network error</strong><div class="integration-callout__detail">${escapeHtml(err instanceof Error ? err.message : "Unknown")}</div>`
       }
     }
     btn.textContent = "Test Connection"

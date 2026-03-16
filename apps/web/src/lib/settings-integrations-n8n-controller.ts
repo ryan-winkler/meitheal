@@ -265,7 +265,7 @@ export function initN8nSettings(): void {
               const el = document.createElement("div")
               el.className = "cal-entity-card"
               const safeName = escapeHtml(wf.name)
-              el.innerHTML = `<div class="cal-entity-card__info" style="flex: 1;"><strong>${safeName}</strong><div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">ID: ${wf.id}</div></div><div class="cal-entity-card__toggle"><span class="badge ${wf.active ? "badge-active" : "badge-disabled"}">${wf.active ? "Active" : "Inactive"}</span></div>`
+              el.innerHTML = `<div class="cal-entity-card__info" style="flex: 1;"><strong>${safeName}</strong><div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">ID: ${escapeHtml(wf.id)}</div></div><div class="cal-entity-card__toggle"><span class="badge ${wf.active ? "badge-active" : "badge-disabled"}">${wf.active ? "Active" : "Inactive"}</span></div>`
               workflowsList.appendChild(el)
             })
           }
@@ -274,7 +274,7 @@ export function initN8nSettings(): void {
         } else if (data.error === "unconfigured") {
           workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>Configure URL to discover workflows.</span></div>`
         } else {
-          workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⚠️</span><span>Failed to load workflows: ${data.message || data.error || "Unknown error"}</span></div>`
+          workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⚠️</span><span>Failed to load workflows: ${escapeHtml(data.message || data.error || "Unknown error")}</span></div>`
         }
       }
     } catch {
