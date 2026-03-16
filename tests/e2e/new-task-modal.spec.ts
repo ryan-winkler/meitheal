@@ -11,14 +11,13 @@ test.describe("New Task Modal", () => {
 
   test("New Task modal opens when + New Task button is clicked", async ({ page }) => {
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/hidden/)
+    await expect(overlay).not.toHaveClass(/active/)
 
     // Click the "+ New Task" button in the header
     await page.click("#create-task-btn")
     await page.waitForTimeout(300)
 
-    await expect(overlay).toHaveClass(/open/)
-    await expect(overlay).not.toHaveClass(/hidden/)
+    await expect(overlay).toHaveClass(/active/)
   })
 
   test("New Task modal has correct accessibility attributes", async ({ page }) => {
@@ -46,13 +45,12 @@ test.describe("New Task Modal", () => {
     await page.waitForTimeout(300)
 
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/open/)
+    await expect(overlay).toHaveClass(/active/)
 
     await page.click("#close-new-task-modal")
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(500)
 
-    await expect(overlay).toHaveClass(/hidden/)
-    await expect(overlay).not.toHaveClass(/open/)
+    await expect(overlay).not.toHaveClass(/active/)
   })
 
   test("New Task modal closes on Cancel button click", async ({ page }) => {
@@ -60,10 +58,10 @@ test.describe("New Task Modal", () => {
     await page.waitForTimeout(300)
 
     await page.click("#cancel-new-task")
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(500)
 
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/hidden/)
+    await expect(overlay).not.toHaveClass(/active/)
   })
 
   test("New Task modal closes on Escape key", async ({ page }) => {
@@ -71,13 +69,12 @@ test.describe("New Task Modal", () => {
     await page.waitForTimeout(300)
 
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/open/)
+    await expect(overlay).toHaveClass(/active/)
 
     await page.keyboard.press("Escape")
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(500)
 
-    await expect(overlay).toHaveClass(/hidden/)
-    await expect(overlay).not.toHaveClass(/open/)
+    await expect(overlay).not.toHaveClass(/active/)
   })
 
   test("New Task modal closes on backdrop click", async ({ page }) => {
@@ -85,13 +82,13 @@ test.describe("New Task Modal", () => {
     await page.waitForTimeout(300)
 
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/open/)
+    await expect(overlay).toHaveClass(/active/)
 
     // Click the overlay itself (outside the modal-content)
     await overlay.click({ position: { x: 10, y: 10 } })
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(500)
 
-    await expect(overlay).toHaveClass(/hidden/)
+    await expect(overlay).not.toHaveClass(/active/)
   })
 
   test("New Task modal title input autofocuses", async ({ page }) => {
@@ -102,3 +99,4 @@ test.describe("New Task Modal", () => {
     await expect(titleInput).toBeFocused()
   })
 })
+

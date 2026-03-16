@@ -9,7 +9,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <div
   id="new-task-overlay"
-  class="modal-overlay hidden z-200"
+  class="modal-overlay z-200"
   role="dialog"
   aria-modal="true"
   aria-labelledby="new-task-title"
@@ -187,11 +187,23 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   addChecklistBtn?.addEventListener("click", () => addChecklistRow());
 
   function closeNewTaskModal() {
-    overlay?.classList.remove("open");
-    overlay?.classList.add("hidden");
-    form?.reset();
-    // Clear dynamic checklist rows
-    if (checklistContainer) checklistContainer.innerHTML = "";
+    if (!overlay || !overlay.classList.contains("active")) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const finishClose = () => {
+      overlay.classList.remove("active", "closing");
+      form?.reset();
+      if (checklistContainer) checklistContainer.innerHTML = "";
+    };
+    if (reducedMotion) { finishClose(); return; }
+    overlay.classList.add("closing");
+    const content = overlay.querySelector(".modal-content");
+    if (content) {
+      const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
+      content.addEventListener("animationend", onEnd, { once: true });
+      setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
+    } else {
+      finishClose();
+    }
   }
 
   closeBtn?.addEventListener("click", closeNewTaskModal);
@@ -200,7 +212,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (e.target === overlay) closeNewTaskModal();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && overlay?.classList.contains("open")) {
+    if (e.key === "Escape" && overlay?.classList.contains("active")) {
       e.preventDefault();
       closeNewTaskModal();
     }
@@ -213,8 +225,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     document.getElementById("task-detail-overlay")?.classList.remove("active");
 
     form?.reset();
-    overlay?.classList.remove("hidden");
-    overlay?.classList.add("open");
+    overlay?.classList.add("active");
     
     // Load user list for assignment dropdown
     loadAssigneeDropdown();

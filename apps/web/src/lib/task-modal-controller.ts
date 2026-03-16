@@ -70,6 +70,16 @@
           }
         }
 
+        // F10: Mobile sidebar disclosure toggle
+        const _sidebarToggle = document.getElementById("td-sidebar-toggle");
+        const _sidebarProps = document.getElementById("td-sidebar-props");
+        const _sidebarChevron = document.getElementById("td-sidebar-chevron");
+        _sidebarToggle?.addEventListener("click", () => {
+          const expanded = _sidebarProps?.classList.toggle("td-sidebar-expanded") ?? false;
+          _sidebarToggle.setAttribute("aria-expanded", String(expanded));
+          _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
+        });
+
         async function openTaskDetail(taskId: string) {
           if (!tdOverlay) return;
           // P3-4: Store focus origin for restore on close
@@ -419,9 +429,15 @@
 
             // Switch to preview mode automatically when opening a task that has a description
             if (t.description) {
-              document.getElementById("td-desc-preview-btn")?.click();
+              // Render markdown preview (save=false prevents re-saving)
+              try {
+                const dirtyHtml = marked.parse(t.description || "*No description provided.*") as string;
+                if (descPreview) descPreview.innerHTML = sanitizeClient(dirtyHtml);
+              } catch {}
+              descEditContainer?.classList.add("hidden");
+              descPreviewContainer?.classList.remove("hidden");
             } else {
-              document.getElementById("td-desc-edit-btn")?.click();
+              enterDescEdit();
             }
 
             (
@@ -943,60 +959,53 @@
           }
         }
 
-        // Markdown Editor Toggle Logic
-        const descEditBtn = document.getElementById("td-desc-edit-btn");
-        const descPreviewBtn = document.getElementById("td-desc-preview-btn");
-        const descEditContainer = document.getElementById(
-          "td-desc-edit-container",
-        );
-        const descPreviewContainer = document.getElementById(
-          "td-desc-preview-container",
-        );
+        // F11: Description Edit/Preview UX (simplified)
+        const descEditContainer = document.getElementById("td-desc-edit-container");
+        const descPreviewContainer = document.getElementById("td-desc-preview-container");
         const descPreview = document.getElementById("td-desc-preview");
-        const tdDescription = document.getElementById(
-          "td-description",
-        ) as HTMLTextAreaElement;
+        const tdDescription = document.getElementById("td-description") as HTMLTextAreaElement;
+        const descEditBtnHover = document.getElementById("td-desc-edit-btn-hover");
+        const descSaveBtn = document.getElementById("td-desc-save-btn");
+        const descCancelBtn = document.getElementById("td-desc-cancel-btn");
+        const descSavedIndicator = document.getElementById("td-desc-saved");
 
-        const activeClasses = ["bg-bg-tertiary", "text-text-primary", "shadow-sm"];
-        const inactiveClasses = ["text-text-muted", "hover:bg-bg-tertiary/50", "hover:text-text-primary"];
+        let _descOriginalValue = "";
 
-        descEditBtn?.addEventListener("click", () => {
+        function enterDescEdit() {
+          _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
           descPreviewContainer?.classList.add("hidden");
-          
-          descEditBtn.classList.remove(...inactiveClasses);
-          descEditBtn.classList.add(...activeClasses);
-          
-          descPreviewBtn?.classList.remove(...activeClasses);
-          descPreviewBtn?.classList.add(...inactiveClasses);
-          
           tdDescription?.focus();
-        });
+        }
 
-        descPreviewBtn?.addEventListener("click", () => {
+        function exitDescEdit(save: boolean) {
           descEditContainer?.classList.add("hidden");
           descPreviewContainer?.classList.remove("hidden");
-          
-          descPreviewBtn.classList.remove(...inactiveClasses);
-          descPreviewBtn.classList.add(...activeClasses);
-          
-          descEditBtn?.classList.remove(...activeClasses);
-          descEditBtn?.classList.add(...inactiveClasses);
-
-          if (descPreview && tdDescription) {
+          if (!save && tdDescription) {
+            tdDescription.value = _descOriginalValue;
+          }
+          if (save && descPreview && tdDescription) {
             const rawMarkdown = tdDescription.value;
             try {
-              // Parse markdown synchronously and sanitize
-              const dirtyHtml = marked.parse(
-                rawMarkdown || "*No description provided.*",
-              ) as string;
+              const dirtyHtml = marked.parse(rawMarkdown || "*No description provided.*") as string;
               descPreview.innerHTML = sanitizeClient(dirtyHtml);
             } catch (e: any) {
               log.error("Markdown render error", e);
               descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${e.message}</div>`;
             }
+            saveTD("description", rawMarkdown);
+            // Show "✓ Saved" indicator
+            if (descSavedIndicator) {
+              descSavedIndicator.style.display = "";
+              setTimeout(() => { descSavedIndicator.style.display = "none"; }, 1500);
+            }
           }
-        });
+        }
+
+        descEditBtnHover?.addEventListener("click", () => enterDescEdit());
+        descPreviewContainer?.addEventListener("click", () => enterDescEdit());
+        descSaveBtn?.addEventListener("click", () => exitDescEdit(true));
+        descCancelBtn?.addEventListener("click", () => exitDescEdit(false));
 
         // Auto-save on change
         const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;

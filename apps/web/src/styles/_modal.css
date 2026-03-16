@@ -23,8 +23,7 @@
     transition: opacity 0.2s ease;
 }
 
-.modal-overlay.active,
-.modal-overlay.open {
+.modal-overlay.active {
   display: flex;
   opacity: 1;
 }
@@ -65,8 +64,7 @@ dialog::backdrop {
 }
 
 dialog[open] .modal-content,
-.modal-overlay.active .modal-content,
-.modal-overlay.open .modal-content {
+.modal-overlay.active .modal-content {
   animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
@@ -94,7 +92,7 @@ dialog[open] .modal-content,
   }
 }
 
-/* Close animation state — applied before removing .active/.open */
+/* Close animation state — applied before removing .active */
 .modal-overlay.closing {
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -356,4 +354,34 @@ dialog[open] .modal-content,
 /* Specific styling for the priority dot */
 .td-priority-dot {
   text-shadow: 0 0 10px currentColor;
+}
+
+/* --- Mobile sidebar disclosure (F10) --- */
+@media (max-width: 767px) {
+  .td-sidebar-props {
+    display: none;
+    overflow: hidden;
+  }
+  .td-sidebar-props.td-sidebar-expanded {
+    display: flex;
+    animation: sidebarSlideDown 0.22s ease-out forwards;
+  }
+  #td-sidebar-chevron.td-chevron-open {
+    transform: rotate(180deg);
+  }
+}
+@media (min-width: 768px) {
+  #td-sidebar-toggle { display: none !important; }
+  .td-sidebar-props { display: flex !important; }
+}
+
+@keyframes sidebarSlideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-sidebar-props.td-sidebar-expanded {
+    animation: none;
+  }
 }

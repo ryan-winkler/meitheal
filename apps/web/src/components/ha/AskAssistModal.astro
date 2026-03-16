@@ -21,7 +21,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 <div
   id="ask-ha-overlay"
   class="modal-overlay z-200"
-  style="display:none;position:fixed;"
 >
   <div class="modal-content max-w-lg w-full p-0 ask-modal">
     <!-- Header -->
@@ -187,24 +186,33 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   function closeAskHaModal() {
     isModalOpen = false;
-    overlay?.classList.remove("open");
-    if (overlay) {
-      overlay.style.display = "none";
-    }
-    form?.reset();
-    input.value = "";
-    submitBtn.disabled = true;
-    // Reset conversation
-    conversationId = null;
-    // Reset chat
-    if (chatContainer) {
-      chatContainer.innerHTML = "";
-      if (welcomeEl) {
-        chatContainer.appendChild(welcomeEl.cloneNode(true));
-        initHints();
+    if (!overlay || !overlay.classList.contains("active")) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const finishClose = () => {
+      overlay.classList.remove("active", "closing");
+      form?.reset();
+      input.value = "";
+      submitBtn.disabled = true;
+      conversationId = null;
+      if (chatContainer) {
+        chatContainer.innerHTML = "";
+        if (welcomeEl) {
+          chatContainer.appendChild(welcomeEl.cloneNode(true));
+          initHints();
+        }
       }
+      document.getElementById("ask-ha-btn")?.focus();
+    };
+    if (reducedMotion) { finishClose(); return; }
+    overlay.classList.add("closing");
+    const content = overlay.querySelector(".modal-content");
+    if (content) {
+      const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
+      content.addEventListener("animationend", onEnd, { once: true });
+      setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
+    } else {
+      finishClose();
     }
-    document.getElementById("ask-ha-btn")?.focus();
   }
 
   /** Response type icon mapping */
@@ -327,11 +335,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   // Export globally for TopNavigation to trigger
   window.openAskHaModal = () => {
     isModalOpen = true;
-    overlay?.classList.add("open");
-    if (overlay) {
-      overlay.style.display = "flex";
-      overlay.style.position = "fixed";
-    }
+    overlay?.classList.add("active");
     loadAgents();
     initHints();
     setTimeout(() => input?.focus(), 50);
