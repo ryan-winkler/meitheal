@@ -2,9 +2,9 @@
 
 ## Current Position
 
-**Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed.
-**Active Tracks:** Phase 12 UX/UI Audit — Wave 1 committed (Habits premium lift, priority a11y icons), Waves 2-5 pending
-**Last Completed Local Work:** Phase 3 PGD-02/03/05 — Layout.astro script extraction (779→613 lines), table and dashboard controllers verified — 2026-03-16
+**Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
+**Active Tracks:** UX/UI optimization pass on strategic rules components; docs update
+**Last Completed Local Work:** Strategic Rules Engine — domain modules, APIs, settings UI, task view integration, 9 domain tests — 2026-03-16
 **Session Date:** 2026-03-16
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
@@ -311,6 +311,37 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 | SHA | Description |
 |-----|-------------|
 | `2e51afe` | Wave 1: Habits lift + priority a11y icons |
+
+## Parallel Phase: Strategic Rules Engine (COMPLETE ✅)
+
+**Objective:** Replace hardcoded strategic lenses with a rule-driven framework supporting per-type assignment, AI scope guardrails, framework config editing, and restore defaults.
+
+### Delivered on 2026-03-16 (5 waves, 5 commits)
+
+| Wave | Scope |
+|------|-------|
+| 1 | domain-strategy: `rule-types.ts`, `framework-config.ts`, `rule-resolver.ts`, `calculateWeightedRiceScore()` |
+| 2 | API: `/api/rules` CRUD + `/api/rules/resolve` + `/api/frameworks` CRUD |
+| 3 | Settings UI: `SettingsRules.astro` + `settings-rules-controller.ts` + registry integration |
+| 4 | Task view: `StrategicEvaluator` rule-driven loading, `FrameworkBadge` generalized badge, KCS checklist, backup v2 |
+| 5 | 9 domain tests + `applicableLensIds` field name fix |
+
+### UX/UI Optimization Pass
+- Fixed broken `var() / 0.15` CSS syntax in `FrameworkBadge.astro` → `color-mix(in srgb, ...)`
+- Added hover micro-animation + `prefers-reduced-motion` to `FrameworkBadge.astro`
+- Added `focus-visible` keyboard outlines + `prefers-reduced-motion` to `SettingsRules.astro`
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/web build` — passed ✅
+- Tier 1: 9 domain tests passed (rule resolution + weighted RICE) ✅
+- Tier 2: Pending Docker access for HA devcontainer verification
+
+### 2026-03-16 Session 13 — Strategic Rules Engine + UX Polish
+- Strategic Rules Engine: domain modules, persistence, API, settings UI, task view integration
+- UX optimization pass: FrameworkBadge CSS fix, focus-visible, reduced-motion
+- REQUIREMENTS.md: added STRAT-01→08
+- STATE.md: updated current position + session summary
+- Tests: 9 domain tests + 319 existing
 
 ## New Engineering Standards (Established Sessions 10-12)
 

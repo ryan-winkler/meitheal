@@ -1,8 +1,8 @@
 # Core Feature Completion — Requirements (Revised)
 
 **Project:** Meitheal Core Feature Completion Sprint
-**Version:** v1.2 (updated after delivery/status reconciliation — 2026-03-15)
-**Date:** 2026-03-15
+**Version:** v1.3 (updated after Strategic Rules pivot — 2026-03-16)
+**Date:** 2026-03-16
 
 > [!IMPORTANT]
 > Requirements now reflect the current repository state after Phases 1, 2, 4 and the Settings redesign work landed.
@@ -88,6 +88,17 @@
 - [x] **STM-14**: Today page E2E test suite (`today-page.spec.ts`, 30+ tests)
 - [ ] **STM-15**: Tier 2 HA verification of calendar events + habits integration
 
+## Strategic Rules Engine (STRAT)
+
+- [x] **STRAT-01**: Domain strategy package — rule types, framework config types, rule resolver (`domain-strategy`)
+- [x] **STRAT-02**: Persistence — `rules` + `framework_configs` SQLite tables + repository modules
+- [x] **STRAT-03**: API — `/api/rules` CRUD, `/api/rules/resolve`, `/api/frameworks` CRUD
+- [x] **STRAT-04**: Settings UI — per-type framework assignment, AI scope toggles, presets, framework config editor
+- [x] **STRAT-05**: Task view integration — `StrategicEvaluator.astro` uses rule resolver, `FrameworkBadge.astro` generalized badge
+- [x] **STRAT-06**: KCS checklist mode — checkbox UI type, boolean value handling, completed/total sidebar badge
+- [x] **STRAT-07**: Backup integration — export/import v2 format (rules + frameworks), restore defaults API with confirmation
+- [x] **STRAT-08**: Domain tests — 9 passing tests for rule resolution + weighted RICE scoring
+
 ## Scope
 
 ### v1 (this sprint)
@@ -109,5 +120,6 @@ All above — 28 requirements (reduced from 35 after audit)
 | 3 | PGD-01→05 |
 | 4 | SMT-01→03, VER-01→03 |
 | 8 | SET-01→12 |
+| Parallel | STRAT-01→08 |
 
-*Requirements revised: 2026-03-15 — delivered work and active gaps reconciled*
+*Requirements revised: 2026-03-16 — Strategic Rules engine delivered*
