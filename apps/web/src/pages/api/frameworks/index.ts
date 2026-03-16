@@ -2,22 +2,36 @@
  * Frameworks API — list all framework configs (YAML defaults + overrides).
  *
  * GET /api/frameworks — list all available frameworks with merged configs
+ *
+ * @kcs Loads field definitions from YAML files in content/frameworks/ and
+ *      merges with user overrides stored in SQLite.
  */
 import type { APIRoute } from "astro"
+import { readFileSync } from "node:fs"
+import { resolve, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+import { parse as parseYaml } from "yaml"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { parseFrameworkConfig, mergeFrameworkConfig } from "@meitheal/domain-strategy"
 
 /**
- * Known built-in framework IDs and their basic metadata.
- * The actual YAML configs are loaded by StrategicEvaluator on the client —
- * this endpoint provides the merged config for API consumers (AI agents, MCP, etc.)
+ * Known built-in framework IDs.
+ * YAML files live at apps/web/src/content/frameworks/{id}.yaml
  */
-const FRAMEWORK_META: Record<string, { name: string, archetype: string }> = {
-  rice: { name: "RICE", archetype: "formula" },
-  drice: { name: "DRICE", archetype: "formula" },
-  heart: { name: "HEART", archetype: "matrix" },
-  ddd: { name: "DDD", archetype: "taxonomy" },
-  kcs: { name: "KCS", archetype: "workflow" },
+const FRAMEWORK_IDS = ["rice", "drice", "heart", "ddd", "kcs"] as const
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
+
+/** Load a framework YAML file by ID, returning raw parsed object */
+function loadFrameworkYaml(id: string): Record<string, unknown> {
+  try {
+    const content = readFileSync(resolve(FRAMEWORKS_DIR, `${id}.yaml`), "utf8")
+    return parseYaml(content) as Record<string, unknown>
+  } catch {
+    // Fallback: return minimal metadata if YAML is missing
+    return { name: id.toUpperCase(), archetype: "formula", fields: [], badge_thresholds: [] }
+  }
 }
 
 export const GET: APIRoute = async () => {
@@ -25,13 +39,9 @@ export const GET: APIRoute = async () => {
     const overrides = await getAllOverrides()
     const overrideMap = new Map(overrides.map((o) => [o.frameworkId, o.overrides]))
 
-    const frameworks = Object.entries(FRAMEWORK_META).map(([id, meta]) => {
-      const base = parseFrameworkConfig(id, {
-        name: meta.name,
-        archetype: meta.archetype,
-        fields: [],
-        badge_thresholds: [],
-      })
+    const frameworks = FRAMEWORK_IDS.map((id) => {
+      const raw = loadFrameworkYaml(id)
+      const base = parseFrameworkConfig(id, raw)
       return mergeFrameworkConfig(base, overrideMap.get(id) ?? null)
     })
 

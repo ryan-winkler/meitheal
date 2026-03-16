@@ -22,6 +22,8 @@ interface RuleApiResponse {
 
 /** Preset definitions — mirrors the 3 built-in presets from domain-strategy */
 const PRESET_DEFINITIONS: Record<string, {
+  label: string
+  description: string
   rules: Array<{
     name: string
     taskTypes: string[]
@@ -30,6 +32,8 @@ const PRESET_DEFINITIONS: Record<string, {
   }>
 }> = {
   strategic: {
+    label: "Strategic",
+    description: "RICE + DDD for epics, RICE + KCS for stories",
     rules: [
       { name: "Epic Default", taskTypes: ["epic"], lensIds: ["rice", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Story Default", taskTypes: ["story"], lensIds: ["rice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
@@ -37,6 +41,8 @@ const PRESET_DEFINITIONS: Record<string, {
     ],
   },
   "ux-focused": {
+    label: "UX-Focused",
+    description: "HEART + DDD for epics, HEART + KCS for stories",
     rules: [
       { name: "Epic Default", taskTypes: ["epic"], lensIds: ["heart", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Story Default", taskTypes: ["story"], lensIds: ["heart", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: true, canSuggestLabels: true } },
@@ -44,6 +50,8 @@ const PRESET_DEFINITIONS: Record<string, {
     ],
   },
   simple: {
+    label: "Simple",
+    description: "No frameworks — lightweight task management",
     rules: [
       { name: "Epic Default", taskTypes: ["epic"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
       { name: "Story Default", taskTypes: ["story"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
@@ -52,13 +60,27 @@ const PRESET_DEFINITIONS: Record<string, {
   },
 }
 
-/** Fetch helper with ingress prefix */
+/**
+ * Fetch helper — wraps native fetch with pageLifecycle signal
+ * and graceful error handling (catches network errors, non-JSON responses).
+ * Returns { ok: false } on any failure instead of throwing.
+ */
 async function apiFetch(path: string, options?: RequestInit): Promise<RuleApiResponse> {
-  const res = await fetch(path, {
-    ...options,
-    signal: pageLifecycle.signal,
-  })
-  return res.json() as Promise<RuleApiResponse>
+  try {
+    const res = await fetch(path, {
+      ...options,
+      signal: pageLifecycle.signal,
+    })
+    // Guard: if response is not JSON (e.g. HA login page redirect, HTML error),
+    // don't let it bubble up as "session expired" via the 403 handler in Layout.astro
+    const contentType = res.headers.get("content-type") ?? ""
+    if (!contentType.includes("application/json")) {
+      return { ok: false, errorCode: "NON_JSON_RESPONSE", message: `Status ${res.status}` }
+    }
+    return res.json() as Promise<RuleApiResponse>
+  } catch {
+    return { ok: false, errorCode: "NETWORK_ERROR", message: "Failed to reach API" }
+  }
 }
 
 /** Download a JSON file in the browser */
@@ -76,6 +98,7 @@ function downloadJson(data: unknown, label: string): void {
 
 /**
  * Load current rules from the API and reflect them in the UI.
+ * If no rules exist (first load), auto-seeds the "Strategic" preset.
  */
 async function loadRulesIntoUI(): Promise<void> {
   try {
@@ -89,6 +112,12 @@ async function loadRulesIntoUI(): Promise<void> {
       lensIds: string[]
       aiScope: Record<string, boolean | string>
     }>
+
+    // Auto-seed: if no rules exist on first load, apply the Strategic preset
+    if (rules.length === 0) {
+      await applyPresetDirect("strategic")
+      return // applyPresetDirect calls loadRulesIntoUI recursively
+    }
 
     // Clear all checkboxes first
     document.querySelectorAll<HTMLInputElement>(".rules-fw-check").forEach((cb) => { cb.checked = false })
@@ -136,6 +165,8 @@ async function loadRulesIntoUI(): Promise<void> {
 function highlightActivePreset(): void {
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {
     btn.classList.remove("is-active")
+    // Update aria
+    btn.setAttribute("aria-pressed", "false")
   })
 
   // Simple heuristic: check if any preset matches the current checkbox state
@@ -159,7 +190,10 @@ function highlightActivePreset(): void {
     }
     if (matches) {
       const btn = document.querySelector<HTMLButtonElement>(`.rules-preset-btn[data-preset="${presetId}"]`)
-      if (btn) btn.classList.add("is-active")
+      if (btn) {
+        btn.classList.add("is-active")
+        btn.setAttribute("aria-pressed", "true")
+      }
     }
   }
 }
@@ -216,8 +250,11 @@ async function saveRulesFromUI(): Promise<void> {
   }
 }
 
-/** Apply a preset — clears and replaces all rules */
-async function applyPreset(presetId: string): Promise<void> {
+/**
+ * Apply a preset — clears and replaces all rules.
+ * This is the internal version that doesn't show confirmation.
+ */
+async function applyPresetDirect(presetId: string): Promise<void> {
   const preset = PRESET_DEFINITIONS[presetId]
   if (!preset) return
 
@@ -245,6 +282,35 @@ async function applyPreset(presetId: string): Promise<void> {
   }
 
   await loadRulesIntoUI()
+}
+
+/** Apply a preset with user confirmation when changing from an existing config */
+async function applyPreset(presetId: string): Promise<void> {
+  const preset = PRESET_DEFINITIONS[presetId]
+  if (!preset) return
+
+  // Check if this preset is already active — noop
+  const activeBtn = document.querySelector<HTMLButtonElement>(`.rules-preset-btn[data-preset="${presetId}"].is-active`)
+  if (activeBtn) {
+    showToast("settings.preset_already_active")
+    return
+  }
+
+  // Confirm when switching presets (existing rules will be replaced)
+  const existing = await apiFetch("/api/rules")
+  const hasExisting = existing.ok && Array.isArray(existing.data) && existing.data.length > 0
+
+  if (hasExisting) {
+    const confirmed = await confirmDialog({
+      message: `Switch to the "${preset.label}" preset? This will replace your current rule configuration.`,
+      title: "Switch Preset",
+      confirmText: `Apply ${preset.label}`,
+      variant: "info",
+    })
+    if (!confirmed) return
+  }
+
+  await applyPresetDirect(presetId)
   showToast("settings.preset_applied")
 }
 
@@ -256,7 +322,7 @@ async function loadFrameworkConfigs(): Promise<void> {
 
     for (const fw of result.data as Array<{
       id: string
-      fields: Array<{ key: string; label: string; weight: number; helpText: string }>
+      fields: Array<{ key: string; label: string; type: string; uiType: string; weight: number; helpText: string; min?: number; max?: number; options?: Array<{ value: string | number; label: string }> }>
     }>) {
       const container = document.querySelector<HTMLElement>(
         `.rules-fw-config-fields[data-framework="${fw.id}"]`
@@ -268,25 +334,43 @@ async function loadFrameworkConfigs(): Promise<void> {
         continue
       }
 
-      container.innerHTML = fw.fields.map((field) => `
-        <div class="rules-fw-field">
-          <label title="${field.helpText}">${field.label}</label>
-          <input
-            type="range"
-            class="form-input rules-fw-weight"
-            data-framework="${fw.id}"
-            data-field="${field.key}"
-            min="0" max="3" step="0.1"
-            value="${field.weight}"
-          />
-          <span class="weight-display">${field.weight.toFixed(1)}×</span>
-        </div>
-      `).join("")
+      container.innerHTML = fw.fields.map((field) => {
+        // Render weight slider for all field types, plus field-specific info
+        const fieldInfo = field.options
+          ? `<span class="fw-field-type" title="${field.helpText}">
+               ${field.options.map((o) => o.label).join(" · ")}
+             </span>`
+          : field.min !== undefined && field.max !== undefined
+            ? `<span class="fw-field-range">${field.min}–${field.max}</span>`
+            : ""
+
+        return `
+          <div class="rules-fw-field">
+            <div class="rules-fw-field-header">
+              <label title="${field.helpText}">${field.label}</label>
+              ${fieldInfo}
+            </div>
+            <div class="rules-fw-field-controls">
+              <input
+                type="range"
+                class="form-input rules-fw-weight"
+                data-framework="${fw.id}"
+                data-field="${field.key}"
+                min="0" max="3" step="0.1"
+                value="${field.weight}"
+                aria-label="${field.label} weight"
+              />
+              <span class="weight-display">${field.weight.toFixed(1)}×</span>
+            </div>
+            <p class="fw-field-help">${field.helpText}</p>
+          </div>
+        `
+      }).join("")
 
       // Wire up weight sliders
       container.querySelectorAll<HTMLInputElement>(".rules-fw-weight").forEach((slider) => {
         pageLifecycle.on(slider, "input", () => {
-          const display = slider.nextElementSibling
+          const display = slider.parentElement?.querySelector(".weight-display")
           if (display) display.textContent = `${Number(slider.value).toFixed(1)}×`
         })
         pageLifecycle.on(slider, "change", async () => {

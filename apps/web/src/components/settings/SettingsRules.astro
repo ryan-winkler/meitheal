@@ -45,7 +45,7 @@ const presets = [
 
 <div id="rules-lenses-settings">
   <!-- Preset Quick-Apply -->
-  <SettingsPanelCard title="Quick Presets" subtitle="Apply a curated rule set in one click">
+  <SettingsPanelCard title="Rule Presets" subtitle="Choose a starting configuration — customise below">
     <div class="rules-presets" id="rules-presets">
       {presets.map((preset) => (
         <button
@@ -53,6 +53,7 @@ const presets = [
           data-preset={preset.id}
           type="button"
           title={preset.description}
+          aria-pressed="false"
         >
           <span class="rules-preset-icon">{preset.icon}</span>
           <span class="rules-preset-label">{preset.label}</span>
@@ -372,24 +373,50 @@ const presets = [
     gap: 8px;
   }
   .rules-fw-field {
-    display: grid;
-    grid-template-columns: 120px 1fr auto;
-    gap: 10px;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     font-size: 13px;
+    padding: 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-primary) 50%, transparent);
   }
-  .rules-fw-field label {
+  .rules-fw-field-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .rules-fw-field-header label {
     font-weight: 500;
   }
-  .rules-fw-field .form-input {
+  .fw-field-type,
+  .fw-field-range {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-fw-field-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rules-fw-field-controls .form-input {
+    flex: 1;
     padding: 4px 8px;
     font-size: 12px;
   }
   .rules-fw-field .weight-display {
     font-size: 12px;
-    color: var(--text-muted);
-    min-width: 32px;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 36px;
     text-align: right;
+  }
+  .fw-field-help {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.3;
   }
 
   /* Actions */

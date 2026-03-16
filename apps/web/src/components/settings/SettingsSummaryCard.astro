@@ -15,13 +15,14 @@ const { section } = Astro.props
   data-settings-section-link
   data-settings-summary={section.id}
 >
-  <span class="settings-summary-card__meta">
+  <span class="settings-summary-card__header">
     <span class="settings-summary-card__eyebrow-wrap">
       <span class="settings-summary-card__icon" aria-hidden="true">{section.icon}</span>
       <span class="settings-summary-card__eyebrow">{section.label}</span>
     </span>
-    <span class="settings-summary-card__jump">Quick jump</span>
+    <span class="settings-summary-card__status">{section.statusLabel}</span>
   </span>
   <strong class="settings-summary-card__title">{section.summaryTitle}</strong>
   <span class="settings-summary-card__detail">{section.summaryDetail}</span>
+  <span class="settings-summary-card__arrow" aria-hidden="true">→</span>
 </a>

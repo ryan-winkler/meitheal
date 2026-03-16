@@ -107,12 +107,14 @@ function syncSummaryStatuses(): void {
     if (!summary) return
 
     const detail = summary.querySelector(".settings-summary-card__detail")
+    const statusChip = summary.querySelector(".settings-summary-card__status")
     const navStatus = document.querySelector<HTMLElement>(
       `[data-settings-nav-status="${mapping.sectionId}"]`,
     )
     const text = mapping.detail(document.getElementById(mapping.sourceId))
 
     if (detail) detail.textContent = text
+    if (statusChip) statusChip.textContent = text
     if (navStatus) navStatus.textContent = text
   })
 }
