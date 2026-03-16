@@ -14,6 +14,7 @@
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
+import FrameworkWizard from "./FrameworkWizard.astro"
 
 const frameworks = [
   { id: "rice", label: "RICE", description: "Reach × Impact × Confidence ÷ Effort", icon: "📊" },
@@ -21,6 +22,9 @@ const frameworks = [
   { id: "heart", label: "HEART", description: "Happiness, Engagement, Adoption, Retention, Task Success", icon: "❤️" },
   { id: "ddd", label: "DDD", description: "Domain-Driven Design boundary audit", icon: "🏗️" },
   { id: "kcs", label: "KCS", description: "Knowledge-Centered Support checklist", icon: "📚" },
+  { id: "wsjf", label: "WSJF", description: "Weighted Shortest Job First (SAFe)", icon: "⚖️" },
+  { id: "moscow", label: "MoSCoW", description: "Must / Should / Could / Won't prioritization", icon: "🏷️" },
+  { id: "ice", label: "ICE", description: "Impact × Confidence × Ease scoring", icon: "🧊" },
 ]
 
 const taskTypes = [
@@ -72,6 +76,12 @@ const presets = [
         📥 Import Rules
         <input type="file" id="rules-import-input" accept=".json" hidden />
       </label>
+      <button class="btn btn-accent btn-sm" id="fw-create-btn" type="button" title="Create a custom evaluation framework">
+        ✨ Create Framework
+      </button>
+      <button class="btn btn-ghost btn-sm" id="fw-import-btn" type="button" title="Import a framework from YAML">
+        📋 Import YAML
+      </button>
     </div>
   </SettingsPanelCard>
 
@@ -179,6 +189,36 @@ const presets = [
       ))}
     </div>
   </SettingsDisclosure>
+
+  <!-- Framework Creation Wizard -->
+  <FrameworkWizard />
+
+  <!-- YAML Import Dialog -->
+  <dialog id="fw-import-dialog" class="fw-wizard-dialog">
+    <div class="fw-wizard-content" style="max-width: 520px;">
+      <header class="fw-wizard-header">
+        <h3 class="fw-wizard-title">Import Framework from YAML</h3>
+        <button class="fw-wizard-close" id="fw-import-close" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div style="padding: 20px;">
+        <div class="fw-field-group">
+          <label class="form-label" for="fw-import-yaml">Paste YAML definition</label>
+          <textarea
+            class="form-input"
+            id="fw-import-yaml"
+            rows="12"
+            placeholder="name: My Framework&#10;version: 1.0.0&#10;archetype: formula&#10;formula: &quot;(field_a * field_b) / field_c&quot;&#10;fields:&#10;  - key: field_a&#10;    label: Field A&#10;    type: number&#10;    ..."
+            style="font-family: 'JetBrains Mono', monospace; font-size: 12px;"
+          ></textarea>
+        </div>
+        <div id="fw-import-errors" class="fw-wizard-errors" hidden></div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+          <button class="btn btn-ghost" id="fw-import-cancel" type="button">Cancel</button>
+          <button class="btn btn-accent" id="fw-import-submit" type="button">Import Framework</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </div>
 
 <style>

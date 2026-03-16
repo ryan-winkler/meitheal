@@ -1,0 +1,48 @@
+name: WSJF
+version: 1.0.0
+archetype: formula
+description: "Weighted Shortest Job First — SAFe prioritization framework. Ranks items by cost of delay divided by job duration."
+formula: "(business_value + time_criticality + risk_reduction) / job_size"
+badge_thresholds:
+  - min: 8
+    label: "Do First (Critical)"
+    color: "danger"
+  - min: 4
+    label: "Schedule (Important)"
+    color: "accent"
+  - min: 0
+    label: "Defer (Low Priority)"
+    color: "bg-secondary"
+fields:
+  - key: business_value
+    label: Business Value
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How much business value does this deliver? Revenue, market share, customer satisfaction. (1 = minimal, 10 = transformational)"
+  - key: time_criticality
+    label: Time Criticality
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How much does the value diminish with delay? Fixed deadlines, competitive pressure, seasonal windows. (1 = no urgency, 10 = immediate deadline)"
+  - key: risk_reduction
+    label: Risk Reduction / Opportunity
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "Does this reduce risk or enable future opportunities? Tech debt, compliance, platform capabilities. (1 = no impact, 10 = critical risk mitigation)"
+  - key: job_size
+    label: Job Size
+    type: number
+    ui_type: slider
+    min: 1
+    max: 20
+    weight: 1
+    help_text: "How large is the effort? Team-weeks, complexity, dependencies. (1 = trivial, 20 = massive multi-team effort)"

@@ -575,6 +575,18 @@ export async function ensureSchema(): Promise<void> {
   `)
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS framework_configs_fid_idx ON framework_configs(framework_id)")
 
+  // Custom frameworks: user-created and imported full framework definitions
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS custom_frameworks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user',
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+
   ensured = true;
 
 }

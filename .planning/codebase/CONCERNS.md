@@ -94,6 +94,12 @@
 - Safe modification: Use unique prefixes per partial domain (e.g., `.kanban-`, `.table-`)
 - Test coverage: CSS brace balance check in CI only
 
+**Astro Scoped CSS → Child Components:**
+- Gotcha: Astro scoped `<style>` tags hash selectors to the parent component only. Selectors targeting elements inside child `.astro` components will NOT apply.
+- Fix: Wrap cross-component selectors in `:global()` — e.g., `:global(.settings-summary-card)` in `settings.astro` for elements in `SettingsSummaryCard.astro`.
+- Alternative: Define styles inside the child component itself. Impractical when the parent controls layout/grid context.
+- Discovered: 2026-03-16 during Quick Jumps redesign — cards rendered as unstyled text.
+
 ## Scaling Limits
 
 **SQLite:**

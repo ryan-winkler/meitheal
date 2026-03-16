@@ -9,6 +9,9 @@
 /** Supported framework archetypes (from YAML configs) */
 export type FrameworkArchetype = "formula" | "matrix" | "taxonomy" | "workflow"
 
+/** Source of a framework definition */
+export type FrameworkSource = "built-in" | "user" | "imported"
+
 /** A single field option (for select/radio fields) */
 export interface FrameworkFieldOption {
   value: string | number
@@ -45,12 +48,16 @@ export interface FrameworkConfig {
   version: string
   /** How the framework operates: formula, matrix, taxonomy, or workflow */
   archetype: FrameworkArchetype
+  /** Where this framework came from */
+  source: FrameworkSource
   /** Scoring formula expression (for formula archetypes) */
   formula?: string | undefined
   /** Badge threshold tiers */
   badgeThresholds: BadgeThreshold[]
   /** Field definitions */
   fields: FrameworkField[]
+  /** Short description for catalog/listings */
+  description?: string | undefined
 }
 
 /**
@@ -112,9 +119,11 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
     name: String(raw.name ?? id.toUpperCase()),
     version: String(raw.version ?? "1.0.0"),
     archetype: String(raw.archetype ?? "formula") as FrameworkArchetype,
+    source: (raw.source as FrameworkSource) ?? "built-in",
     formula: raw.formula ? String(raw.formula) : undefined,
     badgeThresholds,
     fields,
+    description: raw.description ? String(raw.description) : undefined,
   }
 }
 
@@ -153,4 +162,85 @@ export function mergeFrameworkConfig(
   }
 
   return merged
+}
+
+/**
+ * Validate a framework configuration object.
+ * Returns null if valid, or an array of error messages.
+ */
+export function validateFrameworkConfig(
+  config: Partial<FrameworkConfig>,
+): string[] | null {
+  const errors: string[] = []
+
+  if (!config.id || typeof config.id !== "string") {
+    errors.push("id is required and must be a non-empty string")
+  } else if (!/^[a-z0-9-]+$/.test(config.id)) {
+    errors.push("id must be lowercase alphanumeric with hyphens only")
+  }
+
+  if (!config.name || typeof config.name !== "string") {
+    errors.push("name is required")
+  }
+
+  const validArchetypes: FrameworkArchetype[] = ["formula", "matrix", "taxonomy", "workflow"]
+  if (!config.archetype || !validArchetypes.includes(config.archetype)) {
+    errors.push(`archetype must be one of: ${validArchetypes.join(", ")}`)
+  }
+
+  if (!Array.isArray(config.fields) || config.fields.length === 0) {
+    errors.push("At least one field is required")
+  } else {
+    const keys = new Set<string>()
+    for (const field of config.fields) {
+      if (!field.key || typeof field.key !== "string") {
+        errors.push("Each field must have a non-empty key")
+      } else if (keys.has(field.key)) {
+        errors.push(`Duplicate field key: ${field.key}`)
+      } else {
+        keys.add(field.key)
+      }
+      if (!field.label) errors.push(`Field "${field.key}" must have a label`)
+    }
+  }
+
+  if (config.archetype === "formula" && !config.formula) {
+    errors.push("Formula archetypes require a formula expression")
+  }
+
+  if (!Array.isArray(config.badgeThresholds)) {
+    errors.push("badgeThresholds must be an array")
+  }
+
+  return errors.length > 0 ? errors : null
+}
+
+/**
+ * Convert a FrameworkConfig back to YAML-compatible plain object.
+ * Useful for export/display.
+ */
+export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, unknown> {
+  return {
+    name: config.name,
+    version: config.version,
+    archetype: config.archetype,
+    description: config.description ?? "",
+    formula: config.formula,
+    badge_thresholds: config.badgeThresholds.map((t) => ({
+      min: t.min,
+      label: t.label,
+      color: t.color,
+    })),
+    fields: config.fields.map((f) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      ui_type: f.uiType,
+      weight: f.weight,
+      min: f.min,
+      max: f.max,
+      options: f.options?.map((o) => ({ value: o.value, label: o.label })),
+      help_text: f.helpText,
+    })),
+  }
 }

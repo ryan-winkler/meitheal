@@ -4,9 +4,7 @@ import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
 import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
 import SettingsRules from "../components/settings/SettingsRules.astro"
-import SettingsCallout from "../components/settings/SettingsCallout.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
-import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import SettingsSummaryCard from "../components/settings/SettingsSummaryCard.astro"
 import SettingsSystem from "../components/settings/SettingsSystem.astro"
 import Layout from "../layouts/Layout.astro"
@@ -70,13 +68,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
       </div>
     </section>
 
-    <section class="settings-shell__surface settings-shell__summary-surface">
-      <div class="settings-shell__surface-header">
-        <div>
-          <span class="settings-shell__surface-eyebrow">Quick jumps</span>
-          <h2>Jump to a section</h2>
-        </div>
-      </div>
+    <section class="settings-shell__surface settings-shell__summary-surface" id="quick-jumps-surface">
       <div class="settings-shell__summary">
         {SETTINGS_SECTIONS.map((section) => (
           <SettingsSummaryCard section={section} />
@@ -84,80 +76,65 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
       </div>
     </section>
 
-    <section class="settings-shell__mobile-nav settings-shell__surface">
-      <div class="settings-shell__surface-header settings-shell__surface-header--compact">
-        <div>
-          <span class="settings-shell__surface-eyebrow">Section picker</span>
-          <h2>Move between settings on smaller screens</h2>
-        </div>
-      </div>
-      <SettingsShellNav sections={SETTINGS_SECTIONS} variant="mobile" />
-    </section>
+    <div class="settings-shell__content">
+      <section
+        id="personal-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+      </section>
 
-    <div class="settings-shell__layout">
-      <aside class="settings-shell__sidebar">
-        <div class="settings-shell__sidebar-sticky">
-          <a href="#" class="btn btn-ghost" style="margin-bottom: 8px; justify-content: flex-start; gap: 8px; width: 100%;" id="settings-home-btn">
-            <span style="font-size: 16px;">←</span> Settings Home
-          </a>
-          <section class="settings-shell__surface settings-shell__surface--sidebar">
-            <div class="settings-shell__surface-header settings-shell__surface-header--compact">
-              <div>
-                <span class="settings-shell__surface-eyebrow">Directory</span>
-                <h2>Persistent settings rail</h2>
-              </div>
-            </div>
-            <SettingsShellNav sections={SETTINGS_SECTIONS} />
-          </section>
-          <SettingsCallout title="Ingress-safe navigation" icon="🏠">
-            All jumps stay hash-based so Settings remains inside the Home Assistant
-            iframe, companion webview, and PWA scope.
-          </SettingsCallout>
-        </div>
-      </aside>
+      <section
+        id="workflow-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+        <SettingsSectionIntro section={workflowSection} />
+        <SettingsGeneral locale={locale} />
+        <SettingsLabels locale={locale} />
+      </section>
 
-      <div class="settings-shell__content">
-        <section
-          id="workflow-settings"
-          class="settings-shell__section"
-          data-settings-shell-section
-        >
-          <SettingsSectionIntro section={workflowSection} />
-          <SettingsGeneral locale={locale} />
-          <SettingsLabels locale={locale} />
-        </section>
+      <section
+        id="rules-lenses-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+        <SettingsSectionIntro section={rulesSection} />
+        <SettingsRules />
+      </section>
 
-        <section
-          id="rules-lenses-settings"
-          class="settings-shell__section"
-          data-settings-shell-section
-        >
-          <SettingsSectionIntro section={rulesSection} />
-          <SettingsRules />
-        </section>
+      <section
+        id="integrations-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+        <SettingsSectionIntro section={integrationsSection} />
+        <SettingsIntegrations locale={locale} />
+      </section>
 
-        <section
-          id="integrations-settings"
-          class="settings-shell__section"
-          data-settings-shell-section
-        >
-          <SettingsSectionIntro section={integrationsSection} />
-          <SettingsIntegrations locale={locale} />
-        </section>
+      <section
+        id="automation-ai-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+        <SettingsSectionIntro section={automationAiSection} />
+        <SettingsAgents locale={locale} />
+      </section>
 
-        <section
-          id="automation-ai-settings"
-          class="settings-shell__section"
-          data-settings-shell-section
-        >
-          <SettingsSectionIntro section={automationAiSection} />
-          <SettingsAgents locale={locale} />
-        </section>
-
-        <SettingsSystem locale={locale} />
-      </div>
+      <SettingsSystem locale={locale} />
     </div>
   </div>
+
+  <button
+    id="settings-go-top"
+    class="settings-go-top"
+    type="button"
+    aria-label="Scroll to top"
+    title="Back to top (Home key)"
+    hidden
+  >
+    ↑
+  </button>
 
   <div
     id="toast-container"
@@ -366,189 +343,94 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     text-transform: uppercase;
     color: var(--accent);
   }
+  .settings-shell__summary-surface {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-main);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
   .settings-shell__summary {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 14px;
-  }
-  .settings-summary-card {
-    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 18px;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: var(--bg-card);
-    color: inherit;
-    text-decoration: none;
-    transition:
-      transform 200ms ease,
-      border-color 200ms ease,
-      background 200ms ease,
-      box-shadow 200ms ease;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 2px 2px;
   }
-  .settings-summary-card:hover,
-  .settings-summary-card.is-active {
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
-    background: color-mix(in srgb, var(--bg-card) 90%, var(--accent) 8%);
-    box-shadow: 0 12px 28px rgba(5, 10, 25, 0.18);
-  }
-  .settings-summary-card:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
-    outline-offset: 2px;
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
-  }
-  .settings-summary-card__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .settings-summary-card__eyebrow-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .settings-summary-card__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    font-size: 16px;
-    flex-shrink: 0;
-  }
-  .settings-summary-card__eyebrow {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-  }
-  .settings-summary-card__status {
-    display: inline-flex;
-    align-items: center;
-    min-height: 22px;
-    padding: 0 8px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-  }
-  .settings-summary-card__title {
-    font-size: 15px;
-    line-height: 1.3;
-  }
-  .settings-summary-card__detail {
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.45;
-  }
-  .settings-summary-card__arrow {
-    position: absolute;
-    right: 16px;
-    bottom: 16px;
-    font-size: 14px;
-    color: var(--text-muted);
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: opacity 200ms ease, transform 200ms ease;
-  }
-  .settings-summary-card:hover .settings-summary-card__arrow,
-  .settings-summary-card:focus-visible .settings-summary-card__arrow {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .settings-summary-card {
-      transition: border-color 200ms ease, background 200ms ease;
-    }
-    .settings-summary-card:hover,
-    .settings-summary-card.is-active {
-      transform: none;
-    }
-    .settings-summary-card__arrow {
-      opacity: 0.6;
-      transform: none;
-      transition: opacity 200ms ease;
-    }
-  }
-  .settings-shell__layout {
-    display: grid;
-    grid-template-columns: 300px minmax(0, 1fr);
-    gap: 20px;
-    align-items: start;
-  }
-  .settings-shell__mobile-nav {
+  .settings-shell__summary::-webkit-scrollbar {
     display: none;
   }
-  .settings-shell__sidebar-sticky {
-    position: sticky;
-    top: 88px;
+  /* — Tab items — */
+  :global(.settings-tab) {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .settings-shell-nav__list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .settings-shell-nav__link {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: start;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--bg-card);
-    color: inherit;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
     text-decoration: none;
-    transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
   }
-  .settings-shell-nav__link:hover,
-  .settings-shell-nav__link.is-active {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
-    background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 8%);
+  :global(.settings-tab:hover) {
+    background: color-mix(in srgb, var(--bg-card) 80%, var(--accent) 6%);
+    border-color: var(--border);
+    color: var(--text-primary);
   }
-  .settings-shell-nav__icon {
-    font-size: 18px;
-    line-height: 1;
-    padding-top: 2px;
-  }
-  .settings-shell-nav__content {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .settings-shell-nav__content small {
-    color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.45;
-  }
-  .settings-shell-nav__meta {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-  }
-  .settings-shell-nav__jump {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+  :global(.settings-tab.is-active) {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
     color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  :global(.settings-tab:focus-visible) {
+    outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+    outline-offset: 2px;
+  }
+  :global(.settings-tab__icon) {
+    font-size: 15px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  :global(.settings-tab__label) {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  :global(.settings-tab__status) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :global(.settings-tab.is-active .settings-tab__status) {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.settings-tab) {
+      transition: none;
+    }
   }
   .settings-shell__content {
     display: flex;
@@ -559,11 +441,57 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     display: flex;
     flex-direction: column;
     gap: 16px;
-    scroll-margin-top: 88px;
+    scroll-margin-top: 64px;
   }
   .settings-shell__section--muted {
     opacity: 0.42;
     filter: saturate(0.8);
+  }
+  /* — Go to top FAB — */
+  .settings-go-top {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease,
+      background 160ms ease,
+      border-color 160ms ease;
+    pointer-events: none;
+  }
+  .settings-go-top.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .settings-go-top:hover {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    color: var(--accent);
+  }
+  .settings-go-top:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .settings-go-top {
+      transition: none;
+    }
   }
   .settings-grid {
     display: grid;
@@ -702,39 +630,6 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     transform: translateX(18px);
     background: white;
   }
-  @media (max-width: 1120px) {
-    .settings-shell__layout {
-      grid-template-columns: 1fr;
-    }
-    .settings-shell__sidebar {
-      display: none;
-    }
-    .settings-shell__mobile-nav {
-      display: block;
-    }
-    .settings-shell__mobile-nav .settings-shell-nav__list {
-      flex-direction: row;
-      overflow-x: auto;
-      gap: 10px;
-      padding-bottom: 6px;
-      scroll-snap-type: x proximity;
-    }
-    .settings-shell__mobile-nav .settings-shell-nav__link {
-      min-width: 200px;
-      grid-template-columns: 1fr;
-      gap: 8px;
-      scroll-snap-align: start;
-    }
-    .settings-shell__mobile-nav .settings-shell-nav__icon {
-      padding-top: 0;
-      font-size: 20px;
-    }
-    .settings-shell__mobile-nav .settings-shell-nav__meta {
-      align-items: flex-start;
-      justify-content: space-between;
-      flex-direction: row;
-    }
-  }
   @media (max-width: 768px) {
     .settings-shell__hero {
       grid-template-columns: 1fr;
@@ -750,11 +645,15 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     .shortcut-grid {
       grid-template-columns: 1fr;
     }
+    .settings-go-top {
+      bottom: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      font-size: 16px;
+    }
   }
   @media (max-width: 560px) {
-    .settings-shell__mobile-nav .settings-shell-nav__link {
-      min-width: 180px;
-    }
     .settings-shell__search-input-row {
       grid-template-columns: 1fr;
     }

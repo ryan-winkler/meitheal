@@ -9,20 +9,14 @@ const { section } = Astro.props
 ---
 
 <a
-  class="settings-summary-card"
+  class="settings-tab"
   id={`settings-summary-${section.id}`}
   href={`#${section.id}`}
   data-settings-section-link
   data-settings-summary={section.id}
+  role="tab"
 >
-  <span class="settings-summary-card__header">
-    <span class="settings-summary-card__eyebrow-wrap">
-      <span class="settings-summary-card__icon" aria-hidden="true">{section.icon}</span>
-      <span class="settings-summary-card__eyebrow">{section.label}</span>
-    </span>
-    <span class="settings-summary-card__status">{section.statusLabel}</span>
-  </span>
-  <strong class="settings-summary-card__title">{section.summaryTitle}</strong>
-  <span class="settings-summary-card__detail">{section.summaryDetail}</span>
-  <span class="settings-summary-card__arrow" aria-hidden="true">→</span>
+  <span class="settings-tab__icon" aria-hidden="true">{section.icon}</span>
+  <span class="settings-tab__label">{section.label}</span>
+  <span class="settings-tab__status" aria-live="polite">{section.statusLabel}</span>
 </a>

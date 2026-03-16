@@ -12,6 +12,7 @@ import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { exportFilename } from "@lib/export-filename"
+import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controller"
 
 interface RuleApiResponse {
   ok: boolean
@@ -564,6 +565,125 @@ export function initRulesSettings(): void {
         showToast("settings.import_failed", "error")
       } finally {
         importInput.value = ""
+      }
+    })
+  }
+
+  // ── Framework Creation Wizard ──
+  initFrameworkWizard(() => {
+    // Refresh framework configs after wizard creates a new framework
+    loadFrameworkConfigs()
+    showToast("settings.framework_created")
+  })
+
+  const createBtn = document.getElementById("fw-create-btn")
+  if (createBtn) {
+    pageLifecycle.on(createBtn, "click", () => openWizard())
+  }
+
+  // ── YAML Import Dialog ──
+  const yamlImportBtn = document.getElementById("fw-import-btn")
+  const yamlImportDialog = document.getElementById("fw-import-dialog") as HTMLDialogElement | null
+  const yamlImportClose = document.getElementById("fw-import-close")
+  const yamlImportCancel = document.getElementById("fw-import-cancel")
+  const yamlImportSubmit = document.getElementById("fw-import-submit")
+  const yamlImportTextarea = document.getElementById("fw-import-yaml") as HTMLTextAreaElement | null
+  const yamlImportErrors = document.getElementById("fw-import-errors")
+
+  if (yamlImportBtn && yamlImportDialog) {
+    pageLifecycle.on(yamlImportBtn, "click", () => {
+      if (yamlImportTextarea) yamlImportTextarea.value = ""
+      if (yamlImportErrors) yamlImportErrors.hidden = true
+      yamlImportDialog.showModal()
+    })
+  }
+
+  if (yamlImportClose) {
+    pageLifecycle.on(yamlImportClose, "click", () => yamlImportDialog?.close())
+  }
+  if (yamlImportCancel) {
+    pageLifecycle.on(yamlImportCancel, "click", () => yamlImportDialog?.close())
+  }
+
+  if (yamlImportSubmit && yamlImportTextarea && yamlImportDialog) {
+    pageLifecycle.on(yamlImportSubmit, "click", async () => {
+      const yamlText = yamlImportTextarea.value.trim()
+      if (!yamlText) {
+        if (yamlImportErrors) {
+          yamlImportErrors.textContent = "Please paste a YAML framework definition"
+          yamlImportErrors.hidden = false
+        }
+        return
+      }
+
+      try {
+        // Send YAML as-is to server for parsing (using parseFrameworkConfig on server)
+        // But we need a simpler approach: parse YAML client-side and POST as JSON
+        const yamlModule = await import("yaml")
+        const parsed = yamlModule.parse(yamlText) as Record<string, unknown>
+
+        if (!parsed || !parsed.name) {
+          if (yamlImportErrors) {
+            yamlImportErrors.textContent = "Invalid YAML: 'name' field is required"
+            yamlImportErrors.hidden = false
+          }
+          return
+        }
+
+        // Generate ID from name
+        const id = String(parsed.name)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+
+        const payload = {
+          id,
+          name: parsed.name,
+          version: parsed.version ?? "1.0.0",
+          archetype: parsed.archetype ?? "formula",
+          source: "imported",
+          description: parsed.description,
+          formula: parsed.formula,
+          fields: Array.isArray(parsed.fields) ? parsed.fields.map((f: Record<string, unknown>) => ({
+            key: f.key,
+            label: f.label,
+            type: f.type ?? "number",
+            uiType: f.ui_type ?? "slider",
+            weight: f.weight ?? 1,
+            min: f.min,
+            max: f.max,
+            helpText: f.help_text ?? "",
+          })) : [],
+          badgeThresholds: Array.isArray(parsed.badge_thresholds) ? parsed.badge_thresholds.map((b: Record<string, unknown>) => ({
+            min: b.min ?? 0,
+            label: b.label ?? "",
+            color: b.color ?? "bg-secondary",
+          })) : [],
+        }
+
+        const result = await apiFetch("/api/frameworks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+
+        if (!result.ok) {
+          const msg = (result as unknown as { errors?: string[] }).errors?.join(". ") || result.message || "Import failed"
+          if (yamlImportErrors) {
+            yamlImportErrors.textContent = msg
+            yamlImportErrors.hidden = false
+          }
+          return
+        }
+
+        yamlImportDialog.close()
+        loadFrameworkConfigs()
+        showToast("settings.framework_imported")
+      } catch (err) {
+        if (yamlImportErrors) {
+          yamlImportErrors.textContent = `Parse error: ${err}`
+          yamlImportErrors.hidden = false
+        }
       }
     })
   }

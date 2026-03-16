@@ -1,0 +1,528 @@
+---
+/**
+ * FrameworkWizard.astro — 5-step modal wizard for creating custom frameworks
+ *
+ * Steps:
+ * 1. Name + archetype (formula/matrix/taxonomy/workflow)
+ * 2. Field builder (add/remove/reorder fields)
+ * 3. Formula editor (for formula archetypes)
+ * 4. Badge thresholds (score ranges → labels + colors)
+ * 5. Preview + save
+ *
+ * @domain strategy
+ * @kcs Framework extensibility — users create custom evaluation frameworks without code
+ */
+---
+
+<dialog id="framework-wizard-dialog" class="fw-wizard-dialog">
+  <div class="fw-wizard-backdrop" data-action="close"></div>
+  <div class="fw-wizard-content">
+    <header class="fw-wizard-header">
+      <h3 class="fw-wizard-title">Create Custom Framework</h3>
+      <button class="fw-wizard-close" data-action="close" type="button" aria-label="Close">&times;</button>
+    </header>
+
+    <!-- Step Indicator -->
+    <nav class="fw-wizard-steps" aria-label="Wizard steps">
+      <button class="fw-wizard-step is-active" data-step="1" type="button">
+        <span class="fw-step-num">1</span>
+        <span class="fw-step-label">Basics</span>
+      </button>
+      <div class="fw-step-connector"></div>
+      <button class="fw-wizard-step" data-step="2" type="button">
+        <span class="fw-step-num">2</span>
+        <span class="fw-step-label">Fields</span>
+      </button>
+      <div class="fw-step-connector"></div>
+      <button class="fw-wizard-step" data-step="3" type="button">
+        <span class="fw-step-num">3</span>
+        <span class="fw-step-label">Formula</span>
+      </button>
+      <div class="fw-step-connector"></div>
+      <button class="fw-wizard-step" data-step="4" type="button">
+        <span class="fw-step-num">4</span>
+        <span class="fw-step-label">Badges</span>
+      </button>
+      <div class="fw-step-connector"></div>
+      <button class="fw-wizard-step" data-step="5" type="button">
+        <span class="fw-step-num">5</span>
+        <span class="fw-step-label">Preview</span>
+      </button>
+    </nav>
+
+    <!-- Step 1: Basics -->
+    <div class="fw-wizard-panel" data-panel="1">
+      <div class="fw-field-group">
+        <label class="form-label" for="fw-name">Framework Name *</label>
+        <input type="text" class="form-input" id="fw-name" placeholder="e.g. Value vs Effort" maxlength="50" required />
+      </div>
+      <div class="fw-field-group">
+        <label class="form-label" for="fw-id">ID (auto-generated)</label>
+        <input type="text" class="form-input" id="fw-id" placeholder="auto-generated-from-name" readonly />
+        <small class="fw-field-hint">Lowercase, hyphens only. Used in API and data storage.</small>
+      </div>
+      <div class="fw-field-group">
+        <label class="form-label" for="fw-description">Description</label>
+        <input type="text" class="form-input" id="fw-description" placeholder="Brief description for the catalog" maxlength="120" />
+      </div>
+      <div class="fw-field-group">
+        <label class="form-label">Archetype *</label>
+        <div class="fw-archetype-grid">
+          <label class="fw-archetype-option">
+            <input type="radio" name="fw-archetype" value="formula" checked />
+            <div class="fw-archetype-card">
+              <span class="fw-archetype-icon">🧮</span>
+              <strong>Formula</strong>
+              <small>Calculate a score from field values</small>
+            </div>
+          </label>
+          <label class="fw-archetype-option">
+            <input type="radio" name="fw-archetype" value="matrix" />
+            <div class="fw-archetype-card">
+              <span class="fw-archetype-icon">📊</span>
+              <strong>Matrix</strong>
+              <small>Multi-dimensional scoring grid</small>
+            </div>
+          </label>
+          <label class="fw-archetype-option">
+            <input type="radio" name="fw-archetype" value="taxonomy" />
+            <div class="fw-archetype-card">
+              <span class="fw-archetype-icon">🏷️</span>
+              <strong>Taxonomy</strong>
+              <small>Categorization / classification</small>
+            </div>
+          </label>
+          <label class="fw-archetype-option">
+            <input type="radio" name="fw-archetype" value="workflow" />
+            <div class="fw-archetype-card">
+              <span class="fw-archetype-icon">✅</span>
+              <strong>Workflow</strong>
+              <small>Step-by-step checklist</small>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Fields -->
+    <div class="fw-wizard-panel" data-panel="2" hidden>
+      <div class="fw-fields-header">
+        <p class="text-muted" style="font-size: 13px; margin: 0;">Define the fields users will score or fill in.</p>
+        <button class="btn btn-sm btn-accent" id="fw-add-field" type="button">+ Add Field</button>
+      </div>
+      <div id="fw-fields-list" class="fw-fields-list">
+        <!-- Fields added dynamically by controller -->
+      </div>
+      <template id="fw-field-template">
+        <div class="fw-field-editor" data-field-index="">
+          <div class="fw-field-editor-header">
+            <span class="fw-field-drag" title="Drag to reorder">⋮⋮</span>
+            <input type="text" class="form-input fw-field-key" placeholder="field_key" style="max-width: 120px;" />
+            <input type="text" class="form-input fw-field-label" placeholder="Display Label" style="flex:1;" />
+            <select class="form-input fw-field-type" style="max-width: 100px;">
+              <option value="number">Number</option>
+              <option value="select">Select</option>
+            </select>
+            <button class="btn btn-ghost btn-sm fw-field-remove" type="button" title="Remove field">✕</button>
+          </div>
+          <div class="fw-field-editor-body">
+            <div class="fw-field-editor-row">
+              <label class="form-label">UI Type</label>
+              <select class="form-input fw-field-uitype" style="max-width: 100px;">
+                <option value="slider">Slider</option>
+                <option value="radio">Radio</option>
+                <option value="select">Dropdown</option>
+              </select>
+            </div>
+            <div class="fw-field-editor-row fw-number-fields">
+              <label class="form-label">Min</label>
+              <input type="number" class="form-input fw-field-min" value="0" style="max-width: 80px;" />
+              <label class="form-label">Max</label>
+              <input type="number" class="form-input fw-field-max" value="10" style="max-width: 80px;" />
+              <label class="form-label">Weight</label>
+              <input type="number" class="form-input fw-field-weight" value="1" min="0" max="10" step="0.1" style="max-width: 80px;" />
+            </div>
+            <div class="fw-field-editor-row">
+              <label class="form-label">Help Text</label>
+              <input type="text" class="form-input fw-field-help" placeholder="Guidance shown to users when scoring" style="flex:1;" />
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Step 3: Formula -->
+    <div class="fw-wizard-panel" data-panel="3" hidden>
+      <div class="fw-field-group">
+        <label class="form-label" for="fw-formula">Scoring Formula</label>
+        <input type="text" class="form-input fw-formula-input" id="fw-formula" placeholder="e.g. (reach * impact * confidence) / effort" />
+        <small class="fw-field-hint">Use field keys as variables. Supported operators: + - * / ( )</small>
+      </div>
+      <div class="fw-formula-preview" id="fw-formula-preview">
+        <p class="text-muted" style="font-size: 12px; margin: 4px 0;">Formula preview will appear here</p>
+      </div>
+      <div class="fw-formula-vars" id="fw-formula-vars">
+        <p class="fw-field-hint"><strong>Available field keys:</strong></p>
+        <!-- Populated by controller -->
+      </div>
+    </div>
+
+    <!-- Step 4: Badge Thresholds -->
+    <div class="fw-wizard-panel" data-panel="4" hidden>
+      <p class="text-muted" style="font-size: 13px; margin: 0 0 12px;">Define score ranges and the labels/colors shown on task badges.</p>
+      <div id="fw-badges-list" class="fw-badges-list">
+        <!-- Populated by controller -->
+      </div>
+      <button class="btn btn-sm btn-ghost" id="fw-add-badge" type="button">+ Add Threshold</button>
+      <template id="fw-badge-template">
+        <div class="fw-badge-editor" data-badge-index="">
+          <input type="number" class="form-input fw-badge-min" placeholder="Min score" style="max-width: 80px;" />
+          <input type="text" class="form-input fw-badge-label" placeholder="Badge label" style="flex:1;" />
+          <select class="form-input fw-badge-color" style="max-width: 120px;">
+            <option value="danger">🔴 Red (Urgent)</option>
+            <option value="accent">🟡 Accent</option>
+            <option value="bg-secondary">⚪ Neutral</option>
+            <option value="bg-primary">🔵 Primary</option>
+          </select>
+          <button class="btn btn-ghost btn-sm fw-badge-remove" type="button" title="Remove">✕</button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Step 5: Preview -->
+    <div class="fw-wizard-panel" data-panel="5" hidden>
+      <div class="fw-preview-card" id="fw-preview-card">
+        <p class="text-muted" style="font-size: 12px; margin: 4px 0;">Loading preview…</p>
+      </div>
+      <details class="fw-yaml-preview">
+        <summary>Show YAML</summary>
+        <pre id="fw-yaml-output" class="fw-yaml-pre"><code>Loading…</code></pre>
+      </details>
+    </div>
+
+    <!-- Wizard Footer -->
+    <footer class="fw-wizard-footer">
+      <div class="fw-wizard-errors" id="fw-wizard-errors" hidden></div>
+      <div class="fw-wizard-actions">
+        <button class="btn btn-ghost" id="fw-prev-btn" type="button" disabled>← Back</button>
+        <button class="btn btn-accent" id="fw-next-btn" type="button">Next →</button>
+        <button class="btn btn-accent" id="fw-save-btn" type="button" hidden>Save Framework</button>
+      </div>
+    </footer>
+  </div>
+</dialog>
+
+<style>
+  /* Dialog backdrop + container */
+  .fw-wizard-dialog {
+    border: none;
+    padding: 0;
+    max-width: min(640px, 90vw);
+    width: 100%;
+    border-radius: 20px;
+    background: var(--bg-card);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+  }
+  .fw-wizard-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+  }
+  .fw-wizard-backdrop {
+    display: none;
+  }
+
+  /* Header */
+  .fw-wizard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .fw-wizard-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .fw-wizard-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 4px;
+    border-radius: 8px;
+    transition: color 150ms;
+  }
+  .fw-wizard-close:hover {
+    color: var(--text-primary);
+  }
+
+  /* Step Indicator */
+  .fw-wizard-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .fw-wizard-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    min-width: 56px;
+  }
+  .fw-step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    transition: all 200ms ease;
+  }
+  .fw-wizard-step.is-active .fw-step-num {
+    background: var(--accent);
+    color: var(--bg-primary);
+  }
+  .fw-wizard-step.is-complete .fw-step-num {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+  }
+  .fw-step-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .fw-wizard-step.is-active .fw-step-label {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .fw-step-connector {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    min-width: 12px;
+  }
+
+  /* Panels */
+  .fw-wizard-panel {
+    padding: 20px;
+    min-height: 240px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .fw-wizard-panel[hidden] {
+    display: none;
+  }
+
+  /* Field groups */
+  .fw-field-group {
+    margin-bottom: 16px;
+  }
+  .fw-field-group .form-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .fw-field-hint {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* Archetype selector */
+  .fw-archetype-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .fw-archetype-option {
+    cursor: pointer;
+  }
+  .fw-archetype-option input {
+    display: none;
+  }
+  .fw-archetype-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 10px;
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    text-align: center;
+    transition: all 200ms ease;
+  }
+  .fw-archetype-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  }
+  .fw-archetype-option input:checked + .fw-archetype-card {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .fw-archetype-icon {
+    font-size: 24px;
+  }
+  .fw-archetype-card strong {
+    font-size: 13px;
+  }
+  .fw-archetype-card small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Field editor */
+  .fw-fields-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .fw-fields-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .fw-field-editor {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    background: var(--bg-secondary);
+  }
+  .fw-field-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fw-field-drag {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 14px;
+    user-select: none;
+  }
+  .fw-field-editor-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .fw-field-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .fw-field-editor-row .form-label {
+    font-size: 11px;
+    margin: 0;
+    min-width: 40px;
+  }
+
+  /* Badge editor */
+  .fw-badges-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .fw-badge-editor {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Formula */
+  .fw-formula-input {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+  }
+  .fw-formula-preview {
+    margin: 12px 0;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+  }
+  .fw-formula-vars {
+    font-size: 12px;
+  }
+
+  /* Preview */
+  .fw-preview-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+    margin-bottom: 12px;
+  }
+  .fw-yaml-preview summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 8px 0;
+  }
+  .fw-yaml-pre {
+    background: var(--bg-secondary);
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-height: 200px;
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  /* Footer */
+  .fw-wizard-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+  }
+  .fw-wizard-errors {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
+    font-size: 12px;
+  }
+  .fw-wizard-errors[hidden] {
+    display: none;
+  }
+  .fw-wizard-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  @media (max-width: 480px) {
+    .fw-archetype-grid {
+      grid-template-columns: 1fr;
+    }
+    .fw-wizard-steps {
+      padding: 8px 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fw-archetype-card,
+    .fw-step-num {
+      transition: none;
+    }
+  }
+</style>

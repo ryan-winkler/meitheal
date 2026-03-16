@@ -106,14 +106,12 @@ function syncSummaryStatuses(): void {
     )
     if (!summary) return
 
-    const detail = summary.querySelector(".settings-summary-card__detail")
-    const statusChip = summary.querySelector(".settings-summary-card__status")
+    const statusChip = summary.querySelector(".settings-tab__status")
     const navStatus = document.querySelector<HTMLElement>(
       `[data-settings-nav-status="${mapping.sectionId}"]`,
     )
     const text = mapping.detail(document.getElementById(mapping.sourceId))
 
-    if (detail) detail.textContent = text
     if (statusChip) statusChip.textContent = text
     if (navStatus) navStatus.textContent = text
   })
@@ -391,6 +389,37 @@ function syncActiveSectionFromHash(): void {
   }
 }
 
+function initGoToTop(): void {
+  const btn = document.getElementById("settings-go-top")
+  if (!btn) return
+
+  const threshold = 400
+
+  const updateVisibility = (): void => {
+    const past = window.scrollY > threshold
+    btn.classList.toggle("is-visible", past)
+    btn.hidden = !past
+  }
+
+  pageLifecycle.on(window, "scroll", updateVisibility, { passive: true })
+  updateVisibility()
+
+  pageLifecycle.on(btn, "click", () => {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    syncActiveSectionFromHash()
+  })
+
+  pageLifecycle.on(document, "keydown", (event) => {
+    const e = event as KeyboardEvent
+    if (e.key !== "Home" || e.target !== document.body) return
+    e.preventDefault()
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    syncActiveSectionFromHash()
+  })
+}
+
 export function initSettingsShell(): void {
   const shell = document.getElementById("settings-shell")
   if (!shell) return
@@ -399,6 +428,7 @@ export function initSettingsShell(): void {
   initSectionLinks()
   initIntersectionTracking()
   initCompanionLinks()
+  initGoToTop()
   syncSummaryStatuses()
   pageLifecycle.on(window, "hashchange", () => {
     syncActiveSectionFromHash()
@@ -415,16 +445,6 @@ export function initSettingsShell(): void {
     }
   } else {
     setShellDetailView(false)
-  }
-
-  const homeBtn = document.getElementById("settings-home-btn")
-  if (homeBtn) {
-    pageLifecycle.on(homeBtn, "click", (e) => {
-      e.preventDefault()
-      history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
-      syncActiveSectionFromHash()
-      window.scrollTo({ top: 0, behavior: "smooth" })
-    })
   }
 
   if (hashTargetId) {
