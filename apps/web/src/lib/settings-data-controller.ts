@@ -7,6 +7,7 @@
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
@@ -135,7 +136,7 @@ export function initDataSettings(): void {
       }
 
       try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings")
+        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
         const settings = settingsRes.ok ? await settingsRes.json() : {}
         const existing = settings.custom_fields ? JSON.parse(settings.custom_fields) : []
         existing.push(fieldDef)
@@ -144,6 +145,7 @@ export function initDataSettings(): void {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(existing) }),
+          signal: pageLifecycle.signal,
         })
 
         nameInput.disabled = true
@@ -211,16 +213,16 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
           const row = document.createElement("div")
           row.className = "custom-field-row"
           row.innerHTML = `
-            <input type="text" class="form-input" value="${field.name.replace(/"/g, "&quot;")}" disabled />
+            <input type="text" class="form-input" value="${escapeHtml(field.name)}" disabled />
             <select class="form-select" disabled>
-              <option value="${field.type}" selected>${field.type.charAt(0).toUpperCase() + field.type.slice(1)}</option>
+              <option value="${escapeHtml(field.type)}" selected>${escapeHtml(field.type.charAt(0).toUpperCase() + field.type.slice(1))}</option>
             </select>
             <span style="color: var(--text-muted); font-size: 12px;">Saved</span>
             <button type="button" class="btn btn-ghost" style="padding: 4px 8px; color: var(--danger);" title="Remove field definition (data on existing tasks is preserved)">×</button>
           `
           row.querySelector("button")?.addEventListener("click", async () => {
             try {
-              const curRes = await fetch((window.__ingress_path || "") + "/api/settings")
+              const curRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
               const curSettings = curRes.ok ? await curRes.json() : {}
               const curFields = curSettings.custom_fields ? JSON.parse(curSettings.custom_fields) : []
               const updated = curFields.filter((f: { name: string }) => f.name !== field.name)
@@ -228,6 +230,7 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(updated) }),
+                signal: pageLifecycle.signal,
               })
               row.remove()
               showToast("settings.field_removed")
