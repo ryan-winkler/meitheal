@@ -1,0 +1,119 @@
+---
+/**
+ * Home Assistant integration card sub-component.
+ * @domain integrations/ha
+ */
+---
+
+<div class="integration-card" id="integration-ha">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-ha-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">🏠</span>
+      <div class="integration-card__title-info">
+        <strong>Home Assistant</strong>
+        <span class="integration-card__desc">Connection and integration settings</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button
+        type="button"
+        class="info-btn"
+        data-explainer="ha"
+        aria-label="What is Home Assistant integration?"
+        onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-pending" id="ha-connection-badge">Checking…</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-ha-body" aria-hidden="true">
+    <!-- Connection Status Display -->
+    <div id="ha-connection-status" class="ha-status-row">
+      <div class="ha-status-row__left">
+        <div class="ha-status-indicator ha-status-indicator--checking" id="ha-indicator">
+          <span class="ha-status-indicator__dot"></span>
+        </div>
+        <div class="ha-status-row__info">
+          <span class="ha-status-row__mode" id="ha-mode-label">Detecting connection…</span>
+          <span class="ha-status-row__detail" id="ha-detail-label"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HA Info Panel — shown when connected -->
+    <div id="ha-info-panel" class="ha-info-panel" style="display: none;">
+      <div class="ha-info-grid">
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">Version</span>
+          <span class="ha-info-item__value" id="ha-info-version">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">Location</span>
+          <span class="ha-info-item__value" id="ha-info-location">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">Timezone</span>
+          <span class="ha-info-item__value" id="ha-info-timezone">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">Mode</span>
+          <span class="ha-info-item__value" id="ha-info-mode">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Connection -->
+    <div class="integration-card__config" style="margin-top: 8px;">
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-ghost" id="test-connection">
+          Test Connection
+        </button>
+      </div>
+      <div id="ha-status" class="ha-test-result"></div>
+    </div>
+
+    <!-- Advanced / Standalone Mode -->
+    <details class="ha-advanced-section" id="ha-advanced-section">
+      <summary class="ha-advanced-toggle">
+        <span>⚙ Advanced — Standalone Mode</span>
+        <small>Only needed if running outside Home Assistant</small>
+      </summary>
+      <form id="ha-form" class="ha-advanced-form">
+        <div class="form-group">
+          <label class="form-label" for="ha-url">HA URL</label>
+          <input
+            type="url"
+            class="form-input"
+            id="ha-url"
+            placeholder="http://homeassistant.local:8123"
+            pattern="https?://.*"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ha-token">
+            Long-Lived Access Token
+          </label>
+          <input
+            type="password"
+            class="form-input"
+            id="ha-token"
+            placeholder="••••••••"
+          />
+          <small style="color: var(--text-muted); font-size: 12px;">
+            Generate in HA → Profile → Long-Lived Access Tokens
+          </small>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="submit" class="btn btn-primary" id="save-ha">
+            💾 Save
+          </button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>

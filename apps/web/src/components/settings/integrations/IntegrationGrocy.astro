@@ -1,0 +1,118 @@
+---
+/**
+ * Grocy integration card sub-component.
+ * @domain integrations/grocy
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+---
+
+<div class="integration-card" id="integration-grocy">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-grocy-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">🛒</span>
+      <div class="integration-card__title-info">
+        <strong>Grocy</strong>
+        <span class="integration-card__desc">Chores, tasks &amp; shopping list sync</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button type="button" class="info-btn" data-explainer="grocy" aria-label="What is Grocy integration?" onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="grocy-status">Not configured</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-grocy-body" aria-hidden="true">
+    <!-- Grocy auto-detect callout -->
+    <div id="grocy-auto-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
+      <strong>✓ Grocy detected via HA</strong>
+      <div class="integration-callout__detail">
+        Grocy addon found — URL auto-populated from HA ingress. No additional setup needed.
+      </div>
+    </div>
+
+    <!-- Grocy test result callout -->
+    <div id="grocy-test-result" class="integration-callout" style="display: none;" aria-live="polite"></div>
+
+    <div class="integration-card__config">
+      <div class="form-group" id="grocy-url-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-url">Grocy URL</label>
+          <HelpTooltip
+            text="The URL of your Grocy instance. If running Grocy as a Home Assistant add-on, it's typically available at http://homeassistant.local:9192 or via the HA ingress proxy."
+            id="help-grocy-url"
+          />
+        </div>
+        <input type="url" class="form-input" id="grocy-url" placeholder="http://homeassistant.local:9192" />
+      </div>
+      <div class="form-group" id="grocy-key-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-key">API Key</label>
+          <HelpTooltip
+            text="Generate a Grocy API key in Grocy → Settings → API Keys → Add. This key allows Meitheal to read and write chores and tasks."
+            id="help-grocy-key"
+          />
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="password" class="form-input" id="grocy-key" placeholder="••••••••" style="flex: 1;" />
+          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title="Attempt to auto-generate a Grocy API key">⚡ Auto</button>
+        </div>
+      </div>
+      <!-- Custom config toggle for auto-detected installs -->
+      <button type="button" class="btn btn-ghost" id="grocy-custom-toggle" style="display: none; font-size: 12px; padding: 4px 8px; align-self: flex-start;">
+        ⚙ Custom configuration
+      </button>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-sync-mode">Sync Mode</label>
+          <HelpTooltip
+            text="Controls how data flows between Grocy and Meitheal. Import pulls chores/tasks into Meitheal, Export pushes completions to Grocy, Bidirectional keeps both in sync."
+            id="help-grocy-sync"
+          />
+        </div>
+        <select class="form-select" id="grocy-sync-mode">
+          <option value="import">Import Grocy → Meitheal</option>
+          <option value="export">Export Meitheal → Grocy</option>
+          <option value="bidirectional" selected>Bidirectional sync</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-sync-interval">Sync Interval</label>
+          <HelpTooltip
+            text="How often Meitheal polls Grocy for changes. More frequent = faster sync but more API calls."
+            id="help-grocy-interval"
+          />
+        </div>
+        <select class="form-select" id="grocy-sync-interval">
+          <option value="60000">Every 1 minute</option>
+          <option value="300000">Every 5 minutes</option>
+          <option value="900000" selected>Every 15 minutes</option>
+          <option value="1800000">Every 30 minutes</option>
+          <option value="3600000">Every hour</option>
+          <option value="0">Manual only</option>
+        </select>
+      </div>
+
+      <!-- Last synced info -->
+      <div class="form-group" id="grocy-sync-info" style="display: none;">
+        <div class="integration-callout integration-callout--info" style="margin: 0;">
+          <span id="grocy-last-synced">Never synced</span>
+          <span id="grocy-item-count" style="margin-left: auto; font-size: 12px; opacity: 0.7;"></span>
+        </div>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-outline" id="test-grocy">Test Connection</button>
+        <button type="button" class="btn btn-outline" id="sync-grocy-now" style="display: none;">Sync Now</button>
+        <a href="#" class="btn btn-ghost" id="open-grocy-link" target="_blank" rel="noopener" style="display: none; font-size: 12px;" title="Open Grocy in a new tab">↗ Open Grocy</a>
+        <button type="button" class="btn btn-primary" id="save-grocy">Save Grocy Settings</button>
+      </div>
+    </div>
+  </div>
+</div>

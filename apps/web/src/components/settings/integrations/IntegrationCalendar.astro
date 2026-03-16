@@ -1,0 +1,180 @@
+---
+/**
+ * Calendar Sync integration card sub-component.
+ * @domain integrations/calendar
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+---
+
+<div class="integration-card" id="integration-calendar">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-calendar-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">📅</span>
+      <div class="integration-card__title-info">
+        <strong>Calendar Sync</strong>
+        <span class="integration-card__desc">Bidirectional sync with HA calendars</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button
+        type="button"
+        class="info-btn"
+        data-explainer="calendar"
+        aria-label="What is Calendar Sync?"
+        onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-pending" id="cal-status">Checking…</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-calendar-body" aria-hidden="true">
+    <!-- HA auto-sync info callout -->
+    <div id="cal-auto-info" class="integration-callout integration-callout--success" style="display: none;">
+      <strong>✓ Automatic sync active</strong>
+      <span id="cal-auto-entity" class="mono-text"></span>
+      <div class="integration-callout__detail">
+        Running as an HA addon — Meitheal automatically detects your
+        calendar entities and syncs events bidirectionally (past 7 days →
+        next 30 days).
+      </div>
+    </div>
+
+    <!-- Detected HA calendar entities — interactive toggle cards -->
+    <div id="cal-entities-list" style="display: none; margin-bottom: 12px;">
+      <div class="cal-entities-header">
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">Your Calendars</label>
+          <span id="cal-count-badge" class="cal-count-badge">0 of 0 enabled</span>
+        </div>
+        <div class="cal-bulk-actions">
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title="Enable all calendars">Enable All</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title="Disable all calendars">Disable All</button>
+        </div>
+      </div>
+      <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 8px;">
+        Toggle each calendar on or off. Only enabled calendars sync events with Meitheal.
+      </p>
+      <div id="cal-entities-container" class="cal-toggle-list"></div>
+      <div id="cal-no-entities" class="cal-empty-state" style="display: none;">
+        <span class="cal-empty-icon">📭</span>
+        <span>No calendars detected. Make sure your Home Assistant integration is connected and has calendar entities.</span>
+      </div>
+    </div>
+
+    <div class="integration-card__config">
+      <!-- Manual entity input for advanced users -->
+      <details class="caldav-section" style="margin-bottom: 10px;">
+        <summary class="caldav-toggle">
+          <span>⌨ Manual Entity ID</span>
+          <small>For calendars not auto-detected</small>
+        </summary>
+        <div class="form-group" style="margin-top: 10px;">
+          <div class="form-label-row">
+            <label class="form-label" for="cal-entity">Calendar Entity ID</label>
+            <HelpTooltip
+              text="Manually enter a calendar entity ID if it's not showing in the auto-detected list above. This is rarely needed."
+              id="help-cal-entity"
+            />
+          </div>
+          <input type="text" class="form-input" id="cal-entity-manual" placeholder="calendar.my_calendar" />
+          <button type="button" class="btn btn-ghost" id="cal-add-manual" style="margin-top: 6px; font-size: 12px;">
+            + Add Calendar
+          </button>
+        </div>
+      </details>
+
+      <!-- External CalDAV — collapsible -->
+      <details class="caldav-section" id="caldav-details">
+        <summary class="caldav-toggle">
+          <span>📡 External Calendar (CalDAV)</span>
+          <small>For Nextcloud, Radicale, Baikal — not needed for HA calendars</small>
+        </summary>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <div class="form-label-row">
+            <label class="form-label" for="caldav-url">CalDAV Provider URL</label>
+            <HelpTooltip
+              text="URL for your CalDAV server. Meitheal will discover calendars automatically."
+              id="help-caldav-url"
+            />
+          </div>
+          <input type="url" class="form-input" id="caldav-url" placeholder="https://your-server.com/dav/calendars/" />
+          <small class="form-hint" style="margin-top: 4px;">
+            <strong>Nextcloud:</strong> <code>https://your-nc.com/remote.php/dav/</code><br />
+            <strong>Radicale:</strong> <code>http://your-radicale:5232/user/</code>
+          </small>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label" for="caldav-username">Username</label>
+          <input type="text" class="form-input" id="caldav-username" autocomplete="username" placeholder="Required for private calendars" />
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label" for="caldav-password">Password or App Password</label>
+          <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder="Saved securely (AES-256-GCM encrypted)" />
+        </div>
+
+        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+          <button type="button" class="btn btn-secondary" id="caldav-test-btn" style="min-width: 120px;">
+            Test Connection
+          </button>
+          <span id="caldav-test-result" style="font-size: 13px;"></span>
+        </div>
+
+        <div id="caldav-active-indicator" class="integration-callout integration-callout--success" style="display: none; margin-top: 12px;">
+          <strong>✓ CalDAV Configured</strong>
+          <div class="integration-callout__detail">
+            Ready to sync alongside Home Assistant calendars.
+          </div>
+        </div>
+      </details>
+
+      <!-- Sync Direction (global default) -->
+      <div class="form-group" style="margin-top: 10px;">
+        <label class="form-label" for="cal-sync-direction">Default Sync Direction</label>
+        <select id="cal-sync-direction" class="form-select">
+          <option value="bidirectional" selected>↔ Bidirectional — sync both ways</option>
+          <option value="import">↓ Import only — HA → Meitheal</option>
+          <option value="export">↑ Export only — Meitheal → HA</option>
+        </select>
+        <small class="form-hint">Default for new calendars. Override per calendar using the direction selector on each card.</small>
+      </div>
+
+      <!-- Write-back toggle -->
+      <div class="form-group" style="margin-top: 10px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="cal-write-back" />
+          <span>Write back — sync completed tasks to calendar</span>
+        </label>
+        <small class="form-hint">When enabled, task completions update the corresponding calendar event. Only applies to Export and Bidirectional modes.</small>
+      </div>
+
+      <!-- Sync interval selector -->
+      <div class="form-group" style="margin-top: 10px;">
+        <label class="form-label" for="cal-sync-interval">Sync Interval</label>
+        <select id="cal-sync-interval" class="form-select">
+          <option value="60000">Every 1 minute</option>
+          <option value="300000" selected>Every 5 minutes (default)</option>
+          <option value="900000">Every 15 minutes</option>
+          <option value="1800000">Every 30 minutes</option>
+          <option value="3600000">Every 1 hour</option>
+          <option value="0">Manual only</option>
+        </select>
+        <small class="form-hint">How often Meitheal auto-syncs events from enabled calendars. "Manual only" syncs only when you click Sync Now.</small>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-cal">Save Calendar Settings</button>
+        <button type="button" class="btn btn-ghost" id="test-cal">Sync Now</button>
+        <span id="cal-sync-result" class="integration-card__result"></span>
+        <span id="cal-last-synced" class="integration-card__last-synced" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
+      </div>
+    </div>
+  </div>
+</div>

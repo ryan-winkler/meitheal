@@ -1,0 +1,74 @@
+---
+/**
+ * Webhooks integration card sub-component.
+ * @domain integrations/webhooks
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+---
+
+<div class="integration-card" id="integration-webhooks">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-webhooks-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">🔔</span>
+      <div class="integration-card__title-info">
+        <strong>Webhooks</strong>
+        <span class="integration-card__desc">Generic outgoing event webhooks</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button type="button" class="info-btn" data-explainer="webhooks" aria-label="What are Webhooks?" onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="webhook-status">Not configured</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-webhooks-body" aria-hidden="true">
+    <!-- Differentiation callout -->
+    <div class="integration-callout integration-callout--info" style="margin-bottom: 12px;">
+      <strong>📌 Webhooks vs Agents & AI</strong>
+      <div class="integration-callout__detail">
+        Webhooks send task events to external services and automations
+        (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A,
+        MCP, and WebMCP, see the <a href="#automation-ai-settings" class="callout-link" data-settings-section-link>Agents &amp; AI</a> tab.
+      </div>
+    </div>
+    <div class="integration-card__config">
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="webhook-endpoint">Endpoint URL</label>
+          <HelpTooltip
+            text="The URL where Meitheal will POST task event payloads as JSON. Events are sent for task creation, updates, completion, and deletion. Ensure the endpoint accepts POST requests with Content-Type: application/json."
+            id="help-webhook-endpoint"
+          />
+        </div>
+        <input type="url" class="form-input" id="webhook-endpoint" placeholder="https://your-service.com/webhook" />
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="webhook-secret">Signing Secret (optional)</label>
+          <HelpTooltip
+            text="An HMAC-SHA256 secret used to sign webhook payloads. When set, Meitheal adds an X-Meitheal-Signature header to each request. Verify this header on your receiving end to ensure payloads are authentic and untampered."
+            id="help-webhook-secret"
+          />
+        </div>
+        <input type="password" class="form-input" id="webhook-secret" placeholder="••••••••" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="webhook-format">Payload Format</label>
+        <select class="form-select" id="webhook-format">
+          <option value="json" selected>JSON</option>
+          <option value="form">Form-encoded</option>
+        </select>
+      </div>
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-webhook">Save Webhook</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook">Send Test</button>
+      </div>
+    </div>
+  </div>
+</div>

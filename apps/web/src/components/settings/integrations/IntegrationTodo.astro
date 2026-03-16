@@ -1,0 +1,130 @@
+---
+/**
+ * Todo Sync integration card sub-component.
+ * @domain integrations/todo
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+---
+
+<div class="integration-card" id="integration-todo">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-todo-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">✅</span>
+      <div class="integration-card__title-info">
+        <strong>Todo Sync</strong>
+        <span class="integration-card__desc">Bridge HA todo lists with Meitheal</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button type="button" class="info-btn" data-explainer="todo" aria-label="What is Todo Sync?" onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-pending" id="todo-status">Disabled</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-todo-body" aria-hidden="true">
+    <!-- Bridge purpose explainer -->
+    <div class="integration-callout integration-callout--info" style="margin-bottom: 12px;">
+      <strong>🔗 HA Bridge</strong>
+      <div class="integration-callout__detail">
+        Bridges Home Assistant's built-in todo lists with Meitheal. Enable
+        this so your HA dashboards and automations that use <code>todo.*</code>
+        entities stay in sync with tasks managed here.
+      </div>
+    </div>
+    <!-- HA auto-detect callout -->
+    <div id="todo-auto-info" class="integration-callout integration-callout--success" style="display: none;">
+      <strong>✓ Todo list(s) detected</strong>
+      <div id="todo-auto-entities" class="integration-callout__detail"></div>
+    </div>
+
+    <!-- Detected HA todo entities — interactive toggle cards -->
+    <div id="todo-entities-list" style="display: none; margin-bottom: 12px;">
+      <div class="cal-entities-header">
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">Your Todo Lists</label>
+          <span id="todo-count-badge" class="cal-count-badge">0 of 0 enabled</span>
+        </div>
+        <div class="cal-bulk-actions">
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-enable-all" title="Enable all todo lists">Enable All</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-disable-all" title="Disable all todo lists">Disable All</button>
+        </div>
+      </div>
+      <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 8px;">
+        Toggle each todo list on or off. Only enabled lists sync tasks with Meitheal.
+      </p>
+      <div id="todo-entities-container" class="cal-toggle-list"></div>
+      <div id="todo-no-entities" class="cal-empty-state" style="display: none;">
+        <span class="cal-empty-icon">📭</span>
+        <span>No todo lists detected. Make sure Home Assistant has todo entities (e.g. Shopping List).</span>
+      </div>
+    </div>
+
+    <!-- Manual entity input for advanced users -->
+    <details class="caldav-section" style="margin-bottom: 10px;">
+      <summary class="caldav-toggle">
+        <span>⌨ Manual Entity ID</span>
+        <small>For todo lists not auto-detected</small>
+      </summary>
+      <div class="form-group" style="margin-top: 10px;">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-entity-manual">Todo Entity ID</label>
+          <HelpTooltip
+            text="Manually enter a todo entity ID if it's not showing in the auto-detected list above."
+            id="help-todo-entity-manual"
+          />
+        </div>
+        <input type="text" class="form-input" id="todo-entity-manual" placeholder="todo.shopping_list" />
+        <button type="button" class="btn btn-ghost" id="todo-add-manual" style="margin-top: 6px; font-size: 12px;">
+          + Add Todo List
+        </button>
+      </div>
+    </details>
+
+    <div class="integration-card__config">
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-enabled">Enable Todo Sync</label>
+          <HelpTooltip
+            text="When enabled, Meitheal syncs tasks with your HA todo lists in real-time via WebSocket. Disabled by default to save power — enable only for lists you actively use."
+            id="help-todo-enabled"
+          />
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label class="toggle-label">
+            <input type="checkbox" id="todo-enabled" aria-label="Enable or disable todo list sync" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span id="todo-enabled-label" style="font-size: 13px; color: var(--text-secondary);">Off — sync disabled to save power</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-sync-direction">Sync Direction</label>
+          <HelpTooltip
+            text="Bidirectional keeps both Meitheal and HA in sync — changes in either place propagate. Inbound-only imports from HA without pushing back, which saves power and avoids write conflicts."
+            id="help-todo-direction"
+          />
+        </div>
+        <select class="form-select" id="todo-sync-direction">
+          <option value="inbound">Import HA → Meitheal</option>
+          <option value="outbound">Export Meitheal → HA</option>
+          <option value="bidirectional" selected>Bidirectional sync</option>
+        </select>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-todo">Save Todo Settings</button>
+        <button type="button" class="btn btn-ghost" id="sync-todo">Sync Now</button>
+        <span id="todo-sync-result" class="integration-card__result"></span>
+        <span id="todo-last-synced" class="integration-card__last-synced" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
+      </div>
+    </div>
+  </div>
+</div>

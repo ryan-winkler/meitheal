@@ -1,0 +1,244 @@
+---
+/**
+ * n8n / Node-RED integration card sub-component.
+ * @domain integrations/n8n
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+---
+
+<div class="integration-card" id="integration-n8n">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls="integration-n8n-body"
+  >
+    <div class="integration-card__title-row">
+      <span class="integration-card__icon">⚙</span>
+      <div class="integration-card__title-info">
+        <strong>n8n / Node-RED</strong>
+        <span class="integration-card__desc">Automation workflow triggers</span>
+      </div>
+    </div>
+    <div class="integration-card__header-right">
+      <button type="button" class="info-btn" data-explainer="n8n" aria-label="What is n8n / Node-RED integration?" onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="n8n-status">Not configured</span>
+      <span class="integration-card__chevron">▸</span>
+    </div>
+  </button>
+
+  <div class="integration-card__body" id="integration-n8n-body" aria-hidden="true">
+    <!-- HA addon auto-detect callout -->
+    <div id="n8n-auto-info" class="integration-callout integration-callout--success" style="display: none;">
+      <strong>✓ Automation addon detected</strong>
+      <div class="integration-callout__detail" id="n8n-auto-detail">
+        Events are sent/received automatically via WebSocket — no additional webhook configuration needed.
+      </div>
+    </div>
+
+    <!-- Mode toggle: HA Addon vs Standalone -->
+    <div class="n8n-mode-toggle" style="margin-bottom: 12px;">
+      <label class="form-label" style="margin-bottom: 2px;">Integration Mode</label>
+      <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+        Choose how Meitheal communicates with your automation engine.
+      </div>
+      <div class="mode-tabs">
+        <button type="button" class="mode-tab mode-tab--active" id="n8n-mode-auto" data-mode="auto">
+          🏠 HA Addon (auto)
+        </button>
+        <button type="button" class="mode-tab" id="n8n-mode-standalone" data-mode="standalone">
+          🌐 Standalone
+        </button>
+      </div>
+    </div>
+
+    <!-- HA Addon mode content -->
+    <div id="n8n-auto-content" class="integration-card__config" aria-live="polite">
+      <div class="integration-callout integration-callout--info">
+        <strong>🔗 Automatic via WebSocket</strong>
+        <div class="integration-callout__detail">
+          Node-RED and n8n addons communicate with Meitheal automatically through the HA WebSocket. Select which events to broadcast below.
+        </div>
+      </div>
+      <div id="n8n-auto-detect-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
+        <strong>✓ Node-RED detected via HA</strong>
+        <div class="integration-callout__detail">
+          Node-RED addon found and connected automatically.
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Trigger Events</label>
+        <div class="event-checkbox-grid">
+          <label class="event-checkbox" title="Fires when a new task is created">
+            <input type="checkbox" class="n8n-event" value="task.created" checked />
+            <span>Created <small class="text-muted">— new task added</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when task fields are modified">
+            <input type="checkbox" class="n8n-event" value="task.updated" checked />
+            <span>Updated <small class="text-muted">— fields changed</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task is marked done">
+            <input type="checkbox" class="n8n-event" value="task.completed" checked />
+            <span>Completed <small class="text-muted">— marked done</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task is permanently removed">
+            <input type="checkbox" class="n8n-event" value="task.deleted" />
+            <span>Deleted <small class="text-muted">— permanently removed</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task passes its due date">
+            <input type="checkbox" class="n8n-event" value="task.overdue" checked />
+            <span>Overdue <small class="text-muted">— past due date</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when board configuration changes">
+            <input type="checkbox" class="n8n-event" value="board.updated" />
+            <span>Board Updated <small class="text-muted">— columns/config changed</small></span>
+          </label>
+        </div>
+        <div class="event-count-summary" id="n8n-event-count-auto">4 of 6 events enabled</div>
+      </div>
+      <div class="integration-card__actions" style="gap: 8px;">
+        <button type="button" class="btn btn-primary" id="save-n8n">Save Event Settings</button>
+        <button type="button" class="btn btn-ghost" id="test-event-bus">🧪 Test Event Bus</button>
+      </div>
+      <div id="test-event-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
+        <span id="test-event-message"></span>
+      </div>
+
+      <!-- HA Connection Status (auto mode) -->
+      <div class="integration-callout integration-callout--info" style="margin-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
+          <div>
+            <strong>HA Event Bus</strong>
+            <div class="integration-callout__detail" id="n8n-ha-bus-status" style="margin-top: 4px;">Checking...</div>
+          </div>
+          <div style="text-align: right;">
+            <strong>HA Version</strong>
+            <div class="integration-callout__detail" id="n8n-ha-version" style="margin-top: 4px;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Node-RED Flow Deployment ═══ -->
+      <hr style="border: none; border-top: 1px solid rgba(107, 114, 128, 0.2); margin: 20px 0 16px;" />
+      <div class="integration-callout integration-callout--info" style="margin-top: 0;">
+        <strong>📦 Node-RED Flows</strong>
+        <div class="integration-callout__detail">
+          Deploy pre-built automation flows for all Meitheal events directly to Node-RED.
+        </div>
+
+        <!-- Deployment status -->
+        <div id="nodered-deploy-status" style="margin: 8px 0; display: none;">
+          <span id="nodered-deploy-badge" class="badge badge-disabled">Checking...</span>
+          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="display: none; margin-left: 8px; font-size: 12px;">🔗 Open in Node-RED</a>
+        </div>
+
+        <!-- Deploy result message -->
+        <div id="nodered-deploy-result" class="integration-callout integration-callout--success" style="display: none; margin-top: 8px;" aria-live="polite">
+          <span id="nodered-deploy-message"></span>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary" id="deploy-nodered-flows">🚀 Deploy to Node-RED</button>
+          <button type="button" class="btn btn-ghost" id="copy-nodered-flows">📋 Copy Flow JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone mode content -->
+    <div id="n8n-standalone-content" class="integration-card__config" style="display: none;">
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="n8n-webhook-url">Webhook URL</label>
+          <HelpTooltip
+            text="The webhook URL from your n8n or Node-RED flow. Meitheal will POST a JSON payload to this URL whenever selected task events occur."
+            id="help-n8n-url"
+          />
+        </div>
+        <input type="url" class="form-input" id="n8n-webhook-url" placeholder="https://n8n.example.com/webhook/meitheal" />
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="n8n-api-key">API Key (optional)</label>
+          <HelpTooltip
+            text="If your n8n/Node-RED instance requires authentication, enter the API key here. This is used in the Authorization header for webhook requests."
+            id="help-n8n-apikey"
+          />
+        </div>
+        <input type="password" class="form-input" id="n8n-api-key" placeholder="••••••••" />
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="n8n-secret">Signing Secret (optional)</label>
+          <HelpTooltip
+            text="HMAC-SHA256 secret for signing webhook payloads. Verify the X-Meitheal-Signature header on your receiving end."
+            id="help-n8n-secret"
+          />
+        </div>
+        <input type="password" class="form-input" id="n8n-secret" placeholder="••••••••" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Trigger Events</label>
+        <div class="event-checkbox-grid">
+          <label class="event-checkbox" title="Fires when a new task is created">
+            <input type="checkbox" class="n8n-event-standalone" value="task.created" checked />
+            <span>Created <small class="text-muted">— new task added</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when task fields are modified">
+            <input type="checkbox" class="n8n-event-standalone" value="task.updated" checked />
+            <span>Updated <small class="text-muted">— fields changed</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task is marked done">
+            <input type="checkbox" class="n8n-event-standalone" value="task.completed" checked />
+            <span>Completed <small class="text-muted">— marked done</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task is permanently removed">
+            <input type="checkbox" class="n8n-event-standalone" value="task.deleted" />
+            <span>Deleted <small class="text-muted">— permanently removed</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when a task passes its due date">
+            <input type="checkbox" class="n8n-event-standalone" value="task.overdue" checked />
+            <span>Overdue <small class="text-muted">— past due date</small></span>
+          </label>
+          <label class="event-checkbox" title="Fires when board configuration changes">
+            <input type="checkbox" class="n8n-event-standalone" value="board.updated" />
+            <span>Board Updated <small class="text-muted">— columns/config changed</small></span>
+          </label>
+        </div>
+        <div class="event-count-summary" id="n8n-event-count-standalone">4 of 6 events enabled</div>
+      </div>
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-n8n-standalone">Save Standalone Settings</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook-standalone">🔌 Test Webhook</button>
+        <button type="button" class="btn btn-ghost" id="refresh-n8n-standalone">↻ Refresh</button>
+      </div>
+      <div id="test-webhook-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
+        <span id="test-webhook-message"></span>
+      </div>
+
+      <!-- n8n API Health & Last Delivery -->
+      <div class="integration-callout integration-callout--info" style="margin-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
+          <div>
+            <strong>Status</strong>
+            <div class="integration-callout__detail" id="n8n-health-detail" style="margin-top: 4px;">Waiting for configuration...</div>
+          </div>
+          <div style="text-align: right;">
+            <strong>Last Delivery</strong>
+            <div class="integration-callout__detail" id="n8n-last-delivery" style="margin-top: 4px;">Never sent</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workflow Discovery -->
+      <div style="margin-top: 16px;">
+        <label class="form-label" style="margin-bottom: 8px;">Workflow Discovery</label>
+        <div id="n8n-workflows-list" class="cal-toggle-list" style="max-height: 240px; overflow-y: auto;">
+          <div class="cal-empty-state">
+            <span class="cal-empty-icon">📭</span>
+            <span>Configure and save URL/API Key to discover workflows.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
