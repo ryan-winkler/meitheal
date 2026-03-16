@@ -35,6 +35,8 @@ let noDueTasks: TaskViewItem[] = []
 let suggestedTasks: TaskViewItem[] = []
 let completedTodayCount = 0
 let totalOpenCount = 0
+let currentStreak = 0
+let todayXP = 0
 
 try {
   const { tasks } = await getTasksForView()
@@ -97,6 +99,17 @@ try {
   noDueTasks = noDueTasks.filter(t => !suggestedIds.has(t.id))
 
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + noDueTasks.length
+
+  // G36: Fetch gamification stats for streak/XP display
+  try {
+    const { getStats, getWeeklyData } = await import("@domains/gamification")
+    const stats = await getStats()
+    currentStreak = stats.currentStreak ?? 0
+    // Get today's points from weekly data
+    const weekly = await getWeeklyData()
+    const todayRecord = weekly[weekly.length - 1]
+    todayXP = todayRecord?.points ?? 0
+  } catch { /* gamification may not be initialized */ }
 } catch {
   /* DB not available */
 }
@@ -121,7 +134,7 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     </button>
   </div>
 
-  <!-- Daily Stats -->
+  <!-- Daily Stats + Gamification (G36) -->
   <div class="daily-stats-container" id="daily-stats-container">
     <div class="daily-stats" id="daily-stats">
       <a href="#section-today" class="stat-item" style="text-decoration: none; color: inherit;">
@@ -140,6 +153,18 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
         <span class="stat-value">{remainingCount}</span>
         <span class="stat-label">Remaining</span>
       </div>
+      {currentStreak > 0 && (
+        <div class="stat-item stat-streak">
+          <span class="stat-value">🔥{currentStreak}</span>
+          <span class="stat-label">Streak</span>
+        </div>
+      )}
+      {todayXP > 0 && (
+        <div class="stat-item stat-xp">
+          <span class="stat-value" style="color: var(--accent);">+{todayXP}</span>
+          <span class="stat-label">XP Today</span>
+        </div>
+      )}
     </div>
     <div class="daily-stats-progress-bar">
       <div
@@ -508,6 +533,33 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
   }
   :global(.snooze-option:hover) {
     background: var(--bg-hover);
+  }
+
+  /* ── G30: Batch mode ────────────────────────────────── */
+  :global(.batch-toggle-btn.active) {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  :global(.batch-mode .tli) {
+    padding-left: 8px;
+  }
+
+  /* ── G31: Drag reorder ──────────────────────────────── */
+  :global(.tli[draggable="true"]) {
+    cursor: grab;
+  }
+  :global(.tli--dragging) {
+    opacity: 0.4;
+    cursor: grabbing;
+  }
+  :global(.tli--drag-over) {
+    border-top: 2px solid var(--accent);
+  }
+
+  /* ── G36: Gamification stat items ───────────────────── */
+  .stat-streak .stat-value,
+  .stat-xp .stat-value {
+    font-size: 16px;
   }
 </style>
 

@@ -1,0 +1,105 @@
+/**
+ * GET /api/today-summary — Today summary for HA dashboard widget
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Returns a JSON summary of today's task counts, streak, and XP
+ * designed for consumption by a Home Assistant custom dashboard card
+ * or REST sensor.
+ *
+ * @kcs This endpoint enables HA integration via REST sensor:
+ * ```yaml
+ * sensor:
+ *   - platform: rest
+ *     name: Meitheal Today
+ *     resource: http://localhost:3000/api/today-summary
+ *     json_attributes:
+ *       - dueToday
+ *       - completedToday
+ *       - carriedForward
+ *       - remaining
+ *       - streak
+ *       - todayXP
+ *     value_template: "{{ value_json.remaining }}"
+ * ```
+ */
+import type { APIRoute } from "astro"
+import { getTasksForView } from "../../lib/task-queries"
+import { apiLogger, logApiError } from "../../lib/api-logger"
+
+export const GET: APIRoute = async () => {
+  try {
+    const { tasks } = await getTasksForView()
+
+    const todayStr = new Date().toISOString().split("T")[0] ?? ""
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    let dueToday = 0
+    let completedToday = 0
+    let carriedForward = 0
+
+    for (const task of tasks) {
+      if (task.is_done && task.updated_at?.startsWith(todayStr)) {
+        completedToday++
+        continue
+      }
+      if (task.is_done) continue
+
+      if (task.due_date === todayStr) {
+        dueToday++
+      } else if (task.due_date) {
+        const d = new Date(task.due_date)
+        d.setHours(0, 0, 0, 0)
+        if (d < today) carriedForward++
+      }
+    }
+
+    const remaining = dueToday + carriedForward
+
+    // Gamification stats
+    let streak = 0
+    let todayXP = 0
+    try {
+      const { getStats, getWeeklyData } = await import("@domains/gamification")
+      const stats = await getStats()
+      streak = stats.currentStreak ?? 0
+      const weekly = await getWeeklyData()
+      const todayRecord = weekly[weekly.length - 1]
+      todayXP = todayRecord?.points ?? 0
+    } catch { /* gamification may not be available */ }
+
+    const summary = {
+      dueToday,
+      completedToday,
+      carriedForward,
+      remaining,
+      streak,
+      todayXP,
+      timestamp: new Date().toISOString(),
+    }
+
+    apiLogger.log("info", {
+      event: "today-summary.fetched",
+      domain: "tasks",
+      component: "today-summary",
+      request_id: "ha-widget",
+      message: `Today: ${dueToday} due, ${completedToday} done, ${carriedForward} carried, streak=${streak}`,
+    })
+
+    return new Response(JSON.stringify(summary), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-cache, max-age=0",
+      },
+    })
+  } catch (err: unknown) {
+    logApiError("GET", "/api/today-summary", err)
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    })
+  }
+}

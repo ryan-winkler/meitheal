@@ -45,6 +45,11 @@ interface TodayControllerOptions {
 
 let focusedIndex = -1
 const SECTION_COLLAPSE_KEY = "meitheal-today-sections"
+let batchMode = false
+const batchSelected = new Set<string>()
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const EVENING_REVIEW_KEY = "meitheal-evening-review-dismissed"
+const WIP_LIMIT = 6
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +62,12 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupKeyboardNav(container)
   setupSectionCollapse(container)
   restoreFilterState()
+  setupDragReorder(container)     // G31
+  setupWipLimit(container)        // G32
+  setupAutoRefresh()              // G33
+  setupEveningReview(container)   // G34
+  renderEffortIndicators(container) // G35
+  setupBatchUI(container)         // G30
 
   // Hash deep-link: #task-{id} scroll into view
   const hash = window.location.hash
@@ -712,4 +723,421 @@ function saveSectionState() {
   } catch {
     /* ignore */
   }
+}
+
+// ── G30: Batch Actions (Multi-Select) ─────────────────────────────────────
+
+function setupBatchUI(container: HTMLElement) {
+  // Add batch mode toggle button next to filter bar
+  const filterBar = container.querySelector("#today-filter-bar")
+  if (!filterBar) return
+
+  const batchBtn = document.createElement("button")
+  batchBtn.type = "button"
+  batchBtn.className = "btn btn-sm batch-toggle-btn"
+  batchBtn.id = "batch-mode-toggle"
+  batchBtn.title = "Toggle multi-select mode"
+  batchBtn.textContent = "☑"
+  batchBtn.style.cssText = "flex-shrink: 0; font-size: 14px;"
+  filterBar.appendChild(batchBtn)
+
+  batchBtn.addEventListener("click", () => {
+    batchMode = !batchMode
+    batchBtn.classList.toggle("active", batchMode)
+    container.classList.toggle("batch-mode", batchMode)
+    batchSelected.clear()
+    updateBatchBar(container)
+    // Toggle batch checkboxes visibility
+    container.querySelectorAll<HTMLElement>(".tli__batch-cb").forEach(cb => {
+      cb.style.display = batchMode ? "inline-block" : "none"
+    })
+  })
+
+  // Listen for batch checkbox changes (dynamically added)
+  container.addEventListener("change", (e) => {
+    const target = e.target as HTMLInputElement
+    if (!target.classList.contains("tli__batch-cb")) return
+    const id = target.dataset.id
+    if (!id) return
+    if (target.checked) {
+      batchSelected.add(id)
+    } else {
+      batchSelected.delete(id)
+    }
+    updateBatchBar(container)
+  })
+
+  // Inject batch checkboxes into existing task items
+  container.querySelectorAll<HTMLElement>(".tli").forEach(el => {
+    const id = el.dataset.id
+    if (!id) return
+    const cb = document.createElement("input")
+    cb.type = "checkbox"
+    cb.className = "tli__batch-cb"
+    cb.dataset.id = id
+    cb.style.cssText = "display: none; margin-right: 6px; accent-color: var(--accent);"
+    cb.title = "Select for batch action"
+    el.prepend(cb)
+  })
+}
+
+function updateBatchBar(container: HTMLElement) {
+  let bar = container.querySelector("#batch-action-bar") as HTMLElement | null
+
+  if (!batchMode || batchSelected.size === 0) {
+    bar?.remove()
+    return
+  }
+
+  if (!bar) {
+    bar = document.createElement("div")
+    bar.id = "batch-action-bar"
+    bar.className = "batch-action-bar"
+    bar.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 100; background: var(--bg-card, #1e293b); border: 1px solid var(--border);
+      border-radius: var(--radius-md, 12px); padding: 10px 16px; display: flex;
+      gap: 10px; align-items: center; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      backdrop-filter: blur(12px);
+    `
+    container.appendChild(bar)
+  }
+
+  bar.innerHTML = `
+    <span style="font-size: 13px; color: var(--text-muted); white-space: nowrap;">${batchSelected.size} selected</span>
+    <button type="button" class="btn btn-sm batch-complete-btn" title="Complete selected">✓ Complete</button>
+    <button type="button" class="btn btn-sm batch-snooze-btn" title="Snooze selected +1 day">⏰ Snooze</button>
+    <button type="button" class="btn btn-sm batch-delete-btn" style="color: var(--danger);" title="Delete selected">🗑 Delete</button>
+    <button type="button" class="btn btn-sm batch-deselect-btn" title="Deselect all">✕</button>
+  `
+
+  bar.querySelector(".batch-complete-btn")?.addEventListener("click", async () => {
+    const ids = Array.from(batchSelected)
+    try {
+      await Promise.all(ids.map(id => taskApi.updateTask(id, { status: "complete" })))
+      showToast("common.task_completed")
+      ids.forEach(id => onTaskCompleted())
+      setTimeout(() => window.location.reload(), 500)
+    } catch { showToast("common.failed", "error") }
+  })
+
+  bar.querySelector(".batch-snooze-btn")?.addEventListener("click", async () => {
+    const ids = Array.from(batchSelected)
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const dateStr = tomorrow.toISOString().split("T")[0]!
+    try {
+      await Promise.all(ids.map(id => taskApi.updateTask(id, { due_date: dateStr })))
+      showToast("common.task_snoozed")
+      setTimeout(() => window.location.reload(), 500)
+    } catch { showToast("common.failed", "error") }
+  })
+
+  bar.querySelector(".batch-delete-btn")?.addEventListener("click", async () => {
+    const ids = Array.from(batchSelected)
+    const ok = await confirmDialog({
+      title: `Delete ${ids.length} tasks?`,
+      message: "This action cannot be undone.",
+      variant: "danger",
+      confirmText: "Delete All",
+    })
+    if (!ok) return
+    try {
+      await Promise.all(ids.map(id => taskApi.deleteTask(id)))
+      showToast("common.task_deleted")
+      setTimeout(() => window.location.reload(), 500)
+    } catch { showToast("common.failed", "error") }
+  })
+
+  bar.querySelector(".batch-deselect-btn")?.addEventListener("click", () => {
+    batchSelected.clear()
+    container.querySelectorAll<HTMLInputElement>(".tli__batch-cb").forEach(cb => {
+      cb.checked = false
+    })
+    updateBatchBar(container)
+  })
+}
+
+// ── G31: Drag to Reorder ──────────────────────────────────────────────────
+
+function setupDragReorder(container: HTMLElement) {
+  let dragSource: HTMLElement | null = null
+
+  container.querySelectorAll<HTMLElement>(".today-section__list").forEach(list => {
+    list.querySelectorAll<HTMLElement>(".tli").forEach(item => {
+      item.setAttribute("draggable", "true")
+
+      item.addEventListener("dragstart", (e) => {
+        dragSource = item
+        item.classList.add("tli--dragging")
+        e.dataTransfer?.setData("text/plain", item.dataset.id ?? "")
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"
+      })
+
+      item.addEventListener("dragend", () => {
+        item.classList.remove("tli--dragging")
+        dragSource = null
+        // Remove all drop indicators
+        container.querySelectorAll(".tli--drag-over").forEach(el =>
+          el.classList.remove("tli--drag-over")
+        )
+      })
+
+      item.addEventListener("dragover", (e) => {
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move"
+        item.classList.add("tli--drag-over")
+      })
+
+      item.addEventListener("dragleave", () => {
+        item.classList.remove("tli--drag-over")
+      })
+
+      item.addEventListener("drop", async (e) => {
+        e.preventDefault()
+        item.classList.remove("tli--drag-over")
+        if (!dragSource || dragSource === item) return
+
+        // Only allow reorder within same section list
+        const sourceList = dragSource.closest(".today-section__list")
+        const targetList = item.closest(".today-section__list")
+        if (sourceList !== targetList) return
+
+        // Move DOM element
+        const rect = item.getBoundingClientRect()
+        const midY = rect.top + rect.height / 2
+        if (e.clientY < midY) {
+          item.parentNode?.insertBefore(dragSource, item)
+        } else {
+          item.parentNode?.insertBefore(dragSource, item.nextSibling)
+        }
+
+        // Persist new order via API
+        const orderedIds = Array.from(
+          (sourceList as HTMLElement).querySelectorAll<HTMLElement>(".tli")
+        ).map(el => el.dataset.id).filter(Boolean) as string[]
+
+        try {
+          await taskApi.raw("/api/tasks/reorder", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ordered_ids: orderedIds }),
+          })
+        } catch {
+          // Revert silently — reload to fix
+        }
+      })
+    })
+  })
+}
+
+// ── G32: WIP Limit Warning ────────────────────────────────────────────────
+
+function setupWipLimit(container: HTMLElement) {
+  const todaySection = container.querySelector("#section-today")
+  if (!todaySection) return
+
+  const todayTasks = todaySection.querySelectorAll(".tli:not(.tli--done)")
+  if (todayTasks.length <= WIP_LIMIT) return
+
+  const banner = document.createElement("div")
+  banner.className = "wip-warning-banner"
+  banner.style.cssText = `
+    background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: var(--radius-sm, 6px); padding: 8px 14px; margin-bottom: 12px;
+    font-size: 13px; color: var(--warning, #f59e0b); display: flex;
+    align-items: center; gap: 8px;
+  `
+  banner.innerHTML = `
+    <span style="font-size: 16px;">⚠️</span>
+    <span><strong>${todayTasks.length} tasks</strong> due today — consider triaging or snoozing some to stay focused (recommended: ≤${WIP_LIMIT})</span>
+    <button type="button" class="btn btn-sm" style="margin-left: auto; font-size: 11px; padding: 2px 8px;"
+      onclick="this.closest('.wip-warning-banner')?.remove()">Dismiss</button>
+  `
+
+  const statsContainer = container.querySelector("#daily-stats-container")
+  if (statsContainer) {
+    statsContainer.after(banner)
+  }
+}
+
+// ── G33: Auto-Refresh Polling ─────────────────────────────────────────────
+
+function setupAutoRefresh() {
+  // Poll every 30 seconds to refresh stats
+  if (pollTimer) clearInterval(pollTimer)
+
+  pollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch("/api/tasks")
+      if (!resp.ok) return
+      const data = await resp.json()
+      if (!Array.isArray(data)) return
+
+      const todayStr = new Date().toISOString().split("T")[0] ?? ""
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      let dueToday = 0
+      let completed = 0
+      let carriedFwd = 0
+
+      for (const task of data) {
+        const isDone = task.status === "complete"
+        if (isDone && task.updated_at?.startsWith(todayStr)) {
+          completed++
+          continue
+        }
+        if (isDone) continue
+
+        if (task.due_date === todayStr) dueToday++
+        else if (task.due_date) {
+          const d = new Date(task.due_date)
+          d.setHours(0, 0, 0, 0)
+          if (d < today) carriedFwd++
+        }
+      }
+
+      const remaining = dueToday + carriedFwd
+
+      // Update stat values in DOM without full reload
+      const stats = document.querySelectorAll<HTMLElement>(".stat-value")
+      if (stats.length >= 4) {
+        stats[0]!.textContent = String(dueToday)
+        stats[1]!.textContent = String(completed)
+        stats[2]!.textContent = String(carriedFwd)
+        stats[3]!.textContent = String(remaining)
+      }
+
+      // Update progress bar
+      const fill = document.querySelector<HTMLElement>(".daily-stats-progress-fill")
+      if (fill) {
+        const pct = (completed / Math.max(1, completed + remaining)) * 100
+        fill.style.width = `${pct}%`
+      }
+    } catch {
+      /* network error — skip this cycle */
+    }
+  }, 30_000)
+}
+
+// Cleanup polling on navigation
+if (typeof window !== "undefined") {
+  document.addEventListener("astro:before-preparation", () => {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  })
+}
+
+// ── G34: Evening Review Prompt ────────────────────────────────────────────
+
+function setupEveningReview(container: HTMLElement) {
+  const currentHour = new Date().getHours()
+  if (currentHour < 18) return // Only show after 6 PM
+
+  // Check if already dismissed today
+  const todayStr = new Date().toISOString().split("T")[0]
+  const dismissed = localStorage.getItem(EVENING_REVIEW_KEY)
+  if (dismissed === todayStr) return
+
+  // Count incomplete tasks
+  const incompleteTasks = container.querySelectorAll(".tli:not(.tli--done)")
+  if (incompleteTasks.length === 0) return
+
+  const banner = document.createElement("div")
+  banner.className = "evening-review-banner"
+  banner.style.cssText = `
+    background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: var(--radius-md, 8px); padding: 14px 18px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px; font-size: 14px;
+  `
+  banner.innerHTML = `
+    <span style="font-size: 22px;">🌙</span>
+    <div style="flex: 1;">
+      <strong>Evening Review</strong>
+      <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+        ${incompleteTasks.length} task${incompleteTasks.length === 1 ? "" : "s"} still open — snooze what can wait, complete what you can!
+      </div>
+    </div>
+    <button type="button" class="btn btn-sm evening-snooze-all" title="Snooze all to tomorrow"
+      style="font-size: 12px;">⏰ Snooze All</button>
+    <button type="button" class="btn btn-sm evening-dismiss" title="Dismiss"
+      style="font-size: 12px; padding: 4px 8px;">✕</button>
+  `
+
+  const statsContainer = container.querySelector("#daily-stats-container")
+  if (statsContainer) {
+    statsContainer.after(banner)
+  }
+
+  banner.querySelector(".evening-dismiss")?.addEventListener("click", () => {
+    localStorage.setItem(EVENING_REVIEW_KEY, todayStr!)
+    banner.remove()
+  })
+
+  banner.querySelector(".evening-snooze-all")?.addEventListener("click", async () => {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const dateStr = tomorrow.toISOString().split("T")[0]!
+
+    const ids = Array.from(incompleteTasks).map(el =>
+      (el as HTMLElement).dataset.id
+    ).filter(Boolean) as string[]
+
+    try {
+      await Promise.all(ids.map(id => taskApi.updateTask(id, { due_date: dateStr })))
+      showToast("common.task_snoozed")
+      localStorage.setItem(EVENING_REVIEW_KEY, todayStr!)
+      setTimeout(() => window.location.reload(), 500)
+    } catch {
+      showToast("common.failed", "error")
+    }
+  })
+}
+
+// ── G35: Effort Indicators ────────────────────────────────────────────────
+
+function renderEffortIndicators(container: HTMLElement) {
+  // Derive effort from priority: P1-P2 = deep, P3 = regular, P4-P5 = quick
+  container.querySelectorAll<HTMLElement>(".tli").forEach(el => {
+    const priority = parseInt(el.dataset.priority ?? "3", 10)
+    const existing = el.querySelector(".tli__effort")
+    if (existing) return // Already rendered
+
+    let label: string
+    let emoji: string
+    let color: string
+
+    if (priority <= 2) {
+      label = "Deep"
+      emoji = "🔴"
+      color = "rgba(239, 68, 68, 0.15)"
+    } else if (priority === 3) {
+      label = "Regular"
+      emoji = "🟡"
+      color = "rgba(245, 158, 11, 0.15)"
+    } else {
+      label = "Quick"
+      emoji = "🟢"
+      color = "rgba(34, 197, 94, 0.15)"
+    }
+
+    const chip = document.createElement("span")
+    chip.className = "tli__effort"
+    chip.title = `Effort: ${label}`
+    chip.style.cssText = `
+      font-size: 10px; padding: 1px 6px; border-radius: 8px;
+      background: ${color}; display: inline-flex; align-items: center;
+      gap: 2px; white-space: nowrap; margin-left: 4px;
+    `
+    chip.textContent = `${emoji} ${label}`
+
+    // Insert after the priority label if exists, or after title
+    const metaRow = el.querySelector(".tli__meta")
+    if (metaRow) {
+      metaRow.appendChild(chip)
+    }
+  })
 }
