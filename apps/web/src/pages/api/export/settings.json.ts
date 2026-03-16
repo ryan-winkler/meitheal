@@ -1,6 +1,8 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { findAllRules } from "@domains/strategy/rule-repository"
+import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { exportFilename } from "../../../lib/export-filename"
 import { logApiError } from "../../../lib/api-logger"
 
@@ -30,7 +32,19 @@ export const GET: APIRoute = async () => {
             }
         }
 
-        const dataStr = JSON.stringify(settingsObject, null, 2)
+        // Include rules and framework configs for complete backup
+        const rules = await findAllRules()
+        const frameworkOverrides = await getAllOverrides()
+
+        const exportPayload = {
+            _version: 2,
+            _exportedAt: new Date().toISOString(),
+            settings: settingsObject,
+            rules,
+            frameworkOverrides,
+        }
+
+        const dataStr = JSON.stringify(exportPayload, null, 2)
 
         return new Response(dataStr, {
             status: 200,
@@ -47,3 +61,4 @@ export const GET: APIRoute = async () => {
         })
     }
 }
+

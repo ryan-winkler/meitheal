@@ -1,11 +1,15 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { deleteAllRules, createRule } from "@domains/strategy/rule-repository"
+import { saveOverrides, resetOverrides, getAllOverrides } from "@domains/strategy/framework-repository"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
+import type { TaskRule, FrameworkOverrides } from "@meitheal/domain-strategy"
+import { DEFAULT_AI_SCOPE } from "@meitheal/domain-strategy"
 
 /** Known safe setting keys — only these will be imported.
  * IMPORTANT: Update this set when adding new saveSetting() calls.
- * Last audited: 2026-03-09 (SQL-02 Migration) */
+ * Last audited: 2026-03-16 (Rules Engine) */
 const ALLOWED_KEYS = new Set([
     // ── Home Assistant / Connectivity ──
     "ha-url", "ha-token", "ha_url", "ha_token",
@@ -39,10 +43,10 @@ const ALLOWED_KEYS = new Set([
 
 export const POST: APIRoute = async ({ request }) => {
     try {
-        // Guard against oversized payloads (100KB max)
+        // Guard against oversized payloads (200KB max — increased for rules+frameworks)
         const contentLength = Number(request.headers.get("content-length") ?? 0)
-        if (contentLength > 102400) {
-            return new Response(JSON.stringify({ error: "Import payload too large (max 100KB)" }), { status: 413, headers: { "Content-Type": "application/json" } })
+        if (contentLength > 204800) {
+            return new Response(JSON.stringify({ error: "Import payload too large (max 200KB)" }), { status: 413, headers: { "Content-Type": "application/json" } })
         }
 
         let data: unknown
@@ -60,9 +64,15 @@ export const POST: APIRoute = async ({ request }) => {
         const repo = new SettingsRepository(getPersistenceClient())
         await repo.ensureSettingsTable()
 
-        // Build validated entries for batch import
+        const payload = data as Record<string, unknown>
+
+        // Detect v2 format (has settings, rules, frameworkOverrides keys)
+        const isV2 = "_version" in payload && payload._version === 2
+        const settingsData = isV2 ? (payload.settings as Record<string, unknown> ?? {}) : payload
+
+        // ── Import settings (v1 and v2 compatible) ──
         const entries: Array<{ key: string; value: string }> = []
-        for (const [key, value] of Object.entries(data)) {
+        for (const [key, value] of Object.entries(settingsData)) {
             if (typeof key !== "string" || value === null || value === undefined) {
                 continue
             }
@@ -75,16 +85,65 @@ export const POST: APIRoute = async ({ request }) => {
             entries.push({ key, value: stringValue })
         }
 
-        if (entries.length === 0) {
-            return new Response(JSON.stringify({ success: false, message: "No valid settings found in payload." }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-            })
+        let settingsCount = 0
+        if (entries.length > 0) {
+            settingsCount = await repo.importBatch(entries)
         }
 
-        const count = await repo.importBatch(entries)
+        // ── Import rules (v2 only) ──
+        let rulesCount = 0
+        if (isV2 && Array.isArray(payload.rules)) {
+            await deleteAllRules()
+            for (const rule of payload.rules as Array<Record<string, unknown>>) {
+                const taskRule: TaskRule = {
+                    id: crypto.randomUUID(),
+                    name: String(rule.name ?? "Imported Rule"),
+                    description: String(rule.description ?? ""),
+                    ruleType: String(rule.ruleType ?? "strategic-lens") as TaskRule["ruleType"],
+                    taskTypes: Array.isArray(rule.taskTypes) ? rule.taskTypes as string[] : [],
+                    tags: Array.isArray(rule.tags) ? rule.tags as string[] : [],
+                    lensIds: Array.isArray(rule.lensIds) ? rule.lensIds as string[] : [],
+                    aiScope: typeof rule.aiScope === "object" && rule.aiScope !== null
+                        ? rule.aiScope as TaskRule["aiScope"]
+                        : { ...DEFAULT_AI_SCOPE },
+                    constraints: String(rule.constraints ?? ""),
+                    priority: Number(rule.priority ?? 100),
+                    enabled: rule.enabled !== false,
+                    createdAt: "",
+                    updatedAt: "",
+                }
+                await createRule(taskRule)
+                rulesCount++
+            }
+        }
 
-        return new Response(JSON.stringify({ success: true, message: `${count} settings imported successfully.` }), {
+        // ── Import framework overrides (v2 only) ──
+        let frameworkCount = 0
+        if (isV2 && Array.isArray(payload.frameworkOverrides)) {
+            // Clear existing overrides
+            const existing = await getAllOverrides()
+            for (const override of existing) {
+                await resetOverrides(override.frameworkId)
+            }
+            // Import new overrides
+            for (const fw of payload.frameworkOverrides as Array<Record<string, unknown>>) {
+                const frameworkId = String(fw.frameworkId ?? fw.framework_id ?? "")
+                const overrides = fw.overrides as FrameworkOverrides | undefined
+                if (frameworkId && overrides && typeof overrides === "object") {
+                    await saveOverrides(frameworkId, overrides)
+                    frameworkCount++
+                }
+            }
+        }
+
+        const parts = [`${settingsCount} settings`]
+        if (rulesCount > 0) parts.push(`${rulesCount} rules`)
+        if (frameworkCount > 0) parts.push(`${frameworkCount} framework configs`)
+
+        return new Response(JSON.stringify({
+            success: true,
+            message: `${parts.join(", ")} imported successfully.`,
+        }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
         })
@@ -93,3 +152,4 @@ export const POST: APIRoute = async ({ request }) => {
         return new Response(JSON.stringify({ error: "Import failed: payload could not be processed." }), { status: 500, headers: { "Content-Type": "application/json" } })
     }
 }
+

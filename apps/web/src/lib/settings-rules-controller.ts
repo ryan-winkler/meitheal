@@ -362,12 +362,9 @@ export function initRulesSettings(): void {
       })
       if (!confirmed) return
 
-      await applyPreset("strategic")
-
-      // Reset all framework overrides
-      for (const fwId of ["rice", "drice", "heart", "ddd", "kcs"]) {
-        await apiFetch(`/api/frameworks/${fwId}`, { method: "DELETE" })
-      }
+      // Use server-side defaults endpoint — also accessible by HA LLM API and agents
+      await apiFetch("/api/rules/defaults", { method: "POST" })
+      await loadRulesIntoUI()
       await loadFrameworkConfigs()
       showToast("settings.defaults_restored")
     })
