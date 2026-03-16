@@ -30,6 +30,7 @@ export function initDangerZoneSettings(): void {
       )
       if (res.ok) {
         showToast("settings.purge_success")
+        // Full reload required — all task views, counts, and kanban state are stale after purge
         setTimeout(() => window.location.reload(), 1000)
       } else showToast("settings.purge_failed", "error")
     } catch {
@@ -54,6 +55,7 @@ export function initDangerZoneSettings(): void {
       if (res.ok) {
         showToast("settings.reset_success")
         settingsStore.invalidate()
+        // Full reload required — every setting (theme, locale, sidebar, integrations) changed
         setTimeout(() => window.location.reload(), 1000)
       } else showToast("settings.reset_failed", "error")
     } catch {

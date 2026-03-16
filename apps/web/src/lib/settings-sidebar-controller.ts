@@ -7,6 +7,7 @@
 import { confirmDialog } from "@lib/confirm-dialog"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
+import { settingsStore } from "@lib/settings-store"
 
 // ───── Constants ─────
 
@@ -76,7 +77,9 @@ export function initSidebarSettings(): void {
     btn.textContent = oText
     btn.disabled = false
     showToast("settings.sidebar_saved")
-    setTimeout(() => window.location.reload(), 1000)
+    settingsStore.invalidate()
+    // Dispatch event so Layout can reactively update sidebar without full reload
+    window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
   })
 
   // Reset sidebar to defaults
@@ -92,7 +95,8 @@ export function initSidebarSettings(): void {
     ).catch(() => {})
     await saveSetting("sidebar_config", null)
     showToast("Sidebar reset to defaults")
-    setTimeout(() => window.location.reload(), 500)
+    settingsStore.invalidate()
+    window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
   })
 
   // Add custom link

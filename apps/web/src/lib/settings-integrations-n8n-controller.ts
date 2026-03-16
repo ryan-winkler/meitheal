@@ -270,7 +270,7 @@ export function initN8nSettings(): void {
   }
 
   // Expose for restore flow
-  (window as unknown as Record<string, unknown>).__initN8nDiagnostics = initN8nDiagnostics
+  window.__initN8nDiagnostics = initN8nDiagnostics
 
   document.getElementById("refresh-n8n-standalone")?.addEventListener("click", () => initN8nDiagnostics(true))
   document.getElementById("refresh-n8n-status")?.addEventListener("click", () => initN8nDiagnostics(true))
@@ -365,8 +365,7 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
 
   // Trigger diagnostics after loading
   if (s.n8n_webhook_url) {
-    const diagFn = (window as unknown as Record<string, unknown>).__initN8nDiagnostics
-    if (typeof diagFn === "function") setTimeout(() => (diagFn as () => void)(), 500)
+    if (typeof window.__initN8nDiagnostics === "function") setTimeout(() => window.__initN8nDiagnostics!(), 500)
   }
 
   // Switch to standalone tab if mode is standalone

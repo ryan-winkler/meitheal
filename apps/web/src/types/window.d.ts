@@ -114,6 +114,10 @@ interface MeithealWindowExtensions {
   /** Filter state loaded flag (set by FilterToolbar) */
   __filterStateLoaded?: boolean;
 
+  // === n8n / Node-RED ===
+  /** n8n diagnostics initializer (set by settings-integrations-n8n-controller) */
+  __initN8nDiagnostics?: (forceRefresh?: boolean) => void;
+
   // === Calendar ===
   /** Pre-fill date for new task creation from calendar day drawer */
   __prefillTaskDate?: string;

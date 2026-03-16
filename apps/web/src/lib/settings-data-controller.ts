@@ -63,6 +63,7 @@ export function initDataSettings(): void {
         }
         showToast("settings.import_success")
         settingsStore.invalidate()
+        // Full reload required — imported settings replace everything (theme, locale, integrations)
         setTimeout(() => window.location.reload(), 1500)
       } catch (error) {
         log.error("Failed to import settings", error)

@@ -155,6 +155,7 @@ export function initThemeSettings(): void {
     }
     window.dispatchEvent(new CustomEvent("meitheal:locale-changed", { detail: { locale } }))
     showToast(locale === "ga" ? "Teanga athraithe go Gaeilge" : "Language changed to English")
+    // Full reload required — SSR translations are server-rendered and need a fresh page
     setTimeout(() => window.location.reload(), 800)
   })
 
