@@ -70,6 +70,24 @@
 - [x] **SET-11**: Add mobile quick-jump UX plus guided App & PWA and Danger Zone trust surfaces
 - [ ] **SET-12**: Re-run Tier 2 HA verification for the polished Settings UX once Docker access is available
 
+## Smart Today Maturation (STM)
+
+- [x] **STM-01**: Unified `TaskListItem.astro` component shared across Today + all views
+- [x] **STM-02**: `today-controller.ts` with keyboard nav, filter bar, sort, all actions
+- [x] **STM-03**: Full list-view feature parity (G01-G11: favorite, ticket key, RICE, actions, keyboard, filters, persistence, toasts, confirm, i18n, sort)
+- [x] **STM-04**: Today-specific enhancements (G12-G17: snooze, shopping list, quick-add defaults, carried forward, delete, clear completed)
+- [x] **STM-05**: Habits section with TemplateRepository, streak display, complete button (G38)
+- [x] **STM-06**: Save-as-Habit action on task cards (G39)
+- [x] **STM-07**: Recurrence management — auto-link, prompts, cascade cancel, 2-month cleanup (G40-G42)
+- [x] **STM-08**: Enhanced Today — pinned/MITs, custom fields, color dot, progress bar, calendar sync, celebration, deep-link, board context, overdue styling (G18-G26)
+- [x] **STM-09**: Daily migration prompt for morning triage of carried-forward tasks (G27)
+- [x] **STM-10**: Calendar events from HA — multi-calendar, client-hydrated, graceful degradation (G28)
+- [x] **STM-11**: Context grouping by @-prefix labels with threshold and icons (G29)
+- [x] **STM-12**: Advanced features — batch actions, drag reorder, WIP limit, polling, evening review, effort indicators, gamification, HA widget (G30-G37)
+- [x] **STM-13**: List view removal — tasks.astro deleted, TaskViewTabs updated
+- [x] **STM-14**: Today page E2E test suite (`today-page.spec.ts`, 30+ tests)
+- [ ] **STM-15**: Tier 2 HA verification of calendar events + habits integration
+
 ## Scope
 
 ### v1 (this sprint)
