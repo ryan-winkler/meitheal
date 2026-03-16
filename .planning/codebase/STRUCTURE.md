@@ -91,15 +91,19 @@ meitheal/
 - Purpose: Client-side controllers (page interactivity) and shared utilities
 - Contains: Page controllers (kanban, table, settings, task-modal), API client, filter engine, toast, validation
 - Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `search-hub-controller.ts`
-- **Settings controllers** (decomposed from monolithic 3,205 LoC file):
-  - `settings-controller.ts` (~120 LoC coordinator, re-exports)
+- **Settings controllers** (decomposed from monolithic 3,205 LoC file, all using `pageLifecycle.on()` + `escapeHtml()`):
+  - `settings-controller.ts` (~160 LoC coordinator, re-exports)
   - `settings-theme-controller.ts` (appearance/theme)
   - `settings-sidebar-controller.ts` (navigation layout)
-  - `settings-integrations-controller.ts` (HA/Calendar/Todo/Grocy/n8n/Webhooks)
+  - `settings-integrations-ha-controller.ts` (HA connection, webhooks)
+  - `settings-integrations-n8n-controller.ts` (n8n/Node-RED integration)
+  - `settings-integrations-grocy-controller.ts` (Grocy inventory)
+  - `settings-integrations-sync-controller.ts` (calendar/todo sync)
   - `settings-ai-controller.ts` (agent & AI config)
-  - `settings-data-controller.ts` (import/export/backup)
+  - `settings-data-controller.ts` (import/export/backup/custom fields)
   - `settings-danger-controller.ts` (purge/reset)
   - `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
+- **Shared utilities:** `page-lifecycle.ts` (event listener lifecycle management via AbortController), `safe-html.ts` (XSS prevention), `toast.ts`, `confirm-dialog.ts`
 
 **`apps/web/src/components/ui/`:**
 - Purpose: Reusable Astro UI components

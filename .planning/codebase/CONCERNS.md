@@ -19,9 +19,10 @@
 
 **Raw `console.*` Calls (67 total):**
 - Issue: 67 raw `console.log/warn/error` calls instead of structured `createLogger()` from `@meitheal/domain-observability`
-- Files: `apps/web/src/lib/task-modal-controller.ts` (8), `apps/web/src/lib/settings-controller.ts` (7), `apps/web/src/components/settings/SettingsGeneral.astro` (6), `apps/web/src/domains/offline/*.ts` (10), `apps/web/src/lib/kanban-controller.ts` (4), plus 32 across other files
+- Files: `apps/web/src/lib/task-modal-controller.ts` (8), `apps/web/src/components/settings/SettingsGeneral.astro` (6), `apps/web/src/domains/offline/*.ts` (10), `apps/web/src/lib/kanban-controller.ts` (4), plus 32 across other files
 - Impact: Inconsistent logging, no structured output for Loki, no redaction
 - Fix approach: Replace with domain-aware `createLogger()` calls
+- ✅ **Resolved for settings:** All 11 settings controllers now use structured `log` from `settings-utils.ts` — zero raw `console.*` calls (2026-03-16)
 
 **`(window as any)` Global Casts (29 total):**
 - Issue: 29 uses of `(window as any)` for cross-component communication instead of typed patterns
@@ -34,7 +35,10 @@
 - Files: `apps/web/src/pages/tasks.astro` (2), `apps/web/src/pages/today.astro` (2), `apps/web/src/pages/upcoming.astro` (2), `apps/web/src/pages/calendar.astro` (2), `apps/web/src/components/tasks/NewTaskModal.astro` (1), plus others
 - Impact: Full page reloads disrupt user context, cause iframe reload behind HA ingress, waste bandwidth
 - Fix approach: Replace with targeted DOM updates, re-fetch data, or dispatch custom events
-- ✅ **Partially resolved:** Settings reloads reduced to 4 documented legitimate uses (purge/reset/import/locale) in Phase 08.2 (2026-03-16)
+- ✅ **Resolved for settings:** Reloads reduced to 4 documented legitimate uses (purge/reset/import/locale) in Phase 08.2. All 11 controllers fully audited (2026-03-16)
+
+**Settings XSS Hardening:**
+- ✅ **Resolved:** All 11 settings controllers use `escapeHtml()` from shared `@lib/safe-html.ts` for any server/user data interpolated into `innerHTML`. All fetch calls wired with `pageLifecycle.signal` for abort safety. 58+ event listeners migrated to `pageLifecycle.on()` for memory safety. (2026-03-16)
 
 ## Known Bugs
 
