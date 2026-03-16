@@ -49,10 +49,10 @@
            <span id="td-due-display"></span>
         </div>
 
-        <div class="flex flex-1 overflow-hidden flex-col md:flex-row relative">
+        <div class="flex flex-1 overflow-y-auto md:overflow-hidden flex-col md:flex-row relative">
           
           <!-- MAIN CONTENT COLUMN -->
-          <main class="flex-1 overflow-y-auto px-6 py-6 lg:px-10 space-y-8 bg-bg-primary min-w-0">
+          <main class="flex-none w-full md:flex-1 md:w-auto overflow-visible md:overflow-y-auto px-6 py-6 lg:px-10 space-y-8 bg-bg-primary min-w-0">
             
             <!-- Title -->
             <div class="relative group">
@@ -226,7 +226,7 @@
           </main>
 
           <!-- SIDEBAR (PROPERTIES) COLUMN -->
-          <aside class="w-full md:w-[320px] bg-bg-card border-t md:border-t-0 md:border-l border-border px-6 py-6 flex-none overflow-y-auto flex flex-col gap-6">
+          <aside class="w-full md:w-[320px] bg-bg-card border-t md:border-t-0 md:border-l border-border px-6 py-6 flex-none overflow-visible md:overflow-y-auto flex flex-col gap-6">
             
             <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5" style="border: 1px solid rgba(255,255,255,0.1)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
