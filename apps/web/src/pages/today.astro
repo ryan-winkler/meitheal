@@ -227,11 +227,11 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     </select>
     <select id="today-filter-priority" class="form-select">
       <option value="">All Priority</option>
-      <option value="1">🔴 Critical</option>
-      <option value="2">🟠 High</option>
-      <option value="3">🟡 Medium</option>
-      <option value="4">🟢 Low</option>
-      <option value="5">⚪ Minimal</option>
+      <option value="1">▲ Critical</option>
+      <option value="2">↑ High</option>
+      <option value="3">→ Medium</option>
+      <option value="4">↓ Low</option>
+      <option value="5">· Minimal</option>
     </select>
     <select id="today-filter-rice" class="form-select">
       <option value="">All RICE</option>
@@ -308,7 +308,11 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
       </span>
       <span class="today-section__count" id="calendar-events-count">0</span>
     </div>
-    <div class="today-section__list" id="calendar-events-list"></div>
+    <div class="today-section__list" id="calendar-events-list">
+      <div class="skeleton-line" style="width: 70%;"></div>
+      <div class="skeleton-line" style="width: 55%;"></div>
+      <div class="skeleton-line" style="width: 65%;"></div>
+    </div>
   </div>
 
   <!-- Section: Carried Forward (Overdue → ADHD-friendly framing) -->
@@ -431,6 +435,11 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     min-width: 120px;
     font-size: 13px;
     padding: 6px 10px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .today-filter-bar .form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
   }
   .today-filter-bar .form-select {
     font-size: 12px;
@@ -442,6 +451,7 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     cursor: pointer;
     flex-shrink: 0;
     max-width: 130px;
+    transition: border-color 0.2s ease;
   }
   .today-filter-bar .form-select:focus {
     outline: 2px solid var(--accent);
@@ -467,23 +477,28 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
   .today-section {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
-    margin-bottom: 16px;
+    border-radius: 12px;
+    margin-bottom: 14px;
     overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .today-section:hover {
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent, #6366f1) 30%);
   }
 
   .today-section__header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: 10px;
+    padding: 12px 16px;
     cursor: pointer;
     user-select: none;
     border-bottom: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.02);
+    transition: background 0.15s ease;
   }
   .today-section__header:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .today-section__toggle {
@@ -500,7 +515,7 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     font-size: 10px;
     transform: rotate(90deg);
     display: inline-block;
-    transition: transform 0.2s;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
   .today-section--collapsed .today-section__icon {
     transform: rotate(0deg);
@@ -510,6 +525,7 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     font-size: 14px;
     font-weight: 600;
     flex: 1;
+    letter-spacing: -0.01em;
   }
 
   .today-section__count {
@@ -523,7 +539,7 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
   }
 
   .today-section__list {
-    transition: max-height 0.3s ease, opacity 0.2s ease;
+    transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
     overflow: hidden;
   }
   .today-section--collapsed .today-section__list {
@@ -539,55 +555,87 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     display: none !important;
   }
 
-  /* ── Daily Stats ─────────────────────────────────────────────── */
+  /* ── Daily Stats — Glassmorphism ─────────────────────────────── */
   .daily-stats-container {
     display: flex;
     flex-direction: column;
     margin-bottom: 16px;
     background: var(--bg-card);
+    background-image: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.04) 0%,
+      rgba(99, 102, 241, 0.06) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: 14px;
     overflow: hidden;
+    position: relative;
+  }
+  .daily-stats-container::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      transparent 40%
+    );
+    pointer-events: none;
   }
   .daily-stats {
     display: flex;
     gap: 2px;
+    position: relative;
   }
   .daily-stats-progress-bar {
     height: 4px;
     width: 100%;
     background: var(--bg-hover);
+    position: relative;
   }
   .daily-stats-progress-fill {
     height: 100%;
-    background: var(--accent);
-    transition: width 0.3s;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent, #6366f1) 70%, #a78bfa));
+    transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent, #6366f1) 50%, transparent);
+    border-radius: 0 2px 2px 0;
   }
   .stat-item {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px 8px;
-    gap: 2px;
+    padding: 14px 8px;
+    gap: 4px;
+    position: relative;
+    transition: background 0.15s ease;
+  }
+  .stat-item:hover {
+    background: rgba(255, 255, 255, 0.03);
   }
   .stat-item:not(:last-child) {
     border-right: 1px solid var(--border);
   }
   .stat-value {
-    font-size: 20px;
-    font-weight: 700;
+    font-size: 1.25rem;
+    font-weight: 800;
     color: var(--text);
-    line-height: 1;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
   }
   .stat-label {
-    font-size: 11px;
+    font-size: 0.65rem;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.08em;
+    font-weight: 600;
   }
   .stat-danger {
     color: var(--danger);
+    font-weight: 700;
   }
 
   /* ── Snooze popover ──────────────────────────────────────────── */
@@ -615,103 +663,168 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     padding-left: 8px;
   }
 
-  /* ── G31: Drag reorder ──────────────────────────────── */
+  /* ── G31: Drag reorder — premium drag feedback ──────── */
   :global(.tli[draggable="true"]) {
     cursor: grab;
   }
   :global(.tli--dragging) {
     opacity: 0.4;
     cursor: grabbing;
+    transform: scale(0.98);
   }
   :global(.tli--drag-over) {
     border-top: 2px solid var(--accent);
+    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+    transition: box-shadow 0.15s ease;
   }
 
   /* ── G36: Gamification stat items ───────────────────── */
   .stat-streak .stat-value,
   .stat-xp .stat-value {
-    font-size: 16px;
+    font-size: 1rem;
+  }
+  .stat-streak .stat-value {
+    color: var(--warning, #f59e0b);
   }
 
-  /* ── G38: Habit Cards ─────────────────────────────────── */
+  /* ── G38: Habit Cards — Premium (match habits.astro) ── */
   :global(.habit-card) {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    gap: 14px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
+    transition: background 0.15s ease, transform 0.15s ease;
+    position: relative;
+  }
+  :global(.habit-card::after) {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--accent, #6366f1);
+    opacity: 0;
+    transition: opacity 0.2s ease;
   }
   :global(.habit-card:hover) {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  :global(.habit-card:hover::after) {
+    opacity: 1;
   }
   :global(.habit-card--done) {
     opacity: 0.6;
   }
+  :global(.habit-card--done::after) {
+    background: var(--success, #22c55e);
+    opacity: 1;
+  }
   :global(.habit-card__icon) {
-    font-size: 20px;
+    font-size: 1.3rem;
     flex-shrink: 0;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
   }
   :global(.habit-card__info) {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
   :global(.habit-card__name) {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text);
+    letter-spacing: -0.01em;
   }
   :global(.habit-card__meta) {
     font-size: 11px;
     color: var(--text-muted);
     display: flex;
     gap: 8px;
+    align-items: center;
   }
   :global(.habit-card__streak) {
     color: var(--warning, #f59e0b);
-    font-weight: 600;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--warning, #f59e0b) 10%, transparent);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 0.7rem;
   }
   :global(.habit-card__complete) {
     flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  :global(.habit-card__complete:hover:not(:disabled)) {
+    transform: scale(1.05);
   }
   :global(.habit-card__complete:disabled) {
     opacity: 0.7;
     cursor: default;
   }
 
-  /* ── G28: Calendar Event Cards ───────────────────────── */
+  /* ── G28: Calendar Event Cards — polished ────────────── */
   :global(.cal-event-card) {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease;
+  }
+  :global(.cal-event-card:hover) {
+    background: rgba(255, 255, 255, 0.02);
   }
   :global(.cal-event-card__time) {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--accent);
     min-width: 64px;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
   }
   :global(.cal-event-card__summary) {
     font-size: 13px;
     color: var(--text);
     flex: 1;
+    font-weight: 500;
   }
   :global(.cal-event-card__source) {
     font-size: 10px;
     color: var(--text-muted);
     flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+
+  /* ── W2: Loading skeleton shimmer ────────────────────── */
+  :global(.skeleton-line) {
+    height: 14px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.04) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.04) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    margin: 8px 16px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   /* ── G27: Migration Prompt ────────────────────────────── */
   :global(.migration-banner) {
     background: rgba(245, 158, 11, 0.08);
     border: 1px solid rgba(245, 158, 11, 0.25);
-    border-radius: var(--radius-md, 8px);
+    border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 16px;
     display: flex;
@@ -729,13 +842,38 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
 
   /* ── G29: Context Group Headers ──────────────────────── */
   :global(.context-group-header) {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     color: var(--text-muted);
-    padding: 6px 16px 2px;
+    padding: 8px 16px 4px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.08em;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  /* ── Reduced motion ──────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .daily-stats-progress-fill,
+    .today-section__list,
+    .today-section__icon,
+    .today-section,
+    .today-filter-bar .form-input {
+      transition: none !important;
+    }
+    :global(.tli--dragging) {
+      transform: none !important;
+    }
+    :global(.tli--drag-over) {
+      box-shadow: none !important;
+    }
+    :global(.skeleton-line) {
+      animation: none !important;
+    }
+    :global(.habit-card),
+    :global(.habit-card__complete),
+    :global(.cal-event-card) {
+      transition: none !important;
+    }
   }
 </style>
 
