@@ -44,41 +44,81 @@ export function initSettingsController(): void {
   }
 
   document.querySelectorAll<HTMLElement>(".integration-card__header").forEach((header) => {
-    pageLifecycle.on(header, "click", () => {
-      const bodyId = header.dataset.target
-      if (!bodyId) return
-      const body = document.getElementById(bodyId)
+    const bodyId = header.dataset.target
+    if (!bodyId) return
+    const body = document.getElementById(bodyId)
+
+    // A11y attributes
+    header.setAttribute("role", "button")
+    header.setAttribute("tabindex", "0")
+    if (body) {
+      header.setAttribute("aria-controls", bodyId)
+      header.setAttribute("aria-expanded", body.style.display !== "none" ? "true" : "false")
+    }
+
+    const toggle = () => {
       if (!body) return
       const isOpen = body.style.display !== "none"
       body.style.display = isOpen ? "none" : "block"
+      header.setAttribute("aria-expanded", isOpen ? "false" : "true")
       const chevron = header.querySelector<HTMLElement>(".integration-card__chevron")
       if (chevron) chevron.style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)"
+    }
+
+    pageLifecycle.on(header, "click", toggle)
+    pageLifecycle.on(header, "keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
+        e.preventDefault()
+        toggle()
+      }
     })
   })
 
-  // ───── n8n mode tabs ─────
   const n8nAutoTab = document.getElementById("n8n-mode-auto")
-  if (n8nAutoTab) {
-    pageLifecycle.on(n8nAutoTab, "click", () => {
-      document.getElementById("n8n-mode-auto")?.classList.add("mode-tab--active")
-      document.getElementById("n8n-mode-standalone")?.classList.remove("mode-tab--active")
-      const autoContent = document.getElementById("n8n-auto-content")
-      const standaloneContent = document.getElementById("n8n-standalone-content")
-      if (autoContent) autoContent.style.display = ""
-      if (standaloneContent) standaloneContent.style.display = "none"
-    })
-  }
   const n8nStandaloneTab = document.getElementById("n8n-mode-standalone")
-  if (n8nStandaloneTab) {
-    pageLifecycle.on(n8nStandaloneTab, "click", () => {
-      document.getElementById("n8n-mode-standalone")?.classList.add("mode-tab--active")
-      document.getElementById("n8n-mode-auto")?.classList.remove("mode-tab--active")
-      const autoContent = document.getElementById("n8n-auto-content")
-      const standaloneContent = document.getElementById("n8n-standalone-content")
-      if (autoContent) autoContent.style.display = "none"
-      if (standaloneContent) standaloneContent.style.display = ""
+  const switchToAuto = () => {
+    n8nAutoTab?.classList.add("mode-tab--active")
+    n8nStandaloneTab?.classList.remove("mode-tab--active")
+    n8nAutoTab?.setAttribute("aria-selected", "true")
+    n8nStandaloneTab?.setAttribute("aria-selected", "false")
+    const autoContent = document.getElementById("n8n-auto-content")
+    const standaloneContent = document.getElementById("n8n-standalone-content")
+    if (autoContent) autoContent.style.display = ""
+    if (standaloneContent) standaloneContent.style.display = "none"
+  }
+  const switchToStandalone = () => {
+    n8nStandaloneTab?.classList.add("mode-tab--active")
+    n8nAutoTab?.classList.remove("mode-tab--active")
+    n8nStandaloneTab?.setAttribute("aria-selected", "true")
+    n8nAutoTab?.setAttribute("aria-selected", "false")
+    const autoContent = document.getElementById("n8n-auto-content")
+    const standaloneContent = document.getElementById("n8n-standalone-content")
+    if (autoContent) autoContent.style.display = "none"
+    if (standaloneContent) standaloneContent.style.display = ""
+  }
+  if (n8nAutoTab) {
+    n8nAutoTab.setAttribute("role", "tab")
+    n8nAutoTab.setAttribute("tabindex", "0")
+    pageLifecycle.on(n8nAutoTab, "click", switchToAuto)
+    pageLifecycle.on(n8nAutoTab, "keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
+        e.preventDefault()
+        switchToAuto()
+      }
     })
   }
+  if (n8nStandaloneTab) {
+    n8nStandaloneTab.setAttribute("role", "tab")
+    n8nStandaloneTab.setAttribute("tabindex", "0")
+    pageLifecycle.on(n8nStandaloneTab, "click", switchToStandalone)
+    pageLifecycle.on(n8nStandaloneTab, "keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
+        e.preventDefault()
+        switchToStandalone()
+      }
+    })
+  }
+
 
   // ───── Init all domain controllers ─────
   initThemeSettings()
