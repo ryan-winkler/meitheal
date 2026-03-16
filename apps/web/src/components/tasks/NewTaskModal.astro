@@ -443,7 +443,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (res.ok) {
         showToast("Task created successfully", "success");
         closeNewTaskModal();
-        window.location.reload();
+        document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
+          detail: { action: "created" }
+        }))
       } else {
         showToast("Failed to create task", "error");
       }
