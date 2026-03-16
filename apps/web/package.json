@@ -1,14 +1,14 @@
 {
   "name": "@meitheal/web",
   "private": true,
-  "version": "0.2.17",
+  "version": "0.2.18",
   "type": "module",
   "scripts": {
     "dev": "astro dev",
     "dev:clean": "rm -rf node_modules/.vite .astro && astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check",
+    "check": "astro build",
     "db:migrate": "node ./scripts/migrate.mjs",
     "db:migrate:check": "node ./scripts/migrate.mjs --check",
     "schema:drift": "node ./scripts/schema-drift-check.mjs",

@@ -55,7 +55,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - name: Typecheck domain packages
+        run: |
+          pnpm --filter @meitheal/domain-auth check
+          pnpm --filter @meitheal/domain-observability check
+          pnpm --filter @meitheal/domain-strategy check
+          pnpm --filter @meitheal/domain-tasks check
+          pnpm --filter @meitheal/integration-core check
+          pnpm --filter @meitheal/tests check
+      - name: Build web app (validates TS + Astro compilation)
+        run: pnpm --filter @meitheal/web build
       - run: pnpm --filter @meitheal/tests test
 
   ha-harness:

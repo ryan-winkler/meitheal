@@ -9,6 +9,7 @@
  * @bounded-context integration
  */
 import type { GrocyChore, GrocyTask } from "@meitheal/integration-core";
+import { STATUS } from "../../lib/status-config";
 
 interface MeithealTaskData {
   title: string;
@@ -52,7 +53,7 @@ export function choreToTask(chore: GrocyChore): MeithealTaskData {
   return {
     title: chore.choreName,
     description: description || null,
-    status: chore.isOverdue ? "in_progress" : "pending",
+    status: chore.isOverdue ? STATUS.ACTIVE : STATUS.PENDING,
     priority: chore.isOverdue ? 1 : 3,
     dueDate: chore.nextEstimatedExecutionTime?.split(" ")[0] ?? null,
     labels,
@@ -86,7 +87,7 @@ export function taskToTask(task: GrocyTask, categoryName?: string): MeithealTask
   return {
     title: task.name,
     description: task.description,
-    status: task.done ? "complete" : "pending",
+    status: task.done ? STATUS.COMPLETE : STATUS.PENDING,
     priority: 3,
     dueDate: task.dueDate,
     labels,
@@ -124,7 +125,7 @@ export function shoppingListToTask(
   return {
     title: `🛒 Go Shopping (${itemCount} item${itemCount !== 1 ? "s" : ""})`,
     description,
-    status: "pending",
+    status: STATUS.PENDING,
     priority: 3,
     dueDate: null,
     labels: ["grocy-shopping", "synced from grocy"],
