@@ -142,7 +142,8 @@
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Attachments</h3>
                 <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
-                  <span>➕ Add Image</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Image
                   <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
                 </label>
               </div>
@@ -182,7 +183,8 @@
                     </div>
                     <div id="td-add-subtask">
                       <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
-                        <span>➕ Add subtask</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Add subtask
                       </button>
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
                         <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
@@ -254,7 +256,7 @@
           <!-- SIDEBAR (PROPERTIES) COLUMN -->
           <aside class="w-full md:w-[320px] bg-bg-card border-t md:border-t-0 md:border-l border-border px-6 py-6 flex-none overflow-visible md:overflow-y-auto flex flex-col gap-6">
             
-            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5" style="border: 1px solid rgba(255,255,255,0.1)">
+            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5 td-done-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 Mark as Done
             </button>

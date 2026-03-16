@@ -90,9 +90,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <option value="">Unassigned</option>
         </select>
         <p
-          class="text-xs text-text-muted mt-1"
+          class="text-xs text-text-muted mt-1 hidden"
           id="new-task-assignee-hint"
-          style="display:none"
         >
           Tip: Use @name in the title to auto-assign
         </p>
@@ -117,7 +116,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <label class="form-label">Checklist</label>
         <div id="new-task-checklist-items" class="space-y-1"></div>
         <button type="button" id="new-task-add-checklist" class="text-xs text-accent hover:text-accent-hover mt-1 flex items-center gap-1">
-          <span>➕</span> Add checklist item
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+           Add checklist item
         </button>
       </div>
 
@@ -258,7 +258,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
 
       select.parentElement!.style.display = "";
-      if (hint) hint.style.display = users.length > 1 ? "" : "none";
+      if (hint) {
+        if (users.length > 1) hint.classList.remove("hidden")
+        else hint.classList.add("hidden")
+      }
 
       for (const user of users) {
         const opt = document.createElement("option");
