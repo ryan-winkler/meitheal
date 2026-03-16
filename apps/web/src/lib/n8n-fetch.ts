@@ -53,7 +53,7 @@ export function bypassTlsIfNeeded(url: string): TlsContext {
 
   if (isLocalDev && isInternal) {
     const originalValue = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-pinning] — intentional: dev-only TLS bypass for .internal self-signed certs
     return { bypassed: true, originalValue }
   }
 

@@ -66,7 +66,7 @@ export async function emitWebhook(
       const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
 
       if (isLocalDev && isInternal) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-pinning] — intentional: dev-only TLS bypass for .internal self-signed certs
       }
 
       const response = await fetch(subscriber.url, {
