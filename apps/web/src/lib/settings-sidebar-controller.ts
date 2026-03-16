@@ -5,6 +5,7 @@
  * visibility toggles, save, and reset.
  */
 import { confirmDialog } from "@lib/confirm-dialog"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
@@ -27,7 +28,9 @@ const SIDEBAR_LABELS: Record<string, string> = {
 
 export function initSidebarSettings(): void {
   // Save sidebar config
-  document.getElementById("save-sidebar")?.addEventListener("click", async () => {
+  const saveSidebarBtn = document.getElementById("save-sidebar")
+  if (saveSidebarBtn) {
+    pageLifecycle.on(saveSidebarBtn, "click", async () => {
     const list = document.getElementById("sidebar-item-list")
     if (!list) return
 
@@ -80,10 +83,13 @@ export function initSidebarSettings(): void {
     settingsStore.invalidate()
     // Dispatch event so Layout can reactively update sidebar without full reload
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-  })
+    })
+  }
 
   // Reset sidebar to defaults
-  document.getElementById("reset-sidebar")?.addEventListener("click", async () => {
+  const resetSidebarBtn = document.getElementById("reset-sidebar")
+  if (resetSidebarBtn) {
+    pageLifecycle.on(resetSidebarBtn, "click", async () => {
     const confirmed = await confirmDialog({
       message: "Reset sidebar to default configuration? Custom links and reordering will be lost.",
       variant: "warning",
@@ -97,15 +103,19 @@ export function initSidebarSettings(): void {
     showToast("Sidebar reset to defaults")
     settingsStore.invalidate()
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-  })
+    })
+  }
 
   // Add custom link
-  document.getElementById("add-custom-link-btn")?.addEventListener("click", () => {
+  const addCustomBtn = document.getElementById("add-custom-link-btn")
+  if (addCustomBtn) {
+    pageLifecycle.on(addCustomBtn, "click", () => {
     // The custom link is added through the restore flow — this appends a new item
     // and re-renders the sidebar list. Since we need the full render context,
     // we dispatch a custom event that the restore handler picks up.
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-add-custom-link"))
-  })
+    })
+  }
 }
 
 // ───── Restore ─────
@@ -316,16 +326,19 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     }
 
     // Wire up "Add Custom Link" button locally
-    window.addEventListener("meitheal:sidebar-add-custom-link", () => {
+    pageLifecycle.on(window, "meitheal:sidebar-add-custom-link", () => {
       customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
       renderSidebarList()
     })
 
     // Also bind directly to the button in case the event approach isn't needed
-    document.getElementById("add-custom-link-btn")?.addEventListener("click", () => {
-      customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
-      renderSidebarList()
-    })
+    const addBtnRestore = document.getElementById("add-custom-link-btn")
+    if (addBtnRestore) {
+      pageLifecycle.on(addBtnRestore, "click", () => {
+        customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
+        renderSidebarList()
+      })
+    }
 
     renderSidebarList()
   } catch (e) {

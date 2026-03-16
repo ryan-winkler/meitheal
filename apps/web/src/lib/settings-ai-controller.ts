@@ -4,20 +4,26 @@
  * Handles AI provider selection, custom URL toggle, save,
  * and agent protocol (A2A / WebMCP / MCP) toggles.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting } from "@lib/settings-utils"
 
 export function initAISettings(): void {
   // AI provider custom URL toggle
-  document.getElementById("ai-provider")?.addEventListener("change", function () {
-    const group = document.getElementById("ai-custom-url-group")
-    if (group) {
-      group.style.display = (this as HTMLSelectElement).value === "custom" ? "block" : "none"
-    }
-  })
+  const aiProviderEl = document.getElementById("ai-provider")
+  if (aiProviderEl) {
+    pageLifecycle.on(aiProviderEl, "change", () => {
+      const group = document.getElementById("ai-custom-url-group")
+      if (group) {
+        group.style.display = (aiProviderEl as HTMLSelectElement).value === "custom" ? "block" : "none"
+      }
+    })
+  }
 
   // Save AI settings
-  document.getElementById("save-ai")?.addEventListener("click", async () => {
+  const saveAiBtn = document.getElementById("save-ai")
+  if (saveAiBtn) {
+    pageLifecycle.on(saveAiBtn, "click", async () => {
     const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
     const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value
 
@@ -37,10 +43,13 @@ export function initAISettings(): void {
     saveBtn.innerHTML = origText
     saveBtn.disabled = false
     showToast("settings.ai_saved")
-  })
+    })
+  }
 
   // Save agent protocols
-  document.getElementById("save-agent-protocols")?.addEventListener("click", async () => {
+  const saveProtocolsBtn = document.getElementById("save-agent-protocols")
+  if (saveProtocolsBtn) {
+    pageLifecycle.on(saveProtocolsBtn, "click", async () => {
     const a2a = (document.getElementById("agent-a2a-enabled") as HTMLInputElement)?.checked ?? true
     const webmcp = (document.getElementById("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
     const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
@@ -66,7 +75,8 @@ export function initAISettings(): void {
     saveBtn.innerHTML = origText
     saveBtn.disabled = false
     showToast("settings.agent_protocols_saved")
-  })
+    })
+  }
 }
 
 /** Restore AI & agent protocol settings from loaded settings object */

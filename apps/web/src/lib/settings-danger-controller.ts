@@ -5,12 +5,15 @@
  * All destructive operations require confirmation dialogs.
  */
 import { confirmDialog } from "@lib/confirm-dialog"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
 
 export function initDangerZoneSettings(): void {
   // Purge all tasks
-  document.getElementById("purge-tasks")?.addEventListener("click", async () => {
+  const purgeBtn = document.getElementById("purge-tasks")
+  if (purgeBtn) {
+    pageLifecycle.on(purgeBtn, "click", async () => {
     const ok = await confirmDialog({
       title: "Purge All Tasks",
       message: "This will permanently delete ALL tasks. This action is irreversible.",
@@ -31,15 +34,21 @@ export function initDangerZoneSettings(): void {
       if (res.ok) {
         showToast("settings.purge_success")
         // Full reload required — all task views, counts, and kanban state are stale after purge
-        setTimeout(() => window.location.reload(), 1000)
+        setTimeout(() => {
+          if (pageLifecycle.signal.aborted) return
+          window.location.reload()
+        }, 1000)
       } else showToast("settings.purge_failed", "error")
     } catch {
       showToast("common.network_error", "error")
     }
-  })
+    })
+  }
 
   // Reset settings
-  document.getElementById("reset-settings")?.addEventListener("click", async () => {
+  const resetBtn = document.getElementById("reset-settings")
+  if (resetBtn) {
+    pageLifecycle.on(resetBtn, "click", async () => {
     const ok = await confirmDialog({
       title: "Reset Settings",
       message: "This will reset ALL settings to their default values.",
@@ -56,10 +65,14 @@ export function initDangerZoneSettings(): void {
         showToast("settings.reset_success")
         settingsStore.invalidate()
         // Full reload required — every setting (theme, locale, sidebar, integrations) changed
-        setTimeout(() => window.location.reload(), 1000)
+        setTimeout(() => {
+          if (pageLifecycle.signal.aborted) return
+          window.location.reload()
+        }, 1000)
       } else showToast("settings.reset_failed", "error")
     } catch {
       showToast("common.network_error", "error")
     }
-  })
+    })
+  }
 }

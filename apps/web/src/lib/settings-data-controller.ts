@@ -6,13 +6,16 @@
  */
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
 export function initDataSettings(): void {
   // JSON export
-  document.getElementById("export-json-btn")?.addEventListener("click", async (e) => {
+  const exportJsonBtn = document.getElementById("export-json-btn")
+  if (exportJsonBtn) {
+    pageLifecycle.on(exportJsonBtn, "click", async (e) => {
     e.preventDefault()
     try {
       await exportLocalDataAsJson()
@@ -21,10 +24,13 @@ export function initDataSettings(): void {
       log.error("Failed to export JSON", err)
       showToast("settings.export_failed", "error")
     }
-  })
+    })
+  }
 
   // Raw DB download with confirmation dialog
-  document.getElementById("export-db-btn")?.addEventListener("click", async () => {
+  const exportDbBtn = document.getElementById("export-db-btn")
+  if (exportDbBtn) {
+    pageLifecycle.on(exportDbBtn, "click", async () => {
     const confirmed = await confirmDialog({
       message: "This will download the entire raw SQLite database file. Continue?",
       title: "Download Database",
@@ -38,12 +44,13 @@ export function initDataSettings(): void {
     document.body.appendChild(a)
     a.click()
     a.remove()
-  })
+    })
+  }
 
   // Import Config Binding
   const importInput = document.getElementById("import-settings-input") as HTMLInputElement
   if (importInput) {
-    importInput.addEventListener("change", async (e) => {
+    pageLifecycle.on(importInput, "change", async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
@@ -64,7 +71,10 @@ export function initDataSettings(): void {
         showToast("settings.import_success")
         settingsStore.invalidate()
         // Full reload required — imported settings replace everything (theme, locale, integrations)
-        setTimeout(() => window.location.reload(), 1500)
+        setTimeout(() => {
+          if (pageLifecycle.signal.aborted) return
+          window.location.reload()
+        }, 1500)
       } catch (error) {
         log.error("Failed to import settings", error)
         showToast("settings.import_failed", "error")
@@ -73,7 +83,9 @@ export function initDataSettings(): void {
   }
 
   // Add custom field
-  document.getElementById("add-custom-field")?.addEventListener("click", () => {
+  const addFieldBtn = document.getElementById("add-custom-field")
+  if (addFieldBtn) {
+    pageLifecycle.on(addFieldBtn, "click", () => {
     const list = document.getElementById("custom-fields-list")
     if (!list) return
     const row = document.createElement("div")
@@ -148,11 +160,12 @@ export function initDataSettings(): void {
         showToast("settings.failed_save_field", "error")
       }
     })
-  })
+    })
+  }
 
   // Framework mapping change
   document.querySelectorAll(".framework-mapping-select").forEach((sel) => {
-    sel.addEventListener("change", () => {
+    pageLifecycle.on(sel, "change", () => {
       const mapping: Record<string, string[]> = {}
       document.querySelectorAll(".framework-mapping-select").forEach((s) => {
         const select = s as HTMLSelectElement

@@ -20,6 +20,7 @@
  *   4. n8n mode tab switching
  */
 import { createClientLogger } from "@lib/client-logger"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 
 // Domain controllers
@@ -43,7 +44,7 @@ export function initSettingsController(): void {
   }
 
   document.querySelectorAll<HTMLElement>(".integration-card__header").forEach((header) => {
-    header.addEventListener("click", () => {
+    pageLifecycle.on(header, "click", () => {
       const bodyId = header.dataset.target
       if (!bodyId) return
       const body = document.getElementById(bodyId)
@@ -56,22 +57,28 @@ export function initSettingsController(): void {
   })
 
   // ───── n8n mode tabs ─────
-  document.getElementById("n8n-mode-auto")?.addEventListener("click", () => {
-    document.getElementById("n8n-mode-auto")?.classList.add("mode-tab--active")
-    document.getElementById("n8n-mode-standalone")?.classList.remove("mode-tab--active")
-    const autoContent = document.getElementById("n8n-auto-content")
-    const standaloneContent = document.getElementById("n8n-standalone-content")
-    if (autoContent) autoContent.style.display = ""
-    if (standaloneContent) standaloneContent.style.display = "none"
-  })
-  document.getElementById("n8n-mode-standalone")?.addEventListener("click", () => {
-    document.getElementById("n8n-mode-standalone")?.classList.add("mode-tab--active")
-    document.getElementById("n8n-mode-auto")?.classList.remove("mode-tab--active")
-    const autoContent = document.getElementById("n8n-auto-content")
-    const standaloneContent = document.getElementById("n8n-standalone-content")
-    if (autoContent) autoContent.style.display = "none"
-    if (standaloneContent) standaloneContent.style.display = ""
-  })
+  const n8nAutoTab = document.getElementById("n8n-mode-auto")
+  if (n8nAutoTab) {
+    pageLifecycle.on(n8nAutoTab, "click", () => {
+      document.getElementById("n8n-mode-auto")?.classList.add("mode-tab--active")
+      document.getElementById("n8n-mode-standalone")?.classList.remove("mode-tab--active")
+      const autoContent = document.getElementById("n8n-auto-content")
+      const standaloneContent = document.getElementById("n8n-standalone-content")
+      if (autoContent) autoContent.style.display = ""
+      if (standaloneContent) standaloneContent.style.display = "none"
+    })
+  }
+  const n8nStandaloneTab = document.getElementById("n8n-mode-standalone")
+  if (n8nStandaloneTab) {
+    pageLifecycle.on(n8nStandaloneTab, "click", () => {
+      document.getElementById("n8n-mode-standalone")?.classList.add("mode-tab--active")
+      document.getElementById("n8n-mode-auto")?.classList.remove("mode-tab--active")
+      const autoContent = document.getElementById("n8n-auto-content")
+      const standaloneContent = document.getElementById("n8n-standalone-content")
+      if (autoContent) autoContent.style.display = "none"
+      if (standaloneContent) standaloneContent.style.display = ""
+    })
+  }
 
   // ───── Init all domain controllers ─────
   initThemeSettings()

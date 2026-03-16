@@ -4,6 +4,7 @@
  * Handles theme selection, custom theme import/export/delete,
  * locale, timezone, week start, and date format preferences.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import {
   setTheme as importedSetTheme,
@@ -48,7 +49,9 @@ export function initThemeSettings(): void {
   }
 
   // Theme selector — instant apply + persist via theme-watcher
-  document.getElementById("theme-select")?.addEventListener("change", async (e) => {
+  const themeSelectEl = document.getElementById("theme-select")
+  if (themeSelectEl) {
+    pageLifecycle.on(themeSelectEl, "change", async (e) => {
     const theme = (e.target as HTMLSelectElement).value as ThemeMode
     importedSetTheme(theme)
     await saveSetting("theme", theme)
@@ -62,10 +65,13 @@ export function initThemeSettings(): void {
             ? "Theme: Auto (System)"
             : "Theme: Custom",
     )
-  })
+    })
+  }
 
   // Custom theme file import handler
-  document.getElementById("custom-theme-input")?.addEventListener("change", async (e) => {
+  const customThemeInput = document.getElementById("custom-theme-input")
+  if (customThemeInput) {
+    pageLifecycle.on(customThemeInput, "change", async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0]
     if (!file) return
 
@@ -106,10 +112,13 @@ export function initThemeSettings(): void {
     }
 
     ;(e.target as HTMLInputElement).value = ""
-  })
+    })
+  }
 
   // Custom theme delete handler
-  document.getElementById("custom-theme-delete")?.addEventListener("click", async () => {
+  const deleteThemeBtn = document.getElementById("custom-theme-delete")
+  if (deleteThemeBtn) {
+    pageLifecycle.on(deleteThemeBtn, "click", async () => {
     const { confirmDialog } = await import("@lib/confirm-dialog")
     const ok = await confirmDialog({
       message: "Remove custom theme? The app will revert to Dark mode.",
@@ -127,10 +136,13 @@ export function initThemeSettings(): void {
     await saveSetting("custom_theme_name", "")
     updateCustomThemeDisplay(null)
     showToast("Custom theme removed — reverted to Dark")
-  })
+    })
+  }
 
   // Custom theme filename click — download the stored CSS
-  document.getElementById("custom-theme-filename")?.addEventListener("click", (e) => {
+  const filenameEl = document.getElementById("custom-theme-filename")
+  if (filenameEl) {
+    pageLifecycle.on(filenameEl, "click", (e) => {
     e.preventDefault()
     const css = localStorage.getItem("meitheal-custom-theme-css")
     if (!css) return
@@ -141,10 +153,13 @@ export function initThemeSettings(): void {
     a.download = document.getElementById("custom-theme-filename")?.textContent || "custom-theme.css"
     a.click()
     URL.revokeObjectURL(url)
-  })
+    })
+  }
 
   // Language selector — persist to API, cookie, localStorage
-  document.getElementById("locale-select")?.addEventListener("change", async (e) => {
+  const localeSelect = document.getElementById("locale-select")
+  if (localeSelect) {
+    pageLifecycle.on(localeSelect, "change", async (e) => {
     const locale = (e.target as HTMLSelectElement).value
     localStorage.setItem("meitheal-locale", locale)
     document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
@@ -157,31 +172,41 @@ export function initThemeSettings(): void {
     showToast(locale === "ga" ? "Teanga athraithe go Gaeilge" : "Language changed to English")
     // Full reload required — SSR translations are server-rendered and need a fresh page
     setTimeout(() => window.location.reload(), 800)
-  })
+    })
+  }
 
   // Timezone selector
-  document.getElementById("timezone-select")?.addEventListener("change", async (e) => {
+  const tzSelect = document.getElementById("timezone-select")
+  if (tzSelect) {
+    pageLifecycle.on(tzSelect, "change", async (e) => {
     const tz = (e.target as HTMLSelectElement).value
     localStorage.setItem("meitheal-timezone", tz)
     await saveSetting("timezone", tz)
     showToast("common.updated")
-  })
+    })
+  }
 
   // Week start selector
-  document.getElementById("week-start-select")?.addEventListener("change", async (e) => {
+  const wsSelect = document.getElementById("week-start-select")
+  if (wsSelect) {
+    pageLifecycle.on(wsSelect, "change", async (e) => {
     const ws = (e.target as HTMLSelectElement).value
     localStorage.setItem("meitheal-week-start", ws)
     await saveSetting("week_start", ws)
     showToast("common.updated")
-  })
+    })
+  }
 
   // Date format selector
-  document.getElementById("date-format-select")?.addEventListener("change", async (e) => {
+  const dfSelect = document.getElementById("date-format-select")
+  if (dfSelect) {
+    pageLifecycle.on(dfSelect, "change", async (e) => {
     const df = (e.target as HTMLSelectElement).value
     localStorage.setItem("meitheal-date-format", df)
     await saveSetting("date_format", df)
     showToast("common.updated")
-  })
+    })
+  }
 }
 
 // ───── Restore ─────
