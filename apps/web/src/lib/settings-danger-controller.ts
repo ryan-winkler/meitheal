@@ -29,7 +29,7 @@ export function initDangerZoneSettings(): void {
     try {
       const res = await fetch(
         (window.__ingress_path || "") + "/api/tasks?purge=all",
-        { method: "DELETE" },
+        { method: "DELETE", signal: pageLifecycle.signal },
       )
       if (res.ok) {
         showToast("settings.purge_success")
@@ -59,7 +59,7 @@ export function initDangerZoneSettings(): void {
     try {
       const res = await fetch(
         (window.__ingress_path || "") + "/api/settings?reset=all",
-        { method: "DELETE" },
+        { method: "DELETE", signal: pageLifecycle.signal },
       )
       if (res.ok) {
         showToast("settings.reset_success")

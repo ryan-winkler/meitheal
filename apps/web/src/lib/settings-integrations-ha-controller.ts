@@ -132,6 +132,7 @@ export function initHASettings(): void {
           timestamp: new Date().toISOString(),
           payload: { message: "Test ping from Meitheal", source: "settings" },
         }),
+        signal: pageLifecycle.signal,
       })
       showToast(res.ok ? `✅ Test sent — ${res.status}` : `⚠ Response: ${res.status}`, res.ok ? "success" : "error")
     } catch (err) {
