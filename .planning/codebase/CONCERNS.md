@@ -5,36 +5,33 @@
 ## Tech Debt
 
 **`@ts-nocheck` in `kanban-controller.ts`:**
-- Issue: Entire 2,025-line controller has `@ts-nocheck` — extracted from inline `<script>` without progressive typing
-- Files: `apps/web/src/lib/kanban-controller.ts`
-- Impact: No type safety on the most complex client controller. Refactoring risks runtime errors.
-- Fix approach: Remove `@ts-nocheck`, add explicit types section-by-section, fix revealed errors
+- ✅ **Resolved:** `@ts-nocheck` removed from `kanban-controller.ts` (2026-03-16)
 
 **Oversized Controllers:**
 - Issue: Several client controllers are >2,000 lines with mixed concerns
-- Files: `apps/web/src/lib/task-modal-controller.ts` (2,414 LoC), `apps/web/src/lib/kanban-controller.ts` (2,025 LoC)
+- Files: `apps/web/src/lib/task-modal-controller.ts` (2,484 LoC), `apps/web/src/lib/kanban-controller.ts` (2,025 LoC)
 - Impact: Difficult to navigate, test, and maintain. High cognitive load.
 - Fix approach: Decompose into focused sub-modules per domain concern
 - ✅ **Resolved:** `settings-controller.ts` decomposed from 3,218 LoC into 7 domain controllers (2026-03-16)
 
-**Raw `console.*` Calls (67 total):**
-- Issue: 67 raw `console.log/warn/error` calls instead of structured `createLogger()` from `@meitheal/domain-observability`
-- Files: `apps/web/src/lib/task-modal-controller.ts` (8), `apps/web/src/components/settings/SettingsGeneral.astro` (6), `apps/web/src/domains/offline/*.ts` (10), `apps/web/src/lib/kanban-controller.ts` (4), plus 32 across other files
-- Impact: Inconsistent logging, no structured output for Loki, no redaction
-- Fix approach: Replace with domain-aware `createLogger()` calls
-- ✅ **Resolved for settings:** All 11 settings controllers now use structured `log` from `settings-utils.ts` — zero raw `console.*` calls (2026-03-16)
+**Raw `console.*` Calls:**
+- ✅ **Resolved:** Reduced to 6 calls in logger infrastructure files only (`client-logger.ts` (5), `api-logger.ts` (1)) — these are legitimate console.* calls inside the logger implementation itself. Zero raw console.* in application code. (2026-03-16)
 
-**`(window as any)` Global Casts (29 total):**
-- Issue: 29 uses of `(window as any)` for cross-component communication instead of typed patterns
-- Files: `apps/web/src/lib/dashboard-controller.ts` (9), `apps/web/src/lib/page-lifecycle.ts` (3), `apps/web/src/components/tasks/NewTaskModal.astro` (2), plus 15 across other files
+**`(window as any)` Global Casts (11 remaining):**
+- Issue: 11 uses of `(window as any)` for cross-component communication instead of typed patterns
+- Files by category:
+  - **Listener guard flags (4):** `SettingsSystem.astro` (2), `PwaInstallBanner.astro` (2) — `__pwaCompactListenersBound`, `__pwaBannerListenersBound`
+  - **Page-lifecycle interval tracking (3):** `page-lifecycle.ts` (3) — `__meitheal_interval_*` keys
+  - **Exported global functions (2):** `FilterToolbar.astro` (`__isTaskVisible`), `PomodoroTimer.astro` (`startPomodoro`)
+  - **Utility polling (2):** `wait-for-fn.ts` (2) — polls for dynamically loaded functions
 - Impact: No type safety for inter-component contracts. Prone to silent failures.
-- Fix approach: Typed CustomEvent bus + proper `env.d.ts` declarations for legitimate globals like `__ingress_path`, `__featureFlags`
+- Fix approach: Add `Window` interface declaration in `env.d.ts` for all known globals
 
-**`window.location.reload()` Anti-Pattern (~26 remaining):**
+**`window.location.reload()` Anti-Pattern (~34 remaining):**
 - Issue: Multiple calls to `window.location.reload()` instead of DOM/state updates
-- Files by count: `kanban-controller.ts` (10), `today-controller.ts` (8), `task-modal-controller.ts` (2), `settings-danger-controller.ts` (2), `settings-theme-controller.ts` (1), `settings-data-controller.ts` (1), `layout-pwa-controller.ts` (1), `layout-controller.ts` (1)
+- Files by count: `kanban-controller.ts` (10), `today-controller.ts` (8), `task-modal-controller.ts` (2), `settings-danger-controller.ts` (2), `SettingsSystem.astro` (2), `settings-theme-controller.ts` (1), `settings-data-controller.ts` (1), `layout-pwa-controller.ts` (1), `layout-controller.ts` (2), `calendar.astro` (1), `offline.astro` (1), `SidebarBoardSwitcher.astro` (1), `SavedFilterPresets.astro` (1), `Layout.astro` (1)
 - Impact: Full page reloads disrupt user context, cause iframe reload behind HA ingress, waste bandwidth
-- Fix approach: Replace with targeted DOM updates, re-fetch data, or dispatch custom events. Phase 12 establishes `meitheal:tasks-changed` event pattern for NewTaskModal as migration template.
+- Fix approach: Replace with `meitheal:tasks-changed` CustomEvent dispatch for task mutations, keep legitimate reloads (settings purge/reset/import/locale/theme/sw-update)
 - ✅ **Resolved for settings:** Reloads reduced to 4 documented legitimate uses (purge/reset/import/locale) in Phase 08.2. All 11 controllers fully audited (2026-03-16)
 - ✅ **Phase 12:** NewTaskModal reload replaced with `meitheal:tasks-changed` CustomEvent + universal layout listener (2026-03-16)
 
