@@ -41,10 +41,10 @@
 ## Page Decomposition (PGD)
 
 - [x] **PGD-01**: Extract Kanban inline script (~800 lines) to `lib/kanban-controller.ts`
-- [ ] **PGD-02**: Extract Table inline script (~500 lines) to `lib/table-controller.ts`
-- [ ] **PGD-03**: Extract Dashboard inline script (~300 lines) to `lib/dashboard-controller.ts`
+- [x] **PGD-02**: Extract Table inline script (~500 lines) to `lib/table-controller.ts`
+- [x] **PGD-03**: Extract Dashboard inline script (~300 lines) to `lib/dashboard-controller.ts`
 - [x] **PGD-04**: Refactor Settings page orchestration into `settings-page.ts` + shell/store/registry modules and remove duplicated component page-load listeners
-- [ ] **PGD-05**: Extract Layout.astro scripts to `lib/layout-controller.ts`
+- [x] **PGD-05**: Extract Layout.astro module scripts to `lib/layout-body-controller.ts`, `lib/layout-shortcuts-controller.ts`, `lib/layout-pwa-controller.ts`
 
 ## Smart Today + Tooling (SMT/VER)
 

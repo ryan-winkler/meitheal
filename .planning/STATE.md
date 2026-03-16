@@ -2,9 +2,9 @@
 
 ## Current Position
 
-**Core Sprint Status:** Phases 1, 2, 4, 10, 11 complete. Phase 3 partially complete (PGD-01 landed). Phase 12 (UX/UI Audit) Wave 1 committed.
+**Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed.
 **Active Tracks:** Phase 12 UX/UI Audit — Wave 1 committed (Habits premium lift, priority a11y icons), Waves 2-5 pending
-**Last Completed Local Work:** Phase 12 Wave 1 — Habits premium CSS lift, priority accessibility icons (WCAG 2.2) — 2026-03-16
+**Last Completed Local Work:** Phase 3 PGD-02/03/05 — Layout.astro script extraction (779→613 lines), table and dashboard controllers verified — 2026-03-16
 **Session Date:** 2026-03-16
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
@@ -158,7 +158,7 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - ViewTransitions → ClientRouter test fix
 - Tests: 286 passed, 65 skipped
 
-## Phase 3 Summary (PARTIAL — PGD-01 COMPLETE)
+## Phase 3 Summary (COMPLETE ✅)
 
 | SHA | Description |
 |-----|-------------|
@@ -168,6 +168,9 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - kanban.astro: 3,319 → 1,353 lines (59% reduction)
 - kanban-controller.ts: 2,009 lines with `initKanbanBoard()` export
 - Fixed 2 pre-existing TS5076 errors in table-controller.ts
+- PGD-02: table-controller.ts (1,341 LoC) — table.astro reduced to 3-line import
+- PGD-03: dashboard-controller.ts (247 LoC) — index.astro reduced to 3-line import
+- PGD-05: Layout.astro module script extraction (779→613 lines, 166 lines extracted) into `layout-body-controller.ts`, `layout-shortcuts-controller.ts`, `layout-pwa-controller.ts`
 
 ## Phase 4A Summary (COMPLETE ✅)
 

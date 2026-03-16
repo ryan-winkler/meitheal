@@ -548,112 +548,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       </script>
 
       <script>
-        // ───── Service Worker Registration ─────
-        // Handled by module import below (sw-register.ts).
-        // Previous inline block removed to prevent duplicate registration.
-        // See <script> block at end of body importing @domains/offline/sw-register.
-
-        // ───── Sidebar Badge Hydration ─────
-        // SSR renders the badge with server-side count, but it can be stale or 0
-        // if the DB wasn't ready during SSR. This hydrates it client-side.
-        async function refreshSidebarBadge() {
-          try {
-            const res = await fetch(
-              (window.__ingress_path || "") + "/api/tasks?limit=1&offset=0",
-            );
-            if (!res.ok) return;
-            const data = await res.json();
-            const badge = document.getElementById("nav-count-tasks");
-            if (badge && typeof data.total === "number") {
-              badge.textContent = String(data.total);
-            }
-          } catch {
-            /* best-effort */
-          }
-        }
-        refreshSidebarBadge();
-
-        // Re-hydrate badge when tasks change (listen for custom events from task operations)
-        window.addEventListener("meitheal-tasks-changed", () =>
-          refreshSidebarBadge(),
-        );
-
-        // ───── Sync Notifications ─────
-        window.addEventListener("meitheal-sync", async (e: Event) => {
-          const ce = e as CustomEvent;
-          if (ce.detail?.type === "conflict-resolved") {
-            const { showToast } = await import("@lib/toast");
-            showToast("common.sync_conflict_merged", "success");
-          } else if (ce.detail?.type === "sync-error" && ce.detail.error) {
-            const { showToast } = await import("@lib/toast");
-            showToast(ce.detail.error, "error");
-          }
-        });
-
-        // ───── Route Transition Cleanup ─────
-        window.addEventListener("pagehide", () => {
-          const taskOverlay = document.getElementById("task-detail-overlay");
-          if (taskOverlay && !taskOverlay.classList.contains("hidden")) {
-            taskOverlay.classList.add("hidden");
-            document.body.style.overflow = "";
-          }
-        });
-
-        // ───── Ingress State Persistence ─────
-        // Save current route + scroll so that when HA destroys the iframe
-        // (user clicks another sidebar item) and recreates it (clicks back),
-        // we can restore the position instead of always landing on Dashboard.
-        (function initIngressStatePersistence() {
-          const ip = window.__ingress_path;
-          if (!ip) return;
-
-          const STORAGE_KEY = "meitheal-navigation-state";
-          const SCROLL_KEY = "meitheal-restore-scroll";
-
-          function saveState() {
-            try {
-              sessionStorage.setItem(
-                STORAGE_KEY,
-                JSON.stringify({
-                  path: window.location.pathname,
-                  scrollY: window.scrollY,
-                  timestamp: Date.now(),
-                }),
-              );
-            } catch { /* non-fatal */ }
-          }
-
-          // Save on every page load / Astro navigation
-          saveState();
-          document.addEventListener("astro:page-load", saveState);
-
-          // Save on unload (user clicking away from Meitheal)
-          window.addEventListener("beforeunload", saveState);
-
-          // Debounced scroll tracking
-          let scrollTimer: ReturnType<typeof setTimeout> | null = null;
-          window.addEventListener(
-            "scroll",
-            () => {
-              if (scrollTimer) clearTimeout(scrollTimer);
-              scrollTimer = setTimeout(saveState, 500);
-            },
-            { passive: true },
-          );
-
-          // Restore scroll position after redirect (if pending)
-          const pendingScroll = sessionStorage.getItem(SCROLL_KEY);
-          if (pendingScroll) {
-            sessionStorage.removeItem(SCROLL_KEY);
-            const y = parseInt(pendingScroll, 10);
-            if (y > 0) {
-              // Delay to let the page render first
-              requestAnimationFrame(() => {
-                window.scrollTo(0, y);
-              });
-            }
-          }
-        })();
+        import "@lib/layout-body-controller";
       </script>
     </div>
     <StrategicEvaluator />
@@ -674,51 +569,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <PwaInstallBanner />
     <!-- PWA: Service Worker Registration + Install Prompt + Update Handler -->
     <script>
-      import {
-        registerServiceWorker,
-        activateWaitingSw,
-      } from "@domains/offline/sw-register";
-
-      // Register service worker on page load
-      document.addEventListener("DOMContentLoaded", () => {
-        registerServiceWorker();
-      });
-
-      // Capture install prompt — store globally for install banner + settings
-      window.addEventListener("beforeinstallprompt", (e: any) => {
-        e.preventDefault();
-        window.__pwa_install_prompt = e;
-        window.dispatchEvent(new CustomEvent("meitheal-pwa-installable"));
-      });
-
-      // Track installation
-      window.addEventListener("appinstalled", () => {
-        window.__pwa_install_prompt = null;
-        window.dispatchEvent(new CustomEvent("meitheal-pwa-installed"));
-      });
-
-      // SW update toast — show when new version available
-      window.addEventListener("meitheal-sw-update", ((e: CustomEvent) => {
-        if (e.detail?.type !== "update-available") return;
-        const tc = document.querySelector(".toast-container");
-        if (!tc) return;
-        const toast = document.createElement("div");
-        toast.className = "toast info";
-        toast.setAttribute("role", "alert");
-        toast.innerHTML = `
-          <span>🔄 A new version of Meitheal is available.</span>
-          <button type="button" id="sw-update-btn"
-            style="margin-left:12px;padding:4px 12px;font-size:12px;font-weight:600;color:#fff;background:var(--accent,#6366F1);border:none;border-radius:6px;cursor:pointer;"
-          >Refresh</button>
-        `;
-        tc.appendChild(toast);
-        document
-          .getElementById("sw-update-btn")
-          ?.addEventListener("click", async () => {
-            await activateWaitingSw();
-            window.location.reload();
-          });
-      }) as EventListener);
+      import "@lib/layout-pwa-controller";
     </script>
     {showConfetti && <Confetti />}
     <PomodoroTimer enabled={showPomodoro} />
@@ -746,23 +597,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </div>
 
     <script>
-      import { createFocusTrap } from "@lib/focus-trap";
-      const shortcutOverlay = document.getElementById("shortcut-modal");
-      const shortcutTrap = shortcutOverlay ? createFocusTrap(shortcutOverlay) : null;
-      function openShortcutModal() {
-        shortcutOverlay?.classList.remove("hidden");
-        shortcutTrap?.activate();
-      }
-      function closeShortcutModal() {
-        shortcutTrap?.deactivate();
-        shortcutOverlay?.classList.add("hidden");
-      }
-      shortcutOverlay?.addEventListener("click", (e) => {
-        if (e.target === shortcutOverlay) closeShortcutModal();
-      });
-      document.getElementById("shortcut-modal-close")?.addEventListener("click", () => {
-        closeShortcutModal();
-      });
+      import "@lib/layout-shortcuts-controller";
     </script>
 
     <!-- Graceful fallback when JavaScript is disabled -->
