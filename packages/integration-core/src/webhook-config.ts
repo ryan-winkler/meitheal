@@ -37,6 +37,8 @@ export interface WebhookSubscriberConfig {
   secret: string
   events: string[]
   enabled: boolean
+  /** Optional custom headers to include in outbound webhook requests (e.g. Authorization) */
+  headers?: Record<string, string>
 }
 
 export type WebhookConfigParseResult =

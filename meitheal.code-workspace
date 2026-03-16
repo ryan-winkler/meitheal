@@ -2,48 +2,51 @@
   "folders": [
     {
       "path": ".",
-      "name": "📦 Meitheal Root",
+      "name": "📦 Meitheal Root"
     },
     {
       "path": "meitheal-hub",
-      "name": "🏠 HA Add-on",
+      "name": "🏠 HA Add-on"
     },
     {
       "path": "apps/web",
-      "name": "🌐 Web App",
+      "name": "🌐 Web App"
     },
     {
       "path": "apps/api",
-      "name": "🔌 API",
+      "name": "🔌 API"
     },
     {
       "path": "packages/domain-tasks",
-      "name": "📋 Domain: Tasks",
+      "name": "📋 Domain: Tasks"
     },
     {
       "path": "packages/domain-strategy",
-      "name": "🎯 Domain: Strategy",
+      "name": "🎯 Domain: Strategy"
     },
     {
       "path": "packages/domain-auth",
-      "name": "🔐 Domain: Auth",
+      "name": "🔐 Domain: Auth"
     },
     {
       "path": "packages/domain-observability",
-      "name": "📊 Domain: Observability",
+      "name": "📊 Domain: Observability"
     },
     {
       "path": "packages/integration-core",
-      "name": "🔗 Integration Core",
+      "name": "🔗 Integration Core"
     },
     {
       "path": "integrations/home-assistant",
-      "name": "🏡 HA Integration",
+      "name": "🏡 HA Integration"
     },
     {
       "path": "docs",
-      "name": "📖 Docs",
+      "name": "📖 Docs"
     },
+    {
+      "path": "../../.gemini/antigravity/brain"
+    }
   ],
   "settings": {
     "files.exclude": {

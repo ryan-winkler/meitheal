@@ -69,6 +69,7 @@ export async function emitWebhook(
           "x-meitheal-signature": `sha256=${signature}`,
           "x-meitheal-event": event.eventType,
           "x-meitheal-delivery-id": deliveryId,
+          ...(subscriber.headers ?? {}),
         },
         body: payload,
       })

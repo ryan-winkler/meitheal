@@ -139,7 +139,8 @@ try {
     }
   }
 } catch (e) {
-  console.error("[Sidebar.astro] Failed to load sidebar_config:", e);
+  const { logApiError } = await import("@lib/api-logger");
+  logApiError("sidebar", "load_sidebar_config", e);
   // DB fallback — use defaults
 }
 

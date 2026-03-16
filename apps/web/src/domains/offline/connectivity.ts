@@ -101,11 +101,9 @@ function connectSSE(): void {
 
     sseConnection.onopen = () => {
       sseReconnectAttempts = 0; // Reset backoff on success
-      // console.log("[sse] Connected");
     };
 
     sseConnection.onerror = () => {
-      // console.warn("[sse] Connection lost. Backing off...");
       if (sseConnection) {
         sseConnection.close();
         sseConnection = null;

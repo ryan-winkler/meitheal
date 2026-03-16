@@ -882,7 +882,7 @@ const { locale } = Astro.props
           renderCustomUsers(customUsers);
         })
         .catch(function (err) {
-          console.error("[Settings] Users load error:", err);
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Users load error:", err);
           if (discoveredList) {
             discoveredList.innerHTML = "";
             discoveredList.appendChild(
@@ -943,7 +943,7 @@ const { locale } = Astro.props
                 initUsersCard();
               })
               .catch(function (err) {
-                console.error("Delete custom user error:", err);
+                ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Delete custom user error:", err);
               });
           });
           row.appendChild(delBtn);
@@ -967,7 +967,7 @@ const { locale } = Astro.props
                 window.showToast("Default assignee saved");
             })
             .catch(function (err) {
-              console.error("Save default assignee error:", err);
+              ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save default assignee error:", err);
             });
         });
 
@@ -993,7 +993,7 @@ const { locale } = Astro.props
               }
             })
             .catch(function (err) {
-              console.error("Add custom user error:", err);
+              ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Add custom user error:", err);
             });
         });
     }
@@ -1055,7 +1055,7 @@ const { locale } = Astro.props
             window.showToast("Backlog mode saved — reload Kanban to apply");
         })
         .catch(function (err) {
-          console.error("Save backlog mode error:", err);
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save backlog mode error:", err);
         });
     });
   })();
@@ -1097,7 +1097,7 @@ const { locale } = Astro.props
             );
         })
         .catch(function (err) {
-          console.error("Save retention error:", err);
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save retention error:", err);
         });
     });
   })();
@@ -1387,7 +1387,7 @@ const { locale } = Astro.props
           }, 1500);
         })
         .catch(function (err) {
-          console.error("Save notification prefs error:", err);
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save notification prefs error:", err);
           saveBtn.textContent = "✗ Failed";
           setTimeout(function () {
             saveBtn.textContent = origText;

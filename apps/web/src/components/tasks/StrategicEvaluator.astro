@@ -290,7 +290,7 @@ const defaultMapping: Record<string, string> = {
         );
       }
     } catch (e) {
-      console.error("Failed to save evaluation", e);
+      ;(window.__mLog ? window.__mLog("strategy", "evaluator") : console).error("Failed to save evaluation", e);
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = "Accept & Save";
@@ -477,7 +477,7 @@ const defaultMapping: Record<string, string> = {
         askAiBtn.innerHTML = `<span>✨</span> AI Responded`;
       }
     } catch (err) {
-      console.error("Auto-score failed:", err);
+      ;(window.__mLog ? window.__mLog("strategy", "evaluator") : console).error("Auto-score failed:", err);
       const just = document.createElement("div");
       just.id = "se-ai-justification";
       just.className =

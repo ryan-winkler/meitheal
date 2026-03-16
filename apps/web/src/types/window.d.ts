@@ -66,6 +66,10 @@ interface MeithealWindowExtensions {
   /** Whether PWA is supported in this browser context */
   __pwa_supported?: boolean;
 
+  // === Logging ===
+  /** Global logger bridge for is:inline scripts (registered by Layout.astro) */
+  __mLog?: (domain: string, component?: string) => import("../lib/client-logger").ClientLogger;
+
   // === Cleanup ===
   /** AbortController cleanup for table resize listener */
   __tableResizeCleanup?: () => void;

@@ -2,10 +2,13 @@
 //   attachStrategicLens
 
         import { confirmDialog } from "@lib/confirm-dialog";
-        import { createClientLogger } from "@lib/client-logger";
+        import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { pageLifecycle } from "@lib/page-lifecycle";
 
         const log = createClientLogger("app", "layout");
+
+        // Register global logger bridge for is:inline scripts
+        registerGlobalLogger();
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;

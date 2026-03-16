@@ -1220,6 +1220,52 @@ export function initSettingsController(): void {
         showToast("settings.n8n_saved");
       });
 
+    // ───── Test Webhook (Standalone mode — POSTs via server to avoid CORS) ─────
+    document
+      .getElementById("test-webhook-standalone")
+      ?.addEventListener("click", async () => {
+        const btn = document.getElementById(
+          "test-webhook-standalone",
+        ) as HTMLButtonElement;
+        const resultDiv = document.getElementById("test-webhook-result");
+        const msgSpan = document.getElementById("test-webhook-message");
+        if (!btn) return;
+
+        btn.textContent = "🔌 Sending...";
+        btn.disabled = true;
+
+        try {
+          const res = await fetch(
+            (window.__ingress_path || "") + "/api/integrations/test-webhook",
+            { method: "POST", headers: { "content-type": "application/json" } },
+          );
+          const data = await res.json();
+
+          if (resultDiv && msgSpan) {
+            resultDiv.style.display = "block";
+            if (data.success) {
+              resultDiv.className =
+                "integration-callout integration-callout--success";
+              msgSpan.textContent = data.hint || `✅ Delivered (${data.status_code}) in ${data.latency_ms}ms`;
+            } else {
+              resultDiv.className =
+                "integration-callout integration-callout--warning";
+              msgSpan.textContent = data.hint || data.error || "Failed to send test webhook";
+            }
+          }
+        } catch (err) {
+          if (resultDiv && msgSpan) {
+            resultDiv.style.display = "block";
+            resultDiv.className =
+              "integration-callout integration-callout--warning";
+            msgSpan.textContent = `❌ Network error: ${err instanceof Error ? err.message : "unknown"}`;
+          }
+        }
+
+        btn.textContent = "🔌 Test Webhook";
+        btn.disabled = false;
+      });
+
     // ───── Grocy Save ─────
     // Auto-key generation button
     document

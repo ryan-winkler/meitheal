@@ -44,6 +44,25 @@ export interface ClientLogger {
  * log.error("Unexpected state", err)
  * ```
  */
+/**
+ * Global logger bridge for is:inline scripts.
+ *
+ * is:inline scripts cannot use ESM imports, so they access the logger
+ * via window.__mLog(domain, component?). This function is registered
+ * on the window object by Layout.astro's module script.
+ *
+ * @example (in is:inline script)
+ * ```js
+ * const log = window.__mLog("settings", "general")
+ * log.error("Save failed", err)
+ * ```
+ */
+export function registerGlobalLogger(): void {
+  if (typeof window !== "undefined") {
+    window.__mLog = createClientLogger
+  }
+}
+
 export function createClientLogger(domain: string, component?: string): ClientLogger {
   const prefix = component
     ? `[Meitheal][${domain}/${component}]`

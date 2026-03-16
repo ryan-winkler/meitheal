@@ -88,7 +88,7 @@ async function getCachedWebhookSettings(): Promise<Record<string, unknown>> {
   try {
     const client = getPersistenceClient();
     const result = await client.execute(
-      "SELECT key, value FROM settings WHERE key IN ('webhook_endpoint', 'webhook_secret', 'n8n_webhook_url', 'n8n_events')"
+      "SELECT key, value FROM settings WHERE key IN ('webhook_endpoint', 'webhook_secret', 'n8n_webhook_url', 'n8n_events', 'n8n_api_key', 'n8n_signing_secret')"
     );
     for (const row of result.rows) {
       try {
@@ -181,12 +181,17 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
       if (Array.isArray(webhookSettings.n8n_events) && webhookSettings.n8n_events.length > 0) {
         events = webhookSettings.n8n_events;
       }
+      const n8nHeaders: Record<string, string> = {};
+      if (webhookSettings.n8n_api_key) {
+        n8nHeaders["authorization"] = `Bearer ${String(webhookSettings.n8n_api_key)}`;
+      }
       subscribers.push({
         id: "n8n-webhook",
         url: String(webhookSettings.n8n_webhook_url),
-        secret: "", // n8n doesn't strictly require the secret signature from the UI
+        secret: webhookSettings.n8n_signing_secret ? String(webhookSettings.n8n_signing_secret) : "",
         events,
         enabled: true,
+        ...(Object.keys(n8nHeaders).length > 0 ? { headers: n8nHeaders } : {}),
       });
     }
 

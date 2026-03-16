@@ -1105,6 +1105,17 @@ const { locale } = Astro.props;
               class="btn btn-primary"
               id="save-n8n-standalone">Save Standalone Settings</button
             >
+            <button type="button" class="btn btn-ghost" id="test-webhook-standalone"
+              >🔌 Test Webhook</button
+            >
+          </div>
+          <div
+            id="test-webhook-result"
+            class="integration-callout integration-callout--info"
+            style="display: none; margin-top: 8px;"
+            aria-live="polite"
+          >
+            <span id="test-webhook-message"></span>
           </div>
         </div>
       </div>
@@ -2465,7 +2476,7 @@ const { locale } = Astro.props;
         });
       }
     } catch {
-      console.warn("[Meitheal] Grocy auto-detect failed");
+      ;(window.__mLog ? window.__mLog("settings", "integrations") : console).warn("Grocy auto-detect failed");
     }
   }
   /**
@@ -2520,7 +2531,7 @@ const { locale } = Astro.props;
         }
       }
     } catch {
-      console.warn("[Meitheal] Node-RED/n8n auto-detect failed");
+      ;(window.__mLog ? window.__mLog("settings", "integrations") : console).warn("Node-RED/n8n auto-detect failed");
     }
   }
   initIntegrationCards();
