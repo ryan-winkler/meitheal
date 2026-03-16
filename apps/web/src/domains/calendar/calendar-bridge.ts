@@ -15,6 +15,7 @@
  * @bounded-context integration
  */
 import { onEntityChange, listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "../ha";
+import { emitCalendarSynced } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import { STATUS } from "../../lib/status-config";
 
@@ -73,11 +74,18 @@ interface EntitySyncState {
   config: CalendarSyncConfig;
   timer: ReturnType<typeof setInterval> | null;
   unsubscribers: (() => void)[];
+  abortController: AbortController;
   lastSyncAt: number | null;
   lastSyncEventCount: number | null;
   lastSyncError: string | null;
   consecutiveFailures: number;
 }
+
+/** Hard cap: prevent runaway entity registration (memory safety) */
+const MAX_ENTITIES = 10;
+
+/** Sync timeout per entity — prevents hung syncs from blocking forever */
+const SYNC_TIMEOUT_MS = 30_000;
 
 /** Map of entityId → sync state for multi-calendar support */
 const activeSyncs = new Map<string, EntitySyncState>();
@@ -119,16 +127,27 @@ function debounceWithCancel<T extends (...args: unknown[]) => unknown>(
 export function startMultiCalendarSync(configs: CalendarSyncConfig[]): void {
   stopCalendarSync();
 
-  for (const config of configs) {
-    if (!config.syncEnabled) continue;
+  const enabled = configs.filter(c => c.syncEnabled);
+
+  // Memory safety: cap entity count to prevent runaway resource usage
+  if (enabled.length > MAX_ENTITIES) {
+    logger.log("warn", {
+      event: "calendar.sync.entity_cap", domain: "calendar", component: "calendar-bridge",
+      request_id: SYS_REQ,
+      message: `Too many calendar entities (${enabled.length}). Capping at ${MAX_ENTITIES} to prevent memory issues.`,
+      metadata: { requested: enabled.length, cap: MAX_ENTITIES },
+    });
+  }
+
+  for (const config of enabled.slice(0, MAX_ENTITIES)) {
     startSingleEntitySync(config);
   }
 
   logger.log("info", {
     event: "calendar.sync.multi_started", domain: "calendar", component: "calendar-bridge",
     request_id: SYS_REQ,
-    message: `Multi-calendar sync started for ${configs.filter(c => c.syncEnabled).length} entities`,
-    metadata: { entities: configs.filter(c => c.syncEnabled).map(c => c.entityId) },
+    message: `Multi-calendar sync started for ${Math.min(enabled.length, MAX_ENTITIES)} entities`,
+    metadata: { entities: enabled.slice(0, MAX_ENTITIES).map(c => c.entityId) },
   });
 }
 
@@ -153,6 +172,7 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
     config,
     timer: null,
     unsubscribers: [],
+    abortController: new AbortController(),
     lastSyncAt: null,
     lastSyncEventCount: null,
     lastSyncError: null,
@@ -276,7 +296,26 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
   syncingEntities.add(entityId);
 
   try {
-    return await _syncEntityFromHAInner(entityId, state ?? null);
+    // Wrap in timeout to prevent hung syncs from blocking indefinitely
+    const result = await Promise.race([
+      _syncEntityFromHAInner(entityId, state ?? null),
+      new Promise<{ created: number; updated: number; total: number }>((_, reject) =>
+        setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
+      ),
+    ]);
+    return result;
+  } catch (err) {
+    // Timeout or unexpected error — still update state
+    if (state) {
+      state.lastSyncError = String(err);
+      state.lastSyncAt = Date.now();
+      state.consecutiveFailures++;
+    }
+    logger.log("error", {
+      event: "calendar.sync.timeout_or_error", domain: "calendar", component: "calendar-bridge",
+      request_id: SYS_REQ, message: `Sync failed for ${entityId}: ${err}`,
+    });
+    return { created: 0, updated: 0, total: 0 };
   } finally {
     syncingEntities.delete(entityId);
   }
@@ -506,6 +545,17 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       message: `Calendar sync complete for ${entityId}: ${created} created, ${updated} updated, ${skipped} skipped from ${events.length} events`,
       metadata: { entity_id: entityId, sync_mode: state?.config.syncMode ?? "bidirectional", event_count: events.length, created, updated, skipped },
     });
+
+    // Emit HA event for Node-RED/n8n automation
+    const syncMode = state?.config.syncMode ?? "bidirectional"
+    const directionMap = { import: "inbound", export: "outbound", bidirectional: "bidirectional" } as const
+    emitCalendarSynced({
+      entity_id: entityId,
+      sync_direction: directionMap[syncMode] ?? "bidirectional",
+      events_created: created,
+      events_updated: updated,
+      total_events: events.length,
+    }).catch(() => { /* fire-and-forget */ });
 
     return { created, updated, total: events.length };
   } catch (err) {
@@ -753,8 +803,27 @@ export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> 
 function stopSingleEntitySync(entityId: string): void {
   const state = activeSyncs.get(entityId);
   if (!state) return;
-  if (state.timer) clearInterval(state.timer);
+
+  // Clear periodic interval
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+
+  // Abort any in-flight fetch/sync operations
+  state.abortController.abort();
+
+  // Call all unsubscribers (entity change listeners + debounce cancel fns)
   state.unsubscribers.forEach((u) => u());
+
+  // Cleanup any orphaned debounce timers for this entity
+  const debounceKey = `entity-change-${entityId}`;
+  const orphanedTimer = debounceTimers.get(debounceKey);
+  if (orphanedTimer) {
+    clearTimeout(orphanedTimer);
+    debounceTimers.delete(debounceKey);
+  }
+
   activeSyncs.delete(entityId);
 }
 
@@ -838,9 +907,11 @@ interface CalDAVSyncState {
   url: string;
   timer: ReturnType<typeof setInterval> | null;
   intervalMs: number;
+  syncMode: CalendarSyncMode;
   lastSyncAt: number | null;
   lastSyncEventCount: number | null;
   lastSyncError: string | null;
+  consecutiveFailures: number;
 }
 
 let caldavSyncState: CalDAVSyncState | null = null;
@@ -856,9 +927,11 @@ export function startCalDAVSync(url: string, intervalMs: number): void {
     url,
     timer: null,
     intervalMs,
+    syncMode: "import",
     lastSyncAt: null,
     lastSyncEventCount: null,
     lastSyncError: null,
+    consecutiveFailures: 0,
   };
 
   // Run initial sync
@@ -882,6 +955,7 @@ export function startCalDAVSync(url: string, intervalMs: number): void {
 export function stopCalDAVSync(): void {
   if (caldavSyncState?.timer) {
     clearInterval(caldavSyncState.timer);
+    caldavSyncState.timer = null;
   }
   caldavSyncState = null;
 }
@@ -892,6 +966,16 @@ export function stopCalDAVSync(): void {
  */
 export async function syncCalDAVEvents(): Promise<{ created: number; updated: number; total: number }> {
   if (!caldavSyncState) {
+    return { created: 0, updated: 0, total: 0 };
+  }
+
+  // Backoff: skip sync after 5 consecutive failures
+  if (caldavSyncState.consecutiveFailures >= 5) {
+    logger.log("warn", {
+      event: "calendar.caldav.backoff", domain: "calendar", component: "calendar-bridge",
+      request_id: SYS_REQ,
+      message: `CalDAV backoff — ${caldavSyncState.consecutiveFailures} consecutive failures (last: ${caldavSyncState.lastSyncError})`,
+    });
     return { created: 0, updated: 0, total: 0 };
   }
 
