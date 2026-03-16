@@ -3,7 +3,7 @@ import Layout from "../layouts/Layout.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
-import RiceBadge from "../components/ui/RiceBadge.astro";
+import FrameworkBadge from "../components/ui/FrameworkBadge.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import ColumnCustomizer from "../components/ui/ColumnCustomizer.astro"
@@ -364,7 +364,7 @@ const treeRows = buildTreeRows(tasks);
                     </td>
                     <td class="cell-center">
                       {task.rice !== null ? (
-                        <RiceBadge rice={task.rice} />
+                        <FrameworkBadge score={task.rice} framework="RICE" />
                       ) : (
                         <span class="text-muted">—</span>
                       )}

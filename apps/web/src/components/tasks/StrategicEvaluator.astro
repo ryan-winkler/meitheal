@@ -156,6 +156,12 @@ const defaultMapping: Record<string, string> = {
         html += `<option value="${opt.value}" ${isSel}>${opt.label}</option>`;
       }
       html += `</select>`;
+    } else if (field.ui_type === "checkbox" || field.type === "boolean") {
+      const isChecked = val === true || val === 1 || val === "true" || val === "1" ? "checked" : "";
+      html += `<label class="flex items-center gap-3 cursor-pointer text-sm bg-bg-primary border border-border px-3 py-2.5 rounded hover:border-accent transition-colors mt-1">
+        <input type="checkbox" class="accent-accent w-4 h-4 se-input se-checkbox" data-key="${field.key}" data-framework="${frameworkId}" ${isChecked}>
+        <span class="text-text-secondary">${field.help_text || field.description || "Enabled"}</span>
+      </label>`;
     } else {
       html += `<input type="text" class="form-input w-full text-sm py-2 se-input" data-key="${field.key}" data-framework="${frameworkId}" value="${val}" />`;
     }
@@ -172,14 +178,21 @@ const defaultMapping: Record<string, string> = {
     document.querySelectorAll(".se-input").forEach((el) => {
       const k = el.getAttribute("data-key");
       const fw = el.getAttribute("data-framework");
-      const v = el.type === "radio" ? (el.checked ? el.value : null) : el.value;
+      let v;
+      if (el.type === "checkbox") {
+        v = el.checked;
+      } else if (el.type === "radio") {
+        v = el.checked ? el.value : null;
+      } else {
+        v = el.value;
+      }
 
       if (!varsPerFw[fw]) varsPerFw[fw] = {};
-      if (v !== null) varsPerFw[fw][k] = isNaN(Number(v)) ? v : Number(v);
+      if (v !== null) varsPerFw[fw][k] = typeof v === "boolean" ? v : (isNaN(Number(v)) ? v : Number(v));
 
       // Update display text
       const display = document.getElementById(`val-display-${fw}-${k}`);
-      if (display && el.type !== "radio") display.textContent = v;
+      if (display && el.type !== "radio" && el.type !== "checkbox") display.textContent = v;
     });
 
     // Assign gathered payload back
@@ -297,12 +310,12 @@ const defaultMapping: Record<string, string> = {
     }
   });
 
-  // 5. Sidebar Integrator (Exposed Globally so Layout.astro can call it when Task Detail opens)
+  // 5. Sidebar Integrator — uses rule resolver API for framework selection
   window.attachStrategicLens = async function (
     taskId,
     taskType,
     frameworkPayloadStr,
-    cachedSettings,
+    _cachedSettings,
   ) {
     currentTaskId = taskId;
     currentTaskType = taskType || "task";
@@ -314,33 +327,23 @@ const defaultMapping: Record<string, string> = {
       currentPayload = {};
     }
 
-    // Determine active frameworks — prefer cached settings from Layout, fallback to fetch
+    // ── Rule-driven framework selection via /api/rules/resolve ──
     let fwIds = null;
-    let settings = cachedSettings || null;
-    if (!settings) {
-      try {
-        const settingsRes = await fetch(
-          (window.__ingress_path || "") + "/api/settings",
-        );
-        if (settingsRes.ok) settings = await settingsRes.json();
-      } catch {
-        /* fall through to defaults */
+    try {
+      const resolveRes = await fetch(
+        (window.__ingress_path || "") + `/api/rules/resolve?taskType=${encodeURIComponent(currentTaskType)}`,
+      );
+      if (resolveRes.ok) {
+        const resolveData = await resolveRes.json();
+        if (resolveData.data && Array.isArray(resolveData.data.lensIds) && resolveData.data.lensIds.length > 0) {
+          fwIds = resolveData.data.lensIds;
+        }
       }
-    }
-    if (settings?.framework_mapping) {
-      const userMapping =
-        typeof settings.framework_mapping === "string"
-          ? JSON.parse(settings.framework_mapping)
-          : settings.framework_mapping;
-      if (
-        userMapping[currentTaskType] &&
-        Array.isArray(userMapping[currentTaskType])
-      ) {
-        fwIds = userMapping[currentTaskType];
-      }
+    } catch {
+      /* fall through to defaults */
     }
 
-    // Fallback to defaultMapping if settings didn't have a mapping
+    // Fallback to defaultMapping if rules didn't resolve anything
     if (!fwIds) {
       fwIds = defaultMapping[currentTaskType];
       if (typeof fwIds === "string") fwIds = [fwIds];
@@ -381,6 +384,16 @@ const defaultMapping: Record<string, string> = {
         } else {
           html += `<div class="px-3 py-2 rounded-md bg-bg-hover flex justify-between items-center mb-1"><span class="text-xs text-text-muted">${fw.data.name} Score</span><span class="font-mono text-sm">${p.score}</span></div>`;
         }
+      } else if (fw.data.archetype === "checklist") {
+        // KCS-style checklist — show completed/total
+        const total = fw.data.fields ? fw.data.fields.length : 0;
+        const completed = Object.values(p).filter((v) => v === true).length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+        const color = pct >= 80 ? "success" : pct >= 50 ? "warning" : "danger";
+        html += `<div class="px-3 py-2 rounded-md bg-${color}/10 border border-${color}/20 flex items-center justify-between mb-1">
+          <span class="text-xs font-bold text-${color} uppercase tracking-wider">${fw.data.name}: ${completed}/${total}</span>
+          <span class="font-mono font-bold text-${color}">${pct}%</span>
+        </div>`;
       } else if (p._evaluatedAt) {
         html += `<div class="px-3 py-2 rounded-md bg-bg-hover border border-border flex items-center justify-between mb-1">
           <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">${fw.data.name} Evaluated</span>

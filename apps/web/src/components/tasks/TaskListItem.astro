@@ -14,7 +14,7 @@
  */
 import StatusBadge from "../ui/StatusBadge.astro"
 import PriorityLabel from "../ui/PriorityLabel.astro"
-import RiceBadge from "../ui/RiceBadge.astro"
+import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { formatTicketKey } from "../../lib/ticket-key"
@@ -141,7 +141,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         <span title="Synced to calendar">· 📅</span>
       )}
       {task.rice !== null && <span>·</span>}
-      <RiceBadge rice={task.rice} />
+      <FrameworkBadge score={task.rice} framework="RICE" />
     </div>
 
     {/* Progress bar */}
