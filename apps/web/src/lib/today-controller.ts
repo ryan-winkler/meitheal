@@ -33,6 +33,7 @@ import {
   matchesStatusFilter,
   matchesRiceFilter,
 } from "./filter-state"
+import { createListenerManager, installPageCleanup } from "./managed-listeners"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -47,14 +48,19 @@ let focusedIndex = -1
 const SECTION_COLLAPSE_KEY = "meitheal-today-sections"
 let batchMode = false
 const batchSelected = new Set<string>()
-let pollTimer: ReturnType<typeof setInterval> | null = null
 const EVENING_REVIEW_KEY = "meitheal-evening-review-dismissed"
 const MIGRATION_PROMPT_KEY = "meitheal-migration-dismissed"
 const WIP_LIMIT = 6
+let lm = createListenerManager()
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
 export function initTodayPage(options?: Partial<TodayControllerOptions>) {
+  // Cleanup previous instance (prevents listener leaks on page re-init)
+  lm.cleanup()
+  lm = createListenerManager()
+  installPageCleanup(lm)
+
   const container = options?.container ?? document.body
 
   setupEventDelegation(container)
@@ -91,7 +97,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 // ── Event Delegation ──────────────────────────────────────────────────────
 
 function setupEventDelegation(container: HTMLElement) {
-  container.addEventListener("click", async (e) => {
+  lm.on(container, "click", async (e: Event) => {
     const target = e.target as HTMLElement
 
     // ── Checkbox completion ──
@@ -342,8 +348,8 @@ function showSnoozePopover(anchor: HTMLElement) {
   activeSnoozePopover = popover
 
   // Close on outside click
-  setTimeout(() => {
-    document.addEventListener("click", closeSnoozePopover, { once: true })
+  lm.onTimeout(() => {
+    lm.on(document, "click", closeSnoozePopover, { once: true })
   }, 0)
 }
 
@@ -402,7 +408,7 @@ function setupQuickAdd(container: HTMLElement) {
 
   if (!quickForm || !quickInput) return
 
-  quickForm.addEventListener("submit", async (e) => {
+  lm.on(quickForm, "submit", async (e: Event) => {
     e.preventDefault()
     const text = quickInput.value.trim()
     if (!text) return
@@ -459,7 +465,7 @@ function setupQuickAdd(container: HTMLElement) {
 
   // Live NL feedback
   let feedbackTimer: ReturnType<typeof setTimeout> | null = null
-  quickInput.addEventListener("input", () => {
+  lm.on(quickInput, "input", () => {
     if (feedbackTimer) clearTimeout(feedbackTimer)
 
     feedbackTimer = setTimeout(() => {
@@ -507,11 +513,12 @@ function setupFilters(container: HTMLElement) {
   filterIds.forEach(id => {
     const el = container.querySelector(`#${id}`) as HTMLElement | null
     if (!el) return
-    el.addEventListener(id === "today-search" ? "input" : "change", () => applyFilters(container))
+    lm.on(el, id === "today-search" ? "input" : "change", () => applyFilters(container))
   })
 
   // Clear filters
-  container.querySelector("#today-clear-filters")?.addEventListener("click", () => {
+  const clearBtn = container.querySelector("#today-clear-filters")
+  if (clearBtn) lm.on(clearBtn, "click", () => {
     const search = container.querySelector("#today-search") as HTMLInputElement | null
     const status = container.querySelector("#today-filter-status") as HTMLSelectElement | null
     const priority = container.querySelector("#today-filter-priority") as HTMLSelectElement | null
@@ -648,7 +655,8 @@ function setupKeyboardNav(container: HTMLElement) {
     items[focusedIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }
 
-  document.addEventListener("keydown", (e) => {
+  lm.on(document, "keydown", (evt: Event) => {
+    const e = evt as KeyboardEvent
     const tag = (e.target as HTMLElement).tagName
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" ||
         (e.target as HTMLElement).contentEditable === "true") return
@@ -746,7 +754,7 @@ function setupBatchUI(container: HTMLElement) {
   batchBtn.style.cssText = "flex-shrink: 0; font-size: 14px;"
   filterBar.appendChild(batchBtn)
 
-  batchBtn.addEventListener("click", () => {
+  lm.on(batchBtn, "click", () => {
     batchMode = !batchMode
     batchBtn.classList.toggle("active", batchMode)
     container.classList.toggle("batch-mode", batchMode)
@@ -759,7 +767,7 @@ function setupBatchUI(container: HTMLElement) {
   })
 
   // Listen for batch checkbox changes (dynamically added)
-  container.addEventListener("change", (e) => {
+  lm.on(container, "change", (e: Event) => {
     const target = e.target as HTMLInputElement
     if (!target.classList.contains("tli__batch-cb")) return
     const id = target.dataset.id
@@ -816,7 +824,8 @@ function updateBatchBar(container: HTMLElement) {
     <button type="button" class="btn btn-sm batch-deselect-btn" title="Deselect all">✕</button>
   `
 
-  bar.querySelector(".batch-complete-btn")?.addEventListener("click", async () => {
+  const batchCompleteBtn = bar.querySelector(".batch-complete-btn")
+  if (batchCompleteBtn) lm.on(batchCompleteBtn, "click", async () => {
     const ids = Array.from(batchSelected)
     try {
       await Promise.all(ids.map(id => taskApi.updateTask(id, { status: "complete" })))
@@ -826,7 +835,8 @@ function updateBatchBar(container: HTMLElement) {
     } catch { showToast("common.failed", "error") }
   })
 
-  bar.querySelector(".batch-snooze-btn")?.addEventListener("click", async () => {
+  const batchSnoozeBtn = bar.querySelector(".batch-snooze-btn")
+  if (batchSnoozeBtn) lm.on(batchSnoozeBtn, "click", async () => {
     const ids = Array.from(batchSelected)
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
@@ -838,7 +848,8 @@ function updateBatchBar(container: HTMLElement) {
     } catch { showToast("common.failed", "error") }
   })
 
-  bar.querySelector(".batch-delete-btn")?.addEventListener("click", async () => {
+  const batchDeleteBtn = bar.querySelector(".batch-delete-btn")
+  if (batchDeleteBtn) lm.on(batchDeleteBtn, "click", async () => {
     const ids = Array.from(batchSelected)
     const ok = await confirmDialog({
       title: `Delete ${ids.length} tasks?`,
@@ -854,7 +865,8 @@ function updateBatchBar(container: HTMLElement) {
     } catch { showToast("common.failed", "error") }
   })
 
-  bar.querySelector(".batch-deselect-btn")?.addEventListener("click", () => {
+  const batchDeselectBtn = bar.querySelector(".batch-deselect-btn")
+  if (batchDeselectBtn) lm.on(batchDeselectBtn, "click", () => {
     batchSelected.clear()
     container.querySelectorAll<HTMLInputElement>(".tli__batch-cb").forEach(cb => {
       cb.checked = false
@@ -969,12 +981,10 @@ function setupWipLimit(container: HTMLElement) {
 // ── G33: Auto-Refresh Polling ─────────────────────────────────────────────
 
 function setupAutoRefresh() {
-  // Poll every 30 seconds to refresh stats
-  if (pollTimer) clearInterval(pollTimer)
-
-  pollTimer = setInterval(async () => {
+  // Poll every 30 seconds to refresh stats (tracked by lm)
+  lm.onInterval(async () => {
     try {
-      const resp = await fetch("/api/tasks")
+      const resp = await fetch("/api/tasks", { signal: lm.signal })
       if (!resp.ok) return
       const data = await resp.json()
       if (!Array.isArray(data)) return
@@ -1026,15 +1036,7 @@ function setupAutoRefresh() {
   }, 30_000)
 }
 
-// Cleanup polling on navigation
-if (typeof window !== "undefined") {
-  document.addEventListener("astro:before-preparation", () => {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  })
-}
+// Cleanup is now handled by lm.cleanup() via installPageCleanup()
 
 // ── G34: Evening Review Prompt ────────────────────────────────────────────
 
@@ -1169,7 +1171,7 @@ function setupHabitsSection(container: HTMLElement) {
     card.classList.add("habit-card--done")
 
     try {
-      const res = await fetch("/api/habits", {
+      const res = await fetch("/api/habits", { signal: lm.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "complete", templateId: habitId }),
@@ -1199,7 +1201,7 @@ export async function saveTaskAsHabit(taskId: string, container: HTMLElement) {
   const title = taskEl?.querySelector(".tli__title")?.textContent?.trim() ?? "Untitled"
 
   try {
-    const res = await fetch("/api/habits", {
+    const res = await fetch("/api/habits", { signal: lm.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1284,7 +1286,7 @@ async function setupCalendarEvents() {
 
   try {
     // Discover calendars
-    const calRes = await fetch("/api/ha/calendars")
+    const calRes = await fetch("/api/ha/calendars", { signal: lm.signal })
     if (!calRes.ok) return // HA not connected
     const calData = await calRes.json() as { calendars?: Array<{ entity_id: string; name: string }> }
     const calendars = calData.calendars ?? []
@@ -1296,7 +1298,7 @@ async function setupCalendarEvents() {
 
     await Promise.all(calendars.map(async (cal) => {
       try {
-        const res = await fetch(`/api/ha/events?entity_id=${encodeURIComponent(cal.entity_id)}&start=${todayStr}&end=${tomorrowStr}`)
+        const res = await fetch(`/api/ha/events?entity_id=${encodeURIComponent(cal.entity_id)}&start=${todayStr}&end=${tomorrowStr}`, { signal: lm.signal })
         if (!res.ok) return
         const data = await res.json() as { ok: boolean; events?: CalEvent[] }
         if (data.ok && data.events) {
@@ -1413,7 +1415,7 @@ function setupContextGrouping(container: HTMLElement) {
  */
 export async function handleRecurrencePostComplete(taskId: string) {
   try {
-    const res = await fetch(`/api/tasks/${taskId}`)
+    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal })
     if (!res.ok) return
     const data = await res.json() as { task?: { recurrence_rule?: string; title?: string } }
     const task = data.task
@@ -1438,7 +1440,7 @@ export async function cancelRecurrence(taskId: string) {
 
   try {
     // Remove recurrence rule from this task
-    const res = await fetch(`/api/tasks/${taskId}`, {
+    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal,
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ recurrence_rule: null }),

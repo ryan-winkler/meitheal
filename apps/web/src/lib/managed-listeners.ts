@@ -59,7 +59,7 @@ export function createListenerManager(): ListenerManager {
     el: EventTarget
     event: string
     handler: EventListenerOrEventListenerObject
-    options?: AddEventListenerOptions
+    options?: AddEventListenerOptions | undefined
   }> = []
   const intervals: number[] = []
   const timeouts: number[] = []
