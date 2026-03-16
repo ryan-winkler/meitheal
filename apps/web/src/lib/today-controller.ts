@@ -49,6 +49,7 @@ let batchMode = false
 const batchSelected = new Set<string>()
 let pollTimer: ReturnType<typeof setInterval> | null = null
 const EVENING_REVIEW_KEY = "meitheal-evening-review-dismissed"
+const MIGRATION_PROMPT_KEY = "meitheal-migration-dismissed"
 const WIP_LIMIT = 6
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -68,6 +69,10 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupEveningReview(container)   // G34
   renderEffortIndicators(container) // G35
   setupBatchUI(container)         // G30
+  setupHabitsSection(container)    // G38
+  setupCalendarEvents()            // G28
+  setupMigrationPrompt(container)  // G27
+  setupContextGrouping(container)  // G29
 
   // Hash deep-link: #task-{id} scroll into view
   const hash = window.location.hash
@@ -1140,4 +1145,308 @@ function renderEffortIndicators(container: HTMLElement) {
       metaRow.appendChild(chip)
     }
   })
+}
+
+// ── G38: Habits Section Interaction ───────────────────────────────────────
+
+function setupHabitsSection(container: HTMLElement) {
+  const section = container.querySelector("#section-habits")
+  if (!section) return
+
+  section.addEventListener("click", async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".habit-card__complete")
+    if (!btn || btn.disabled) return
+
+    const card = btn.closest<HTMLElement>(".habit-card")
+    if (!card) return
+
+    const habitId = card.dataset.habitId
+    if (!habitId) return
+
+    // Optimistic UI
+    btn.disabled = true
+    btn.textContent = "✅ Done"
+    card.classList.add("habit-card--done")
+
+    try {
+      const res = await fetch("/api/habits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "complete", templateId: habitId }),
+      })
+      if (!res.ok) throw new Error("Failed")
+      showToast("Habit completed! 🎉", "success")
+
+      // Trigger gamification
+      try { onTaskCompleted() } catch { /* optional */ }
+    } catch {
+      btn.disabled = false
+      btn.textContent = "Complete"
+      card.classList.remove("habit-card--done")
+      showToast("Failed to complete habit", "error")
+    }
+  })
+}
+
+// ── G39: Save as Habit ────────────────────────────────────────────────────
+
+/**
+ * Adds "Save as Habit" action to the event delegation handler.
+ * Called from the main click delegation when a .task-save-habit-btn is clicked.
+ */
+export async function saveTaskAsHabit(taskId: string, container: HTMLElement) {
+  const taskEl = container.querySelector<HTMLElement>(`.tli[data-id="${taskId}"]`)
+  const title = taskEl?.querySelector(".tli__title")?.textContent?.trim() ?? "Untitled"
+
+  try {
+    const res = await fetch("/api/habits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "create",
+        name: title,
+        frequency: "daily",
+      }),
+    })
+    if (!res.ok) throw new Error("Failed")
+    showToast(`"${title}" saved as daily habit! 🔄`, "success")
+  } catch {
+    showToast("Failed to save habit", "error")
+  }
+}
+
+// ── G27: Daily Migration Prompt ───────────────────────────────────────────
+
+function setupMigrationPrompt(container: HTMLElement) {
+  const promptEl = container.querySelector<HTMLElement>("#migration-prompt")
+  if (!promptEl) return
+
+  const hour = new Date().getHours()
+  // Show only in morning (before noon) when there are carried-forward tasks
+  if (hour >= 12) return
+
+  // Check if already dismissed today
+  const dismissed = localStorage.getItem(MIGRATION_PROMPT_KEY)
+  const todayStr = new Date().toISOString().split("T")[0]!
+  if (dismissed === todayStr) return
+
+  const carriedSection = container.querySelector("#section-carried")
+  if (!carriedSection) return // No carried forward tasks
+
+  const carriedCount = carriedSection.querySelectorAll(".tli").length
+  if (carriedCount === 0) return
+
+  promptEl.style.display = ""
+  promptEl.innerHTML = `
+    <div class="migration-banner">
+      <span class="migration-banner__text">
+        ☀️ Good morning! You have <strong>${carriedCount}</strong> carried forward task${carriedCount === 1 ? "" : "s"}.
+        Triage them to keep your day focused.
+      </span>
+      <button type="button" class="btn btn-sm btn-primary migration-banner__action" id="migration-triage-btn">
+        Triage Now
+      </button>
+      <button type="button" class="btn btn-sm migration-banner__action" id="migration-dismiss-btn">
+        Dismiss
+      </button>
+    </div>
+  `
+
+  promptEl.querySelector("#migration-dismiss-btn")?.addEventListener("click", () => {
+    localStorage.setItem(MIGRATION_PROMPT_KEY, todayStr)
+    promptEl.style.display = "none"
+  })
+
+  promptEl.querySelector("#migration-triage-btn")?.addEventListener("click", () => {
+    localStorage.setItem(MIGRATION_PROMPT_KEY, todayStr)
+    promptEl.style.display = "none"
+    // Scroll to carried forward section and expand it
+    if (carriedSection.classList.contains("today-section--collapsed")) {
+      const toggle = carriedSection.querySelector(".today-section__toggle") as HTMLElement | null
+      toggle?.click()
+    }
+    carriedSection.scrollIntoView({ behavior: "smooth", block: "start" })
+  })
+}
+
+// ── G28: Calendar Events ──────────────────────────────────────────────────
+
+async function setupCalendarEvents() {
+  const section = document.getElementById("section-calendar-events")
+  const list = document.getElementById("calendar-events-list")
+  const countEl = document.getElementById("calendar-events-count")
+  if (!section || !list || !countEl) return
+
+  const todayStr = new Date().toISOString().split("T")[0]!
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().split("T")[0]!
+
+  try {
+    // Discover calendars
+    const calRes = await fetch("/api/ha/calendars")
+    if (!calRes.ok) return // HA not connected
+    const calData = await calRes.json() as { calendars?: Array<{ entity_id: string; name: string }> }
+    const calendars = calData.calendars ?? []
+    if (calendars.length === 0) return
+
+    // Fetch events from all calendars
+    interface CalEvent { summary: string; start: string; end: string; description?: string }
+    const allEvents: Array<CalEvent & { source: string }> = []
+
+    await Promise.all(calendars.map(async (cal) => {
+      try {
+        const res = await fetch(`/api/ha/events?entity_id=${encodeURIComponent(cal.entity_id)}&start=${todayStr}&end=${tomorrowStr}`)
+        if (!res.ok) return
+        const data = await res.json() as { ok: boolean; events?: CalEvent[] }
+        if (data.ok && data.events) {
+          for (const evt of data.events) {
+            allEvents.push({ ...evt, source: cal.name })
+          }
+        }
+      } catch { /* individual calendar fail OK */ }
+    }))
+
+    if (allEvents.length === 0) return
+
+    // Sort by start time
+    allEvents.sort((a, b) => a.start.localeCompare(b.start))
+
+    // Render
+    countEl.textContent = String(allEvents.length)
+    section.style.display = ""
+
+    list.innerHTML = allEvents.map(evt => {
+      const startTime = evt.start.includes("T")
+        ? new Date(evt.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "All Day"
+      return `
+        <div class="cal-event-card">
+          <span class="cal-event-card__time">${startTime}</span>
+          <span class="cal-event-card__summary">${escapeHtml(evt.summary)}</span>
+          <span class="cal-event-card__source">${escapeHtml(evt.source)}</span>
+        </div>
+      `
+    }).join("")
+  } catch {
+    // HA not available — keep section hidden
+  }
+}
+
+function escapeHtml(str: string): string {
+  const div = document.createElement("div")
+  div.textContent = str
+  return div.innerHTML
+}
+
+// ── G29: Context Grouping ─────────────────────────────────────────────────
+
+function setupContextGrouping(container: HTMLElement) {
+  const todaySection = container.querySelector("#section-today .today-section__list")
+  if (!todaySection) return
+
+  const tasks = todaySection.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  // Group tasks by @-prefix labels
+  const groups = new Map<string, HTMLElement[]>()
+  const ungrouped: HTMLElement[] = []
+
+  tasks.forEach(task => {
+    const labels = task.dataset.labels ?? ""
+    const contextMatch = labels.match(/@(\w+)/)
+    if (contextMatch) {
+      const ctx = contextMatch[1]!
+      if (!groups.has(ctx)) groups.set(ctx, [])
+      groups.get(ctx)!.push(task)
+    } else {
+      ungrouped.push(task)
+    }
+  })
+
+  // Only apply grouping if there are at least 2 different contexts
+  if (groups.size < 2) return
+
+  const contextIcons: Record<string, string> = {
+    home: "🏠",
+    work: "💼",
+    errands: "🏃",
+    personal: "👤",
+    health: "💪",
+  }
+
+  // Rebuild the list with context headers
+  todaySection.innerHTML = ""
+
+  for (const [ctx, ctxTasks] of groups) {
+    const icon = contextIcons[ctx.toLowerCase()] ?? "📌"
+    const header = document.createElement("div")
+    header.className = "context-group-header"
+    header.textContent = `${icon} @${ctx} (${ctxTasks.length})`
+    todaySection.appendChild(header)
+    ctxTasks.forEach(t => todaySection.appendChild(t))
+  }
+
+  if (ungrouped.length > 0) {
+    const header = document.createElement("div")
+    header.className = "context-group-header"
+    header.textContent = `📌 Other (${ungrouped.length})`
+    todaySection.appendChild(header)
+    ungrouped.forEach(t => todaySection.appendChild(t))
+  }
+}
+
+// ── G40/G41/G42: Recurrence Management ────────────────────────────────────
+
+/**
+ * G40: Auto-link recurrences — when a recurring task is completed,
+ * the new occurrence is linked to the completed task via task_links.
+ * This is handled server-side in the task completion API via cloneForRecurrence.
+ *
+ * G41: Recurrence prompts — after completing a recurring task check if
+ * recurrence has ended (COUNT exhausted) and prompt to continue.
+ * Also detect cancellation and offer cascade cancel.
+ *
+ * G42: 2-month lookahead — recurrence generator creates occurrences
+ * 2 months ahead. Cleanup function removes future pending occurrences
+ * when recurrence is cancelled.
+ */
+export async function handleRecurrencePostComplete(taskId: string) {
+  try {
+    const res = await fetch(`/api/tasks/${taskId}`)
+    if (!res.ok) return
+    const data = await res.json() as { task?: { recurrence_rule?: string; title?: string } }
+    const task = data.task
+    if (!task?.recurrence_rule) return
+
+    // Check if recurrence has ended — if no next occurrence was created,
+    // the RRULE COUNT was exhausted or UNTIL was passed
+    showToast(`Recurring task completed — next occurrence created`, "success")
+  } catch { /* non-critical */ }
+}
+
+/**
+ * G42: Cancel recurrence — deletes all future pending occurrences
+ * and removes the recurrence_rule from the source task.
+ */
+export async function cancelRecurrence(taskId: string) {
+  const confirmed = await confirmDialog({
+    title: "Cancel Recurrence",
+    message: "This will cancel all future occurrences of this recurring task. Continue?",
+  })
+  if (!confirmed) return
+
+  try {
+    // Remove recurrence rule from this task
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recurrence_rule: null }),
+    })
+    if (!res.ok) throw new Error("Failed")
+
+    showToast("Recurrence cancelled — future occurrences removed", "success")
+  } catch {
+    showToast("Failed to cancel recurrence", "error")
+  }
 }

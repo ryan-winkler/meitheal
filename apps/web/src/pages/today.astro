@@ -26,7 +26,10 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
+import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
+import { isFeatureEnabled } from "../lib/feature-flags"
 
 let carriedForwardTasks: TaskViewItem[] = []
 let pinnedTasks: TaskViewItem[] = []
@@ -37,6 +40,8 @@ let completedTodayCount = 0
 let totalOpenCount = 0
 let currentStreak = 0
 let todayXP = 0
+let habits: HabitWithStats[] = []
+let habitsEnabled = false
 
 try {
   const { tasks } = await getTasksForView()
@@ -110,6 +115,15 @@ try {
     const todayRecord = weekly[weekly.length - 1]
     todayXP = todayRecord?.points ?? 0
   } catch { /* gamification may not be initialized */ }
+
+  // G38: Fetch habits for Today section
+  try {
+    habitsEnabled = await isFeatureEnabled("habits")
+    if (habitsEnabled) {
+      const repo = new TemplateRepository(getPersistenceClient())
+      habits = await repo.getHabitsWithStats()
+    }
+  } catch { /* habits may not be available */ }
 } catch {
   /* DB not available */
 }
@@ -238,6 +252,63 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
       ✕
     </button>
+  </div>
+
+  <!-- G27: Migration Prompt (client-rendered by controller) -->
+  <div id="migration-prompt" class="today-section" style="display: none;"></div>
+
+  <!-- G38: Habits / Routines Section -->
+  {habitsEnabled && habits.length > 0 && (
+    <div class="today-section" id="section-habits">
+      <div class="today-section__header">
+        <button type="button" class="today-section__toggle" aria-label="Toggle Habits section">
+          <span class="today-section__icon">▶</span>
+        </button>
+        <span class="today-section__title" style="color: var(--accent);">
+          🔄 Habits / Routines
+        </span>
+        <span class="today-section__count">{habits.length}</span>
+      </div>
+      <div class="today-section__list">
+        {habits.map(habit => (
+            <div
+              class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
+              data-habit-id={habit.id}
+              data-today-task-id={habit.todayTaskId ?? ""}
+            >
+              <span class="habit-card__icon">{habit.icon}</span>
+              <div class="habit-card__info">
+                <span class="habit-card__name">{habit.name}</span>
+                <span class="habit-card__meta">
+                  {habit.currentStreak > 0 && <span class="habit-card__streak">🔥{habit.currentStreak}</span>}
+                  <span class="habit-card__total">{habit.totalCompletions} total</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                class="habit-card__complete btn btn-sm"
+                disabled={habit.todayCompleted}
+              >
+                {habit.todayCompleted ? "✅ Done" : "Complete"}
+              </button>
+            </div>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- G28: Calendar Events Section (client-hydrated) -->
+  <div class="today-section" id="section-calendar-events" style="display: none;">
+    <div class="today-section__header">
+      <button type="button" class="today-section__toggle" aria-label="Toggle Calendar Events section">
+        <span class="today-section__icon">▶</span>
+      </button>
+      <span class="today-section__title" style="color: var(--info, #60a5fa);">
+        📅 Calendar Events
+      </span>
+      <span class="today-section__count" id="calendar-events-count">0</span>
+    </div>
+    <div class="today-section__list" id="calendar-events-list"></div>
   </div>
 
   <!-- Section: Carried Forward (Overdue → ADHD-friendly framing) -->
@@ -560,6 +631,111 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
   .stat-streak .stat-value,
   .stat-xp .stat-value {
     font-size: 16px;
+  }
+
+  /* ── G38: Habit Cards ─────────────────────────────────── */
+  :global(.habit-card) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  :global(.habit-card:hover) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  :global(.habit-card--done) {
+    opacity: 0.6;
+  }
+  :global(.habit-card__icon) {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  :global(.habit-card__info) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  :global(.habit-card__name) {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  :global(.habit-card__meta) {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+  }
+  :global(.habit-card__streak) {
+    color: var(--warning, #f59e0b);
+    font-weight: 600;
+  }
+  :global(.habit-card__complete) {
+    flex-shrink: 0;
+  }
+  :global(.habit-card__complete:disabled) {
+    opacity: 0.7;
+    cursor: default;
+  }
+
+  /* ── G28: Calendar Event Cards ───────────────────────── */
+  :global(.cal-event-card) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  :global(.cal-event-card__time) {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 64px;
+    flex-shrink: 0;
+  }
+  :global(.cal-event-card__summary) {
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+  :global(.cal-event-card__source) {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── G27: Migration Prompt ────────────────────────────── */
+  :global(.migration-banner) {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius-md, 8px);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  :global(.migration-banner__text) {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text);
+  }
+  :global(.migration-banner__action) {
+    flex-shrink: 0;
+  }
+
+  /* ── G29: Context Group Headers ──────────────────────── */
+  :global(.context-group-header) {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 6px 16px 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 </style>
 
