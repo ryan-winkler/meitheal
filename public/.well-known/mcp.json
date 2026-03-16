@@ -147,6 +147,72 @@
           "entity_id": { "type": "string", "description": "Specific entity to sync (optional, syncs all if omitted)" }
         }
       }
+    },
+    {
+      "name": "updateTask",
+      "description": "Update an existing task's fields (title, description, status, priority, labels, due_date, etc.)",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": {
+          "taskId": { "type": "integer", "description": "Task ID to update" },
+          "title": { "type": "string", "description": "New title" },
+          "description": { "type": "string", "description": "New description (HTML supported)" },
+          "status": { "type": "string", "enum": ["todo", "in_progress", "done", "cancelled", "backlog"] },
+          "priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "due_date": { "type": "string", "format": "date" },
+          "assigned_to": { "type": "string", "description": "User ID to assign to" }
+        }
+      }
+    },
+    {
+      "name": "deleteTask",
+      "description": "Permanently delete a task by its ID",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": {
+          "taskId": { "type": "integer", "description": "Task ID to delete" }
+        }
+      }
+    },
+    {
+      "name": "getBoards",
+      "description": "List all kanban boards with their column configurations and task counts",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getLabels",
+      "description": "List all available labels with their colors and usage counts",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getTodaySummary",
+      "description": "Get today's task summary - tasks due today, overdue tasks, recently completed, and daily stats",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_overdue": { "type": "boolean", "default": true, "description": "Include overdue tasks" },
+          "include_completed": { "type": "boolean", "default": true, "description": "Include completed-today tasks" }
+        }
+      }
+    },
+    {
+      "name": "getHabits",
+      "description": "Get habit tracker data including streaks, completion rates, and today's habits",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "active_only": { "type": "boolean", "default": true, "description": "Only return active habits" }
+        }
+      }
     }
   ],
   "agent_protocols": {

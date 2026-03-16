@@ -54,7 +54,7 @@ export const POST: APIRoute = async ({ request }) => {
         messageId: crypto.randomUUID(),
         parts: [
           {
-            text: "I couldn't determine which skill to use. Please specify a skill: task-management, task-search, framework-scoring, data-export, ha-calendar-sync, or ha-entity-state.",
+            text: "I couldn't determine which skill to use. Please specify a skill: task-management, task-search, framework-scoring, data-export, ha-calendar-sync, ha-entity-state, boards, labels, today-summary, or habits.",
           },
         ],
       });
@@ -169,6 +169,42 @@ async function handleSkill(
         description: "Read Home Assistant entity states",
         api_endpoint: "/api/ha/calendars",
         requires: "Home Assistant connection configured in Settings",
+      };
+
+    case "boards":
+      return {
+        skill: "boards",
+        description: "List kanban boards with column configurations and task counts",
+        api_endpoint: "/api/boards",
+        supported_actions: ["list", "get"],
+        input_received: dataPart?.data ?? textPart?.text ?? null,
+      };
+
+    case "labels":
+      return {
+        skill: "labels",
+        description: "List available task labels with colors and usage counts",
+        api_endpoint: "/api/labels",
+        supported_actions: ["list", "create", "update", "delete"],
+        input_received: dataPart?.data ?? textPart?.text ?? null,
+      };
+
+    case "today-summary":
+      return {
+        skill: "today-summary",
+        description: "Get today's task overview — due today, overdue, completed, stats",
+        api_endpoint: "/api/tasks?due=today",
+        includes: ["due_today", "overdue", "completed_today", "daily_stats"],
+        input_received: dataPart?.data ?? textPart?.text ?? null,
+      };
+
+    case "habits":
+      return {
+        skill: "habits",
+        description: "Habit tracker — streaks, completion rates, today's habits",
+        api_endpoint: "/api/habits",
+        supported_actions: ["list", "log", "get-streaks"],
+        input_received: dataPart?.data ?? textPart?.text ?? null,
       };
 
     default:
