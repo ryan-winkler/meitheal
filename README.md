@@ -22,7 +22,7 @@ Centralize your tasks, automate the coordination, and let technology get out of 
 - **Searchable Settings Shell** — Grouped `Personal`, `Workflow`, `Integrations`, `Automation & AI`, `App & PWA`, and `Danger Zone` sections with direct field search, summary badges, and ingress-safe hash deep links.
 - **Bidirectional Calendar Sync** — Meitheal detects your HA calendar entities and syncs events automatically. Tasks → calendar, calendar → tasks.
 - **Voice & Assist** — 8 LLM tools + 6 voice intents for HA Assist. Works with Gemini, OpenAI, Ollama — any conversation agent. "What's on my plate today?"
-- **MCP Server** — 13 live Model Context Protocol tools at `/api/mcp`. Your AI coding agent can manage tasks directly.
+- **MCP Server** — 17 live Model Context Protocol tools at `/api/mcp`. Your AI coding agent can manage tasks, boards, labels, habits, and today summaries directly.
 - **Multiple Views** — Dashboard, Today, Upcoming, task list, Kanban board, data table, calendar, habits, and Gantt. Drag-and-drop, swimlane management, inline editing.
 - **Smart Notifications** — Multi-channel dispatch: sidebar bell, mobile push (Android/iOS), calendar reminders. Actionable buttons. Due-date scheduler.
 - **Strategic Lenses** — RICE, HEART, and KCS scoring frameworks built into task evaluation.
@@ -32,7 +32,7 @@ Centralize your tasks, automate the coordination, and let technology get out of 
 - **Device Triggers** — Fire HA automations from task events. Node-RED and n8n integration via webhooks.
 - **Grocy Integration** — Auto-detects Grocy add-on. Stock-aware task checklists.
 - **Proactive Reminders** — Configurable due-date reminder window. Push notifications for overdue tasks.
-- **Accessibility** — WCAG 2.1 AA compliant. Keyboard navigation. ARIA live regions. High contrast support.
+- **Accessibility** — WCAG 2.2 AA compliant. Keyboard navigation. ARIA live regions. High contrast support. Priority encoded by icon + color + text (color-blind safe).
 
 ## Screenshots
 

@@ -110,4 +110,37 @@ return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_ERROR" })
 
 ---
 
-*Convention analysis: 2026-03-15*
+*Convention analysis: 2026-03-16*
+
+## Memory Safety (Established Phase 11)
+
+**Event Listeners:**
+- All page controllers MUST use `managedListeners()` from `@lib/managed-listeners` or `pageLifecycle.on()` for DOM event subscriptions
+- Raw `addEventListener()` is forbidden in page controllers — it leaks across view transitions
+- `managedListeners()` auto-cleans on `astro:before-swap`
+
+**Fetch Calls:**
+- All fetch calls MUST accept an `AbortSignal` (from `pageLifecycle.signal` or a local `AbortController`)
+- Pattern: `fetch(url, { signal: pageLifecycle.signal })`
+
+## Priority Accessibility (Established Phase 12, WCAG 2.2)
+
+- Priority MUST be encoded with **icon + color + text** — never color-only
+- Icons: `▲` Critical, `↑` High, `→` Medium, `↓` Low, `·` Minimal
+- Use `PRIORITY_ICONS` / `getPriorityIcon()` from `@lib/priority-config`
+- All views must render `{icon} {label}` alongside the color dot
+
+## CSS Premium Standards (Established Phase 12)
+
+**Glassmorphism:**
+- Elevated surfaces: `backdrop-filter: blur(12px)` + `background-image: linear-gradient(135deg, ...)`
+- Inner glow: `::before` pseudo with top→transparent gradient
+
+**Hover micro-interactions:**
+- Cards: `transform: translateY(-2px)` + deepened `box-shadow` + `border-color: var(--accent)`
+- Buttons: `transform: scale(1.05)` for icon buttons
+
+**Animations:**
+- Completion celebration: scale keyframe (1 → 1.02 → 1 → 1.01 → 1)
+- ALL animations MUST respect `@media (prefers-reduced-motion: reduce)`
+- Badge/pill styling: `border-radius: 10px` with 10% tinted background

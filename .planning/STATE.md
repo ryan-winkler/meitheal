@@ -2,9 +2,9 @@
 
 ## Current Position
 
-**Core Sprint Status:** Phases 1, 2, and 4 are complete. Phase 3 is only partially complete (`PGD-01` landed; newer settings/search decomposition work is being carried by parallel phases instead of the original per-tab plan). Phase 10 (Smart Today Maturation) **COMPLETE** — all 42 gaps across 4 waves implemented.
-**Active Tracks:** Phase 08.2 (Settings Controller Decomposition) complete, Phase 08.1 (Settings UX polish closeout) complete, Phase 09 (search hub stabilization), Phase 10 (Smart Today Maturation) **complete**
-**Last Completed Local Work:** Phase 10 Smart Today Maturation — final 8 gaps (G27-G29, G38-G42), E2E tests, verification — 2026-03-16
+**Core Sprint Status:** Phases 1, 2, 4, 10, 11 complete. Phase 3 partially complete (PGD-01 landed). Phase 12 (UX/UI Audit) Wave 1 committed.
+**Active Tracks:** Phase 12 UX/UI Audit — Wave 1 committed (Habits premium lift, priority a11y icons), Waves 2-5 pending
+**Last Completed Local Work:** Phase 12 Wave 1 — Habits premium CSS lift, priority accessibility icons (WCAG 2.2) — 2026-03-16
 **Session Date:** 2026-03-16
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
@@ -260,3 +260,77 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - `.planning/codebase/` doc sync (STRUCTURE, ARCHITECTURE, CONCERNS)
 - Tests: 319 passed, 85 skipped
 - TypeCheck: 0 errors
+
+### 2026-03-16 Session 10 — Settings Hardening (Phase 10.5)
+- Migrated 7 settings controllers to `pageLifecycle.on()` managed listeners
+- XSS hardening: escaped all innerHTML interpolations in settings
+- Fetch safety: wired AbortController signals to all settings fetch calls
+- Keyboard a11y: integration cards, n8n tabs made keyboard-navigable
+- Custom field XSS prevention in data controller
+- Tests: 319 passed
+
+| SHA | Description |
+|-----|-------------|
+| `db968e4` | Migrate 7 controllers to pageLifecycle.on() |
+| `3500e14` | XSS hardening + fetch safety for integration controllers |
+| `5c3338e` | Keyboard a11y for integration cards and n8n tabs |
+| `f1bc86c` | Escape remaining innerHTML interpolations |
+| `b3a8cd6` | Data controller fetch signals + custom field XSS |
+| `d1c0bd7` | Final fetch signal + XSS sweep |
+| `3c3738f` | Add signal to nodered/status fetch |
+
+### 2026-03-16 Session 11 — Memory/HA/AI Hardening (Phase 11)
+- Created `managed-listeners.ts` — memory-safe event lifecycle utility
+- Migrated `today-controller.ts` to managed listeners (full migration)
+- Added `pageLifecycle.signal` protection to kanban + table controllers
+- Created `ha-theme-bridge.ts` for HA → Meitheal RGB channel CSS var sync
+- Expanded MCP tools: 11 → 17 (updateTask, deleteTask, getBoards, getLabels, getTodaySummary, getHabits)
+- Expanded A2A message handler: 6 → 10 skill handlers
+- Tests: 319 passed
+
+| SHA | Description |
+|-----|-------------|
+| `36422c9` | managed-listeners.ts — memory-safe event lifecycle |
+| `ac12d15` | today-controller managed-listeners migration |
+| `3492221` | pageLifecycle.signal for kanban + table controllers |
+| `5b8a322` | HA theme bridge for RGB channel sync |
+| `ead38f5` | MCP 11→17, A2A 6→10 skill handlers |
+
+### 2026-03-16 Session 12 — UX/UI 50-Persona Audit (Phase 12, In Progress)
+- 50-persona UX/UI audit across all 10 pages + 2 modals
+- Wave 1 committed: Habits premium CSS lift (5→9/10), priority accessibility icons (▲↑→↓·)
+- Glassmorphism stat cards, celebration animations, streak badges, modal slide-in
+- `PRIORITY_ICONS` map + `getPriorityIcon()` in `priority-config.ts` for WCAG 2.2
+- `prefers-reduced-motion` support added to Habits page
+- Tests: 319 passed
+- Waves 2-5 pending (loading skeletons, interaction polish, navigation, details)
+
+| SHA | Description |
+|-----|-------------|
+| `2e51afe` | Wave 1: Habits lift + priority a11y icons |
+
+## New Engineering Standards (Established Sessions 10-12)
+
+### Memory Safety Pattern
+- All page controllers MUST use `managedListeners()` or `pageLifecycle.on()` for event listeners
+- AbortController signals MUST be wired to all fetch calls
+- `managed-listeners.ts` is the canonical utility (`@lib/managed-listeners`)
+- Auto-cleanup on `astro:before-swap` for view transition safety
+
+### Priority Accessibility Standard (WCAG 2.2)
+- Priority MUST be encoded with icon + color + text (never color-only)
+- `PRIORITY_ICONS` from `@lib/priority-config` provides the canonical icons (▲↑→↓·)
+- All views must render `{icon} {label}` alongside the priority color dot
+
+### CSS Premium Standards
+- Glassmorphism: `backdrop-filter: blur(12px)` + gradient overlay for elevated surfaces
+- Hover: `translateY(-2px)` + deepened shadow + border-color accent transition
+- Celebration: element-scale keyframe for completion micro-interactions
+- All animations MUST respect `prefers-reduced-motion: reduce`
+- Streak/badge styling: pill-shaped (`border-radius: 10px`) with tinted background
+
+### HA Integration Pattern
+- `ha-theme-bridge.ts` syncs HA parent frame CSS vars → Meitheal RGB channel tokens
+- Always check `body.ha-ingress` before HA-specific behavior
+- Ingress fetch auto-prefixed by `Layout.astro` — do NOT double-wrap with `apiUrl()`
+- HA theme change event listener auto-re-syncs colors

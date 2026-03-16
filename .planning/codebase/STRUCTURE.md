@@ -103,7 +103,7 @@ meitheal/
   - `settings-data-controller.ts` (import/export/backup/custom fields)
   - `settings-danger-controller.ts` (purge/reset)
   - `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
-- **Shared utilities:** `page-lifecycle.ts` (event listener lifecycle management via AbortController), `safe-html.ts` (XSS prevention), `toast.ts`, `confirm-dialog.ts`
+- **Shared utilities:** `page-lifecycle.ts` (event listener lifecycle management via AbortController), `managed-listeners.ts` (memory-safe addEventListener/removeEventListener with auto-cleanup on `astro:before-swap`), `safe-html.ts` (XSS prevention), `toast.ts`, `confirm-dialog.ts`, `ha-theme-bridge.ts` (HA→Meitheal CSS var sync), `priority-config.ts` (priority definitions with `PRIORITY_ICONS` for WCAG 2.2 a11y)
 
 **`apps/web/src/components/ui/`:**
 - Purpose: Reusable Astro UI components
