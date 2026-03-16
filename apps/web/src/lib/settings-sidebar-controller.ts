@@ -97,7 +97,7 @@ export function initSidebarSettings(): void {
     if (!confirmed) return
     await fetch(
       (window.__ingress_path || "") + "/api/settings?key=sidebar_config",
-      { method: "DELETE" },
+      { method: "DELETE", signal: pageLifecycle.signal },
     ).catch(() => {})
     await saveSetting("sidebar_config", null)
     showToast("Sidebar reset to defaults")

@@ -6,6 +6,7 @@
  * All HA-ingress-aware via window.__ingress_path.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
@@ -125,16 +126,16 @@ export function initCalendarTodoSettings(): void {
     await saveSetting("calendar_sync_mode", globalMode)
     await saveSetting("calendar_sync_modes", syncModes)
     if (caldavUrl && caldavUsername && caldavPassword) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword }) }) }
+      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword }), signal: pageLifecycle.signal }) }
       catch (err) { log.error("Failed to save CalDAV credentials", err) }
     } else if (caldavUrl && !caldavUsername && !caldavPassword) {
       await saveSetting("caldav_url", caldavUrl)
     }
     if (enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }) }) }
+      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }), signal: pageLifecycle.signal }) }
       catch { /* logged server-side */ }
     } else {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }) }) }
+      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
       catch { /* logged server-side */ }
     }
     const statusEl = document.getElementById("cal-status")
@@ -267,10 +268,10 @@ export function initCalendarTodoSettings(): void {
     await saveSetting("todo_entity", enabledEntities[0] || "")
     await saveSetting("todo_sync_direction", direction)
     if (enabled && enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }) }) }
+      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }), signal: pageLifecycle.signal }) }
       catch { /* logged server-side */ }
     } else {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }) }) }
+      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
       catch { /* logged server-side */ }
     }
     const statusEl = document.getElementById("todo-status")
@@ -514,7 +515,7 @@ async function hydrateTodoStatus() {
 
     if (entities.length > 0 && autoInfo && autoEntities) {
       autoInfo.style.display = "block"
-      autoEntities.innerHTML = entities.map((e) => `• <code style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${e.entity_id}</code> (${e.friendly_name})`).join("<br>")
+      autoEntities.innerHTML = entities.map((e) => `• <code style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${escapeHtml(e.entity_id)}</code> (${escapeHtml(e.friendly_name)})`).join("<br>")
     }
 
     if (entitiesList && entitiesContainer) {
@@ -566,7 +567,7 @@ export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
     (document.getElementById("caldav-url") as HTMLInputElement).value = String(s.caldav_url)
     ;(async () => {
       try {
-        const credRes = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials")
+        const credRes = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { signal: pageLifecycle.signal })
         if (credRes.ok) {
           const credData = await credRes.json()
           if (credData.configured) {
