@@ -45,12 +45,6 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     icon: "kanban",
     matchExact: true,
   },
-  tasks: {
-    href: "/tasks",
-    i18nKey: "nav.tasks",
-    icon: "tasks",
-    showBadge: true,
-  },
   table: { href: "/table", i18nKey: "nav.table", icon: "table" },
   today: { href: "/today", i18nKey: "nav.today", icon: "today" },
   upcoming: { href: "/upcoming", i18nKey: "nav.upcoming", icon: "upcoming" },
@@ -63,7 +57,6 @@ type NavKey = string;
 const DEFAULT_ORDER: NavKey[] = [
   "dashboard",
   "kanban",
-  "tasks",
   "today",
   "upcoming",
   "calendar",
@@ -93,7 +86,6 @@ interface SidebarConfig {
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   kanban: true,
-  tasks: true,
   table: true,
   today: true,
   upcoming: true,

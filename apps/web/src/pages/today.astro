@@ -327,31 +327,44 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     display: flex;
     gap: 8px;
     margin-bottom: 16px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
   }
   .today-filter-bar .form-input {
     flex: 1;
-    min-width: 140px;
+    min-width: 120px;
     font-size: 13px;
     padding: 6px 10px;
   }
   .today-filter-bar .form-select {
-    font-size: 13px;
-    padding: 6px 8px;
+    font-size: 12px;
+    padding: 6px 6px;
     background: var(--bg-card, #1e1e2e);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
+    flex-shrink: 0;
+    max-width: 130px;
   }
   .today-filter-bar .form-select:focus {
     outline: 2px solid var(--accent);
     outline-offset: -1px;
   }
   .today-filter-bar .btn-sm {
-    padding: 5px 10px;
+    padding: 5px 8px;
     font-size: 13px;
+    flex-shrink: 0;
+  }
+  @media (max-width: 640px) {
+    .today-filter-bar {
+      flex-wrap: wrap;
+    }
+    .today-filter-bar .form-select {
+      max-width: none;
+      flex: 1;
+      min-width: 100px;
+    }
   }
 
   /* ── Sections ────────────────────────────────────────────────── */
