@@ -161,8 +161,8 @@ export function initKanbanBoard(): void {
       } catch {
         // Show error feedback before reverting
         if (window.showToast) window.showToast("Failed to move task — reverting", "error")
-        // Revert on failure — reload to get server state
-        setTimeout(() => window.location.reload(), 800)
+        // Revert on failure — refresh to get server state
+        setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-revert" } })), 800)
       }
     }
 
@@ -469,7 +469,7 @@ export function initKanbanBoard(): void {
               }),
             },
           );
-          if (dupRes.ok) window.location.reload();
+          if (dupRes.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-duplicate" } }));
           else {
             dupBtn.disabled = false;
             dupBtn.classList.remove("btn-loading");
@@ -629,10 +629,10 @@ export function initKanbanBoard(): void {
           });
           if (res.ok) {
             _qa.toast("Child task created", "success");
-            // P1-6: Reload to show new card (DOM insertion would require full card template)
+            // P1-6: Refresh to show new card (DOM insertion would require full card template)
             const scrollLeft = document.querySelector(".kanban-scroll-area")?.scrollLeft || 0;
             sessionStorage.setItem("meitheal-kanban-scroll", String(scrollLeft));
-            window.location.reload();
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-child-created" } }));
           } else {
             _qa.toast("Failed to create child task", "error");
           }
@@ -910,7 +910,7 @@ export function initKanbanBoard(): void {
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify({ status: "complete" }),
                 });
-                if (res.ok) window.location.reload();
+                if (res.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-archive" } }));
                 else if (window.showToast) window.showToast("Failed to archive task", "error");
               } catch {
                 if (window.showToast) window.showToast("Failed to archive task", "error");
@@ -1010,7 +1010,7 @@ export function initKanbanBoard(): void {
                 body: JSON.stringify(payload),
               },
             );
-            if (res.ok) window.location.reload();
+            if (res.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-add" } }));
             else {
               addBtn.disabled = false;
               addBtn.classList.remove("btn-loading");
@@ -1108,7 +1108,7 @@ export function initKanbanBoard(): void {
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ wip_limit: wipLimit }),
             });
-            window.location.reload();
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-wip-update" } }));
           } catch { /* non-fatal */ }
         });
       });
@@ -1129,7 +1129,7 @@ export function initKanbanBoard(): void {
                   body: JSON.stringify({ label: newName.trim() }),
                 },
               );
-              window.location.reload();
+              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-rename" } }));
             } catch { /* non-fatal */ }
           }
         });
@@ -1150,7 +1150,7 @@ export function initKanbanBoard(): void {
             await fetch(`${window.__ingress_path || ""}/api/lanes/${laneId}`, {
               method: "DELETE",
             });
-            window.location.reload();
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-delete" } }));
           } catch { /* non-fatal */ }
         });
       });
@@ -1194,7 +1194,7 @@ export function initKanbanBoard(): void {
             );
           });
           await Promise.all(updates);
-          window.location.reload();
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-reorder" } }));
         });
         item.addEventListener("dragover", (e) => {
           e.preventDefault();
@@ -1259,7 +1259,7 @@ export function initKanbanBoard(): void {
           body: JSON.stringify({ label: name }),
         });
         if (res.ok) {
-          window.location.reload();
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-label-create" } }));
         } else {
           const err = await res.json();
           const t = document.createElement("div");
