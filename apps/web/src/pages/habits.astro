@@ -427,6 +427,9 @@ if (!isEnabled) {
 </style>
 
 <script>
+  import { createClientLogger } from "@lib/client-logger"
+
+  const log = createClientLogger("habits")
   const ingressPath = (window as any).__ingress_path || ""
 
   interface HabitData {
@@ -456,7 +459,7 @@ if (!isEnabled) {
       renderHabits()
       updateStats()
     } catch (err) {
-      console.error("[Habits] Failed to load:", err)
+      log.error("Failed to load habits", err)
       const list = document.getElementById("habits-list")
       if (list) list.innerHTML = '<div class="habits-empty">Failed to load habits</div>'
     }
@@ -551,7 +554,7 @@ if (!isEnabled) {
         await fetchHabits()
       }
     } catch (err) {
-      console.error("[Habits] Complete failed:", err)
+      log.error("Complete habit failed", err)
     }
   }
 
@@ -565,7 +568,7 @@ if (!isEnabled) {
       })
       if (res.ok) await fetchHabits()
     } catch (err) {
-      console.error("[Habits] Delete failed:", err)
+      log.error("Delete habit failed", err)
     }
   }
 

@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { getHAConnection } from "@domains/ha/ha-connection";
+import { logApiError } from "@lib/api-logger";
 
 /**
  * GET /api/ha/services — List available HA services.
@@ -38,7 +39,7 @@ export const GET: APIRoute = async () => {
       },
     });
   } catch (err) {
-    console.error("[api/ha/services] Error fetching HA services:", err);
+    logApiError("ha-services", err instanceof Error ? err.message : String(err), { endpoint: "/api/ha/services" });
     return new Response(JSON.stringify({ services: [], error: "Failed to fetch HA services" }), {
       status: 200,
       headers: { "content-type": "application/json" },

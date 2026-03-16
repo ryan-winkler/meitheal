@@ -59,6 +59,10 @@ const { class: className } = Astro.props
 </div>
 
 <script>
+  import { createClientLogger } from "@lib/client-logger"
+
+  const log = createClientLogger("tasks", "saved-presets")
+
   interface SavedFilter {
     id: string
     name: string
@@ -153,7 +157,7 @@ const { class: className } = Astro.props
         // Reload to apply all preset filters
         window.location.reload()
       } catch {
-        console.error("[SavedPresets] Failed to load preset:", preset.name)
+        log.error("Failed to load preset", preset.name)
       }
     }
 
@@ -182,7 +186,7 @@ const { class: className } = Astro.props
           await fetchPresets()
         }
       } catch {
-        console.error("[SavedPresets] Failed to save preset")
+        log.error("Failed to save preset")
       }
     }
 
@@ -192,7 +196,7 @@ const { class: className } = Astro.props
         await fetch(`/api/saved-filters?id=${id}`, { method: "DELETE" })
         await fetchPresets()
       } catch {
-        console.error("[SavedPresets] Failed to delete preset")
+        log.error("Failed to delete preset")
       }
     }
 

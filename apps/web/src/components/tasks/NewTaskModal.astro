@@ -139,6 +139,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <script>
   import { showToast } from "@lib/toast";
+  import { createClientLogger } from "@lib/client-logger";
+
+  const log = createClientLogger("tasks", "new-task-modal");
 
   // Handle smart task extraction mapping
   const nextWeekday = (day: number) => {
@@ -431,7 +434,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         showToast("Failed to create task", "error");
       }
     } catch (err) {
-      console.error(err);
+      log.error("Failed to create task", err);
       showToast("Network error creating task", "error");
     } finally {
       submitBtn.disabled = false;
