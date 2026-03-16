@@ -92,9 +92,18 @@ const activeSyncs = new Map<string, EntitySyncState>();
 
 // Cached persistence refs — avoids repeated dynamic imports in hot sync path
 let _storeModule: typeof import("@domains/tasks/persistence/store") | null = null;
+let _schemaEnsured = false;
 async function getStoreModule() {
   if (!_storeModule) _storeModule = await import("@domains/tasks/persistence/store");
   return _storeModule;
+}
+
+/** Ensure schema once per process — avoids redundant DDL on every sync cycle */
+async function ensureSchemaOnce() {
+  if (_schemaEnsured) return;
+  const mod = await getStoreModule();
+  await mod.ensureSchema();
+  _schemaEnsured = true;
 }
 
 /** Concurrency guard — prevents overlapping syncs for the same entity */
@@ -354,8 +363,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
   }
 
   try {
+    await ensureSchemaOnce();
     const mod = await getStoreModule();
-    await mod.ensureSchema();
     const client = mod.getPersistenceClient();
 
     let created = 0;
@@ -514,8 +523,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           if (!currentUids.has(eventUid)) {
             const taskId = String(row.task_id);
             await client.execute({
-              sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ? WHERE id = ? AND status != '${STATUS.COMPLETE}'`,
-              args: [Date.now(), taskId],
+              sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND status != ?`,
+              args: [STATUS.COMPLETE, Date.now(), taskId, STATUS.COMPLETE],
             });
             logger.log("info", {
               event: "calendar.sync.stale_archived", domain: "calendar", component: "calendar-bridge",
@@ -664,8 +673,8 @@ export async function pushTaskToCalendar(
   // Check if we already pushed this task — if so, UPDATE instead of creating duplicate
   let isUpdate = false;
   try {
+    await ensureSchemaOnce();
     const mod = await getStoreModule();
-    await mod.ensureSchema();
     const client = mod.getPersistenceClient();
     const existing = await client.execute({
       sql: "SELECT confirmation_id FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.write_back'",
@@ -754,8 +763,8 @@ export async function pushTaskToCalendar(
  */
 export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> {
   try {
+    await ensureSchemaOnce();
     const mod = await getStoreModule();
-    await mod.ensureSchema();
     const client = mod.getPersistenceClient();
 
     // Find the write-back confirmation to get entity_id
@@ -861,7 +870,7 @@ export function getCalendarSyncStatus() {
     entities.push({
       entityId: "caldav:" + (caldavSyncState.url || "external"),
       source: "caldav" as const,
-      syncMode: "import" as const,
+      syncMode: caldavSyncState.syncMode,
       writeBack: false,
       syncIntervalMs: caldavSyncState.intervalMs,
       lastSyncAt: caldavSyncState.lastSyncAt,
@@ -985,7 +994,7 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     const { listCalDAVEvents, discoverCalendars } = await import("./caldav-client");
     const mod = await getStoreModule();
 
-    await mod.ensureSchema();
+    await ensureSchemaOnce();
     const client = mod.getPersistenceClient();
 
     // Load credentials
@@ -1030,14 +1039,17 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
         const events = await listCalDAVEvents(config, cal.href, start, end);
         totalEvents += events.length;
 
-        for (const evt of events) {
-          // Check if already synced via UID (dedup)
-          const existingRes = await client.execute({
-            sql: "SELECT confirmation_id FROM calendar_confirmations WHERE provider_event_id = ? AND source = 'caldav' LIMIT 1",
-            args: [evt.uid],
-          });
+        // Batch dedup: pre-fetch all existing UIDs for this calendar in one query
+        const calUids = events.map((evt) => evt.uid);
+        const uidPlaceholders = calUids.map(() => "?").join(", ");
+        const existingCalRes = calUids.length > 0 ? await client.execute({
+          sql: `SELECT provider_event_id FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
+          args: calUids,
+        }) : { rows: [] };
+        const existingCalUids = new Set(existingCalRes.rows.map((r) => String(r.provider_event_id)));
 
-          if (existingRes.rows.length > 0) {
+        for (const evt of events) {
+          if (existingCalUids.has(evt.uid)) {
             totalUpdated++;
             continue;
           }
@@ -1090,6 +1102,7 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     caldavSyncState.lastSyncAt = Date.now();
     caldavSyncState.lastSyncEventCount = totalEvents;
     caldavSyncState.lastSyncError = null;
+    caldavSyncState.consecutiveFailures = 0; // Reset on success
 
     logger.log("info", {
       event: "calendar.caldav.synced", domain: "calendar", component: "calendar-bridge",
@@ -1100,7 +1113,10 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     return { created: totalCreated, updated: totalUpdated, total: totalEvents };
   } catch (err) {
     const message = err instanceof Error ? err.message : "CalDAV sync failed";
-    if (caldavSyncState) caldavSyncState.lastSyncError = message;
+    if (caldavSyncState) {
+      caldavSyncState.lastSyncError = message;
+      caldavSyncState.consecutiveFailures++;
+    }
 
     logger.log("error", {
       event: "calendar.caldav.error", domain: "calendar", component: "calendar-bridge",

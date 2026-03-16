@@ -26,6 +26,70 @@ export interface CalendarEvent {
   description?: string;
   location?: string;
   uid?: string;
+  recurrence_id?: string;
+}
+
+/** HA CalendarEntityFeature bitmask values */
+export const CalendarFeature = {
+  CREATE_EVENT: 1,
+  DELETE_EVENT: 2,
+  UPDATE_EVENT: 4,
+} as const;
+
+/**
+ * Detect whether a date string is date-only (YYYY-MM-DD) vs datetime.
+ * HA requires different field names: start_date/end_date vs start_date_time/end_date_time.
+ */
+function isDateOnly(dateStr: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+}
+
+/**
+ * Build the correct HA service_data fields for start/end based on whether
+ * the event is all-day (date-only) or timed (datetime).
+ */
+function buildDateFields(start: string, end: string): Record<string, string> {
+  if (isDateOnly(start)) {
+    return { start_date: start, end_date: end };
+  }
+  return { start_date_time: start, end_date_time: end };
+}
+
+/** Feature detection cache — avoids re-fetching all states for every calendar operation */
+const _featureCache = new Map<string, { features: number; cachedAt: number }>();
+const FEATURE_CACHE_TTL_MS = 60_000; // 1 minute
+
+/**
+ * Get supported calendar features for an entity from its state attributes.
+ * Returns bitmask of CalendarFeature values. Cached for 60s.
+ */
+export async function getCalendarEntityFeatures(entityId: string): Promise<number> {
+  // Check cache first
+  const cached = _featureCache.get(entityId);
+  if (cached && Date.now() - cached.cachedAt < FEATURE_CACHE_TTL_MS) {
+    return cached.features;
+  }
+
+  const conn = await getHAConnection();
+  if (!conn) return 0;
+  try {
+    const states = await conn.sendMessagePromise<Array<{ entity_id: string; attributes: Record<string, unknown> }>>({
+      type: "get_states",
+    });
+    const entity = states.find((s) => s.entity_id === entityId);
+    const features = (entity?.attributes?.supported_features as number) ?? 0;
+
+    // Cache result
+    _featureCache.set(entityId, { features, cachedAt: Date.now() });
+
+    return features;
+  } catch (err) {
+    logger.log("warn", {
+      event: "ha.calendar.features.failed", domain: "ha", component: "ha-services",
+      request_id: SYS_REQ, message: `Failed to get calendar features for ${entityId}: ${err}`,
+    });
+    return 0;
+  }
 }
 
 export async function listCalendarEvents(
@@ -74,14 +138,17 @@ export async function createCalendarEvent(
   const conn = await getHAConnection();
   if (!conn) return false;
   try {
-    await callService(conn, "calendar", "create_event", {
-      summary: event.summary, start_date_time: event.start,
-      end_date_time: event.end, description: event.description,
+    const serviceData: Record<string, unknown> = {
+      summary: event.summary,
+      ...buildDateFields(event.start, event.end),
+      description: event.description,
       location: event.location,
-    }, { entity_id: entityId });
+    };
+    await callService(conn, "calendar", "create_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_created", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Created calendar event: ${event.summary}`,
+      request_id: SYS_REQ,
+      message: `Created calendar event: ${event.summary} (all-day: ${isDateOnly(event.start)})`,
     });
     return true;
   } catch (err) {
@@ -95,52 +162,91 @@ export async function createCalendarEvent(
 
 /**
  * Update an existing calendar event by uid.
- * Uses HA's calendar.create_event with identical summary+start to upsert,
- * since not all calendar integrations expose a direct update service.
- * Falls back to create if update fails.
+ * Uses HA's calendar.update_event service (requires UPDATE_EVENT feature).
+ * Falls back to delete + create if update service is not supported.
+ * @see https://developers.home-assistant.io/docs/core/entity/calendar#update-events
  */
 export async function updateCalendarEvent(
   entityId: string, event: CalendarEvent,
+  options?: { recurrence_id?: string; recurrence_range?: string },
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
+
+  const serviceData: Record<string, unknown> = {
+    uid: event.uid,
+    summary: event.summary,
+    ...buildDateFields(event.start, event.end),
+    description: event.description,
+    location: event.location,
+  };
+  if (options?.recurrence_id) serviceData.recurrence_id = options.recurrence_id;
+  if (options?.recurrence_range) serviceData.recurrence_range = options.recurrence_range;
+
   try {
-    // HA calendar.create_event acts as upsert when summary+start match an existing event
-    await callService(conn, "calendar", "create_event", {
-      summary: event.summary, start_date_time: event.start,
-      end_date_time: event.end, description: event.description,
-      location: event.location,
-    }, { entity_id: entityId });
+    // Try HA's native calendar.update_event service first
+    await callService(conn, "calendar", "update_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_updated", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Updated calendar event: ${event.summary} (uid: ${event.uid})`,
+      request_id: SYS_REQ,
+      message: `Updated calendar event: ${event.summary} (uid: ${event.uid}, all-day: ${isDateOnly(event.start)})`,
     });
     return true;
-  } catch (err) {
-    logger.log("error", {
-      event: "ha.calendar.update_event.failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to update calendar event: ${err}`,
+  } catch (updateErr) {
+    // Fallback: calendar may not support update_event — try delete + create
+    logger.log("warn", {
+      event: "ha.calendar.update_event.fallback", domain: "ha", component: "ha-services",
+      request_id: SYS_REQ,
+      message: `update_event failed for ${entityId}, falling back to delete+create: ${updateErr}`,
     });
-    return false;
+    try {
+      if (event.uid) {
+        await callService(conn, "calendar", "delete_event", { uid: event.uid }, { entity_id: entityId });
+      }
+      const createData: Record<string, unknown> = {
+        summary: event.summary,
+        ...buildDateFields(event.start, event.end),
+        description: event.description,
+        location: event.location,
+      };
+      await callService(conn, "calendar", "create_event", createData, { entity_id: entityId });
+      logger.log("info", {
+        event: "ha.calendar.event_updated_via_recreate", domain: "ha", component: "ha-services",
+        request_id: SYS_REQ, message: `Updated event via delete+create: ${event.summary}`,
+      });
+      return true;
+    } catch (fallbackErr) {
+      logger.log("error", {
+        event: "ha.calendar.update_event.failed", domain: "ha", component: "ha-services",
+        request_id: SYS_REQ, message: `Failed to update calendar event (all methods): ${fallbackErr}`,
+      });
+      return false;
+    }
   }
 }
 
 /**
  * Delete a calendar event by uid.
- * Uses HA's calendar.delete_event service (requires HA 2024.x+).
+ * Uses HA's calendar.delete_event service (requires DELETE_EVENT feature).
+ * Supports recurring event deletion via recurrence_id and recurrence_range.
+ * @see https://developers.home-assistant.io/docs/core/entity/calendar#delete-events
  */
 export async function deleteCalendarEvent(
   entityId: string, uid: string,
+  options?: { recurrence_id?: string; recurrence_range?: "THISANDFUTURE" },
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
   try {
-    await callService(conn, "calendar", "delete_event", {
-      uid,
-    }, { entity_id: entityId });
+    const serviceData: Record<string, unknown> = { uid };
+    if (options?.recurrence_id) serviceData.recurrence_id = options.recurrence_id;
+    if (options?.recurrence_range) serviceData.recurrence_range = options.recurrence_range;
+
+    await callService(conn, "calendar", "delete_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_deleted", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Deleted calendar event: uid=${uid} from ${entityId}`,
+      request_id: SYS_REQ,
+      message: `Deleted calendar event: uid=${uid} from ${entityId}${options?.recurrence_id ? ` (recurrence: ${options.recurrence_id})` : ""}`,
     });
     return true;
   } catch (err) {

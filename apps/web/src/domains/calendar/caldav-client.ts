@@ -113,6 +113,9 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
 
 const TIMEOUT_MS = 10_000;
 
+/** Max response body size (5MB) — prevents OOM from oversized calendar responses */
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
 function basicAuthHeader(username: string, password: string): string {
   return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
 }
@@ -136,7 +139,20 @@ async function caldavFetch(
       body,
       signal: controller.signal,
     });
+
+    // Guard: check Content-Length header before reading body
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
+      throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`);
+    }
+
     const text = await res.text();
+
+    // Guard: check actual body size after reading
+    if (text.length > MAX_RESPONSE_BYTES) {
+      throw new Error(`CalDAV response body too large (${text.length} chars, max ${MAX_RESPONSE_BYTES})`);
+    }
+
     return { status: res.status, text };
   } finally {
     clearTimeout(timeout);
