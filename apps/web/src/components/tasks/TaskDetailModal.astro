@@ -75,7 +75,7 @@
           </div>
         </div>
 
-        <div id="td-loaded-content" class="flex flex-1 overflow-y-auto md:overflow-hidden flex-col md:flex-row relative" style="display:none">
+        <div id="td-loaded-content" class="flex flex-1 overflow-y-auto md:overflow-hidden flex-col md:flex-row relative hidden">
           
           <!-- MAIN CONTENT COLUMN -->
           <main class="flex-none w-full md:flex-1 md:w-auto overflow-visible md:overflow-y-auto px-6 py-6 lg:px-10 space-y-8 bg-bg-primary min-w-0">
@@ -124,7 +124,8 @@
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Checklists</h3>
                 <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
-                    <span>➕ Add Item</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>Add Item</span>
                 </button>
               </div>
               <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
@@ -262,12 +263,13 @@
             <button id="td-sidebar-toggle" class="md:hidden w-full flex items-center justify-between py-2.5 px-3 text-sm font-semibold text-text-primary bg-bg-input rounded-lg border border-border hover:bg-bg-hover transition-colors" type="button" aria-expanded="false" aria-controls="td-sidebar-props">
               <span class="flex items-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
-                Properties
+                Details
               </span>
               <svg id="td-sidebar-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="transition-transform duration-200 text-text-muted"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
 
             <!-- Collapsible content (always visible on desktop, toggled on mobile) -->
+            <noscript></noscript>
             <div id="td-sidebar-props" class="td-sidebar-props flex flex-col gap-6">
 
             <!-- Essential Properties -->

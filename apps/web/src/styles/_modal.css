@@ -109,8 +109,7 @@ dialog[open] .modal-content,
     opacity: 1;
   }
   dialog[open] .modal-content,
-  .modal-overlay.active .modal-content,
-  .modal-overlay.open .modal-content {
+  .modal-overlay.active .modal-content {
     animation: none;
   }
   .modal-overlay.closing .modal-content {
@@ -240,10 +239,7 @@ dialog[open] .modal-content,
     border-radius: 0 !important;
   }
 
-  /* Task detail overlay — slide up instead of right on mobile */
-  #task-detail-overlay .animate-slide-in {
-    animation: td-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
+
 
   /* Task detail content — reduce padding on mobile */
   #task-detail-panel > div {
@@ -384,4 +380,9 @@ dialog[open] .modal-content,
   .td-sidebar-props.td-sidebar-expanded {
     animation: none;
   }
+}
+
+/* Noscript fallback: show sidebar props when JS is unavailable */
+@media (max-width: 767px) {
+  noscript ~ .td-sidebar-props { display: flex !important; }
 }

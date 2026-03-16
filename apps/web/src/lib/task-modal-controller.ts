@@ -98,7 +98,7 @@
           const tdSkeleton = document.getElementById("td-skeleton");
           const tdLoaded = document.getElementById("td-loaded-content");
           if (tdSkeleton) tdSkeleton.style.display = "";
-          if (tdLoaded) tdLoaded.style.display = "none";
+          if (tdLoaded) tdLoaded.classList.add("hidden");
 
           try {
             // Populate status dropdown from lanes API
@@ -798,7 +798,7 @@
             // spurious save notifications
             // Hide skeleton, show loaded content
             if (tdSkeleton) tdSkeleton.style.display = "none";
-            if (tdLoaded) tdLoaded.style.display = "";
+            if (tdLoaded) tdLoaded.classList.remove("hidden");
             setTimeout(() => { _isPopulating = false }, 100);
           } catch (e) {
             if ((e as { name?: string })?.name === "AbortError") {
@@ -808,7 +808,7 @@
             _isPopulating = false;
             // Hide skeleton on error too so error message is visible
             if (tdSkeleton) tdSkeleton.style.display = "none";
-            if (tdLoaded) tdLoaded.style.display = "";
+            if (tdLoaded) tdLoaded.classList.remove("hidden");
             // Show error state in modal instead of closing — better UX for transient errors
             const titleEl = document.getElementById("td-title") as HTMLTextAreaElement | null;
             if (titleEl) {
@@ -970,6 +970,7 @@
         const descSavedIndicator = document.getElementById("td-desc-saved");
 
         let _descOriginalValue = "";
+        let _descSavedTimer: number | null = null;
 
         function enterDescEdit() {
           _descOriginalValue = tdDescription?.value ?? "";
@@ -994,18 +995,31 @@
               descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${e.message}</div>`;
             }
             saveTD("description", rawMarkdown);
-            // Show "✓ Saved" indicator
+            // Show "✓ Saved" indicator (T4: guarded with timeout tracking)
             if (descSavedIndicator) {
               descSavedIndicator.style.display = "";
-              setTimeout(() => { descSavedIndicator.style.display = "none"; }, 1500);
+              if (_descSavedTimer) clearTimeout(_descSavedTimer);
+              _descSavedTimer = window.setTimeout(() => { descSavedIndicator.style.display = "none"; _descSavedTimer = null; }, 1500);
             }
           }
         }
 
         descEditBtnHover?.addEventListener("click", () => enterDescEdit());
-        descPreviewContainer?.addEventListener("click", () => enterDescEdit());
+        // T9: Only enter edit mode when clicking preview container background, not rendered links/code
+        descPreviewContainer?.addEventListener("click", (e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest("a, code, pre, img")) return;
+          enterDescEdit();
+        });
         descSaveBtn?.addEventListener("click", () => exitDescEdit(true));
         descCancelBtn?.addEventListener("click", () => exitDescEdit(false));
+        // T7: Cmd/Ctrl+S shortcut in description edit mode
+        tdDescription?.addEventListener("keydown", (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+            e.preventDefault();
+            exitDescEdit(true);
+          }
+        });
 
         // Auto-save on change
         const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
