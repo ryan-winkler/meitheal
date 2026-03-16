@@ -1,0 +1,415 @@
+---
+/**
+ * SettingsRules.astro — Task Context Rules & Frameworks configuration
+ *
+ * Renders inside the Workflow settings section.
+ * - Per-type lens assignment table (epic / story / task)
+ * - AI scope toggles per task type
+ * - Quick-apply presets (Strategic / UX-Focused / Simple)
+ * - Framework config editor (weights, descriptions)
+ * - Restore defaults with confirmation
+ *
+ * @domain strategy
+ */
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsDisclosure from "./SettingsDisclosure.astro"
+
+const frameworks = [
+  { id: "rice", label: "RICE", description: "Reach × Impact × Confidence ÷ Effort", icon: "📊" },
+  { id: "drice", label: "DRICE", description: "Domain-aware RICE with DDD weighting", icon: "🎯" },
+  { id: "heart", label: "HEART", description: "Happiness, Engagement, Adoption, Retention, Task Success", icon: "❤️" },
+  { id: "ddd", label: "DDD", description: "Domain-Driven Design boundary audit", icon: "🏗️" },
+  { id: "kcs", label: "KCS", description: "Knowledge-Centered Support checklist", icon: "📚" },
+]
+
+const taskTypes = [
+  { id: "epic", label: "Epic", icon: "⚡" },
+  { id: "story", label: "Story", icon: "📖" },
+  { id: "task", label: "Task", icon: "✅" },
+]
+
+const aiCapabilities = [
+  { key: "canAutoScore", label: "Auto-score", description: "Allow AI to automatically score using assigned frameworks" },
+  { key: "canAutoClose", label: "Auto-close", description: "Allow AI to close tasks when criteria are met" },
+  { key: "canChangePriority", label: "Change priority", description: "Allow AI to adjust task priority" },
+  { key: "canSuggestLabels", label: "Suggest labels", description: "Allow AI to suggest labels and tags" },
+]
+
+const presets = [
+  { id: "strategic", label: "Strategic", description: "RICE + DDD + KCS — full scoring for epics and stories", icon: "🎯" },
+  { id: "ux-focused", label: "UX-Focused", description: "HEART + KCS — user experience metrics for stories", icon: "❤️" },
+  { id: "simple", label: "Simple", description: "No frameworks — minimal guardrails for quick tasks", icon: "⚡" },
+]
+---
+
+<div id="rules-lenses-settings">
+  <!-- Preset Quick-Apply -->
+  <SettingsPanelCard title="Quick Presets" subtitle="Apply a curated rule set in one click">
+    <div class="rules-presets" id="rules-presets">
+      {presets.map((preset) => (
+        <button
+          class="rules-preset-btn"
+          data-preset={preset.id}
+          type="button"
+          title={preset.description}
+        >
+          <span class="rules-preset-icon">{preset.icon}</span>
+          <span class="rules-preset-label">{preset.label}</span>
+          <span class="rules-preset-desc">{preset.description}</span>
+        </button>
+      ))}
+    </div>
+    <div class="rules-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn btn-ghost btn-sm" id="rules-restore-defaults" type="button" title="Reset all rules to default presets">
+        ↺ Restore Defaults
+      </button>
+      <button class="btn btn-ghost btn-sm" id="rules-export-btn" type="button" title="Export rules and framework configs as JSON">
+        📤 Export Rules
+      </button>
+      <label class="btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
+        📥 Import Rules
+        <input type="file" id="rules-import-input" accept=".json" hidden />
+      </label>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Per-Type Framework Assignment -->
+  <SettingsPanelCard title="Framework Assignment" subtitle="Choose which strategic lenses apply to each task type">
+    <div class="rules-assignment-grid" id="rules-assignment-grid">
+      {taskTypes.map((type) => (
+        <div class="rules-assignment-row" data-task-type={type.id}>
+          <div class="rules-assignment-type">
+            <span class="rules-assignment-type-icon">{type.icon}</span>
+            <span class="rules-assignment-type-label">{type.label}</span>
+          </div>
+          <div class="rules-assignment-frameworks">
+            {frameworks.map((fw) => (
+              <label class="rules-framework-toggle" title={fw.description}>
+                <input
+                  type="checkbox"
+                  class="rules-fw-check"
+                  data-task-type={type.id}
+                  data-framework={fw.id}
+                />
+                <span class="rules-fw-pill">
+                  <span class="rules-fw-pill-icon">{fw.icon}</span>
+                  {fw.label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsPanelCard>
+
+  <!-- AI Scope Configuration -->
+  <SettingsDisclosure title="AI Scope per Task Type" subtitle="Control what AI agents are allowed to do for each type" id="ai-scope-disclosure">
+    <div class="rules-ai-scope" id="rules-ai-scope">
+      {taskTypes.map((type) => (
+        <div class="rules-ai-type-block" data-task-type={type.id}>
+          <h4 class="rules-ai-type-header">
+            <span>{type.icon}</span>
+            {type.label}
+          </h4>
+          <div class="rules-ai-toggles">
+            {aiCapabilities.map((cap) => (
+              <label class="rules-ai-toggle" title={cap.description}>
+                <span class="rules-ai-toggle-text">
+                  <strong>{cap.label}</strong>
+                  <small>{cap.description}</small>
+                </span>
+                <label class="toggle-label">
+                  <input
+                    type="checkbox"
+                    class="rules-ai-check"
+                    data-task-type={type.id}
+                    data-capability={cap.key}
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </label>
+            ))}
+          </div>
+          <div class="rules-ai-instructions">
+            <label class="form-label" for={`ai-instructions-${type.id}`}>
+              Custom AI Instructions
+            </label>
+            <textarea
+              class="form-input rules-ai-textarea"
+              id={`ai-instructions-${type.id}`}
+              data-task-type={type.id}
+              placeholder={`Optional instructions for AI agents working on ${type.label.toLowerCase()}s...`}
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsDisclosure>
+
+  <!-- Framework Config Editor -->
+  <SettingsDisclosure title="Framework Configuration" subtitle="Edit weights, descriptions, and formulas for each framework" id="framework-config-disclosure">
+    <div class="rules-framework-configs" id="rules-framework-configs">
+      {frameworks.map((fw) => (
+        <div class="rules-fw-config" data-framework={fw.id}>
+          <div class="rules-fw-config-header">
+            <span class="rules-fw-config-icon">{fw.icon}</span>
+            <div>
+              <strong>{fw.label}</strong>
+              <small>{fw.description}</small>
+            </div>
+            <button
+              class="btn btn-ghost btn-sm rules-fw-reset"
+              data-framework={fw.id}
+              type="button"
+              title={`Reset ${fw.label} to defaults`}
+            >
+              ↺ Reset
+            </button>
+          </div>
+          <div class="rules-fw-config-fields" data-framework={fw.id}>
+            <p class="text-muted" style="font-size: 12px; margin: 4px 0;">
+              Loading {fw.label} configuration…
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsDisclosure>
+</div>
+
+<style>
+  /* Presets */
+  .rules-presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+  }
+  .rules-preset-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 200ms ease, background 200ms ease, transform 150ms ease;
+  }
+  .rules-preset-btn:hover,
+  .rules-preset-btn.is-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--bg-card) 90%, var(--accent) 8%);
+    transform: translateY(-1px);
+  }
+  .rules-preset-btn.is-active {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .rules-preset-icon {
+    font-size: 22px;
+  }
+  .rules-preset-label {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .rules-preset-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  /* Assignment grid */
+  .rules-assignment-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rules-assignment-row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+  }
+  .rules-assignment-type {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .rules-assignment-type-icon {
+    font-size: 16px;
+  }
+  .rules-assignment-frameworks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .rules-framework-toggle {
+    cursor: pointer;
+  }
+  .rules-framework-toggle input {
+    display: none;
+  }
+  .rules-fw-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    transition: all 200ms ease;
+    user-select: none;
+  }
+  .rules-fw-pill-icon {
+    font-size: 13px;
+  }
+  .rules-framework-toggle input:checked + .rules-fw-pill {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* AI Scope */
+  .rules-ai-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rules-ai-type-block {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+  }
+  .rules-ai-type-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font-size: 14px;
+  }
+  .rules-ai-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rules-ai-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .rules-ai-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rules-ai-toggle-text strong {
+    font-size: 13px;
+  }
+  .rules-ai-toggle-text small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-ai-instructions {
+    margin-top: 10px;
+  }
+  .rules-ai-textarea {
+    resize: vertical;
+    min-height: 48px;
+    font-size: 13px;
+  }
+
+  /* Framework configs */
+  .rules-framework-configs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rules-fw-config {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+  }
+  .rules-fw-config-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .rules-fw-config-icon {
+    font-size: 20px;
+  }
+  .rules-fw-config-header > div {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rules-fw-config-header small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-fw-config-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rules-fw-field {
+    display: grid;
+    grid-template-columns: 120px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .rules-fw-field label {
+    font-weight: 500;
+  }
+  .rules-fw-field .form-input {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .rules-fw-field .weight-display {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 32px;
+    text-align: right;
+  }
+
+  /* Actions */
+  .rules-actions .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .rules-presets {
+      grid-template-columns: 1fr;
+    }
+    .rules-assignment-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .rules-fw-field {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+  }
+</style>

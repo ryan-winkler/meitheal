@@ -3,6 +3,7 @@ import SettingsLabels from "../components/settings/SettingsLabels.astro"
 import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
 import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
+import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsCallout from "../components/settings/SettingsCallout.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
@@ -16,6 +17,7 @@ import { SETTINGS_SECTIONS } from "../lib/settings-registry"
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 const workflowSection = SETTINGS_SECTIONS.find((section) => section.id === "workflow-settings")!
+const rulesSection = SETTINGS_SECTIONS.find((section) => section.id === "rules-lenses-settings")!
 const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "integrations-settings")!
 const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "automation-ai-settings")!
 ---
@@ -124,6 +126,15 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
           <SettingsSectionIntro section={workflowSection} />
           <SettingsGeneral locale={locale} />
           <SettingsLabels locale={locale} />
+        </section>
+
+        <section
+          id="rules-lenses-settings"
+          class="settings-shell__section"
+          data-settings-shell-section
+        >
+          <SettingsSectionIntro section={rulesSection} />
+          <SettingsRules />
         </section>
 
         <section

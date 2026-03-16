@@ -1,6 +1,7 @@
 export type SettingsSectionId =
   | "personal-settings"
   | "workflow-settings"
+  | "rules-lenses-settings"
   | "integrations-settings"
   | "automation-ai-settings"
   | "app-pwa-settings"
@@ -71,6 +72,22 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     featuredTasks: ["Sidebar setup", "Labels and fields", "Defaults and notifications"],
     statusTargetId: "settings-summary-workflow",
     keywords: ["labels", "custom fields", "sidebar", "notifications", "backlog", "retention", "users", "frameworks"],
+  },
+  {
+    id: "rules-lenses-settings",
+    label: "Rules & Lenses",
+    icon: "📏",
+    description: "Task context rules, AI scope, framework weights, and presets",
+    navDetail: "Per-type lens assignment, AI guardrails, framework configuration",
+    statusLabel: "Rules",
+    summaryTitle: "Strategy",
+    summaryDetail: "Configured",
+    introTitle: "Shape how tasks are evaluated and what AI can do",
+    introDescription:
+      "Assign strategic frameworks per task type, control AI scope with per-type guardrails, tune RICE/HEART/DDD/KCS weights, and apply presets to get started fast.",
+    featuredTasks: ["Apply a preset", "Configure AI scope", "Tune framework weights"],
+    statusTargetId: "rules-lenses-settings",
+    keywords: ["rules", "lenses", "rice", "heart", "ddd", "kcs", "ai scope", "presets", "frameworks", "strategic", "guardrails", "weights"],
   },
   {
     id: "integrations-settings",
@@ -263,6 +280,34 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     anchorId: "purge-tasks",
     sectionId: "danger-zone-settings",
     keywords: ["purge", "reset", "delete all", "factory reset"],
+  },
+  {
+    id: "field-rules-presets",
+    label: "Quick Presets",
+    anchorId: "rules-presets",
+    sectionId: "rules-lenses-settings",
+    keywords: ["preset", "strategic", "ux-focused", "simple", "quick apply"],
+  },
+  {
+    id: "field-rules-assignment",
+    label: "Framework Assignment",
+    anchorId: "rules-assignment-grid",
+    sectionId: "rules-lenses-settings",
+    keywords: ["framework", "lens", "rice", "heart", "ddd", "kcs", "epic", "story", "task"],
+  },
+  {
+    id: "field-rules-ai-scope",
+    label: "AI Scope",
+    anchorId: "ai-scope-disclosure",
+    sectionId: "rules-lenses-settings",
+    keywords: ["ai", "scope", "auto-score", "auto-close", "priority", "labels", "guardrails"],
+  },
+  {
+    id: "field-rules-framework-config",
+    label: "Framework Configuration",
+    anchorId: "framework-config-disclosure",
+    sectionId: "rules-lenses-settings",
+    keywords: ["weights", "formula", "description", "configuration", "customize"],
   },
 ]
 

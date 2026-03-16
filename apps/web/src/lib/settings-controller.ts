@@ -33,6 +33,7 @@ import { initHASettings, restoreHASettings } from "@lib/settings-integrations-ha
 import { initN8nSettings, restoreN8nSettings } from "@lib/settings-integrations-n8n-controller"
 import { initGrocySettings } from "@lib/settings-integrations-grocy-controller"
 import { initCalendarTodoSettings, restoreCalendarTodoSettings } from "@lib/settings-integrations-sync-controller"
+import { initRulesSettings } from "@lib/settings-rules-controller"
 
 const log = createClientLogger("settings")
 
@@ -130,6 +131,7 @@ export function initSettingsController(): void {
   initN8nSettings()
   initGrocySettings()
   initCalendarTodoSettings()
+  initRulesSettings()
 
   // ───── Load and restore all settings ─────
   loadSettings()
