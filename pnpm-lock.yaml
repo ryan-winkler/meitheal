@@ -60,6 +60,9 @@ importers:
       '@meitheal/domain-observability':
         specifier: workspace:*
         version: link:../../packages/domain-observability
+      '@meitheal/domain-strategy':
+        specifier: workspace:*
+        version: link:../../packages/domain-strategy
       '@meitheal/domain-tasks':
         specifier: workspace:*
         version: link:../../packages/domain-tasks

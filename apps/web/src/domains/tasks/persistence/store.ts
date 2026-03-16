@@ -542,6 +542,39 @@ export async function ensureSchema(): Promise<void> {
   await client.execute("UPDATE tasks SET status = 'active' WHERE status = 'in_progress'");
   await client.execute("UPDATE tasks SET status = 'complete' WHERE status = 'done'");
 
+  // Strategic Lenses pivot: Task Context Rules — per-type/per-tag guardrails
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      rule_type TEXT NOT NULL DEFAULT 'strategic-lens',
+      task_types TEXT NOT NULL DEFAULT '[]',
+      tags TEXT NOT NULL DEFAULT '[]',
+      lens_ids TEXT NOT NULL DEFAULT '[]',
+      ai_scope TEXT NOT NULL DEFAULT '{}',
+      constraints TEXT NOT NULL DEFAULT '',
+      priority INTEGER NOT NULL DEFAULT 100,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS rules_rule_type_idx ON rules(rule_type)")
+  await client.execute("CREATE INDEX IF NOT EXISTS rules_priority_idx ON rules(priority)")
+
+  // Strategic Lenses pivot: Framework config overrides (user edits stored as JSON)
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS framework_configs (
+      id TEXT PRIMARY KEY,
+      framework_id TEXT NOT NULL UNIQUE,
+      overrides TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS framework_configs_fid_idx ON framework_configs(framework_id)")
+
   ensured = true;
 
 }

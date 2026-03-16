@@ -24,6 +24,7 @@
     "@fontsource/outfit": "^5.2.8",
     "@libsql/client": "^0.17.0",
     "@meitheal/domain-observability": "workspace:*",
+    "@meitheal/domain-strategy": "workspace:*",
     "@meitheal/domain-tasks": "workspace:*",
     "@meitheal/integration-core": "workspace:*",
     "astro": "^6.0.4",
