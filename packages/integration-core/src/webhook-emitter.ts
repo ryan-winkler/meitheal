@@ -61,6 +61,14 @@ export async function emitWebhook(
     const timeout = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS)
 
     try {
+      const isLocalDev = process.env.NODE_ENV !== "production"
+      const isInternal = subscriber.url.includes(".internal")
+      const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+
+      if (isLocalDev && isInternal) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+      }
+
       const response = await fetch(subscriber.url, {
         method: "POST",
         signal: controller.signal,
@@ -73,6 +81,11 @@ export async function emitWebhook(
         },
         body: payload,
       })
+
+      if (isLocalDev && isInternal) {
+        if (originalTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTls
+      }
 
       lastStatusCode = response.status
 

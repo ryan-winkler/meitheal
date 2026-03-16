@@ -102,12 +102,25 @@ export const POST: APIRoute = async ({ request }) => {
     const startTime = Date.now()
 
     try {
+      const isLocalDev = process.env.NODE_ENV !== "production"
+      const isInternal = targetUrl.includes(".internal")
+      const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+
+      if (isLocalDev && isInternal) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+      }
+
       const response = await fetch(targetUrl, {
         method: "POST",
         signal: controller.signal,
         headers,
         body: payloadString,
       })
+
+      if (isLocalDev && isInternal) {
+        if (originalTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTls
+      }
 
       const latencyMs = Date.now() - startTime
 

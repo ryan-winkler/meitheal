@@ -1,5 +1,5 @@
-// @ts-nocheck — Extracted from kanban.astro is:inline script (PGD-01).
-// Progressive typing tracked as future work. All code is working production JS.
+// Extracted from kanban.astro is:inline script (PGD-01).
+// DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
 
 const log = createClientLogger("kanban");
@@ -28,7 +28,7 @@ const log = createClientLogger("kanban");
  * Called on `astro:page-load` from kanban.astro.
  */
 export function initKanbanBoard(): void {
-    function buildTaskApiUrl(taskId, suffix = "") {
+    function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
       if (!/^[A-Za-z0-9_-]+$/.test(normalizedTaskId)) {
         throw new Error("Invalid task id")
@@ -36,7 +36,7 @@ export function initKanbanBoard(): void {
       return `${window.__ingress_path || ""}/api/tasks/${encodeURIComponent(normalizedTaskId)}${suffix}`
     }
 
-    async function handleDrop(e) {
+    async function handleDrop(e: DragEvent) {
       e.preventDefault();
       const col = e.currentTarget;
       col.classList.remove("drag-over");
@@ -123,7 +123,7 @@ export function initKanbanBoard(): void {
 
       // Persist to API (background, no reload)
       try {
-        const payload = { status: newStatus };
+        const payload: Record<string, string | undefined> = { status: newStatus };
         if (targetSwimlane) {
           payload.task_type = targetSwimlane.dataset.swimlaneType;
         }
@@ -134,11 +134,11 @@ export function initKanbanBoard(): void {
         });
 
         // WIP limit warning toast (soft limit — allows drop but warns)
-        const wipLimit = parseInt(targetCol.dataset.wipLimit || "0", 10)
+        const wipLimit = parseInt((col as HTMLElement).dataset?.wipLimit || "0", 10)
         if (wipLimit > 0) {
-          const currentCount = targetCol.querySelectorAll(".kanban-card").length
+          const currentCount = col.querySelectorAll(".kanban-card").length
           if (currentCount > wipLimit) {
-            const colTitle = targetCol.querySelector(".kanban-column-title")?.textContent || "this column"
+            const colTitle = col.querySelector(".kanban-column-title")?.textContent || "this column"
             if (window.showToast) window.showToast(`⚠️ WIP limit exceeded: ${currentCount}/${wipLimit} in ${colTitle}`, "warning")
           }
         }
@@ -168,9 +168,9 @@ export function initKanbanBoard(): void {
     document.querySelectorAll(".kanban-column").forEach((col) => {
       // Column-level: drop, dragover, dragleave
       col.addEventListener("drop", handleDrop);
-      col.addEventListener("dragover", (e) => {
+      col.addEventListener("dragover", (e: DragEvent) => {
         e.preventDefault();
-        col.classList.add("drag-over");
+        (col as HTMLElement).classList.add("drag-over");
       });
       col.addEventListener("dragleave", () => {
         col.classList.remove("drag-over");
@@ -180,8 +180,8 @@ export function initKanbanBoard(): void {
       if (!cardsContainer) return;
 
       // Card-level: dragstart, dragend (replaces inline handlers for CSP)
-      cardsContainer.querySelectorAll(".kanban-card").forEach((card) => {
-        card.addEventListener("dragstart", (e) => {
+      cardsContainer.querySelectorAll<HTMLElement>(".kanban-card").forEach((card) => {
+        card.addEventListener("dragstart", (e: DragEvent) => {
           e.dataTransfer.setData("text/plain", card.dataset.id);
           card.classList.add("dragging");
         });
@@ -192,7 +192,7 @@ export function initKanbanBoard(): void {
         });
       });
 
-      cardsContainer.addEventListener("dragover", (e) => {
+      cardsContainer.addEventListener("dragover", (e: DragEvent) => {
         e.preventDefault();
         const dragging = document.querySelector(".kanban-card.dragging");
         if (!dragging) return;

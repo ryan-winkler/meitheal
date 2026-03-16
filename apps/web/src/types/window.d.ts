@@ -105,6 +105,14 @@ interface MeithealWindowExtensions {
   showToast?: (message: string, type?: string) => void;
   /** Start pomodoro timer for a task */
   startPomodoro?: (taskId?: string) => void;
+
+  // === Kanban-specific ===
+  /** Updates column card counts after DOM mutations */
+  updateAllCounts?: () => void;
+  /** Card visibility check for kanban filtering */
+  isCardVisible?: (card: HTMLElement) => boolean;
+  /** Filter state loaded flag (set by FilterToolbar) */
+  __filterStateLoaded?: boolean;
 }
 
 /** BeforeInstallPromptEvent — not in lib.dom.d.ts */
