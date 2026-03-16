@@ -131,7 +131,7 @@ if (!isEnabled) {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
     gap: 16px;
   }
 
@@ -139,86 +139,179 @@ if (!isEnabled) {
     font-size: 1.5rem;
     font-weight: 700;
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .habits-header__subtitle {
     font-size: 0.85rem;
     color: var(--text-muted, #9ca3af);
-    margin: 4px 0 0;
+    margin: 6px 0 0;
+    line-height: 1.5;
   }
 
+  /* ── Glassmorphism stat cards ────────────────────────── */
   .habits-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
   }
 
   .stat-card {
-    background: var(--surface-elevated, #1e1e2e);
+    background: var(--bg-card, #1e1e2e);
+    background-image: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.04) 0%,
+      rgba(99, 102, 241, 0.06) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--border, #2e2e3e);
-    border-radius: 10px;
-    padding: 16px;
+    border-radius: 14px;
+    padding: 18px 16px;
     text-align: center;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+      box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      transparent 50%
+    );
+    pointer-events: none;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(99, 102, 241, 0.15),
+      0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: var(--accent, #6366f1);
   }
 
   .stat-value {
     display: block;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-weight: 800;
     color: var(--accent, #6366f1);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    position: relative;
   }
 
   .stat-label {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-muted, #9ca3af);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 4px;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+    font-weight: 600;
+    position: relative;
   }
 
-  /* Habit cards */
+  /* ── Habit card list ────────────────────────────────── */
   .habits-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
 
-  .habits-loading, .habits-empty {
+  .habits-loading {
     text-align: center;
     color: var(--text-muted, #9ca3af);
     padding: 48px 0;
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
+  .habits-empty {
+    text-align: center;
+    color: var(--text-muted, #9ca3af);
+    padding: 56px 24px;
+    font-size: 0.95rem;
+    border: 1px dashed var(--border, #2e2e3e);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
+  }
+
+  /* ── Premium habit cards ────────────────────────────── */
   .habit-card {
-    background: var(--surface-elevated, #1e1e2e);
+    background: var(--bg-card, #1e1e2e);
     border: 1px solid var(--border, #2e2e3e);
-    border-radius: 12px;
-    padding: 16px 20px;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    border-radius: 14px;
+    padding: 18px 22px;
+    transition: transform 0.2s ease, border-color 0.2s ease,
+      box-shadow 0.2s ease, background-color 0.3s ease;
     position: relative;
+    overflow: hidden;
+  }
+
+  /* Subtle left accent bar */
+  .habit-card::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--accent, #6366f1);
+    opacity: 0;
+    transition: opacity 0.2s ease;
   }
 
   .habit-card:hover {
     border-color: var(--accent, #6366f1);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px -6px rgba(99, 102, 241, 0.12),
+      0 4px 8px -2px rgba(0, 0, 0, 0.15);
   }
 
+  .habit-card:hover::after {
+    opacity: 1;
+  }
+
+  /* ── Completion celebration ──────────────────────────── */
   .habit-card.completed {
     border-color: var(--success, #22c55e);
-    background: color-mix(in srgb, var(--success, #22c55e) 5%, var(--surface-elevated, #1e1e2e));
+    background: color-mix(in srgb, var(--success, #22c55e) 4%, var(--bg-card, #1e1e2e));
+  }
+
+  .habit-card.completed::after {
+    background: var(--success, #22c55e);
+    opacity: 1;
+  }
+
+  /* Completion celebration pulse */
+  @keyframes habit-celebrate {
+    0% { transform: scale(1); }
+    15% { transform: scale(1.02); }
+    30% { transform: scale(1); }
+    45% { transform: scale(1.01); }
+    60% { transform: scale(1); }
+  }
+
+  .habit-card.just-completed {
+    animation: habit-celebrate 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
 
   .habit-card__top {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
   }
 
+  /* ── Check button ───────────────────────────────────── */
   .habit-card__check {
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 2px solid var(--border-strong, #3e3e4e);
     background: transparent;
@@ -226,24 +319,29 @@ if (!isEnabled) {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    transition: all 0.15s;
+    font-size: 15px;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     color: transparent;
+    position: relative;
   }
 
   .habit-card__check:hover {
     border-color: var(--accent, #6366f1);
-    background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
+    background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
+    transform: scale(1.1);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #6366f1) 8%, transparent);
   }
 
   .habit-card.completed .habit-card__check {
     background: var(--success, #22c55e);
     border-color: var(--success, #22c55e);
     color: white;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--success, #22c55e) 12%, transparent);
   }
 
   .habit-card__icon {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
   }
 
   .habit-card__info {
@@ -254,44 +352,64 @@ if (!isEnabled) {
   .habit-card__name {
     font-weight: 600;
     font-size: 1rem;
+    letter-spacing: -0.01em;
   }
 
   .habit-card__meta {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     font-size: 0.78rem;
     color: var(--text-muted, #9ca3af);
-    margin-top: 4px;
+    margin-top: 6px;
     flex-wrap: wrap;
+    align-items: center;
   }
 
+  /* ── Streak badge ───────────────────────────────────── */
   .habit-card__streak {
     color: var(--warning, #f59e0b);
-    font-weight: 600;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--warning, #f59e0b) 10%, transparent);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    letter-spacing: 0.01em;
   }
 
   .habit-card__actions {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     flex-shrink: 0;
+    opacity: 0;
+    transform: translateX(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .habit-card:hover .habit-card__actions {
+    opacity: 1;
+    transform: translateX(0);
   }
 
   .habit-card__actions .btn-icon {
-    opacity: 0.5;
-    transition: opacity 0.15s;
+    opacity: 0.7;
+    transition: opacity 0.15s, transform 0.15s;
+    border-radius: 8px;
+    padding: 4px 6px;
   }
 
-  .habit-card:hover .habit-card__actions .btn-icon {
+  .habit-card__actions .btn-icon:hover {
     opacity: 1;
+    background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+    transform: scale(1.05);
   }
 
-  /* Checklists in cards */
+  /* ── Checklists in cards ─────────────────────────────── */
   .habit-card__checklist {
-    margin-top: 10px;
-    padding-left: 40px;
+    margin-top: 12px;
+    padding-left: 46px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
 
   .habit-card__checklist-item {
@@ -304,18 +422,28 @@ if (!isEnabled) {
 
   .habit-card__checklist-item input[type="checkbox"] {
     accent-color: var(--accent, #6366f1);
+    width: 16px;
+    height: 16px;
   }
 
-  /* Modal */
+  /* ── Modal ───────────────────────────────────────────── */
   .habit-modal-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    animation: habit-overlay-in 0.2s ease;
+  }
+
+  @keyframes habit-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   .habit-modal-overlay.hidden {
@@ -323,30 +451,45 @@ if (!isEnabled) {
   }
 
   .habit-modal {
-    background: var(--surface-elevated, #1e1e2e);
+    background: var(--bg-card, #1e1e2e);
     border: 1px solid var(--border, #2e2e3e);
-    border-radius: 16px;
+    border-radius: 18px;
     width: 100%;
     max-width: 520px;
     max-height: 80vh;
     overflow-y: auto;
+    box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.5);
+    animation: habit-modal-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes habit-modal-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
   .habit-modal__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px 12px;
+    padding: 22px 24px 14px;
+    border-bottom: 1px solid var(--border, #2e2e3e);
   }
 
   .habit-modal__header h2 {
     font-size: 1.2rem;
     font-weight: 700;
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .habit-modal__body {
-    padding: 0 24px 24px;
+    padding: 20px 24px 24px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -356,17 +499,18 @@ if (!isEnabled) {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border, #2e2e3e);
   }
 
   .form-group label {
     display: block;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     font-weight: 600;
     margin-bottom: 6px;
     color: var(--text-muted, #9ca3af);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.06em;
   }
 
   .form-row {
@@ -384,7 +528,7 @@ if (!isEnabled) {
     font-size: 1.3rem;
   }
 
-  /* Checklist builder */
+  /* ── Checklist builder ───────────────────────────────── */
   .checklist-builder {
     display: flex;
     flex-direction: column;
@@ -409,19 +553,40 @@ if (!isEnabled) {
     font-size: 1.1rem;
     padding: 4px;
     opacity: 0.6;
+    transition: opacity 0.15s;
   }
 
   .checklist-builder__item .btn-remove:hover {
     opacity: 1;
   }
 
-  /* Responsive */
+  /* ── Responsive ──────────────────────────────────────── */
   @media (max-width: 600px) {
     .habits-header {
       flex-direction: column;
     }
     .form-row {
       flex-direction: column;
+    }
+    .habit-card__actions {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* ── Reduced motion ──────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .habit-card,
+    .stat-card,
+    .habit-card__check,
+    .habit-card__actions,
+    .habit-modal,
+    .habit-modal-overlay {
+      transition: none !important;
+      animation: none !important;
+    }
+    .habit-card.just-completed {
+      animation: none !important;
     }
   }
 </style>
@@ -546,6 +711,12 @@ if (!isEnabled) {
         body: JSON.stringify({ action: "complete", templateId }),
       })
       if (res.ok) {
+        // Visual celebration — trigger pulse animation
+        const card = document.querySelector(`.habit-card[data-habit-id="${templateId}"]`)
+        if (card) {
+          card.classList.add("just-completed")
+          setTimeout(() => card.classList.remove("just-completed"), 700)
+        }
         // Trigger gamification/confetti hook
         try {
           const { onTaskCompleted } = await import("@lib/gamification-hook")

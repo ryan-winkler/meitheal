@@ -144,7 +144,7 @@ if (backlogMode === "hidden" || backlogMode === "disabled") {
   columns = columns.filter((col) => col.key !== "backlog");
 }
 
-import { PRIORITY_COLORS as priorityColors, PRIORITY_CSS_CLASSES as priorityClasses } from "../lib/priority-config";
+import { PRIORITY_COLORS as priorityColors, PRIORITY_CSS_CLASSES as priorityClasses, PRIORITY_ICONS as priorityIcons } from "../lib/priority-config";
 
 const priorityLabels: Record<number, string> = {
   1: t("priority.critical", locale),
@@ -413,7 +413,7 @@ const typeConfig: Record<
                         title={priorityLabels[p]}
                       />
                       <span class={`priority-label ${priorityClasses[p] ?? 'priority-medium'}`}>
-                        {priorityLabels[p]}
+                        {priorityIcons[p] ?? '→'} {priorityLabels[p]}
                       </span>
                       {task.due_date ? (
                         <span
