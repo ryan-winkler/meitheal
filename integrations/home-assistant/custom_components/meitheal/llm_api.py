@@ -798,6 +798,8 @@ API_PROMPT = (
     "- When they say 'add', 'create', 'remind me to', or 'I need to' — create a task.\n"
     "- When they say 'done', 'complete', or 'finished' — complete the task.\n"
     "- When they say 'delete', 'remove', or 'get rid of' — delete the task.\n"
+    "- When they say 'take off my list', 'remove from my shopping list', or 'clear from todo' "
+    "— use remove_from_todo_list to delete the task and remove from HA todo lists.\n"
     "- When they ask 'what's overdue?' or 'what did I miss?' — check overdue tasks.\n"
     "- When they ask 'what's on my plate?' or 'today's tasks' — get today's tasks.\n"
     "- When they ask 'what's on my calendar?' or 'any events?' — get calendar events.\n"
@@ -912,6 +914,67 @@ class GetTaskLinksTool(Tool):
         return result
 
 
+class RemoveFromTodoListTool(Tool):
+    """Remove a task from synced HA todo lists by deleting it.
+
+    Deletes the task from Meitheal, which triggers outbound sync
+    cleanup to remove the corresponding item from all synced HA
+    todo entities.
+    """
+
+    name = "meitheal_remove_from_todo_list"
+    description = (
+        "Remove a task from synced Home Assistant todo lists. "
+        "This deletes the task from Meitheal and removes it from all synced HA todo entities. "
+        "Use when the user says 'take X off my list', 'remove X from the shopping list', "
+        "'clear X from my todo', or 'take that off the list'. "
+        "Provide task_id (UUID) or title (fuzzy match) to identify the task."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("task_id"): str,
+            vol.Optional("title"): str,
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: ToolInput,
+        llm_context: LLMContext,
+    ) -> JsonObjectType:
+        """Remove task from Meitheal and all synced HA todo lists."""
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return {"error": "Meitheal not available"}
+
+        task_id = tool_input.tool_args.get("task_id")
+        title = tool_input.tool_args.get("title")
+
+        if not task_id and not title:
+            return {"error": "Provide task_id or title"}
+
+        # Resolve by title if no ID given
+        if not task_id and title:
+            tasks = await coordinator.async_search_tasks(title)
+            if not tasks:
+                return {"error": f"No task found matching '{title}'"}
+            task_id = tasks[0].get("id")
+
+        if not task_id:
+            return {"error": "Could not resolve task"}
+
+        result = await coordinator.async_delete_task(task_id)
+        if isinstance(result, dict) and result.get("error"):
+            return result
+
+        return {
+            "success": True,
+            "message": f"Removed task from Meitheal and all synced todo lists",
+            "task_id": task_id,
+        }
+
+
 class MeithealLLMAPI(API):
     """Meitheal LLM API — Exposes task tools to HA conversation agents."""
 
@@ -940,6 +1003,7 @@ class MeithealLLMAPI(API):
                 LinkTaskTool(),
                 UnlinkTaskTool(),
                 GetTaskLinksTool(),
+                RemoveFromTodoListTool(),
             ],
         )
 

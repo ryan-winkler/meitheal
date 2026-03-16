@@ -499,6 +499,11 @@ export const DELETE: APIRoute = async ({ params }) => {
     removeTaskCalendarEvent(resolvedId).catch(() => {})
   }).catch(() => {})
 
+  // Clean up any associated HA todo items (fire-and-forget)
+  import("../../../domains/todo/todo-bridge").then(({ removeTaskFromTodoList }) => {
+    removeTaskFromTodoList(resolvedId).catch(() => {})
+  }).catch(() => {})
+
   return new Response(null, { status: 204 })
 }
 

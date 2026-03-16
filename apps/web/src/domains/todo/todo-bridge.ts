@@ -543,6 +543,101 @@ export async function pushTaskToTodoList(
 }
 
 /**
+ * Remove a Meitheal task from all synced HA todo lists.
+ *
+ * Looks up `todo_sync_confirmations` for the task_id, calls
+ * `removeTodoItem()` for each linked HA entity, and deletes
+ * the confirmation rows.
+ *
+ * Called by:
+ *   - `DELETE /api/tasks/[id]` (direct cleanup)
+ *   - `sync-outbound.ts` on `task.deleted` event
+ *
+ * @returns Number of HA todo items removed
+ */
+export async function removeTaskFromTodoList(taskId: string): Promise<number> {
+  let removed = 0;
+  try {
+    const client = await getClient();
+
+    // Find all sync confirmations for this task
+    const rows = await client.execute({
+      sql: "SELECT ha_entity_id, ha_todo_uid, payload FROM todo_sync_confirmations WHERE task_id = ?",
+      args: [taskId],
+    });
+
+    if (rows.rows.length === 0) {
+      logger.log("debug", {
+        event: "todo.sync.remove_skipped", domain: "todo", component: "todo-bridge",
+        request_id: SYS_REQ,
+        message: `No sync confirmations found for task ${taskId} — nothing to remove`,
+      });
+      return 0;
+    }
+
+    for (const row of rows.rows) {
+      const entityId = row.ha_entity_id as string;
+      const rawPayload = row.payload as string | null;
+
+      // HA's todo.remove_item identifies items by summary text
+      let summary: string | null = null;
+      if (rawPayload) {
+        try {
+          const parsed = JSON.parse(rawPayload) as { summary?: string };
+          if (parsed.summary) summary = parsed.summary;
+        } catch { /* fall through */ }
+      }
+
+      if (!summary) {
+        logger.log("warn", {
+          event: "todo.sync.remove_no_summary", domain: "todo", component: "todo-bridge",
+          request_id: SYS_REQ,
+          message: `Sync confirmation for task ${taskId} in ${entityId} has no stored summary — skipping`,
+        });
+        continue;
+      }
+
+      const success = await removeTodoItem(entityId, [summary]);
+      if (success) {
+        removed++;
+        logger.log("info", {
+          event: "todo.sync.removed_from_ha", domain: "todo", component: "todo-bridge",
+          request_id: SYS_REQ,
+          message: `Removed "${summary}" from HA todo ${entityId}`,
+          metadata: { task_id: taskId },
+        });
+      } else {
+        logger.log("warn", {
+          event: "todo.sync.remove_failed", domain: "todo", component: "todo-bridge",
+          request_id: SYS_REQ,
+          message: `Failed to remove "${summary}" from HA todo ${entityId}`,
+          metadata: { task_id: taskId },
+        });
+      }
+    }
+
+    // Clean up all sync confirmation rows for this task
+    await client.execute({
+      sql: "DELETE FROM todo_sync_confirmations WHERE task_id = ?",
+      args: [taskId],
+    });
+
+    logger.log("info", {
+      event: "todo.sync.confirmations_cleaned", domain: "todo", component: "todo-bridge",
+      request_id: SYS_REQ,
+      message: `Cleaned ${rows.rows.length} sync confirmation(s) for task ${taskId}`,
+    });
+  } catch (err) {
+    logger.log("error", {
+      event: "todo.sync.remove_error", domain: "todo", component: "todo-bridge",
+      request_id: SYS_REQ, message: `Error removing task ${taskId} from HA todo lists: ${err}`,
+    });
+  }
+
+  return removed;
+}
+
+/**
  * Stop all or specific todo syncs and clean up.
  */
 export function stopTodoSync(entityId?: string): void {

@@ -62,8 +62,8 @@ export async function pushToActiveSyncs(
   eventType: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  // Only handle creates and updates
-  if (eventType !== "task.created" && eventType !== "task.updated") return;
+  // Only handle creates, updates, and deletes
+  if (eventType !== "task.created" && eventType !== "task.updated" && eventType !== "task.deleted") return;
 
   const labels = parseLabels(payload);
 
@@ -75,6 +75,31 @@ export async function pushToActiveSyncs(
       message: `Skipping outbound push for "${payload.title}" — has no-sync label`,
     });
     return;
+  }
+
+  // ── Handle task deletion: remove from all synced HA todo lists ──
+  if (eventType === "task.deleted") {
+    const taskId = String(payload.id ?? "");
+    if (!taskId) return;
+
+    try {
+      const { removeTaskFromTodoList } = await import("@domains/todo/todo-bridge");
+      const removed = await removeTaskFromTodoList(taskId);
+      if (removed > 0) {
+        logger.log("info", {
+          event: "sync.outbound.todo.deleted", domain: "integrations",
+          component: "sync-outbound", request_id: "system",
+          message: `Removed ${removed} HA todo item(s) for deleted task ${taskId}`,
+        });
+      }
+    } catch (err) {
+      logger.log("error", {
+        event: "sync.outbound.todo.delete_failed", domain: "integrations",
+        component: "sync-outbound", request_id: "system",
+        message: `Failed to remove HA todo items for deleted task: ${err}`,
+      });
+    }
+    return; // No further sync needed for deleted tasks
   }
 
   // Entities this task originated from (loop prevention)
