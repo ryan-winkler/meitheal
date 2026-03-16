@@ -8,13 +8,8 @@ import type {
   TaskSearchField,
 } from "@domains/search/search-types"
 
-declare global {
-  interface Window {
-    openSearchHub?: (prefill?: string) => void
-    closeSearchHub?: () => void
-    __searchHubKeyboardBound?: boolean
-  }
-}
+// Window globals (typed in types/window.d.ts):
+//   openSearchHub, closeSearchHub, __searchHubKeyboardBound
 
 interface StaticRegistry {
   pages: SearchResultItem[]

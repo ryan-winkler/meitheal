@@ -13,11 +13,8 @@
  * @module ingress-state-persistence
  */
 
-declare global {
-  interface Window {
-    __ingress_path?: string;
-  }
-}
+// Window globals (typed in types/window.d.ts):
+//   __ingress_path
 
 // ── Constants ──────────────────────────────────────────────────────
 const STORAGE_KEY = "meitheal-navigation-state";

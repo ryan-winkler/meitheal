@@ -19,15 +19,9 @@ const log = createClientLogger("kanban");
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-declare global {
-  interface Window {
-    __ingress_path?: string
-    showToast?: (msg: string, type?: string) => void
-    __featureFlags?: Record<string, boolean>
-    triggerConfetti?: () => void
-    openTaskModal?: (id: string) => void
-  }
-}
+// Window globals (typed in types/window.d.ts):
+//   __ingress_path, showToast, __featureFlags,
+//   triggerConfetti, openTaskDetail
 
 /**
  * Initialize all Kanban board interactivity.

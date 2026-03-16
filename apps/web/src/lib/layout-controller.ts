@@ -1,13 +1,5 @@
-        declare global {
-          interface Window {
-            attachStrategicLens?: (
-              taskId: string,
-              taskType: string,
-              payload: string,
-              cachedSettings?: Record<string, unknown>,
-            ) => void;
-          }
-        }
+// Window globals (typed in types/window.d.ts):
+//   attachStrategicLens
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { createClientLogger } from "@lib/client-logger";

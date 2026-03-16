@@ -70,6 +70,14 @@ interface MeithealWindowExtensions {
   /** AbortController cleanup for table resize listener */
   __tableResizeCleanup?: () => void;
 
+  // === Search Hub ===
+  /** Opens the search hub modal, optionally pre-filling the search input */
+  openSearchHub?: (prefill?: string) => void;
+  /** Closes the search hub modal */
+  closeSearchHub?: () => void;
+  /** Guard to prevent duplicate keyboard listeners for search hub */
+  __searchHubKeyboardBound?: boolean;
+
   // === Intervals / Singleton Guards ===
   /** Health check interval ID (prevents accumulation across navigations) */
   __healthIntervalId?: ReturnType<typeof setInterval>;
