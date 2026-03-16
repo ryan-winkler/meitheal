@@ -10,7 +10,10 @@
         }
 
         import { confirmDialog } from "@lib/confirm-dialog";
+        import { createClientLogger } from "@lib/client-logger";
         import { pageLifecycle } from "@lib/page-lifecycle";
+
+        const log = createClientLogger("app", "layout");
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
@@ -51,10 +54,10 @@
         // Global error resilience — catch unhandled errors to prevent blank-page crashes
         // (These are global/permanent — intentionally NOT lifecycle-managed)
         window.addEventListener("error", (e) => {
-          console.error("[Meitheal] Unhandled error:", e.error ?? e.message);
+          log.error("Unhandled error", e.error ?? e.message);
         });
         window.addEventListener("unhandledrejection", (e) => {
-          console.error("[Meitheal] Unhandled promise rejection:", e.reason);
+          log.error("Unhandled promise rejection", e.reason);
         });
 
         // Mobile menu toggle managed in TopNavigation.astro

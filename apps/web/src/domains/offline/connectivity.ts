@@ -18,6 +18,9 @@ export interface ConnectivityEventDetail {
 }
 
 import { apiUrl } from "../../lib/ingress-fetch"
+import { createClientLogger } from "@lib/client-logger"
+
+const log = createClientLogger("offline", "connectivity")
 
 // --- Configuration ---
 
@@ -125,7 +128,7 @@ function connectSSE(): void {
     });
 
   } catch (err) {
-    console.warn("[sse] Failed to initialize EventSource:", err);
+    log.warn("Failed to initialize EventSource", err);
   }
 }
 

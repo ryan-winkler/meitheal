@@ -10,6 +10,9 @@
  */
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
+import { createClientLogger } from "@lib/client-logger";
+
+const log = createClientLogger("ai", "context");
 
 /** Extended task interface with optional fields from persistence layer */
 interface TaskWithExtras extends OfflineTask {
@@ -80,7 +83,7 @@ async function resolveTask(taskId: string): Promise<TaskWithExtras> {
         }
       }
     } catch (err) {
-      console.warn("[ai] Failed to fetch task from server:", err);
+      log.warn("Failed to fetch task from server", err);
     }
   }
 
@@ -203,7 +206,7 @@ Please act as a senior technical co-pilot. Break this down into actionable sub-t
       };
     }
   } catch (err) {
-    console.warn("[ai] HA Assist call failed, falling back:", err);
+    log.warn("HA Assist call failed, falling back", err);
   }
 
   // Fallback
@@ -290,7 +293,7 @@ Respond with ONLY a JSON object in this exact format, no markdown fences:
       };
     }
   } catch (err) {
-    console.warn("[ai] Auto-score via Assist failed:", err);
+    log.warn("Auto-score via Assist failed", err);
   }
 
   // Fallback: clipboard

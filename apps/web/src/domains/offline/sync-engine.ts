@@ -18,6 +18,9 @@ import {
   type PendingSyncOperation,
   type OfflineTask,
 } from "./offline-store"
+import { createClientLogger } from "@lib/client-logger"
+
+const log = createClientLogger("offline", "sync-engine")
 
 // --- Types ---
 
@@ -111,7 +114,7 @@ export async function processSyncQueue(
         result.succeeded++
         // Wait using exponential backoff based on retry count
         const delay = RETRY_DELAYS_MS[op.retryCount] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
-        console.warn(`[sync-engine] op ${op.id} failed, retrying in ${delay}ms...`)
+        log.warn(`op ${op.id} failed, retrying in ${delay}ms...`)
         emitSyncEvent({
           type: "sync-error",
           error: `Network unstable. Retrying in ${delay / 1000}s...`,
@@ -121,7 +124,7 @@ export async function processSyncQueue(
         break;
       } else {
         // Max retries exceeded — dead letter
-        console.error(`[sync-engine] Max retries exceeded for ${op.id}, removing from queue`)
+        log.error(`Max retries exceeded for ${op.id}, removing from queue`)
         await removeSyncOp(op.id)
         result.failed++
       }
@@ -130,7 +133,7 @@ export async function processSyncQueue(
       if (op.retryCount < MAX_RETRIES) {
         await incrementRetryCount(op.id)
         const delay = RETRY_DELAYS_MS[op.retryCount] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
-        console.warn(`[sync-engine] op ${op.id} failed, retrying in ${delay}ms...`)
+        log.warn(`op ${op.id} failed, retrying in ${delay}ms...`)
         emitSyncEvent({
           type: "sync-error",
           error: `Network unstable. Retrying in ${delay / 1000}s...`,
@@ -143,7 +146,7 @@ export async function processSyncQueue(
           type: "sync-error",
           error: `Sync failed permanently for operation ${op.id}.`,
         })
-        console.error(`[sync-engine] Operation ${op.id} failed:`, error)
+        log.error(`Operation ${op.id} failed:`, error)
       }
     }
   }
@@ -219,9 +222,9 @@ export function startPeriodicSync(intervalMs: number = PERIODIC_SYNC_MS): void {
   periodicTimer = setInterval(() => {
     if (navigator.onLine) {
       cleanupExpiredSyncOps().then(removed => {
-        if (removed > 0) console.debug(`[sync-engine] Cleaned up ${removed} expired sync operations`)
-      }).catch(err => console.error("[sync-engine] Cleanup failed:", err))
-      processSyncQueue().catch((err) => console.error("[sync-engine] Periodic sync failed:", err))
+        if (removed > 0) log.debug(`Cleaned up ${removed} expired sync operations`)
+      }).catch(err => log.error("Cleanup failed", err))
+      processSyncQueue().catch((err) => log.error("Periodic sync failed", err))
     }
   }, intervalMs)
 

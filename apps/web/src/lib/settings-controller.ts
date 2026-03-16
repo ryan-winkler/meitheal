@@ -1,4 +1,5 @@
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
+import { createClientLogger } from "@lib/client-logger"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
@@ -7,6 +8,8 @@ import {
   applyCustomTheme as importedApplyCustomTheme,
 } from "@lib/theme-watcher"
 import type { ThemeMode } from "@lib/theme-watcher"
+
+const log = createClientLogger("settings")
 
 export function initSettingsController(): void {
 
@@ -18,7 +21,7 @@ export function initSettingsController(): void {
           await exportLocalDataAsJson();
           showToast("settings.export_success");
         } catch (err) {
-          console.error("Failed to export JSON:", err);
+          log.error("Failed to export JSON", err);
           showToast("settings.export_failed", "error");
         }
       });
@@ -73,7 +76,7 @@ export function initSettingsController(): void {
           settingsStore.invalidate()
           setTimeout(() => window.location.reload(), 1500);
         } catch (error) {
-          console.error("Failed to import settings:", error);
+          log.error("Failed to import settings", error);
           showToast("settings.import_failed", "error");
         }
       });
@@ -142,7 +145,7 @@ export function initSettingsController(): void {
       try {
         settings = await settingsStore.load()
       } catch (e) {
-        console.error("[Settings] Failed to load settings from API:", e);
+        log.error("Failed to load settings from API", e);
         // Fall back to localStorage for locale
         const stored = localStorage.getItem("meitheal-locale") || "en";
         (document.getElementById("locale-select") as HTMLSelectElement).value =
@@ -187,7 +190,7 @@ export function initSettingsController(): void {
           ).value = stored;
         }
       } catch (e) {
-        console.error("[Settings] Framework mapping error:", e);
+        log.error("Framework mapping error", e);
       }
 
       try {
@@ -215,7 +218,7 @@ export function initSettingsController(): void {
           updateCustomThemeDisplay(String(settings.custom_theme_name));
         }
       } catch (e) {
-        console.error("[Settings] Theme restore error:", e);
+        log.error("Theme restore error", e);
       }
 
       try {
@@ -248,7 +251,7 @@ export function initSettingsController(): void {
         ) as HTMLSelectElement;
         if (dfEl) dfEl.value = df;
       } catch (e) {
-        console.error("[Settings] UI settings error:", e);
+        log.error("UI settings error", e);
       }
 
       try {
@@ -591,7 +594,7 @@ export function initSettingsController(): void {
           }
         }
       } catch (e) {
-        console.error("[Settings] Sidebar/custom fields error:", e);
+        log.error("Sidebar/custom fields error", e);
       }
     }
 
@@ -2180,7 +2183,7 @@ export function initSettingsController(): void {
             },
           );
         } catch (err) {
-          console.error("Failed to save CalDAV credentials", err);
+          log.error("Failed to save CalDAV credentials", err);
         }
       } else if (caldavUrl && !caldavUsername && !caldavPassword) {
         await saveSetting("caldav_url", caldavUrl); // Legacy/unauthenticated
@@ -3123,7 +3126,7 @@ export function initSettingsController(): void {
           if (themeEl) themeEl.value = "custom";
           showToast(`Theme imported: ${file.name}`);
         } catch (err) {
-          console.error("Failed to import custom theme:", err);
+          log.error("Failed to import custom theme", err);
           showToast("Failed to import theme", "error");
         }
 

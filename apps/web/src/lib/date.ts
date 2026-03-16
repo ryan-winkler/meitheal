@@ -1,5 +1,8 @@
 import { formatDistanceToNow } from "date-fns";
 import { format as tzFormat, toZonedTime } from "date-fns-tz";
+import { createClientLogger } from "@lib/client-logger";
+
+const log = createClientLogger("utils", "date");
 
 export type DateFormat = "relative" | "absolute-iso" | "absolute-eu" | "absolute-us";
 
@@ -60,7 +63,7 @@ export function formatRegionalDate(
     // Default fallback
     return tzFormat(zonedDate, "yyyy-MM-dd", { timeZone: tz });
   } catch (e) {
-    console.warn("Date formatting error", e);
+    log.warn("Date formatting error", e);
     return String(dateInput);
   }
 }

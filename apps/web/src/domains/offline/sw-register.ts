@@ -15,6 +15,10 @@
  * Bounded context: offline domain
  */
 
+import { createClientLogger } from "@lib/client-logger"
+
+const log = createClientLogger("offline", "sw-register")
+
 // --- Types ---
 
 export interface SwUpdateEventDetail {
@@ -35,9 +39,9 @@ export function isPwaSupported(): boolean {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!isPwaSupported()) {
     if (typeof window !== "undefined" && !window.isSecureContext) {
-      console.info("[sw-register] Insecure context (HTTP) — PWA features disabled. Enable HTTPS for offline support.")
+      log.info("Insecure context (HTTP) — PWA features disabled. Enable HTTPS for offline support.")
     } else if (!("serviceWorker" in navigator)) {
-      console.info("[sw-register] Service workers not supported in this browser")
+      log.info("Service workers not supported in this browser")
     }
     return null
   }
@@ -120,7 +124,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
     return registration
   } catch (error) {
-    console.error("[sw-register] Registration failed:", error)
+    log.error("Registration failed", error)
     return null
   }
 }

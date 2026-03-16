@@ -1,4 +1,7 @@
         import { askAIForTask } from "@domains/ai/ai-context-service";
+        import { createClientLogger } from "@lib/client-logger";
+
+        const log = createClientLogger("tasks", "detail-modal");
         import {
           saveAttachment,
           getAttachmentsByTaskId,
@@ -755,7 +758,7 @@
             if ((e as { name?: string })?.name === "AbortError") {
               return;
             }
-            console.error("Failed to load task detail", e);
+            log.error("Failed to load task detail", e);
             _isPopulating = false;
             // Show error state in modal instead of closing — better UX for transient errors
             const titleEl = document.getElementById("td-title") as HTMLTextAreaElement | null;
@@ -872,7 +875,7 @@
               container.appendChild(thumb);
             });
           } catch (e) {
-            console.error("Failed to load attachments", e);
+            log.error("Failed to load attachments", e);
             container.innerHTML =
               '<span class="text-xs text-danger">Failed to load attachments</span>';
           }
@@ -900,10 +903,10 @@
                 }, 2000);
               }
             } else {
-              console.warn(`[saveTD] Failed to save ${field}:`, res.status);
+              log.warn(`Failed to save ${field}:`, res.status);
             }
           } catch (err) {
-            console.warn(`[saveTD] Network error saving ${field}:`, err);
+            log.warn(`Network error saving ${field}:`, err);
           }
         }
 
@@ -956,7 +959,7 @@
               ) as string;
               descPreview.innerHTML = sanitizeClient(dirtyHtml);
             } catch (e: any) {
-              console.error("Markdown render error:", e);
+              log.error("Markdown render error", e);
               descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${e.message}</div>`;
             }
           }
@@ -1008,7 +1011,7 @@
                 });
                 loadAttachments(currentTaskId!);
               } catch (err) {
-                console.error("Failed to save attachment", err);
+                log.error("Failed to save attachment", err);
                 const { showToast } = await import("@lib/toast");
                 showToast(
                   "Failed to save attachment due to storage limits or error.",
@@ -2077,7 +2080,7 @@
                   responseEl.remove();
                 });
             } catch (err) {
-              console.error("AI Context error:", err);
+              log.error("AI context error", err);
               const { showToast: toast } = await import("@lib/toast");
               toast("Failed to generate AI context.", "error");
               btn.innerHTML = "❌ Failed";
@@ -2111,7 +2114,7 @@
                 });
                 loadAttachments(currentTaskId!);
               } catch (err) {
-                console.error("Attachment failed:", err);
+                log.error("Attachment failed", err);
                 const { showToast: toast } = await import("@lib/toast");
                 toast("Failed to save attachment.", "error");
               } finally {
@@ -2195,7 +2198,7 @@
               currentTaskId = null;
             }
           } catch (err) {
-            console.warn("[Meitheal] Hash navigation error:", err);
+            log.warn("Hash navigation error", err);
           }
         }
         window.addEventListener("hashchange", checkHash, { signal: __signal });

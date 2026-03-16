@@ -8,6 +8,10 @@
  * Bounded context: offline domain
  */
 
+import { createClientLogger } from "@lib/client-logger"
+
+const log = createClientLogger("offline", "store")
+
 // --- Types ---
 
 export interface OfflineTask {
@@ -99,11 +103,11 @@ export async function putTask(task: OfflineTask): Promise<void> {
       const usagePct = quota ? ((usage || 0) / quota) * 100 : 0
 
       if (usagePct > 90) {
-        console.error(`[offline-store] Storage critically full (${usagePct.toFixed(1)}% of ${quotaMB.toFixed(0)}MB) — rejecting write`)
+        log.error(`Storage critically full (${usagePct.toFixed(1)}% of ${quotaMB.toFixed(0)}MB) — rejecting write`)
         throw new Error("IndexedDB storage quota exceeded (>90%)")
       }
       if (usageMB > 50) {
-        console.warn(`[offline-store] Storage usage high (${usageMB.toFixed(2)} MB) — consider cleanup`)
+        log.warn(`Storage usage high (${usageMB.toFixed(2)} MB) — consider cleanup`)
       }
     } catch (e) {
       // Only re-throw quota errors, ignore estimate() failures
@@ -164,7 +168,7 @@ export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "creat
   // Check queue depth warning
   const depth = await getSyncQueueDepth()
   if (depth >= MAX_QUEUE_DEPTH) {
-    console.warn(`[offline-store] Sync queue at capacity (${depth}/${MAX_QUEUE_DEPTH})`)
+    log.warn(`Sync queue at capacity (${depth}/${MAX_QUEUE_DEPTH})`)
   }
 
   // Deduplication: collapse updates to same entity

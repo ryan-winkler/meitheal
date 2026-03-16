@@ -19,6 +19,10 @@
  * Documented in .planning/persona-loops/click-reliability-audit.md (P4-2).
  */
 
+import { createClientLogger } from "@lib/client-logger";
+
+const log = createClientLogger("utils", "wait-for-fn");
+
 /**
  * Wait for a function to appear on the window object, then execute a callback with it.
  *
@@ -48,8 +52,8 @@ export function waitForFn<T extends (...args: any[]) => any>(
       callback(fn as T);
     } else if (elapsed >= timeoutMs) {
       clearInterval(timer);
-      console.warn(
-        `[waitForFn] Timed out waiting for window.${fnName} after ${timeoutMs}ms`,
+      log.warn(
+        `Timed out waiting for window.${fnName} after ${timeoutMs}ms`,
       );
     }
   }, interval);

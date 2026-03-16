@@ -1,5 +1,8 @@
 // @ts-nocheck — Extracted from kanban.astro is:inline script (PGD-01).
 // Progressive typing tracked as future work. All code is working production JS.
+import { createClientLogger } from "@lib/client-logger";
+
+const log = createClientLogger("kanban");
 /**
  * kanban-controller.ts — Kanban board interactive logic
  *
@@ -476,7 +479,7 @@ export function initKanbanBoard(): void {
             dupBtn.classList.remove("btn-loading");
           }
         } catch (err) {
-          console.warn("[Meitheal] Duplicate task failed:", err);
+          log.warn("Duplicate task failed", err);
           btn.disabled = false;
           btn.classList.remove("btn-loading");
         }
@@ -503,7 +506,7 @@ export function initKanbanBoard(): void {
       /** Reusable toast with fallback (P2-6) */
       function toast(msg, type = "success") {
         if (window.showToast) window.showToast(msg, type);
-        else console.log(`[Meitheal] ${type}: ${msg}`);
+        else log.info(`${type}: ${msg}`);
       }
 
       /**
@@ -638,7 +641,7 @@ export function initKanbanBoard(): void {
             _qa.toast("Failed to create child task", "error");
           }
         } catch (err) {
-          console.warn("[Meitheal] Add child failed:", err);
+          log.warn("Add child failed", err);
           _qa.toast("Failed to create child task", "error");
         } finally {
           btn.disabled = false;
@@ -1017,7 +1020,7 @@ export function initKanbanBoard(): void {
               addBtn.classList.remove("btn-loading");
             }
           } catch (err) {
-            console.warn("[Meitheal] Quick-add task failed:", err);
+            log.warn("Quick-add task failed", err);
             addBtn.disabled = false;
             addBtn.classList.remove("btn-loading");
           }
