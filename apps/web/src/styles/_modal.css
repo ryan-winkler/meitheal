@@ -64,7 +64,8 @@ dialog::backdrop {
   opacity: 0;
 }
 
-dialog[open] .modal-content {
+dialog[open] .modal-content,
+.modal-overlay.open .modal-content {
   animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 

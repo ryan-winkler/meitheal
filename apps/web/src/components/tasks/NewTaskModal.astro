@@ -9,8 +9,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <div
   id="new-task-overlay"
-  class="modal-overlay z-[200]"
-  style="display:none;position:fixed;"
+  class="modal-overlay hidden z-200"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="new-task-title"
 >
   <div class="modal-content max-w-lg w-full p-6 animate-slide-in">
     <div
@@ -183,9 +185,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   function closeNewTaskModal() {
     overlay?.classList.remove("open");
-    if (overlay) {
-      overlay.style.display = "none";
-    }
+    overlay?.classList.add("hidden");
     form?.reset();
     // Clear dynamic checklist rows
     if (checklistContainer) checklistContainer.innerHTML = "";
@@ -196,6 +196,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   overlay?.addEventListener("click", (e) => {
     if (e.target === overlay) closeNewTaskModal();
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && overlay?.classList.contains("open")) {
+      e.preventDefault();
+      closeNewTaskModal();
+    }
+  });
 
   // Expose global open method
   window.openNewTaskModal = () => {
@@ -204,11 +210,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     document.getElementById("task-detail-overlay")?.classList.add("hidden");
 
     form?.reset();
+    overlay?.classList.remove("hidden");
     overlay?.classList.add("open");
-    if (overlay) {
-      overlay.style.display = "flex";
-      overlay.style.position = "fixed";
-    }
+    
     // Load user list for assignment dropdown
     loadAssigneeDropdown();
     setTimeout(() => {
