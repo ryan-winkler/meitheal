@@ -420,7 +420,11 @@
         "updated": "Updated",
         "failed": "Failed",
         "id_copied": "ID copied to clipboard",
-        "sync_conflict_merged": "Sync conflict merged with server changes"
+        "sync_conflict_merged": "Sync conflict merged with server changes",
+        "tasks_cleared": "Completed tasks archived",
+        "favorited": "Added to favorites",
+        "unfavorited": "Removed from favorites",
+        "task_snoozed": "Task snoozed"
     },
     "errors": {
         "page_not_found": "Page Not Found",

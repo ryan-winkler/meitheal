@@ -3,7 +3,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 
 interface Props {
-  activeView: "list" | "board" | "table" | "calendar" | "gantt";
+  activeView: "board" | "table" | "calendar" | "gantt";
 }
 
 const { activeView } = Astro.props;
@@ -18,13 +18,6 @@ const queryString = currentParams.toString()
 ---
 
 <div class="task-view-tabs px-6">
-  <a
-    href={`/tasks${queryString}`}
-    class={`view-tab ${activeView === "list" ? "active" : ""}`}
-  >
-    <span class="mr-2">☰</span>
-    {t("tasks.list_view", locale)}
-  </a>
   <a
     href={`/kanban${queryString}`}
     class={`view-tab ${activeView === "board" ? "active" : ""}`}

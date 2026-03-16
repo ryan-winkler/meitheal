@@ -417,7 +417,11 @@
         "updated": "Nuashonraithe",
         "failed": "Theip",
         "id_copied": "ID cóipeáilte go dtí an ghearrthaisce",
-        "sync_conflict_merged": "Coimhlint sioncronaithe cumaisc le hathruithe freastalaí"
+        "sync_conflict_merged": "Coimhlint sioncronaithe cumaisc le hathruithe freastalaí",
+        "tasks_cleared": "Tascanna críochnaithe curtha i gcartlann",
+        "favorited": "Curtha le ceanáin",
+        "unfavorited": "Bainte ó cheanáin",
+        "task_snoozed": "Tasc curtha ar sos"
     },
     "errors": {
         "page_not_found": "Leathanach Gan Aimsiú",

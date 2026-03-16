@@ -1,537 +1,436 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import EmptyState from "../components/ui/EmptyState.astro";
-import LabelBadges from "../components/ui/LabelBadges.astro";
+/**
+ * Today Page — Smart Daily Cockpit
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Single-pane-of-glass daily view with sections:
+ * 1. Daily Stats
+ * 2. Quick Add (NL-aware + defaults due_date = today)
+ * 3. Filter Bar (search, status, priority, RICE, sort)
+ * 4. Carried Forward (overdue tasks with triage / snooze)
+ * 5. Pinned / MITs (favorited tasks)
+ * 6. Due Today (hard landscape)
+ * 7. Unscheduled (no due date)
+ * 8. Suggested (smart picks)
+ *
+ * @kcs This page uses the shared TaskListItem component for all task rendering.
+ * The inline script is replaced by today-controller.ts module.
+ */
+import Layout from "../layouts/Layout.astro"
+import EmptyState from "../components/ui/EmptyState.astro"
+import TaskListItem from "../components/tasks/TaskListItem.astro"
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+} from "@domains/tasks/persistence/store"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 
-let overdueTasks: Record<string, unknown>[] = [];
-let todayTasks: Record<string, unknown>[] = [];
-let noDueTasks: Record<string, unknown>[] = [];
-let suggestedTasks: Record<string, unknown>[] = [];
-let completedTodayCount = 0;
+let carriedForwardTasks: TaskViewItem[] = []
+let pinnedTasks: TaskViewItem[] = []
+let todayTasks: TaskViewItem[] = []
+let noDueTasks: TaskViewItem[] = []
+let suggestedTasks: TaskViewItem[] = []
+let completedTodayCount = 0
+let totalOpenCount = 0
 
 try {
-  await ensureSchema();
-  const repo = new TaskRepository(getPersistenceClient());
-  const today = new Date().toISOString().split("T")[0] ?? "";
+  const { tasks } = await getTasksForView()
+  const todayStr = new Date().toISOString().split("T")[0] ?? ""
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
-  overdueTasks = await repo.getOverdueTasks(today);
-  todayTasks = await repo.getTasksDueOn(today);
-  noDueTasks = await repo.getUnscheduledTasks(10);
-  suggestedTasks = await repo.getSuggestedTasks(today, 8);
-  completedTodayCount = await repo.getCompletedTodayCount(today);
+  // Partition tasks into sections
+  for (const task of tasks) {
+    if (task.is_done) {
+      // Count completed today
+      if (task.updated_at?.startsWith(todayStr)) {
+        completedTodayCount++
+      }
+      continue
+    }
+
+    // Pinned / MITs (favorited and not in another section)
+    if (task.is_favorite) {
+      pinnedTasks.push(task)
+    }
+
+    if (task.due_date) {
+      const dueDate = new Date(task.due_date)
+      dueDate.setHours(0, 0, 0, 0)
+
+      if (dueDate < today) {
+        // Carried forward (overdue)
+        carriedForwardTasks.push(task)
+      } else if (task.due_date === todayStr) {
+        // Due today
+        todayTasks.push(task)
+      }
+      // Future dates go to suggested if high priority
+    } else {
+      // No due date → unscheduled
+      noDueTasks.push(task)
+    }
+  }
+
+  // Suggested: high-priority tasks due within 3 days + top-RICE unscheduled
+  const threeDaysOut = new Date(today)
+  threeDaysOut.setDate(threeDaysOut.getDate() + 3)
+  const threeDaysStr = threeDaysOut.toISOString().split("T")[0]!
+
+  suggestedTasks = tasks.filter(t => {
+    if (t.is_done) return false
+    // Already in today or carried forward
+    if (t.due_date === todayStr) return false
+    if (t.is_overdue) return false
+    // High priority due within 3 days
+    if (t.due_date && t.due_date <= threeDaysStr && t.priority <= 2) return true
+    // Top RICE unscheduled (not already in unscheduled section to avoid double)
+    if (!t.due_date && t.rice !== null && t.rice >= 15) return true
+    return false
+  }).slice(0, 8)
+
+  // Remove suggested from noDueTasks to avoid double-showing
+  const suggestedIds = new Set(suggestedTasks.map(t => t.id))
+  noDueTasks = noDueTasks.filter(t => !suggestedIds.has(t.id))
+
+  totalOpenCount = carriedForwardTasks.length + todayTasks.length + noDueTasks.length
 } catch {
   /* DB not available */
 }
 
-import {
-  PRIORITY_LABELS as priorityLabels,
-  PRIORITY_COLORS as priorityColors,
-} from "../lib/priority-config";
-import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
-import StatusBadge from "../components/ui/StatusBadge.astro";
+// Remove pinned duplicates from other sections (keep in Pinned section)
+const pinnedIds = new Set(pinnedTasks.map(t => t.id))
+carriedForwardTasks = carriedForwardTasks.filter(t => !pinnedIds.has(t.id))
+todayTasks = todayTasks.filter(t => !pinnedIds.has(t.id))
+noDueTasks = noDueTasks.filter(t => !pinnedIds.has(t.id))
 
-const typeIcons: Record<string, string> = {
-  epic: "🎯",
-  story: "📖",
-  task: "📌",
-};
+const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
 ---
 
 <Layout title="Meitheal — Today">
   <span slot="page-title">☀️ Today</span>
   <div slot="actions">
-    <button type="button" class="btn btn-primary" id="create-task-btn"
-      >+ New Task</button
-    >
+    <button type="button" class="btn btn-sm" id="clear-completed-btn" title="Clear completed tasks">
+      🧹 Clear Done
+    </button>
+    <button type="button" class="btn btn-primary" id="create-task-btn">
+      + New Task
+    </button>
   </div>
 
-  <!-- SMT-03: Daily Summary Stats -->
+  <!-- Daily Stats -->
   <div class="daily-stats-container" id="daily-stats-container">
     <div class="daily-stats" id="daily-stats">
-      <a href="#due-today" class="stat-item" style="text-decoration: none; color: inherit;">
-        <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
-        <span class="stat-label">Open Today</span>
+      <a href="#section-today" class="stat-item" style="text-decoration: none; color: inherit;">
+        <span class="stat-value">{todayTasks.length}</span>
+        <span class="stat-label">Due Today</span>
       </a>
       <div class="stat-item">
         <span class="stat-value">{completedTodayCount}</span>
         <span class="stat-label">Completed</span>
       </div>
-      <a href="#overdue" class="stat-item" style="text-decoration: none; color: inherit;">
-        <span class="stat-value">{overdueTasks.length}</span>
-        <span class="stat-label stat-danger">Overdue</span>
+      <a href="#section-carried" class="stat-item" style="text-decoration: none; color: inherit;">
+        <span class="stat-value">{carriedForwardTasks.length}</span>
+        <span class="stat-label stat-danger">Carried Fwd</span>
       </a>
       <div class="stat-item">
-        <span class="stat-value">{todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length}</span>
+        <span class="stat-value">{remainingCount}</span>
         <span class="stat-label">Remaining</span>
       </div>
     </div>
     <div class="daily-stats-progress-bar">
-      <div class="daily-stats-progress-fill" style={`width: ${(completedTodayCount / Math.max(1, completedTodayCount + todayTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length + overdueTasks.filter(t => t.status !== 'complete' && t.status !== 'done').length)) * 100}%`}></div>
+      <div
+        class="daily-stats-progress-fill"
+        style={`width: ${(completedTodayCount / Math.max(1, completedTodayCount + remainingCount)) * 100}%`}
+      ></div>
     </div>
   </div>
 
-  <!-- Persona 10: Quick-add inline -->
+  <!-- Quick Add -->
   <div class="card" style="margin-bottom: 16px; padding: 12px 16px;">
-    <form
-      id="quick-add-form"
-      style="display: flex; gap: 8px; align-items: center;"
-    >
+    <form id="quick-add-form" style="display: flex; gap: 8px; align-items: center;">
       <input
         type="text"
         id="quick-add-input"
         class="form-input flex-1"
-        placeholder="Add a task... (try 'Buy groceries tomorrow' or 'Review docs every monday')"
+        placeholder="Add a task... (try 'shopping: milk, eggs' or 'call dentist tomorrow')"
         autocomplete="off"
         style="font-size: 14px;"
       />
-      <button
-        type="submit"
-        class="btn btn-primary"
-        style="padding: 8px 16px; white-space: nowrap;">Add</button
-      >
+      <button type="submit" class="btn btn-primary" style="padding: 8px 16px; white-space: nowrap;">
+        Add
+      </button>
     </form>
     <div
       id="quick-add-feedback"
       style="display: none; font-size: 11px; color: var(--text-muted); margin-top: 4px; padding-left: 2px;"
-    >
+    ></div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="today-filter-bar" id="today-filter-bar">
+    <input
+      type="text"
+      id="today-search"
+      class="form-input"
+      placeholder="Search tasks..."
+      autocomplete="off"
+    />
+    <select id="today-filter-status" class="form-select">
+      <option value="">All Status</option>
+      <option value="pending">Todo</option>
+      <option value="active">Active</option>
+      <option value="complete">Done</option>
+      <option value="overdue">Overdue</option>
+    </select>
+    <select id="today-filter-priority" class="form-select">
+      <option value="">All Priority</option>
+      <option value="1">🔴 Critical</option>
+      <option value="2">🟠 High</option>
+      <option value="3">🟡 Medium</option>
+      <option value="4">🟢 Low</option>
+      <option value="5">⚪ Minimal</option>
+    </select>
+    <select id="today-filter-rice" class="form-select">
+      <option value="">All RICE</option>
+      <option value="high">High (≥15)</option>
+      <option value="medium">Medium (8-14)</option>
+      <option value="low">Low (&lt;8)</option>
+    </select>
+    <select id="today-sort" class="form-select">
+      <option value="priority-asc">Priority ↑</option>
+      <option value="priority-desc">Priority ↓</option>
+      <option value="rice-desc">RICE ↓</option>
+      <option value="rice-asc">RICE ↑</option>
+      <option value="due_date-asc">Due Soonest</option>
+      <option value="due_date-desc">Due Latest</option>
+      <option value="title-asc">Title A-Z</option>
+      <option value="title-desc">Title Z-A</option>
+    </select>
+    <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
+      ✕
+    </button>
+  </div>
+
+  <!-- Section: Carried Forward (Overdue → ADHD-friendly framing) -->
+  {carriedForwardTasks.length > 0 && (
+    <div class="today-section" id="section-carried">
+      <div class="today-section__header">
+        <button type="button" class="today-section__toggle" aria-label="Toggle Carried Forward section">
+          <span class="today-section__icon">▶</span>
+        </button>
+        <span class="today-section__title" style="color: var(--warning);">
+          🔄 Carried Forward
+        </span>
+        <span class="today-section__count">{carriedForwardTasks.length}</span>
+      </div>
+      <div class="today-section__list">
+        {carriedForwardTasks.map(task => (
+          <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- Section: Pinned / MITs -->
+  {pinnedTasks.length > 0 && (
+    <div class="today-section" id="section-pinned">
+      <div class="today-section__header">
+        <button type="button" class="today-section__toggle" aria-label="Toggle Pinned section">
+          <span class="today-section__icon">▶</span>
+        </button>
+        <span class="today-section__title">
+          ⭐ Pinned / MITs
+        </span>
+        <span class="today-section__count">{pinnedTasks.length}</span>
+      </div>
+      <div class="today-section__list">
+        {pinnedTasks.map(task => (
+          <TaskListItem task={task} showSnooze showActions section="Pinned" />
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- Section: Due Today -->
+  <div class="today-section" id="section-today">
+    <div class="today-section__header">
+      <button type="button" class="today-section__toggle" aria-label="Toggle Due Today section">
+        <span class="today-section__icon">▶</span>
+      </button>
+      <span class="today-section__title">
+        ☀️ Due Today
+      </span>
+      <span class="today-section__count">{todayTasks.length}</span>
+    </div>
+    <div class="today-section__list">
+      {todayTasks.length === 0 ? (
+        <EmptyState
+          title="Nothing due today"
+          description="You're on top of things! 🎉"
+        />
+      ) : (
+        todayTasks.map(task => (
+          <TaskListItem task={task} showSnooze showActions section="Due Today" />
+        ))
+      )}
     </div>
   </div>
 
-  {
-    overdueTasks.length > 0 && (
-      <div
-        class="card"
-        id="overdue"
-        style="margin-bottom: 16px; border-left: 3px solid var(--danger);"
-      >
-        <div class="card-header" style="padding: 12px 16px;">
-          <div>
-            <div
-              class="card-title"
-              style="color: var(--danger); font-size: 14px;"
-            >
-              ⚠️ Overdue ({overdueTasks.length})
-            </div>
-          </div>
-        </div>
-        <div class="task-list">
-          {overdueTasks.map((task) => {
-            const p = Number(task.priority ?? 3);
-            const tt = String(task.task_type ?? "task");
-            const status = normalizeStatus(String(task.status ?? "pending"));
-            return (
-              <div
-                class="task-item"
-                data-id={String(task.id)}
-                style="cursor:pointer; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s;"
-                role="button"
-                tabindex="0"
-                aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, overdue since ${String(task.due_date)}`}
-              >
-                <input
-                  type="checkbox"
-                  class="task-checkbox"
-                  data-id={String(task.id)}
-                  aria-label={`Complete ${String(task.title)}`}
-                />
-                <span
-                  style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
-                  title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                >
-                  ●
-                </span>
-                <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    <span style="margin-right: 4px; font-size: 12px;">
-                      {typeIcons[tt] ?? ""}
-                    </span>
-                    {String(task.title)}
-                  </div>
-                  <div style="font-size: 11px; color: var(--danger); margin-top: 2px;">
-                    {String(task.due_date)}
-                  </div>
-                  <LabelBadges labels={task.labels as string} compact max={3} />
-                </div>
-                <span class={`status-badge status-badge--${status}`}>
-                  {STATUS_LABELS[status] ?? "Unknown"}
-                </span>
-                {task.recurrence_rule && (
-                  <span
-                    style="font-size: 11px; color: var(--text-muted);"
-                    title="Recurring task"
-                  >
-                    🔁
-                  </span>
-                )}
-                {(() => {
-                  try {
-                    const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
-                    if (Array.isArray(cl) && cl.length > 0) {
-                      const done = cl.filter((i: {done: boolean}) => i.done).length;
-                      return (
-                        <span
-                          style={`font-size: 11px; color: ${done === cl.length ? 'var(--color-green-500, #22c55e)' : 'var(--text-muted)'};`}
-                          title={`Checklist: ${done}/${cl.length}`}
-                        >
-                          ✓ {done}/{cl.length}
-                        </span>
-                      );
-                    }
-                  } catch { /* skip */ }
-                  return null;
-                })()}
-                {task.assigned_to && (
-                  <span
-                    class="avatar avatar--sm"
-                    title={`Assigned to ${String(task.assigned_to)}`}
-                    aria-label={`Assigned to ${String(task.assigned_to)}`}
-                  >
-                    {String(task.assigned_to)
-                      .replace(/^(ha_|custom_)/, "")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+  <!-- Section: Unscheduled -->
+  {noDueTasks.length > 0 && (
+    <div class="today-section today-section--collapsed" id="section-unscheduled">
+      <div class="today-section__header">
+        <button type="button" class="today-section__toggle" aria-label="Toggle Unscheduled section">
+          <span class="today-section__icon">▶</span>
+        </button>
+        <span class="today-section__title">
+          📌 Unscheduled
+        </span>
+        <span class="today-section__count">{noDueTasks.length}</span>
       </div>
-    )
-  }
-
-  <div class="card" id="due-today" style="margin-bottom: 16px;">
-    <div class="card-header" style="padding: 12px 16px;">
-      <div>
-        <div class="card-title" style="font-size: 14px;">
-          {
-            todayTasks.length > 0
-              ? `☀️ Due Today (${todayTasks.length})`
-              : "☀️ Today"
-          }
-        </div>
-        {
-          todayTasks.length > 0 && (
-            <div class="card-subtitle" style="font-size: 12px;">
-              Focus on these tasks
-            </div>
-          )
-        }
+      <div class="today-section__list">
+        {noDueTasks.map(task => (
+          <TaskListItem task={task} showActions section="Unscheduled" />
+        ))}
       </div>
     </div>
-    <div class="task-list" id="today-tasks">
-      {
-        todayTasks.length === 0 ? (
-          <EmptyState
-            title="No tasks due today"
-            description="You're on top of things! 🎉"
-          />
-        ) : (
-          todayTasks.map((task) => {
-            const p = Number(task.priority ?? 3);
-            const tt = String(task.task_type ?? "task");
-            const progress = Number(task.progress ?? 0);
-            const status = normalizeStatus(String(task.status ?? "pending"));
-            return (
-              <div
-                class="task-item"
-                data-id={String(task.id)}
-                style="cursor:pointer; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s;"
-                role="button"
-                tabindex="0"
-                aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}`}
-              >
-                <input
-                  type="checkbox"
-                  class="task-checkbox"
-                  data-id={String(task.id)}
-                  aria-label={`Complete ${String(task.title)}`}
-                />
-                <span
-                  style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
-                  title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                >
-                  ●
-                </span>
-                <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    <span style="margin-right: 4px; font-size: 12px;">
-                      {typeIcons[tt] ?? ""}
-                    </span>
-                    {String(task.title)}
-                  </div>
-                  <LabelBadges labels={task.labels as string} compact max={3} />
-                  {progress > 0 && (
-                    <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px;">
-                      <div style="flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;">
-                        <div
-                          style={`width: ${progress}%; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s;`}
-                        />
-                      </div>
-                      <span style="font-size: 10px; color: var(--text-muted);">
-                        {progress}%
-                      </span>
-                    </div>
-                  )}
-                  <LabelBadges labels={String(task.labels ?? "[]")} compact max={2} />
-                </div>
-                {task.color && (
-                  <span
-                    style={`width: 4px; height: 24px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
-                  />
-                )}
-                <span class={`status-badge status-badge--${status}`}>
-                  {STATUS_LABELS[status] ?? "Unknown"}
-                </span>
-                {task.recurrence_rule && (
-                  <span
-                    style="font-size: 11px; color: var(--text-muted);"
-                    title="Recurring task"
-                  >
-                    🔁
-                  </span>
-                )}
-                {(() => {
-                  try {
-                    const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
-                    if (Array.isArray(cl) && cl.length > 0) {
-                      const done = cl.filter((i: {done: boolean}) => i.done).length;
-                      return (
-                        <span
-                          style={`font-size: 11px; color: ${done === cl.length ? 'var(--color-green-500, #22c55e)' : 'var(--text-muted)'};`}
-                          title={`Checklist: ${done}/${cl.length}`}
-                        >
-                          ✓ {done}/{cl.length}
-                        </span>
-                      );
-                    }
-                  } catch { /* skip */ }
-                  return null;
-                })()}
-                {task.assigned_to && (
-                  <span
-                    class="assignee-badge"
-                    title={`Assigned to ${String(task.assigned_to)}`}
-                    aria-label={`Assigned to ${String(task.assigned_to)}`}
-                  >
-                    {String(task.assigned_to)
-                      .replace(/^(ha_|custom_)/, "")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
-            );
-          })
-        )
-      }
+  )}
+
+  <!-- Section: Suggested -->
+  {suggestedTasks.length > 0 && (
+    <div class="today-section" id="section-suggested">
+      <div class="today-section__header">
+        <button type="button" class="today-section__toggle" aria-label="Toggle Suggested section">
+          <span class="today-section__icon">▶</span>
+        </button>
+        <span class="today-section__title" style="color: var(--accent);">
+          💡 Suggested
+        </span>
+        <span class="today-section__count">{suggestedTasks.length}</span>
+      </div>
+      <div class="today-section__list">
+        {suggestedTasks.map(task => (
+          <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+        ))}
+      </div>
     </div>
-  </div>
-
-  {
-    noDueTasks.length > 0 && (
-      <div class="card">
-        <div class="card-header" style="padding: 12px 16px;">
-          <div>
-            <div class="card-title" style="font-size: 14px;">
-              📌 Unscheduled ({noDueTasks.length})
-            </div>
-            <div class="card-subtitle" style="font-size: 12px;">
-              Consider scheduling these
-            </div>
-          </div>
-        </div>
-        <div class="task-list">
-          {noDueTasks.map((task) => {
-            const p = Number(task.priority ?? 3);
-            const tt = String(task.task_type ?? "task");
-            const status = normalizeStatus(String(task.status ?? "pending"));
-            return (
-              <div
-                class="task-item"
-                data-id={String(task.id)}
-                style="cursor:pointer; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s;"
-                role="button"
-                tabindex="0"
-                aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, no due date`}
-              >
-                <input
-                  type="checkbox"
-                  class="task-checkbox"
-                  data-id={String(task.id)}
-                  aria-label={`Complete ${String(task.title)}`}
-                />
-                <span
-                  style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
-                  title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                >
-                  ●
-                </span>
-                <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    <span style="margin-right: 4px; font-size: 12px;">
-                      {typeIcons[tt] ?? ""}
-                    </span>
-                    {String(task.title)}
-                  </div>
-                  <LabelBadges labels={task.labels as string} compact max={3} />
-                </div>
-                <span class={`status-badge status-badge--${status}`}>
-                  {STATUS_LABELS[status]}
-                </span>
-                {task.assigned_to && (
-                  <span
-                    class="assignee-badge"
-                    title={`Assigned to ${String(task.assigned_to)}`}
-                    aria-label={`Assigned to ${String(task.assigned_to)}`}
-                  >
-                    {String(task.assigned_to)
-                      .replace(/^(ha_|custom_)/, "")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  {/* SMT-01: Suggested Tasks — high-priority due within 3 days */}
-  {
-    suggestedTasks.length > 0 && (
-      <div
-        class="card"
-        style="margin-bottom: 16px; border-left: 3px solid var(--accent);"
-      >
-        <div class="card-header" style="padding: 12px 16px;">
-          <div>
-            <div class="card-title" style="font-size: 14px; color: var(--accent);">
-              💡 Suggested ({suggestedTasks.length})
-            </div>
-            <div class="card-subtitle" style="font-size: 12px;">
-              High-priority tasks due soon or unscheduled
-            </div>
-          </div>
-        </div>
-        <div class="task-list">
-          {suggestedTasks.map((task) => {
-            const p = Number(task.priority ?? 3);
-            const tt = String(task.task_type ?? "task");
-            const status = normalizeStatus(String(task.status ?? "pending"));
-            const dueDate = task.due_date ? String(task.due_date) : null;
-            return (
-              <div
-                class="task-item"
-                data-id={String(task.id)}
-                style="cursor:pointer; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s;"
-                role="button"
-                tabindex="0"
-                aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}${dueDate ? `, due ${dueDate}` : ', no due date'}`}
-              >
-                <input
-                  type="checkbox"
-                  class="task-checkbox"
-                  data-id={String(task.id)}
-                  aria-label={`Complete ${String(task.title)}`}
-                />
-                <span
-                  style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
-                  title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                >
-                  ●
-                </span>
-                <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    <span style="margin-right: 4px; font-size: 12px;">
-                      {typeIcons[tt] ?? ""}
-                    </span>
-                    {String(task.title)}
-                  </div>
-                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                    {dueDate ? `Due: ${dueDate}` : "No due date"}
-                  </div>
-                  <LabelBadges labels={task.labels as string} compact max={3} />
-                </div>
-                {/* SMT-02: Focus Today button */}
-                <button
-                  class="btn btn-sm focus-today-btn"
-                  data-id={String(task.id)}
-                  title="Set due date to today"
-                  aria-label={`Focus today: ${String(task.title)}`}
-                >
-                  ➕ Today
-                </button>
-                <span class={`status-badge status-badge--${status}`}>
-                  {STATUS_LABELS[status]}
-                </span>
-                {task.assigned_to && (
-                  <span
-                    class="assignee-badge"
-                    title={`Assigned to ${String(task.assigned_to)}`}
-                  >
-                    {String(task.assigned_to)
-                      .replace(/^(ha_|custom_)/, "")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )
-  }
+  )}
 </Layout>
 
 <style>
-  .task-item:hover {
-    background: var(--bg-hover);
+  /* ── Filter Bar ──────────────────────────────────────────────── */
+  .today-filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
   }
-  .task-item:focus-visible {
+  .today-filter-bar .form-input {
+    flex: 1;
+    min-width: 140px;
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+  .today-filter-bar .form-select {
+    font-size: 13px;
+    padding: 6px 8px;
+    background: var(--bg-card, #1e1e2e);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+  }
+  .today-filter-bar .form-select:focus {
     outline: 2px solid var(--accent);
-    outline-offset: -2px;
+    outline-offset: -1px;
   }
-  .task-done .task-item {
-    opacity: 0.5;
-  }
-  .status-badge {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .status-badge--pending {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
-  }
-  .status-badge--active {
-    background: rgba(34, 197, 94, 0.12);
-    color: #22c55e;
-  }
-  .status-badge--backlog {
-    background: rgba(148, 163, 184, 0.12);
-    color: #94a3b8;
-  }
-  .status-badge--complete {
-    background: rgba(34, 197, 94, 0.15);
-    color: var(--color-green-500, #22c55e);
+  .today-filter-bar .btn-sm {
+    padding: 5px 10px;
+    font-size: 13px;
   }
 
-  /* SMT-03: Daily Summary Stats */
+  /* ── Sections ────────────────────────────────────────────────── */
+  .today-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .today-section__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .today-section__header:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .today-section__toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+  .today-section__icon {
+    font-size: 10px;
+    transform: rotate(90deg);
+    display: inline-block;
+    transition: transform 0.2s;
+  }
+  .today-section--collapsed .today-section__icon {
+    transform: rotate(0deg);
+  }
+
+  .today-section__title {
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .today-section__count {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .today-section__list {
+    transition: max-height 0.3s ease, opacity 0.2s ease;
+    overflow: hidden;
+  }
+  .today-section--collapsed .today-section__list {
+    max-height: 0;
+    opacity: 0;
+  }
+  .today-section--collapsed .today-section__header {
+    border-bottom: none;
+  }
+
+  /* ── Filtered-out items ──────────────────────────────────────── */
+  .filtered-out {
+    display: none !important;
+  }
+
+  /* ── Daily Stats ─────────────────────────────────────────────── */
   .daily-stats-container {
     display: flex;
     flex-direction: column;
@@ -582,139 +481,28 @@ const typeIcons: Record<string, string> = {
     color: var(--danger);
   }
 
-  /* SMT-02: Focus Today button */
-  .focus-today-btn {
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm, 4px);
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--accent);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+  /* ── Snooze popover ──────────────────────────────────────────── */
+  :global(.snooze-option) {
+    padding: 6px 12px;
+    font-size: 13px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text);
     cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: background 0.15s, border-color 0.15s;
+    border-radius: var(--radius-sm, 4px);
+    transition: background 0.15s;
   }
-  .focus-today-btn:hover {
-    background: rgba(59, 130, 246, 0.2);
-    border-color: var(--accent);
+  :global(.snooze-option:hover) {
+    background: var(--bg-hover);
   }
 </style>
 
 <script>
-  import { taskApi } from "../lib/task-api-client";
-  import { onTaskCompleted } from "../lib/gamification-hook";
+  import { initTodayPage } from "../lib/today-controller"
+  import { pageLifecycle } from "../lib/page-lifecycle"
 
-  // Task checkbox completion
-  document
-    .querySelectorAll<HTMLInputElement>(".task-checkbox")
-    .forEach((cb) => {
-      cb.addEventListener("change", async () => {
-        const id = cb.dataset.id;
-        if (!id) return;
-        try {
-          await taskApi.updateTask(id, {
-            status: cb.checked ? "complete" : "pending",
-          });
-          const item = cb.closest(".task-item") as HTMLElement | null;
-          if (cb.checked && item) {
-            item.style.opacity = "0.4";
-            item.style.transition = "opacity 0.3s";
-            setTimeout(() => item.remove(), 800);
-            onTaskCompleted();
-          }
-        } catch {
-          /* retry silently */
-        }
-      });
-    });
-
-  // Click to open task detail
-  document.querySelectorAll<HTMLElement>(".task-item").forEach((item) => {
-    item.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
-      const id = item.dataset.id;
-      if (id)
-        window.location.href =
-          (window.__ingress_path || "") + `/tasks#task-${id}`;
-    });
-    // Keyboard: Enter/Space to activate
-    item.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        const id = (e.target as HTMLElement).dataset?.id;
-        if (id)
-          window.location.href =
-            (window.__ingress_path || "") + `/tasks#task-${id}`;
-      }
-    });
-  });
-
-  // Quick-add with NL date parsing
-  const quickForm = document.getElementById(
-    "quick-add-form",
-  ) as HTMLFormElement;
-  const quickInput = document.getElementById(
-    "quick-add-input",
-  ) as HTMLInputElement;
-  const quickFeedback = document.getElementById(
-    "quick-add-feedback",
-  ) as HTMLElement;
-
-  quickForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = quickInput?.value.trim();
-    if (!text) return;
-
-    try {
-      const result = await taskApi.createTask({ title: text });
-      if (result) {
-        if (quickInput) quickInput.value = "";
-        if (quickFeedback) quickFeedback.style.display = "none";
-        window.location.reload();
-      }
-    } catch {
-      /* silently retry */
-    }
-  });
-
-  // Live NL date feedback as user types
-  let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
-  quickInput?.addEventListener("input", () => {
-    if (feedbackTimer) clearTimeout(feedbackTimer);
-    const val = quickInput.value.trim().toLowerCase();
-    const nlPatterns = [
-      { pattern: /\btomorrow\b/i, label: "📅 Due: Tomorrow" },
-      { pattern: /\btoday\b/i, label: "📅 Due: Today" },
-      { pattern: /\bnext\s+\w+/i, label: "📅 Due: Next week" },
-      { pattern: /\bin\s+\d+\s+\w+/i, label: "📅 Due: Relative date" },
-      { pattern: /\bevery\s+\w+/i, label: "🔁 Recurring task" },
-    ];
-    const match = nlPatterns.find((p) => p.pattern.test(val));
-    if (match) {
-      quickFeedback.textContent = match.label;
-      quickFeedback.style.display = "block";
-    } else {
-      quickFeedback.style.display = "none";
-    }
-  });
-
-  // SMT-02: Focus Today — set due_date to today and reload
-  document.querySelectorAll<HTMLButtonElement>(".focus-today-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.id;
-      if (!id) return;
-      btn.disabled = true;
-      btn.textContent = "...";
-      try {
-        const todayStr = new Date().toISOString().split("T")[0]!;
-        await taskApi.updateTask(id, { due_date: todayStr });
-        window.location.reload();
-      } catch {
-        btn.disabled = false;
-        btn.textContent = "➕ Today";
-      }
-    });
-  });
+  pageLifecycle.onPageLoad(() => {
+    initTodayPage()
+  })
 </script>

@@ -1,0 +1,535 @@
+---
+/**
+ * TaskListItem — Unified task card for list-style views
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Shared component used by Today, Upcoming, and any future list views.
+ * Renders a fully-featured task row with all metadata, badges, and actions.
+ *
+ * @kcs This component is the single source of truth for task list rendering.
+ * Any visual change to how tasks appear in list views should be made HERE,
+ * not duplicated across page files.
+ */
+import StatusBadge from "../ui/StatusBadge.astro"
+import PriorityLabel from "../ui/PriorityLabel.astro"
+import RiceBadge from "../ui/RiceBadge.astro"
+import LabelBadges from "../ui/LabelBadges.astro"
+import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
+import { formatTicketKey } from "../../lib/ticket-key"
+import type { TaskViewItem } from "../../lib/task-queries"
+
+interface Props {
+  task: TaskViewItem
+  /** Show action buttons (duplicate, AI, delete). Default: true */
+  showActions?: boolean
+  /** Show snooze/reschedule button. Default: false (Today-only) */
+  showSnooze?: boolean
+  /** Show "Focus Today" button. Default: false (Suggested section) */
+  showFocusToday?: boolean
+  /** Compact mode — less padding, smaller text. Default: false */
+  compact?: boolean
+  /** Section context for ARIA labels */
+  section?: string
+}
+
+const {
+  task,
+  showActions = true,
+  showSnooze = false,
+  showFocusToday = false,
+  compact = false,
+  section = "",
+} = Astro.props
+
+const ticketKey = formatTicketKey(task.ticket_number ?? 0)
+const searchText = [task.title, task.description ?? "", ...task.labels]
+  .join(" ")
+  .toLowerCase()
+
+// Parse checklists for count display
+let checklistDone = 0
+let checklistTotal = 0
+try {
+  const cl = task.checklists
+    ? typeof task.checklists === "string"
+      ? JSON.parse(task.checklists)
+      : task.checklists
+    : []
+  if (Array.isArray(cl) && cl.length > 0) {
+    checklistTotal = cl.length
+    checklistDone = cl.filter((i: { done: boolean }) => i.done).length
+  }
+} catch {
+  /* skip */
+}
+
+// Custom fields
+const customEntries = Object.entries(task.custom_fields).filter(
+  ([, v]) => v !== "" && v !== null && v !== undefined
+)
+---
+
+<div
+  class:list={[
+    "tli",
+    { "tli--done": task.is_done },
+    { "tli--compact": compact },
+    { "tli--overdue": task.is_overdue },
+  ]}
+  data-id={task.id}
+  data-status={task.status}
+  data-priority={String(task.priority)}
+  data-rice={task.rice !== null ? String(task.rice) : ""}
+  data-board={task.board_id}
+  data-overdue={task.is_overdue ? "true" : "false"}
+  data-favorite={task.is_favorite ? "true" : "false"}
+  data-title={task.title.toLowerCase()}
+  data-search={searchText}
+  data-due={task.due_date ?? ""}
+  role="button"
+  tabindex="0"
+  aria-label={`${task.title}, priority ${task.priority}${task.due_date ? `, due ${task.due_date}` : ""}${section ? `, in ${section}` : ""}`}
+>
+  {/* Color indicator */}
+  {task.color && (
+    <span class="tli__color" style={`background: ${task.color}`} />
+  )}
+
+  {/* Favorite star */}
+  <button
+    type="button"
+    class:list={["tli__fav", { "is-fav": task.is_favorite }]}
+    data-id={task.id}
+    aria-label={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
+    title={task.is_favorite ? "★ Favorited" : "☆ Favorite"}
+  >
+    {task.is_favorite ? "★" : "☆"}
+  </button>
+
+  {/* Checkbox */}
+  <input
+    type="checkbox"
+    class="tli__checkbox"
+    checked={task.is_done}
+    data-id={task.id}
+    aria-label={`Complete ${task.title}`}
+  />
+
+  {/* Content */}
+  <div class="tli__content">
+    <div class:list={["tli__title", { done: task.is_done }]}>
+      {ticketKey && (
+        <span class="tli__ticket">{ticketKey}</span>
+      )}
+      <TaskTypeIcon type={task.task_type} size={14} />
+      <span class="tli__title-text">{task.title}</span>
+    </div>
+
+    <div class="tli__meta">
+      <PriorityLabel priority={task.priority} />
+      {task.due_date && (
+        <span class={task.is_overdue ? "tli__overdue-date" : ""}>
+          · Due {task.due_date.split("T")[0]}
+          {task.is_overdue && (
+            <span class="tli__overdue-tag">overdue</span>
+          )}
+        </span>
+      )}
+      {task.calendar_sync_state === "confirmed" && (
+        <span title="Synced to calendar">· 📅</span>
+      )}
+      {task.rice !== null && <span>·</span>}
+      <RiceBadge rice={task.rice} />
+    </div>
+
+    {/* Progress bar */}
+    {task.progress > 0 && (
+      <div class="tli__progress">
+        <div class="tli__progress-track">
+          <div
+            class="tli__progress-fill"
+            style={`width: ${Math.min(task.progress, 100)}%`}
+          />
+        </div>
+        <span class="tli__progress-label">{task.progress}%</span>
+      </div>
+    )}
+
+    {/* Labels */}
+    {task.labels.length > 0 && (
+      <LabelBadges labels={task.labels} compact />
+    )}
+
+    {/* Checklist count */}
+    {checklistTotal > 0 && (
+      <span
+        class="tli__checklist"
+        style={`color: ${checklistDone === checklistTotal ? "var(--color-green-500, #22c55e)" : "var(--text-muted)"}`}
+        title={`Checklist: ${checklistDone}/${checklistTotal}`}
+      >
+        ✓ {checklistDone}/{checklistTotal}
+      </span>
+    )}
+
+    {/* Custom fields */}
+    {customEntries.length > 0 && (
+      <div class="tli__custom-fields">
+        {customEntries.map(([key, val]) => (
+          <span class="tli__custom-chip">
+            {key}: {String(val)}
+          </span>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {/* Recurrence badge */}
+  {task.checklists && false /* placeholder — checklists already shown above */}
+  {(task as any).recurrence_rule && (
+    <span class="tli__recurrence" title="Recurring task">🔁</span>
+  )}
+
+  {/* Assignee badge */}
+  {task.assigned_to && (
+    <span
+      class="tli__assignee"
+      title={`Assigned to ${task.assigned_to}`}
+      aria-label={`Assigned to ${task.assigned_to}`}
+    >
+      {task.assigned_to.replace(/^(ha_|custom_)/, "").slice(0, 2).toUpperCase()}
+    </span>
+  )}
+
+  {/* Status badge */}
+  <StatusBadge status={task.status} />
+
+  {/* Focus Today button (for Suggested section) */}
+  {showFocusToday && (
+    <button
+      class="tli__focus-btn"
+      data-id={task.id}
+      title="Set due date to today"
+      aria-label={`Focus today: ${task.title}`}
+    >
+      ➕ Today
+    </button>
+  )}
+
+  {/* Snooze button (for Today sections) */}
+  {showSnooze && (
+    <button
+      class="tli__snooze-btn"
+      data-id={task.id}
+      title="Snooze / Reschedule"
+      aria-label={`Snooze ${task.title}`}
+    >
+      ▿
+    </button>
+  )}
+
+  {/* Action buttons */}
+  {showActions && (
+    <div class="tli__actions">
+      <button
+        type="button"
+        class="tli__action tli__duplicate"
+        data-id={task.id}
+        title="Duplicate task"
+        aria-label="Duplicate task"
+      >
+        ⧉
+      </button>
+      <button
+        type="button"
+        class="tli__action tli__ask-ai"
+        data-title={task.title}
+        data-description={task.description ?? ""}
+        data-status={task.status}
+        data-priority={String(task.priority)}
+        title="Ask AI"
+        aria-label="Ask AI"
+      >
+        🤖
+      </button>
+      <button
+        type="button"
+        class="tli__action tli__delete danger"
+        data-id={task.id}
+        title="Delete task"
+        aria-label="Delete task"
+      >
+        ×
+      </button>
+    </div>
+  )}
+</div>
+
+<style>
+  /* ── TaskListItem base ─────────────────────────────────────────── */
+  .tli {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .tli:hover {
+    background: var(--bg-hover);
+  }
+  .tli:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm, 4px);
+  }
+  .tli--done {
+    opacity: 0.6;
+  }
+  .tli--compact {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  /* Keyboard focus highlight (applied by controller) */
+  .tli.tli--focused {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  /* Completion celebration */
+  @keyframes celebrate {
+    0% { transform: scale(1); }
+    20% { transform: scale(1.02); }
+    40% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+  }
+  .tli--celebrate {
+    animation: celebrate 0.6s ease;
+  }
+
+  /* ── Color indicator ───────────────────────────────────────────── */
+  .tli__color {
+    width: 4px;
+    border-radius: 4px;
+    align-self: stretch;
+    flex-shrink: 0;
+    min-height: 20px;
+  }
+
+  /* ── Favorite star ─────────────────────────────────────────────── */
+  .tli__fav {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--text-muted);
+    padding: 2px;
+    transition: transform 200ms ease, color 200ms ease;
+    flex-shrink: 0;
+  }
+  .tli__fav:hover {
+    transform: scale(1.2);
+    color: var(--warning);
+  }
+  .tli__fav.is-fav {
+    color: var(--warning);
+  }
+
+  /* ── Content area ──────────────────────────────────────────────── */
+  .tli__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tli__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tli__title-text {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tli__title.done .tli__title-text {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  .tli__ticket {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    color: var(--text-muted);
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* ── Meta row ──────────────────────────────────────────────────── */
+  .tli__meta {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .tli__overdue-date {
+    color: var(--danger);
+  }
+  .tli__overdue-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--danger);
+    color: white;
+    margin-left: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Progress bar ──────────────────────────────────────────────── */
+  .tli__progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .tli__progress-track {
+    flex: 1;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    max-width: 120px;
+  }
+  .tli__progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 300ms ease;
+  }
+  .tli__progress-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* ── Checklist ─────────────────────────────────────────────────── */
+  .tli__checklist {
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* ── Custom fields ─────────────────────────────────────────────── */
+  .tli__custom-fields {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .tli__custom-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+
+  /* ── Badges ────────────────────────────────────────────────────── */
+  .tli__recurrence {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .tli__assignee {
+    font-size: 10px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    flex-shrink: 0;
+  }
+
+  /* ── Focus Today button ────────────────────────────────────────── */
+  .tli__focus-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm, 4px);
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .tli__focus-btn:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: var(--accent);
+  }
+
+  /* ── Snooze button ─────────────────────────────────────────────── */
+  .tli__snooze-btn {
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm, 4px);
+    background: rgba(99, 102, 241, 0.08);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tli__snooze-btn:hover {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--accent);
+  }
+
+  /* ── Action buttons ────────────────────────────────────────────── */
+  .tli__actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .tli:hover .tli__actions {
+    opacity: 1;
+  }
+  .tli__action {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    color: var(--text-muted);
+    transition: background 0.15s, color 0.15s;
+  }
+  .tli__action:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .tli__action.danger:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+</style>
