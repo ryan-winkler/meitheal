@@ -4,6 +4,8 @@
  * Handles: HA connection test, HA standalone form save,
  * webhook save/test, n8n mode tabs, expand integration cards.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
@@ -18,11 +20,13 @@ export function readEntityValue(id: string): string {
 
 export function initHASettings(): void {
   // Test HA connection
-  document.getElementById("test-connection")?.addEventListener("click", async () => {
+  const testConnBtn = document.getElementById("test-connection")
+  if (testConnBtn) {
+    pageLifecycle.on(testConnBtn, "click", async () => {
     const statusEl = document.getElementById("ha-status")
     if (statusEl) statusEl.innerHTML = '<span style="color: var(--accent);">Testing HA connection...</span>'
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/ha/connection")
+      const res = await fetch((window.__ingress_path || "") + "/api/ha/connection", { signal: pageLifecycle.signal })
       const data = (await res.json()) as Record<string, unknown>
       if (statusEl) {
         if (data.connected) {
@@ -36,28 +40,31 @@ export function initHASettings(): void {
             compHtml = `<div style="margin-top: 8px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; max-width: 100%; overflow: hidden;">
               <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px;">Components (${comps.length})</div>
               <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                ${preview.map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${c}</span>`).join("")}
+                ${preview.map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${escapeHtml(c)}</span>`).join("")}
               </div>
-              ${remaining > 0 ? `<button type="button" onclick="const el=document.getElementById('${compId}');if(el){el.style.display=el.style.display==='none'?'flex':'none';this.textContent=el.style.display==='none'?'Show all ${comps.length}':'Collapse'}" style="margin-top: 6px; font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;">Show all ${comps.length}</button><div id="${compId}" style="display: none; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${comps.slice(SHOW_LIMIT).map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${c}</span>`).join("")}</div>` : ""}
+              ${remaining > 0 ? `<button type="button" onclick="const el=document.getElementById('${compId}');if(el){el.style.display=el.style.display==='none'?'flex':'none';this.textContent=el.style.display==='none'?'Show all ${comps.length}':'Collapse'}" style="margin-top: 6px; font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;">Show all ${comps.length}</button><div id="${compId}" style="display: none; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${comps.slice(SHOW_LIMIT).map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${escapeHtml(c)}</span>`).join("")}</div>` : ""}
             </div>`
           }
           statusEl.innerHTML =
-            `<span style="color: var(--accent); font-weight: 500;">✓ Connected</span> <span style="color: var(--text-secondary);">HA ${data.version} (${data.mode})</span>` +
-            `<div style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">${data.location_name} · ${data.time_zone}</div>` +
+            `<span style="color: var(--accent); font-weight: 500;">✓ Connected</span> <span style="color: var(--text-secondary);">HA ${escapeHtml(data.version)} (${escapeHtml(data.mode)})</span>` +
+            `<div style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">${escapeHtml(data.location_name)} · ${escapeHtml(data.time_zone)}</div>` +
             compHtml
         } else {
           statusEl.innerHTML =
-            `<span style="color: var(--danger);">⚠ ${data.message ?? "HA not reachable"}</span>` +
-            `<br><small style="color: var(--text-muted);">Mode: ${data.mode ?? "unknown"}</small>`
+            `<span style="color: var(--danger);">⚠ ${escapeHtml(data.message ?? "HA not reachable")}</span>` +
+            `<br><small style="color: var(--text-muted);">Mode: ${escapeHtml(data.mode ?? "unknown")}</small>`
         }
       }
     } catch {
       if (statusEl) statusEl.innerHTML = '<span style="color: var(--danger);">Connection test failed</span>'
     }
-  })
+    })
+  }
 
   // Save HA settings (standalone mode only)
-  document.getElementById("ha-form")?.addEventListener("submit", async (e) => {
+  const haForm = document.getElementById("ha-form")
+  if (haForm) {
+    pageLifecycle.on(haForm, "submit", async (e) => {
     e.preventDefault()
     const haUrl = (document.getElementById("ha-url") as HTMLInputElement).value
     const haToken = (document.getElementById("ha-token") as HTMLInputElement).value
@@ -73,10 +80,13 @@ export function initHASettings(): void {
     saveBtn.innerHTML = origText
     saveBtn.disabled = false
     showToast("settings.ha_saved")
-  })
+    })
+  }
 
   // Webhook Save
-  document.getElementById("save-webhook")?.addEventListener("click", async () => {
+  const saveWebhookBtn = document.getElementById("save-webhook")
+  if (saveWebhookBtn) {
+    pageLifecycle.on(saveWebhookBtn, "click", async () => {
     const endpoint = (document.getElementById("webhook-endpoint") as HTMLInputElement).value
     const secret = (document.getElementById("webhook-secret") as HTMLInputElement).value
     const format = (document.getElementById("webhook-format") as HTMLSelectElement).value
@@ -97,10 +107,13 @@ export function initHASettings(): void {
     btn.textContent = "Save Webhook"
     btn.disabled = false
     showToast("settings.webhook_saved")
-  })
+    })
+  }
 
   // Webhook Test
-  document.getElementById("test-webhook")?.addEventListener("click", async () => {
+  const testWebhookBtn = document.getElementById("test-webhook")
+  if (testWebhookBtn) {
+    pageLifecycle.on(testWebhookBtn, "click", async () => {
     const endpoint = (document.getElementById("webhook-endpoint") as HTMLInputElement).value
     if (!endpoint) {
       showToast("settings.webhook_enter_url", "error")
@@ -127,7 +140,8 @@ export function initHASettings(): void {
 
     btn.textContent = "Send Test"
     btn.disabled = false
-  })
+    })
+  }
 }
 
 /** Restore HA/webhook related settings */

@@ -5,6 +5,7 @@
  * CalDAV test, manual entity add, Todo hydration, save, sync.
  * All HA-ingress-aware via window.__ingress_path.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
@@ -15,7 +16,9 @@ export function initCalendarTodoSettings(): void {
   hydrateTodoStatus()
 
   // ───── Calendar manual add ─────
-  document.getElementById("cal-add-manual")?.addEventListener("click", () => {
+  const calManualBtn = document.getElementById("cal-add-manual")
+  if (calManualBtn) {
+    pageLifecycle.on(calManualBtn, "click", () => {
     const input = document.getElementById("cal-entity-manual") as HTMLInputElement | null
     const container = document.getElementById("cal-entities-container")
     const entitiesList = document.getElementById("cal-entities-list")
@@ -55,10 +58,13 @@ export function initCalendarTodoSettings(): void {
     if (emptyState) emptyState.style.display = "none"
     updateCalCountBadge()
     input.value = ""
-  })
+    })
+  }
 
   // ───── CalDAV Test ─────
-  document.getElementById("caldav-test-btn")?.addEventListener("click", async () => {
+  const caldavTestBtn = document.getElementById("caldav-test-btn")
+  if (caldavTestBtn) {
+    pageLifecycle.on(caldavTestBtn, "click", async () => {
     const url = (document.getElementById("caldav-url") as HTMLInputElement).value
     const username = (document.getElementById("caldav-username") as HTMLInputElement).value
     const password = (document.getElementById("caldav-password") as HTMLInputElement).value
@@ -75,6 +81,7 @@ export function initCalendarTodoSettings(): void {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "test", url, username, password }),
+        signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (resultEl) {
@@ -87,10 +94,13 @@ export function initCalendarTodoSettings(): void {
       btn.textContent = "Test Connection"
       btn.disabled = false
     }
-  })
+    })
+  }
 
   // ───── Calendar Save ─────
-  document.getElementById("save-cal")?.addEventListener("click", async () => {
+  const saveCalBtn = document.getElementById("save-cal")
+  if (saveCalBtn) {
+    pageLifecycle.on(saveCalBtn, "click", async () => {
     const enabledEntities: string[] = []
     document.querySelectorAll<HTMLInputElement>(".cal-entity-toggle:checked").forEach((cb) => enabledEntities.push(cb.value))
     const syncModes: Record<string, string> = {}
@@ -136,10 +146,13 @@ export function initCalendarTodoSettings(): void {
     btn.disabled = false
     showToast("settings.calendar_saved")
     updateCalCountBadge()
-  })
+    })
+  }
 
   // ───── Calendar Sync Now ─────
-  document.getElementById("test-cal")?.addEventListener("click", async () => {
+  const testCalBtn = document.getElementById("test-cal")
+  if (testCalBtn) {
+    pageLifecycle.on(testCalBtn, "click", async () => {
     const btn = document.getElementById("test-cal") as HTMLButtonElement
     const resultEl = document.getElementById("cal-sync-result")
     btn.textContent = "Syncing..."
@@ -148,6 +161,7 @@ export function initCalendarTodoSettings(): void {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync" }),
+        signal: pageLifecycle.signal,
       })
       const data = (await res.json()) as { ok: boolean; message?: string; created?: number; updated?: number; total?: number }
       if (resultEl) resultEl.textContent = data.message ?? "Sync triggered"
@@ -167,24 +181,33 @@ export function initCalendarTodoSettings(): void {
     btn.textContent = "Sync Now"
     btn.disabled = false
     setTimeout(() => { if (resultEl) resultEl.textContent = "" }, 5000)
-  })
+    })
+  }
 
   // ───── Todo Enable/Disable All ─────
-  document.getElementById("todo-enable-all")?.addEventListener("click", () => {
+  const todoEnableAllBtn = document.getElementById("todo-enable-all")
+  if (todoEnableAllBtn) {
+    pageLifecycle.on(todoEnableAllBtn, "click", () => {
     document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle").forEach((cb) => {
       if (!cb.checked) { cb.checked = true; cb.closest(".cal-toggle-card")?.classList.add("cal-toggle-card--active") }
     })
     updateTodoCount()
-  })
-  document.getElementById("todo-disable-all")?.addEventListener("click", () => {
+    })
+  }
+  const todoDisableAllBtn = document.getElementById("todo-disable-all")
+  if (todoDisableAllBtn) {
+    pageLifecycle.on(todoDisableAllBtn, "click", () => {
     document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle").forEach((cb) => {
       if (cb.checked) { cb.checked = false; cb.closest(".cal-toggle-card")?.classList.remove("cal-toggle-card--active") }
     })
     updateTodoCount()
-  })
+    })
+  }
 
   // ───── Todo manual add ─────
-  document.getElementById("todo-add-manual")?.addEventListener("click", () => {
+  const todoManualBtn = document.getElementById("todo-add-manual")
+  if (todoManualBtn) {
+    pageLifecycle.on(todoManualBtn, "click", () => {
     const input = document.getElementById("todo-entity-manual") as HTMLInputElement
     const entityId = input?.value?.trim()
     if (!entityId || !entityId.startsWith("todo.")) { showToast("Enter a valid entity ID (e.g. todo.shopping_list)", "error"); return }
@@ -215,17 +238,23 @@ export function initCalendarTodoSettings(): void {
     if (noEntities) noEntities.style.display = "none"
     updateTodoCount()
     input.value = ""
-  })
+    })
+  }
 
   // ───── Todo toggle label ─────
-  document.getElementById("todo-enabled")?.addEventListener("change", function () {
-    const cb = this as HTMLInputElement
+  const todoEnabledCb = document.getElementById("todo-enabled")
+  if (todoEnabledCb) {
+    pageLifecycle.on(todoEnabledCb, "change", () => {
+    const cb = todoEnabledCb as HTMLInputElement
     const label = document.getElementById("todo-enabled-label")
     if (label) label.textContent = cb.checked ? "On — syncing with HA" : "Off — sync disabled to save power"
-  })
+    })
+  }
 
   // ───── Todo Save ─────
-  document.getElementById("save-todo")?.addEventListener("click", async () => {
+  const saveTodoBtn = document.getElementById("save-todo")
+  if (saveTodoBtn) {
+    pageLifecycle.on(saveTodoBtn, "click", async () => {
     const enabled = (document.getElementById("todo-enabled") as HTMLInputElement).checked
     const enabledEntities = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
     const direction = (document.getElementById("todo-sync-direction") as HTMLSelectElement).value
@@ -252,10 +281,13 @@ export function initCalendarTodoSettings(): void {
     btn.textContent = "Save Todo Settings"
     btn.disabled = false
     showToast("settings.todo_saved")
-  })
+    })
+  }
 
   // ───── Todo Sync Now ─────
-  document.getElementById("sync-todo")?.addEventListener("click", async () => {
+  const syncTodoBtn = document.getElementById("sync-todo")
+  if (syncTodoBtn) {
+    pageLifecycle.on(syncTodoBtn, "click", async () => {
     const btn = document.getElementById("sync-todo") as HTMLButtonElement
     const resultEl = document.getElementById("todo-sync-result")
     btn.textContent = "Syncing..."
@@ -266,6 +298,7 @@ export function initCalendarTodoSettings(): void {
       const res = await fetch((window.__ingress_path || "") + "/api/todo/sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", entity_id: entity || undefined }),
+        signal: pageLifecycle.signal,
       })
       const data = (await res.json()) as { ok: boolean; synced?: number; errors?: number; message?: string; ha_connected?: boolean }
       const msg = data.message ?? (data.ok ? "Sync triggered" : "Sync failed")
@@ -283,7 +316,8 @@ export function initCalendarTodoSettings(): void {
     btn.textContent = "Sync Now"
     btn.disabled = false
     setTimeout(() => { if (resultEl) resultEl.textContent = "" }, 5000)
-  })
+    })
+  }
 }
 
 // ───── Shared helpers ─────
@@ -319,7 +353,7 @@ async function hydrateCalendarStatus() {
   const lastSynced = document.getElementById("cal-last-synced")
 
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/status")
+    const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/status", { signal: pageLifecycle.signal })
     if (!res.ok) throw new Error("API error")
     const data = (await res.json()) as { ok: boolean; calendars?: { entity_id: string; friendly_name: string; state: string }[]; sync: { active: boolean; entityId: string; lastSyncAt: number | null; eventCount: number } }
 
@@ -357,7 +391,7 @@ async function hydrateCalendarStatus() {
       let savedSyncModes: Record<string, string> = {}
       let savedGlobalMode = "bidirectional"
       try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings")
+        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
         const s = (await settingsRes.json()) as Record<string, unknown>
         const raw = s.calendar_entities ?? s.calendar_entity ?? s.cal_entity
         if (Array.isArray(raw)) savedEntities = raw as string[]
@@ -466,13 +500,13 @@ async function hydrateTodoStatus() {
   const enabledLabel = document.getElementById("todo-enabled-label")
 
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/todo")
+    const res = await fetch((window.__ingress_path || "") + "/api/todo", { signal: pageLifecycle.signal })
     if (!res.ok) throw new Error("API error")
     const data = (await res.json()) as { ok: boolean; entities?: { entity_id: string; friendly_name: string; state: string; sync: { active: boolean; direction: string; lastSyncAt: number | null; itemCount: number } | null }[] }
     const entities = data.entities ?? []
     let savedEnabled: string[] = []
     try {
-      const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings")
+      const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
       const settings = await settingsRes.json()
       if (settings.todo_entities) savedEnabled = Array.isArray(settings.todo_entities) ? settings.todo_entities : [settings.todo_entities]
       else if (settings.todo_entity) savedEnabled = [settings.todo_entity]

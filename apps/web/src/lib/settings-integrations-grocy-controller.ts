@@ -4,12 +4,16 @@
  * Handles: Grocy save, auto-key, test connection, sync now,
  * and hydration of Grocy status on load.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
 export function initGrocySettings(): void {
   // Auto-key generation
-  document.getElementById("grocy-auto-key")?.addEventListener("click", async () => {
+  const autoKeyBtn = document.getElementById("grocy-auto-key")
+  if (autoKeyBtn) {
+    pageLifecycle.on(autoKeyBtn, "click", async () => {
     const btn = document.getElementById("grocy-auto-key") as HTMLButtonElement
     const origText = btn.textContent
     btn.disabled = true
@@ -23,6 +27,7 @@ export function initGrocySettings(): void {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
+        signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (data.ok) {
@@ -38,10 +43,13 @@ export function initGrocySettings(): void {
       btn.disabled = false
       btn.textContent = origText
     }
-  })
+    })
+  }
 
   // Save Grocy settings
-  document.getElementById("save-grocy")?.addEventListener("click", async () => {
+  const saveGrocyBtn = document.getElementById("save-grocy")
+  if (saveGrocyBtn) {
+    pageLifecycle.on(saveGrocyBtn, "click", async () => {
     const url = (document.getElementById("grocy-url") as HTMLInputElement).value
     const key = (document.getElementById("grocy-key") as HTMLInputElement).value
     const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
@@ -81,6 +89,7 @@ export function initGrocySettings(): void {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
+        signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (data.ok) {
@@ -97,10 +106,13 @@ export function initGrocySettings(): void {
     }
     btn.textContent = "Save Grocy Settings"
     btn.disabled = false
-  })
+    })
+  }
 
   // Test Connection
-  document.getElementById("test-grocy")?.addEventListener("click", async () => {
+  const testGrocyBtn = document.getElementById("test-grocy")
+  if (testGrocyBtn) {
+    pageLifecycle.on(testGrocyBtn, "click", async () => {
     const url = (document.getElementById("grocy-url") as HTMLInputElement).value
     const key = (document.getElementById("grocy-key") as HTMLInputElement).value
     const resultEl = document.getElementById("grocy-test-result")
@@ -122,16 +134,17 @@ export function initGrocySettings(): void {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: url || undefined, api_key: key || undefined, auto_detected: isAutoDetected || false }),
+        signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (resultEl) {
         resultEl.style.display = "block"
         if (data.ok) {
           resultEl.className = "integration-callout integration-callout--success"
-          resultEl.innerHTML = `<strong>✓ Connected to Grocy ${data.version}</strong><div class="integration-callout__detail">${data.counts.chores} chore${data.counts.chores !== 1 ? "s" : ""} · ${data.counts.tasks} task${data.counts.tasks !== 1 ? "s" : ""} · ${data.counts.shoppingItems} shopping item${data.counts.shoppingItems !== 1 ? "s" : ""}</div>`
+          resultEl.innerHTML = `<strong>✓ Connected to Grocy ${escapeHtml(data.version)}</strong><div class="integration-callout__detail">${escapeHtml(data.counts.chores)} chore${data.counts.chores !== 1 ? "s" : ""} · ${escapeHtml(data.counts.tasks)} task${data.counts.tasks !== 1 ? "s" : ""} · ${escapeHtml(data.counts.shoppingItems)} shopping item${data.counts.shoppingItems !== 1 ? "s" : ""}</div>`
         } else {
           resultEl.className = "integration-callout integration-callout--warning"
-          resultEl.innerHTML = `<strong>✗ Connection failed</strong><div class="integration-callout__detail">${data.error || "Unknown error"}</div>`
+          resultEl.innerHTML = `<strong>✗ Connection failed</strong><div class="integration-callout__detail">${escapeHtml(data.error || "Unknown error")}</div>`
         }
       }
     } catch (err) {
@@ -143,10 +156,13 @@ export function initGrocySettings(): void {
     }
     btn.textContent = "Test Connection"
     btn.disabled = false
-  })
+    })
+  }
 
   // Sync Now
-  document.getElementById("sync-grocy-now")?.addEventListener("click", async () => {
+  const syncGrocyBtn = document.getElementById("sync-grocy-now")
+  if (syncGrocyBtn) {
+    pageLifecycle.on(syncGrocyBtn, "click", async () => {
     const btn = document.getElementById("sync-grocy-now") as HTMLButtonElement
     btn.textContent = "Syncing..."
     btn.disabled = true
@@ -157,6 +173,7 @@ export function initGrocySettings(): void {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", sync_mode: syncMode, interval_ms: Number(syncInterval) }),
+        signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (data.ok) {
@@ -184,7 +201,8 @@ export function initGrocySettings(): void {
     }
     btn.textContent = "Sync Now"
     btn.disabled = false
-  })
+    })
+  }
 
   // Hydrate on load
   hydrateGrocyStatus()
@@ -192,7 +210,7 @@ export function initGrocySettings(): void {
 
 async function hydrateGrocyStatus() {
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings")
+    const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings", { signal: pageLifecycle.signal })
     if (!res.ok) return
     const data = await res.json()
     const s = data.settings || {}
@@ -208,7 +226,7 @@ async function hydrateGrocyStatus() {
       const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
       if (openLink && s.grocy_url) { openLink.href = String(s.grocy_url); openLink.style.display = "" }
     }
-    const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync")
+    const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync", { signal: pageLifecycle.signal })
     if (syncRes.ok) {
       const syncData = await syncRes.json()
       const sync = syncData.sync

@@ -6,19 +6,16 @@
  * HA bus status, Node-RED copy/deploy/status, event count,
  * n8n mode tab switching, and n8n settings restore.
  */
+import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
-/** HTML-escape helper for user-provided strings */
-function escapeHtml(str: string): string {
-  const div = document.createElement("div")
-  div.textContent = str
-  return div.innerHTML
-}
-
 export function initN8nSettings(): void {
   // ───── n8n Save (HA Addon / Auto mode) ─────
-  document.getElementById("save-n8n")?.addEventListener("click", async () => {
+  const saveN8nBtn = document.getElementById("save-n8n")
+  if (saveN8nBtn) {
+    pageLifecycle.on(saveN8nBtn, "click", async () => {
     const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value || ""
     const events: string[] = []
     document.querySelectorAll(".n8n-event:checked").forEach((cb) => {
@@ -35,10 +32,13 @@ export function initN8nSettings(): void {
     btn.textContent = "Save n8n Settings"
     btn.disabled = false
     showToast("settings.n8n_saved")
-  })
+    })
+  }
 
   // ───── Test Event Bus ─────
-  document.getElementById("test-event-bus")?.addEventListener("click", async () => {
+  const testEventBtn = document.getElementById("test-event-bus")
+  if (testEventBtn) {
+    pageLifecycle.on(testEventBtn, "click", async () => {
     const btn = document.getElementById("test-event-bus") as HTMLButtonElement
     const resultDiv = document.getElementById("test-event-result")
     const msgSpan = document.getElementById("test-event-message")
@@ -47,7 +47,7 @@ export function initN8nSettings(): void {
     btn.disabled = true
     try {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-event", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (resultDiv && msgSpan) {
@@ -69,7 +69,8 @@ export function initN8nSettings(): void {
     }
     btn.textContent = "🧪 Test Event Bus"
     btn.disabled = false
-  })
+    })
+  }
 
   // ───── Event Count Updaters ─────
   function updateEventCount(selectorClass: string, countId: string) {
@@ -79,35 +80,40 @@ export function initN8nSettings(): void {
     if (el) el.textContent = `${checked} of ${total} events enabled`
   }
   document.querySelectorAll(".n8n-event").forEach((cb) => {
-    cb.addEventListener("change", () => updateEventCount("n8n-event", "n8n-event-count-auto"))
+    pageLifecycle.on(cb, "change", () => updateEventCount("n8n-event", "n8n-event-count-auto"))
   })
   updateEventCount("n8n-event", "n8n-event-count-auto")
   document.querySelectorAll(".n8n-event-standalone").forEach((cb) => {
-    cb.addEventListener("change", () => updateEventCount("n8n-event-standalone", "n8n-event-count-standalone"))
+    pageLifecycle.on(cb, "change", () => updateEventCount("n8n-event-standalone", "n8n-event-count-standalone"))
   })
   updateEventCount("n8n-event-standalone", "n8n-event-count-standalone")
 
   // ───── Copy Node-RED flows ─────
-  document.getElementById("copy-nodered-flows")?.addEventListener("click", async () => {
+  const copyNodeRedBtn = document.getElementById("copy-nodered-flows")
+  if (copyNodeRedBtn) {
+    pageLifecycle.on(copyNodeRedBtn, "click", async () => {
     const btn = document.getElementById("copy-nodered-flows") as HTMLButtonElement
     if (!btn) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/flows")
+      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const flowJson = await res.text()
       await navigator.clipboard.writeText(flowJson)
       btn.textContent = "✅ Copied!"
       showToast("Node-RED flows copied to clipboard — paste in Node-RED → Import")
-      setTimeout(() => { btn.textContent = "📋 Copy Flow JSON" }, 2000)
+      setTimeout(() => { if (!pageLifecycle.signal.aborted) btn.textContent = "📋 Copy Flow JSON" }, 2000)
     } catch (err) {
       btn.textContent = "❌ Failed"
       showToast(`Failed to copy: ${err instanceof Error ? err.message : "error"}`, "error")
-      setTimeout(() => { btn.textContent = "📋 Copy Flow JSON" }, 2000)
+      setTimeout(() => { if (!pageLifecycle.signal.aborted) btn.textContent = "📋 Copy Flow JSON" }, 2000)
     }
-  })
+    })
+  }
 
   // ───── Deploy Node-RED flows ─────
-  document.getElementById("deploy-nodered-flows")?.addEventListener("click", async () => {
+  const deployNodeRedBtn = document.getElementById("deploy-nodered-flows")
+  if (deployNodeRedBtn) {
+    pageLifecycle.on(deployNodeRedBtn, "click", async () => {
     const btn = document.getElementById("deploy-nodered-flows") as HTMLButtonElement
     const resultDiv = document.getElementById("nodered-deploy-result")
     const msgSpan = document.getElementById("nodered-deploy-message")
@@ -120,7 +126,7 @@ export function initN8nSettings(): void {
     btn.disabled = true
     try {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/deploy", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json() as { success: boolean; message?: string; error?: string; nodeCount?: number }
       if (resultDiv && msgSpan) {
@@ -143,13 +149,16 @@ export function initN8nSettings(): void {
     }
     btn.textContent = "🚀 Deploy to Node-RED"
     btn.disabled = false
-  })
+    })
+  }
 
   // ───── Node-RED Deploy Status ─────
   initNodeRedDeployStatus()
 
   // ───── n8n Standalone Save ─────
-  document.getElementById("save-n8n-standalone")?.addEventListener("click", async () => {
+  const saveStandaloneBtn = document.getElementById("save-n8n-standalone")
+  if (saveStandaloneBtn) {
+    pageLifecycle.on(saveStandaloneBtn, "click", async () => {
     const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement).value
     const apiKey = (document.getElementById("n8n-api-key") as HTMLInputElement).value
     const secret = (document.getElementById("n8n-secret") as HTMLInputElement).value
@@ -171,10 +180,13 @@ export function initN8nSettings(): void {
     btn.textContent = "Save Standalone Settings"
     btn.disabled = false
     showToast("settings.n8n_saved")
-  })
+    })
+  }
 
   // ───── Test Webhook (Standalone) ─────
-  document.getElementById("test-webhook-standalone")?.addEventListener("click", async () => {
+  const testWebhookStandaloneBtn = document.getElementById("test-webhook-standalone")
+  if (testWebhookStandaloneBtn) {
+    pageLifecycle.on(testWebhookStandaloneBtn, "click", async () => {
     const btn = document.getElementById("test-webhook-standalone") as HTMLButtonElement
     const resultDiv = document.getElementById("test-webhook-result")
     const msgSpan = document.getElementById("test-webhook-message")
@@ -183,7 +195,7 @@ export function initN8nSettings(): void {
     btn.disabled = true
     try {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-webhook", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (resultDiv && msgSpan) {
@@ -201,9 +213,9 @@ export function initN8nSettings(): void {
       if (lastDeliveryEl) {
         const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleString() : "Just now"
         if (data.success) {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${data.status_code})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr} · ${data.latency_ms}ms</span>`
+          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${escapeHtml(data.status_code)})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)} · ${escapeHtml(data.latency_ms)}ms</span>`
         } else {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${data.status_code || data.error || 'Error'})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`
+          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${escapeHtml(data.status_code || data.error || 'Error')})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
         }
       }
     } catch (err) {
@@ -215,7 +227,8 @@ export function initN8nSettings(): void {
     }
     btn.textContent = "🔌 Test Webhook"
     btn.disabled = false
-  })
+    })
+  }
 
   // ───── n8n Diagnostics ─────
   async function initN8nDiagnostics(_forceRefresh: boolean = false) {
@@ -228,19 +241,19 @@ export function initN8nSettings(): void {
       workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⏳</span><span>Fetching workflows...</span></div>`
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/health")
+      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/health", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (healthDetail) {
         if (data.status === "connected") healthDetail.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Connected</span>`
         else if (data.status === "unreachable") healthDetail.innerHTML = `<span style="color: var(--error);">Unreachable</span>`
         else if (data.status === "unconfigured") healthDetail.innerHTML = `<span style="color: var(--text-muted);">Unconfigured</span>`
-        else healthDetail.innerHTML = `<span style="color: var(--warning);">Error: ${data.code || data.message || "Unknown"}</span>`
+        else healthDetail.innerHTML = `<span style="color: var(--warning);">Error: ${escapeHtml(data.code || data.message || "Unknown")}</span>`
       }
     } catch {
       if (healthDetail) healthDetail.innerHTML = `<span style="color: var(--error);">Failed to check</span>`
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/workflows")
+      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/workflows", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (workflowsList) {
         if (data.success && Array.isArray(data.workflows)) {
@@ -272,9 +285,12 @@ export function initN8nSettings(): void {
   // Expose for restore flow
   window.__initN8nDiagnostics = initN8nDiagnostics
 
-  document.getElementById("refresh-n8n-standalone")?.addEventListener("click", () => initN8nDiagnostics(true))
-  document.getElementById("refresh-n8n-status")?.addEventListener("click", () => initN8nDiagnostics(true))
-  document.getElementById("refresh-n8n-workflows")?.addEventListener("click", () => initN8nDiagnostics(true))
+  const refreshStandalone = document.getElementById("refresh-n8n-standalone")
+  if (refreshStandalone) pageLifecycle.on(refreshStandalone, "click", () => initN8nDiagnostics(true))
+  const refreshStatus = document.getElementById("refresh-n8n-status")
+  if (refreshStatus) pageLifecycle.on(refreshStatus, "click", () => initN8nDiagnostics(true))
+  const refreshWorkflows = document.getElementById("refresh-n8n-workflows")
+  if (refreshWorkflows) pageLifecycle.on(refreshWorkflows, "click", () => initN8nDiagnostics(true))
 
   // ───── HA Bus Status ─────
   async function initHABusStatus() {
@@ -282,7 +298,7 @@ export function initN8nSettings(): void {
     const haVersionEl = document.getElementById("n8n-ha-version")
     if (!busStatusEl) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/status")
+      const res = await fetch((window.__ingress_path || "") + "/api/integrations/status", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (data.ha_connection) {
         if (data.ha_connection.connected)
@@ -298,7 +314,9 @@ export function initN8nSettings(): void {
       if (busStatusEl) busStatusEl.innerHTML = `<span style="color: var(--error);">Failed to check</span>`
     }
   }
-  setTimeout(() => initHABusStatus(), 300)
+  setTimeout(() => {
+    if (!pageLifecycle.signal.aborted) initHABusStatus()
+  }, 300)
 }
 
 async function initNodeRedDeployStatus() {
@@ -355,9 +373,9 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
         const res = typeof s.n8n_last_delivery === "string" ? JSON.parse(s.n8n_last_delivery) : s.n8n_last_delivery
         const timeStr = res.timestamp ? new Date(res.timestamp).toLocaleString() : "Unknown"
         if (res.success) {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${res.status})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`
+          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${escapeHtml(res.status)})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
         } else {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${res.status || 'Error'})</span><br><span style="font-size: 11px; color: var(--text-muted);">${timeStr}</span>`
+          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${escapeHtml(res.status || 'Error')})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
         }
       } catch { lastDeliveryEl.textContent = "Parse error" }
     }
