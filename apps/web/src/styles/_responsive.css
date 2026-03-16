@@ -433,9 +433,6 @@
 .kanban-card.dragging {
   will-change: transform;
 }
-.animate-slide-in {
-  will-change: transform;
-}
 }
 
 /* High contrast mode */

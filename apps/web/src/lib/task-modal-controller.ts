@@ -35,16 +35,38 @@
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
 
         function closeTD() {
-          tdOverlay?.classList.remove("active");
-          currentTaskId = null;
+          if (!tdOverlay || !tdOverlay.classList.contains("active")) return;
+          // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
-          // Always reset body overflow to restore page scrolling
-          document.body.style.overflow = "";
-          history.pushState(null, "", window.location.pathname);
-          // P3-4: Restore focus to the element that triggered the panel
-          if (_previouslyFocused && _previouslyFocused instanceof HTMLElement) {
-            _previouslyFocused.focus();
-            _previouslyFocused = null;
+          currentTaskId = null;
+
+          const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+          const finishClose = () => {
+            tdOverlay.classList.remove("active", "closing");
+            document.body.style.overflow = "";
+            history.pushState(null, "", window.location.pathname);
+            // P3-4: Restore focus to the element that triggered the panel
+            if (_previouslyFocused && _previouslyFocused instanceof HTMLElement) {
+              _previouslyFocused.focus();
+              _previouslyFocused = null;
+            }
+          };
+
+          if (reducedMotion) {
+            finishClose();
+            return;
+          }
+
+          tdOverlay.classList.add("closing");
+          const panel = document.getElementById("task-detail-panel");
+          if (panel) {
+            const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
+            panel.addEventListener("animationend", onEnd, { once: true });
+            // Safety fallback — never leave modal stuck
+            setTimeout(() => { panel.removeEventListener("animationend", onEnd); finishClose(); }, 300);
+          } else {
+            finishClose();
           }
         }
 
@@ -62,6 +84,11 @@
           document.body.style.overflow = "hidden";
           // Set dynamic aria-label for screen readers
           tdOverlay.setAttribute("aria-label", `Task detail: loading...`);
+          // Show skeleton, hide loaded content
+          const tdSkeleton = document.getElementById("td-skeleton");
+          const tdLoaded = document.getElementById("td-loaded-content");
+          if (tdSkeleton) tdSkeleton.style.display = "";
+          if (tdLoaded) tdLoaded.style.display = "none";
 
           try {
             // Populate status dropdown from lanes API
@@ -753,6 +780,9 @@
             // Delay resetting _isPopulating so blur/change events that
             // fire asynchronously during focus transitions don't trigger
             // spurious save notifications
+            // Hide skeleton, show loaded content
+            if (tdSkeleton) tdSkeleton.style.display = "none";
+            if (tdLoaded) tdLoaded.style.display = "";
             setTimeout(() => { _isPopulating = false }, 100);
           } catch (e) {
             if ((e as { name?: string })?.name === "AbortError") {
@@ -760,6 +790,9 @@
             }
             log.error("Failed to load task detail", e);
             _isPopulating = false;
+            // Hide skeleton on error too so error message is visible
+            if (tdSkeleton) tdSkeleton.style.display = "none";
+            if (tdLoaded) tdLoaded.style.display = "";
             // Show error state in modal instead of closing — better UX for transient errors
             const titleEl = document.getElementById("td-title") as HTMLTextAreaElement | null;
             if (titleEl) {
@@ -2289,7 +2322,7 @@
               else closeCP();
             }
             if (e.key === "Escape") {
-              if (!tdOverlay?.classList.contains("hidden")) closeTD();
+              if (tdOverlay?.classList.contains("active")) closeTD();
               if (!cpOverlay?.classList.contains("hidden")) closeCP();
             }
           },

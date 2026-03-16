@@ -51,7 +51,6 @@
   --font-heading: 'Outfit', 'Geist Variable', 'Inter Variable', -apple-system, sans-serif;
 
   /* --- Animation --- */
-  --animate-slide-in: slideIn 300ms ease-out;
   --animate-fade-in: fadeIn 200ms ease;
 
   /* --- Spacing --- */
