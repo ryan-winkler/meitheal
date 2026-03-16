@@ -30,12 +30,13 @@
 - Impact: No type safety for inter-component contracts. Prone to silent failures.
 - Fix approach: Typed CustomEvent bus + proper `env.d.ts` declarations for legitimate globals like `__ingress_path`, `__featureFlags`
 
-**`window.location.reload()` Anti-Pattern (~28 remaining):**
+**`window.location.reload()` Anti-Pattern (~26 remaining):**
 - Issue: Multiple calls to `window.location.reload()` instead of DOM/state updates
-- Files: `apps/web/src/pages/tasks.astro` (2), `apps/web/src/pages/today.astro` (2), `apps/web/src/pages/upcoming.astro` (2), `apps/web/src/pages/calendar.astro` (2), `apps/web/src/components/tasks/NewTaskModal.astro` (1), plus others
+- Files by count: `kanban-controller.ts` (10), `today-controller.ts` (8), `task-modal-controller.ts` (2), `settings-danger-controller.ts` (2), `settings-theme-controller.ts` (1), `settings-data-controller.ts` (1), `layout-pwa-controller.ts` (1), `layout-controller.ts` (1)
 - Impact: Full page reloads disrupt user context, cause iframe reload behind HA ingress, waste bandwidth
-- Fix approach: Replace with targeted DOM updates, re-fetch data, or dispatch custom events
+- Fix approach: Replace with targeted DOM updates, re-fetch data, or dispatch custom events. Phase 12 establishes `meitheal:tasks-changed` event pattern for NewTaskModal as migration template.
 - ✅ **Resolved for settings:** Reloads reduced to 4 documented legitimate uses (purge/reset/import/locale) in Phase 08.2. All 11 controllers fully audited (2026-03-16)
+- ✅ **Phase 12:** NewTaskModal reload replaced with `meitheal:tasks-changed` CustomEvent + universal layout listener (2026-03-16)
 
 **Settings XSS Hardening:**
 - ✅ **Resolved:** All 11 settings controllers use `escapeHtml()` from shared `@lib/safe-html.ts` for any server/user data interpolated into `innerHTML`. All fetch calls wired with `pageLifecycle.signal` for abort safety. 58+ event listeners migrated to `pageLifecycle.on()` for memory safety. (2026-03-16)
