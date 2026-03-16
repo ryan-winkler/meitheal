@@ -18,6 +18,7 @@
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import {
   saveFilterState,
   loadFilterState,
@@ -48,6 +49,7 @@ let currentGroupBy = "none"
 let currentSubGroupBy = "none"
 let boardMap: Record<string, BoardInfo> = {}
 let currentFilterState: Partial<FilterState> = {}
+const __signal = pageLifecycle.signal
 
 // =============================================================================
 // Initialization
@@ -102,14 +104,14 @@ function init() {
 
     saveFilterState(currentFilterState)
     applyAllFilters()
-  }) as EventListener)
+  }) as EventListener, { signal: __signal })
 
   // Listen for label filter events (from LabelFilterBar inside FilterToolbar)
   document.addEventListener("meitheal:label-filter", ((e: CustomEvent) => {
     currentFilterState.labels = e.detail?.labels ?? []
     saveFilterState(currentFilterState)
     applyAllFilters()
-  }) as EventListener)
+  }) as EventListener, { signal: __signal })
 
   // Apply grouping first (creates group headers before filtering)
   if (currentGroupBy !== "none") {
@@ -147,7 +149,7 @@ function init() {
 
 async function loadBoards() {
   try {
-    const res = await fetch("/api/boards")
+    const res = await fetch("/api/boards", { signal: __signal })
     if (!res.ok) return
     const data = await res.json()
     const boards: BoardInfo[] = data.boards || []
@@ -858,6 +860,7 @@ function setupInlineEditing() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: newVal }),
+          signal: __signal,
         })
         if (res.ok) {
           cell.dataset.original = newVal
@@ -900,6 +903,7 @@ function setupInlineEditing() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [field]: field === "priority" ? Number(sel.value) : sel.value }),
+          signal: __signal,
         })
         if (res.ok) {
           showToast(`${field} updated`, "success")
@@ -1037,7 +1041,7 @@ function setupBulkActions() {
     let deleted = 0
     for (const id of ids) {
       try {
-        const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" })
+        const res = await fetch(`/api/tasks/${id}`, { method: "DELETE", signal: __signal })
         if (res.ok) {
           const row = document.querySelector<HTMLElement>(`.table-row[data-id="${id}"]`)
           row?.remove()
@@ -1078,6 +1082,7 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[]) {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value }),
+        signal: __signal,
       })
       if (res.ok) {
         updated++

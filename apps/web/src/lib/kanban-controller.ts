@@ -1,8 +1,10 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
+import { pageLifecycle } from "@lib/page-lifecycle";
 
 const log = createClientLogger("kanban");
+const __signal = pageLifecycle.signal;
 /**
  * kanban-controller.ts — Kanban board interactive logic
  *
@@ -573,7 +575,7 @@ export function initKanbanBoard(): void {
             !e.target.closest(".card-assign-btn, .card-color-btn")) {
           close();
         }
-      });
+      }, { signal: __signal });
       document.addEventListener("keydown", (e) => {
         if (!activePopover) return;
         if (e.key === "Escape") { close(); return; }
@@ -588,10 +590,10 @@ export function initKanbanBoard(): void {
             : items[(idx - 1 + items.length) % items.length];
           next?.focus();
         }
-      });
+      }, { signal: __signal });
 
       // P2-4: Cleanup listeners on Astro navigation
-      document.addEventListener("astro:before-swap", () => close(), { once: true });
+      document.addEventListener("astro:before-swap", () => close(), { once: true, signal: __signal });
 
       return { close, toast, open };
     })();
