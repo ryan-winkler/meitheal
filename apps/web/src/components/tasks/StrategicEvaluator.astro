@@ -335,8 +335,8 @@ const defaultMapping: Record<string, string> = {
       );
       if (resolveRes.ok) {
         const resolveData = await resolveRes.json();
-        if (resolveData.data && Array.isArray(resolveData.data.lensIds) && resolveData.data.lensIds.length > 0) {
-          fwIds = resolveData.data.lensIds;
+        if (resolveData.data && Array.isArray(resolveData.data.applicableLensIds) && resolveData.data.applicableLensIds.length > 0) {
+          fwIds = resolveData.data.applicableLensIds;
         }
       }
     } catch {
