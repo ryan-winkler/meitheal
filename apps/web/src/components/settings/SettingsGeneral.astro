@@ -107,12 +107,21 @@ const { locale } = Astro.props
         title="Strategic Lenses"
         subtitle="Map evaluation frameworks contextually by Task Type."
       >
-        <button type="button" class="btn btn-ghost"
-          slot="actions"
-          id="strategic-lenses-help-btn"
-          style="width: 22px; height: 22px; border-radius: 50%; padding: 0; min-height: 22px;"
-          title="What are Strategic Lenses?">?</button
-        >
+        <div slot="actions" style="display: flex; gap: 6px; align-items: center;">
+          <a
+            href="#rules-lenses-settings"
+            class="btn btn-ghost btn-sm"
+            style="font-size: 11px; text-decoration: none;"
+            title="Open Rules & Lenses for full framework management"
+          >⚙️ Manage Frameworks →</a>
+          <button type="button" class="btn btn-ghost"
+            id="strategic-lenses-help-btn"
+            style="width: 28px; height: 28px; border-radius: 50%; padding: 0; min-height: 28px; font-size: 14px;"
+            title="What are Strategic Lenses?"
+            aria-expanded="false"
+            aria-haspopup="true"
+          >?</button>
+        </div>
 
       <!-- Helper Popup -->
       <div
@@ -139,7 +148,7 @@ const { locale } = Astro.props
             type="button"
             id="strategic-lenses-help-close"
             style="color: var(--text-muted); background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1;"
-            >×</button
+            >&times;</button
           >
         </div>
 
@@ -151,7 +160,7 @@ const { locale } = Astro.props
             <div
               style="display: flex; justify-content: space-between; align-items: center;"
             >
-              <strong style="font-size: 13px;">🎯 RICE</strong>
+              <strong style="font-size: 13px;">📊 RICE</strong>
               <a
                 href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/"
                 target="_blank"
@@ -177,7 +186,7 @@ const { locale } = Astro.props
             <div
               style="display: flex; justify-content: space-between; align-items: center;"
             >
-              <strong style="font-size: 13px;">🔗 DRICE</strong>
+              <strong style="font-size: 13px;">🎯 DRICE</strong>
               <a
                 href="https://www.lennysnewsletter.com/p/introducing-drice-a-modern-prioritization"
                 target="_blank"
@@ -237,7 +246,7 @@ const { locale } = Astro.props
             <div
               style="display: flex; justify-content: space-between; align-items: center;"
             >
-              <strong style="font-size: 13px;">💚 HEART</strong>
+              <strong style="font-size: 13px;">❤️ HEART</strong>
               <a
                 href="https://www.heartframework.com/"
                 target="_blank"
@@ -281,6 +290,81 @@ const { locale } = Astro.props
               improved?
             </p>
           </div>
+
+          <!-- WSJF -->
+          <div
+            style="padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
+          >
+            <div
+              style="display: flex; justify-content: space-between; align-items: center;"
+            >
+              <strong style="font-size: 13px;">⚖️ WSJF</strong>
+              <a
+                href="https://www.scaledagileframework.com/wsjf/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style="font-size: 11px; color: var(--accent); text-decoration: none;"
+                >SAFe Docs →</a
+              >
+            </div>
+            <p
+              style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5;"
+            >
+              <strong>Weighted Shortest Job First</strong>. SAFe prioritization
+              method. Calculates Cost of Delay ÷ Job Duration to sequence work
+              for maximum economic benefit.
+            </p>
+          </div>
+
+          <!-- MoSCoW -->
+          <div
+            style="padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
+          >
+            <div
+              style="display: flex; justify-content: space-between; align-items: center;"
+            >
+              <strong style="font-size: 13px;">🏷️ MoSCoW</strong>
+              <a
+                href="https://www.agilebusiness.org/dsdm-project-framework/moscow-prioririsation.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                style="font-size: 11px; color: var(--accent); text-decoration: none;"
+                >DSDM Docs →</a
+              >
+            </div>
+            <p
+              style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5;"
+            >
+              <strong>Must / Should / Could / Won't</strong> prioritization.
+              Classifies requirements into four categories to manage scope and
+              stakeholder expectations during delivery.
+            </p>
+          </div>
+
+          <!-- ICE -->
+          <div
+            style="padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
+          >
+            <div
+              style="display: flex; justify-content: space-between; align-items: center;"
+            >
+              <strong style="font-size: 13px;">🧊 ICE</strong>
+              <a
+                href="https://growthmethod.com/growth-scoring/ice/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style="font-size: 11px; color: var(--accent); text-decoration: none;"
+                >Growth Method →</a
+              >
+            </div>
+            <p
+              style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5;"
+            >
+              <strong>Impact × Confidence × Ease</strong>. Lightweight
+              scoring system for rapid experiment prioritization. Each
+              dimension scored 1-10 for a composite score.
+            </p>
+          </div>
         </div>
 
         <div
@@ -300,7 +384,7 @@ const { locale } = Astro.props
           style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);"
         >
           <div>
-            <strong style="display: block; font-size: 14px;">🎯 Epic</strong>
+            <strong style="display: block; font-size: 14px;">⚡ Epic</strong>
             <span style="font-size: 12px; color: var(--text-muted);"
               >High-level initiatives</span
             >
@@ -311,11 +395,14 @@ const { locale } = Astro.props
             multiple
             style="height: 80px; max-width: 260px;"
           >
-            <option value="ddd">DDD (Domain-Driven Design)</option>
-            <option value="rice">RICE (Priority Math)</option>
-            <option value="drice">DRICE (Deps + RICE)</option>
-            <option value="heart">HEART (UX Matrix)</option>
-            <option value="kcs">KCS (Knowledge Workflow)</option>
+            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
+            <option value="rice">📊 RICE (Priority Math)</option>
+            <option value="drice">🎯 DRICE (Deps + RICE)</option>
+            <option value="heart">❤️ HEART (UX Matrix)</option>
+            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
+            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
+            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
+            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
           </select>
         </div>
 
@@ -334,11 +421,14 @@ const { locale } = Astro.props
             multiple
             style="height: 80px; max-width: 260px;"
           >
-            <option value="rice">RICE (Priority Math)</option>
-            <option value="drice">DRICE (Deps + RICE)</option>
-            <option value="ddd">DDD (Domain-Driven Design)</option>
-            <option value="heart">HEART (UX Matrix)</option>
-            <option value="kcs">KCS (Knowledge Workflow)</option>
+            <option value="rice">📊 RICE (Priority Math)</option>
+            <option value="drice">🎯 DRICE (Deps + RICE)</option>
+            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
+            <option value="heart">❤️ HEART (UX Matrix)</option>
+            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
+            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
+            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
+            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
           </select>
         </div>
 
@@ -357,11 +447,14 @@ const { locale } = Astro.props
             multiple
             style="height: 80px; max-width: 260px;"
           >
-            <option value="heart">HEART (UX Matrix)</option>
-            <option value="rice">RICE (Priority Math)</option>
-            <option value="drice">DRICE (Deps + RICE)</option>
-            <option value="ddd">DDD (Domain-Driven Design)</option>
-            <option value="kcs">KCS (Knowledge Workflow)</option>
+            <option value="heart">❤️ HEART (UX Matrix)</option>
+            <option value="rice">📊 RICE (Priority Math)</option>
+            <option value="drice">🎯 DRICE (Deps + RICE)</option>
+            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
+            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
+            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
+            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
+            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
           </select>
         </div>
 
@@ -382,11 +475,14 @@ const { locale } = Astro.props
             multiple
             style="height: 80px; max-width: 260px;"
           >
-            <option value="kcs">KCS (Knowledge Workflow)</option>
-            <option value="heart">HEART (UX Matrix)</option>
-            <option value="rice">RICE (Priority Math)</option>
-            <option value="drice">DRICE (Deps + RICE)</option>
-            <option value="ddd">DDD (Domain-Driven Design)</option>
+            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
+            <option value="heart">❤️ HEART (UX Matrix)</option>
+            <option value="rice">📊 RICE (Priority Math)</option>
+            <option value="drice">🎯 DRICE (Deps + RICE)</option>
+            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
+            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
+            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
+            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
           </select>
         </div>
       </div>
@@ -736,8 +832,6 @@ const { locale } = Astro.props
       btn.focus();
     }
 
-    btn.setAttribute("aria-expanded", "false");
-    btn.setAttribute("aria-haspopup", "true");
     btn.addEventListener("click", function () {
       popup.style.display !== "none" ? closePopup() : openPopup();
     });
