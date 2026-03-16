@@ -2,5 +2,7 @@
   "css.lint.unknownAtRules": "ignore",
   "css.lint.propertyIgnoredDueToDisplay": "ignore",
   "git.autofetch": "all",
-  "chatgpt.openOnStartup": true
+  "chatgpt.openOnStartup": true,
+  "files.autoSave": "onFocusChange",
+  "files.autoSaveWhenNoErrors": false
 }

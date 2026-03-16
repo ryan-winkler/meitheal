@@ -84,6 +84,7 @@
     "workbench.experimental.cloudChanges.autoStore": "onShutdown",
     "git.autofetch": true,
     "typescript.disableAutomaticTypeAcquisition": false,
+    "files.autoSave": "onFocusChange",
   },
   "extensions": {
     "recommendations": [

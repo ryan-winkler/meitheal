@@ -4,7 +4,8 @@
 
 	// List of extensions which should be recommended for users of this workspace.
 	"recommendations": [
-		"golang.go"
+		"golang.go",
+		"formulahendry.docker-explorer"
 
 	],
 	// List of extensions recommended by Antigravity that should not be recommended for users of this workspace.
