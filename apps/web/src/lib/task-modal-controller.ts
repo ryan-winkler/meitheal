@@ -46,6 +46,10 @@
             tdOverlay.classList.remove("active", "closing");
             document.body.style.overflow = "";
             history.pushState(null, "", window.location.pathname);
+            // D1: Collapse sidebar on close (reset for next open)
+            _sidebarProps?.classList.remove("td-sidebar-expanded");
+            _sidebarToggle?.setAttribute("aria-expanded", "false");
+            _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
             if (_previouslyFocused && _previouslyFocused instanceof HTMLElement) {
               _previouslyFocused.focus();
@@ -97,8 +101,15 @@
           // Show skeleton, hide loaded content
           const tdSkeleton = document.getElementById("td-skeleton");
           const tdLoaded = document.getElementById("td-loaded-content");
-          if (tdSkeleton) tdSkeleton.style.display = "";
-          if (tdLoaded) tdLoaded.classList.add("hidden");
+           if (tdSkeleton) tdSkeleton.style.display = "";
+           if (tdLoaded) tdLoaded.classList.add("hidden");
+
+           // D1: Auto-expand sidebar on mobile so properties are visible immediately
+           if (window.matchMedia("(max-width: 767px)").matches) {
+             _sidebarProps?.classList.add("td-sidebar-expanded");
+             _sidebarToggle?.setAttribute("aria-expanded", "true");
+             _sidebarChevron?.classList.toggle("td-chevron-open", true);
+           }
 
           try {
             // Populate status dropdown from lanes API
