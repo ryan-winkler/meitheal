@@ -380,110 +380,72 @@ const { locale } = Astro.props
       <div
         style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;"
       >
-        <div
-          style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);"
-        >
-          <div>
-            <strong style="display: block; font-size: 14px;">⚡ Epic</strong>
-            <span style="font-size: 12px; color: var(--text-muted);"
-              >High-level initiatives</span
-            >
+        <div class="lenses-type-row" data-lenses-type="epic">
+          <div class="lenses-type-meta">
+            <strong class="lenses-type-label">⚡ Epic</strong>
+            <span class="lenses-type-desc">High-level initiatives</span>
           </div>
-          <select
-            class="form-select framework-mapping-select"
-            data-task-type="epic"
-            multiple
-            style="height: 80px; max-width: 260px;"
-          >
-            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
-            <option value="rice">📊 RICE (Priority Math)</option>
-            <option value="drice">🎯 DRICE (Deps + RICE)</option>
-            <option value="heart">❤️ HEART (UX Matrix)</option>
-            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
-            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
-            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
-            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
-          </select>
+          <div class="lenses-pill-group">
+            <label class="lenses-pill-toggle" title="Domain-Driven Design"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="ddd" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏗️</span> DDD</span></label>
+            <label class="lenses-pill-toggle" title="Reach × Impact × Confidence ÷ Effort"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="rice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📊</span> RICE</span></label>
+            <label class="lenses-pill-toggle" title="Dependencies + RICE"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="drice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🎯</span> DRICE</span></label>
+            <label class="lenses-pill-toggle" title="Happiness, Engagement, Adoption, Retention, Task success"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="heart" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">❤️</span> HEART</span></label>
+            <label class="lenses-pill-toggle" title="Knowledge-Centered Service"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="kcs" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📚</span> KCS</span></label>
+            <label class="lenses-pill-toggle" title="Weighted Shortest Job First"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="wsjf" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">⚖️</span> WSJF</span></label>
+            <label class="lenses-pill-toggle" title="Must / Should / Could / Won't"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="moscow" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏷️</span> MoSCoW</span></label>
+            <label class="lenses-pill-toggle" title="Impact × Confidence × Ease"><input type="checkbox" class="lenses-fw-check" data-task-type="epic" data-framework="ice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🧊</span> ICE</span></label>
+          </div>
         </div>
 
-        <div
-          style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);"
-        >
-          <div>
-            <strong style="display: block; font-size: 14px;">📖 Story</strong>
-            <span style="font-size: 12px; color: var(--text-muted);"
-              >User-facing features</span
-            >
+        <div class="lenses-type-row" data-lenses-type="story">
+          <div class="lenses-type-meta">
+            <strong class="lenses-type-label">📖 Story</strong>
+            <span class="lenses-type-desc">User-facing features</span>
           </div>
-          <select
-            class="form-select framework-mapping-select"
-            data-task-type="story"
-            multiple
-            style="height: 80px; max-width: 260px;"
-          >
-            <option value="rice">📊 RICE (Priority Math)</option>
-            <option value="drice">🎯 DRICE (Deps + RICE)</option>
-            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
-            <option value="heart">❤️ HEART (UX Matrix)</option>
-            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
-            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
-            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
-            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
-          </select>
+          <div class="lenses-pill-group">
+            <label class="lenses-pill-toggle" title="Reach × Impact × Confidence ÷ Effort"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="rice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📊</span> RICE</span></label>
+            <label class="lenses-pill-toggle" title="Dependencies + RICE"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="drice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🎯</span> DRICE</span></label>
+            <label class="lenses-pill-toggle" title="Domain-Driven Design"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="ddd" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏗️</span> DDD</span></label>
+            <label class="lenses-pill-toggle" title="Happiness, Engagement, Adoption, Retention, Task success"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="heart" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">❤️</span> HEART</span></label>
+            <label class="lenses-pill-toggle" title="Knowledge-Centered Service"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="kcs" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📚</span> KCS</span></label>
+            <label class="lenses-pill-toggle" title="Weighted Shortest Job First"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="wsjf" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">⚖️</span> WSJF</span></label>
+            <label class="lenses-pill-toggle" title="Must / Should / Could / Won't"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="moscow" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏷️</span> MoSCoW</span></label>
+            <label class="lenses-pill-toggle" title="Impact × Confidence × Ease"><input type="checkbox" class="lenses-fw-check" data-task-type="story" data-framework="ice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🧊</span> ICE</span></label>
+          </div>
         </div>
 
-        <div
-          style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);"
-        >
-          <div>
-            <strong style="display: block; font-size: 14px;">✅ Task</strong>
-            <span style="font-size: 12px; color: var(--text-muted);"
-              >Standard work items</span
-            >
+        <div class="lenses-type-row" data-lenses-type="task">
+          <div class="lenses-type-meta">
+            <strong class="lenses-type-label">✅ Task</strong>
+            <span class="lenses-type-desc">Standard work items</span>
           </div>
-          <select
-            class="form-select framework-mapping-select"
-            data-task-type="task"
-            multiple
-            style="height: 80px; max-width: 260px;"
-          >
-            <option value="heart">❤️ HEART (UX Matrix)</option>
-            <option value="rice">📊 RICE (Priority Math)</option>
-            <option value="drice">🎯 DRICE (Deps + RICE)</option>
-            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
-            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
-            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
-            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
-            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
-          </select>
+          <div class="lenses-pill-group">
+            <label class="lenses-pill-toggle" title="Happiness, Engagement, Adoption, Retention, Task success"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="heart" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">❤️</span> HEART</span></label>
+            <label class="lenses-pill-toggle" title="Reach × Impact × Confidence ÷ Effort"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="rice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📊</span> RICE</span></label>
+            <label class="lenses-pill-toggle" title="Dependencies + RICE"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="drice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🎯</span> DRICE</span></label>
+            <label class="lenses-pill-toggle" title="Domain-Driven Design"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="ddd" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏗️</span> DDD</span></label>
+            <label class="lenses-pill-toggle" title="Knowledge-Centered Service"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="kcs" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📚</span> KCS</span></label>
+            <label class="lenses-pill-toggle" title="Weighted Shortest Job First"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="wsjf" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">⚖️</span> WSJF</span></label>
+            <label class="lenses-pill-toggle" title="Must / Should / Could / Won't"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="moscow" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏷️</span> MoSCoW</span></label>
+            <label class="lenses-pill-toggle" title="Impact × Confidence × Ease"><input type="checkbox" class="lenses-fw-check" data-task-type="task" data-framework="ice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🧊</span> ICE</span></label>
+          </div>
         </div>
 
-        <div
-          style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);"
-        >
-          <div>
-            <strong style="display: block; font-size: 14px;"
-              >📝 Documentation</strong
-            >
-            <span style="font-size: 12px; color: var(--text-muted);"
-              >Knowledge articles</span
-            >
+        <div class="lenses-type-row" data-lenses-type="documentation">
+          <div class="lenses-type-meta">
+            <strong class="lenses-type-label">📝 Documentation</strong>
+            <span class="lenses-type-desc">Knowledge articles</span>
           </div>
-          <select
-            class="form-select framework-mapping-select"
-            data-task-type="documentation"
-            multiple
-            style="height: 80px; max-width: 260px;"
-          >
-            <option value="kcs">📚 KCS (Knowledge Workflow)</option>
-            <option value="heart">❤️ HEART (UX Matrix)</option>
-            <option value="rice">📊 RICE (Priority Math)</option>
-            <option value="drice">🎯 DRICE (Deps + RICE)</option>
-            <option value="ddd">🏗️ DDD (Domain-Driven Design)</option>
-            <option value="wsjf">⚖️ WSJF (Weighted Shortest Job)</option>
-            <option value="moscow">🏷️ MoSCoW (Must/Should/Could/Won't)</option>
-            <option value="ice">🧊 ICE (Impact × Confidence × Ease)</option>
-          </select>
+          <div class="lenses-pill-group">
+            <label class="lenses-pill-toggle" title="Knowledge-Centered Service"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="kcs" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📚</span> KCS</span></label>
+            <label class="lenses-pill-toggle" title="Happiness, Engagement, Adoption, Retention, Task success"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="heart" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">❤️</span> HEART</span></label>
+            <label class="lenses-pill-toggle" title="Reach × Impact × Confidence ÷ Effort"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="rice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">📊</span> RICE</span></label>
+            <label class="lenses-pill-toggle" title="Dependencies + RICE"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="drice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🎯</span> DRICE</span></label>
+            <label class="lenses-pill-toggle" title="Domain-Driven Design"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="ddd" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏗️</span> DDD</span></label>
+            <label class="lenses-pill-toggle" title="Weighted Shortest Job First"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="wsjf" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">⚖️</span> WSJF</span></label>
+            <label class="lenses-pill-toggle" title="Must / Should / Could / Won't"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="moscow" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🏷️</span> MoSCoW</span></label>
+            <label class="lenses-pill-toggle" title="Impact × Confidence × Ease"><input type="checkbox" class="lenses-fw-check" data-task-type="documentation" data-framework="ice" /><span class="lenses-fw-pill"><span class="lenses-fw-pill-icon">🧊</span> ICE</span></label>
+          </div>
         </div>
       </div>
       </SettingsPanelCard>
@@ -1589,3 +1551,84 @@ const { locale } = Astro.props
       });
   })();
 </script>
+
+<style>
+  /* Strategic Lenses — pill toggle styles
+     Mirrors the SettingsRules.astro pill toggle pattern
+     using lenses-* namespace for Astro scoping */
+  .lenses-type-row {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .lenses-type-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .lenses-type-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .lenses-type-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .lenses-pill-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lenses-pill-toggle {
+    cursor: pointer;
+  }
+  .lenses-pill-toggle input {
+    display: none;
+  }
+  .lenses-fw-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    transition: all 200ms ease;
+    user-select: none;
+  }
+  .lenses-fw-pill:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  }
+  .lenses-fw-pill-icon {
+    font-size: 13px;
+  }
+  .lenses-pill-toggle input:checked + .lenses-fw-pill {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  /* Focus-visible ring for keyboard nav */
+  .lenses-pill-toggle:focus-within .lenses-fw-pill {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (max-width: 480px) {
+    .lenses-type-row {
+      padding: 10px;
+    }
+    .lenses-fw-pill {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+  }
+</style>

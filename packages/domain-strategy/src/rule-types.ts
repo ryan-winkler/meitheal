@@ -11,7 +11,7 @@
  */
 
 /** Task types from domain-tasks */
-export type TaskType = "epic" | "story" | "task"
+export type TaskType = "epic" | "story" | "task" | "documentation"
 
 /** Rule types that can be assigned to tasks */
 export type RuleType = "strategic-lens" | "ai-scope" | "custom"

@@ -21,7 +21,7 @@ interface RuleApiResponse {
   message?: string
 }
 
-/** Preset definitions — mirrors the 3 built-in presets from domain-strategy */
+/** Preset definitions — mirrors the 5 built-in presets from domain-strategy */
 const PRESET_DEFINITIONS: Record<string, {
   label: string
   description: string
@@ -39,6 +39,7 @@ const PRESET_DEFINITIONS: Record<string, {
       { name: "Epic Default", taskTypes: ["epic"], lensIds: ["rice", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Story Default", taskTypes: ["story"], lensIds: ["rice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Task Default", taskTypes: ["task"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+      { name: "Doc Default", taskTypes: ["documentation"], lensIds: ["kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
     ],
   },
   "ux-focused": {
@@ -48,6 +49,7 @@ const PRESET_DEFINITIONS: Record<string, {
       { name: "Epic Default", taskTypes: ["epic"], lensIds: ["heart", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Story Default", taskTypes: ["story"], lensIds: ["heart", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: true, canSuggestLabels: true } },
       { name: "Task Default", taskTypes: ["task"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+      { name: "Doc Default", taskTypes: ["documentation"], lensIds: ["kcs", "heart"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
     ],
   },
   simple: {
@@ -57,6 +59,7 @@ const PRESET_DEFINITIONS: Record<string, {
       { name: "Epic Default", taskTypes: ["epic"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
       { name: "Story Default", taskTypes: ["story"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
       { name: "Task Default", taskTypes: ["task"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+      { name: "Doc Default", taskTypes: ["documentation"], lensIds: [], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
     ],
   },
   "agile-delivery": {
@@ -66,6 +69,7 @@ const PRESET_DEFINITIONS: Record<string, {
       { name: "Epic WSJF", taskTypes: ["epic"], lensIds: ["wsjf", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: true, canSuggestLabels: true } },
       { name: "Story ICE", taskTypes: ["story"], lensIds: ["ice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Task Default", taskTypes: ["task"], lensIds: ["kcs"], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+      { name: "Doc Default", taskTypes: ["documentation"], lensIds: ["kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
     ],
   },
   balanced: {
@@ -74,6 +78,8 @@ const PRESET_DEFINITIONS: Record<string, {
     rules: [
       { name: "Epic MoSCoW", taskTypes: ["epic"], lensIds: ["moscow", "ddd"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
       { name: "Story RICE", taskTypes: ["story"], lensIds: ["rice", "kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
+      { name: "Task Default", taskTypes: ["task"], lensIds: ["rice"], aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: false } },
+      { name: "Doc Default", taskTypes: ["documentation"], lensIds: ["kcs"], aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: true } },
     ],
   },
 }
@@ -99,6 +105,16 @@ async function apiFetch(path: string, options?: RequestInit): Promise<RuleApiRes
   } catch {
     return { ok: false, errorCode: "NETWORK_ERROR", message: "Failed to reach API" }
   }
+}
+
+/** Escape HTML entities to prevent XSS when injecting user-provided text via innerHTML */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
 }
 
 /** Download a JSON file in the browser */
@@ -192,7 +208,7 @@ function highlightActivePreset(): void {
     let matches = true
     for (const rule of preset.rules) {
       for (const taskType of rule.taskTypes) {
-        for (const fw of ["rice", "drice", "heart", "ddd", "kcs"]) {
+        for (const fw of ["rice", "drice", "heart", "ddd", "kcs", "wsjf", "moscow", "ice"]) {
           const cb = document.querySelector<HTMLInputElement>(
             `.rules-fw-check[data-task-type="${taskType}"][data-framework="${fw}"]`
           )
@@ -228,7 +244,7 @@ async function saveRulesFromUI(): Promise<void> {
     }
 
     // Collect state from UI
-    const taskTypes = ["epic", "story", "task"]
+    const taskTypes = ["epic", "story", "task", "documentation"]
     for (const taskType of taskTypes) {
       const lensIds: string[] = []
       document.querySelectorAll<HTMLInputElement>(`.rules-fw-check[data-task-type="${taskType}"]:checked`).forEach((cb) => {
@@ -354,9 +370,12 @@ async function loadFrameworkConfigs(): Promise<void> {
 
       container.innerHTML = fw.fields.map((field) => {
         // Render weight slider for all field types, plus field-specific info
+        const safeLabel = escapeHtml(field.label)
+        const safeHelp = escapeHtml(field.helpText)
+        const safeKey = escapeHtml(field.key)
         const fieldInfo = field.options
-          ? `<span class="fw-field-type" title="${field.helpText}">
-               ${field.options.map((o) => o.label).join(" · ")}
+          ? `<span class="fw-field-type" title="${safeHelp}">
+               ${field.options.map((o) => escapeHtml(String(o.label))).join(" · ")}
              </span>`
           : field.min !== undefined && field.max !== undefined
             ? `<span class="fw-field-range">${field.min}–${field.max}</span>`
@@ -365,22 +384,22 @@ async function loadFrameworkConfigs(): Promise<void> {
         return `
           <div class="rules-fw-field">
             <div class="rules-fw-field-header">
-              <label title="${field.helpText}">${field.label}</label>
+              <label title="${safeHelp}">${safeLabel}</label>
               ${fieldInfo}
             </div>
             <div class="rules-fw-field-controls">
               <input
                 type="range"
                 class="form-input rules-fw-weight"
-                data-framework="${fw.id}"
-                data-field="${field.key}"
+                data-framework="${escapeHtml(fw.id)}"
+                data-field="${safeKey}"
                 min="0" max="3" step="0.1"
                 value="${field.weight}"
-                aria-label="${field.label} weight"
+                aria-label="${safeLabel} weight"
               />
               <span class="weight-display">${field.weight.toFixed(1)}×</span>
             </div>
-            <p class="fw-field-help">${field.helpText}</p>
+            <p class="fw-field-help">${safeHelp}</p>
           </div>
         `
       }).join("")
