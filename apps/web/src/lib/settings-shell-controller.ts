@@ -1,9 +1,6 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import {
   SETTINGS_SECTIONS,
-  getSettingsSection,
-  searchSettingsRegistry,
   type SettingsSectionId,
 } from "@lib/settings-registry"
 import { showToast } from "@lib/toast"
@@ -136,155 +133,7 @@ function revealAllSections(): void {
 }
 
 function clearSearchState(): void {
-  const input = document.getElementById(
-    "settings-search-input",
-  ) as HTMLInputElement | null
-  const results = document.getElementById("settings-search-results")
-  const clearButton = document.getElementById(
-    "settings-search-clear",
-  ) as HTMLButtonElement | null
-
-  if (input) input.value = ""
-  if (results) results.hidden = true
-  if (results) results.innerHTML = ""
-  if (clearButton) clearButton.hidden = true
-
   revealAllSections()
-}
-
-function initSearch(): void {
-  const input = document.getElementById(
-    "settings-search-input",
-  ) as HTMLInputElement | null
-  const results = document.getElementById("settings-search-results")
-  const clearButton = document.getElementById(
-    "settings-search-clear",
-  ) as HTMLButtonElement | null
-  if (!input || !results) return
-
-  let matches = searchSettingsRegistry("")
-  let activeResultIndex = -1
-
-  const setActiveResult = (index: number): void => {
-    activeResultIndex = index
-    results
-      .querySelectorAll<HTMLElement>(".settings-search-results__item")
-      .forEach((item, itemIndex) => {
-        const active = itemIndex === index
-        item.classList.toggle("is-active", active)
-        item.setAttribute("aria-selected", active ? "true" : "false")
-      })
-  }
-
-  const selectMatch = (matchIndex: number): void => {
-    const match = matches[matchIndex]
-    if (!match) return
-
-    clearSearchState()
-    scrollToAnchor(match.anchorId)
-  }
-
-  const renderMatches = (): void => {
-    const term = input.value.trim()
-    matches = searchSettingsRegistry(term)
-    activeResultIndex = -1
-    results.innerHTML = ""
-
-    if (clearButton) {
-      clearButton.hidden = term.length === 0
-    }
-
-    if (!term) {
-      results.hidden = true
-      revealAllSections()
-      return
-    }
-
-    const visibleSections = new Set(matches.map((match) => match.sectionId))
-    SETTINGS_SECTIONS.forEach((section) => {
-      const element = document.getElementById(section.id)
-      if (!element) return
-      element.classList.toggle(
-        "settings-shell__section--muted",
-        !visibleSections.has(section.id),
-      )
-    })
-
-    if (matches.length === 0) {
-      results.hidden = false
-      results.innerHTML = `<div class="settings-search-results__empty">No matching settings for "${escapeHtml(term)}" yet. Press Esc or Clear to reset.</div>`
-      return
-    }
-
-    matches.forEach((match, index) => {
-      const button = document.createElement("button")
-      button.type = "button"
-      button.className = "settings-search-results__item"
-      button.setAttribute("role", "option")
-      button.setAttribute("aria-selected", "false")
-      button.innerHTML = `
-        <span class="settings-search-results__meta">
-          <span class="settings-search-results__type">${match.type === "field" ? "Setting" : "Section"}</span>
-          <span class="settings-search-results__section">${getSettingsSection(match.sectionId)?.label ?? match.sectionId}</span>
-        </span>
-        <strong>${match.label}</strong>
-        <span class="settings-search-results__description">${match.description}</span>
-      `
-
-      pageLifecycle.on(button, "click", () => {
-        selectMatch(index)
-      })
-      pageLifecycle.on(button, "mouseenter", () => {
-        setActiveResult(index)
-      })
-
-      results.appendChild(button)
-    })
-
-    results.hidden = false
-  }
-
-  pageLifecycle.on(input, "input", () => {
-    renderMatches()
-  })
-
-  pageLifecycle.on(input, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key === "ArrowDown") {
-      keyboardEvent.preventDefault()
-      if (!matches.length) return
-      setActiveResult((activeResultIndex + 1 + matches.length) % matches.length)
-      return
-    }
-
-    if (keyboardEvent.key === "ArrowUp") {
-      keyboardEvent.preventDefault()
-      if (!matches.length) return
-      setActiveResult((activeResultIndex - 1 + matches.length) % matches.length)
-      return
-    }
-
-    if (keyboardEvent.key === "Escape") {
-      keyboardEvent.preventDefault()
-      clearSearchState()
-      return
-    }
-
-    if (keyboardEvent.key !== "Enter") return
-
-    const matchIndex = activeResultIndex >= 0 ? activeResultIndex : 0
-    const firstMatch = matches[matchIndex]
-    if (!firstMatch) return
-
-    keyboardEvent.preventDefault()
-    selectMatch(matchIndex)
-  })
-
-  if (clearButton) {
-    pageLifecycle.on(clearButton, "click", () => {
-      clearSearchState()
-    })
-  }
 }
 
 function initSectionLinks(): void {
@@ -487,8 +336,10 @@ function initStickyTabBar(): void {
 /** Title switcher — the page title acts as a dropdown trigger showing ALL
  *  sections. Replaces both the old hamburger and overflow concepts. */
 function initTitleSwitcher(): void {
-  const btn = document.getElementById("unified-bar-switcher-btn") as HTMLElement | null
-  const dropdown = document.getElementById("unified-bar-switcher-dropdown") as HTMLElement | null
+  const bar = document.getElementById("settings-bar")
+  const barId = bar?.id ?? "settings-bar"
+  const btn = document.getElementById(`${barId}-switcher-btn`) as HTMLElement | null
+  const dropdown = document.getElementById(`${barId}-switcher-dropdown`) as HTMLElement | null
   if (!btn || !dropdown) return
 
   let isOpen = false
@@ -578,30 +429,71 @@ function initTitleSwitcher(): void {
   if (hash) updateActiveState(hash)
 }
 
-/** Settings search — persistent compact input. "/" shortcut to focus. */
-function initNavSearch(): void {
-  const searchInput = document.getElementById("settings-search-input") as HTMLInputElement | null
-  if (!searchInput) return
+/** Search launcher — clicking the search button in the UnifiedBar opens
+ *  the global SearchHub modal, pre-scoped to the bar's data-search-scope. */
+function initSearchLauncher(): void {
+  const bar = document.getElementById("settings-bar")
+  const barId = bar?.id ?? "settings-bar"
+  const launcher = document.getElementById(`${barId}-search-launcher`) as HTMLButtonElement | null
+  if (!launcher) return
 
-  /* Keyboard shortcut: `/` focuses search (when not already in an input) */
-  pageLifecycle.on(document, "keydown", (event) => {
-    const e = event as KeyboardEvent
-    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return
-    const target = e.target as HTMLElement
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
-    e.preventDefault()
-    searchInput.focus()
-  })
+  const scope = launcher.dataset.searchScope || bar?.dataset.searchScope || ""
 
-  /* Esc blurs and clears */
-  pageLifecycle.on(searchInput, "keydown", (event) => {
-    const e = event as KeyboardEvent
-    if (e.key === "Escape") {
-      e.preventDefault()
-      clearSearchState()
-      searchInput.blur()
-    }
+  pageLifecycle.on(launcher, "click", () => {
+    window.openSearchHub?.(scope ? { scope } : undefined)
   })
+}
+
+/** Tab overflow — uses ResizeObserver to show only tabs that fit in the
+ *  available space. Hidden tabs are still accessible via the title dropdown. */
+function initTabOverflow(): void {
+  const bar = document.getElementById("settings-bar")
+  const barId = bar?.id ?? "settings-bar"
+  const tabsContainer = document.getElementById(`${barId}-tabs`) as HTMLElement | null
+  if (!tabsContainer) return
+
+  const tabs = Array.from(tabsContainer.querySelectorAll<HTMLElement>("[data-unified-bar-tab]"))
+  if (tabs.length === 0) return
+
+  function recalcOverflow(): void {
+    /* First, reset all tabs to visible for measurement */
+    tabs.forEach((tab) => {
+      tab.removeAttribute("data-overflow-hidden")
+      tab.removeAttribute("tabindex")
+    })
+
+    const containerWidth = tabsContainer!.clientWidth
+    let usedWidth = 0
+    let overflow = false
+
+    tabs.forEach((tab) => {
+      if (overflow) {
+        tab.setAttribute("data-overflow-hidden", "")
+        tab.setAttribute("tabindex", "-1")
+        return
+      }
+
+      /* Measure the tab's natural width including gap */
+      const tabWidth = tab.offsetWidth + 4 /* 4px gap */
+      usedWidth += tabWidth
+
+      if (usedWidth > containerWidth) {
+        overflow = true
+        tab.setAttribute("data-overflow-hidden", "")
+        tab.setAttribute("tabindex", "-1")
+      }
+    })
+  }
+
+  const observer = new ResizeObserver(() => {
+    recalcOverflow()
+  })
+  observer.observe(tabsContainer)
+
+  /* Initial calc */
+  requestAnimationFrame(recalcOverflow)
+
+  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
 }
 
 function initGoToTop(): void {
@@ -651,13 +543,13 @@ export function initSettingsShell(): void {
   const shell = document.getElementById("settings-shell")
   if (!shell) return
 
-  initSearch()
   initSectionLinks()
   initIntersectionTracking()
   initCompanionLinks()
   initStickyTabBar()
   initTitleSwitcher()
-  initNavSearch()
+  initSearchLauncher()
+  initTabOverflow()
   initGoToTop()
   syncSummaryStatuses()
   pageLifecycle.on(window, "hashchange", () => {
@@ -694,43 +586,23 @@ export function initSettingsShell(): void {
     })
   }
 
-  /* ARIA tablist: scroll active tab into view and add arrow key navigation */
-  const tabContainer = document.querySelector(".settings-nav__tabs")
+  /* Tab arrow key navigation for quick access tabs */
+  const tabContainer = document.getElementById("settings-bar-tabs")
   if (tabContainer) {
-    tabContainer.setAttribute("role", "tablist")
-    tabContainer.setAttribute("aria-label", "Settings sections")
-
-    const tabs = tabContainer.querySelectorAll<HTMLElement>(".settings-tab")
-    tabs.forEach((tab) => {
-      tab.setAttribute("role", "tab")
-      const isActive = tab.classList.contains("is-active")
-      tab.setAttribute("aria-selected", isActive ? "true" : "false")
-      tab.setAttribute("tabindex", isActive ? "0" : "-1")
-    })
-
-    /* Scroll active tab into view on init (for narrow viewports) */
-    const activeTab = tabContainer.querySelector<HTMLElement>(".settings-tab.is-active")
-    if (activeTab) {
-      requestAnimationFrame(() => {
-        activeTab.scrollIntoView({ inline: "center", behavior: "auto", block: "nearest" })
-      })
-    }
-
-    /* Arrow key navigation per ARIA tablist pattern */
     pageLifecycle.on(tabContainer, "keydown", (event) => {
       const e = event as KeyboardEvent
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
 
-      const currentTabs = Array.from(
-        tabContainer.querySelectorAll<HTMLElement>(".settings-tab"),
+      const visibleTabs = Array.from(
+        tabContainer.querySelectorAll<HTMLElement>("[data-unified-bar-tab]:not([data-overflow-hidden])"),
       )
-      const currentIndex = currentTabs.findIndex((t) => t === document.activeElement)
+      const currentIndex = visibleTabs.findIndex((t) => t === document.activeElement)
       if (currentIndex === -1) return
 
       e.preventDefault()
       const direction = e.key === "ArrowRight" ? 1 : -1
-      const nextIndex = (currentIndex + direction + currentTabs.length) % currentTabs.length
-      const nextTab = currentTabs[nextIndex]
+      const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
+      const nextTab = visibleTabs[nextIndex]
       if (nextTab) {
         nextTab.focus()
         nextTab.click()

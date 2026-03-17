@@ -25,6 +25,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     title={t("settings.title", locale)}
     tabs={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
     searchPlaceholder="Search settings…"
+    searchScope="settings"
     slot="custom-header"
   />
 

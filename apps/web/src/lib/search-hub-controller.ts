@@ -341,7 +341,17 @@ pageLifecycle.onPageLoad(() => {
     }
   }
 
-  function openHub(prefill = ""): void {
+  function openHub(options?: string | { prefill?: string; scope?: string }): void {
+    const prefill = typeof options === "string" ? options : options?.prefill ?? ""
+    const scope = typeof options === "object" ? options?.scope : undefined
+
+    if (scope) {
+      const validScope = scopeButtons.find((b) => b.dataset.scope === scope)
+      if (validScope) {
+        activeScope = scope as SearchScope
+      }
+    }
+
     if (!isOpen) {
       isOpen = true
       overlayEl.classList.remove("hidden")

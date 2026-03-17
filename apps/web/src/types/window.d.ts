@@ -75,8 +75,8 @@ interface MeithealWindowExtensions {
   __tableResizeCleanup?: () => void;
 
   // === Search Hub ===
-  /** Opens the search hub modal, optionally pre-filling the search input */
-  openSearchHub?: (prefill?: string) => void;
+  /** Opens the search hub modal, optionally pre-filling and/or pre-scoping */
+  openSearchHub?: (options?: string | { prefill?: string; scope?: string }) => void;
   /** Closes the search hub modal */
   closeSearchHub?: () => void;
   /** Guard to prevent duplicate keyboard listeners for search hub */
