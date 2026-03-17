@@ -396,6 +396,57 @@ function syncActiveSectionFromHash(): void {
   }
 }
 
+/** Sticky tab bar fallback — CSS position:sticky breaks in HA ingress
+ * iframes because the parent HA shell controls scrolling, not the addon
+ * body. This uses IntersectionObserver on the hero section to detect
+ * when tabs should stick. When the hero scrolls out, the tab surface
+ * switches to position:fixed and a spacer prevents layout jump. */
+function initStickyTabBar(): void {
+  const hero = document.querySelector<HTMLElement>(".settings-shell__hero")
+  const surface = document.getElementById("quick-jumps-surface") as HTMLElement | null
+  if (!hero || !surface) return
+
+  /* Create spacer to prevent layout jump when surface becomes fixed */
+  const spacer = document.createElement("div")
+  spacer.style.cssText = "display:none;width:100%;"
+  spacer.setAttribute("aria-hidden", "true")
+  surface.parentNode?.insertBefore(spacer, surface.nextSibling)
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const heroVisible = entries[0]?.isIntersecting ?? true
+      if (!heroVisible) {
+        /* Hero scrolled out — fix the tab bar to top */
+        const rect = surface.getBoundingClientRect()
+        spacer.style.display = "block"
+        spacer.style.height = `${rect.height}px`
+        surface.style.position = "fixed"
+        surface.style.top = "0"
+        surface.style.left = "0"
+        surface.style.right = "0"
+        surface.style.width = "100%"
+        surface.classList.add("is-fixed")
+      } else {
+        /* Hero visible — restore normal flow */
+        spacer.style.display = "none"
+        surface.style.position = ""
+        surface.style.top = ""
+        surface.style.left = ""
+        surface.style.right = ""
+        surface.style.width = ""
+        surface.classList.remove("is-fixed")
+      }
+    },
+    { threshold: 0 },
+  )
+
+  observer.observe(hero)
+  pageLifecycle.signal.addEventListener("abort", () => {
+    observer.disconnect()
+    spacer.remove()
+  }, { once: true })
+}
+
 function initGoToTop(): void {
   const btn = document.getElementById("settings-go-top")
   if (!btn) return
@@ -447,6 +498,7 @@ export function initSettingsShell(): void {
   initSectionLinks()
   initIntersectionTracking()
   initCompanionLinks()
+  initStickyTabBar()
   initGoToTop()
   syncSummaryStatuses()
   pageLifecycle.on(window, "hashchange", () => {
