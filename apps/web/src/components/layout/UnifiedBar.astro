@@ -29,6 +29,8 @@ export interface UnifiedBarTab {
 interface Props {
   /** Page title — also the dropdown trigger */
   title: string
+  /** SVG icon to show before the title (e.g. gear icon for Settings) */
+  titleIcon?: string
   /** Tab items for section navigation */
   tabs: UnifiedBarTab[]
   /** Placeholder text for the search launcher */
@@ -41,18 +43,25 @@ interface Props {
   showSearch?: boolean
   /** SearchHub scope to pre-select when launched from this bar */
   searchScope?: string
+  /** Show the new task button */
+  showNewTask?: boolean
+  /** Label for the new task button (shown on wide viewports) */
+  newTaskLabel?: string
   /** Element ID prefix for the bar (used by controller). All child IDs are derived from this. */
   barId?: string
 }
 
 const {
   title,
+  titleIcon,
   tabs,
   searchPlaceholder = "Search…",
   showAiButton = true,
   aiButtonLabel = "Ask Home Assistant",
   showSearch = true,
   searchScope = "",
+  showNewTask = true,
+  newTaskLabel = "New Task",
   barId = "settings-bar",
 } = Astro.props
 ---
@@ -73,6 +82,14 @@ const {
         aria-haspopup="true"
         aria-label={`${title} — switch section`}
       >
+        {titleIcon === "gear" ? (
+          <svg class="unified-bar__title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        ) : titleIcon && (
+          <span class="unified-bar__title-icon-emoji" aria-hidden="true">{titleIcon}</span>
+        )}
         <span class="unified-bar__switcher-label">{title}</span>
         <svg class="unified-bar__switcher-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path d="M4 5.5L7 8.5L10 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -110,7 +127,25 @@ const {
       ))}
     </nav>
 
-    <!-- Right: search launcher (opens SearchHub modal) -->
+    <!-- Right actions — order matches HA: +, Search, Assist -->
+
+    <!-- + New task button -->
+    {showNewTask && (
+      <button
+        type="button"
+        class="unified-bar__new-task-btn"
+        id="unified-bar-new-task"
+        title={newTaskLabel}
+        aria-label={newTaskLabel}
+      >
+        <svg class="unified-bar__new-task-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <span class="unified-bar__new-task-label">{newTaskLabel}</span>
+      </button>
+    )}
+
+    <!-- Search launcher (opens SearchHub modal) -->
     {showSearch && (
       <button
         type="button"
@@ -128,7 +163,7 @@ const {
       </button>
     )}
 
-    <!-- AI assistant button -->
+    <!-- Assist (AI) button -->
     {showAiButton && (
       <button
         type="button"
@@ -390,6 +425,58 @@ const {
   .unified-bar__ai-btn:hover {
     color: var(--accent);
     background: var(--accent-6-bg);
+  }
+
+  /* ─── Title icon ─── */
+  .unified-bar__title-icon {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .unified-bar__title-icon-emoji {
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  /* ─── + New Task button ─── */
+  .unified-bar__new-task-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+    transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  }
+  .unified-bar__new-task-btn:hover {
+    border-color: var(--accent-50-border);
+    color: var(--accent);
+    background: var(--accent-6-bg);
+  }
+  .unified-bar__new-task-btn:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+    outline: none;
+  }
+  .unified-bar__new-task-icon {
+    flex-shrink: 0;
+  }
+  .unified-bar__new-task-label {
+    display: none;
+  }
+  /* Only show label text on wide monitors (1100px+) */
+  @media (min-width: 1100px) {
+    .unified-bar__new-task-label {
+      display: inline;
+    }
   }
 
   /* ─── Responsive ─── */

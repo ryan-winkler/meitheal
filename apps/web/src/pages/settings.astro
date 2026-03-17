@@ -23,6 +23,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
   <UnifiedBar
     title={t("settings.title", locale)}
+    titleIcon="gear"
     tabs={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
     searchPlaceholder="Search settings…"
     searchScope="settings"
