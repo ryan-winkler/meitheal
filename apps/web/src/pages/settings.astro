@@ -350,7 +350,8 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     padding: 6px 0;
     border-bottom: 1px solid var(--border);
   }
-  /* JS-driven fixed mode for HA ingress where CSS sticky fails */
+  /* JS-driven fixed mode for HA ingress where CSS sticky fails.
+     JS handles sidebar offset via left position — see initStickyTabBar(). */
   .settings-shell__summary-surface.is-fixed {
     z-index: 100;
     background: color-mix(in srgb, var(--bg-main) 95%, transparent);
@@ -358,15 +359,6 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     -webkit-backdrop-filter: blur(12px);
     padding: 6px 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,.15);
-  }
-  @media (min-width: 768px) {
-    .settings-shell__summary-surface.is-fixed {
-      /* Offset for sidebar width when not collapsed */
-      padding-left: calc(var(--sidebar-width, 220px) + 16px);
-    }
-    body.sidebar-collapsed .settings-shell__summary-surface.is-fixed {
-      padding-left: 16px;
-    }
   }
   .settings-shell__summary {
     display: flex;

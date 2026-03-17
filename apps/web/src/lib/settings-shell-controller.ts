@@ -400,7 +400,11 @@ function syncActiveSectionFromHash(): void {
  * iframes because the parent HA shell controls scrolling, not the addon
  * body. This uses IntersectionObserver on the hero section to detect
  * when tabs should stick. When the hero scrolls out, the tab surface
- * switches to position:fixed and a spacer prevents layout jump. */
+ * switches to position:fixed and a spacer prevents layout jump.
+ *
+ * The fixed bar must respect the sidebar width on desktop viewports
+ * to avoid covering the sidebar and logo. On mobile or when the sidebar
+ * is collapsed, it spans the full width. */
 function initStickyTabBar(): void {
   const hero = document.querySelector<HTMLElement>(".settings-shell__hero")
   const surface = document.getElementById("quick-jumps-surface") as HTMLElement | null
@@ -412,37 +416,80 @@ function initStickyTabBar(): void {
   spacer.setAttribute("aria-hidden", "true")
   surface.parentNode?.insertBefore(spacer, surface.nextSibling)
 
+  /** Calculate the sidebar offset for the fixed tab bar.
+   *  Returns 0 on mobile (<768px) or when sidebar is collapsed. */
+  function getSidebarOffset(): number {
+    if (window.innerWidth < 768) return 0
+    if (document.body.classList.contains("sidebar-collapsed")) return 0
+    const sidebar = document.querySelector<HTMLElement>(".sidebar")
+    return sidebar ? sidebar.offsetWidth : 240
+  }
+
+  /** Apply or update the fixed position of the tab surface.
+   *  Sits below the TopNavigation (search bar) and to the right of the sidebar. */
+  function applyFixedPosition(): void {
+    const sidebarOffset = getSidebarOffset()
+    /* Measure the topbar so the tab bar sits below it, not on top of it.
+       TopNavigation is sticky top-0 z-30 inside .main-content. */
+    const topbar = document.querySelector<HTMLElement>(".topbar")
+    const topOffset = topbar ? topbar.getBoundingClientRect().bottom : 0
+    const rect = surface!.getBoundingClientRect()
+    spacer.style.display = "block"
+    spacer.style.height = `${rect.height}px`
+    surface!.style.position = "fixed"
+    surface!.style.top = `${topOffset}px`
+    surface!.style.left = `${sidebarOffset}px`
+    surface!.style.right = "0"
+    surface!.style.width = ""
+    surface!.classList.add("is-fixed")
+  }
+
+  function clearFixedPosition(): void {
+    spacer.style.display = "none"
+    surface!.style.position = ""
+    surface!.style.top = ""
+    surface!.style.left = ""
+    surface!.style.right = ""
+    surface!.style.width = ""
+    surface!.classList.remove("is-fixed")
+  }
+
+  let isFixed = false
+
   const observer = new IntersectionObserver(
     (entries) => {
       const heroVisible = entries[0]?.isIntersecting ?? true
-      if (!heroVisible) {
-        /* Hero scrolled out — fix the tab bar to top */
-        const rect = surface.getBoundingClientRect()
-        spacer.style.display = "block"
-        spacer.style.height = `${rect.height}px`
-        surface.style.position = "fixed"
-        surface.style.top = "0"
-        surface.style.left = "0"
-        surface.style.right = "0"
-        surface.style.width = "100%"
-        surface.classList.add("is-fixed")
-      } else {
-        /* Hero visible — restore normal flow */
-        spacer.style.display = "none"
-        surface.style.position = ""
-        surface.style.top = ""
-        surface.style.left = ""
-        surface.style.right = ""
-        surface.style.width = ""
-        surface.classList.remove("is-fixed")
+      if (!heroVisible && !isFixed) {
+        isFixed = true
+        applyFixedPosition()
+      } else if (heroVisible && isFixed) {
+        isFixed = false
+        clearFixedPosition()
       }
     },
     { threshold: 0 },
   )
 
+  /* Re-calculate offset on resize (sidebar may collapse at breakpoints) */
+  function onResize(): void {
+    if (isFixed) applyFixedPosition()
+  }
+  window.addEventListener("resize", onResize)
+
+  /* Watch for sidebar collapse toggle via class changes on body */
+  const bodyObserver = new MutationObserver(() => {
+    if (isFixed) applyFixedPosition()
+  })
+  bodyObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ["class"],
+  })
+
   observer.observe(hero)
   pageLifecycle.signal.addEventListener("abort", () => {
     observer.disconnect()
+    bodyObserver.disconnect()
+    window.removeEventListener("resize", onResize)
     spacer.remove()
   }, { once: true })
 }
