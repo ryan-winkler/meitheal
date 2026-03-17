@@ -188,15 +188,16 @@ const {
   .unified-bar {
     position: sticky;
     top: 0;
-    z-index: 30;
+    z-index: 35;
     display: flex;
     align-items: center;
     padding: 0 24px;
     min-height: 56px;
-    background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+    background: color-mix(in srgb, var(--bg-primary) 95%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
   }
   @supports not (backdrop-filter: blur(1px)) {
     .unified-bar {
@@ -490,20 +491,8 @@ const {
     .unified-bar__switcher-label { font-size: 16px; }
   }
 
-  /* JS-driven fixed mode for HA ingress */
-  .unified-bar.is-fixed {
-    position: fixed;
-    z-index: 35;
-    background: color-mix(in srgb, var(--bg-primary) 95%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    box-shadow: 0 1px 4px rgba(0,0,0,.15);
-  }
-  @supports not (backdrop-filter: blur(1px)) {
-    .unified-bar.is-fixed {
-      background: var(--bg-primary);
-    }
-  }
+  /* .is-fixed CSS REMOVED — sticky is now always active from CSS.
+   * Box-shadow and enhanced bg are merged into base .unified-bar above. */
 
   /* Hidden by tab overflow controller */
   .unified-bar__tab[data-overflow-hidden] {

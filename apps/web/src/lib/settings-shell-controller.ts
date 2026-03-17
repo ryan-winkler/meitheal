@@ -253,85 +253,12 @@ function syncActiveSectionFromHash(): void {
  * iframes because the parent HA shell controls scrolling, not the addon
  * body. Uses IntersectionObserver on the first content section to detect
  * when the bar should fix. */
-function initStickyTabBar(): void {
-  const bar = document.getElementById("settings-bar") as HTMLElement | null
-  if (!bar) return
-
-  const firstSection = document.querySelector<HTMLElement>("[data-settings-shell-section]")
-  if (!firstSection) return
-
-  const spacer = document.createElement("div")
-  spacer.style.cssText = "display:none;width:100%;"
-  spacer.setAttribute("aria-hidden", "true")
-  bar.parentNode?.insertBefore(spacer, bar.nextSibling)
-
-  function getSidebarOffset(): number {
-    if (window.innerWidth < 768) return 0
-    if (document.body.classList.contains("sidebar-collapsed")) return 48
-    const sidebar = document.querySelector<HTMLElement>(".sidebar")
-    return sidebar ? sidebar.offsetWidth : 240
-  }
-
-  function applyFixedPosition(): void {
-    const sidebarOffset = getSidebarOffset()
-    const rect = bar!.getBoundingClientRect()
-    spacer.style.display = "block"
-    spacer.style.height = `${rect.height}px`
-    bar!.style.position = "fixed"
-    bar!.style.top = "0"
-    bar!.style.left = `${sidebarOffset}px`
-    bar!.style.right = "0"
-    bar!.style.width = ""
-    bar!.classList.add("is-fixed")
-  }
-
-  function clearFixedPosition(): void {
-    spacer.style.display = "none"
-    bar!.style.position = ""
-    bar!.style.top = ""
-    bar!.style.left = ""
-    bar!.style.right = ""
-    bar!.style.width = ""
-    bar!.classList.remove("is-fixed")
-  }
-
-  let isFixed = false
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const sectionVisible = entries[0]?.isIntersecting ?? true
-      if (!sectionVisible && !isFixed) {
-        isFixed = true
-        applyFixedPosition()
-      } else if (sectionVisible && isFixed) {
-        isFixed = false
-        clearFixedPosition()
-      }
-    },
-    { threshold: 0, rootMargin: "-60px 0px 0px 0px" },
-  )
-
-  function onResize(): void {
-    if (isFixed) applyFixedPosition()
-  }
-  window.addEventListener("resize", onResize)
-
-  const bodyObserver = new MutationObserver(() => {
-    if (isFixed) applyFixedPosition()
-  })
-  bodyObserver.observe(document.body, {
-    attributes: true,
-    attributeFilter: ["class"],
-  })
-
-  observer.observe(firstSection)
-  pageLifecycle.signal.addEventListener("abort", () => {
-    observer.disconnect()
-    bodyObserver.disconnect()
-    window.removeEventListener("resize", onResize)
-    spacer.remove()
-  }, { once: true })
-}
+/* initStickyTabBar REMOVED — CSS `position: sticky; top: 0` on .unified-bar
+ * handles sticky behavior correctly without JS intervention.
+ * The old JS used IntersectionObserver + rootMargin: -60px which delayed
+ * sticky engagement until you scrolled past the first section.
+ * `.main-content` uses `overflow-x: clip` (not `hidden`) so sticky works
+ * at the viewport level without creating a nested scroll context. */
 
 /** Title switcher — the page title acts as a dropdown trigger showing ALL
  *  sections. Replaces both the old hamburger and overflow concepts. */
@@ -569,7 +496,7 @@ export function initSettingsShell(): void {
   initSectionLinks()
   initIntersectionTracking()
   initCompanionLinks()
-  initStickyTabBar()
+  // initStickyTabBar removed — CSS sticky handles this (see above)
   initTitleSwitcher()
   initSearchLauncher()
   initNewTaskButton()
