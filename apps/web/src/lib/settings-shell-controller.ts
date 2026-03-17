@@ -28,6 +28,10 @@ function scrollToAnchor(anchorId: string, behavior: ScrollBehavior = "smooth"): 
   if (sectionId) {
     updateActiveSectionState(sectionId)
   }
+
+  /* Brief highlight flash to orient user after deep-link navigation */
+  target.classList.add("settings-landing-flash")
+  setTimeout(() => target.classList.remove("settings-landing-flash"), 1200)
 }
 
 function resolveSectionId(anchorId: string): SettingsSectionId | null {
@@ -56,6 +60,9 @@ function updateActiveSectionState(sectionId: SettingsSectionId): void {
 
       link.classList.toggle("is-active", active)
       link.setAttribute("aria-current", active ? "location" : "false")
+      /* ARIA tab state sync */
+      link.setAttribute("aria-selected", active ? "true" : "false")
+      link.setAttribute("tabindex", active ? "0" : "-1")
     })
 }
 
@@ -393,16 +400,28 @@ function initGoToTop(): void {
   const btn = document.getElementById("settings-go-top")
   if (!btn) return
 
-  const threshold = 400
-
-  const updateVisibility = (): void => {
-    const past = window.scrollY > threshold
-    btn.classList.toggle("is-visible", past)
-    btn.hidden = !past
+  /* Use IntersectionObserver on a sentinel element instead of scroll listener.
+   * The sentinel is positioned 400px from the top — when it scrolls out of
+   * view, the FAB becomes visible. Zero scroll-event overhead. */
+  const sentinel = document.createElement("div")
+  sentinel.setAttribute("aria-hidden", "true")
+  sentinel.style.cssText = "position:absolute;top:400px;width:1px;height:1px;pointer-events:none;"
+  const shell = document.getElementById("settings-shell")
+  if (shell) {
+    shell.style.position = "relative"
+    shell.appendChild(sentinel)
   }
 
-  pageLifecycle.on(window, "scroll", updateVisibility, { passive: true })
-  updateVisibility()
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const isAboveFold = entries[0]?.isIntersecting ?? true
+      btn.classList.toggle("is-visible", !isAboveFold)
+      btn.hidden = isAboveFold
+    },
+    { threshold: 0 },
+  )
+  observer.observe(sentinel)
+  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
 
   pageLifecycle.on(btn, "click", () => {
     history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
@@ -461,6 +480,50 @@ export function initSettingsShell(): void {
           updateActiveSectionState(activeSectionId)
         }
       }, 200)
+    })
+  }
+
+  /* ARIA tablist: scroll active tab into view and add arrow key navigation */
+  const tabContainer = document.querySelector(".settings-shell__summary")
+  if (tabContainer) {
+    tabContainer.setAttribute("role", "tablist")
+    tabContainer.setAttribute("aria-label", "Settings sections")
+
+    const tabs = tabContainer.querySelectorAll<HTMLElement>(".settings-tab")
+    tabs.forEach((tab) => {
+      tab.setAttribute("role", "tab")
+      const isActive = tab.classList.contains("is-active")
+      tab.setAttribute("aria-selected", isActive ? "true" : "false")
+      tab.setAttribute("tabindex", isActive ? "0" : "-1")
+    })
+
+    /* Scroll active tab into view on init (for narrow viewports) */
+    const activeTab = tabContainer.querySelector<HTMLElement>(".settings-tab.is-active")
+    if (activeTab) {
+      requestAnimationFrame(() => {
+        activeTab.scrollIntoView({ inline: "center", behavior: "auto", block: "nearest" })
+      })
+    }
+
+    /* Arrow key navigation per ARIA tablist pattern */
+    pageLifecycle.on(tabContainer, "keydown", (event) => {
+      const e = event as KeyboardEvent
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+
+      const currentTabs = Array.from(
+        tabContainer.querySelectorAll<HTMLElement>(".settings-tab"),
+      )
+      const currentIndex = currentTabs.findIndex((t) => t === document.activeElement)
+      if (currentIndex === -1) return
+
+      e.preventDefault()
+      const direction = e.key === "ArrowRight" ? 1 : -1
+      const nextIndex = (currentIndex + direction + currentTabs.length) % currentTabs.length
+      const nextTab = currentTabs[nextIndex]
+      if (nextTab) {
+        nextTab.focus()
+        nextTab.click()
+      }
     })
   }
 
