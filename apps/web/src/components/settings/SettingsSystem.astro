@@ -278,6 +278,86 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
       </div>
     </SettingsPanelCard>
 
+    <!-- Help & Support -->
+    <SettingsPanelCard
+      title="Help & Support"
+      subtitle="Documentation, guides, and community resources."
+    >
+      <div
+        style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
+      >
+        <SettingsDisclosure title="📖 Getting Started" open={true}>
+            <p style="margin: 0 0 8px 0;">
+              <strong>Meitheal</strong> is a local-first task and life management
+              engine built for Home Assistant. Your data lives on your device. No
+              cloud required.
+            </p>
+            <ul style="margin: 0; padding-left: 20px; line-height: 2;">
+              <li>
+                Create tasks with <kbd
+                  style="font-size: 11px; padding: 1px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px;"
+                  >n</kbd
+                > or the + button
+              </li>
+              <li>Switch views: Kanban, Table, Calendar, Today, Upcoming</li>
+              <li>Drag and drop to reorder, prioritize, and schedule</li>
+              <li>
+                Configure integrations (Calendar, Todo, Grocy) in the
+                Integrations tab
+              </li>
+              <li>All data is exportable as JSON, CSV, or raw SQLite</li>
+            </ul>
+        </SettingsDisclosure>
+        <SettingsDisclosure title="🏗️ Architecture">
+            <p style="margin: 0 0 8px 0;">Meitheal is built with:</p>
+            <ul style="margin: 0; padding-left: 20px; line-height: 2;">
+              <li><strong>Astro</strong> for SSR and static generation</li>
+              <li>
+                <strong>SQLite</strong> (better-sqlite3) for local-first persistence
+              </li>
+              <li>
+                <strong>Home Assistant WebSocket API</strong> for calendar and todo
+                sync
+              </li>
+              <li>
+                <strong>Service Worker</strong> for offline caching (requires HTTPS)
+              </li>
+              <li>
+                <strong>Domain-Driven Design</strong> with bounded contexts per feature
+              </li>
+            </ul>
+        </SettingsDisclosure>
+      </div>
+      <SettingsActionRow
+        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
+      >
+        <a
+          href="https://github.com/Coolock-Village/meitheal#readme"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-secondary"
+          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+          >📄 Full README</a
+        >
+        <a
+          href="https://github.com/Coolock-Village/meitheal/wiki"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-secondary"
+          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+          >📚 Wiki</a
+        >
+        <a
+          href="https://github.com/Coolock-Village/meitheal/blob/main/CHANGELOG.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-secondary"
+          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+          >📋 Changelog</a
+        >
+      </SettingsActionRow>
+    </SettingsPanelCard>
+
     </div>
   </section>
 
@@ -631,85 +711,6 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
       </SettingsActionRow>
     </SettingsPanelCard>
 
-    <!-- Help & Support -->
-    <SettingsPanelCard
-      title="Help & Support"
-      subtitle="Documentation, guides, and community resources."
-    >
-      <div
-        style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
-      >
-        <SettingsDisclosure title="📖 Getting Started" open={true}>
-            <p style="margin: 0 0 8px 0;">
-              <strong>Meitheal</strong> is a local-first task and life management
-              engine built for Home Assistant. Your data lives on your device. No
-              cloud required.
-            </p>
-            <ul style="margin: 0; padding-left: 20px; line-height: 2;">
-              <li>
-                Create tasks with <kbd
-                  style="font-size: 11px; padding: 1px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px;"
-                  >n</kbd
-                > or the + button
-              </li>
-              <li>Switch views: Kanban, Table, Calendar, Today, Upcoming</li>
-              <li>Drag and drop to reorder, prioritize, and schedule</li>
-              <li>
-                Configure integrations (Calendar, Todo, Grocy) in the
-                Integrations tab
-              </li>
-              <li>All data is exportable as JSON, CSV, or raw SQLite</li>
-            </ul>
-        </SettingsDisclosure>
-        <SettingsDisclosure title="🏗️ Architecture">
-            <p style="margin: 0 0 8px 0;">Meitheal is built with:</p>
-            <ul style="margin: 0; padding-left: 20px; line-height: 2;">
-              <li><strong>Astro</strong> for SSR and static generation</li>
-              <li>
-                <strong>SQLite</strong> (better-sqlite3) for local-first persistence
-              </li>
-              <li>
-                <strong>Home Assistant WebSocket API</strong> for calendar and todo
-                sync
-              </li>
-              <li>
-                <strong>Service Worker</strong> for offline caching (requires HTTPS)
-              </li>
-              <li>
-                <strong>Domain-Driven Design</strong> with bounded contexts per feature
-              </li>
-            </ul>
-        </SettingsDisclosure>
-      </div>
-      <SettingsActionRow
-        style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
-      >
-        <a
-          href="https://github.com/Coolock-Village/meitheal#readme"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-secondary"
-          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-          >📄 Full README</a
-        >
-        <a
-          href="https://github.com/Coolock-Village/meitheal/wiki"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-secondary"
-          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-          >📚 Wiki</a
-        >
-        <a
-          href="https://github.com/Coolock-Village/meitheal/blob/main/CHANGELOG.md"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-secondary"
-          style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-          >📋 Changelog</a
-        >
-      </SettingsActionRow>
-    </SettingsPanelCard>
     </div>
   </section>
 

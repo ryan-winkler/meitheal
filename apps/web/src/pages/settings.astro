@@ -5,7 +5,6 @@ import SettingsIntegrations from "../components/settings/SettingsIntegrations.as
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
 import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
-import SettingsSummaryCard from "../components/settings/SettingsSummaryCard.astro"
 import SettingsSystem from "../components/settings/SettingsSystem.astro"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
@@ -24,59 +23,105 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   <span slot="page-title">{t("settings.title", locale)}</span>
 
   <div id="settings-shell" class="settings-shell">
-    <section class="card settings-shell__hero">
-      <div class="settings-shell__hero-copy">
-        <span class="settings-shell__eyebrow">Home Assistant-native settings</span>
-        <h2 class="settings-shell__title">Personal, workflow, and platform controls in one place</h2>
-        <p class="settings-shell__description">
-          Search for a setting, jump directly to a section, and keep companion,
-          PWA, and integration actions ingress-safe with hash links.
-        </p>
-      </div>
-
-      <div class="settings-shell__search">
-        <label class="form-label" for="settings-search-input">Find a setting</label>
-        <div class="settings-shell__search-input-row">
-          <input
-            id="settings-search-input"
-            class="form-input"
-            type="search"
-            placeholder="Theme, labels, calendar sync, companion links…"
-            autocomplete="off"
-          />
-          <button
-            id="settings-search-clear"
-            class="settings-shell__search-clear"
-            type="button"
-            hidden
-          >
-            Clear
-          </button>
-        </div>
-        <p class="settings-shell__search-hint">
-          Search by section, setting, or integration. Press <kbd>Enter</kbd> to jump and
-          <kbd>Esc</kbd> to reset.
-        </p>
-        <div
-          id="settings-search-results"
-          class="settings-search-results"
-          role="listbox"
-          hidden
-          aria-live="polite"
-        >
-        </div>
-      </div>
-    </section>
-
+    <!-- Zendesk-style unified nav bar -->
     <section class="settings-shell__surface settings-shell__summary-surface" id="quick-jumps-surface">
-      <div class="settings-shell__summary">
-        {SETTINGS_SECTIONS.map((section) => (
-          <SettingsSummaryCard section={section} />
-        ))}
+      <div class="settings-shell__nav">
+        <!-- Left: Section switcher dropdown -->
+        <div class="settings-nav__switcher" id="settings-section-switcher">
+          <button
+            type="button"
+            class="settings-nav__switcher-btn"
+            id="settings-switcher-btn"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-label="Switch settings section"
+          >
+            <span class="settings-nav__switcher-icon" id="settings-switcher-icon" aria-hidden="true">🎨</span>
+            <span class="settings-nav__switcher-label" id="settings-switcher-label">Personal</span>
+            <svg class="settings-nav__switcher-chevron" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+          </button>
+          <div class="settings-nav__switcher-dropdown" id="settings-switcher-dropdown" role="menu" aria-label="Settings sections">
+            {SETTINGS_SECTIONS.map((section) => (
+              <button
+                type="button"
+                class="settings-nav__switcher-item"
+                role="menuitem"
+                data-section-id={section.id}
+                data-section-icon={section.icon}
+                data-section-label={section.label}
+              >
+                <span class="settings-nav__switcher-item-icon" aria-hidden="true">{section.icon}</span>
+                <span class="settings-nav__switcher-item-label">{section.label}</span>
+                <span class="settings-nav__switcher-item-status">{section.statusLabel}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Middle: Visible tab pills -->
+        <div class="settings-nav__tabs" id="settings-nav-tabs">
+          {SETTINGS_SECTIONS.map((section) => (
+            <a
+              class="settings-tab"
+              href={`#${section.id}`}
+              data-settings-section-link
+              data-settings-summary={section.id}
+              role="tab"
+            >
+              <span class="settings-tab__icon" aria-hidden="true">{section.icon}</span>
+              <span class="settings-tab__label">{section.label}</span>
+            </a>
+          ))}
+        </div>
+
+        <!-- Right: Expandable search -->
+        <div class="settings-nav__search" id="settings-nav-search">
+          <button
+            type="button"
+            class="settings-nav__search-trigger"
+            id="settings-search-trigger"
+            aria-label="Search settings"
+            aria-expanded="false"
+            title="Search settings (/)"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="7" cy="7" r="5"/>
+              <path d="M11 11L14 14" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <div class="settings-nav__search-expand" id="settings-search-expand">
+            <input
+              id="settings-search-input"
+              class="settings-nav__search-input"
+              type="search"
+              placeholder="Search settings…"
+              autocomplete="off"
+            />
+            <button
+              id="settings-search-clear"
+              class="settings-nav__search-clear"
+              type="button"
+              hidden
+              aria-label="Clear search"
+            >×</button>
+          </div>
+          <div
+            id="settings-search-results"
+            class="settings-search-results"
+            role="listbox"
+            hidden
+            aria-live="polite"
+          >
+          </div>
+        </div>
       </div>
     </section>
 
     <div class="settings-shell__content">
+
+      <SettingsSystem locale={locale} />
 
       <section
         id="workflow-settings"
@@ -114,8 +159,6 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
         <SettingsSectionIntro section={automationAiSection} />
         <SettingsAgents locale={locale} />
       </section>
-
-      <SettingsSystem locale={locale} />
     </div>
   </div>
 
@@ -155,121 +198,263 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   .settings-shell:not(.is-detail-view) .settings-shell__mobile-nav {
     display: none;
   }
-  .settings-shell.is-detail-view .settings-shell__hero,
-  .settings-shell.is-detail-view .settings-shell__search {
-    display: none;
-  }
-  .settings-shell__hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
-    gap: 20px;
-    padding: 24px;
-    border-radius: 22px;
-    max-width: 1200px;        /* #40: constrain hero width at 2560px */
-    margin: 0 auto;
-    width: 100%;
-    background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 14%, transparent), transparent 30%),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 94%, white), var(--bg-card));
-  }
-  .settings-shell__hero-copy {
+  /* — Zendesk-style nav bar — */
+  .settings-shell__nav {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  /* #17: Reduced visual weight — eyebrow is contextual, not dominant */
-  .settings-shell__eyebrow {
-    display: inline-flex;
-    width: fit-content;
-    padding: 4px 8px;
-    border-radius: 999px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--accent) 78%, var(--text-secondary));
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
-  }
-  .settings-shell__title {
-    margin: 0;
-    font-size: clamp(1.8rem, 3vw, 2.5rem);
-    line-height: 1.05;
-  }
-  .settings-shell__description {
-    margin: 0;
-    max-width: 62ch;
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 1.6;
-  }
-  .settings-shell__search {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 18px;
-    border: 1px solid color-mix(in srgb, var(--border) 75%, var(--accent));
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
-  }
-  .settings-shell__search-input-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
     align-items: center;
+    gap: 6px;
+    padding: 0 2px 2px 2px;
+    min-height: 52px;
   }
-  .settings-shell__search-clear {
-    min-height: 42px;
-    padding: 0 14px;
+  /* — Section Switcher (left) — */
+  .settings-nav__switcher {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .settings-nav__switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    min-height: 40px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 160ms ease, border-color 160ms ease;
+  }
+  .settings-nav__switcher-btn:hover {
+    background: var(--accent-6-bg);
+    border-color: var(--border);
+  }
+  .settings-nav__switcher-btn[aria-expanded="true"] {
+    background: var(--accent-6-bg);
+    border-color: var(--accent-50-border);
+  }
+  .settings-nav__switcher-icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+  .settings-nav__switcher-label {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .settings-nav__switcher-chevron {
+    transition: transform 200ms ease;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+  }
+  .settings-nav__switcher-btn[aria-expanded="true"] .settings-nav__switcher-chevron {
+    transform: rotate(180deg);
+  }
+  /* — Switcher dropdown — */
+  .settings-nav__switcher-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 240px;
+    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    padding: 4px;
+    z-index: 50;
+    animation: settings-dropdown-in 120ms ease-out;
   }
-  .settings-shell__search-clear:hover,
-  .settings-shell__search-clear:focus-visible {
-    border-color: color-mix(in srgb, var(--accent) 75%, var(--border));
-    color: var(--text-primary);
-  }
-  .settings-shell__search-hint {
-    margin: -2px 0 0;
-    color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .settings-search-results {
+  .settings-nav__switcher-dropdown.is-open {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    max-height: 280px;
+  }
+  .settings-nav__switcher-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .settings-nav__switcher-item:hover {
+    background: var(--accent-6-bg);
+    color: var(--text-primary);
+  }
+  .settings-nav__switcher-item.is-active {
+    background: var(--accent-12-bg);
+    color: var(--accent);
+  }
+  .settings-nav__switcher-item-icon {
+    font-size: 15px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .settings-nav__switcher-item-label {
+    flex: 1 1 auto;
+  }
+  .settings-nav__switcher-item-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  /* — Visible tab pills (middle) — */
+  .settings-nav__tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1 1 auto;
+    overflow: hidden;
+    align-items: center;
+  }
+  /* — Expandable search (right) — */
+  .settings-nav__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .settings-nav__search-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+    flex-shrink: 0;
+  }
+  .settings-nav__search-trigger:hover {
+    background: var(--accent-6-bg);
+    border-color: var(--border);
+    color: var(--text-primary);
+  }
+  .settings-nav__search-trigger[aria-expanded="true"] {
+    background: var(--accent-6-bg);
+    border-color: var(--accent-50-border);
+    color: var(--accent);
+  }
+  /* Hide search trigger icon when search is expanded */
+  .settings-nav__search.is-expanded .settings-nav__search-trigger {
+    display: none;
+  }
+  .settings-nav__search-expand {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    animation: search-expand-in 200ms ease-out;
+  }
+  .settings-nav__search.is-expanded .settings-nav__search-expand {
+    display: flex;
+  }
+  @keyframes search-expand-in {
+    from { opacity: 0; width: 0; }
+    to { opacity: 1; width: 240px; }
+  }
+  .settings-nav__search-input {
+    width: 240px;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--accent-50-border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .settings-nav__search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .settings-nav__search-input::placeholder {
+    color: var(--text-muted);
+  }
+  .settings-nav__search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 150ms ease, color 150ms ease;
+  }
+  .settings-nav__search-clear:hover {
+    border-color: var(--accent-50-border);
+    color: var(--text-primary);
+  }
+  /* — Search results dropdown — */
+  .settings-search-results {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 320px;
+    max-height: 340px;
     overflow-y: auto;
+    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    padding: 4px;
+    z-index: 50;
+    animation: settings-dropdown-in 120ms ease-out;
+  }
+  .settings-search-results:not([hidden]) {
+    display: flex;
+  }
+  @keyframes settings-dropdown-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
   .settings-search-results__item {
     display: flex;
     flex-direction: column;
     gap: 4px;
     width: 100%;
-    padding: 12px 14px;
+    padding: 10px 12px;
     text-align: left;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
     color: var(--text-primary);
     cursor: pointer;
-    transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .settings-search-results__item:hover,
+  .settings-search-results__item.is-active {
+    background: var(--accent-6-bg);
+    color: var(--text-primary);
   }
   .settings-search-results__item.is-active {
-    border-color: color-mix(in srgb, var(--accent) 78%, var(--border));
-    background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 10%);
-    box-shadow: 0 10px 24px rgba(5, 10, 25, 0.12);
-  }
-  .settings-search-results__item:hover {
-    transform: translateY(-1px);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 8%);
+    background: var(--accent-12-bg);
   }
   .settings-search-results__meta {
     display: flex;
@@ -281,10 +466,10 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   .settings-search-results__section {
     display: inline-flex;
     align-items: center;
-    min-height: 22px;
-    padding: 0 8px;
+    min-height: 20px;
+    padding: 0 6px;
     border-radius: 999px;
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1;
   }
   .settings-search-results__type {
@@ -302,45 +487,29 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     line-height: 1.55;
   }
   .settings-search-results__empty {
-    padding: 14px;
-    border: 1px dashed var(--border);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+    padding: 12px;
+    text-align: center;
   }
-  .settings-shell__surface {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  /* — Responsive: mobile — */
+  @media (max-width: 640px) {
+    .settings-nav__tabs {
+      display: none;
+    }
+    .settings-nav__search-input {
+      width: 180px;
+    }
+    .settings-nav__switcher-label {
+      display: none; /* icon-only on small screens */
+    }
   }
-  .settings-shell__surface--sidebar {
-    gap: 10px;
-  }
-  .settings-shell__surface-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 16px;
-  }
-  .settings-shell__surface-header h2 {
-    margin: 2px 0 0;
-    font-size: 18px;
-  }
-  .settings-shell__surface-header p {
-    margin: 0;
-    max-width: 44ch;
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.55;
-  }
-  .settings-shell__surface-header--compact h2 {
-    font-size: 15px;
-  }
-  .settings-shell__surface-eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--accent);
+  @media (prefers-reduced-motion: reduce) {
+    .settings-nav__switcher-chevron,
+    .settings-nav__search-expand,
+    .settings-nav__switcher-dropdown,
+    .settings-search-results {
+      animation: none;
+      transition: none;
+    }
   }
   .settings-shell__summary-surface {
     position: sticky;
@@ -350,11 +519,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     padding: 6px 0;
     border-bottom: 1px solid var(--border);
   }
-  /* JS-driven fixed mode for HA ingress where CSS sticky fails.
-     JS handles sidebar offset via left position — see initStickyTabBar().
-     z-index 35 sits above content but below sidebar (z-40) and never
-     covers the TopNavigation search bar (z-30) — topbar height used
-     as top offset in JS. */
+  /* JS-driven fixed mode for HA ingress where CSS sticky fails */
   .settings-shell__summary-surface.is-fixed {
     z-index: 35;
     background: color-mix(in srgb, var(--bg-main) 95%, transparent);
@@ -362,95 +527,6 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     -webkit-backdrop-filter: blur(12px);
     padding: 6px 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,.15);
-  }
-  /* — Overflow "More" dropdown for tabs that don't fit — */
-  :global(.settings-overflow-btn) {
-    display: none; /* JS shows when tabs overflow */
-    align-items: center;
-    gap: 4px;
-    padding: 10px 14px;
-    min-height: 44px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    flex-shrink: 0;
-    white-space: nowrap;
-    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    /* position:relative removed — wrapper div handles dropdown positioning */
-  }
-  :global(.settings-overflow-btn.is-visible) {
-    display: flex;
-  }
-  :global(.settings-overflow-btn:hover) {
-    background: var(--accent-6-bg);
-    border-color: var(--border);
-    color: var(--text-primary);
-  }
-  :global(.settings-overflow-btn[aria-expanded="true"]) {
-    background: var(--accent-6-bg);
-    border-color: var(--accent-50-border);
-    color: var(--accent);
-  }
-  :global(.settings-overflow-dropdown) {
-    display: none;
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 200px;
-    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    padding: 4px;
-    z-index: 50;
-    animation: settings-dropdown-in 120ms ease-out;
-  }
-  @keyframes settings-dropdown-in {
-    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-  :global(.settings-overflow-dropdown.is-open) {
-    display: block;
-  }
-  :global(.settings-overflow-item) {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px 14px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: left;
-    white-space: nowrap;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  :global(.settings-overflow-item:hover) {
-    background: var(--accent-6-bg);
-    color: var(--text-primary);
-  }
-  :global(.settings-overflow-item.is-active) {
-    background: var(--accent-12-bg);
-    color: var(--accent);
-  }
-  .settings-shell__summary {
-    display: flex;
-    gap: 6px;
-    overflow: hidden; /* Dynamic overflow tabs JS handles visibility — no hidden scroll */
-    flex-wrap: nowrap;
-    align-items: center;
-    padding: 0 2px 2px 2px;
   }
   /* — Color-mix CSS custom properties (pre-computed for paint perf) — */
   :root {

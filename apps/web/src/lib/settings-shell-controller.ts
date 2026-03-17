@@ -64,6 +64,12 @@ function updateActiveSectionState(sectionId: SettingsSectionId): void {
       link.setAttribute("aria-selected", active ? "true" : "false")
       link.setAttribute("tabindex", active ? "0" : "-1")
     })
+
+  /* Update section switcher display if initialized */
+  const updater = (window as Record<string, unknown>).__updateSwitcherDisplay as
+    | ((id: string) => void)
+    | undefined
+  if (updater) updater(sectionId)
 }
 
 function syncSummaryStatuses(): void {
@@ -145,6 +151,13 @@ function clearSearchState(): void {
   if (results) results.hidden = true
   if (results) results.innerHTML = ""
   if (clearButton) clearButton.hidden = true
+
+  /* Collapse expandable search back to icon */
+  const searchContainer = document.getElementById("settings-nav-search")
+  if (searchContainer) searchContainer.classList.remove("is-expanded")
+  const searchTrigger = document.getElementById("settings-search-trigger")
+  if (searchTrigger) searchTrigger.setAttribute("aria-expanded", "false")
+
   revealAllSections()
 }
 
@@ -398,17 +411,16 @@ function syncActiveSectionFromHash(): void {
 
 /** Sticky tab bar fallback — CSS position:sticky breaks in HA ingress
  * iframes because the parent HA shell controls scrolling, not the addon
- * body. This uses IntersectionObserver on the hero section to detect
- * when tabs should stick. When the hero scrolls out, the tab surface
- * switches to position:fixed and a spacer prevents layout jump.
- *
- * The fixed bar must respect the sidebar width on desktop viewports
- * to avoid covering the sidebar and logo. On mobile or when the sidebar
- * is collapsed, it spans the full width. */
+ * body. Uses IntersectionObserver on the first content section to detect
+ * when the nav bar should fix. */
 function initStickyTabBar(): void {
-  const hero = document.querySelector<HTMLElement>(".settings-shell__hero")
   const surface = document.getElementById("quick-jumps-surface") as HTMLElement | null
-  if (!hero || !surface) return
+  if (!surface) return
+
+  /* Use the first content section as the sentinel — when it starts scrolling
+     out of view, the nav bar should become fixed */
+  const firstSection = document.querySelector<HTMLElement>("[data-settings-shell-section]")
+  if (!firstSection) return
 
   /* Create spacer to prevent layout jump when surface becomes fixed */
   const spacer = document.createElement("div")
@@ -416,8 +428,6 @@ function initStickyTabBar(): void {
   spacer.setAttribute("aria-hidden", "true")
   surface.parentNode?.insertBefore(spacer, surface.nextSibling)
 
-  /** Calculate the sidebar offset for the fixed tab bar.
-   *  Returns 0 on mobile (<768px), 48 when collapsed (icon-only), else sidebar width. */
   function getSidebarOffset(): number {
     if (window.innerWidth < 768) return 0
     if (document.body.classList.contains("sidebar-collapsed")) return 48
@@ -425,12 +435,8 @@ function initStickyTabBar(): void {
     return sidebar ? sidebar.offsetWidth : 240
   }
 
-  /** Apply or update the fixed position of the tab surface.
-   *  Sits below the TopNavigation (search bar) and to the right of the sidebar. */
   function applyFixedPosition(): void {
     const sidebarOffset = getSidebarOffset()
-    /* Measure the topbar so the tab bar sits below it, not on top of it.
-       TopNavigation is sticky top-0 z-30 inside .main-content. */
     const topbar = document.querySelector<HTMLElement>(".topbar")
     const topOffset = topbar ? topbar.getBoundingClientRect().bottom : 0
     const rect = surface!.getBoundingClientRect()
@@ -458,25 +464,23 @@ function initStickyTabBar(): void {
 
   const observer = new IntersectionObserver(
     (entries) => {
-      const heroVisible = entries[0]?.isIntersecting ?? true
-      if (!heroVisible && !isFixed) {
+      const sectionVisible = entries[0]?.isIntersecting ?? true
+      if (!sectionVisible && !isFixed) {
         isFixed = true
         applyFixedPosition()
-      } else if (heroVisible && isFixed) {
+      } else if (sectionVisible && isFixed) {
         isFixed = false
         clearFixedPosition()
       }
     },
-    { threshold: 0 },
+    { threshold: 0, rootMargin: "-60px 0px 0px 0px" },
   )
 
-  /* Re-calculate offset on resize (sidebar may collapse at breakpoints) */
   function onResize(): void {
     if (isFixed) applyFixedPosition()
   }
   window.addEventListener("resize", onResize)
 
-  /* Watch for sidebar collapse toggle via class changes on body */
   const bodyObserver = new MutationObserver(() => {
     if (isFixed) applyFixedPosition()
   })
@@ -485,7 +489,7 @@ function initStickyTabBar(): void {
     attributeFilter: ["class"],
   })
 
-  observer.observe(hero)
+  observer.observe(firstSection)
   pageLifecycle.signal.addEventListener("abort", () => {
     observer.disconnect()
     bodyObserver.disconnect()
@@ -494,206 +498,75 @@ function initStickyTabBar(): void {
   }, { once: true })
 }
 
-/** Dynamic overflow tabs — Zendesk / Chrome DevTools pattern.
- *  Measures available space in the tab container, fits as many tabs
- *  as possible, and moves the rest into a "⋯ More" dropdown.
- *  Recalculates on resize + sidebar toggle.  Active tab is always
- *  kept visible by swapping it with the last visible tab. */
-function initOverflowTabs(): void {
-  const container = document.querySelector<HTMLElement>(".settings-shell__summary")
-  if (!container) return
+/** Section switcher dropdown — Zendesk-style left-side nav.
+ *  Shows current section icon + label, clicking opens a dropdown
+ *  listing ALL sections with icons and status labels. */
+function initSectionSwitcher(): void {
+  const btn = document.getElementById("settings-switcher-btn")
+  const dropdown = document.getElementById("settings-switcher-dropdown")
+  const iconEl = document.getElementById("settings-switcher-icon")
+  const labelEl = document.getElementById("settings-switcher-label")
+  if (!btn || !dropdown || !iconEl || !labelEl) return
 
-  const allTabs = Array.from(container.querySelectorAll<HTMLElement>(".settings-tab"))
-  if (allTabs.length <= 1) return
-
-  /* Wrapper div: holds button + dropdown as SIBLINGS (not nested).
-     Nesting the dropdown inside the button causes click events on
-     dropdown items to bubble up and trigger the button's handler. */
-  const wrapper = document.createElement("div")
-  wrapper.className = "settings-overflow-wrapper"
-  wrapper.style.cssText = "position:relative;flex-shrink:0;display:flex;align-items:center"
-
-  /* Create "More" button */
-  const moreBtn = document.createElement("button")
-  moreBtn.type = "button"
-  moreBtn.className = "settings-overflow-btn"
-  moreBtn.setAttribute("aria-expanded", "false")
-  moreBtn.setAttribute("aria-haspopup", "true")
-  moreBtn.setAttribute("aria-label", "More settings sections")
-  moreBtn.innerHTML = `<span aria-hidden="true">⋯</span><span>More</span>`
-
-  /* Create dropdown container — SIBLING of button, not child */
-  const dropdown = document.createElement("div")
-  dropdown.className = "settings-overflow-dropdown"
-  dropdown.setAttribute("role", "menu")
-  dropdown.setAttribute("aria-label", "Hidden settings sections")
-
-  wrapper.appendChild(moreBtn)
-  wrapper.appendChild(dropdown)
-
-  /* Insert wrapper as last child of the flex container */
-  container.appendChild(wrapper)
-
-  let isDropdownOpen = false
+  let isOpen = false
 
   function toggleDropdown(open?: boolean): void {
-    isDropdownOpen = open ?? !isDropdownOpen
-    dropdown.classList.toggle("is-open", isDropdownOpen)
-    moreBtn.setAttribute("aria-expanded", isDropdownOpen ? "true" : "false")
+    isOpen = open ?? !isOpen
+    dropdown!.classList.toggle("is-open", isOpen)
+    btn!.setAttribute("aria-expanded", isOpen ? "true" : "false")
   }
 
   function closeDropdown(): void {
     toggleDropdown(false)
   }
 
-  /** Measure how many tabs fit in the available space.
-   *  Returns the index of the first tab that overflows. */
-  function calculateOverflow(): number {
-    /* Temporarily show all tabs to measure their natural widths */
-    allTabs.forEach((tab) => {
-      tab.style.display = ""
-      tab.style.order = ""
+  /** Update the switcher button to show the given section */
+  function updateSwitcherDisplay(sectionId: string): void {
+    const section = getSettingsSection(sectionId as SettingsSectionId)
+    if (!section) return
+    iconEl!.textContent = section.icon
+    labelEl!.textContent = section.label
+
+    /* Highlight active item in dropdown */
+    dropdown!.querySelectorAll<HTMLElement>(".settings-nav__switcher-item").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.sectionId === sectionId)
     })
-    wrapper.classList.remove("is-visible")
-    dropdown.innerHTML = ""
-
-    const containerWidth = container!.clientWidth
-    const gap = 6 /* matches CSS gap: 6px */
-    const moreBtnWidth = 90 /* approximate width of "⋯ More" button */
-
-    /* Identify active tab index */
-    const activeIndex = allTabs.findIndex((t) => t.classList.contains("is-active"))
-
-    let consumed = 0
-    let firstOverflow = allTabs.length /* default: everything fits */
-
-    for (let i = 0; i < allTabs.length; i++) {
-      const tabWidth = allTabs[i].offsetWidth + (i > 0 ? gap : 0)
-
-      /* If this tab fits without needing a More button, include it */
-      if (consumed + tabWidth <= containerWidth) {
-        consumed += tabWidth
-        continue
-      }
-
-      /* This tab doesn't fit — but we need space for the More button too.
-         Back up and recalculate: does PREVIOUS total + moreBtnWidth fit? */
-      firstOverflow = i
-      /* Check if previous tabs + More button fit */
-      if (consumed + moreBtnWidth + gap > containerWidth && i > 1) {
-        firstOverflow = i - 1
-      }
-      break
-    }
-
-    /* If the active tab would be hidden, swap it with the last visible tab */
-    if (activeIndex >= firstOverflow && firstOverflow > 0) {
-      const swapIndex = firstOverflow - 1
-      /* Use CSS order to visually swap without moving DOM nodes for event stability */
-      allTabs[activeIndex].style.order = String(swapIndex)
-      allTabs[swapIndex].style.order = String(activeIndex)
-    }
-
-    return firstOverflow
   }
 
-  /** Apply overflow — hide overflowing tabs and populate dropdown */
-  function applyOverflow(): void {
-    closeDropdown()
-    const firstOverflow = calculateOverflow()
-
-    if (firstOverflow >= allTabs.length) {
-      /* Everything fits — hide More wrapper */
-      wrapper.classList.remove("is-visible")
-      moreBtn.classList.remove("is-visible")
-      allTabs.forEach((tab) => { tab.style.display = "" })
-      return
-    }
-
-    /* Show More button */
-    wrapper.classList.add("is-visible")
-    moreBtn.classList.add("is-visible")
-
-    /* Determine which tabs are effectively hidden */
-    const activeIndex = allTabs.findIndex((t) => t.classList.contains("is-active"))
-    const wasSwapped = activeIndex >= firstOverflow && firstOverflow > 0
-
-    for (let i = 0; i < allTabs.length; i++) {
-      const isHidden =
-        wasSwapped
-          ? i === firstOverflow - 1 || (i >= firstOverflow && i !== activeIndex)
-          : i >= firstOverflow
-
-      if (isHidden) {
-        allTabs[i].style.display = "none"
-
-        /* Create dropdown mirror item */
-        const item = document.createElement("button")
-        item.type = "button"
-        item.className = "settings-overflow-item"
-        item.setAttribute("role", "menuitem")
-        item.setAttribute("tabindex", "-1")
-
-        if (allTabs[i].classList.contains("is-active")) {
-          item.classList.add("is-active")
-        }
-
-        /* Copy icon + label from original tab */
-        const icon = allTabs[i].querySelector(".settings-tab__icon")
-        const label = allTabs[i].querySelector(".settings-tab__label")
-        if (icon) item.appendChild(icon.cloneNode(true))
-        if (label) item.appendChild(label.cloneNode(true))
-
-        /* Clicking dropdown item delegates to original tab */
-        const originalTab = allTabs[i]
-        item.addEventListener("click", (e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          closeDropdown()
-          originalTab.click()
-          /* Recalculate after click so newly-active tab becomes visible */
-          requestAnimationFrame(() => applyOverflow())
-        })
-
-        dropdown.appendChild(item)
-      } else {
-        allTabs[i].style.display = ""
-      }
-    }
-
-    /* Update More button count badge */
-    const hiddenCount = allTabs.filter((_, i) => {
-      const isHidden =
-        wasSwapped
-          ? i === firstOverflow - 1 || (i >= firstOverflow && i !== activeIndex)
-          : i >= firstOverflow
-      return isHidden
-    }).length
-    const existing = moreBtn.querySelector("span:last-of-type")
-    if (existing) existing.textContent = `More (${hiddenCount})`
-  }
-
-  /* Toggle dropdown on click — only on the button itself */
-  pageLifecycle.on(moreBtn, "click", (e) => {
+  /* Toggle on button click */
+  pageLifecycle.on(btn, "click", (e) => {
     e.stopPropagation()
-    e.preventDefault()
     toggleDropdown()
-    if (isDropdownOpen) {
-      const firstItem = dropdown.querySelector<HTMLElement>(".settings-overflow-item")
-      firstItem?.focus()
+    if (isOpen) {
+      const activeItem = dropdown.querySelector<HTMLElement>(".settings-nav__switcher-item.is-active")
+        ?? dropdown.querySelector<HTMLElement>(".settings-nav__switcher-item")
+      activeItem?.focus()
     }
   })
 
-  /* Keyboard navigation in dropdown */
+  /* Handle dropdown item clicks */
+  dropdown.querySelectorAll<HTMLElement>(".settings-nav__switcher-item").forEach((item) => {
+    pageLifecycle.on(item, "click", (e) => {
+      e.stopPropagation()
+      const sectionId = item.dataset.sectionId
+      if (!sectionId) return
+      closeDropdown()
+      clearSearchState()
+      scrollToAnchor(sectionId)
+      updateSwitcherDisplay(sectionId)
+    })
+  })
+
+  /* Keyboard navigation */
   pageLifecycle.on(dropdown, "keydown", (event) => {
     const e = event as KeyboardEvent
-    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".settings-overflow-item"))
+    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".settings-nav__switcher-item"))
     const currentIndex = items.findIndex((item) => item === document.activeElement)
 
     if (e.key === "Escape") {
       e.preventDefault()
       closeDropdown()
-      moreBtn.focus()
+      btn.focus()
       return
     }
 
@@ -702,49 +575,85 @@ function initOverflowTabs(): void {
       const direction = e.key === "ArrowDown" ? 1 : -1
       const nextIndex = (currentIndex + direction + items.length) % items.length
       items[nextIndex]?.focus()
-      return
     }
   })
 
-  /* Close dropdown on click outside — check wrapper (button + dropdown) */
+  /* Close on outside click */
   pageLifecycle.on(document, "click", (e) => {
-    if (isDropdownOpen && !wrapper.contains(e.target as Node)) {
+    if (isOpen && !btn.contains(e.target as Node) && !dropdown.contains(e.target as Node)) {
       closeDropdown()
     }
   })
 
-  /* Close dropdown on scroll (prevents dropdown drifting from fixed tab bar) */
+  /* Close on scroll */
   pageLifecycle.on(window, "scroll", () => {
-    if (isDropdownOpen) closeDropdown()
+    if (isOpen) closeDropdown()
   }, { passive: true } as AddEventListenerOptions)
 
-  /* Recalculate on resize (debounced via rAF) */
-  let rafId = 0
-  function debouncedApply(): void {
-    cancelAnimationFrame(rafId)
-    rafId = requestAnimationFrame(() => applyOverflow())
+  /* Expose updater for intersection observer to call */
+  ;(window as Record<string, unknown>).__updateSwitcherDisplay = updateSwitcherDisplay
+
+  /* Set initial state */
+  updateSwitcherDisplay("personal-settings")
+}
+
+/** Expandable search in the nav bar — Zendesk-style right-side search.
+ *  🔍 icon expands to a search input on click. Esc or click-outside
+ *  collapses back. `/` keyboard shortcut opens search. */
+function initNavSearch(): void {
+  const searchContainer = document.getElementById("settings-nav-search")
+  const searchTrigger = document.getElementById("settings-search-trigger")
+  const searchExpand = document.getElementById("settings-search-expand")
+  const searchInput = document.getElementById("settings-search-input") as HTMLInputElement | null
+  if (!searchContainer || !searchTrigger || !searchExpand || !searchInput) return
+
+  function expandSearch(): void {
+    searchContainer!.classList.add("is-expanded")
+    searchTrigger!.setAttribute("aria-expanded", "true")
+    requestAnimationFrame(() => searchInput!.focus())
   }
 
-  /* ResizeObserver for the tab container — more precise than window resize */
-  if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => debouncedApply())
-    ro.observe(container)
-    pageLifecycle.signal.addEventListener("abort", () => ro.disconnect(), { once: true })
+  function collapseSearch(): void {
+    searchContainer!.classList.remove("is-expanded")
+    searchTrigger!.setAttribute("aria-expanded", "false")
+    clearSearchState()
   }
-  /* Also listen to window resize + sidebar toggle for fallback */
-  window.addEventListener("resize", debouncedApply)
-  const bodyObs = new MutationObserver(() => debouncedApply())
-  bodyObs.observe(document.body, { attributes: true, attributeFilter: ["class"] })
 
-  pageLifecycle.signal.addEventListener("abort", () => {
-    window.removeEventListener("resize", debouncedApply)
-    bodyObs.disconnect()
-    cancelAnimationFrame(rafId)
-    wrapper.remove()
-  }, { once: true })
+  /* Click trigger to expand */
+  pageLifecycle.on(searchTrigger, "click", (e) => {
+    e.stopPropagation()
+    expandSearch()
+  })
 
-  /* Initial calculation */
-  requestAnimationFrame(() => applyOverflow())
+  /* Esc collapses search */
+  pageLifecycle.on(searchInput, "keydown", (event) => {
+    const e = event as KeyboardEvent
+    if (e.key === "Escape") {
+      e.preventDefault()
+      collapseSearch()
+      searchTrigger.focus()
+    }
+  })
+
+  /* Click outside collapses */
+  pageLifecycle.on(document, "click", (e) => {
+    if (
+      searchContainer!.classList.contains("is-expanded") &&
+      !searchContainer!.contains(e.target as Node)
+    ) {
+      collapseSearch()
+    }
+  })
+
+  /* Keyboard shortcut: `/` opens search (when not in an input/textarea) */
+  pageLifecycle.on(document, "keydown", (event) => {
+    const e = event as KeyboardEvent
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return
+    const target = e.target as HTMLElement
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
+    e.preventDefault()
+    expandSearch()
+  })
 }
 
 function initGoToTop(): void {
@@ -799,7 +708,8 @@ export function initSettingsShell(): void {
   initIntersectionTracking()
   initCompanionLinks()
   initStickyTabBar()
-  initOverflowTabs()
+  initSectionSwitcher()
+  initNavSearch()
   initGoToTop()
   syncSummaryStatuses()
   pageLifecycle.on(window, "hashchange", () => {
@@ -837,7 +747,7 @@ export function initSettingsShell(): void {
   }
 
   /* ARIA tablist: scroll active tab into view and add arrow key navigation */
-  const tabContainer = document.querySelector(".settings-shell__summary")
+  const tabContainer = document.querySelector(".settings-nav__tabs")
   if (tabContainer) {
     tabContainer.setAttribute("role", "tablist")
     tabContainer.setAttribute("aria-label", "Settings sections")
