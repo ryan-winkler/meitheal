@@ -1,61 +1,67 @@
-# Domain Pitfalls — List View Overhaul
+# Domain Pitfalls: Settings Navigation
 
-**Domain:** Task management list/table views
-**Researched:** 2026-03-14
+**Domain:** Settings page navigation in HA add-on (ingress iframe)  
+**Researched:** 2026-03-17
 
 ## Critical Pitfalls
 
-### Pitfall 1: Importing Kanban Filter Bugs Into Shared Component
-**What goes wrong:** Extracting a shared FilterToolbar without first fixing the 6 known kanban bugs (06-07-RESEARCH) means the table inherits broken filter composability.
-**Why it happens:** Temptation to "unify first, fix later" to avoid duplicate work.
-**Consequences:** Table view ships with broken filter interactions. Both views have bugs instead of one.
-**Prevention:** Fix kanban filter bugs FIRST (Plan 06-07), THEN extract shared component.
-**Detection:** Swimlane counts don't update when filters change, cards visible that should be hidden.
+### Pitfall 1: position:fixed ignores CSS layout flow
+**What goes wrong:** Fixed elements use viewport coordinates, not parent. Tab bar at `left:0` covers sidebar.
+**Why it happens:** Developers forget fixed positioning bypasses document flow.
+**Consequences:** Sidebar logo/nav occluded, search bar covered.
+**Prevention:** Always offset fixed elements by sidebar width and topbar height. Use CSS custom properties.
+**Detection:** Visual testing at multiple viewport widths with sidebar expanded/collapsed.
 
-### Pitfall 2: Grouping + Subtask Tree Interaction
-**What goes wrong:** Table already has a parent/child tree (subtask hierarchy). Adding group-by creates conflicts — does a child task belong in its parent's group or its own status group?
-**Why it happens:** Subtask tree and group-by are both row-organization features that can conflict.
-**Consequences:** Tasks appear in wrong groups, subtree expand/collapse breaks, child tasks orphaned from parents.
-**Prevention:** When group-by is active, flatten the tree (no subtask indentation). When group-by is "none", show the existing tree. These are mutually exclusive modes.
-**Detection:** Subtask rows appearing under wrong group headers, expand/collapse toggles non-functional within groups.
+### Pitfall 2: z-index escalation without a scale
+**What goes wrong:** z-index 100 on tab bar > z-index 40 on sidebar, covering everything.
+**Why it happens:** Ad-hoc z-index values without a defined scale.
+**Consequences:** Stacking context fights, unpredictable layering.
+**Prevention:** Define scale: `--z-topbar: 30, --z-tab-bar: 35, --z-sidebar: 40, --z-overflow: 50, --z-modal: 1000`.
+**Detection:** Code review — any z-index not from the scale is a bug.
 
-### Pitfall 3: Client-Side Regrouping Performance
-**What goes wrong:** With 500+ tasks, client-side DOM regrouping (removing/re-inserting all `<tr>` elements) causes visible layout shift and jank.
-**Why it happens:** DOM manipulation is expensive. Moving hundreds of rows triggers layout recalculation.
-**Consequences:** Sluggish group-by switching, visible flicker, scroll position lost.
-**Prevention:** Use `documentFragment` for batch operations, debounce rapid group-by changes, consider virtual scrolling for 1000+ tasks (defer).
-**Detection:** Noticeable delay (>200ms) when changing group-by with 200+ rows.
+### Pitfall 3: Tab overflow invisible on narrow viewports
+**What goes wrong:** Tabs that don't fit silently scroll off with hidden scrollbar. Users never discover them.
+**Why it happens:** `scrollbar-width: none` hides affordance. Gradient mask provides minimal hint.
+**Consequences:** Features like "Danger Zone" become undiscoverable. Support tickets increase.
+**Prevention:** Implement dynamic overflow with visible "More" button.
+**Detection:** Viewport width testing at 768px, 1024px — all tabs must be reachable.
 
 ## Moderate Pitfalls
 
-### Pitfall 4: Group Collapse State vs Filter State Interaction
-**What goes wrong:** User collapses a group, then applies a filter that hides all remaining visible items in another group. The collapsed group appears empty but actually has matching items.
-**Prevention:** When filters change, update group counts BEFORE checking collapse. Show groups with 0 visible items as fully collapsed with a "(0)" count badge.
+### Pitfall 4: HA ingress breaks CSS position:sticky
+**What goes wrong:** CSS `position: sticky` doesn't work reliably inside HA ingress iframe.
+**Prevention:** Use IntersectionObserver + position:fixed fallback (already implemented).
 
-### Pitfall 5: URL Sync Complexity
-**What goes wrong:** Adding board/type/groupBy to URL params creates long, ugly URLs that break when shared between views (kanban doesn't need sort param, table doesn't need groupBy param for the same meaning).
-**Prevention:** Namespace URL params by view (`tbl_group`, `tbl_board` vs `kb_group`). Or use a single `view` param that encodes the preset.
+### Pitfall 5: Sidebar collapse removes spatial anchor
+**What goes wrong:** Fully hiding sidebar (`translateX(-100%)`) disorients users — they lose the nav landmark.
+**Prevention:** Collapse to icon-only (48px) instead of fully off-screen. Zendesk pattern.
 
-### Pitfall 6: Mobile/HA Ingress Toolbar Overflow
-**What goes wrong:** Adding type toggles, user pills, board selector, and group-by to the table toolbar creates horizontal overflow in narrow HA ingress iframes.
-**Prevention:** Use a "More filters" dropdown/popover for secondary filters. Keep only search + status + priority visible at small widths. Use CSS container queries.
+### Pitfall 6: ResizeObserver measurement timing
+**What goes wrong:** Measuring tab widths during CSS transitions gives wrong values.
+**Prevention:** Debounce measurement by 100ms or use `requestAnimationFrame`. Measure after transition completes.
 
 ## Minor Pitfalls
 
-### Pitfall 7: Accessibility of Group Headers
-**What goes wrong:** Group headers are `<tr>` elements with colspan, but assistive tech treats them as data rows.
-**Prevention:** Use `role="rowgroup"` and `aria-expanded` on group headers. Ensure keyboard navigation works for expand/collapse.
+### Pitfall 7: RTL layout breaks fixed left offset
+**What goes wrong:** `left: sidebarWidth` assumes LTR layout.
+**Prevention:** Use `inset-inline-start` instead of `left` for RTL support (future consideration).
 
-### Pitfall 8: Empty Groups
-**What goes wrong:** When all tasks in a group are filtered out, users see an empty group header with "0" count.
-**Prevention:** Auto-hide groups with zero visible tasks. Show them when filter is cleared.
+### Pitfall 8: Dropdown dismiss on scroll
+**What goes wrong:** User scrolls while overflow dropdown is open — dropdown stays fixed while content moves.
+**Prevention:** Close dropdown on scroll event. Add scroll listener when dropdown opens.
 
 ## Phase-Specific Warnings
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Shared FilterToolbar | Kanban inline script coupling | Extract toolbar as Astro component, kanban script listens to events |
-| Table grouping | Subtask tree conflict | Mutually exclusive modes (tree vs group) |
-| Client-side regroup | Performance with 500+ tasks | DocumentFragment batch, defer virtual scroll |
-| URL persistence | View-specific params collide | Namespace by view prefix |
-| Saved presets | Schema migration needed | Use existing `/api/saved-filters` with extended schema |
+| Phase | Likely Pitfall | Mitigation |
+|-------|---------------|------------|
+| Tab position fix | Fixed elements ignore layout | Offset by sidebar + topbar |
+| Overflow tabs | Measurement during transitions | Debounce + rAF |
+| Sidebar icon-only | Mobile breakpoint conflicts | Test at 768px boundary |
+| Dropdown ARIA | Focus management | Auto-focus first item, escape to close |
+
+## Sources
+
+- Codebase audit (settings-shell-controller.ts, _layout.css)
+- 50-persona panel audit
+- Web research: CSS position:fixed gotchas
+- Zendesk unified navigation patterns

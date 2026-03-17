@@ -494,6 +494,244 @@ function initStickyTabBar(): void {
   }, { once: true })
 }
 
+/** Dynamic overflow tabs — Zendesk / Chrome DevTools pattern.
+ *  Measures available space in the tab container, fits as many tabs
+ *  as possible, and moves the rest into a "⋯ More" dropdown.
+ *  Recalculates on resize + sidebar toggle.  Active tab is always
+ *  kept visible by swapping it with the last visible tab. */
+function initOverflowTabs(): void {
+  const container = document.querySelector<HTMLElement>(".settings-shell__summary")
+  if (!container) return
+
+  const allTabs = Array.from(container.querySelectorAll<HTMLElement>(".settings-tab"))
+  if (allTabs.length <= 1) return
+
+  /* Create "More" button */
+  const moreBtn = document.createElement("button")
+  moreBtn.className = "settings-overflow-btn"
+  moreBtn.setAttribute("aria-expanded", "false")
+  moreBtn.setAttribute("aria-haspopup", "true")
+  moreBtn.setAttribute("aria-label", "More settings sections")
+  moreBtn.innerHTML = `<span aria-hidden="true">⋯</span><span>More</span>`
+
+  /* Create dropdown container */
+  const dropdown = document.createElement("div")
+  dropdown.className = "settings-overflow-dropdown"
+  dropdown.setAttribute("role", "menu")
+  dropdown.setAttribute("aria-label", "Hidden settings sections")
+  moreBtn.appendChild(dropdown)
+
+  /* Insert More button as last child of the flex container */
+  container.appendChild(moreBtn)
+
+  let isDropdownOpen = false
+
+  function toggleDropdown(open?: boolean): void {
+    isDropdownOpen = open ?? !isDropdownOpen
+    dropdown.classList.toggle("is-open", isDropdownOpen)
+    moreBtn.setAttribute("aria-expanded", isDropdownOpen ? "true" : "false")
+  }
+
+  function closeDropdown(): void {
+    toggleDropdown(false)
+  }
+
+  /** Measure how many tabs fit in the available space.
+   *  Returns the index of the first tab that overflows. */
+  function calculateOverflow(): number {
+    /* Temporarily show all tabs to measure their natural widths */
+    allTabs.forEach((tab) => {
+      tab.style.display = ""
+      tab.style.order = ""
+    })
+    moreBtn.classList.remove("is-visible")
+    dropdown.innerHTML = ""
+
+    const containerWidth = container!.clientWidth
+    const gap = 6 /* matches CSS gap: 6px */
+    const moreBtnWidth = 90 /* approximate width of "⋯ More" button */
+
+    /* Identify active tab index */
+    const activeIndex = allTabs.findIndex((t) => t.classList.contains("is-active"))
+
+    let consumed = 0
+    let firstOverflow = allTabs.length /* default: everything fits */
+
+    for (let i = 0; i < allTabs.length; i++) {
+      const tabWidth = allTabs[i].offsetWidth + (i > 0 ? gap : 0)
+      const remaining = containerWidth - consumed
+
+      /* If this tab fits without needing a More button, include it */
+      if (consumed + tabWidth <= containerWidth) {
+        consumed += tabWidth
+        continue
+      }
+
+      /* This tab doesn't fit — but we need space for the More button too.
+         Back up and recalculate: does PREVIOUS total + moreBtnWidth fit? */
+      firstOverflow = i
+      /* Check if previous tabs + More button fit */
+      if (consumed + moreBtnWidth + gap > containerWidth && i > 1) {
+        firstOverflow = i - 1
+      }
+      break
+    }
+
+    /* If the active tab would be hidden, swap it with the last visible tab */
+    if (activeIndex >= firstOverflow && firstOverflow > 0) {
+      const swapIndex = firstOverflow - 1
+      /* Use CSS order to visually swap without moving DOM nodes for event stability */
+      allTabs[activeIndex].style.order = String(swapIndex)
+      allTabs[swapIndex].style.order = String(activeIndex)
+    }
+
+    return firstOverflow
+  }
+
+  /** Apply overflow — hide overflowing tabs and populate dropdown */
+  function applyOverflow(): void {
+    closeDropdown()
+    const firstOverflow = calculateOverflow()
+
+    if (firstOverflow >= allTabs.length) {
+      /* Everything fits — hide More button */
+      moreBtn.classList.remove("is-visible")
+      allTabs.forEach((tab) => { tab.style.display = "" })
+      return
+    }
+
+    /* Show More button */
+    moreBtn.classList.add("is-visible")
+
+    /* Determine which tabs are effectively hidden */
+    const activeIndex = allTabs.findIndex((t) => t.classList.contains("is-active"))
+    const wasSwapped = activeIndex >= firstOverflow && firstOverflow > 0
+
+    for (let i = 0; i < allTabs.length; i++) {
+      const isHidden =
+        wasSwapped
+          ? i === firstOverflow - 1 || (i >= firstOverflow && i !== activeIndex)
+          : i >= firstOverflow
+
+      if (isHidden) {
+        allTabs[i].style.display = "none"
+
+        /* Create dropdown mirror item */
+        const item = document.createElement("button")
+        item.className = "settings-overflow-item"
+        item.setAttribute("role", "menuitem")
+        item.setAttribute("tabindex", "-1")
+
+        if (allTabs[i].classList.contains("is-active")) {
+          item.classList.add("is-active")
+        }
+
+        /* Copy icon + label from original tab */
+        const icon = allTabs[i].querySelector(".settings-tab__icon")
+        const label = allTabs[i].querySelector(".settings-tab__label")
+        if (icon) item.appendChild(icon.cloneNode(true))
+        if (label) item.appendChild(label.cloneNode(true))
+
+        /* Clicking dropdown item delegates to original tab */
+        const originalTab = allTabs[i]
+        item.addEventListener("click", () => {
+          closeDropdown()
+          originalTab.click()
+          /* Recalculate after click so newly-active tab becomes visible */
+          requestAnimationFrame(() => applyOverflow())
+        })
+
+        dropdown.appendChild(item)
+      } else {
+        allTabs[i].style.display = ""
+      }
+    }
+
+    /* Update More button count badge */
+    const hiddenCount = allTabs.filter((_, i) => {
+      const isHidden =
+        wasSwapped
+          ? i === firstOverflow - 1 || (i >= firstOverflow && i !== activeIndex)
+          : i >= firstOverflow
+      return isHidden
+    }).length
+    const existing = moreBtn.querySelector("span:last-of-type")
+    if (existing) existing.textContent = `More (${hiddenCount})`
+  }
+
+  /* Toggle dropdown on click */
+  pageLifecycle.on(moreBtn, "click", (e) => {
+    e.stopPropagation()
+    toggleDropdown()
+    if (isDropdownOpen) {
+      const firstItem = dropdown.querySelector<HTMLElement>(".settings-overflow-item")
+      firstItem?.focus()
+    }
+  })
+
+  /* Keyboard navigation in dropdown */
+  pageLifecycle.on(dropdown, "keydown", (event) => {
+    const e = event as KeyboardEvent
+    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".settings-overflow-item"))
+    const currentIndex = items.findIndex((item) => item === document.activeElement)
+
+    if (e.key === "Escape") {
+      e.preventDefault()
+      closeDropdown()
+      moreBtn.focus()
+      return
+    }
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault()
+      const direction = e.key === "ArrowDown" ? 1 : -1
+      const nextIndex = (currentIndex + direction + items.length) % items.length
+      items[nextIndex]?.focus()
+      return
+    }
+  })
+
+  /* Close dropdown on click outside */
+  pageLifecycle.on(document, "click", (e) => {
+    if (isDropdownOpen && !moreBtn.contains(e.target as Node)) {
+      closeDropdown()
+    }
+  })
+
+  /* Close dropdown on scroll (prevents dropdown drifting from fixed tab bar) */
+  pageLifecycle.on(window, "scroll", () => {
+    if (isDropdownOpen) closeDropdown()
+  }, { passive: true } as AddEventListenerOptions)
+
+  /* Recalculate on resize (debounced via rAF) */
+  let rafId = 0
+  function debouncedApply(): void {
+    cancelAnimationFrame(rafId)
+    rafId = requestAnimationFrame(() => applyOverflow())
+  }
+
+  /* ResizeObserver for the tab container — more precise than window resize */
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => debouncedApply())
+    ro.observe(container)
+    pageLifecycle.signal.addEventListener("abort", () => ro.disconnect(), { once: true })
+  }
+  /* Also listen to window resize + sidebar toggle for fallback */
+  window.addEventListener("resize", debouncedApply)
+  const bodyObs = new MutationObserver(() => debouncedApply())
+  bodyObs.observe(document.body, { attributes: true, attributeFilter: ["class"] })
+
+  pageLifecycle.signal.addEventListener("abort", () => {
+    window.removeEventListener("resize", debouncedApply)
+    bodyObs.disconnect()
+    cancelAnimationFrame(rafId)
+    moreBtn.remove()
+  }, { once: true })
+
+  /* Initial calculation */
+  requestAnimationFrame(() => applyOverflow())
+}
+
 function initGoToTop(): void {
   const btn = document.getElementById("settings-go-top")
   if (!btn) return
@@ -546,6 +784,7 @@ export function initSettingsShell(): void {
   initIntersectionTracking()
   initCompanionLinks()
   initStickyTabBar()
+  initOverflowTabs()
   initGoToTop()
   syncSummaryStatuses()
   pageLifecycle.on(window, "hashchange", () => {

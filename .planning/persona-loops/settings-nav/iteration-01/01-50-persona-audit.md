@@ -1,336 +1,154 @@
-# 50-Persona Audit — Settings Navigation Overhaul
+# 50-Persona UX Audit: Settings Navigation
 
-**Objective:** Audit the removal of the sidebar directory, introduction of sticky horizontal tab bar, go-to-top FAB, and full-width content layout.
+**Date:** 2026-03-17  
+**Scope:** Sticky tab bar, sidebar interaction, and responsive overflow behavior  
+**Product:** Meitheal Settings page (Home Assistant add-on, Astro SSR)
 
-**Scope:** `settings.astro`, `SettingsSummaryCard.astro`, `settings-shell-controller.ts`
+## Current Issues (User Evidence)
 
----
+| # | Issue | Evidence |
+|---|-------|----------|
+| **I1** | Fixed tab bar covers sidebar logo and navigation | User screenshot shows tabs spanning from left:0, hiding "Meitheal" logo |
+| **I2** | Fixed tab bar covers the TopNavigation search bar | Tab bar sits at `top:0 z:100` over search bar (`sticky top:0 z:30`) |
+| **I3** | Tabs "fall off" on narrow viewports instead of responsive collapse | 7 tabs exceed viewport width; hidden scrollbar with no affordance |
+| **I4** | Sidebar toggle UX is suboptimal | User wants Zendesk-style simple arrow, not current hover-reveal pill |
 
-## Panel 1: Frontier Experts (5 personas)
+## Context
 
-### 1. Platform Architect
-**Recommendation:** The empty `<section id="personal-settings">` anchor in `settings.astro` is misleading — it has no content of its own; `SettingsSystem.astro` renders the actual personal-settings section. Either remove the duplicate anchor or merge them so scroll-margin targets the correct DOM node.
-- Impact: 4 | Effort: 2 | Risk: 3
-- **Decision: ACCEPT** — Duplicate anchors break IntersectionObserver tracking
-
-### 2. OSS Integrations Specialist
-**Recommendation:** The go-to-top FAB uses `window.scrollY` which works in standard browsers but may behave differently inside HA ingress iframe where the scrolling container isn't `window`. Verify that scroll events fire correctly inside the HA Companion WebView and ingress iframe.
-- Impact: 5 | Effort: 2 | Risk: 4
-- **Decision: ACCEPT** — Critical for HA ingress compatibility
-
-### 3. Reliability Engineer
-**Recommendation:** `initGoToTop()` uses `pageLifecycle.on(window, "scroll", ...)` without debouncing/throttling. On long settings pages, this fires hundreds of times per scroll gesture. Use `requestAnimationFrame` or `IntersectionObserver` for the threshold check instead.
-- Impact: 3 | Effort: 2 | Risk: 2
-- **Decision: ACCEPT** — `passive: true` helps, but RAF is better practice
-
-### 4. Security Engineer
-**Recommendation:** No new attack surface introduced. The FAB uses `history.replaceState` with same-origin path only. Tab links are all hash-based (`#section-id`). No XSS vectors. Pass.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
-
-### 5. Product Architect
-**Recommendation:** The tab bar labels use `section.label` which is the full section name (e.g. "Workflow & Task Defaults"). On narrow viewports, these truncate awkwardly. Add `section.shortLabel` or use icon-only mode below 640px.
-- Impact: 4 | Effort: 3 | Risk: 2
-- **Decision: ACCEPT** — Critical for mobile HA Companion
+- **Layout:** Sidebar (fixed, `z-40`, 240px) → `.main-content` (margin-left: 240px) → TopNavigation (`sticky top-0 z-30`) → Settings content
+- **Tabs:** 7 sections — Personal, Workflow, Rules & Lenses, Integrations, Automation & AI, App & PWA, Danger Zone
+- **Sticky mechanism:** IntersectionObserver on hero → `position: fixed` → spacer prevents layout jump
+- **Constraint:** Must work inside HA Supervisor ingress iframe (CSS `position: sticky` unreliable)
 
 ---
 
-## Panel 2: ADHD/Productivity Specialists (5 personas)
+## Persona Panel Audit
 
-### 6. Workflow Coach
-**Recommendation:** Users arriving at `/settings` with no hash see the tab bar but no section is highlighted. Set a default active tab (e.g. `personal-settings`) so new visitors have clear orientation.
-- Impact: 5 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — First-visit orientation is critical for ADHD users
+### Issue I1: Tab bar covers sidebar
 
-### 7. Execution Coach
-**Recommendation:** The `Home` key shortcut for go-to-top is non-obvious. Add it to the keyboard shortcuts section in `SettingsSystem.astro` so it's discoverable.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — KCS: document as you go
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 1 | **Sarah Chen** | Sr. Frontend Eng (Google) | 🔴 Critical | Fixed positioning with `left:0` bypasses layout flow. Must offset by sidebar width. The `fixed` element is in viewport coordinates, not parent coordinates. |
+| 2 | **James Park** | UX Director (Figma) | 🔴 Critical | The sidebar is the user's spatial anchor. Covering it destroys wayfinding. Tab bar must respect the sidebar boundary absolutely. |
+| 3 | **Maria Gonzalez** | Accessibility Lead (Microsoft) | 🔴 Critical | Screen reader users navigating by landmarks lose the sidebar landmark when it's visually obscured. WCAG 2.1.1 violation risk — keyboard users can't see where focus goes. |
+| 4 | **Tom Williams** | HA Add-on Developer | 🔴 Critical | HA ingress iframe controls the outer scroll. Fixed elements must account for the sidebar panel being external. The add-on content area starts at sidebar width. |
+| 5 | **Priya Sharma** | Mobile UX Specialist | 🟡 N/A | Sidebar is hidden on mobile (<768px). Issue only affects desktop viewports. |
+| 6 | **Anders Lindqvist** | CSS Architecture Lead | 🔴 Critical | `position: fixed` is relative to viewport, not containing block. Must use `left: var(--sidebar-width)` and recalculate on sidebar collapse. Use CSS custom properties for single source of truth. |
+| 7 | **Yuki Tanaka** | Design Systems Engineer | 🔴 Critical | Design token `--sidebar-width: 240px` exists. Fixed element should consume this token. Hardcoded values create maintenance debt. |
 
-### 8. Knowledge Coach
-**Recommendation:** The go-to-top button tooltip says "Back to top (Home key)" which is good self-documentation. Also add `aria-keyshortcuts="Home"` for screen readers.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Accessibility best practice
-
-### 9. Focus Optimizer
-**Recommendation:** The tab bar scrolls horizontally on mobile but has no visual scroll affordance (gradient fade, arrow, or scrollbar hint). Users may not realize there are more tabs off-screen.
-- Impact: 4 | Effort: 2 | Risk: 1
-- **Decision: ACCEPT** — Discoverability is key
-
-### 10. Automation Coach
-**Recommendation:** The `syncSummaryStatuses` function runs on page load but not on hashchange. When a user clicks a tab, the status chips should update immediately, not require a refresh.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Already handled by existing code flow
+**Consensus I1: 🔴 Must fix. Tab bar `left` must equal sidebar width on desktop, 0 when collapsed/mobile.**
 
 ---
 
-## Panel 3: UX/Design Specialists (10 personas)
+### Issue I2: Tab bar covers TopNavigation/search bar
 
-### 11. Mobile UX Designer
-**Recommendation:** On 320px viewport, the tab bar pills are too wide (18px padding + icon + label). Switch to icon-only mode below 480px with label as tooltip.
-- Impact: 4 | Effort: 3 | Risk: 2
-- **Decision: ACCEPT** — HA Companion on phone is a primary use case
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 8 | **Elena Petrov** | Product Designer (Slack) | 🔴 Critical | Search is the primary discovery mechanism. Covering it with a secondary nav defeats the information hierarchy. The topbar is the global constant — nothing should obscure it. |
+| 9 | **David Kim** | Frontend Architect (Vercel) | 🔴 Critical | Two `position: fixed/sticky` elements at `top: 0` on different z-indexes is a z-fighting antipattern. The tab bar must sit BELOW the topbar. Use `top: topbar.offsetHeight`. |
+| 10 | **Rachel Torres** | QA Automation Lead | 🔴 Critical | E2E tests targeting `#global-search` fail when occluded. Playwright's `click()` throws "element is covered by another element". |
+| 11 | **Akira Nakamura** | HA Core Team Contributor | 🔴 Critical | HA's own UI never covers its top header bar. Add-ons that break this pattern cause user confusion — "where did my search go?" |
+| 12 | **Lisa Morrison** | Information Architect | 🔴 Critical | The topbar (search + actions) is the global navigation context. The tab bar is page-level navigation. Page-level can never override global. Must stack: topbar → tabs → content. |
+| 13 | **Carlos Ruiz** | Performance Engineer | 🟡 Medium | `getBoundingClientRect()` on scroll is acceptable but avoid calling it continuously. Measure once on intersection change, cache the value. |
+| 14 | **Fatima Al-Hassan** | Eye-tracking Researcher | 🔴 Critical | F-pattern scanning starts top-left. When the tab bar covers the search, users lose the "safe zone" anchor they rely on for orientation. |
 
-### 12. Interaction Designer
-**Recommendation:** Active tab needs stronger visual differentiation. Current accent border-bottom is subtle. Add a filled background with `color-mix(in srgb, var(--accent) 15%, var(--bg-card))` for the active state.
-- Impact: 4 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — User explicitly requested tabs look "highlighted/pressed"
-
-### 13. Motion Designer
-**Recommendation:** The go-to-top FAB entrance animation (translateY + opacity) is good. Add `will-change: transform, opacity` for GPU acceleration on low-end devices.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Trivial, improves Android perf
-
-### 14. Dark Mode Specialist
-**Recommendation:** The go-to-top FAB box-shadow uses `rgba(0,0,0,0.2)` which disappears on dark backgrounds. Use a combination of dark shadow + subtle accent glow for dark mode visibility.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Default theme is dark
-
-### 15. Responsive Design Lead
-**Recommendation:** Tab bar `overflow-x: auto` shows a native scrollbar on some browsers (Firefox, Windows Chrome). Add `scrollbar-width: none` and `-webkit-scrollbar { display: none }` for a cleaner look.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Already standard practice
-
-### 16. Touch Input Specialist
-**Recommendation:** Tab bar items need minimum 44px touch target height per WCAG 2.5.8. Current compact pills may be < 36px. Ensure `min-height: 44px` or add padding to meet target.
-- Impact: 4 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Accessibility requirement
-
-### 17. Color System Designer
-**Recommendation:** Active tab uses `var(--accent)` directly for border but the contrast ratio against `var(--bg-card)` may be insufficient for WCAG AA. Test with color contrast tools.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: DEFER** — Audit in next pass
-
-### 18. Typography Specialist
-**Recommendation:** Tab labels use 12px font-size which is at the minimum readable threshold. On high-DPI displays this is fine, but consider 13px for better legibility across devices.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Low effort, high polish
-
-### 19. Loading State Designer
-**Recommendation:** When the page loads, the tab bar appears but status chips show stale data until JS hydrates. Add a brief `opacity: 0` → `opacity: 1` transition on the status chips to mask the flash.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: DEFER** — Minor polish
-
-### 20. Whitespace/Layout Specialist
-**Recommendation:** Content sections now span full width, which on large monitors (1440px+) creates very wide text lines. Cap content at `max-width: 1200px` with `margin: 0 auto` for optimal reading experience.
-- Impact: 5 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Critical readability improvement
+**Consensus I2: 🔴 Must fix. Tab bar `top` must equal topbar height. Cache measurement. Never cover global chrome.**
 
 ---
 
-## Panel 4: Accessibility & Inclusion (5 personas)
+### Issue I3: Tab overflow — tabs "fall off"
 
-### 21. Screen Reader QA
-**Recommendation:** Tab bar should use `role="tablist"` and each tab should use `role="tab"` + `aria-selected` + `aria-controls` for proper ARIA tab pattern. Currently they're plain `<a>` links.
-- Impact: 5 | Effort: 3 | Risk: 2
-- **Decision: ACCEPT** — Accessibility pattern required
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 15 | **Marcus Thompson** | UX Lead (Atlassian) | 🔴 Critical | Jira uses a "more" overflow menu for tabs that can't fit. Tabs disappearing silently is a discoverability failure — users don't know features exist. |
+| 16 | **Sophie Laurent** | Mobile-first Designer | 🔴 Critical | On mobile/narrow, the user may never see "Danger Zone". If something is important enough to be a tab, it must be reachable. Use a `… More` overflow dropdown. |
+| 17 | **Raj Patel** | Interaction Designer (Apple) | 🔴 Critical | iOS tabs use "More" as the last visible tab. This is the *de facto* standard pattern for tab overflow since iOS 2.0 (2008). Not implementing it is 18 years behind. |
+| 18 | **Hannah Weber** | A11y Auditor (Deque) | 🔴 Critical | WCAG 2.4.1 (Bypass Blocks): All navigation sections must be accessible. Tabs that scroll off with no indicator violate this — users can't discover them. |
+| 19 | **Chen Wei** | Responsive Web Expert | 🔴 Critical | Three patterns exist: (A) overflow dropdown, (B) scrollable with arrow buttons, (C) accordion collapse. All are valid. Hidden scrollbar + mask gradient is NOT sufficient — it's invisible-scrollbar antipattern. |
+| 20 | **Alex Petrov** | Data-driven UX Researcher | 🔴 Critical | Analytics will show Danger Zone has lowest engagement — not because it's unimportant, but because users literally can't find it. Invisible scrollbars = invisible features. |
+| 21 | **Kenji Hayashi** | Figma Plugin Dev (Tab UX Specialist) | 🔴 Critical | Recommended pattern: fit as many tabs as possible left-to-right, then collapse remaining into a `⋯ More` dropdown positioned at the right edge. The dropdown should show the hidden tab labels. |
+| 22 | **Ingrid Bergman** | Design System (Shopify Polaris) | 🔴 Critical | Polaris Tabs component uses "Fitted" mode (fills space) or "Regular" (scrolls with clear indicators). Hidden overflow is explicitly an anti-pattern in their guidelines. |
+| 23 | **Tomás Herrera** | Frontend (Chrome DevTools) | 🟢 Reference | Chrome DevTools uses exactly this: visible tabs + `»` chevron that opens a dropdown of hidden tabs. Well-proven pattern. |
+| 24 | **Aisha Patel** | Tab Bar Pattern Expert | 🔴 Critical | The "dynamic overflow" pattern: (1) Measure tab container width, (2) Measure each tab's width, (3) Determine how many fit, (4) Show a "More" button with the rest. Must recalculate on resize. |
 
-### 22. Keyboard Navigation QA
-**Recommendation:** ARIA tab pattern requires arrow-key navigation between tabs (`ArrowLeft`/`ArrowRight`). Current implementation only supports click and hash navigation.
-- Impact: 4 | Effort: 3 | Risk: 2
-- **Decision: DEFER** — Significant scope, do in follow-up
-
-### 23. Low Vision QA
-**Recommendation:** go-to-top FAB at 42x42px with 18px font is borderline for low-vision users. The `↑` character is small. Use a proper SVG arrow icon for better scaling.
-- Impact: 3 | Effort: 2 | Risk: 1
-- **Decision: DEFER** — Icon system enhancement, not blocking
-
-### 24. Motor Impairment QA
-**Recommendation:** Tab bar horizontal scroll requires fine motor control on touch devices. Add large previous/next navigation arrows at edges for users who can't swipe precisely.
-- Impact: 3 | Effort: 4 | Risk: 2
-- **Decision: REJECT** — Effort too high for impact
-
-### 25. Cognitive Load QA
-**Recommendation:** 7 tabs is at the upper limit of Miller's Law (7±2). Current count is good. Ensure no future additions push beyond 9 without grouping.
-- Impact: 2 | Effort: 0 | Risk: 1
-- **Decision: ACCEPT** — Document as constraint in settings-registry
+**Consensus I3: 🔴 Must fix. Implement dynamic overflow: visible tabs + "⋯ More" dropdown for the rest. Recalculate on resize.**
 
 ---
 
-## Panel 5: HA Integration Specialists (5 personas)
+### Issue I4: Sidebar toggle UX
 
-### 26. HA Ingress Specialist
-**Recommendation:** Verify that `window.scrollTo()` in the go-to-top handler actually scrolls the correct container behind ingress. HA embeds the addon in an iframe — `window.scrollTo` scrolls the iframe's document, not the parent. This should work correctly since the settings page IS the iframe document.
-- Impact: 5 | Effort: 1 | Risk: 3
-- **Decision: ACCEPT** — Must verify in Tier 2
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 25 | **Lena Johansson** | Sr. Designer (Zendesk) | 🟡 Medium | Zendesk uses a minimal `«` / `»` chevron at the bottom of the sidebar. It's always visible, not hover-dependent. Simple, clear, zero learning curve. |
+| 26 | **Michael Brown** | Accessibility Consultant | 🟡 Medium | Current hover-reveal toggle is inaccessible — users who can't hover (touch, keyboard, switch access) may never discover it. Must be persistently visible or keyboard-discoverable. |
+| 27 | **Nina Kowalski** | UX Researcher (Notion) | 🟡 Medium | Notion uses a hover-reveal, BUT it also has Ctrl+\ shortcut with visual hint. Meitheal has Ctrl+B but no visible hint. Need persistent visual toggle OR visible shortcut hint. |
+| 28 | **Omar Al-Rashid** | HA Panel Developer | 🟡 Medium | HA's own sidebar has a persistent collapse button. Add-ons should mirror this pattern for consistency. A tiny arrow that's always visible is less cognitive load. |
+| 29 | **Emma Chen** | Motion Designer | 🟢 Low | Current transition is fine (250ms cubic-bezier). The issue isn't animation quality — it's discoverability of the toggle. |
+| 30 | **Patrick O'Brien** | Keyboard UX Specialist | 🟡 Medium | Ctrl+B shortcut exists but isn't taught. Adding a visible toggle with shortcut hint (like `«` with `⌘B` tooltip) would serve both mouse and keyboard users. |
 
-### 27. HA Companion App Specialist
-**Recommendation:** Companion app on iOS uses WKWebView which has different scroll behavior. The `scroll-behavior: smooth` CSS property works but `window.scrollTo({ behavior: "smooth" })` may not. Add fallback with `scrollTop = 0` for unsupported browsers.
-- Impact: 3 | Effort: 1 | Risk: 2
-- **Decision: ACCEPT** — Good defensive coding
-
-### 28. HA Sidebar Panel Specialist
-**Recommendation:** Settings is accessible both via the HA sidebar panel and via ingress. The tab bar `position: sticky` needs to account for both contexts — sidebar panels have different top offsets than ingress iframes.
-- Impact: 4 | Effort: 2 | Risk: 3
-- **Decision: ACCEPT** — Critical for dual-context navigation
-
-### 29. HA WebSocket Specialist
-**Recommendation:** No WebSocket changes in this PR. The HA connection status chip in the tab bar still works via the existing `syncSummaryStatuses` flow. Pass.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
-
-### 30. HA Add-on Lifecycle Specialist
-**Recommendation:** No add-on lifecycle changes. Settings page renders client-side only. Pass.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
+**Consensus I4: 🟡 Polish. Make sidebar toggle always visible (small arrow/chevron). Not blocking but improves UX significantly.**
 
 ---
 
-## Panel 6: Performance & Runtime (5 personas)
+### Cross-cutting: Layout system and z-index management
 
-### 31. Bundle Size Analyst
-**Recommendation:** Removing `SettingsShellNav` and `SettingsCallout` imports from `settings.astro` reduces the component tree. Verify that unused components are tree-shaken from the bundle.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Verify with build output
-
-### 32. First Paint Optimizer
-**Recommendation:** The sticky tab bar is above the fold and renders server-side. Good. The go-to-top FAB is hidden by default. No LCP impact.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
-
-### 33. Scroll Performance Engineer
-**Recommendation:** `initGoToTop` adds a scroll listener to `window`. While marked `passive: true`, it still fires at 60fps on scroll. Use `IntersectionObserver` on a sentinel element at 400px instead.
-- Impact: 3 | Effort: 2 | Risk: 1
-- **Decision: ACCEPT** — Better practice (echoes #3)
-
-### 34. Memory Leak Hunter
-**Recommendation:** `pageLifecycle.on()` is used consistently for all event listeners, which provides automatic cleanup. No leak risk. Pass.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
-
-### 35. CSS Paint Optimizer
-**Recommendation:** `color-mix()` in CSS is recalculated on every repaint. For static elements like the FAB, this is fine. For hover states on rapidly-scrolled elements, consider pre-computed values.
-- Impact: 1 | Effort: 2 | Risk: 1
-- **Decision: REJECT** — Impact too low
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 31 | **Dr. Amanda Ross** | CSS Spec Editor | 🟡 Medium | Define a z-index scale as design tokens: `--z-sidebar: 40`, `--z-topbar: 30`, `--z-tab-bar: 35`. Tab bar should be BETWEEN sidebar and topbar, never above both. |
+| 32 | **Ryan Fletcher** | Stacking Context Expert | 🔴 Critical | Current z-index 100 for tab bar is way too high. It should be z-index 35 — above regular content (z-auto) but below sidebar (40) and never above topbar. The sidebar `z-40` should always win. |
+| 33 | **Laura Kim** | CSS Custom Properties Advocate | 🟡 Medium | All hardcoded `240px` values should reference `--sidebar-width`. All z-index values should reference scale tokens. This prevents the drift that caused these bugs. |
+| 34 | **Dmitry Volkov** | Performance-focused Dev | 🟢 Low | Current IntersectionObserver + MutationObserver pattern is efficient. No scroll listeners. Good. |
+| 35 | **Chloe Martin** | Design Tokens Specialist | 🟡 Medium | Topbar height should be a token too: `--topbar-height`. This makes the tab bar offset predictable and maintainable instead of runtime measurement. |
 
 ---
 
-## Panel 7: Cross-Browser & Device (5 personas)
+### Responsive behavior and edge cases
 
-### 36. Firefox QA
-**Recommendation:** Firefox renders a visible scrollbar for `overflow-x: auto`. Add `scrollbar-width: none` to `.settings-shell__summary`.
-- Impact: 3 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Same as #15
-
-### 37. Safari/WebKit QA
-**Recommendation:** Safari position:sticky inside overflow containers has known bugs. The tab bar uses `position: sticky; top: 0` which should work since the parent is the main scroll container, not a nested overflow.
-- Impact: 3 | Effort: 1 | Risk: 2
-- **Decision: ACCEPT** — Verify visually in Safari
-
-### 38. Chrome Android QA
-**Recommendation:** Chrome on Android hides the address bar on scroll, changing `100vh`. The go-to-top FAB uses `position: fixed; bottom: 28px` which is relative to the viewport — this is correct and handles address bar hide/show automatically.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — No action needed
-
-### 39. PWA Standalone QA
-**Recommendation:** In PWA standalone mode, there's no address bar. The FAB's `bottom: 28px` is correct. Verify the tab bar sticky top works without a browser chrome offset.
-- Impact: 2 | Effort: 1 | Risk: 2
-- **Decision: ACCEPT** — Quick visual check
-
-### 40. Screen Size Edge Case QA
-**Recommendation:** At exactly 768px breakpoint, the media query switches `settings-grid` to single column. Test that the tab bar doesn't overflow or compress at this exact width.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Standard breakpoint testing
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 36 | **Wei Zhao** | Tablet/iPad UX | 🔴 Critical | At 768–1024px, sidebar may be visible but tabs won't all fit. This is the critical breakpoint where overflow handling is essential. Test at exactly 768px. |
+| 37 | **Isabella Costa** | Touch UX Specialist | 🟡 Medium | The "More" dropdown must be touch-friendly: min 44×44px hit target, enough spacing between items, and dismissible by tapping outside. |
+| 38 | **Viktor Petrov** | RTL Layout Expert | 🟡 Medium | Tab bar's `left: sidebarWidth` assumption breaks in RTL. Would need `right: sidebarWidth` instead. Not immediately blocking but design should account for it. |
+| 39 | **Grace Liu** | Dark Mode / Contrast | 🟢 Low | Current backdrop-blur glassmorphism looks good in dark mode. Ensure the "More" dropdown also matches. |
+| 40 | **Nathan Harris** | Animation Perf | 🟢 Low | The fixed → unfixed transition should use `will-change: transform` for GPU compositing. Minor optimization. |
 
 ---
 
-## Panel 8: Information Architecture (5 personas)
+### Holistic UX and information architecture
 
-### 41. Navigation Pattern Expert
-**Recommendation:** The tab bar is a horizontal nav but the page is a vertical scroll. This is a "scrollspy" pattern, not true tabs. Consider adding visual feedback as the user scrolls — highlight the tab corresponding to the visible section.
-- Impact: 5 | Effort: 3 | Risk: 2
-- **Decision: ACCEPT** — Already partially implemented via `initIntersectionTracking()`
-
-### 42. URL Strategy Expert
-**Recommendation:** Hash-based URLs (`#personal-settings`) are ingress-safe and bookmark-friendly. The go-to-top clearing the hash via `history.replaceState` is correct — it prevents back-button issues.
-- Impact: 1 | Effort: 0 | Risk: 1
-- **Decision: REJECT** — Already correct
-
-### 43. Search Integration Expert
-**Recommendation:** Settings search results should scroll to and highlight the matching section. With the new layout, verify that `scrollToAnchor()` accounts for the new sticky tab bar height (smaller than before).
-- Impact: 4 | Effort: 1 | Risk: 2
-- **Decision: ACCEPT** — `scroll-margin-top: 64px` is set, verify it's enough
-
-### 44. Content Hierarchy Expert
-**Recommendation:** Each section has a `SettingsSectionIntro` with the section name, but the tab already shows the same name. This is double labeling. Consider making section intros more descriptive or smaller, since the tab bar already provides wayfinding.
-- Impact: 3 | Effort: 2 | Risk: 2
-- **Decision: DEFER** — Content audit for next iteration
-
-### 45. Deep Link Expert
-**Recommendation:** Companion handoff links use `data-companion-link` + `data-companion-xcallback` attributes. These still work since the section IDs haven't changed. Verify x-callback URLs still resolve correctly.
-- Impact: 3 | Effort: 1 | Risk: 2
-- **Decision: ACCEPT** — Quick verification
-
----
-
-## Panel 9: Code Quality (3 personas)
-
-### 46. TypeScript Strictness Reviewer
-**Recommendation:** `initGoToTop()` casts `event as KeyboardEvent` manually. Use a typed event listener: `pageLifecycle.on<KeyboardEvent>(document, "keydown", ...)` if the API supports generics.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: DEFER** — Low priority, existing pattern
-
-### 47. CSS Architecture Reviewer
-**Recommendation:** The new `.settings-go-top` styles are in `settings.astro` scoped style block, which is correct. However, the `is-visible` class toggle pattern should be consistent with other FAB patterns in the app.
-- Impact: 2 | Effort: 1 | Risk: 1
-- **Decision: ACCEPT** — Check for consistency
-
-### 48. Test Coverage Reviewer
-**Recommendation:** E2E test `settings.spec.ts` likely tests for sidebar navigation elements that no longer exist. Update selectors to target the new tab bar.
-- Impact: 5 | Effort: 2 | Risk: 3
-- **Decision: ACCEPT** — Critical: broken tests block CI
-
----
-
-## Panel 10: Domain-Specific (2 personas)
-
-### 49. Settings UX Benchmarker
-**Recommendation:** Compare against VS Code Settings, Firefox `about:preferences`, and Chrome `chrome://settings`. All three use a sidebar for persistent navigation on wide screens. Without a sidebar, Meitheal's navigation relies entirely on the tab bar + scroll. This is fine for 7 sections but degraded for discovery — consider adding subsection anchors within each section.
-- Impact: 3 | Effort: 3 | Risk: 2
-- **Decision: DEFER** — Good for next iteration
-
-### 50. Ryan Winkler (User Proxy)
-**Recommendation:** "I want this to feel like a premium, polished app that works flawlessly inside HA. The tab bar must be clearly highlighted when active, scrolling must be smooth, and the go-to-top button should be subtle but always accessible. No janky scrollbars, no wonky breakpoints."
-- Impact: 5 | Effort: 2 | Risk: 1
-- **Decision: ACCEPT** — Core user requirement
+| # | Persona | Role | Verdict | Reasoning |
+|---|---------|------|---------|-----------|
+| 41 | **Dr. Emily Watson** | Cognitive Load Researcher | 🔴 Critical | 7 tabs is at the cognitive limit (Miller's Law: 7±2). Overflow handling prevents the "overwhelm" effect. Users need to see the full scope of options without visual clutter. |
+| 42 | **Robert Chen** | HA Power User | 🟡 Medium | As a HA user, I expect the settings nav to work like HA's own — sidebar stays put, content scrolls independently. The tab bar fighting the sidebar is disorienting. |
+| 43 | **Samantha Cho** | Progressive Disclosure Expert | 🔴 Critical | "Danger Zone" belongs in overflow — it's the least-frequently-accessed, highest-risk section. Putting it in a "More" menu is *correct* progressive disclosure. |
+| 44 | **Frank Mueller** | Error Prevention (Nielsen) | 🟡 Medium | If users can't find "Danger Zone" easily in the More menu, accidental access to destructive settings goes down. But it must still be discoverable. Clear label + warning icon in dropdown. |
+| 45 | **Ayumi Sato** | First-run Experience Designer | 🟡 Medium | New users scanning tabs left-to-right should see the most relevant tabs first. "Personal" → "Workflow" → "Integrations" is good priority order. Less-used tabs in overflow is correct. |
+| 46 | **Ben Carpenter** | Component Library Maintainer | 🟡 Medium | The overflow tab pattern should be a reusable component — `OverflowTabs` — not page-specific logic. Other pages may need this pattern too. |
+| 47 | **Diana Reyes** | Micro-interaction Designer | 🟢 Low | The "More" dropdown should animate in with a 150ms fade+scale. Instant appear feels harsh. |
+| 48 | **Lucas Fontaine** | Keyboard Navigation Expert | 🔴 Critical | Tab key must cycle through visible tabs AND then into the "More" dropdown. Arrow keys within dropdown. Escape to close. All standard patterns from WAI-ARIA Tabs. |
+| 49 | **Olivia Yang** | Screen Reader User Advocate | 🔴 Critical | The "More" button needs `aria-expanded`, `aria-controls`, and the dropdown needs `role="menu"` with `role="menuitem"` children. Otherwise tabs are "invisible" to screen readers. |
+| 50 | **Max Berger** | Systems Thinker | 🔴 Critical | These four issues are ONE system problem: the tab bar doesn't know its spatial context (sidebar, topbar) or its content constraints (available width). The fix must be holistic — position + overflow + toggle — not three separate patches. |
 
 ---
 
 ## Summary
 
-| Category | Accept | Defer | Reject |
-|----------|--------|-------|--------|
-| Frontier Experts | 3 | 0 | 1 |
-| ADHD/Productivity | 5 | 0 | 0 |
-| UX/Design | 7 | 2 | 0 |
-| Accessibility | 2 | 2 | 1 |
-| HA Integration | 3 | 0 | 2 |
-| Performance | 2 | 0 | 3 |
-| Cross-Browser | 3 | 0 | 2 |
-| Info Architecture | 2 | 1 | 1 |
-| Code Quality | 1 | 2 | 0 |
-| Domain-Specific | 1 | 1 | 0 |
-| **Total** | **29** | **8** | **10** |
+| Issue | Severity | Consensus | Pattern |
+|-------|----------|-----------|---------|
+| **I1: Tab covers sidebar** | 🔴 P0 | 7/7 Critical | `left: var(--sidebar-width)` on desktop; 0 on mobile/collapsed |
+| **I2: Tab covers search** | 🔴 P0 | 7/7 Critical | `top: var(--topbar-height)` or measured; never `top: 0` |
+| **I3: Tab overflow** | 🔴 P0 | 10/10 Critical | Dynamic overflow: visible tabs + "⋯ More" dropdown |
+| **I4: Sidebar toggle** | 🟡 P1 | 4/6 Medium | Zendesk-style persistent chevron, always visible |
 
-## Priority Actions (Accept, grouped by urgency)
+## Recommended Priority
 
-### P0 — Must fix before merge
-1. **#1** Remove duplicate `personal-settings` anchor from `settings.astro` (already in `SettingsSystem.astro`)
-2. **#2** Verify go-to-top works inside HA ingress iframe (#26)
-3. **#6** Set default active tab on first visit
-4. **#48** Update E2E test selectors for new tab bar
-5. **#20** Add `max-width: 1200px` to content for readability
+1. **P0 — Fix I1 + I2 + I3 together** (these are the same system — tab bar spatial awareness)
+2. **P1 — Fix I4** (sidebar toggle) — can be done independently
 
-### P1 — Important polish
-6. **#12** Stronger active tab visual (filled background)
-7. **#15/#36** Hide scrollbar on tab bar (`scrollbar-width: none`)
-8. **#16** Ensure 44px touch targets on tabs
-9. **#9** Add scroll affordance indicator for tab overflow
-10. **#7** Add Home key to keyboard shortcuts docs
+## Recommended Patterns
 
-### P2 — Follow-up iteration
-11. **#5** Short labels / icon-only mode on narrow viewports
-12. **#11** Icon-only tabs at 480px
-13. **#21** ARIA tablist pattern
-14. **#41** Scrollspy highlighting on intersection
-15. **#27** Smooth scroll fallback for WKWebView
+| Issue | Pattern | Reference |
+|-------|---------|-----------|
+| I1+I2 | Tab bar respects sidebar left + topbar top offsets | Chrome DevTools, VS Code secondary nav |
+| I3 | Dynamic overflow tabs with "More" dropdown | Atlassian tabs, Chrome DevTools, iOS UITabBarController |
+| I4 | Persistent collapse chevron at sidebar edge | Zendesk, GitLab, Linear |

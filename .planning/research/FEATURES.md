@@ -1,47 +1,32 @@
-# Feature Landscape — List View Overhaul
+# Feature Landscape: Settings Navigation
 
-**Domain:** Task management list/table views
-**Researched:** 2026-03-14
+**Domain:** Settings page navigation in HA add-on  
+**Researched:** 2026-03-17
 
 ## Table Stakes
 
-Features users expect. Missing = product feels incomplete.
+Features users expect. Missing = product feels broken.
 
 | Feature | Why Expected | Complexity | Status |
 |---------|--------------|------------|--------|
-| Group by status | Every competitor (Linear/ClickUp/Asana) | Low | ❌ Missing |
-| Group by priority | Teamhood/Linear/ClickUp | Low | ❌ Missing |
-| Group by type (epic/story/task) | Teamhood rows, kanban swimlanes | Low | ❌ Missing |
-| Group by board | Teamhood/ClickUp project grouping | Low | ❌ Missing |
-| Group by assignee | Linear/ClickUp/Jira/Asana | Low | ❌ Missing |
-| Collapsible groups | All competitors | Low | ❌ Missing |
-| Group counts (badge) | Teamhood/Linear/ClickUp | Low | ❌ Missing |
-| Board filter in list | Kanban has it, table doesn't | Low | ❌ Missing |
-| Type filter in list | Kanban has it, table doesn't | Low | ❌ Missing |
-| User filter pills | Kanban has it, table has dropdown | Low | ❌ Missing |
-| Clear all filters | Linear/ClickUp/Teamhood | Low | ✅ Exists |
-| Text search | All competitors | Low | ✅ Exists |
-| Status filter | All competitors | Low | ✅ Exists |
-| Priority filter | All competitors | Low | ✅ Exists |
-| Label filter | All competitors | Low | ✅ Exists |
-| Column sorting | All competitors | Low | ✅ Exists |
-| Bulk actions | Linear/ClickUp | Medium | ✅ Exists |
-| Inline editing | Linear/ClickUp | Medium | ✅ Exists |
+| Tab bar doesn't cover sidebar | Basic spatial integrity | Low | 🔴 Broken |
+| Tab bar doesn't cover search | Global chrome never occluded | Low | 🔴 Broken |
+| All tabs reachable | Discoverability — users need to find features | Medium | 🔴 Broken |
+| Sidebar toggle discoverable | Users must be able to collapse/expand | Low | 🟡 Poor UX |
+| Keyboard tab navigation | WCAG compliance, power user efficiency | Low | ✅ Done |
 
 ## Differentiators
 
-Features that set product apart. Not expected, but valued.
+Features that elevate UX beyond basic expectations.
 
-| Feature | Value Proposition | Complexity | Status |
-|---------|-------------------|------------|--------|
-| Saved filter/view presets | Personalization, quick access | Medium | 🔧 API exists, no UI |
-| RICE score grouping | Unique to Meitheal | Low | ❌ Missing |
-| AND/OR filter logic | Linear-level filtering | High | ❌ Missing |
-| Column customization (show/hide) | Teamhood/ClickUp parity | Medium | ❌ Missing |
-| Shared filter state across views | Seamless Kanban↔Table switching | Medium | 🔧 Partial (localStorage) |
-| Sub-grouping (nested groups) | Linear has this | High | ❌ Missing |
-| Color-coded group headers | Teamhood visual clarity | Low | ❌ Missing |
-| Grand total / summary row | Teamhood baseline feature | Low | ❌ Missing |
+| Feature | Value Proposition | Complexity | Priority |
+|---------|-------------------|------------|----------|
+| Dynamic overflow "More" menu | Tabs flow in/out of dropdown as viewport resizes | Medium | P0 |
+| Icon-only sidebar collapse | Zendesk pattern — keeps nav visible at 48px | Medium | P1 |
+| Sidebar tooltip on collapsed | Icons get tooltip labels when text hidden | Low | P1 |
+| Active tab always visible | Active tab swaps to visible area if in overflow | Medium | P0 |
+| Overflow keyboard navigation | Arrow keys in dropdown, Escape to close | Low | P0 |
+| Persist sidebar state | localStorage saves expanded/collapsed preference | Low | P1 |
 
 ## Anti-Features
 
@@ -49,31 +34,34 @@ Features to explicitly NOT build.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Gantt in list view | Already have separate Gantt page | Link to Gantt from table |
-| Drag-to-reorder in table | Complex, low ROI for table | Keep in kanban only |
-| Pivot table mode | Over-engineering, enterprise bloat | Group-by covers 90% of use cases |
-| Timeline columns | Complexity explosion | Use dedicated timeline/calendar views |
+| Horizontal scroll with hidden scrollbar | Invisible features, no affordance | Dynamic overflow dropdown |
+| Full off-screen sidebar slide | Loses spatial context, no icon anchor | Icon-only collapse (48px) |
+| Hover-only toggle visibility | Inaccessible on touch/keyboard | Persistent visible toggle |
+| Tab wrapping (multi-row) | Eats vertical space, looks broken | Single-row with overflow |
 
 ## Feature Dependencies
 
 ```
-Board Filter → Group by Board (board filter needed to test grouping)
-Type Filter → Group by Type (type filter needed for swimlane consistency)
-Shared FilterToolbar → All grouping features (groups need to respect active filters)
-Fix Kanban Filter Bugs → Shared FilterToolbar (can't share broken logic)
+Icon-only sidebar → requires tooltip on collapsed icons
+Dynamic overflow → requires ResizeObserver + tab width measurement
+Active tab visible → requires overflow tab swap logic
+Persist sidebar → requires localStorage read on init
 ```
 
 ## MVP Recommendation
 
-Prioritize:
-1. **Group by type/priority/board/assignee** — immediate Teamhood parity
-2. **Shared filter toolbar** — unifies kanban/table, reduces code duplication
-3. **Saved view presets** — differentiator, API already exists
+**P0 (this fix):**
+1. Tab bar position offsets (sidebar left, topbar top) — already partially done
+2. Dynamic overflow tabs with "More" dropdown
+3. Lower z-index to proper scale (35, not 100)
 
-Include (no deferrals):
-4. **AND/OR filter logic** — Linear-level compound filtering (P3)
-5. **Column customization** — show/hide/reorder per Teamhood (P4)
-6. **Sub-grouping** — nested groups (e.g., Board → Type) (P4)
-7. **Color-coded group headers** — visual clarity per Teamhood (P5)
-8. **Grand total / summary row** — per-group subtotals + grand total (P5)
-9. **RICE score grouping** — Meitheal differentiator (P5)
+**P1 (follow-up):**
+4. Icon-only sidebar collapse (Zendesk pattern)
+5. Persistent sidebar toggle at bottom
+6. Sidebar state persistence (localStorage)
+
+## Sources
+
+- Zendesk Unified Navigation EAP article (2026)
+- 50-persona panel audit
+- User screenshots and feedback

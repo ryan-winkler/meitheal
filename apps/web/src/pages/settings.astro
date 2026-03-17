@@ -351,32 +351,106 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     border-bottom: 1px solid var(--border);
   }
   /* JS-driven fixed mode for HA ingress where CSS sticky fails.
-     JS handles sidebar offset via left position — see initStickyTabBar(). */
+     JS handles sidebar offset via left position — see initStickyTabBar().
+     z-index 35 sits above content but below sidebar (z-40) and never
+     covers the TopNavigation search bar (z-30) — topbar height used
+     as top offset in JS. */
   .settings-shell__summary-surface.is-fixed {
-    z-index: 100;
+    z-index: 35;
     background: color-mix(in srgb, var(--bg-main) 95%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     padding: 6px 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,.15);
   }
+  /* — Overflow "More" dropdown for tabs that don't fit — */
+  :global(.settings-overflow-btn) {
+    display: none; /* JS shows when tabs overflow */
+    align-items: center;
+    gap: 4px;
+    padding: 10px 14px;
+    min-height: 44px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+    position: relative;
+  }
+  :global(.settings-overflow-btn.is-visible) {
+    display: flex;
+  }
+  :global(.settings-overflow-btn:hover) {
+    background: var(--accent-6-bg);
+    border-color: var(--border);
+    color: var(--text-primary);
+  }
+  :global(.settings-overflow-btn[aria-expanded="true"]) {
+    background: var(--accent-6-bg);
+    border-color: var(--accent-50-border);
+    color: var(--accent);
+  }
+  :global(.settings-overflow-dropdown) {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 200px;
+    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    padding: 4px;
+    z-index: 50;
+    animation: settings-dropdown-in 120ms ease-out;
+  }
+  @keyframes settings-dropdown-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  :global(.settings-overflow-dropdown.is-open) {
+    display: block;
+  }
+  :global(.settings-overflow-item) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  :global(.settings-overflow-item:hover) {
+    background: var(--accent-6-bg);
+    color: var(--text-primary);
+  }
+  :global(.settings-overflow-item.is-active) {
+    background: var(--accent-12-bg);
+    color: var(--accent);
+  }
   .settings-shell__summary {
     display: flex;
     gap: 6px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding: 0 40px 2px 2px; /* right pad keeps tabs out of the fade zone */
-    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-  }
-  .settings-shell__summary:hover,
-  .settings-shell__summary:focus-within {
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-  .settings-shell__summary::-webkit-scrollbar {
-    display: none;
+    overflow: hidden; /* Dynamic overflow tabs JS handles visibility — no hidden scroll */
+    flex-wrap: nowrap;
+    align-items: center;
+    padding: 0 2px 2px 2px;
   }
   /* — Color-mix CSS custom properties (pre-computed for paint perf) — */
   :root {
