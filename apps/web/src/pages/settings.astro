@@ -165,26 +165,30 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     gap: 20px;
     padding: 24px;
     border-radius: 22px;
+    max-width: 1200px;        /* #40: constrain hero width at 2560px */
+    margin: 0 auto;
+    width: 100%;
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 18%, transparent), transparent 35%),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 92%, white), var(--bg-card));
+      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 14%, transparent), transparent 30%),
+      linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 94%, white), var(--bg-card));
   }
   .settings-shell__hero-copy {
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
+  /* #17: Reduced visual weight — eyebrow is contextual, not dominant */
   .settings-shell__eyebrow {
     display: inline-flex;
     width: fit-content;
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: color-mix(in srgb, var(--accent) 78%, var(--text-secondary));
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
   .settings-shell__title {
     margin: 0;
@@ -352,9 +356,9 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    padding: 0 2px 2px;
-    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+    padding: 0 40px 2px 2px; /* right pad keeps tabs out of the fade zone */
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
   }
   .settings-shell__summary:hover,
   .settings-shell__summary:focus-within {
@@ -373,7 +377,10 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     --accent-50-border: color-mix(in srgb, var(--accent) 50%, var(--border));
     --accent-78-white: color-mix(in srgb, var(--accent) 78%, white);
   }
-  /* — Tab items — */
+  /* — Tab items —
+   * Uses :global() because tabs live in SettingsSummaryCard.astro
+   * (child component), but styles need to be owned by the parent
+   * settings.astro to maintain the unified tab bar layout. #33 */
   :global(.settings-tab) {
     display: flex;
     align-items: center;
@@ -429,7 +436,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     min-height: 18px;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--accent-10);
+    background: color-mix(in srgb, var(--accent) 18%, transparent); /* #23: bump from 10% for contrast */
     color: var(--accent);
     font-size: 10px;
     font-weight: 600;
@@ -487,7 +494,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     display: flex;
     flex-direction: column;
     gap: 16px;
-    scroll-margin-top: 64px;
+    scroll-margin-top: calc(var(--settings-tab-bar-h, 52px) + 16px); /* #9: dynamic, accommodates tab bar height */
     padding-bottom: 32px;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   }

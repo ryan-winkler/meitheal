@@ -31,6 +31,7 @@ const taskTypes = [
   { id: "epic", label: "Epic", icon: "⚡" },
   { id: "story", label: "Story", icon: "📖" },
   { id: "task", label: "Task", icon: "✅" },
+  { id: "documentation", label: "Documentation", icon: "📝" },
 ]
 
 const aiCapabilities = [
@@ -189,6 +190,68 @@ const presets = [
           </div>
         </div>
       ))}
+    </div>
+  </SettingsDisclosure>
+
+  <!-- Framework Reference -->
+  <SettingsDisclosure title="Framework Reference" subtitle="Learn about each strategic evaluation framework" id="framework-ref-disclosure">
+    <div class="rules-fw-reference">
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>📊 RICE</strong>
+          <a href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Intercom Blog →</a>
+        </div>
+        <p><strong>Reach × Impact × Confidence ÷ Effort</strong>. Prioritization framework from Intercom for scoring tasks by audience reach, impact, confidence, and effort.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🎯 DRICE</strong>
+          <a href="https://www.lennysnewsletter.com/p/introducing-drice-a-modern-prioritization" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Lenny's Newsletter →</a>
+        </div>
+        <p>Extended RICE that factors in <strong>dependency weight</strong> — how many other tasks are blocked by this one.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🏗️ DDD</strong>
+          <a href="https://martinfowler.com/bliki/DomainDrivenDesign.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Fowler →</a>
+        </div>
+        <p><strong>Domain-Driven Design</strong>. Evaluates tasks through bounded context alignment, ubiquitous language, and strategic/tactical pattern fit.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>❤️ HEART</strong>
+          <a href="https://www.heartframework.com/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">heartframework.com →</a>
+        </div>
+        <p><strong>Happiness, Engagement, Adoption, Retention, Task success</strong>. Google's UX metrics framework for holistic UX impact scoring.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>📚 KCS</strong>
+          <a href="https://library.serviceinnovation.org/KCS" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Service Innovation →</a>
+        </div>
+        <p><strong>Knowledge-Centered Service</strong>. Evaluates documentation tasks: is knowledge captured at creation, reusable, and continuously improved?</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>⚖️ WSJF</strong>
+          <a href="https://www.scaledagileframework.com/wsjf/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">SAFe Docs →</a>
+        </div>
+        <p><strong>Weighted Shortest Job First</strong>. Calculates Cost of Delay ÷ Job Duration to sequence work for maximum economic benefit.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🏷️ MoSCoW</strong>
+          <a href="https://www.agilebusiness.org/dsdm-project-framework/moscow-prioririsation.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">DSDM Docs →</a>
+        </div>
+        <p><strong>Must / Should / Could / Won't</strong> prioritization. Classifies requirements into four categories for scope and stakeholder management.</p>
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🧊 ICE</strong>
+          <a href="https://growthmethod.com/growth-scoring/ice/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Growth Method →</a>
+        </div>
+        <p><strong>Impact × Confidence × Ease</strong>. Lightweight scoring system for rapid experiment prioritization, each dimension scored 1-10.</p>
+      </div>
     </div>
   </SettingsDisclosure>
 
@@ -508,5 +571,52 @@ const presets = [
     .rules-fw-pill {
       transition: none;
     }
+  }
+
+  /* 320px small screen pill wrap */
+  @media (max-width: 320px) {
+    .rules-pill-group {
+      flex-direction: column;
+    }
+    .rules-fw-pill {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  /* Framework Reference */
+  .rules-fw-reference {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rules-fw-ref-item {
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .rules-fw-ref-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .rules-fw-ref-header strong {
+    font-size: 13px;
+  }
+  .rules-fw-ref-link {
+    font-size: 11px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .rules-fw-ref-link:hover {
+    text-decoration: underline;
+  }
+  .rules-fw-ref-item p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
   }
 </style>

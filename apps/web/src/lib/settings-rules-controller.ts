@@ -232,8 +232,20 @@ function highlightActivePreset(): void {
   }
 }
 
+/** Debounce timer and saving guard for saveRulesFromUI */
+let _saveTimer: ReturnType<typeof setTimeout> | null = null
+let _isSaving = false
+
+/** Debounced save — coalesces rapid changes into a single API call */
+function debouncedSave(): void {
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = setTimeout(() => { saveRulesFromUI() }, 400)
+}
+
 /** Save current UI state as rules to the API */
 async function saveRulesFromUI(): Promise<void> {
+  if (_isSaving) return
+  _isSaving = true
   try {
     // Delete all existing rules first (full replace)
     const existing = await apiFetch("/api/rules")
@@ -281,6 +293,8 @@ async function saveRulesFromUI(): Promise<void> {
     showToast("settings.rules_saved")
   } catch {
     showToast("settings.rules_save_failed", "error")
+  } finally {
+    _isSaving = false
   }
 }
 
@@ -449,18 +463,18 @@ export function initRulesSettings(): void {
     })
   })
 
-  // Framework assignment checkboxes — auto-save on change
+  // Framework assignment checkboxes — auto-save on change (debounced)
   document.querySelectorAll<HTMLInputElement>(".rules-fw-check").forEach((cb) => {
-    pageLifecycle.on(cb, "change", async () => {
-      await saveRulesFromUI()
+    pageLifecycle.on(cb, "change", () => {
+      debouncedSave()
       highlightActivePreset()
     })
   })
 
-  // AI scope toggles — auto-save on change
+  // AI scope toggles — auto-save on change (debounced)
   document.querySelectorAll<HTMLInputElement>(".rules-ai-check").forEach((cb) => {
-    pageLifecycle.on(cb, "change", async () => {
-      await saveRulesFromUI()
+    pageLifecycle.on(cb, "change", () => {
+      debouncedSave()
     })
   })
 

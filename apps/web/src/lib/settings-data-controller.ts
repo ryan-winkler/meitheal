@@ -165,42 +165,12 @@ export function initDataSettings(): void {
     })
     })
   }
-
-  // Framework mapping change — pill toggle checkboxes
-  document.querySelectorAll<HTMLInputElement>(".lenses-fw-check").forEach((cb) => {
-    pageLifecycle.on(cb, "change", () => {
-      const mapping: Record<string, string[]> = {}
-      document.querySelectorAll<HTMLInputElement>(".lenses-fw-check").forEach((c) => {
-        const taskType = c.dataset.taskType
-        const framework = c.dataset.framework
-        if (taskType && framework) {
-          if (!mapping[taskType]) mapping[taskType] = []
-          if (c.checked) mapping[taskType].push(framework)
-        }
-      })
-      saveSetting("framework_mapping", mapping)
-      showToast("settings.frameworks_updated")
-    })
-  })
 }
+
 
 /** Restore data/export-related settings from loaded settings object */
 export function restoreDataSettings(settings: Record<string, unknown>): void {
-  // Framework mapping — pill toggle checkboxes
-  try {
-    if (settings.framework_mapping) {
-      const mapping = settings.framework_mapping as Record<string, string[]>
-      document.querySelectorAll<HTMLInputElement>(".lenses-fw-check").forEach((cb) => {
-        const taskType = cb.dataset.taskType
-        const framework = cb.dataset.framework
-        if (taskType && framework && mapping[taskType] && Array.isArray(mapping[taskType])) {
-          cb.checked = mapping[taskType].includes(framework)
-        }
-      })
-    }
-  } catch (e) {
-    log.error("Framework mapping error", e)
-  }
+
 
   // Restore custom fields
   try {
