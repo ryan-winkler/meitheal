@@ -248,7 +248,6 @@ const navItems = order
     <span
       class="sidebar-tooltip"
       aria-hidden="true"
-      style="display:none;position:absolute;left:0.5rem;top:calc(100% + 2px);white-space:nowrap;font-size:10px;font-weight:400;font-style:italic;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;pointer-events:none;z-index:50;box-shadow:0 2px 8px rgba(0,0,0,0.15)"
       >Ag Obair le Chéile&ensp;·&ensp;Working Together</span
     >
   </div>
@@ -328,7 +327,10 @@ const navItems = order
     position: absolute;
     left: 0.5rem;
     top: calc(100% + 2px);
-    white-space: nowrap;
+    /* Prevent overflow clipping — constrain width to sidebar */
+    max-width: calc(100% - 1rem);
+    white-space: normal;
+    overflow-wrap: break-word;
     font-size: 10px;
     font-weight: 400;
     font-style: italic;

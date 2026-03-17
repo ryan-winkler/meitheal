@@ -506,23 +506,33 @@ function initOverflowTabs(): void {
   const allTabs = Array.from(container.querySelectorAll<HTMLElement>(".settings-tab"))
   if (allTabs.length <= 1) return
 
+  /* Wrapper div: holds button + dropdown as SIBLINGS (not nested).
+     Nesting the dropdown inside the button causes click events on
+     dropdown items to bubble up and trigger the button's handler. */
+  const wrapper = document.createElement("div")
+  wrapper.className = "settings-overflow-wrapper"
+  wrapper.style.cssText = "position:relative;flex-shrink:0;display:flex;align-items:center"
+
   /* Create "More" button */
   const moreBtn = document.createElement("button")
+  moreBtn.type = "button"
   moreBtn.className = "settings-overflow-btn"
   moreBtn.setAttribute("aria-expanded", "false")
   moreBtn.setAttribute("aria-haspopup", "true")
   moreBtn.setAttribute("aria-label", "More settings sections")
   moreBtn.innerHTML = `<span aria-hidden="true">⋯</span><span>More</span>`
 
-  /* Create dropdown container */
+  /* Create dropdown container — SIBLING of button, not child */
   const dropdown = document.createElement("div")
   dropdown.className = "settings-overflow-dropdown"
   dropdown.setAttribute("role", "menu")
   dropdown.setAttribute("aria-label", "Hidden settings sections")
-  moreBtn.appendChild(dropdown)
 
-  /* Insert More button as last child of the flex container */
-  container.appendChild(moreBtn)
+  wrapper.appendChild(moreBtn)
+  wrapper.appendChild(dropdown)
+
+  /* Insert wrapper as last child of the flex container */
+  container.appendChild(wrapper)
 
   let isDropdownOpen = false
 
@@ -544,7 +554,7 @@ function initOverflowTabs(): void {
       tab.style.display = ""
       tab.style.order = ""
     })
-    moreBtn.classList.remove("is-visible")
+    wrapper.classList.remove("is-visible")
     dropdown.innerHTML = ""
 
     const containerWidth = container!.clientWidth
@@ -559,7 +569,6 @@ function initOverflowTabs(): void {
 
     for (let i = 0; i < allTabs.length; i++) {
       const tabWidth = allTabs[i].offsetWidth + (i > 0 ? gap : 0)
-      const remaining = containerWidth - consumed
 
       /* If this tab fits without needing a More button, include it */
       if (consumed + tabWidth <= containerWidth) {
@@ -594,13 +603,15 @@ function initOverflowTabs(): void {
     const firstOverflow = calculateOverflow()
 
     if (firstOverflow >= allTabs.length) {
-      /* Everything fits — hide More button */
+      /* Everything fits — hide More wrapper */
+      wrapper.classList.remove("is-visible")
       moreBtn.classList.remove("is-visible")
       allTabs.forEach((tab) => { tab.style.display = "" })
       return
     }
 
     /* Show More button */
+    wrapper.classList.add("is-visible")
     moreBtn.classList.add("is-visible")
 
     /* Determine which tabs are effectively hidden */
@@ -618,6 +629,7 @@ function initOverflowTabs(): void {
 
         /* Create dropdown mirror item */
         const item = document.createElement("button")
+        item.type = "button"
         item.className = "settings-overflow-item"
         item.setAttribute("role", "menuitem")
         item.setAttribute("tabindex", "-1")
@@ -634,7 +646,9 @@ function initOverflowTabs(): void {
 
         /* Clicking dropdown item delegates to original tab */
         const originalTab = allTabs[i]
-        item.addEventListener("click", () => {
+        item.addEventListener("click", (e) => {
+          e.stopPropagation()
+          e.preventDefault()
           closeDropdown()
           originalTab.click()
           /* Recalculate after click so newly-active tab becomes visible */
@@ -659,9 +673,10 @@ function initOverflowTabs(): void {
     if (existing) existing.textContent = `More (${hiddenCount})`
   }
 
-  /* Toggle dropdown on click */
+  /* Toggle dropdown on click — only on the button itself */
   pageLifecycle.on(moreBtn, "click", (e) => {
     e.stopPropagation()
+    e.preventDefault()
     toggleDropdown()
     if (isDropdownOpen) {
       const firstItem = dropdown.querySelector<HTMLElement>(".settings-overflow-item")
@@ -691,9 +706,9 @@ function initOverflowTabs(): void {
     }
   })
 
-  /* Close dropdown on click outside */
+  /* Close dropdown on click outside — check wrapper (button + dropdown) */
   pageLifecycle.on(document, "click", (e) => {
-    if (isDropdownOpen && !moreBtn.contains(e.target as Node)) {
+    if (isDropdownOpen && !wrapper.contains(e.target as Node)) {
       closeDropdown()
     }
   })
@@ -725,7 +740,7 @@ function initOverflowTabs(): void {
     window.removeEventListener("resize", debouncedApply)
     bodyObs.disconnect()
     cancelAnimationFrame(rafId)
-    moreBtn.remove()
+    wrapper.remove()
   }, { once: true })
 
   /* Initial calculation */
