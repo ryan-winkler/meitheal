@@ -1,0 +1,52 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsCallout from "./SettingsCallout.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "danger-zone-settings")!
+---
+
+<section
+  id="danger-zone-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+>
+  <SettingsSectionIntro section={dangerZoneSection} />
+  <div class="settings-grid">
+  <!-- Danger Zone -->
+  <SettingsPanelCard
+    title={t("settings.danger_title", locale)}
+    subtitle={t("settings.danger_subtitle", locale)}
+    tone="danger"
+  >
+    <SettingsCallout title="Protected actions" icon="⚠" tone="danger">
+      These actions are intentionally separated from everyday settings because
+      they remove data or revert behavior globally. Double-check exports before
+      using them.
+    </SettingsCallout>
+    <SettingsActionRow style="margin-top: 16px;">
+      <button
+        class="btn"
+        id="purge-tasks"
+        style="border-color: var(--danger); color: var(--danger);"
+        >🗑 Purge All Tasks</button
+      >
+      <button
+        class="btn"
+        id="reset-settings"
+        style="border-color: var(--danger); color: var(--danger);"
+        >🔄 Reset Settings</button
+      >
+    </SettingsActionRow>
+  </SettingsPanelCard>
+  </div>
+</section>

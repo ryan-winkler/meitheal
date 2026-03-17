@@ -4,8 +4,10 @@ import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
 import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
 import SettingsRules from "../components/settings/SettingsRules.astro"
+import SettingsPersonal from "../components/settings/SettingsPersonal.astro"
+import SettingsAppPwa from "../components/settings/SettingsAppPwa.astro"
+import SettingsDangerZone from "../components/settings/SettingsDangerZone.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
-import SettingsSystem from "../components/settings/SettingsSystem.astro"
 import Layout from "../layouts/Layout.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import { t } from "../i18n/translations"
@@ -16,8 +18,8 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 const workflowSection = SETTINGS_SECTIONS.find((section) => section.id === "workflow-settings")!
 const rulesSection = SETTINGS_SECTIONS.find((section) => section.id === "rules-lenses-settings")!
-const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "integrations-settings")!
 const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "automation-ai-settings")!
+const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "integrations-settings")!
 ---
 
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
@@ -34,8 +36,10 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
 
     <div class="settings-shell__content">
 
-      <SettingsSystem locale={locale} />
+      <!-- 1. Personal -->
+      <SettingsPersonal locale={locale} />
 
+      <!-- 2. Workflow -->
       <section
         id="workflow-settings"
         class="settings-shell__section"
@@ -46,6 +50,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
         <SettingsLabels locale={locale} />
       </section>
 
+      <!-- 3. Rules & Lenses -->
       <section
         id="rules-lenses-settings"
         class="settings-shell__section"
@@ -55,6 +60,17 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
         <SettingsRules />
       </section>
 
+      <!-- 4. Automation & AI -->
+      <section
+        id="automation-ai-settings"
+        class="settings-shell__section"
+        data-settings-shell-section
+      >
+        <SettingsSectionIntro section={automationAiSection} />
+        <SettingsAgents locale={locale} />
+      </section>
+
+      <!-- 5. Integrations -->
       <section
         id="integrations-settings"
         class="settings-shell__section"
@@ -64,14 +80,12 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
         <SettingsIntegrations locale={locale} />
       </section>
 
-      <section
-        id="automation-ai-settings"
-        class="settings-shell__section"
-        data-settings-shell-section
-      >
-        <SettingsSectionIntro section={automationAiSection} />
-        <SettingsAgents locale={locale} />
-      </section>
+      <!-- 6. App & PWA -->
+      <SettingsAppPwa locale={locale} />
+
+      <!-- 7. Danger Zone -->
+      <SettingsDangerZone locale={locale} />
+
     </div>
   </div>
 
