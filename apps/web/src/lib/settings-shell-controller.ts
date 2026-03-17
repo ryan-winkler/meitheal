@@ -539,6 +539,29 @@ function initGoToTop(): void {
   })
 }
 
+/** + New Task button — opens the global NewTaskModal.
+ *  Uses window.openNewTaskModal() (same pattern as kanban/dashboard controllers).
+ *  Includes a retry tick for late-loaded scripts. */
+function initNewTaskButton(): void {
+  const btn = document.getElementById("unified-bar-new-task") as HTMLButtonElement | null
+  if (!btn) return
+
+  pageLifecycle.on(btn, "click", () => {
+    if (typeof window.openNewTaskModal === "function") {
+      window.openNewTaskModal()
+    } else {
+      // NewTaskModal script may still be initializing — retry after a tick
+      requestAnimationFrame(() => {
+        if (typeof window.openNewTaskModal === "function") {
+          window.openNewTaskModal()
+        } else {
+          showToast("Task modal not ready — try again", "warning")
+        }
+      })
+    }
+  })
+}
+
 export function initSettingsShell(): void {
   const shell = document.getElementById("settings-shell")
   if (!shell) return
@@ -549,6 +572,7 @@ export function initSettingsShell(): void {
   initStickyTabBar()
   initTitleSwitcher()
   initSearchLauncher()
+  initNewTaskButton()
   initTabOverflow()
   initGoToTop()
   syncSummaryStatuses()

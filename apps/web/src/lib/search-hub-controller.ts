@@ -161,11 +161,14 @@ pageLifecycle.onPageLoad(() => {
   const sortSelect = document.getElementById("search-sort") as HTMLSelectElement | null
   const staticRegistry = getStaticRegistry()
 
-  if (!launcher || !overlay || !panel || !input || !results || !closeButton) {
+  // The SearchHub modal must initialize even without a launcher input.
+  // Pages using custom-header slot (e.g. settings) don't render TopNavigation,
+  // so #global-search doesn't exist — but window.openSearchHub must still work.
+  if (!overlay || !panel || !input || !results || !closeButton) {
     return
   }
 
-  const launcherEl = launcher
+  const launcherEl = launcher  // nullable — may not exist on custom-header pages
   const overlayEl = overlay
   const panelEl = panel
   const inputEl = input
@@ -214,7 +217,7 @@ pageLifecycle.onPageLoad(() => {
     renderedItems = []
     selectedIndex = -1
     inputEl.value = ""
-    launcherEl.value = ""
+    if (launcherEl) launcherEl.value = ""
     suppressLauncherFocus = true
     focusTrap.deactivate()
     setTimeout(() => {
@@ -397,17 +400,22 @@ pageLifecycle.onPageLoad(() => {
     })
   }
 
-  launcherEl.addEventListener("focus", () => {
-    if (suppressLauncherFocus) return
-    openHub()
-  })
-  launcherEl.addEventListener("click", () => openHub())
-  launcherEl.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault()
+  // Launcher-specific event listeners — only bound when #global-search exists.
+  // On pages with custom-header (settings), the UnifiedBar search launcher
+  // opens the hub via window.openSearchHub() directly instead.
+  if (launcherEl) {
+    launcherEl.addEventListener("focus", () => {
+      if (suppressLauncherFocus) return
       openHub()
-    }
-  })
+    })
+    launcherEl.addEventListener("click", () => openHub())
+    launcherEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        openHub()
+      }
+    })
+  }
 
   closeButtonEl.addEventListener("click", closeHub)
   overlayEl.addEventListener("click", (event) => {
