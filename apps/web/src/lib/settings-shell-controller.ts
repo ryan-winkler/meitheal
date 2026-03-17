@@ -417,10 +417,10 @@ function initStickyTabBar(): void {
   surface.parentNode?.insertBefore(spacer, surface.nextSibling)
 
   /** Calculate the sidebar offset for the fixed tab bar.
-   *  Returns 0 on mobile (<768px) or when sidebar is collapsed. */
+   *  Returns 0 on mobile (<768px), 48 when collapsed (icon-only), else sidebar width. */
   function getSidebarOffset(): number {
     if (window.innerWidth < 768) return 0
-    if (document.body.classList.contains("sidebar-collapsed")) return 0
+    if (document.body.classList.contains("sidebar-collapsed")) return 48
     const sidebar = document.querySelector<HTMLElement>(".sidebar")
     return sidebar ? sidebar.offsetWidth : 240
   }

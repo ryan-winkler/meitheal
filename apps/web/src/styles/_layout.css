@@ -7,58 +7,47 @@
  * ============================================= */
 /* --- Layout --- */
 .sidebar {
-  @apply w-sidebar bg-bg-secondary/90 backdrop-blur-md flex flex-col border-r border-border fixed h-screen z-40;
-  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  @apply bg-bg-secondary/90 backdrop-blur-md flex flex-col border-r border-border fixed h-screen z-40;
+  width: var(--sidebar-width, 240px);
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
   }
 
-  /* Collapsed sidebar slides off-screen */
+  /* Collapsed sidebar: icon-only (Zendesk pattern) — NOT off-screen */
   body.sidebar-collapsed .sidebar {
-    transform: translateX(-100%);
+    width: 48px;
   }
 
-  /* Toggle pill that hugs the sidebar edge */
+  /* Sidebar toggle: persistent chevron at bottom of sidebar */
   .sidebar-toggle {
-    position: fixed;
-    top: 50%;
-    left: 240px;
-    transform: translateY(-50%) translateX(-50%);
-    z-index: 41;
-    width: 24px;
-    height: 48px;
-    border-radius: 0 8px 8px 0;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-left: none;
-    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    height: 36px;
+    border: none;
+    border-top: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
     color: var(--text-muted);
     font-size: 12px;
-    opacity: 0;
-    transition: left 250ms cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 200ms ease;
+    flex-shrink: 0;
+    transition: color 200ms ease, background 200ms ease;
   }
 
   .sidebar-toggle:hover {
-    opacity: 1 !important;
     color: var(--accent);
     background: var(--bg-hover);
   }
 
-  /* Show on sidebar hover or when page is hovered near the edge */
-  .sidebar:hover~.sidebar-toggle,
-  .sidebar-toggle:hover {
-    opacity: 0.7;
+  .sidebar-toggle svg {
+    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* When collapsed, move toggle to left edge and always show */
-  body.sidebar-collapsed .sidebar-toggle {
-    left: 0;
-    opacity: 1;
-    border-radius: 0 8px 8px 0;
-    border-left: 1px solid var(--border);
-}
+  /* When collapsed, rotate chevron to point right (expand) */
+  body.sidebar-collapsed .sidebar-toggle svg {
+    transform: rotate(180deg);
+  }
 
 .sidebar-header {
   @apply p-5 border-b border-border;
@@ -122,7 +111,10 @@
 
 /* --- Main content area --- */
 .main-content {
-  @apply ml-0 md:ml-sidebar flex-1 flex flex-col;
+  margin-left: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh; /* Changed from 100vh for accurate mobile/HA Companion App sizing */
   min-width: 0;
   /* Clip horizontal overflow without creating a scroll container.
@@ -149,10 +141,92 @@
   contain: style;
 }
 
-  /* When sidebar is collapsed, expand main content to full width */
-  body.sidebar-collapsed .main-content {
-    margin-left: 0;
+/* Desktop: offset main content by sidebar width (md+ only, mobile has no sidebar) */
+@media (min-width: 769px) {
+  .main-content {
+    margin-left: var(--sidebar-width, 240px);
+  }
 }
+
+  /* When sidebar is collapsed, shrink main content offset */
+  body.sidebar-collapsed .main-content {
+    margin-left: 48px;
+  }
+
+  /* — Collapsed sidebar: hide text, center icons — */
+  body.sidebar-collapsed .sidebar-header .sidebar-brand {
+    justify-content: center;
+    gap: 0;
+    font-size: 0; /* Hide text, keep SVG */
+  }
+  body.sidebar-collapsed .sidebar-header .sidebar-brand svg {
+    font-size: 24px;
+  }
+  body.sidebar-collapsed .sidebar-ipa,
+  body.sidebar-collapsed .sidebar-tooltip { display: none !important; }
+  body.sidebar-collapsed .sidebar-header { padding: 0; margin-bottom: 0.5rem; }
+  body.sidebar-collapsed .sidebar-header .sidebar-brand {
+    padding: 0.75rem 0;
+  }
+
+  /* Nav links: icon-only, centered */
+  body.sidebar-collapsed .nav-link {
+    justify-content: center;
+    padding: 0.5rem 0;
+    gap: 0;
+  }
+  body.sidebar-collapsed .nav-link .nav-icon {
+    margin-right: 0;
+  }
+  body.sidebar-collapsed .nav-link span:not(.nav-icon):not(.nav-badge),
+  body.sidebar-collapsed .nav-badge {
+    display: none;
+  }
+  /* Active indicator: bottom border instead of right border */
+  body.sidebar-collapsed .nav-link.active {
+    border-right: none;
+    background: rgba(var(--accent-rgb), 0.15);
+  }
+  /* Hide board switcher, streak badge, and footer text when collapsed */
+  body.sidebar-collapsed .board-switcher,
+  body.sidebar-collapsed .sidebar-footer a span,
+  body.sidebar-collapsed .sidebar-footer .sidebar-footer-text {
+    display: none;
+  }
+  body.sidebar-collapsed .sidebar-footer a {
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-scroll {
+    padding-top: 4px;
+  }
+
+  /* Collapsed nav tooltip — appears on hover for icon-only items */
+  body.sidebar-collapsed .nav-link {
+    position: relative;
+  }
+  body.sidebar-collapsed .nav-link::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  body.sidebar-collapsed .nav-link:hover::after {
+    opacity: 1;
+  }
 
 .page-header {
   @apply flex items-center justify-between px-6 py-4 bg-bg-secondary/50 border-b border-border;

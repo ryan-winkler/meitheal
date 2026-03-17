@@ -452,30 +452,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       <Sidebar locale={locale} taskCounts={taskCounts} />
     </div>
 
-    <!-- Sidebar toggle pill (appears on hover, always visible when collapsed) -->
-    <button
-      type="button"
-      class="sidebar-toggle"
-      id="sidebar-toggle-btn"
-      aria-label="Toggle sidebar (Ctrl+B)"
-      title="Toggle sidebar (Ctrl+B)"
-    >
-      <svg
-        width="10"
-        height="14"
-        viewBox="0 0 10 14"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M8 1L2 7L8 13"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"></path>
-      </svg>
-    </button>
-
     <div class="main-content">
       <TopNavigation locale={locale}>
         <Fragment slot="page-title"><slot name="page-title" /></Fragment>
