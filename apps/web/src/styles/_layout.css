@@ -13,7 +13,7 @@
   overflow: hidden;
   }
 
-  /* Collapsed sidebar: icon-only (Zendesk pattern) — NOT off-screen */
+  /* Collapsed sidebar: icon-only — NOT off-screen */
   body.sidebar-collapsed .sidebar {
     width: 48px;
   }

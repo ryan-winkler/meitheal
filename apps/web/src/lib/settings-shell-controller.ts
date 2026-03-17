@@ -65,11 +65,8 @@ function updateActiveSectionState(sectionId: SettingsSectionId): void {
       link.setAttribute("tabindex", active ? "0" : "-1")
     })
 
-  /* Update section switcher display if initialized */
-  const updater = (window as Record<string, unknown>).__updateSwitcherDisplay as
-    | ((id: string) => void)
-    | undefined
-  if (updater) updater(sectionId)
+  /* Notify overflow menu to refresh active state */
+  window.dispatchEvent(new CustomEvent("settings:section-changed", { detail: { sectionId } }))
 }
 
 function syncSummaryStatuses(): void {
@@ -151,12 +148,6 @@ function clearSearchState(): void {
   if (results) results.hidden = true
   if (results) results.innerHTML = ""
   if (clearButton) clearButton.hidden = true
-
-  /* Collapse expandable search back to icon */
-  const searchContainer = document.getElementById("settings-nav-search")
-  if (searchContainer) searchContainer.classList.remove("is-expanded")
-  const searchTrigger = document.getElementById("settings-search-trigger")
-  if (searchTrigger) searchTrigger.setAttribute("aria-expanded", "false")
 
   revealAllSections()
 }
@@ -409,24 +400,21 @@ function syncActiveSectionFromHash(): void {
   }
 }
 
-/** Sticky tab bar fallback — CSS position:sticky breaks in HA ingress
+/** Sticky bar fallback — CSS position:sticky breaks in HA ingress
  * iframes because the parent HA shell controls scrolling, not the addon
  * body. Uses IntersectionObserver on the first content section to detect
- * when the nav bar should fix. */
+ * when the bar should fix. */
 function initStickyTabBar(): void {
-  const surface = document.getElementById("quick-jumps-surface") as HTMLElement | null
-  if (!surface) return
+  const bar = document.getElementById("settings-bar") as HTMLElement | null
+  if (!bar) return
 
-  /* Use the first content section as the sentinel — when it starts scrolling
-     out of view, the nav bar should become fixed */
   const firstSection = document.querySelector<HTMLElement>("[data-settings-shell-section]")
   if (!firstSection) return
 
-  /* Create spacer to prevent layout jump when surface becomes fixed */
   const spacer = document.createElement("div")
   spacer.style.cssText = "display:none;width:100%;"
   spacer.setAttribute("aria-hidden", "true")
-  surface.parentNode?.insertBefore(spacer, surface.nextSibling)
+  bar.parentNode?.insertBefore(spacer, bar.nextSibling)
 
   function getSidebarOffset(): number {
     if (window.innerWidth < 768) return 0
@@ -437,27 +425,25 @@ function initStickyTabBar(): void {
 
   function applyFixedPosition(): void {
     const sidebarOffset = getSidebarOffset()
-    const topbar = document.querySelector<HTMLElement>(".topbar")
-    const topOffset = topbar ? topbar.getBoundingClientRect().bottom : 0
-    const rect = surface!.getBoundingClientRect()
+    const rect = bar!.getBoundingClientRect()
     spacer.style.display = "block"
     spacer.style.height = `${rect.height}px`
-    surface!.style.position = "fixed"
-    surface!.style.top = `${topOffset}px`
-    surface!.style.left = `${sidebarOffset}px`
-    surface!.style.right = "0"
-    surface!.style.width = ""
-    surface!.classList.add("is-fixed")
+    bar!.style.position = "fixed"
+    bar!.style.top = "0"
+    bar!.style.left = `${sidebarOffset}px`
+    bar!.style.right = "0"
+    bar!.style.width = ""
+    bar!.classList.add("is-fixed")
   }
 
   function clearFixedPosition(): void {
     spacer.style.display = "none"
-    surface!.style.position = ""
-    surface!.style.top = ""
-    surface!.style.left = ""
-    surface!.style.right = ""
-    surface!.style.width = ""
-    surface!.classList.remove("is-fixed")
+    bar!.style.position = ""
+    bar!.style.top = ""
+    bar!.style.left = ""
+    bar!.style.right = ""
+    bar!.style.width = ""
+    bar!.classList.remove("is-fixed")
   }
 
   let isFixed = false
@@ -498,15 +484,12 @@ function initStickyTabBar(): void {
   }, { once: true })
 }
 
-/** Section switcher dropdown — Zendesk-style left-side nav.
- *  Shows current section icon + label, clicking opens a dropdown
- *  listing ALL sections with icons and status labels. */
-function initSectionSwitcher(): void {
-  const btn = document.getElementById("settings-switcher-btn")
-  const dropdown = document.getElementById("settings-switcher-dropdown")
-  const iconEl = document.getElementById("settings-switcher-icon")
-  const labelEl = document.getElementById("settings-switcher-label")
-  if (!btn || !dropdown || !iconEl || !labelEl) return
+/** Title switcher — the page title acts as a dropdown trigger showing ALL
+ *  sections. Replaces both the old hamburger and overflow concepts. */
+function initTitleSwitcher(): void {
+  const btn = document.getElementById("unified-bar-switcher-btn") as HTMLElement | null
+  const dropdown = document.getElementById("unified-bar-switcher-dropdown") as HTMLElement | null
+  if (!btn || !dropdown) return
 
   let isOpen = false
 
@@ -520,16 +503,12 @@ function initSectionSwitcher(): void {
     toggleDropdown(false)
   }
 
-  /** Update the switcher button to show the given section */
-  function updateSwitcherDisplay(sectionId: string): void {
-    const section = getSettingsSection(sectionId as SettingsSectionId)
-    if (!section) return
-    iconEl!.textContent = section.icon
-    labelEl!.textContent = section.label
-
-    /* Highlight active item in dropdown */
-    dropdown!.querySelectorAll<HTMLElement>(".settings-nav__switcher-item").forEach((item) => {
-      item.classList.toggle("is-active", item.dataset.sectionId === sectionId)
+  /** Update active state in dropdown items */
+  function updateActiveState(activeSectionId?: string): void {
+    const items = dropdown!.querySelectorAll<HTMLElement>(".unified-bar__switcher-item")
+    items.forEach((item) => {
+      const isActive = item.dataset.sectionId === activeSectionId
+      item.classList.toggle("is-active", isActive)
     })
   }
 
@@ -538,14 +517,14 @@ function initSectionSwitcher(): void {
     e.stopPropagation()
     toggleDropdown()
     if (isOpen) {
-      const activeItem = dropdown.querySelector<HTMLElement>(".settings-nav__switcher-item.is-active")
-        ?? dropdown.querySelector<HTMLElement>(".settings-nav__switcher-item")
+      const activeItem = dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item.is-active")
+        ?? dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item")
       activeItem?.focus()
     }
   })
 
-  /* Handle dropdown item clicks */
-  dropdown.querySelectorAll<HTMLElement>(".settings-nav__switcher-item").forEach((item) => {
+  /* Handle item clicks */
+  dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item").forEach((item) => {
     pageLifecycle.on(item, "click", (e) => {
       e.stopPropagation()
       const sectionId = item.dataset.sectionId
@@ -553,14 +532,13 @@ function initSectionSwitcher(): void {
       closeDropdown()
       clearSearchState()
       scrollToAnchor(sectionId)
-      updateSwitcherDisplay(sectionId)
     })
   })
 
   /* Keyboard navigation */
   pageLifecycle.on(dropdown, "keydown", (event) => {
     const e = event as KeyboardEvent
-    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".settings-nav__switcher-item"))
+    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item"))
     const currentIndex = items.findIndex((item) => item === document.activeElement)
 
     if (e.key === "Escape") {
@@ -590,69 +568,39 @@ function initSectionSwitcher(): void {
     if (isOpen) closeDropdown()
   }, { passive: true } as AddEventListenerOptions)
 
-  /* Expose updater for intersection observer to call */
-  ;(window as Record<string, unknown>).__updateSwitcherDisplay = updateSwitcherDisplay
+  /* Listen for section changes */
+  window.addEventListener("settings:section-changed", ((e: CustomEvent) => {
+    updateActiveState(e.detail?.sectionId)
+  }) as EventListener)
 
   /* Set initial state */
-  updateSwitcherDisplay("personal-settings")
+  const hash = window.location.hash.replace("#", "")
+  if (hash) updateActiveState(hash)
 }
 
-/** Expandable search in the nav bar — Zendesk-style right-side search.
- *  🔍 icon expands to a search input on click. Esc or click-outside
- *  collapses back. `/` keyboard shortcut opens search. */
+/** Settings search — persistent compact input. "/" shortcut to focus. */
 function initNavSearch(): void {
-  const searchContainer = document.getElementById("settings-nav-search")
-  const searchTrigger = document.getElementById("settings-search-trigger")
-  const searchExpand = document.getElementById("settings-search-expand")
   const searchInput = document.getElementById("settings-search-input") as HTMLInputElement | null
-  if (!searchContainer || !searchTrigger || !searchExpand || !searchInput) return
+  if (!searchInput) return
 
-  function expandSearch(): void {
-    searchContainer!.classList.add("is-expanded")
-    searchTrigger!.setAttribute("aria-expanded", "true")
-    requestAnimationFrame(() => searchInput!.focus())
-  }
-
-  function collapseSearch(): void {
-    searchContainer!.classList.remove("is-expanded")
-    searchTrigger!.setAttribute("aria-expanded", "false")
-    clearSearchState()
-  }
-
-  /* Click trigger to expand */
-  pageLifecycle.on(searchTrigger, "click", (e) => {
-    e.stopPropagation()
-    expandSearch()
-  })
-
-  /* Esc collapses search */
-  pageLifecycle.on(searchInput, "keydown", (event) => {
-    const e = event as KeyboardEvent
-    if (e.key === "Escape") {
-      e.preventDefault()
-      collapseSearch()
-      searchTrigger.focus()
-    }
-  })
-
-  /* Click outside collapses */
-  pageLifecycle.on(document, "click", (e) => {
-    if (
-      searchContainer!.classList.contains("is-expanded") &&
-      !searchContainer!.contains(e.target as Node)
-    ) {
-      collapseSearch()
-    }
-  })
-
-  /* Keyboard shortcut: `/` opens search (when not in an input/textarea) */
+  /* Keyboard shortcut: `/` focuses search (when not already in an input) */
   pageLifecycle.on(document, "keydown", (event) => {
     const e = event as KeyboardEvent
     if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return
     const target = e.target as HTMLElement
     if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
     e.preventDefault()
-    expandSearch()
+    searchInput.focus()
+  })
+
+  /* Esc blurs and clears */
+  pageLifecycle.on(searchInput, "keydown", (event) => {
+    const e = event as KeyboardEvent
+    if (e.key === "Escape") {
+      e.preventDefault()
+      clearSearchState()
+      searchInput.blur()
+    }
   })
 }
 
@@ -708,7 +656,7 @@ export function initSettingsShell(): void {
   initIntersectionTracking()
   initCompanionLinks()
   initStickyTabBar()
-  initSectionSwitcher()
+  initTitleSwitcher()
   initNavSearch()
   initGoToTop()
   syncSummaryStatuses()

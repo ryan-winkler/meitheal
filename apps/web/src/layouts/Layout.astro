@@ -453,10 +453,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </div>
 
     <div class="main-content">
-      <TopNavigation locale={locale}>
-        <Fragment slot="page-title"><slot name="page-title" /></Fragment>
-        <Fragment slot="actions"><slot name="actions" /></Fragment>
-      </TopNavigation>
+      {Astro.slots.has('custom-header') ? (
+        <slot name="custom-header" />
+      ) : (
+        <TopNavigation locale={locale}>
+          <Fragment slot="page-title"><slot name="page-title" /></Fragment>
+          <Fragment slot="actions"><slot name="actions" /></Fragment>
+        </TopNavigation>
+      )}
       <main
         class="content"
         role="main"

@@ -1,0 +1,415 @@
+---
+/**
+ * UnifiedBar — Reusable top navigation bar with tab pills and title-based section switcher.
+ *
+ * The page title acts as a dropdown trigger (with chevron) showing all sections.
+ * Tab pills fill remaining space for quick switching. Overflow is handled by the
+ * title dropdown — no separate hamburger or overflow button needed.
+ *
+ * Usage:
+ *   <UnifiedBar
+ *     title="Settings"
+ *     tabs={SETTINGS_SECTIONS.map(s => ({ id: s.id, label: s.label, icon: s.icon }))}
+ *     searchPlaceholder="Search settings…"
+ *   />
+ */
+
+export interface UnifiedBarTab {
+  id: string
+  label: string
+  icon?: string
+}
+
+interface Props {
+  /** Page title — also the dropdown trigger */
+  title: string
+  /** Tab items for section navigation */
+  tabs: UnifiedBarTab[]
+  /** Placeholder text for the search input */
+  searchPlaceholder?: string
+  /** Show the AI assistant button */
+  showAiButton?: boolean
+  /** Show the search bar */
+  showSearch?: boolean
+  /** Element ID for the bar (used by controller) */
+  barId?: string
+}
+
+const {
+  title,
+  tabs,
+  searchPlaceholder = "Search…",
+  showAiButton = true,
+  showSearch = true,
+  barId = "settings-bar",
+} = Astro.props
+---
+
+<header
+  class="unified-bar"
+  id={barId}
+>
+  <div class="unified-bar__inner">
+    <!-- Left: title dropdown trigger (shows all sections) -->
+    <div class="unified-bar__switcher" id="unified-bar-switcher">
+      <button
+        type="button"
+        class="unified-bar__switcher-btn"
+        id="unified-bar-switcher-btn"
+        aria-expanded="false"
+        aria-haspopup="true"
+        aria-label={`${title} — switch section`}
+      >
+        <span class="unified-bar__switcher-label">{title}</span>
+        <svg class="unified-bar__switcher-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M4 5.5L7 8.5L10 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="unified-bar__switcher-dropdown" id="unified-bar-switcher-dropdown" role="menu" aria-label={`${title} sections`}>
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            class="unified-bar__switcher-item"
+            role="menuitem"
+            data-section-id={tab.id}
+          >
+            {tab.icon && <span class="unified-bar__switcher-item-icon" aria-hidden="true">{tab.icon}</span>}
+            <span class="unified-bar__switcher-item-label">{tab.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <!-- Center: tab pills (fill available space, quick switching) -->
+    <nav class="unified-bar__tabs" id="settings-nav-tabs" role="tablist" aria-label={`${title} sections`}>
+      {tabs.map((tab) => (
+        <a
+          class="settings-tab"
+          href={`#${tab.id}`}
+          data-settings-section-link
+          data-settings-summary={tab.id}
+          data-section-id={tab.id}
+          role="tab"
+        >
+          {tab.icon && <span class="settings-tab__icon" aria-hidden="true">{tab.icon}</span>}
+          <span class="settings-tab__label">{tab.label}</span>
+        </a>
+      ))}
+    </nav>
+
+    <!-- Right: persistent compact search -->
+    {showSearch && (
+      <div class="unified-bar__search" id="settings-nav-search">
+        <div class="unified-bar__search-field">
+          <svg class="unified-bar__search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="5"/><path d="M11 11L14 14" stroke-linecap="round"/>
+          </svg>
+          <input
+            id="settings-search-input"
+            class="unified-bar__search-input"
+            type="search"
+            placeholder={searchPlaceholder}
+            autocomplete="off"
+          />
+          <kbd class="unified-bar__search-kbd" aria-hidden="true">/</kbd>
+          <button
+            id="settings-search-clear"
+            class="unified-bar__search-clear"
+            type="button"
+            hidden
+            aria-label="Clear search"
+          >×</button>
+        </div>
+        <div
+          id="settings-search-results"
+          class="settings-search-results"
+          role="listbox"
+          hidden
+          aria-live="polite"
+        >
+        </div>
+      </div>
+    )}
+
+    <!-- AI assistant button -->
+    {showAiButton && (
+      <button
+        type="button"
+        class="unified-bar__ai-btn"
+        id="ask-ha-btn"
+        title="Ask Home Assistant"
+        aria-label="Ask Home Assistant"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/>
+        </svg>
+      </button>
+    )}
+
+    <!-- Optional extra actions slot -->
+    <slot name="actions" />
+  </div>
+</header>
+
+<style>
+  /* ─── Unified bar core ─── */
+  .unified-bar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    min-height: 56px;
+    background: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  }
+  .unified-bar__inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 56px;
+  }
+
+  /* ─── Title/Switcher (left) ─── */
+  .unified-bar__switcher {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .unified-bar__switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    min-height: 44px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease;
+  }
+  .unified-bar__switcher-btn:hover {
+    background: var(--accent-6-bg);
+    border-color: var(--border);
+  }
+  .unified-bar__switcher-btn[aria-expanded="true"] {
+    background: var(--accent-6-bg);
+    border-color: var(--accent-50-border);
+  }
+  .unified-bar__switcher-label {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .unified-bar__switcher-chevron {
+    transition: transform 160ms ease;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+  }
+  .unified-bar__switcher-btn[aria-expanded="true"] .unified-bar__switcher-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* ─── Switcher dropdown ─── */
+  .unified-bar__switcher-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 240px;
+    max-width: calc(100vw - 32px);
+    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    padding: 4px;
+    z-index: 50;
+    animation: unified-bar-dropdown-in 120ms ease-out;
+  }
+  .unified-bar__switcher-dropdown.is-open {
+    display: flex;
+    flex-direction: column;
+  }
+  .unified-bar__switcher-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .unified-bar__switcher-item:hover {
+    background: var(--accent-6-bg);
+    color: var(--text-primary);
+  }
+  .unified-bar__switcher-item.is-active {
+    background: var(--accent-12-bg);
+    color: var(--accent);
+  }
+  .unified-bar__switcher-item-icon {
+    font-size: 15px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .unified-bar__switcher-item-label {
+    flex: 1 1 auto;
+  }
+  @keyframes unified-bar-dropdown-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* ─── Center: tab pills (fill available space) ─── */
+  .unified-bar__tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1 1 auto;
+    overflow: hidden;
+    align-items: center;
+    margin: 0 4px;
+  }
+
+  /* ─── Search ─── */
+  .unified-bar__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .unified-bar__search-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .unified-bar__search-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .unified-bar__search-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .unified-bar__search-field:focus-within .unified-bar__search-icon {
+    color: var(--accent);
+  }
+  .unified-bar__search-input {
+    width: min(180px, 20vw);
+    height: 34px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+  }
+  .unified-bar__search-input::placeholder {
+    color: var(--text-muted);
+  }
+  .unified-bar__search-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-card);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .unified-bar__search-field:focus-within .unified-bar__search-kbd {
+    display: none;
+  }
+  .unified-bar__search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 150ms ease, color 150ms ease;
+  }
+  .unified-bar__search-clear:hover {
+    border-color: var(--accent-50-border);
+    color: var(--text-primary);
+  }
+
+  /* ─── AI button ─── */
+  .unified-bar__ai-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 160ms ease, background 160ms ease;
+  }
+  .unified-bar__ai-btn:hover {
+    color: var(--accent);
+    background: var(--accent-6-bg);
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    .unified-bar { padding: 0 12px; }
+    .unified-bar__tabs { display: none; }
+    .unified-bar__search-input { width: 120px; }
+    .unified-bar__switcher-label { font-size: 16px; }
+  }
+
+  /* JS-driven fixed mode for HA ingress */
+  .unified-bar.is-fixed {
+    position: fixed;
+    z-index: 35;
+    background: color-mix(in srgb, var(--bg-primary) 95%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .unified-bar__switcher-chevron,
+    .unified-bar__switcher-dropdown {
+      animation: none;
+      transition: none;
+    }
+  }
+</style>

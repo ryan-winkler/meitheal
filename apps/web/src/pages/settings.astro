@@ -7,6 +7,7 @@ import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsSystem from "../components/settings/SettingsSystem.astro"
 import Layout from "../layouts/Layout.astro"
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { SETTINGS_SECTIONS } from "../lib/settings-registry"
@@ -20,104 +21,14 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
 ---
 
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
-  <span slot="page-title">{t("settings.title", locale)}</span>
+  <UnifiedBar
+    title={t("settings.title", locale)}
+    tabs={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
+    searchPlaceholder="Search settings…"
+    slot="custom-header"
+  />
 
   <div id="settings-shell" class="settings-shell">
-    <!-- Zendesk-style unified nav bar -->
-    <section class="settings-shell__surface settings-shell__summary-surface" id="quick-jumps-surface">
-      <div class="settings-shell__nav">
-        <!-- Left: Section switcher dropdown -->
-        <div class="settings-nav__switcher" id="settings-section-switcher">
-          <button
-            type="button"
-            class="settings-nav__switcher-btn"
-            id="settings-switcher-btn"
-            aria-expanded="false"
-            aria-haspopup="true"
-            aria-label="Switch settings section"
-          >
-            <span class="settings-nav__switcher-icon" id="settings-switcher-icon" aria-hidden="true">🎨</span>
-            <span class="settings-nav__switcher-label" id="settings-switcher-label">Personal</span>
-            <svg class="settings-nav__switcher-chevron" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            </svg>
-          </button>
-          <div class="settings-nav__switcher-dropdown" id="settings-switcher-dropdown" role="menu" aria-label="Settings sections">
-            {SETTINGS_SECTIONS.map((section) => (
-              <button
-                type="button"
-                class="settings-nav__switcher-item"
-                role="menuitem"
-                data-section-id={section.id}
-                data-section-icon={section.icon}
-                data-section-label={section.label}
-              >
-                <span class="settings-nav__switcher-item-icon" aria-hidden="true">{section.icon}</span>
-                <span class="settings-nav__switcher-item-label">{section.label}</span>
-                <span class="settings-nav__switcher-item-status">{section.statusLabel}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <!-- Middle: Visible tab pills -->
-        <div class="settings-nav__tabs" id="settings-nav-tabs">
-          {SETTINGS_SECTIONS.map((section) => (
-            <a
-              class="settings-tab"
-              href={`#${section.id}`}
-              data-settings-section-link
-              data-settings-summary={section.id}
-              role="tab"
-            >
-              <span class="settings-tab__icon" aria-hidden="true">{section.icon}</span>
-              <span class="settings-tab__label">{section.label}</span>
-            </a>
-          ))}
-        </div>
-
-        <!-- Right: Expandable search -->
-        <div class="settings-nav__search" id="settings-nav-search">
-          <button
-            type="button"
-            class="settings-nav__search-trigger"
-            id="settings-search-trigger"
-            aria-label="Search settings"
-            aria-expanded="false"
-            title="Search settings (/)"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <circle cx="7" cy="7" r="5"/>
-              <path d="M11 11L14 14" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <div class="settings-nav__search-expand" id="settings-search-expand">
-            <input
-              id="settings-search-input"
-              class="settings-nav__search-input"
-              type="search"
-              placeholder="Search settings…"
-              autocomplete="off"
-            />
-            <button
-              id="settings-search-clear"
-              class="settings-nav__search-clear"
-              type="button"
-              hidden
-              aria-label="Clear search"
-            >×</button>
-          </div>
-          <div
-            id="settings-search-results"
-            class="settings-search-results"
-            role="listbox"
-            hidden
-            aria-live="polite"
-          >
-          </div>
-        </div>
-      </div>
-    </section>
 
     <div class="settings-shell__content">
 
@@ -196,214 +107,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
   }
   .settings-shell:not(.is-detail-view) .settings-shell__layout,
   .settings-shell:not(.is-detail-view) .settings-shell__mobile-nav {
-    display: none;
-  }
-  /* — Zendesk-style nav bar — */
-  .settings-shell__nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 2px 2px 2px;
-    min-height: 52px;
-  }
-  /* — Section Switcher (left) — */
-  .settings-nav__switcher {
-    position: relative;
-    flex-shrink: 0;
-  }
-  .settings-nav__switcher-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    min-height: 40px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 160ms ease, border-color 160ms ease;
-  }
-  .settings-nav__switcher-btn:hover {
-    background: var(--accent-6-bg);
-    border-color: var(--border);
-  }
-  .settings-nav__switcher-btn[aria-expanded="true"] {
-    background: var(--accent-6-bg);
-    border-color: var(--accent-50-border);
-  }
-  .settings-nav__switcher-icon {
-    font-size: 16px;
-    line-height: 1;
-  }
-  .settings-nav__switcher-label {
-    font-size: 14px;
-    font-weight: 700;
-  }
-  .settings-nav__switcher-chevron {
-    transition: transform 200ms ease;
-    flex-shrink: 0;
-    color: var(--text-secondary);
-  }
-  .settings-nav__switcher-btn[aria-expanded="true"] .settings-nav__switcher-chevron {
-    transform: rotate(180deg);
-  }
-  /* — Switcher dropdown — */
-  .settings-nav__switcher-dropdown {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 4px;
-    min-width: 240px;
-    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    padding: 4px;
-    z-index: 50;
-    animation: settings-dropdown-in 120ms ease-out;
-  }
-  .settings-nav__switcher-dropdown.is-open {
-    display: flex;
-    flex-direction: column;
-  }
-  .settings-nav__switcher-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 14px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: left;
-    white-space: nowrap;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  .settings-nav__switcher-item:hover {
-    background: var(--accent-6-bg);
-    color: var(--text-primary);
-  }
-  .settings-nav__switcher-item.is-active {
-    background: var(--accent-12-bg);
-    color: var(--accent);
-  }
-  .settings-nav__switcher-item-icon {
-    font-size: 15px;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .settings-nav__switcher-item-label {
-    flex: 1 1 auto;
-  }
-  .settings-nav__switcher-item-status {
-    font-size: 11px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-  /* — Visible tab pills (middle) — */
-  .settings-nav__tabs {
-    display: flex;
-    gap: 4px;
-    flex: 1 1 auto;
-    overflow: hidden;
-    align-items: center;
-  }
-  /* — Expandable search (right) — */
-  .settings-nav__search {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  .settings-nav__search-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    flex-shrink: 0;
-  }
-  .settings-nav__search-trigger:hover {
-    background: var(--accent-6-bg);
-    border-color: var(--border);
-    color: var(--text-primary);
-  }
-  .settings-nav__search-trigger[aria-expanded="true"] {
-    background: var(--accent-6-bg);
-    border-color: var(--accent-50-border);
-    color: var(--accent);
-  }
-  /* Hide search trigger icon when search is expanded */
-  .settings-nav__search.is-expanded .settings-nav__search-trigger {
-    display: none;
-  }
-  .settings-nav__search-expand {
-    display: none;
-    align-items: center;
-    gap: 6px;
-    animation: search-expand-in 200ms ease-out;
-  }
-  .settings-nav__search.is-expanded .settings-nav__search-expand {
-    display: flex;
-  }
-  @keyframes search-expand-in {
-    from { opacity: 0; width: 0; }
-    to { opacity: 1; width: 240px; }
-  }
-  .settings-nav__search-input {
-    width: 240px;
-    height: 38px;
-    padding: 0 12px;
-    border: 1px solid var(--accent-50-border);
-    border-radius: 10px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    font-size: 13px;
-    outline: none;
-    transition: border-color 160ms ease, box-shadow 160ms ease;
-  }
-  .settings-nav__search-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-  }
-  .settings-nav__search-input::placeholder {
-    color: var(--text-muted);
-  }
-  .settings-nav__search-clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 14px;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: border-color 150ms ease, color 150ms ease;
-  }
-  .settings-nav__search-clear:hover {
-    border-color: var(--accent-50-border);
-    color: var(--text-primary);
+    display: none; /* Bar-specific overrides handled by UnifiedBar.astro component */
   }
   /* — Search results dropdown — */
   .settings-search-results {
@@ -415,6 +119,7 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     right: 0;
     margin-top: 4px;
     min-width: 320px;
+    max-width: calc(100vw - 32px);
     max-height: 340px;
     overflow-y: auto;
     background: color-mix(in srgb, var(--bg-card) 97%, transparent);
@@ -490,43 +195,11 @@ const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "
     padding: 12px;
     text-align: center;
   }
-  /* — Responsive: mobile — */
-  @media (max-width: 640px) {
-    .settings-nav__tabs {
-      display: none;
-    }
-    .settings-nav__search-input {
-      width: 180px;
-    }
-    .settings-nav__switcher-label {
-      display: none; /* icon-only on small screens */
-    }
-  }
   @media (prefers-reduced-motion: reduce) {
-    .settings-nav__switcher-chevron,
-    .settings-nav__search-expand,
-    .settings-nav__switcher-dropdown,
     .settings-search-results {
       animation: none;
       transition: none;
     }
-  }
-  .settings-shell__summary-surface {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: var(--bg-main);
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  /* JS-driven fixed mode for HA ingress where CSS sticky fails */
-  .settings-shell__summary-surface.is-fixed {
-    z-index: 35;
-    background: color-mix(in srgb, var(--bg-main) 95%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: 6px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.15);
   }
   /* — Color-mix CSS custom properties (pre-computed for paint perf) — */
   :root {
