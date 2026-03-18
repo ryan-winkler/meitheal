@@ -5,27 +5,31 @@
  * Provides typed, parameterized query methods for task template CRUD
  * and task instantiation from templates.
  *
- * Habit templates (is_habit=1) are a specialization that auto-create
+ * Routine templates (is_routine=1) are a specialization that auto-create
  * recurring tasks. Streaks are derived from completed task dates.
  *
- * @kcs Habits are NOT isolated — they create real tasks via templates.
- * Tasks created from habits carry source_template_id for tracking.
+ * @kcs Routines are NOT isolated — they create real tasks via templates.
+ * Tasks created from routines carry source_template_id for tracking.
+ * @see docs/decisions/ADR-007-hierarchy-model.md for terminology evolution.
  */
 import type { Client } from "@libsql/client"
 import { STATUS } from "../../../lib/status-config"
 
-export interface HabitTemplateRow {
+export interface RoutineTemplateRow {
   id: string
   name: string
   template_json: string
   icon: string
-  frequency: string
+  cadence: string
   position: number
   created_at: number
   updated_at: number
 }
 
-export interface HabitWithStats extends HabitTemplateRow {
+/** @deprecated Use RoutineTemplateRow — ADR-007 ubiquitous language */
+export type HabitTemplateRow = RoutineTemplateRow
+
+export interface RoutineWithStats extends RoutineTemplateRow {
   todayCompleted: boolean
   todayTaskId: string | null
   lastCompletedDate: string | null
@@ -34,6 +38,9 @@ export interface HabitWithStats extends HabitTemplateRow {
   totalCompletions: number
   checklists: Array<{ text: string; done: boolean }>
 }
+
+/** @deprecated Use RoutineWithStats — ADR-007 ubiquitous language */
+export type HabitWithStats = RoutineWithStats
 
 export class TemplateRepository {
   constructor(private client: Client) {}
@@ -94,13 +101,19 @@ export class TemplateRepository {
 
   /** Create a new template */
   async create(data: {
-    id: string; name: string; templateJson: string; icon: string; position: number; isHabit?: boolean; frequency?: string
+    id: string; name: string; templateJson: string; icon: string; position: number; isRoutine?: boolean; cadence?: string
+    /** @deprecated Use isRoutine */
+    isHabit?: boolean
+    /** @deprecated Use cadence */
+    frequency?: string
   }): Promise<void> {
     const now = Date.now()
+    const isRoutine = data.isRoutine ?? data.isHabit ?? false
+    const cadence = data.cadence ?? data.frequency ?? "daily"
     await this.client.execute({
-      sql: `INSERT INTO task_templates (id, name, template_json, icon, is_habit, frequency, position, created_at, updated_at)
+      sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [data.id, data.name, data.templateJson, data.icon, data.isHabit ? 1 : 0, data.frequency ?? "daily", data.position, now, now],
+      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now],
     })
   }
 
@@ -114,7 +127,9 @@ export class TemplateRepository {
 
   /** Update a template */
   async update(id: string, data: {
-    name?: string; templateJson?: string; icon?: string; frequency?: string
+    name?: string; templateJson?: string; icon?: string; cadence?: string
+    /** @deprecated Use cadence */
+    frequency?: string
   }): Promise<void> {
     const sets: string[] = []
     const args: (string | number)[] = []
@@ -122,7 +137,8 @@ export class TemplateRepository {
     if (data.name !== undefined) { sets.push("name = ?"); args.push(data.name) }
     if (data.templateJson !== undefined) { sets.push("template_json = ?"); args.push(data.templateJson) }
     if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
-    if (data.frequency !== undefined) { sets.push("frequency = ?"); args.push(data.frequency) }
+    const cadence = data.cadence ?? data.frequency
+    if (cadence !== undefined) { sets.push("cadence = ?"); args.push(cadence) }
 
     if (sets.length === 0) return
 
@@ -136,12 +152,12 @@ export class TemplateRepository {
     })
   }
 
-  // ── Habit-Specific Methods ──────────────────────────────────────
+  // ── Routine-Specific Methods ────────────────────────────────────
 
-  /** Find all habit templates */
-  async findHabits(): Promise<HabitTemplateRow[]> {
+  /** Find all routine templates */
+  async findRoutines(): Promise<RoutineTemplateRow[]> {
     const result = await this.client.execute(
-      "SELECT * FROM task_templates WHERE is_habit = 1 ORDER BY position ASC, created_at ASC"
+      "SELECT * FROM task_templates WHERE is_routine = 1 ORDER BY position ASC, created_at ASC"
     )
     return result.rows.map(r => {
       const row = r as Record<string, unknown>
@@ -150,7 +166,7 @@ export class TemplateRepository {
         name: String(row.name),
         template_json: String(row.template_json ?? "{}"),
         icon: String(row.icon ?? "✅"),
-        frequency: String(row.frequency ?? "daily"),
+        cadence: String(row.cadence ?? row.frequency ?? "daily"),
         position: Number(row.position ?? 0),
         created_at: Number(row.created_at),
         updated_at: Number(row.updated_at),
@@ -158,26 +174,31 @@ export class TemplateRepository {
     })
   }
 
+  /** @deprecated Use findRoutines() — ADR-007 ubiquitous language */
+  async findHabits(): Promise<RoutineTemplateRow[]> {
+    return this.findRoutines()
+  }
+
   /**
-   * Get habits with stats — enriches each habit template with:
+   * Get routines with stats — enriches each routine template with:
    * - Today's completion status (from linked tasks)
    * - Last completed date
    * - Current and longest streaks
    * - Total completions
    * - Checklists from template
    */
-  async getHabitsWithStats(): Promise<HabitWithStats[]> {
-    const habits = await this.findHabits()
+  async getRoutinesWithStats(): Promise<RoutineWithStats[]> {
+    const routines = await this.findRoutines()
     const today = new Date().toISOString().split("T")[0]!
-    const results: HabitWithStats[] = []
+    const results: RoutineWithStats[] = []
 
-    for (const habit of habits) {
-      // Today's task for this habit
+    for (const routine of routines) {
+      // Today's task for this routine
       const todayTask = await this.client.execute({
         sql: `SELECT id, status FROM tasks
               WHERE source_template_id = ? AND due_date = ?
               ORDER BY created_at DESC LIMIT 1`,
-        args: [habit.id, today],
+        args: [routine.id, today],
       })
       const todayRow = todayTask.rows[0] as Record<string, unknown> | undefined
       const todayCompleted = todayRow ? String(todayRow.status) === "complete" : false
@@ -188,7 +209,7 @@ export class TemplateRepository {
         sql: `SELECT due_date FROM tasks
               WHERE source_template_id = ? AND status = 'complete'
               ORDER BY due_date DESC LIMIT 1`,
-        args: [habit.id],
+        args: [routine.id],
       })
       const lastRow = lastCompleted.rows[0] as Record<string, unknown> | undefined
       const lastCompletedDate = lastRow ? String(lastRow.due_date) : null
@@ -196,24 +217,24 @@ export class TemplateRepository {
       // Total completions
       const totalResult = await this.client.execute({
         sql: "SELECT COUNT(*) as cnt FROM tasks WHERE source_template_id = ? AND status = 'complete'",
-        args: [habit.id],
+        args: [routine.id],
       })
       const totalCompletions = Number((totalResult.rows[0] as Record<string, unknown>).cnt)
 
       // Streak calculation from completed task dates
-      const streakData = await this.calculateStreak(habit.id)
+      const streakData = await this.calculateStreak(routine.id)
 
       // Parse checklists from template JSON
       let checklists: Array<{ text: string; done: boolean }> = []
       try {
-        const tmpl = JSON.parse(habit.template_json) as Record<string, unknown>
+        const tmpl = JSON.parse(routine.template_json) as Record<string, unknown>
         if (Array.isArray(tmpl.checklists)) {
           checklists = tmpl.checklists as Array<{ text: string; done: boolean }>
         }
       } catch { /* invalid JSON */ }
 
       results.push({
-        ...habit,
+        ...routine,
         todayCompleted,
         todayTaskId,
         lastCompletedDate,
@@ -227,13 +248,18 @@ export class TemplateRepository {
     return results
   }
 
+  /** @deprecated Use getRoutinesWithStats() — ADR-007 ubiquitous language */
+  async getHabitsWithStats(): Promise<RoutineWithStats[]> {
+    return this.getRoutinesWithStats()
+  }
+
   /**
-   * Create today's task from a habit template.
+   * Create today's task from a routine template.
    * If today's task already exists, returns its ID without creating a duplicate.
    *
    * @returns { taskId, alreadyExisted }
    */
-  async instantiateHabitTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
+  async instantiateRoutineTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
     const today = new Date().toISOString().split("T")[0]!
 
     // Check if today's task already exists
@@ -272,18 +298,18 @@ export class TemplateRepository {
       }
     } catch { /* keep default */ }
 
-    // Build habit task label
+    // Build routine task label
     const labels = Array.isArray(template.labels) ? [...template.labels] : []
-    if (!labels.includes("habit")) labels.push("habit")
+    if (!labels.includes("routine")) labels.push("routine")
 
     await this.client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type,
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, task_kind,
             due_date, checklists, custom_fields, board_id, source_template_id, ticket_number,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 'pending', ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?, ?, '{}', 'pending', ?, ?, ?, ?)`,
       args: [
         taskId,
-        String(template.title ?? tmpl.name ?? "Habit"),
+        String(template.title ?? tmpl.name ?? "Routine"),
         String(template.description ?? ""),
         STATUS.PENDING,
         Number(template.priority ?? 3),
@@ -305,8 +331,13 @@ export class TemplateRepository {
     return { taskId, alreadyExisted: false }
   }
 
+  /** @deprecated Use instantiateRoutineTask() — ADR-007 ubiquitous language */
+  async instantiateHabitTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
+    return this.instantiateRoutineTask(templateId)
+  }
+
   /**
-   * Calculate current and longest streak for a habit.
+   * Calculate current and longest streak for a routine.
    * Streaks are derived from distinct completed task dates (due_date).
    */
   private async calculateStreak(templateId: string): Promise<{ current: number; longest: number }> {

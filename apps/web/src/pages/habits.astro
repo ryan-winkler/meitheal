@@ -1,16 +1,17 @@
 ---
 /**
- * Habits Page — Task Template Integration
+ * Habits Page — Routine Template Integration
  *
- * @domain domain-tasks (habits bounded context)
- * @bounded-context habits
+ * @domain domain-tasks (routines bounded context)
+ * @bounded-context routines
  *
- * Habits are task templates (is_habit=1) that auto-create daily tasks.
- * Completing a habit creates a real task visible across all views.
+ * Routines (formerly "habits") are task templates (is_routine=1) that auto-create daily tasks.
+ * Completing a routine creates a real task visible across all views.
  * Streaks derive from completed task dates — fully integrated.
  *
- * @kcs Habits are NOT isolated. They produce real tasks that appear in
+ * @kcs Routines are NOT isolated. They produce real tasks that appear in
  * Today, Kanban, Table, and Upcoming views automatically.
+ * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"

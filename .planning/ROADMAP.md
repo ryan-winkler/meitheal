@@ -157,25 +157,48 @@
 
 ---
 
-### Phase 04.1: Human-Agent DDD Core (INSERTED)
+### Phase 04.1: Human-Agent DDD Core
 
 **Goal:** Replace `Epic -> Story -> Task` with `Area -> Goal -> Project -> Task -> Routine`, add bot-safe orchestration primitives, and define an offline-safe merge and compatibility translation strategy before execution.
 
+**Status:** ✅ Schema + Domain Logic Complete | 🔜 API routes + UI (Phase 04.2)
+
 **Success Criteria:**
-1. `Goal` and `Project` are treated as aggregate roots, not `task_type` aliases.
-2. `Task` behavior is modeled via `task_kind` (`standard_action`, `shopping_item`, `checklist`) instead of hierarchy labels.
-3. Bot handoff uses explicit owner, lock, orchestration, proposal, and audit-ledger primitives.
-4. Offline/PWA sync has a documented field-family merge strategy instead of whole-row last-write-wins.
-5. HA todo, Grocy, and Vikunja/Trello translation rules are defined without bloating the core UI model.
+1. ✅ `Goal` and `Project` are treated as aggregate roots, not `task_type` aliases.
+2. ✅ `Task` behavior is modeled via `task_kind` (`standard_action`, `shopping_item`, `checklist`, `routine_instance`) instead of hierarchy labels.
+3. ✅ Bot handoff uses explicit owner, lock, orchestration, proposal, and audit-ledger primitives.
+4. 🔜 Offline/PWA sync has a documented field-family merge strategy instead of whole-row last-write-wins.
+5. ✅ HA todo and Vikunja translation rules are defined without bloating the core UI model.
+
+**Sub-Phases:**
+
+| # | Sub-Phase | Status | Files Changed |
+|---|-----------|--------|---------------|
+| 04.1a | Schema Foundation | ✅ | `store.ts`, `domain-model.ts`, `task.ts`, `index.ts` |
+| 04.1b | Bot Orchestration Core | ✅ | `handoff.ts`, `store.ts`, `task-repository.ts` |
+| 04.1c | Integration Translation | ✅ | `todo-bridge.ts`, verified: vikunja-compat, offline-store |
+| 04.1d | Ubiquitous Language Cleanup | ✅ | `template-repository.ts`, `habits.ts`, `habits.astro` |
+
+**Test Coverage:** 64 new tests (schema-validation: 15, hierarchy-model: 8, handoff-state-machine: 41)
 
 **Depends on:** Phase 4
-**Plans:** 0 plans
+**Plans:** Completed — see [ADR-007](file:///home/ryan/code/meitheal/docs/decisions/ADR-007-hierarchy-model.md)
 
-Plans:
-- [ ] Research + discuss the target domain model and schema contract
-- [ ] Confirm board/area/project semantics and compatibility boundaries
-- [ ] Plan execution only after discuss-phase approval
+### Phase 04.2: Hierarchy API + UI (Planned)
+
+**Goal:** Expose areas/goals/projects via API routes and build sidebar navigation tree + project views.
+
+**Status:** 📋 Planned
+
+**Requirements:**
+1. API routes: `/api/areas`, `/api/goals`, `/api/projects` (CRUD)
+2. Sidebar navigation tree component
+3. Project detail view
+4. Bot badge indicators on tasks
+5. Goal progress visualization
+
+**Depends on:** Phase 04.1
 
 ---
 
-*Roadmap revised: 2026-03-18 — added Phase 04.1 Human-Agent DDD Core research/discuss track*
+*Roadmap revised: 2026-03-18 — Phase 04.1 complete, Phase 04.2 planned*

@@ -6,17 +6,18 @@ import { isFeatureEnabled } from "../../lib/feature-flags"
 import { logApiError } from "../../lib/api-logger"
 
 /**
- * Habits API — Task Template Integration
+ * Habits API — Routine Template Integration
  *
- * Habits are task templates with is_habit=1. Completing a habit
- * creates/completes a real task linked via source_template_id.
+ * Routines (formerly "habits") are task templates with is_routine=1.
+ * Completing a routine creates/completes a real task linked via source_template_id.
  *
- * GET  /api/habits — Get all habit templates with stats
- * POST /api/habits — Create, complete, update, or delete habits
+ * GET  /api/habits — Get all routine templates with stats
+ * POST /api/habits — Create, complete, update, or delete routines
  *
- * @domain domain-tasks (habits bounded context)
- * @kcs Habits are NOT isolated — they produce real tasks visible
+ * @domain domain-tasks (routines bounded context)
+ * @kcs Routines are NOT isolated — they produce real tasks visible
  * across all views (Today, Kanban, Table, Upcoming).
+ * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
 export const GET: APIRoute = async () => {
@@ -26,7 +27,7 @@ export const GET: APIRoute = async () => {
   try {
     await ensureSchema()
     const repo = new TemplateRepository(getPersistenceClient())
-    const habits = await repo.getHabitsWithStats()
+    const habits = await repo.getRoutinesWithStats()
     return apiJson({ habits })
   } catch (error) {
     logApiError("habits", "GET error", error)
@@ -54,14 +55,14 @@ export const POST: APIRoute = async ({ request }) => {
         const id = crypto.randomUUID()
         const position = await repo.getNextPosition()
         const icon = typeof body.icon === "string" ? body.icon : "✅"
-        const frequency = body.frequency === "weekly" ? "weekly" : "daily"
+        const cadence = (body.cadence ?? body.frequency) === "weekly" ? "weekly" : "daily"
 
         // Build template JSON with optional checklists
         const templateJson: Record<string, unknown> = {
           title: name,
           description: typeof body.description === "string" ? body.description : "",
           priority: typeof body.priority === "number" ? body.priority : 3,
-          labels: ["habit"],
+          labels: ["routine"],
           task_type: "task",
         }
 
@@ -78,19 +79,18 @@ export const POST: APIRoute = async ({ request }) => {
           templateJson: JSON.stringify(templateJson),
           icon,
           position,
-          isHabit: true,
-          frequency,
+          isRoutine: true,
+          cadence,
         })
 
-        return apiJson({ id, name, icon, frequency, position }, 201)
+        return apiJson({ id, name, icon, cadence, position }, 201)
       }
 
       case "complete": {
         const templateId = String(body.templateId || body.habitId || "")
         if (!templateId) return apiError("templateId is required", 400)
 
-        // Create today's task if not exists, then mark it complete
-        const { taskId, alreadyExisted } = await repo.instantiateHabitTask(templateId)
+        const { taskId, alreadyExisted } = await repo.instantiateRoutineTask(templateId)
 
         // Mark the task as complete
         const client = getPersistenceClient()
@@ -109,7 +109,8 @@ export const POST: APIRoute = async ({ request }) => {
         const updates: Parameters<typeof repo.update>[1] = {}
         if (typeof body.name === "string") updates.name = body.name.trim()
         if (typeof body.icon === "string") updates.icon = body.icon
-        if (typeof body.frequency === "string") updates.frequency = body.frequency
+        if (typeof body.cadence === "string") updates.cadence = body.cadence
+        else if (typeof body.frequency === "string") updates.cadence = body.frequency
 
         // Rebuild template JSON if checklist or other template fields change
         if (body.templateJson && typeof body.templateJson === "object") {
