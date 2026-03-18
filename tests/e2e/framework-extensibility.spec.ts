@@ -136,6 +136,7 @@ test("frameworkConfigToRaw converts FrameworkConfig to YAML-compatible object", 
 
   // Check field key mapping
   const fields = raw.fields as Array<Record<string, unknown>>
+  expect(fields.length).toBeGreaterThan(0)
   expect(fields[0]!.key).toBe("reach")
   expect(fields[0]!.ui_type).toBe("slider")
   expect(fields[0]!.help_text).toBe("Reach score")
@@ -163,7 +164,9 @@ test("parseFrameworkConfig → frameworkConfigToRaw round-trip preserves data", 
   expect(exported.version).toBe(rawYaml.version)
   expect(exported.archetype).toBe(rawYaml.archetype)
   expect(exported.formula).toBe(rawYaml.formula)
+  expect((exported.badge_thresholds as unknown[]).length).toBeGreaterThan(0)
   expect((exported.badge_thresholds as Array<{ min: number }>)[0]!.min).toBe(0)
+  expect((exported.fields as unknown[]).length).toBeGreaterThan(0)
   expect((exported.fields as Array<{ key: string }>)[0]!.key).toBe("a")
   expect((exported.fields as Array<{ help_text: string }>)[0]!.help_text).toBe("Alpha value")
 })
