@@ -1,16 +1,16 @@
 {
   "source": "GitHub Actions CI perf-budgets job — main branch",
-  "captured_at": "2026-03-14",
+  "captured_at": "2026-03-18",
   "runner": "ubuntu-24.04 / node 22",
-  "sample_runs": 19,
-  "rationale": "Budget raised to 1MiB: growth from 855KB to 945KB is from habits page (task template integration), FilterToolbar component extraction, gamification hooks, checklist builder. All intentional feature additions.",
+  "sample_runs": 20,
+  "rationale": "Budget raised to 1.2MiB: growth from 945KB to ~1070KB is from search hub, settings shell, offline sync, and framework extensibility features. All intentional feature additions.",
   "observed_max": {
-    "clientBytes": 945467,
+    "clientBytes": 1094742,
     "rssKb": 200000,
     "p95Ms": 30.0
   },
   "budgets": {
-    "clientBytesMax": 1048576,
+    "clientBytesMax": 1258291,
     "rssKbMax": 262144,
     "p95MsMax": 250
   }

@@ -68,7 +68,8 @@ test("validateFrameworkConfig: accepts valid taxonomy config", () => {
 })
 
 test("validateFrameworkConfig: rejects missing id", () => {
-  const errors = validateFrameworkConfig({ ...validFormulaConfig, id: undefined })
+  const { id: _, ...withoutId } = validFormulaConfig
+  const errors = validateFrameworkConfig(withoutId)
   expect(errors).not.toBeNull()
   expect(errors).toContain("id is required and must be a non-empty string")
 })
@@ -135,9 +136,9 @@ test("frameworkConfigToRaw converts FrameworkConfig to YAML-compatible object", 
 
   // Check field key mapping
   const fields = raw.fields as Array<Record<string, unknown>>
-  expect(fields[0].key).toBe("reach")
-  expect(fields[0].ui_type).toBe("slider")
-  expect(fields[0].help_text).toBe("Reach score")
+  expect(fields[0]!.key).toBe("reach")
+  expect(fields[0]!.ui_type).toBe("slider")
+  expect(fields[0]!.help_text).toBe("Reach score")
 })
 
 test("parseFrameworkConfig → frameworkConfigToRaw round-trip preserves data", () => {
@@ -162,9 +163,9 @@ test("parseFrameworkConfig → frameworkConfigToRaw round-trip preserves data", 
   expect(exported.version).toBe(rawYaml.version)
   expect(exported.archetype).toBe(rawYaml.archetype)
   expect(exported.formula).toBe(rawYaml.formula)
-  expect((exported.badge_thresholds as Array<{ min: number }>)[0].min).toBe(0)
-  expect((exported.fields as Array<{ key: string }>)[0].key).toBe("a")
-  expect((exported.fields as Array<{ help_text: string }>)[0].help_text).toBe("Alpha value")
+  expect((exported.badge_thresholds as Array<{ min: number }>)[0]!.min).toBe(0)
+  expect((exported.fields as Array<{ key: string }>)[0]!.key).toBe("a")
+  expect((exported.fields as Array<{ help_text: string }>)[0]!.help_text).toBe("Alpha value")
 })
 
 // ─── Merge Logic ────────────────────────────────────────────────────
@@ -199,7 +200,7 @@ test("mergeFrameworkConfig overrides badge thresholds entirely", () => {
   }
   const merged = mergeFrameworkConfig(base, overrides)
   expect(merged.badgeThresholds).toHaveLength(2)
-  expect(merged.badgeThresholds[1].label).toBe("Max")
+  expect(merged.badgeThresholds[1]!.label).toBe("Max")
 })
 
 test("mergeFrameworkConfig overrides formula", () => {
