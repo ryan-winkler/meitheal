@@ -115,6 +115,17 @@ Cross-context imports must occur through public package APIs, not deep path impo
 - Redact secrets by default via `defaultRedactionPatterns`
 - Do not introduce high-cardinality Loki labels (user IDs, task IDs, URLs)
 
+## Git Commit Policy
+
+**Commits must not be attributed to the Copilot bot identity.**
+
+- Every commit message produced by an AI agent **must** end with a `Co-authored-by` trailer:
+  ```
+  Co-authored-by: ryan-winkler <ryan-winkler@users.noreply.github.com>
+  ```
+- PRs opened by an AI agent should be **squash-merged** by the human owner so the final commit lands under the human author's identity.
+- Do not push force-authored bot commits directly to `main`.
+
 ## Deploy Rules
 
 - Pushing to `main` does NOT deploy. Push a version tag (`v*`) to trigger CI Docker build
