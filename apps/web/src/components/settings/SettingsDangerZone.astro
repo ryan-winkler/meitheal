@@ -30,9 +30,10 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     tone="default"
   >
     <SettingsCallout title="What gets deleted?" icon="ℹ" tone="warning">
-      This permanently deletes tasks with status <strong>complete</strong> or
-      <strong>archived</strong> that were last updated before the chosen cutoff.
-      Active, pending, and in-progress tasks are never affected.
+      <strong>Complete</strong> = work is done, task stays visible.
+      <strong>Archived</strong> = complete task hidden from daily views.
+      This control permanently deletes both, based on when they were last
+      updated. Active and in-progress tasks are never touched.
     </SettingsCallout>
 
     <div class="retention-controls" style="margin-top: 16px;">

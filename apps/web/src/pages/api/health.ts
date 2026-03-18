@@ -3,6 +3,8 @@ import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVers
 import { apiJson } from "../../lib/api-response";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { supervisorFetch } from "../../lib/supervisor-fetch";
+import { getHAConnectionStatus } from "@domains/ha/ha-connection";
 
 /** Process startup time for uptime calculation. */
 const startedAt = Date.now();
@@ -44,6 +46,24 @@ export const GET: APIRoute = async () => {
     // Simple connectivity check
     await client.execute("SELECT 1");
 
+    // PRA-14: Supervisor API connectivity probe
+    const haMode = process.env.SUPERVISOR_TOKEN ? "ha-addon" : "standalone";
+    let supervisorReachable = false;
+    let addonSlug = "unknown";
+    if (process.env.SUPERVISOR_TOKEN) {
+      try {
+        const res = await supervisorFetch("/addons/self/info", {}, 3_000);
+        if (res && res.ok) {
+          supervisorReachable = true;
+          const data = await res.json() as { data?: { slug?: string } };
+          addonSlug = data?.data?.slug ?? "unknown";
+        }
+      } catch { /* Supervisor unreachable — non-fatal */ }
+    }
+
+    // HA WebSocket connection status
+    const haWsStatus = getHAConnectionStatus();
+
     return apiJson({
       status: "ok",
       service: "meitheal-web",
@@ -53,6 +73,10 @@ export const GET: APIRoute = async () => {
       db_status: "connected",
       db_integrity: getDbIntegrityStatus() ? "ok" : "failed",
       schema_version: getSchemaVersion(),
+      ha_mode: haMode,
+      supervisor_reachable: supervisorReachable,
+      addon_slug: addonSlug,
+      ha_websocket: haWsStatus,
     });
   } catch (error) {
     return apiJson({
