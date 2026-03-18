@@ -4,6 +4,7 @@ import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarNavList from "./SidebarNavList.astro";
 import SidebarBoardSwitcher from "./SidebarBoardSwitcher.astro";
+import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
 import {
@@ -51,6 +52,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
   calendar: { href: "/calendar", i18nKey: "nav.calendar", icon: "calendar" },
   gamification: { href: "/gamification", i18nKey: "nav.gamification", icon: "trophy" },
   habits: { href: "/habits", i18nKey: "nav.habits", icon: "habit" },
+  projects: { href: "/projects", i18nKey: "nav.projects", icon: "folder" },
 };
 
 type NavKey = string;
@@ -62,6 +64,7 @@ const DEFAULT_ORDER: NavKey[] = [
   "calendar",
   "gamification",
   "habits",
+  "projects",
 ];
 
 interface CustomNavItem {
@@ -254,6 +257,7 @@ const navItems = order
 
   <div class="sidebar-scroll">
     <SidebarNavList navItems={navItems} taskCounts={taskCounts} />
+    <SidebarHierarchyTree />
     <SidebarBoardSwitcher locale={locale} />
   </div>
 

@@ -1,0 +1,317 @@
+---
+/**
+ * Projects Index — grid view of all projects with status, progress, and goal breadcrumbs.
+ * @page /projects
+ */
+import Layout from "../../layouts/Layout.astro";
+import Icon from "../../components/ui/Icon.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+interface ProjectView {
+  id: string;
+  title: string;
+  description: string | null;
+  icon: string;
+  color: string;
+  status: string;
+  goal_id: string | null;
+  goalTitle: string | null;
+  areaName: string | null;
+  taskCount: number;
+  completedCount: number;
+}
+
+let projects: ProjectView[] = [];
+
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new HierarchyRepository(client);
+  const taskRepo = new TaskRepository(client);
+
+  const rawProjects = await repo.findAllProjects({});
+  const goals = await repo.findAllGoals({});
+  const areas = await repo.findAllAreas();
+
+  const goalMap = new Map(goals.map((g: Record<string, unknown>) => [g.id, g]));
+  const areaMap = new Map(areas.map((a: Record<string, unknown>) => [a.id, a]));
+
+  for (const proj of rawProjects) {
+    const goal = proj.goal_id ? goalMap.get(proj.goal_id as string) : null;
+    const area = goal && (goal as Record<string, unknown>).area_id
+      ? areaMap.get((goal as Record<string, unknown>).area_id as string)
+      : null;
+
+    const tasks = await taskRepo.findByProjectId(proj.id as string);
+    const completed = tasks.filter((t) => String(t.status) === "complete").length;
+
+    projects.push({
+      id: proj.id as string,
+      title: proj.title as string,
+      description: (proj.description as string | null) ?? null,
+      icon: (proj.icon as string) || "📋",
+      color: (proj.color as string) || "#6366F1",
+      status: (proj.status as string) || "active",
+      goal_id: (proj.goal_id as string | null) ?? null,
+      goalTitle: goal ? (goal as Record<string, unknown>).title as string : null,
+      areaName: area ? (area as Record<string, unknown>).name as string : null,
+      taskCount: tasks.length,
+      completedCount: completed,
+    });
+  }
+} catch {
+  // Schema may not exist yet
+}
+
+const statusLabels: Record<string, string> = {
+  active: "Active",
+  completed: "Completed",
+  paused: "Paused",
+  archived: "Archived",
+};
+---
+
+<Layout title="Meitheal — Projects">
+  <span slot="page-title">Projects</span>
+  <div slot="actions" class="flex gap-2">
+    <button type="button" class="btn btn-primary" id="new-project-btn">
+      <Icon name="plus" size={16} /> New Project
+    </button>
+  </div>
+
+  {projects.length === 0 ? (
+    <div class="empty-state">
+      <div class="empty-state-icon">📂</div>
+      <h2 class="empty-state-title">No projects yet</h2>
+      <p class="empty-state-desc">Create your first project to organise tasks by outcome.</p>
+      <button type="button" class="btn btn-primary" id="empty-new-project-btn">
+        Create Project
+      </button>
+    </div>
+  ) : (
+    <div class="project-grid">
+      {projects.map((proj) => {
+        const progress = proj.taskCount > 0
+          ? Math.round((proj.completedCount / proj.taskCount) * 100)
+          : 0;
+        return (
+          <a
+            class="project-card"
+            href={`/projects/${proj.id}`}
+            style={`--project-accent: ${proj.color};`}
+            data-project-id={proj.id}
+          >
+            <div class="project-card-header">
+              <span class="project-card-icon">{proj.icon}</span>
+              <span class={`project-status-badge status-${proj.status}`}>
+                {statusLabels[proj.status] ?? proj.status}
+              </span>
+            </div>
+            <h3 class="project-card-title">{proj.title}</h3>
+            {proj.description && (
+              <p class="project-card-desc">{proj.description.slice(0, 100)}{proj.description.length > 100 ? "…" : ""}</p>
+            )}
+            {(proj.goalTitle || proj.areaName) && (
+              <div class="project-card-breadcrumb">
+                {proj.areaName && <span class="breadcrumb-area">{proj.areaName}</span>}
+                {proj.areaName && proj.goalTitle && <span class="breadcrumb-sep">›</span>}
+                {proj.goalTitle && <span class="breadcrumb-goal">🎯 {proj.goalTitle}</span>}
+              </div>
+            )}
+            <div class="project-card-footer">
+              <div class="project-progress">
+                <div class="project-progress-track">
+                  <div class="project-progress-bar" style={`width: ${progress}%`} />
+                </div>
+                <span class="project-progress-text">{progress}%</span>
+              </div>
+              <span class="project-task-count">
+                {proj.completedCount}/{proj.taskCount} tasks
+              </span>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  )}
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  ></div>
+</Layout>
+
+<style>
+  @reference "../../../src/styles/global.css";
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+  }
+  .empty-state-icon { font-size: 48px; margin-bottom: 1rem; }
+  .empty-state-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .empty-state-desc {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .project-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-decoration: none;
+    color: inherit;
+    transition: all 200ms ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .project-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--project-accent, var(--accent));
+  }
+  .project-card:hover {
+    border-color: var(--project-accent, var(--accent));
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+  }
+
+  .project-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .project-card-icon { font-size: 24px; }
+  .project-status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+  }
+  .status-active { background: rgba(34,197,94,0.1); color: #22c55e; }
+  .status-completed { background: rgba(99,102,241,0.1); color: var(--accent); }
+  .status-paused { background: rgba(245,158,11,0.1); color: #f59e0b; }
+  .status-archived { background: rgba(107,114,128,0.1); color: #6b7280; }
+
+  .project-card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .project-card-desc {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .project-card-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .breadcrumb-sep { opacity: 0.5; }
+
+  .project-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: auto;
+  }
+  .project-progress {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+  }
+  .project-progress-track {
+    flex: 1;
+    height: 4px;
+    background: var(--bg-hover);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .project-progress-bar {
+    height: 100%;
+    background: var(--project-accent, var(--accent));
+    border-radius: 2px;
+    transition: width 300ms ease;
+  }
+  .project-progress-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 28px;
+    text-align: right;
+  }
+  .project-task-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  function handleNewProject() {
+    const title = prompt("Project name:");
+    if (!title?.trim()) return;
+    fetch((window.__ingress_path || "") + "/api/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: title.trim() }),
+    })
+      .then((r) => {
+        if (r.ok) return r.json();
+        throw new Error("Failed to create project");
+      })
+      .then((data) => {
+        window.location.href = (window.__ingress_path || "") + `/projects/${data.id}`;
+      })
+      .catch(() => {
+        alert("Failed to create project");
+      });
+  }
+
+  document.getElementById("new-project-btn")?.addEventListener("click", handleNewProject);
+  document.getElementById("empty-new-project-btn")?.addEventListener("click", handleNewProject);
+</script>

@@ -1,0 +1,410 @@
+---
+/**
+ * Project Detail — shows project metadata + filtered task list.
+ * @page /projects/[id]
+ */
+import Layout from "../../layouts/Layout.astro";
+import StatusBadge from "../../components/ui/StatusBadge.astro";
+import BotBadge from "../../components/ui/BotBadge.astro";
+import LabelBadges from "../../components/ui/LabelBadges.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import { formatRegionalDate } from "../../lib/date";
+import { formatTicketKey } from "../../lib/ticket-key";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
+import { STATUS_LABELS } from "../../lib/status-config";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+const projectId = Astro.params.id;
+if (!projectId) {
+  return Astro.redirect("/projects");
+}
+
+let project: Record<string, unknown> | null = null;
+let goal: Record<string, unknown> | null = null;
+let area: Record<string, unknown> | null = null;
+let tasks: Record<string, unknown>[] = [];
+
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new HierarchyRepository(client);
+  const taskRepo = new TaskRepository(client);
+
+  project = await repo.findGoalById(projectId) as Record<string, unknown> | null;
+  // Actually use findProjectById — let's query properly
+  const allProjects = await repo.findAllProjects({});
+  project = allProjects.find((p: Record<string, unknown>) => p.id === projectId) as Record<string, unknown> | null;
+
+  if (!project) {
+    return Astro.redirect("/projects");
+  }
+
+  if (project.goal_id) {
+    const allGoals = await repo.findAllGoals({});
+    goal = allGoals.find((g: Record<string, unknown>) => g.id === project!.goal_id) as Record<string, unknown> | null;
+    if (goal?.area_id) {
+      const allAreas = await repo.findAllAreas();
+      area = allAreas.find((a: Record<string, unknown>) => a.id === (goal as Record<string, unknown>).area_id) as Record<string, unknown> | null;
+    }
+  }
+
+  tasks = await taskRepo.findByProjectId(projectId);
+} catch {
+  return Astro.redirect("/projects");
+}
+
+const projTitle = String(project?.title ?? "Project");
+const projDesc = project?.description ? String(project.description) : null;
+const projIcon = String(project?.icon ?? "📋");
+const projColor = String(project?.color ?? "#6366F1");
+const projStatus = String(project?.status ?? "active");
+
+const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
+const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+
+const { timezone, dateFormat } = Astro.locals;
+---
+
+<Layout title={`Meitheal — ${projTitle}`}>
+  <span slot="page-title">
+    <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
+    {projTitle}
+  </span>
+  <div slot="actions" class="flex gap-2">
+    <a href="/projects" class="btn btn-ghost">← Projects</a>
+    <button type="button" class="btn btn-primary" id="add-task-to-project-btn">
+      + Add Task
+    </button>
+  </div>
+
+  {/* Breadcrumb */}
+  <nav class="project-breadcrumb" aria-label="Project breadcrumb">
+    <a href="/projects">Projects</a>
+    {area && <><span class="bc-sep">›</span><span>{String(area.name)}</span></>}
+    {goal && <><span class="bc-sep">›</span><span>🎯 {String(goal.title)}</span></>}
+    <span class="bc-sep">›</span>
+    <span class="bc-current">{projIcon} {projTitle}</span>
+  </nav>
+
+  {/* Project header card */}
+  <div class="project-header-card" style={`--project-accent: ${projColor};`}>
+    <div class="project-header-top">
+      <div class="project-header-info">
+        <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
+        {projDesc && <p class="project-desc">{projDesc}</p>}
+      </div>
+      <div class="project-header-stats">
+        <div class="stat-block">
+          <div class="stat-value">{tasks.length}</div>
+          <div class="stat-label">Tasks</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-value">{completedCount}</div>
+          <div class="stat-label">Done</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-value" style={progress === 100 ? "color: #22c55e" : ""}>{progress}%</div>
+          <div class="stat-label">Progress</div>
+        </div>
+      </div>
+    </div>
+    <div class="project-progress-full">
+      <div class="project-progress-bar" style={`width: ${progress}%`} />
+    </div>
+  </div>
+
+  {/* Task list */}
+  <div class="project-tasks-card">
+    <div class="card-header">
+      <h2 class="card-title">Tasks</h2>
+      <span class="text-sm text-text-muted">{tasks.length} total</span>
+    </div>
+
+    {tasks.length === 0 ? (
+      <div class="project-tasks-empty">
+        <p>No tasks in this project yet. Add one to get started.</p>
+      </div>
+    ) : (
+      <div class="project-task-list">
+        {tasks.map((task) => {
+          const p = Number(task.priority ?? 3);
+          const status = String(task.status ?? "pending");
+          const isDone = status === "complete";
+          const ticketKey = task.ticket_number ? formatTicketKey(Number(task.ticket_number)) : null;
+
+          return (
+            <div
+              class={`project-task-item ${isDone ? "task-done" : ""}`}
+              data-id={String(task.id)}
+              data-task-id={String(task.id)}
+              role="button"
+              tabindex="0"
+            >
+              <div class="task-item-left">
+                <span
+                  class="priority-dot"
+                  style={`background: ${PRIORITY_COLORS[p] ?? "#6b7280"}`}
+                  title={`Priority ${p}`}
+                />
+                {ticketKey && <span class="task-ticket-key">{ticketKey}</span>}
+                <span class={`task-title-text ${isDone ? "done" : ""}`}>{String(task.title)}</span>
+                <BotBadge owner={String(task.owner ?? "")} handoffState={String(task.handoff_state ?? "")} />
+              </div>
+              <div class="task-item-right">
+                {task.labels && String(task.labels) !== "[]" && (
+                  <LabelBadges labels={String(task.labels)} compact max={2} />
+                )}
+                <StatusBadge status={status} />
+                {task.due_date && (
+                  <span class="task-due-date">
+                    {formatRegionalDate(new Date(String(task.due_date)), { format: dateFormat, timezone })}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  ></div>
+</Layout>
+
+<style>
+  @reference "../../../src/styles/global.css";
+
+  .project-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+  .project-breadcrumb a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 150ms;
+  }
+  .project-breadcrumb a:hover { color: var(--accent); }
+  .bc-sep { opacity: 0.5; }
+  .bc-current { color: var(--text-primary); font-weight: 500; }
+
+  .project-header-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .project-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--project-accent);
+  }
+
+  .project-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .project-header-info { flex: 1; }
+  .project-desc {
+    margin: 0.75rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .project-status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+  }
+  .status-active { background: rgba(34,197,94,0.1); color: #22c55e; }
+  .status-completed { background: rgba(99,102,241,0.1); color: var(--accent); }
+  .status-paused { background: rgba(245,158,11,0.1); color: #f59e0b; }
+  .status-archived { background: rgba(107,114,128,0.1); color: #6b7280; }
+
+  .project-header-stats {
+    display: flex;
+    gap: 1.5rem;
+  }
+  .stat-block { text-align: center; }
+  .stat-block .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .stat-block .stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .project-progress-full {
+    height: 6px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .project-progress-bar {
+    height: 100%;
+    background: var(--project-accent, var(--accent));
+    border-radius: 3px;
+    transition: width 300ms ease;
+  }
+
+  .project-tasks-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .project-tasks-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .project-tasks-card .card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .project-tasks-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .project-task-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .project-task-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
+    cursor: pointer;
+    transition: background 150ms;
+    gap: 0.75rem;
+  }
+  .project-task-item:last-child { border-bottom: none; }
+  .project-task-item:hover { background: var(--bg-hover); }
+  .project-task-item.task-done { opacity: 0.6; }
+
+  .task-item-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .priority-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .task-ticket-key {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .task-title-text {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-title-text.done { text-decoration: line-through; opacity: 0.7; }
+
+  .task-item-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .task-due-date {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 640px) {
+    .project-header-top { flex-direction: column; }
+    .project-header-stats { justify-content: space-around; }
+    .task-item-right { display: none; }
+  }
+</style>
+
+<script>
+  // Add task to this project
+  document.getElementById("add-task-to-project-btn")?.addEventListener("click", () => {
+    const title = prompt("Task title:");
+    if (!title?.trim()) return;
+    const projectId = window.location.pathname.split("/").pop();
+    fetch((window.__ingress_path || "") + "/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: title.trim(),
+        project_id: projectId,
+      }),
+    })
+      .then((r) => {
+        if (r.ok) {
+          window.location.reload();
+        } else {
+          throw new Error("Failed");
+        }
+      })
+      .catch(() => alert("Failed to add task"));
+  });
+
+  // Click task to open edit modal
+  document.querySelectorAll<HTMLElement>(".project-task-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const taskId = item.dataset.id;
+      if (taskId) {
+        document.dispatchEvent(
+          new CustomEvent("meitheal:open-task", { detail: { taskId } })
+        );
+      }
+    });
+  });
+</script>

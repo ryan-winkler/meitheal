@@ -109,6 +109,17 @@ export class TaskRepository {
     return result.rows as TaskRow[];
   }
 
+  /** Tasks belonging to a specific project, ordered by priority */
+  async findByProjectId(projectId: string): Promise<TaskRow[]> {
+    const result = await this.client.execute({
+      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, board_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at
+            FROM tasks WHERE project_id = ?
+            ORDER BY priority ASC, created_at DESC`,
+      args: [projectId],
+    });
+    return sanitizeRows(result.rows as TaskRow[]);
+  }
+
   /** Favorited, non-complete tasks */
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({

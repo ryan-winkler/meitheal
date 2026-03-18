@@ -1,0 +1,377 @@
+---
+/**
+ * SidebarHierarchyTree — collapsible Area > Goal > Project navigation tree.
+ * Renders in the sidebar between nav list and board switcher.
+ * Collapse state persisted in localStorage.
+ */
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+
+interface AreaRow { id: string; name: string; icon: string; color: string; position: number }
+interface GoalRow { id: string; title: string; area_id: string | null; status: string }
+interface ProjectRow { id: string; title: string; goal_id: string | null; icon: string; color: string; status: string }
+
+let areas: AreaRow[] = [];
+let goals: GoalRow[] = [];
+let projects: ProjectRow[] = [];
+
+try {
+  await ensureSchema();
+  const repo = new HierarchyRepository(getPersistenceClient());
+  areas = (await repo.findAllAreas()) as unknown as AreaRow[];
+  goals = (await repo.findAllGoals({})) as unknown as GoalRow[];
+  projects = (await repo.findAllProjects({})) as unknown as ProjectRow[];
+} catch {
+  // Schema may not exist yet — render empty
+}
+
+// Group goals by area_id, projects by goal_id
+const goalsByArea = new Map<string, GoalRow[]>();
+const projectsByGoal = new Map<string, ProjectRow[]>();
+const ungroupedGoals: GoalRow[] = [];
+const ungroupedProjects: ProjectRow[] = [];
+
+goals.forEach((g) => {
+  if (g.area_id) {
+    const list = goalsByArea.get(g.area_id) ?? [];
+    list.push(g);
+    goalsByArea.set(g.area_id, list);
+  } else {
+    ungroupedGoals.push(g);
+  }
+});
+
+projects.forEach((p) => {
+  if (p.goal_id) {
+    const list = projectsByGoal.get(p.goal_id) ?? [];
+    list.push(p);
+    projectsByGoal.set(p.goal_id, list);
+  } else {
+    ungroupedProjects.push(p);
+  }
+});
+
+const currentPath = Astro.url.pathname;
+const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
+---
+
+{hasContent && (
+  <div class="hierarchy-tree" id="hierarchy-tree" role="tree" aria-label="Project hierarchy">
+    <div class="hierarchy-tree-header">
+      <span class="hierarchy-tree-label">Projects</span>
+      <a
+        href="/projects"
+        class="hierarchy-tree-action"
+        title="View all projects"
+        aria-label="View all projects"
+      >
+        →
+      </a>
+    </div>
+
+    <div class="hierarchy-tree-content" id="hierarchy-tree-content">
+      {areas
+        .filter((a) => a.name !== "Uncategorized" || goalsByArea.has(a.id))
+        .map((area) => {
+          const areaGoals = goalsByArea.get(area.id) ?? [];
+          return (
+            <div class="tree-area" data-area-id={area.id} role="treeitem" aria-expanded="true">
+              <button
+                class="tree-toggle tree-area-toggle"
+                data-tree-id={`area-${area.id}`}
+                aria-label={`Toggle ${area.name}`}
+                type="button"
+              >
+                <span class="tree-chevron">▸</span>
+                <span class="tree-area-icon" style={`color: ${area.color}`}>{area.icon}</span>
+                <span class="tree-area-name">{area.name}</span>
+                {areaGoals.length > 0 && (
+                  <span class="tree-count">{areaGoals.length}</span>
+                )}
+              </button>
+              <div class="tree-children" data-tree-children={`area-${area.id}`}>
+                {areaGoals.map((goal) => {
+                  const goalProjects = projectsByGoal.get(goal.id) ?? [];
+                  const goalIcon = goal.status === "completed" ? "✅" : goal.status === "archived" ? "📦" : "🎯";
+                  return (
+                    <div class="tree-goal" data-goal-id={goal.id} role="treeitem" aria-expanded="true">
+                      <button
+                        class="tree-toggle tree-goal-toggle"
+                        data-tree-id={`goal-${goal.id}`}
+                        aria-label={`Toggle ${goal.title}`}
+                        type="button"
+                      >
+                        <span class="tree-chevron">{goalProjects.length > 0 ? "▸" : ""}</span>
+                        <span class="tree-goal-icon">{goalIcon}</span>
+                        <span class="tree-goal-name">{goal.title}</span>
+                        {goalProjects.length > 0 && (
+                          <span class="tree-count">{goalProjects.length}</span>
+                        )}
+                      </button>
+                      {goalProjects.length > 0 && (
+                        <div class="tree-children" data-tree-children={`goal-${goal.id}`}>
+                          {goalProjects.map((proj) => (
+                            <a
+                              class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                              href={`/projects/${proj.id}`}
+                              role="treeitem"
+                              data-project-id={proj.id}
+                              title={proj.title}
+                            >
+                              <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                              <span class="tree-project-name">{proj.title}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })
+      }
+
+      {/* Ungrouped goals (no area) */}
+      {ungroupedGoals.map((goal) => {
+        const goalProjects = projectsByGoal.get(goal.id) ?? [];
+        const goalIcon = goal.status === "completed" ? "✅" : "🎯";
+        return (
+          <div class="tree-goal tree-goal-root" data-goal-id={goal.id} role="treeitem">
+            <button
+              class="tree-toggle tree-goal-toggle"
+              data-tree-id={`goal-${goal.id}`}
+              type="button"
+            >
+              <span class="tree-chevron">{goalProjects.length > 0 ? "▸" : ""}</span>
+              <span class="tree-goal-icon">{goalIcon}</span>
+              <span class="tree-goal-name">{goal.title}</span>
+            </button>
+            {goalProjects.length > 0 && (
+              <div class="tree-children" data-tree-children={`goal-${goal.id}`}>
+                {goalProjects.map((proj) => (
+                  <a
+                    class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                    href={`/projects/${proj.id}`}
+                    role="treeitem"
+                    data-project-id={proj.id}
+                    title={proj.title}
+                  >
+                    <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                    <span class="tree-project-name">{proj.title}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Ungrouped projects (no goal) */}
+      {ungroupedProjects.map((proj) => (
+        <a
+          class={`tree-project tree-project-root ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+          href={`/projects/${proj.id}`}
+          role="treeitem"
+          data-project-id={proj.id}
+          title={proj.title}
+        >
+          <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+          <span class="tree-project-name">{proj.title}</span>
+        </a>
+      ))}
+    </div>
+  </div>
+)}
+
+<style>
+  .hierarchy-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem;
+    background: rgba(var(--bg-primary-rgb), 0.5);
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    margin-bottom: 0.5rem;
+  }
+
+  .hierarchy-tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+  }
+
+  .hierarchy-tree-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .hierarchy-tree-action {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    opacity: 0.7;
+    transition: opacity 150ms;
+  }
+  .hierarchy-tree-action:hover {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .hierarchy-tree-content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tree-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 3px 4px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: all 150ms;
+    text-align: left;
+  }
+  .tree-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .tree-chevron {
+    width: 12px;
+    font-size: 9px;
+    color: var(--text-muted);
+    transition: transform 150ms;
+    flex-shrink: 0;
+    text-align: center;
+  }
+
+  .tree-toggle[aria-expanded="false"] .tree-chevron {
+    transform: rotate(0deg);
+  }
+  .tree-toggle[aria-expanded="true"] .tree-chevron {
+    transform: rotate(90deg);
+  }
+
+  .tree-area-icon,
+  .tree-goal-icon,
+  .tree-project-icon {
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .tree-area-name { font-weight: 600; font-size: 12px; }
+  .tree-goal-name { font-weight: 500; font-size: 12px; }
+  .tree-project-name {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tree-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    padding: 0 5px;
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+
+  .tree-children {
+    padding-left: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .tree-children[data-collapsed="true"] {
+    display: none;
+  }
+
+  .tree-project {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: var(--radius-sm, 4px);
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    transition: all 150ms;
+  }
+  .tree-project:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .tree-project.active {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+
+  .tree-goal-root { padding-left: 0; }
+  .tree-project-root { padding-left: 4px; }
+</style>
+
+<script>
+  // Hierarchy tree collapse/expand with localStorage persistence
+  (function initHierarchyTree() {
+    const STORAGE_KEY = "meitheal_hierarchy_collapsed";
+    let collapsed: Set<string>;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      collapsed = new Set(stored ? JSON.parse(stored) : []);
+    } catch {
+      collapsed = new Set();
+    }
+
+    function save() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsed])); } catch { /* quota */ }
+    }
+
+    document.querySelectorAll<HTMLButtonElement>(".tree-toggle").forEach((btn) => {
+      const id = btn.dataset.treeId;
+      if (!id) return;
+      const children = document.querySelector(`[data-tree-children="${id}"]`) as HTMLElement | null;
+      if (!children) return;
+
+      // Restore state
+      if (collapsed.has(id)) {
+        children.dataset.collapsed = "true";
+        btn.setAttribute("aria-expanded", "false");
+      } else {
+        btn.setAttribute("aria-expanded", "true");
+      }
+
+      btn.addEventListener("click", () => {
+        const isCollapsed = children.dataset.collapsed === "true";
+        if (isCollapsed) {
+          children.dataset.collapsed = "false";
+          children.style.display = "";
+          btn.setAttribute("aria-expanded", "true");
+          collapsed.delete(id);
+        } else {
+          children.dataset.collapsed = "true";
+          children.style.display = "none";
+          btn.setAttribute("aria-expanded", "false");
+          collapsed.add(id);
+        }
+        save();
+      });
+    });
+  })();
+</script>
