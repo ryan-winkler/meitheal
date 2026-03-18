@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync, existsSync } from "node:fs";
 import path from "node:path";
 import { type Client, createClient } from "@libsql/client";
 import type { CalendarResult } from "@meitheal/integration-core";
@@ -27,18 +27,72 @@ let clientSingleton: Client | null = null;
 let dbSingleton: ReturnType<typeof drizzle> | null = null;
 let ensured = false;
 
+/** Latest DB integrity check result — exposed via /api/health */
+let dbIntegrityOk = true
+/** Current schema version after ensureSchema() completes */
+let currentSchemaVersion = 0
+
+/** Get the latest integrity check result */
+export function getDbIntegrityStatus(): boolean { return dbIntegrityOk }
+/** Get the current schema version */
+export function getSchemaVersion(): number { return currentSchemaVersion }
+
 function resolveDbUrl(): string {
-  return process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db";
+  return process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
+}
+
+function resolveDbPath(dbUrl: string): string | null {
+  if (!dbUrl.startsWith("file:")) return null
+  const dbPath = dbUrl.slice("file:".length)
+  return path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath)
 }
 
 function ensureFileDbDirectory(dbUrl: string): void {
-  if (!dbUrl.startsWith("file:")) {
-    return;
+  const absolutePath = resolveDbPath(dbUrl)
+  if (absolutePath) {
+    mkdirSync(path.dirname(absolutePath), { recursive: true })
+  }
+}
+
+/**
+ * Auto-backup DB on cold start (PRA-25).
+ * Copies the DB file to a backups/ subdirectory with FIFO rotation (max 5).
+ * Skips backup if DB doesn't exist yet (fresh install).
+ */
+const MAX_BACKUPS = 5
+function autoBackupDb(dbUrl: string): void {
+  const dbPath = resolveDbPath(dbUrl)
+  if (!dbPath || !existsSync(dbPath)) return
+
+  const backupDir = path.join(path.dirname(dbPath), "backups")
+  mkdirSync(backupDir, { recursive: true })
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const backupPath = path.join(backupDir, `meitheal-${timestamp}.db`)
+
+  try {
+    copyFileSync(dbPath, backupPath)
+    // eslint-disable-next-line no-console
+    console.log(`[meitheal] DB backup created: ${backupPath} (${statSync(backupPath).size} bytes)`)
+  } catch {
+    // eslint-disable-next-line no-console
+    console.error(`[meitheal] DB backup failed — continuing without backup`)
+    return
   }
 
-  const dbPath = dbUrl.slice("file:".length);
-  const absolutePath = path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath);
-  mkdirSync(path.dirname(absolutePath), { recursive: true });
+  // FIFO rotation — keep max 5 backups
+  try {
+    const backups = readdirSync(backupDir)
+      .filter(f => f.startsWith("meitheal-") && f.endsWith(".db"))
+      .map(f => ({ name: f, time: statSync(path.join(backupDir, f)).mtimeMs }))
+      .sort((a, b) => b.time - a.time)
+
+    for (const old of backups.slice(MAX_BACKUPS)) {
+      unlinkSync(path.join(backupDir, old.name))
+    }
+  } catch {
+    // Non-critical — cleanup failure shouldn't block startup
+  }
 }
 
 function getClient(): Client {
@@ -133,9 +187,27 @@ export async function ensureSchema(): Promise<void> {
 
   const client = getClient();
 
+  // Auto-backup before any migrations (PRA-25)
+  autoBackupDb(resolveDbUrl())
+
   // WAL mode: enables concurrent reads during writes — critical for addon
   // context where SSR page loads and background syncs can overlap.
   await client.execute("PRAGMA journal_mode=WAL");
+
+  // Integrity check: detect DB corruption on startup (PRA-24)
+  try {
+    const integrityResult = await client.execute("PRAGMA integrity_check(1)")
+    const result = String((integrityResult.rows[0] as Record<string, unknown>)?.integrity_check ?? "")
+    dbIntegrityOk = result === "ok"
+    if (!dbIntegrityOk) {
+      // eslint-disable-next-line no-console
+      console.error(`[meitheal] DB INTEGRITY CHECK FAILED: ${result}`)
+    }
+  } catch {
+    dbIntegrityOk = false
+    // eslint-disable-next-line no-console
+    console.error("[meitheal] DB integrity check threw — treating as failed")
+  }
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -723,6 +795,40 @@ export async function ensureSchema(): Promise<void> {
   }
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_handoff_state_idx ON tasks(handoff_state)")
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_lock_expires_idx ON tasks(lock_expires_at)")
+
+  // ─── Phase 05.1: Schema & Architecture Hardening (PRA-23/24/25/27/30) ───
+
+  // Goal metrics (PRA-27): structured progress tracking
+  if (!(await hasColumn(client, "goals", "metric_type"))) {
+    await client.execute("ALTER TABLE goals ADD COLUMN metric_type TEXT")
+  }
+  if (!(await hasColumn(client, "goals", "metric_target"))) {
+    await client.execute("ALTER TABLE goals ADD COLUMN metric_target REAL")
+  }
+  if (!(await hasColumn(client, "goals", "metric_current"))) {
+    await client.execute("ALTER TABLE goals ADD COLUMN metric_current REAL NOT NULL DEFAULT 0")
+  }
+
+  // Streak freezes (PRA-30): forgivable missed routines
+  if (!(await hasColumn(client, "task_templates", "streak_freezes_used"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freezes_used INTEGER NOT NULL DEFAULT 0")
+  }
+  if (!(await hasColumn(client, "task_templates", "streak_freeze_limit"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freeze_limit INTEGER NOT NULL DEFAULT 3")
+  }
+
+  // Schema version tracking (PRA-23): set version after all migrations complete
+  const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
+  const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
+  const targetVersion = 3
+  if (storedVersion < targetVersion) {
+    await client.execute({
+      sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      args: [String(targetVersion), Date.now()],
+    })
+  }
+  currentSchemaVersion = targetVersion
 
   ensured = true;
 

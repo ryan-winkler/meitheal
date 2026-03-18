@@ -20,12 +20,14 @@ export type TaskKind =
   | "shopping_item"
   | "checklist"
   | "routine_instance"
+  | "quick_capture"
 
 export const VALID_TASK_KINDS: readonly TaskKind[] = [
   "standard_action",
   "shopping_item",
   "checklist",
   "routine_instance",
+  "quick_capture",
 ] as const
 
 export function isValidTaskKind(value: string): value is TaskKind {
@@ -38,8 +40,10 @@ export function isValidTaskKind(value: string): value is TaskKind {
  * Bot handoff lifecycle:
  *   idle → claimed → proposed → accepted → idle
  *   idle → claimed → proposed → rejected → idle
+ *   idle → claimed → proposed → failed → idle (bot error)
+ *   idle → claimed → proposed → timeout → idle (stale proposal)
+ *   idle → claimed → proposed → human_override → idle (user took over)
  *   idle → claimed → idle (release without proposing)
- *   proposed → idle (timeout, human didn't respond)
  */
 export type HandoffState =
   | "idle"
@@ -47,6 +51,9 @@ export type HandoffState =
   | "proposed"
   | "accepted"
   | "rejected"
+  | "failed"
+  | "timeout"
+  | "human_override"
 
 export const VALID_HANDOFF_STATES: readonly HandoffState[] = [
   "idle",
@@ -54,15 +61,21 @@ export const VALID_HANDOFF_STATES: readonly HandoffState[] = [
   "proposed",
   "accepted",
   "rejected",
+  "failed",
+  "timeout",
+  "human_override",
 ] as const
 
 /** Valid state transitions for the handoff state machine */
 const VALID_TRANSITIONS: ReadonlyMap<HandoffState, readonly HandoffState[]> = new Map([
   ["idle", ["claimed"]],
-  ["claimed", ["proposed", "idle"]],
-  ["proposed", ["accepted", "rejected", "idle"]],
+  ["claimed", ["proposed", "idle", "failed"]],
+  ["proposed", ["accepted", "rejected", "idle", "failed", "timeout", "human_override"]],
   ["accepted", ["idle"]],
-  ["rejected", ["idle"]],
+  ["rejected", ["idle", "claimed"]],
+  ["failed", ["idle", "claimed"]],
+  ["timeout", ["idle", "claimed"]],
+  ["human_override", ["idle"]],
 ])
 
 export function isValidHandoffTransition(from: HandoffState, to: HandoffState): boolean {
@@ -95,6 +108,16 @@ export const VALID_GOAL_STATUSES: readonly GoalStatus[] = [
   "archived",
 ] as const
 
+/** Goal metric type for progress tracking (PRA-27) */
+export type MetricType = "count" | "percentage" | "currency" | "boolean"
+
+export const VALID_METRIC_TYPES: readonly MetricType[] = [
+  "count",
+  "percentage",
+  "currency",
+  "boolean",
+] as const
+
 export interface Goal {
   id: string
   areaId: string | null
@@ -102,6 +125,12 @@ export interface Goal {
   description: string | null
   status: GoalStatus
   targetDate: string | null
+  /** Type of metric used to measure goal progress (PRA-27) */
+  metricType: MetricType | null
+  /** Target value for the metric (e.g., 100 for "100 blog posts") */
+  metricTarget: number | null
+  /** Current progress toward the target */
+  metricCurrent: number
   createdAt: number
   updatedAt: number
 }

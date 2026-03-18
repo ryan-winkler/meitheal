@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store";
+import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
 import { apiJson } from "../../lib/api-response";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -31,7 +31,8 @@ const VERSION = getAddonVersion();
 
 /**
  * GET /api/health — Readiness & liveness probe.
- * Returns service status, version, uptime, and database connectivity.
+ * Returns service status, version, uptime, database connectivity,
+ * integrity check result (PRA-24), and schema version (PRA-23).
  */
 export const GET: APIRoute = async () => {
   const now = Date.now();
@@ -50,6 +51,8 @@ export const GET: APIRoute = async () => {
       time: new Date(now).toISOString(),
       uptime_seconds: Math.floor(uptimeMs / 1000),
       db_status: "connected",
+      db_integrity: getDbIntegrityStatus() ? "ok" : "failed",
+      schema_version: getSchemaVersion(),
     });
   } catch (error) {
     return apiJson({

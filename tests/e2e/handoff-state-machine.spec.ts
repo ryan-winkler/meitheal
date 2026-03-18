@@ -19,32 +19,47 @@ import {
 const VALID_TRANSITIONS: [HandoffState, HandoffState][] = [
   ["idle", "claimed"],
   ["claimed", "proposed"],
-  ["claimed", "idle"],       // release without proposing
+  ["claimed", "idle"],           // release without proposing
+  ["claimed", "failed"],         // agent error during claim
   ["proposed", "accepted"],
   ["proposed", "rejected"],
-  ["proposed", "idle"],      // timeout
-  ["accepted", "idle"],      // post-apply cleanup
-  ["rejected", "idle"],      // post-reject cleanup
+  ["proposed", "idle"],          // timeout (legacy)
+  ["proposed", "failed"],        // agent error during proposal
+  ["proposed", "timeout"],       // stale proposal
+  ["proposed", "human_override"],// user took over
+  ["accepted", "idle"],          // post-apply cleanup
+  ["rejected", "idle"],          // post-reject cleanup
+  ["rejected", "claimed"],       // retry after rejection
+  ["failed", "idle"],            // error cleanup
+  ["failed", "claimed"],         // retry after failure
+  ["timeout", "idle"],           // timeout cleanup
+  ["timeout", "claimed"],        // retry after timeout
+  ["human_override", "idle"],    // override cleanup
 ]
 
 const INVALID_TRANSITIONS: [HandoffState, HandoffState][] = [
-  ["idle", "proposed"],      // can't propose without claiming
-  ["idle", "accepted"],      // can't accept without proposal
-  ["idle", "rejected"],      // can't reject without proposal
-  ["idle", "idle"],          // self-loop not allowed
-  ["claimed", "accepted"],   // must go through proposed
-  ["claimed", "rejected"],   // must go through proposed
-  ["claimed", "claimed"],    // already claimed
-  ["proposed", "claimed"],   // can't re-claim
-  ["proposed", "proposed"],  // already proposed
-  ["accepted", "claimed"],   // terminal
-  ["accepted", "proposed"],  // terminal
-  ["accepted", "accepted"],  // self-loop
-  ["accepted", "rejected"],  // terminal
-  ["rejected", "claimed"],   // terminal
-  ["rejected", "proposed"],  // terminal
-  ["rejected", "accepted"],  // terminal
-  ["rejected", "rejected"],  // self-loop
+  ["idle", "proposed"],          // can't propose without claiming
+  ["idle", "accepted"],          // can't accept without proposal
+  ["idle", "rejected"],          // can't reject without proposal
+  ["idle", "idle"],              // self-loop not allowed
+  ["claimed", "accepted"],       // must go through proposed
+  ["claimed", "rejected"],       // must go through proposed
+  ["claimed", "claimed"],        // already claimed
+  ["proposed", "claimed"],       // can't re-claim
+  ["proposed", "proposed"],      // already proposed
+  ["accepted", "claimed"],       // terminal
+  ["accepted", "proposed"],      // terminal
+  ["accepted", "accepted"],      // self-loop
+  ["accepted", "rejected"],      // terminal
+  ["rejected", "proposed"],      // can't propose from rejected
+  ["rejected", "accepted"],      // can't accept from rejected
+  ["rejected", "rejected"],      // self-loop
+  ["failed", "proposed"],        // can't propose from failed
+  ["failed", "failed"],          // self-loop
+  ["timeout", "proposed"],       // can't propose from timeout
+  ["timeout", "timeout"],        // self-loop
+  ["human_override", "claimed"],  // can't re-claim after override
+  ["human_override", "human_override"], // self-loop
 ]
 
 for (const [from, to] of VALID_TRANSITIONS) {
@@ -191,5 +206,5 @@ test("getExpiredLockClause returns valid SQL", () => {
 // --- All valid states are accounted for ---
 
 test("all handoff states are valid enum values", () => {
-  expect(VALID_HANDOFF_STATES).toEqual(["idle", "claimed", "proposed", "accepted", "rejected"])
+  expect(VALID_HANDOFF_STATES).toEqual(["idle", "claimed", "proposed", "accepted", "rejected", "failed", "timeout", "human_override"])
 })
