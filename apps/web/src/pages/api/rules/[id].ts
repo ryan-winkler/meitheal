@@ -8,9 +8,18 @@
 import type { APIRoute } from "astro"
 import { findRuleById, updateRule, deleteRule } from "@domains/strategy/rule-repository"
 import { logApiError } from "@lib/api-logger"
+import { validateSafeId } from "@lib/sanitize-id"
 
 export const GET: APIRoute = async ({ params }) => {
   try {
+    const idErr = validateSafeId(params.id, "rule_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
     const rule = await findRuleById(params.id!)
     if (!rule) {
       return new Response(
@@ -33,6 +42,14 @@ export const GET: APIRoute = async ({ params }) => {
 
 export const PUT: APIRoute = async ({ params, request }) => {
   try {
+    const idErr = validateSafeId(params.id, "rule_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
     const body = await request.json()
     const updated = await updateRule(params.id!, body)
     if (!updated) {
@@ -56,6 +73,14 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
 export const DELETE: APIRoute = async ({ params }) => {
   try {
+    const idErr = validateSafeId(params.id, "rule_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
     const deleted = await deleteRule(params.id!)
     if (!deleted) {
       return new Response(

@@ -18,6 +18,7 @@ import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } fro
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
+import { validateSafeId } from "@lib/sanitize-id"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
@@ -35,6 +36,10 @@ function getBuiltInFrameworkIds(): string[] {
 
 /** Load a framework YAML file by ID, returning raw parsed object */
 function loadFrameworkYaml(id: string): Record<string, unknown> {
+  // Guard: reject IDs with path traversal sequences
+  if (validateSafeId(id)) {
+    return { name: id.toUpperCase(), archetype: "formula", fields: [], badge_thresholds: [] }
+  }
   try {
     const content = readFileSync(resolve(FRAMEWORKS_DIR, `${id}.yaml`), "utf8")
     return parseYaml(content) as Record<string, unknown>
@@ -94,7 +99,7 @@ export const POST: APIRoute = async ({ request }) => {
     const builtInIds = getBuiltInFrameworkIds()
     if (builtInIds.includes(body.id!)) {
       return new Response(
-        JSON.stringify({ ok: false, errorCode: "ID_CONFLICT", message: `Framework ID "${body.id}" conflicts with a built-in framework` }),
+        JSON.stringify({ ok: false, errorCode: "ID_CONFLICT", message: "Framework ID conflicts with a built-in framework" }),
         { status: 409, headers: { "Content-Type": "application/json" } },
       )
     }
@@ -103,7 +108,7 @@ export const POST: APIRoute = async ({ request }) => {
     const idExists = await isFrameworkIdTaken(body.id!)
     if (idExists) {
       return new Response(
-        JSON.stringify({ ok: false, errorCode: "ID_CONFLICT", message: `Framework ID "${body.id}" already exists` }),
+        JSON.stringify({ ok: false, errorCode: "ID_CONFLICT", message: "Framework ID already exists" }),
         { status: 409, headers: { "Content-Type": "application/json" } },
       )
     }

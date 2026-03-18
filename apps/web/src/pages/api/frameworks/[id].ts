@@ -19,6 +19,7 @@ import { getCustomFramework, updateCustomFramework, deleteCustomFramework } from
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig, FrameworkOverrides } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
+import { validateSafeId } from "@lib/sanitize-id"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
@@ -43,12 +44,19 @@ function loadBuiltInFramework(id: string): FrameworkConfig | null {
 
 export const GET: APIRoute = async ({ params }) => {
   try {
-    const frameworkId = params.id!
+    const frameworkId = params.id
+    const idErr = validateSafeId(frameworkId, "framework_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     // Try built-in first
-    const builtIn = loadBuiltInFramework(frameworkId)
+    const builtIn = loadBuiltInFramework(frameworkId!)
     if (builtIn) {
-      const overrideRecord = await getOverrides(frameworkId)
+      const overrideRecord = await getOverrides(frameworkId!)
       const config = mergeFrameworkConfig(builtIn, overrideRecord?.overrides ?? null)
       return new Response(JSON.stringify({ ok: true, data: { ...config, source: "built-in" }, hasOverrides: !!overrideRecord }), {
         status: 200,
@@ -57,7 +65,7 @@ export const GET: APIRoute = async ({ params }) => {
     }
 
     // Try custom
-    const custom = await getCustomFramework(frameworkId)
+    const custom = await getCustomFramework(frameworkId!)
     if (custom) {
       return new Response(JSON.stringify({ ok: true, data: custom, hasOverrides: false }), {
         status: 200,
@@ -80,12 +88,19 @@ export const GET: APIRoute = async ({ params }) => {
 
 export const PUT: APIRoute = async ({ params, request }) => {
   try {
-    const frameworkId = params.id!
+    const frameworkId = params.id
+    const idErr = validateSafeId(frameworkId, "framework_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
-    if (isBuiltIn(frameworkId)) {
+    if (isBuiltIn(frameworkId!)) {
       // Built-in: save as overrides
       const body = (await request.json()) as FrameworkOverrides
-      const record = await saveOverrides(frameworkId, body)
+      const record = await saveOverrides(frameworkId!, body)
       return new Response(JSON.stringify({ ok: true, data: record }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -94,7 +109,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
     // Custom: update full config
     const body = (await request.json()) as Partial<FrameworkConfig>
-    const existing = await getCustomFramework(frameworkId)
+    const existing = await getCustomFramework(frameworkId!)
     if (!existing) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "FRAMEWORK_NOT_FOUND" }),
@@ -102,7 +117,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
       )
     }
 
-    const updated: FrameworkConfig = { ...existing, ...body, id: frameworkId, source: existing.source }
+    const updated: FrameworkConfig = { ...existing, ...body, id: frameworkId!, source: existing.source }
     const errors = validateFrameworkConfig(updated)
     if (errors) {
       return new Response(
@@ -111,7 +126,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
       )
     }
 
-    const result = await updateCustomFramework(frameworkId, updated)
+    const result = await updateCustomFramework(frameworkId!, updated)
     return new Response(JSON.stringify({ ok: true, data: result }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -127,11 +142,18 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
 export const DELETE: APIRoute = async ({ params }) => {
   try {
-    const frameworkId = params.id!
+    const frameworkId = params.id
+    const idErr = validateSafeId(frameworkId, "framework_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
-    if (isBuiltIn(frameworkId)) {
+    if (isBuiltIn(frameworkId!)) {
       // Built-in: reset overrides to YAML defaults
-      const deleted = await resetOverrides(frameworkId)
+      const deleted = await resetOverrides(frameworkId!)
       return new Response(JSON.stringify({ ok: true, wasReset: deleted, source: "built-in" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -139,7 +161,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     }
 
     // Custom: fully delete
-    const exists = await getCustomFramework(frameworkId)
+    const exists = await getCustomFramework(frameworkId!)
     if (!exists) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "FRAMEWORK_NOT_FOUND" }),
@@ -147,7 +169,7 @@ export const DELETE: APIRoute = async ({ params }) => {
       )
     }
 
-    const deleted = await deleteCustomFramework(frameworkId)
+    const deleted = await deleteCustomFramework(frameworkId!)
     return new Response(JSON.stringify({ ok: true, wasDeleted: deleted, source: "custom" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

@@ -12,18 +12,32 @@ import { resolveRulesForTask } from "@meitheal/domain-strategy"
 import type { TaskType } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
 
+/** Known TaskType values — validated against the domain-strategy union type */
+const VALID_TASK_TYPES: ReadonlySet<string> = new Set<string>(["epic", "story", "task", "documentation"])
+
 export const GET: APIRoute = async ({ url }) => {
   try {
-    const taskType = url.searchParams.get("taskType") as TaskType | null
+    const taskTypeParam = url.searchParams.get("taskType")
     const labelsParam = url.searchParams.get("labels")
-    const labels = labelsParam ? labelsParam.split(",").map((l) => l.trim()) : []
+    const labels = labelsParam
+      ? labelsParam.split(",").map((l) => l.trim()).filter((l) => l.length > 0 && l.length <= 100)
+      : []
 
-    if (!taskType) {
+    if (!taskTypeParam) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "VALIDATION_ERROR", message: "taskType is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       )
     }
+
+    if (!VALID_TASK_TYPES.has(taskTypeParam)) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "VALIDATION_ERROR", message: "Invalid taskType" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
+
+    const taskType = taskTypeParam as TaskType
 
     const allRules = await findAllRules()
     const match = resolveRulesForTask(taskType, labels, allRules)

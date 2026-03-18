@@ -15,6 +15,7 @@
 import type { APIRoute } from "astro"
 import { listCalendarEvents, getCalendarEntityFeatures, CalendarFeature } from "@domains/ha"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { sanitizeForLog } from "@lib/sanitize-id"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -43,7 +44,8 @@ export const GET: APIRoute = async ({ url }) => {
 
     logger.log("debug", {
       event: "api.ha.events", domain: "ha", component: "events-api",
-      request_id: "api", message: `Returned ${events.length} events for ${entityId}`,
+      request_id: "api", message: `Returned ${events.length} events`,
+      metadata: { entity_id: sanitizeForLog(entityId) },
     })
 
     return new Response(JSON.stringify({
@@ -59,7 +61,8 @@ export const GET: APIRoute = async ({ url }) => {
   } catch (err) {
     logger.log("error", {
       event: "api.ha.events.failed", domain: "ha", component: "events-api",
-      request_id: "api", message: `Failed to fetch calendar events: ${err}`,
+      request_id: "api", message: "Failed to fetch calendar events",
+      metadata: { entity_id: sanitizeForLog(entityId), error: err instanceof Error ? err.message : "unknown" },
     })
     return new Response(JSON.stringify({
       ok: false,

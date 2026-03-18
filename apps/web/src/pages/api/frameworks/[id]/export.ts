@@ -15,13 +15,21 @@ import { getCustomFramework } from "@domains/strategy/custom-framework-repositor
 import { parseFrameworkConfig, frameworkConfigToRaw } from "@meitheal/domain-strategy"
 import { stringify as stringifyYaml } from "yaml"
 import { logApiError } from "@lib/api-logger"
+import { validateSafeId } from "@lib/sanitize-id"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../../content/frameworks")
 
 export const GET: APIRoute = async ({ params }) => {
   try {
-    const frameworkId = params.id!
+    const frameworkId = params.id
+    const idErr = validateSafeId(frameworkId, "framework_id")
+    if (idErr) {
+      return new Response(
+        JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idErr }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      )
+    }
 
     // Try built-in first — serve the raw YAML file
     const yamlPath = resolve(FRAMEWORKS_DIR, `${frameworkId}.yaml`)
@@ -37,7 +45,7 @@ export const GET: APIRoute = async ({ params }) => {
     }
 
     // Try custom — convert from FrameworkConfig to YAML
-    const custom = await getCustomFramework(frameworkId)
+    const custom = await getCustomFramework(frameworkId!)
     if (custom) {
       const raw = frameworkConfigToRaw(custom)
       const yaml = stringifyYaml(raw, { indent: 2 })
@@ -62,3 +70,4 @@ export const GET: APIRoute = async ({ params }) => {
     )
   }
 }
+
