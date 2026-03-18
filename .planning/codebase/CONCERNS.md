@@ -168,4 +168,50 @@
 
 ---
 
-*Concerns audit: 2026-03-18*
+## Pre-Release Audit Concerns (from 50-Persona Expert Audit, 2026-03-18)
+
+**PRA-06: Incomplete Handoff State Machine:**
+- Issue: `handoff_state` supports `idle` → `proposed` → `accepted` but has no `failed`, `timeout`, or `human_override` states
+- Files: `apps/web/src/domains/tasks/persistence/store.ts` (L708-710), `apps/web/src/pages/api/tasks/[id]/accept-proposal.ts`
+- Impact: Bot proposals that fail silently will leave tasks in `proposed` state indefinitely with no cleanup path
+- Fix approach: Add `failed`/`timeout`/`human_override` states + stale lock cleanup cron/endpoint
+
+**PRA-08: No Bot Endpoint Rate Limiting:**
+- Issue: `accept-proposal.ts` and bot-facing write endpoints have no dedicated rate limiting beyond the generic 300/min middleware
+- Files: `apps/web/src/pages/api/tasks/[id]/accept-proposal.ts`, `apps/web/src/middleware.ts`
+- Impact: A misbehaving bot could saturate the task API
+- Fix approach: Add per-endpoint rate limits (10 accepts/min, 60 writes/min per IP) in middleware
+
+**PRA-20: `transition: all` Performance Anti-Pattern (30 instances):**
+- Issue: 30 occurrences of `transition: all` across 15 files cause unnecessary GPU repaints on every property change
+- Files: `kanban.astro` (7), `SettingsIntegrations.astro` (4), `settings.astro` (2), `calendar.astro` (2), `AskAssistModal.astro` (2), `SidebarHierarchyTree.astro` (2), `SettingsPersonal.astro` (1), `FrameworkWizard.astro` (2), `SettingsRules.astro` (1), `habits.astro` (1), `projects/index.astro` (1), `SavedFilterPresets.astro` (1), `HelpTooltip.astro` (1), `TaskViewTabs.astro` (1), `Sidebar.astro` (1), `_labels.css` (1)
+- Impact: Jank on low-power devices (HA Companion on tablets/phones), wasted CPU cycles
+- Fix approach: Replace with explicit property lists (e.g., `transition: background-color 150ms, border-color 150ms, box-shadow 150ms`)
+
+**PRA-23: No Schema Version Tracking:**
+- Issue: No `schema_version` tracked — every migration runs `hasColumn` checks on every startup
+- Files: `apps/web/src/domains/tasks/persistence/store.ts` (L500-730+ — migration block runs every startup)
+- Impact: Startup latency increases with each migration, no way to skip completed migrations
+- Fix approach: Add `schema_version` to `app_settings` table, check version before running migration blocks
+
+**PRA-24: No Startup Integrity Check:**
+- Issue: No `PRAGMA integrity_check` or similar validation on startup — corrupt DB returns silent read failures
+- Files: `apps/web/src/domains/tasks/persistence/store.ts` (startup block)
+- Impact: Data corruption goes undetected until user hits an error
+- Fix approach: Run `PRAGMA integrity_check` on startup, surface result in `/api/health`
+
+**PRA-03: Thin IDB Offline Schema:**
+- Issue: `OfflineTask` in IndexedDB stores only `id`, `title`, `status`, `due_date`, `updated_at` — missing priority, labels, project_id, task_kind, checklists, board_id, assigned_to
+- Files: `apps/web/src/domains/offline/offline-store.ts`
+- Impact: Offline mode cannot display priority, labels, or board context — degraded experience
+- Fix approach: Expand `OfflineTask` interface and bump IDB version to 3
+
+**PRA-25: No Auto-Backup:**
+- Issue: No automatic backup on startup — DB corruption or bad migration destroys data with no recovery path
+- Files: `apps/web/src/domains/tasks/persistence/store.ts`
+- Impact: High — users lose all tasks if migration fails or DB corrupts
+- Fix approach: Copy DB to `.data/backups/` on startup, keep max 5 (FIFO rotation)
+
+---
+
+*Concerns audit: 2026-03-18 — Updated with pre-release audit findings*
