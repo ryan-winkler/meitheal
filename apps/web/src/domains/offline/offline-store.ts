@@ -19,10 +19,15 @@ export interface OfflineTask {
   title: string
   description: string
   status: "backlog" | "pending" | "active" | "complete"
+  priority: number
   dueDate: string | null
   updatedAt: string
   createdAt: string
   syncedAt: string | null
+  boardId: string | null
+  labels: string | null
+  kind: string
+  sortOrder: number
 }
 
 export interface PendingSyncOperation {
@@ -38,7 +43,7 @@ export interface PendingSyncOperation {
 // --- IndexedDB Schema ---
 
 const DB_NAME = "meitheal-offline"
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const STORES = {
   tasks: "tasks",
@@ -60,6 +65,18 @@ function openDatabase(): Promise<IDBDatabase> {
         const taskStore = db.createObjectStore(STORES.tasks, { keyPath: "id" })
         taskStore.createIndex("status", "status", { unique: false })
         taskStore.createIndex("updatedAt", "updatedAt", { unique: false })
+        taskStore.createIndex("priority", "priority", { unique: false })
+        taskStore.createIndex("boardId", "boardId", { unique: false })
+      } else {
+        // V3 migration: add indexes to existing store
+        const tx = (event.target as IDBOpenDBRequest).transaction!
+        const taskStore = tx.objectStore(STORES.tasks)
+        if (!taskStore.indexNames.contains("priority")) {
+          taskStore.createIndex("priority", "priority", { unique: false })
+        }
+        if (!taskStore.indexNames.contains("boardId")) {
+          taskStore.createIndex("boardId", "boardId", { unique: false })
+        }
       }
 
       // Pending sync queue — FIFO operations
