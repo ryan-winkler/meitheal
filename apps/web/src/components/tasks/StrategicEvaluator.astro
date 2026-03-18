@@ -68,6 +68,17 @@ const defaultMapping: Record<string, string> = {
 </div>
 
 <script define:vars={{ frameworks, defaultMapping }}>
+  // HTML-escape utility (inline — define:vars scripts cannot use ES imports)
+  function escapeHtml(str) {
+    const s = String(str ?? "")
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+  }
+
   // 1. Core State
   let currentTaskId = null;
   let currentTaskType = null;
@@ -122,48 +133,50 @@ const defaultMapping: Record<string, string> = {
   function renderField(field, value, frameworkId) {
     const val = value !== undefined ? value : field.min || 0;
     const idPrefix = `${frameworkId}-${field.key}`;
-    let html = `<div class="se-field" data-key="${field.key}" data-framework="${frameworkId}">
+    const safeLabel = escapeHtml(field.label);
+    const safeHelp = escapeHtml(field.help_text || field.description);
+    let html = `<div class="se-field" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}">
       <div class="flex justify-between items-center mb-1">
         <label class="text-sm font-semibold text-text-primary flex items-center gap-1 group relative">
-          ${field.label}
+          ${safeLabel}
           ${
             field.help_text || field.description
               ? `<span class="cursor-help text-text-muted hover:text-accent opacity-70">ⓘ</span>
-          <div class="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute left-0 bottom-full mb-1 w-56 bg-bg-secondary text-text-primary text-[11px] p-2.5 rounded shadow-xl border border-border z-20 font-normal leading-relaxed">${field.help_text || field.description}</div>`
+          <div class="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute left-0 bottom-full mb-1 w-56 bg-bg-secondary text-text-primary text-[11px] p-2.5 rounded shadow-xl border border-border z-20 font-normal leading-relaxed">${safeHelp}</div>`
               : ""
           }
         </label>
-        <span class="text-xs font-mono text-accent se-field-val-display bg-accent/10 px-1.5 py-0.5 rounded" id="val-display-${idPrefix}">${val}</span>
+        <span class="text-xs font-mono text-accent se-field-val-display bg-accent/10 px-1.5 py-0.5 rounded" id="val-display-${escapeHtml(idPrefix)}">${escapeHtml(val)}</span>
       </div>
     `;
 
     if (field.ui_type === "slider" || field.type === "number") {
-      html += `<input type="range" class="w-full accent-accent se-input focus:outline-none focus:ring-2 focus:ring-accent/50 rounded-lg" data-key="${field.key}" data-framework="${frameworkId}" min="${field.min || 0}" max="${field.max || 100}" value="${val}" step="${field.type === "number" && field.max > 10 ? 1 : 0.1}" />`;
+      html += `<input type="range" class="w-full accent-accent se-input focus:outline-none focus:ring-2 focus:ring-accent/50 rounded-lg" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" min="${field.min || 0}" max="${field.max || 100}" value="${escapeHtml(val)}" step="${field.type === "number" && field.max > 10 ? 1 : 0.1}" />`;
     } else if (field.ui_type === "radio" && field.options) {
       html += `<div class="flex flex-col gap-2 mt-2">`;
       for (const opt of field.options) {
         const isChecked = String(val) === String(opt.value) ? "checked" : "";
         html += `<label class="flex items-center gap-2 cursor-pointer text-sm bg-bg-primary border border-border px-3 py-2 rounded hover:border-accent transition-colors">
-          <input type="radio" name="se-radio-${idPrefix}" class="accent-accent se-input focus:ring-2 focus:ring-accent/50" data-key="${field.key}" data-framework="${frameworkId}" value="${opt.value}" ${isChecked}>
-          <span>${opt.label}</span>
+          <input type="radio" name="se-radio-${escapeHtml(idPrefix)}" class="accent-accent se-input focus:ring-2 focus:ring-accent/50" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" value="${escapeHtml(opt.value)}" ${isChecked}>
+          <span>${escapeHtml(opt.label)}</span>
         </label>`;
       }
       html += `</div>`;
     } else if (field.ui_type === "select" && field.options) {
-      html += `<select class="form-input w-full text-sm py-2 se-input" data-key="${field.key}" data-framework="${frameworkId}">`;
+      html += `<select class="form-input w-full text-sm py-2 se-input" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}">`;
       for (const opt of field.options) {
         const isSel = String(val) === String(opt.value) ? "selected" : "";
-        html += `<option value="${opt.value}" ${isSel}>${opt.label}</option>`;
+        html += `<option value="${escapeHtml(opt.value)}" ${isSel}>${escapeHtml(opt.label)}</option>`;
       }
       html += `</select>`;
     } else if (field.ui_type === "checkbox" || field.type === "boolean") {
       const isChecked = val === true || val === 1 || val === "true" || val === "1" ? "checked" : "";
       html += `<label class="flex items-center gap-3 cursor-pointer text-sm bg-bg-primary border border-border px-3 py-2.5 rounded hover:border-accent transition-colors mt-1">
-        <input type="checkbox" class="accent-accent w-4 h-4 se-input se-checkbox" data-key="${field.key}" data-framework="${frameworkId}" ${isChecked}>
-        <span class="text-text-secondary">${field.help_text || field.description || "Enabled"}</span>
+        <input type="checkbox" class="accent-accent w-4 h-4 se-input se-checkbox" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" ${isChecked}>
+        <span class="text-text-secondary">${safeHelp || "Enabled"}</span>
       </label>`;
     } else {
-      html += `<input type="text" class="form-input w-full text-sm py-2 se-input" data-key="${field.key}" data-framework="${frameworkId}" value="${val}" />`;
+      html += `<input type="text" class="form-input w-full text-sm py-2 se-input" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" value="${escapeHtml(val)}" />`;
     }
 
     html += `</div>`;
@@ -211,9 +224,9 @@ const defaultMapping: Record<string, string> = {
         currentPayload[fw.id].score = score;
         const badge = getBadgeForScore(fw, score);
         if (badge) {
-          overallHtml += `<div class="flex items-center gap-2"><span class="text-[10px] text-text-muted uppercase">${fw.data.name}:</span> <span class="font-bold">${score}</span><span class="px-1.5 py-0.5 text-[9px] rounded bg-${badge.color}/10 text-${badge.color} border border-${badge.color}/20">${badge.label}</span></div>`;
+          overallHtml += `<div class="flex items-center gap-2"><span class="text-[10px] text-text-muted uppercase">${escapeHtml(fw.data.name)}:</span> <span class="font-bold">${escapeHtml(score)}</span><span class="px-1.5 py-0.5 text-[9px] rounded bg-${badge.color}/10 text-${badge.color} border border-${badge.color}/20">${escapeHtml(badge.label)}</span></div>`;
         } else {
-          overallHtml += `<div class="flex items-center gap-2"><span class="text-[10px] text-text-muted uppercase">${fw.data.name}:</span> <span class="font-bold">${score}</span></div>`;
+          overallHtml += `<div class="flex items-center gap-2"><span class="text-[10px] text-text-muted uppercase">${escapeHtml(fw.data.name)}:</span> <span class="font-bold">${escapeHtml(score)}</span></div>`;
         }
       }
     });
@@ -237,7 +250,7 @@ const defaultMapping: Record<string, string> = {
 
     let html = "";
     currentActiveFrameworks.forEach((fw) => {
-      html += `<div class="mb-6"><h4 class="font-bold text-sm text-text-primary mb-3 pb-1 border-b border-border/50 flex items-center gap-2">${fw.data.name} <span class="bg-bg-hover text-text-muted px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">${fw.data.archetype}</span></h4>`;
+      html += `<div class="mb-6"><h4 class="font-bold text-sm text-text-primary mb-3 pb-1 border-b border-border/50 flex items-center gap-2">${escapeHtml(fw.data.name)} <span class="bg-bg-hover text-text-muted px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">${escapeHtml(fw.data.archetype)}</span></h4>`;
 
       const payloadContext = currentPayload[fw.id] || {};
 
@@ -378,11 +391,11 @@ const defaultMapping: Record<string, string> = {
         const badge = getBadgeForScore(fw, p.score);
         if (badge) {
           html += `<div class="px-3 py-2 rounded-md bg-${badge.color}/10 border border-${badge.color}/20 flex items-center justify-between mb-1">
-            <span class="text-xs font-bold text-${badge.color} uppercase tracking-wider">${fw.data.name}: ${badge.label}</span>
-            <span class="font-mono font-bold text-${badge.color}">${p.score}</span>
+            <span class="text-xs font-bold text-${badge.color} uppercase tracking-wider">${escapeHtml(fw.data.name)}: ${escapeHtml(badge.label)}</span>
+            <span class="font-mono font-bold text-${badge.color}">${escapeHtml(p.score)}</span>
           </div>`;
         } else {
-          html += `<div class="px-3 py-2 rounded-md bg-bg-hover flex justify-between items-center mb-1"><span class="text-xs text-text-muted">${fw.data.name} Score</span><span class="font-mono text-sm">${p.score}</span></div>`;
+          html += `<div class="px-3 py-2 rounded-md bg-bg-hover flex justify-between items-center mb-1"><span class="text-xs text-text-muted">${escapeHtml(fw.data.name)} Score</span><span class="font-mono text-sm">${escapeHtml(p.score)}</span></div>`;
         }
       } else if (fw.data.archetype === "checklist") {
         // KCS-style checklist — show completed/total
@@ -391,12 +404,12 @@ const defaultMapping: Record<string, string> = {
         const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
         const color = pct >= 80 ? "success" : pct >= 50 ? "warning" : "danger";
         html += `<div class="px-3 py-2 rounded-md bg-${color}/10 border border-${color}/20 flex items-center justify-between mb-1">
-          <span class="text-xs font-bold text-${color} uppercase tracking-wider">${fw.data.name}: ${completed}/${total}</span>
+          <span class="text-xs font-bold text-${color} uppercase tracking-wider">${escapeHtml(fw.data.name)}: ${completed}/${total}</span>
           <span class="font-mono font-bold text-${color}">${pct}%</span>
         </div>`;
       } else if (p._evaluatedAt) {
         html += `<div class="px-3 py-2 rounded-md bg-bg-hover border border-border flex items-center justify-between mb-1">
-          <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">${fw.data.name} Evaluated</span>
+          <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">${escapeHtml(fw.data.name)} Evaluated</span>
           <span class="text-sm">✅</span>
         </div>`;
       }
@@ -466,7 +479,7 @@ const defaultMapping: Record<string, string> = {
         just.id = "se-ai-justification";
         just.className =
           "mt-4 p-3 bg-accent/10 border border-accent/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
-        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Evaluation</strong>${result.justification}`;
+        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Evaluation</strong>${escapeHtml(result.justification)}`;
         contentEl.prepend(just);
 
         askAiBtn.innerHTML = `<span>✨</span> Scored via Assist`;
@@ -476,7 +489,7 @@ const defaultMapping: Record<string, string> = {
         just.id = "se-ai-justification";
         just.className =
           "mt-4 p-3 bg-warning/10 border border-warning/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
-        just.innerHTML = `<strong class="text-warning block mb-1">⚠ HA Assist Unavailable</strong>${result.justification}`;
+        just.innerHTML = `<strong class="text-warning block mb-1">⚠ HA Assist Unavailable</strong>${escapeHtml(result.justification)}`;
         contentEl.prepend(just);
         askAiBtn.innerHTML = `<span>📋</span> Prompt Copied`;
       } else {
@@ -485,7 +498,7 @@ const defaultMapping: Record<string, string> = {
         just.id = "se-ai-justification";
         just.className =
           "mt-4 p-3 bg-accent/10 border border-accent/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
-        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Response</strong>${result.justification}<br/><span class="text-text-muted mt-1 block">Adjust sliders manually based on AI feedback above.</span>`;
+        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Response</strong>${escapeHtml(result.justification)}<br/><span class="text-text-muted mt-1 block">Adjust sliders manually based on AI feedback above.</span>`;
         contentEl.prepend(just);
         askAiBtn.innerHTML = `<span>✨</span> AI Responded`;
       }
@@ -495,7 +508,7 @@ const defaultMapping: Record<string, string> = {
       just.id = "se-ai-justification";
       just.className =
         "mt-4 p-3 bg-danger/10 border border-danger/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
-      just.innerHTML = `<strong class="text-danger block mb-1">Error</strong>Failed to score: ${err.message || "Unknown error"}`;
+      just.innerHTML = `<strong class="text-danger block mb-1">Error</strong>Failed to score: ${escapeHtml(err.message || "Unknown error")}`;
       contentEl.prepend(just);
       askAiBtn.innerHTML = `<span>❌</span> Failed`;
     }

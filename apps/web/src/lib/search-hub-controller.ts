@@ -56,6 +56,16 @@ function getIconForItem(item: SearchResultItem): string {
   }
 }
 
+/** Ensure a URL is safe for navigation (only relative paths allowed) */
+function isSafeUrl(url: string): boolean {
+  try {
+    const u = new URL(url, window.location.origin)
+    return u.origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
 function prefixIngress(href: string): string {
   if (!href.startsWith("/")) return href
   return `${window.__ingress_path || ""}${href}`
@@ -248,7 +258,10 @@ pageLifecycle.onPageLoad(() => {
       return
     }
     if (item.href) {
-      window.location.href = prefixIngress(item.href)
+      const target = prefixIngress(item.href)
+      if (isSafeUrl(target)) {
+        window.location.href = target
+      }
     }
   }
 

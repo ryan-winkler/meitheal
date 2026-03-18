@@ -19,6 +19,7 @@ import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import {
   saveFilterState,
   loadFilterState,
@@ -455,15 +456,15 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
     td.setAttribute("colspan", String(colCount))
     td.className = "group-header-cell"
     td.innerHTML = `
-      <button type="button" class="group-toggle" aria-label="Toggle group ${display.label}">
+      <button type="button" class="group-toggle" aria-label="Toggle group ${escapeHtml(display.label)}">
         <span class="group-toggle-arrow">▾</span>
       </button>
-      <span class="group-dot" style="background: ${display.color}"></span>
-      <span class="group-icon">${display.icon}</span>
-      <span class="group-label">${display.label}</span>
+      <span class="group-dot" style="background: ${sanitizeCssColor(display.color)}"></span>
+      <span class="group-icon">${escapeHtml(display.icon)}</span>
+      <span class="group-label">${escapeHtml(display.label)}</span>
       <span class="group-count">${groupRows.length}</span>
       <span class="group-checkbox-wrapper">
-        <input type="checkbox" class="group-select-all" data-group-key="${key}" aria-label="Select all in ${display.label}" />
+        <input type="checkbox" class="group-select-all" data-group-key="${escapeHtml(key)}" aria-label="Select all in ${escapeHtml(display.label)}" />
       </span>
     `
     headerRow.appendChild(td)
@@ -503,11 +504,11 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
         subTd.setAttribute("colspan", String(colCount))
         subTd.className = "group-header-cell sub-group-header-cell"
         subTd.innerHTML = `
-          <button type="button" class="group-toggle sub-group-toggle" aria-label="Toggle sub-group ${subDisplay.label}">
+          <button type="button" class="group-toggle sub-group-toggle" aria-label="Toggle sub-group ${escapeHtml(subDisplay.label)}">
             <span class="group-toggle-arrow">▾</span>
           </button>
-          <span class="group-dot" style="background: ${subDisplay.color}"></span>
-          <span class="group-label">${subDisplay.label}</span>
+          <span class="group-dot" style="background: ${sanitizeCssColor(subDisplay.color)}"></span>
+          <span class="group-label">${escapeHtml(subDisplay.label)}</span>
           <span class="group-count">${subRows.length}</span>
         `
         subHeaderRow.appendChild(subTd)

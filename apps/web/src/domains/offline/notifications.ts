@@ -90,7 +90,14 @@ export async function showTaskNotification(notification: TaskNotification): Prom
     // Click handler: navigate to task
     n.onclick = () => {
       window.focus()
-      if (notification.url) window.location.href = notification.url
+      if (notification.url) {
+        try {
+          const target = new URL(notification.url, window.location.origin)
+          if (target.origin === window.location.origin) {
+            window.location.href = target.href
+          }
+        } catch { /* invalid URL — ignore */ }
+      }
       n.close()
     }
 

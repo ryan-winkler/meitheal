@@ -69,6 +69,7 @@ const {
 </div>
 
 <script>
+  import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
   /**
    * LabelPicker client-side controller
    * Fetches labels from /api/labels, renders typeahead, handles add/remove
@@ -105,9 +106,9 @@ const {
       selectedEl.innerHTML = selectedLabels
         .map(
           (label) => `
-        <span class="label-badge label-badge--default" data-label="${label}">
-          ${label}
-          <button type="button" class="label-badge__remove" data-remove="${label}" aria-label="Remove ${label}">×</button>
+        <span class="label-badge label-badge--default" data-label="${escapeHtml(label)}">
+          ${escapeHtml(label)}
+          <button type="button" class="label-badge__remove" data-remove="${escapeHtml(label)}" aria-label="Remove ${escapeHtml(label)}">×</button>
         </span>
       `,
         )
@@ -134,9 +135,9 @@ const {
       let html = filtered
         .map(
           (l) => `
-        <div class="label-picker__option" data-title="${l.title}" data-color="${l.hex_color}">
-          <span class="label-picker__dot" style="background: ${l.hex_color}"></span>
-          ${l.title}
+        <div class="label-picker__option" data-title="${escapeHtml(l.title)}" data-color="${escapeHtml(l.hex_color)}">
+          <span class="label-picker__dot" style="background: ${sanitizeCssColor(l.hex_color)}"></span>
+          ${escapeHtml(l.title)}
         </div>
       `,
         )
@@ -145,8 +146,8 @@ const {
       // Show "create" option if query doesn't match existing
       if (q && !allLabels.some((l) => l.title.toLowerCase() === q) && !selectedLabels.includes(q)) {
         html += `
-          <div class="label-picker__option label-picker__option--create" data-create="${q}">
-            + Create "${q}"
+          <div class="label-picker__option label-picker__option--create" data-create="${escapeHtml(q)}">
+            + Create "${escapeHtml(q)}"
           </div>
         `
       }

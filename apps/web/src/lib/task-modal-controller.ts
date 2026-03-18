@@ -14,6 +14,7 @@
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { createFocusTrap } from "@lib/focus-trap";
         import { renderTypeIconSvg } from "@lib/type-icon-config";
+        import { escapeHtml } from "@lib/safe-html";
 
         // Use lifecycle signal for all global listeners in this module
         const __signal = pageLifecycle.signal;
@@ -205,7 +206,7 @@
                     String(t.parent_id).slice(0, 8),
                 );
                 linkParentDisplay.innerHTML = `
-                <a href="#" class="text-xs text-accent hover:underline td-parent-link" data-id="${t.parent_id}">${parentTitle}</a>
+                <a href="#" class="text-xs text-accent hover:underline td-parent-link" data-id="${escapeHtml(t.parent_id)}">${escapeHtml(parentTitle)}</a>
                 <button type="button" class="text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent" title="Remove parent">✕</button>
               `;
                 linkParentDisplay
@@ -1003,7 +1004,7 @@
               descPreview.innerHTML = sanitizeClient(dirtyHtml);
             } catch (e: any) {
               log.error("Markdown render error", e);
-              descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${e.message}</div>`;
+              descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${escapeHtml(e.message)}</div>`;
             }
             saveTD("description", rawMarkdown);
             // Show "✓ Saved" indicator (T4: guarded with timeout tracking)

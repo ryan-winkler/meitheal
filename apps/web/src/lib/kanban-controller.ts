@@ -2,6 +2,7 @@
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
 import { pageLifecycle } from "@lib/page-lifecycle";
+import { escapeHtml, sanitizeCssColor } from "@lib/safe-html";
 
 const log = createClientLogger("kanban");
 const __signal = pageLifecycle.signal;
@@ -719,8 +720,8 @@ export function initKanbanBoard(): void {
           item.className = "popover-item" + (currentAssigned === userId ? " active" : "");
           item.setAttribute("role", "menuitem");
           // P2-7: Colored dot for user recognition
-          const dot = user.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${user.color};margin-right:6px;vertical-align:middle"></span>` : "👤 ";
-          item.innerHTML = `${dot}${user.name || user.id}`;
+          const dot = user.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle"></span>` : "👤 ";
+          item.innerHTML = `${dot}${escapeHtml(user.name || user.id)}`;
           item.addEventListener("click", async () => {
             // P3-4: Optimistic update
             btn.dataset.assigned = userId;
@@ -1295,7 +1296,7 @@ export function initKanbanBoard(): void {
               const before = originalTitle.substring(0, idx);
               const matched = originalTitle.substring(idx, idx + query.length);
               const after = originalTitle.substring(idx + query.length);
-              titleEl.innerHTML = `${before}<mark class="search-highlight">${matched}</mark>${after}`;
+              titleEl.innerHTML = `${escapeHtml(before)}<mark class="search-highlight">${escapeHtml(matched)}</mark>${escapeHtml(after)}`;
             } else {
               titleEl.textContent = originalTitle;
             }
