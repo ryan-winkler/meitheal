@@ -201,4 +201,125 @@
 
 ---
 
-*Roadmap revised: 2026-03-18 — Phase 04.1 complete, Phase 04.2 planned*
+## Pre-Release Audit Phases (from 50-Persona Expert Audit)
+
+### Phase 05.1: Schema & Architecture Hardening
+
+**Goal:** Make the database startup fast, safe, and observable. Prevent corruption, track schema versions, auto-backup.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-23, PRA-24, PRA-25, PRA-01, PRA-27, PRA-30
+
+**Success Criteria:**
+1. Schema version tracked in `app_settings` — startup skips completed migrations
+2. `PRAGMA integrity_check` runs on startup with error surfacing to `/api/health`
+3. Auto-backup copies DB to `.data/backups/` on startup (max 5, FIFO)
+4. `quick_capture` task kind accepted by `/api/tasks` with only title required
+5. Goals table has `metric_type`, `metric_target`, `metric_current` columns
+6. Streak freeze logic — 1 grace day/week without resetting streak
+
+**Depends on:** Phase 04.1
+
+---
+
+### Phase 05.2: Bot Orchestration Completion
+
+**Goal:** Complete the bot handoff lifecycle — review queue UI, state machine gaps, scratchpad isolation, rate limiting.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-05, PRA-06, PRA-07, PRA-08
+
+**Success Criteria:**
+1. `/review` page shows pending bot proposals grouped by bot with accept-all/reject-all
+2. Sidebar shows 📬 icon with pending count badge
+3. Handoff state machine includes `failed`, `timeout`, `human_override` states
+4. Stale lock cleanup runs on configurable interval
+5. `agent_scratchpad` never appears in any API response
+6. Bot write endpoints rate-limited (60/min per IP)
+
+**Depends on:** Phase 05.1
+
+---
+
+### Phase 05.3: Offline & PWA Resilience
+
+**Goal:** Make offline mode actually useful — field-family merge, expanded IDB schema, proper SW caching, tab sync.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-03, PRA-09, PRA-10, PRA-11, PRA-12
+
+**Success Criteria:**
+1. `OfflineTask` includes all 14 essential task fields, IDB version = 3
+2. Field-family merge strategy implemented (user_fields, bot_fields, meta_fields)
+3. IDB cursor pagination via `getAllTasks(limit, offset)`
+4. Service Worker caches static assets on install; serves cached when offline
+5. Tab-sync shows conflict prompt when task modified in another tab
+
+**Depends on:** Phase 05.1
+
+---
+
+### Phase 05.4: Home Assistant Deep Integration
+
+**Goal:** Make Meitheal a first-class HA citizen — WebSocket hardening, entity registration, LLM tools, Companion detection.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-13, PRA-14, PRA-15, PRA-16
+
+**Success Criteria:**
+1. WebSocket auto-reconnects within 30s with exponential backoff
+2. Sidebar shows real-time HA connection status
+3. 3 HA entities registered (overdue sensor, active count, streak)
+4. 5 hierarchy-aware LLM tools available via HA Assist
+5. Companion app detected — IDB features gracefully disabled
+
+**Depends on:** Phase 05.2
+
+---
+
+### Phase 05.5: Accessibility & UX Polish
+
+**Goal:** WCAG 2.2 AA compliance, mobile responsiveness, animation performance, visual token consistency.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-04, PRA-19, PRA-20, PRA-21, PRA-22, PRA-26, PRA-28, PRA-29, PRA-02
+
+**Success Criteria:**
+1. Lighthouse accessibility score ≥ 90
+2. Skip-to-content link, correct heading hierarchy, keyboard DnD alternative
+3. All `transition: all` replaced with explicit property lists
+4. Mobile (< 768px) shows bottom tab bar, sidebar hidden
+5. All hardcoded `rgba()` shadow values replaced with `var(--shadow-*)` tokens
+6. Event listeners wrapped in `pageLifecycle.onCleanup()`
+7. Progress rings on sidebar projects and goals
+8. Focus Stack (top 3 tasks) on Today page
+9. Kanban cards ≤ 80px with priority strip
+
+**Depends on:** Phase 05.3
+
+---
+
+### Phase 05.6: n8n & MCP Integration
+
+**Goal:** Connect Meitheal to the automation ecosystem — n8n webhook triggers and functional MCP tools.
+
+**Status:** 📋 Planned
+
+**Requirements:** PRA-17, PRA-18
+
+**Success Criteria:**
+1. 3 webhook events fire on configured URL (task-created, task-completed, daily-summary)
+2. 5 MCP core tools functional (create, list, update, search, get)
+3. MCP tools respect `bot_allow_proposals` setting
+4. MCP tools use handoff protocol (claim → propose → await human accept)
+
+**Depends on:** Phase 05.2
+
+---
+
+*Roadmap revised: 2026-03-18 — Pre-release audit phases (05.1–05.6) from 50-persona expert audit*

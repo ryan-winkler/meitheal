@@ -111,6 +111,71 @@ All above — 28 requirements (reduced from 35 after audit)
 
 ---
 
+## Pre-Release Audit (PRA) — from 50-Persona Expert Audit
+
+> [!IMPORTANT]
+> These requirements were generated from a comprehensive 50-persona expert audit on 2026-03-18.
+> Source: `.planning/persona-loops/pre-release-audit/50-persona-expert-audit.md`
+
+### ADHD & Executive Function
+
+- [ ] **PRA-01**: Add `quick_capture` task kind — zero-friction task creation with only title required, auto-assigns to backlog
+- [ ] **PRA-02**: Smart Today Focus Stack — top 3 recommended tasks (overdue + due today + next routine) shown above full list
+- [ ] **PRA-03**: Expand `OfflineTask` IDB schema to include priority, labels, project_id, task_kind, checklists, assigned_to, board_id (bump IDB v3)
+- [ ] **PRA-04**: Kanban card 3-line rule — max 80px height, priority color strip, expand for details
+
+### Bot Orchestration
+
+- [ ] **PRA-05**: Bot Review Queue page (`/review`) — sidebar icon 📬 with count badge, grouped by bot, accept-all/reject-all
+- [ ] **PRA-06**: Complete handoff state machine — add `failed`, `timeout`, `human_override` states + stale lock cleanup endpoint
+- [ ] **PRA-07**: Exclude `agent_scratchpad` from all SELECT queries — never return in API responses
+- [ ] **PRA-08**: Rate-limit bot endpoints (10 accepts/min, 60 writes/min per IP)
+
+### Offline & Sync
+
+- [ ] **PRA-09**: Field-family merge strategy — user_fields, bot_fields, meta_fields — per-family conflict resolution (not whole-row LWW)
+- [ ] **PRA-10**: IDB cursor pagination — `getAllTasks(limit, offset)` and `getTasksByStatus(status)`
+- [ ] **PRA-11**: Service Worker cache-first for static assets, network-first for API with IDB fallback
+- [ ] **PRA-12**: Tab-sync conflict detection — version check on save with "modified elsewhere" prompt
+
+### Home Assistant Integration
+
+- [ ] **PRA-13**: WebSocket heartbeat (30s ping/pong) + exponential backoff reconnect (1-30s) + sidebar status indicator
+- [ ] **PRA-14**: Register HA entities — `binary_sensor.meitheal_tasks_overdue`, `sensor.meitheal_active_tasks`, `sensor.meitheal_streak_days`
+- [ ] **PRA-15**: Add hierarchy LLM tools — `list_areas`, `list_goals`, `list_projects`, `move_task_to_project`, `set_goal_progress`
+- [ ] **PRA-16**: Detect HA Companion app and disable IndexedDB-based offline features gracefully
+
+### n8n & MCP
+
+- [ ] **PRA-17**: Webhook triggers — `task-created`, `task-completed`, `daily-summary` outbound events to configured n8n URL
+- [ ] **PRA-18**: Implement 5 MCP core tools — `create_task`, `list_tasks`, `update_task`, `search_tasks`, `get_task` with handoff protocol
+
+### Accessibility & UX
+
+- [ ] **PRA-19**: WCAG 2.2 AA pass — skip-to-content link, heading hierarchy, keyboard DnD alternative, focus styles, color contrast
+- [ ] **PRA-20**: Replace all `transition: all` with explicit property lists for performance
+- [ ] **PRA-21**: Mobile bottom tab bar when `innerWidth < 768` — hide Meitheal sidebar for HA Companion
+- [ ] **PRA-22**: Shadow and color token audit — replace all hardcoded `rgba()` with `var(--shadow-*)` tokens
+
+### Schema & Architecture
+
+- [ ] **PRA-23**: Schema version tracking via `app_settings.schema_version` — skip completed migrations on startup
+- [ ] **PRA-24**: SQLite integrity check on startup — `PRAGMA integrity_check` with error surfacing
+- [ ] **PRA-25**: Auto-backup on startup — copy DB to `.data/backups/`, keep max 5 (FIFO)
+- [ ] **PRA-26**: Event listener cleanup pass — wrap all `addEventListener` in `pageLifecycle.onCleanup()`
+
+### Goals & Planning
+
+- [ ] **PRA-27**: Goal metrics — add `metric_type`, `metric_target`, `metric_current` columns for measurable OKR-style goals
+- [ ] **PRA-28**: Progress rings — SVG circle on sidebar projects + goals showing completion percentage
+- [ ] **PRA-29**: Weekly review endpoint — `/api/review/weekly` listing stale tasks, dormant projects, stagnant goals
+
+### Gamification
+
+- [ ] **PRA-30**: Streak freeze — 1 grace day/week without resetting streak, track `streak_freezes_used`
+
+---
+
 ## Traceability
 
 | Phase | Requirements |
@@ -121,5 +186,6 @@ All above — 28 requirements (reduced from 35 after audit)
 | 4 | SMT-01→03, VER-01→03 |
 | 8 | SET-01→12 |
 | Parallel | STRAT-01→08 |
+| 04.2-PRA | PRA-01→30 |
 
-*Requirements revised: 2026-03-16 — Strategic Rules engine delivered*
+*Requirements revised: 2026-03-18 — Pre-release audit requirements from 50-persona expert audit*
