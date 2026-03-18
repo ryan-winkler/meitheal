@@ -64,7 +64,6 @@ export const GET: APIRoute = async ({ url }) => {
     return new Response(JSON.stringify({
       ok: false,
       errorCode: "FETCH_FAILED",
-      message: `Failed to fetch events: ${err instanceof Error ? err.message : String(err)}`,
     }), { status: 500, headers: { "content-type": "application/json" } })
   }
 }
