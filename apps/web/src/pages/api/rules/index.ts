@@ -8,7 +8,7 @@ import type { APIRoute } from "astro"
 import { findAllRules, createRule } from "@domains/strategy/rule-repository"
 import { createTaskRule } from "@meitheal/domain-strategy"
 import type { TaskType } from "@meitheal/domain-strategy"
-import { safeErrorMessage } from "@lib/safe-error"
+import { logApiError } from "@lib/api-logger"
 
 export const GET: APIRoute = async ({ url }) => {
   try {
@@ -23,8 +23,9 @@ export const GET: APIRoute = async ({ url }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    logApiError("rules", "Failed to fetch rules", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULES_FETCH_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULES_FETCH_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -61,8 +62,9 @@ export const POST: APIRoute = async ({ request }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    logApiError("rules", "Failed to create rule", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULE_CREATE_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULE_CREATE_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }

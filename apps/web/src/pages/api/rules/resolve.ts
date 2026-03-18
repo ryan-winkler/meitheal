@@ -10,7 +10,7 @@ import type { APIRoute } from "astro"
 import { findAllRules } from "@domains/strategy/rule-repository"
 import { resolveRulesForTask } from "@meitheal/domain-strategy"
 import type { TaskType } from "@meitheal/domain-strategy"
-import { safeErrorMessage } from "@lib/safe-error"
+import { logApiError } from "@lib/api-logger"
 
 export const GET: APIRoute = async ({ url }) => {
   try {
@@ -33,8 +33,9 @@ export const GET: APIRoute = async ({ url }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    logApiError("rules", "Failed to resolve rules", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULE_RESOLVE_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULE_RESOLVE_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }

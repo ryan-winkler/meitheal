@@ -18,7 +18,7 @@ import { getOverrides, saveOverrides, resetOverrides } from "@domains/strategy/f
 import { getCustomFramework, updateCustomFramework, deleteCustomFramework } from "@domains/strategy/custom-framework-repository"
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig, FrameworkOverrides } from "@meitheal/domain-strategy"
-import { safeErrorMessage } from "@lib/safe-error"
+import { logApiError } from "@lib/api-logger"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
@@ -70,8 +70,9 @@ export const GET: APIRoute = async ({ params }) => {
       { status: 404, headers: { "Content-Type": "application/json" } },
     )
   } catch (error) {
+    logApiError("frameworks", "Failed to fetch framework", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_FETCH_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_FETCH_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -116,8 +117,9 @@ export const PUT: APIRoute = async ({ params, request }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    logApiError("frameworks", "Failed to update framework", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_UPDATE_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_UPDATE_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -151,8 +153,9 @@ export const DELETE: APIRoute = async ({ params }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    logApiError("frameworks", "Failed to delete framework", error)
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_DELETE_FAILED", message: safeErrorMessage(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_DELETE_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
