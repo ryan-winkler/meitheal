@@ -525,7 +525,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
     background: var(--bg-hover);
     border: 1px solid var(--border);
     border-radius: 11px;
-    transition: all 200ms;
+    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
   }
   .toggle-slider::before {
     content: "";
@@ -536,7 +536,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
     bottom: 2px;
     background: var(--text-muted);
     border-radius: 50%;
-    transition: all 200ms;
+    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
   }
   .toggle-label input:checked + .toggle-slider {
     background: var(--accent);
