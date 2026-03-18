@@ -57,6 +57,34 @@ const _rateLimitCleanup = setInterval(() => {
 }, 5 * 60_000);
 if (typeof _rateLimitCleanup?.unref === "function") _rateLimitCleanup.unref();
 
+// ── Bot-specific rate limiter (PRA-08) ──
+// Stricter 60/min limit for bot mutation endpoints to prevent runaway agents
+// from overwhelming the DB with proposals/claims.
+const botRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const BOT_RATE_LIMIT = 60;
+const BOT_RATE_WINDOW_MS = 60_000;
+const BOT_PATH_PATTERNS = ["/accept-proposal", "/api/mcp"];
+
+function isBotEndpoint(pathname: string): boolean {
+  return BOT_PATH_PATTERNS.some(p => pathname.includes(p));
+}
+
+function getBotRateLimit(ip: string): { remaining: number; resetAt: number; exceeded: boolean } {
+  const now = Date.now();
+  let entry = botRateLimitMap.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    if (botRateLimitMap.size >= 1_000) {
+      const firstKey = botRateLimitMap.keys().next().value;
+      if (firstKey !== undefined) botRateLimitMap.delete(firstKey);
+    }
+    entry = { count: 0, resetAt: now + BOT_RATE_WINDOW_MS };
+    botRateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  const remaining = Math.max(0, BOT_RATE_LIMIT - entry.count);
+  return { remaining, resetAt: entry.resetAt, exceeded: entry.count > BOT_RATE_LIMIT };
+}
+
 // ── Settings cache (avoids DB query on every request) ──
 // TTL: 60s — settings change rarely, no need to hit SQLite every request.
 let _settingsCache: { timezone: string; weekStart: string; dateFormat: string } | null = null;
@@ -202,6 +230,30 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
         "x-ratelimit-reset": String(Math.ceil(rateInfo.resetAt / 1000)),
       },
     });
+  }
+
+  // Bot-specific rate limiting (PRA-08) — stricter 60/min for bot mutation endpoints
+  if (url.pathname.startsWith("/api/") && isBotEndpoint(url.pathname)) {
+    const botRate = getBotRateLimit(ip);
+    if (botRate.exceeded) {
+      logger.log("warn", {
+        event: "http.bot_rate_limited",
+        domain: "security",
+        component: "middleware",
+        request_id: requestId,
+        message: `Bot rate limit exceeded: ${request.method} ${url.pathname} from ${ip}`,
+      });
+      return new Response(JSON.stringify({ error: "Bot rate limit exceeded", limit: BOT_RATE_LIMIT }), {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": String(Math.ceil((botRate.resetAt - Date.now()) / 1000)),
+          "x-ratelimit-limit": String(BOT_RATE_LIMIT),
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-reset": String(Math.ceil(botRate.resetAt / 1000)),
+        },
+      });
+    }
   }
 
   // CSRF origin check for mutating API requests (defense-in-depth)
