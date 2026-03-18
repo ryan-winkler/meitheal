@@ -12,7 +12,6 @@
  */
 import type { APIRoute } from "astro"
 import { logApiError } from "../../../lib/api-logger"
-import { bypassTlsIfNeeded, restoreTls } from "../../../lib/n8n-fetch"
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -97,21 +96,35 @@ export const POST: APIRoute = async ({ request }) => {
       headers["x-meitheal-signature"] = `sha256=${signature}`
     }
 
-    // Send with timeout + TLS bypass
+    // Send with timeout + scoped TLS bypass for .internal domains in dev
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
     const startTime = Date.now()
-    const tlsCtx = bypassTlsIfNeeded(targetUrl)
+
+    // Scoped TLS bypass via undici Agent (no global process.env mutation)
+    const fetchOpts: RequestInit & { dispatcher?: unknown } = {
+      method: "POST",
+      signal: controller.signal,
+      headers,
+      body: payloadString,
+    }
+
+    const isLocalDev = process.env.NODE_ENV !== "production"
+    const isInternal = targetUrl.includes(".internal")
+    if (isLocalDev && isInternal) {
+      try {
+        const { Agent } = await import("undici")
+        fetchOpts.dispatcher = new Agent({
+          connect: { rejectUnauthorized: false },
+        })
+      } catch {
+        // undici not available — proceed without TLS bypass
+      }
+    }
 
     try {
-      const response = await fetch(targetUrl, {
-        method: "POST",
-        signal: controller.signal,
-        headers,
-        body: payloadString,
-      })
+      const response = await fetch(targetUrl, fetchOpts as RequestInit)
 
-      restoreTls(tlsCtx)
       const latencyMs = Date.now() - startTime
 
       // Persist delivery result for UI display (same key as webhook-dispatcher)
@@ -142,7 +155,6 @@ export const POST: APIRoute = async ({ request }) => {
         headers: { "content-type": "application/json" },
       })
     } catch (err) {
-      restoreTls(tlsCtx)
       const latencyMs = Date.now() - startTime
 
       const errorMessage = err instanceof Error

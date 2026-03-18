@@ -17,6 +17,7 @@ import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } from "@domains/strategy/custom-framework-repository"
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig } from "@meitheal/domain-strategy"
+import { safeErrorMessage } from "@lib/safe-error"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
@@ -69,7 +70,7 @@ export const GET: APIRoute = async () => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORKS_FETCH_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORKS_FETCH_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -127,7 +128,7 @@ export const POST: APIRoute = async ({ request }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_CREATE_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_CREATE_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }

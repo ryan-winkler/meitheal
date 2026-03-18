@@ -17,7 +17,7 @@ function makeEvent(overrides: Partial<{
   description: string; location: string; recurrence_id: string
 }> = {}) {
   return {
-    uid: overrides.uid ?? `uid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    uid: overrides.uid ?? `uid-${crypto.randomUUID()}`,
     summary: overrides.summary ?? "Test Event",
     start: overrides.start ?? "2025-01-15T10:00:00",
     end: overrides.end ?? "2025-01-15T11:00:00",

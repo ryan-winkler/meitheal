@@ -7,6 +7,7 @@
  */
 import type { APIRoute } from "astro"
 import { findRuleById, updateRule, deleteRule } from "@domains/strategy/rule-repository"
+import { safeErrorMessage } from "@lib/safe-error"
 
 export const GET: APIRoute = async ({ params }) => {
   try {
@@ -23,7 +24,7 @@ export const GET: APIRoute = async ({ params }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULE_FETCH_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULE_FETCH_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -45,7 +46,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULE_UPDATE_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULE_UPDATE_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -66,7 +67,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "RULE_DELETE_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "RULE_DELETE_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }

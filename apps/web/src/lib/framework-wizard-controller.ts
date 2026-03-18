@@ -8,6 +8,8 @@
  * @kcs Framework extensibility — wizard-guided custom framework creation
  */
 
+import { escapeHtml } from "@lib/safe-html"
+
 /** State for the wizard */
 interface WizardField {
   key: string
@@ -296,7 +298,7 @@ function renderFormulaVars(): void {
   varsEl.innerHTML = `
     <p class="fw-field-hint"><strong>Available field keys:</strong></p>
     <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
-      ${keys.map((k) => `<code style="padding: 2px 6px; background: var(--bg-secondary); border-radius: 4px; font-size: 12px;">${k}</code>`).join("")}
+      ${keys.map((k) => `<code style="padding: 2px 6px; background: var(--bg-secondary); border-radius: 4px; font-size: 12px;">${escapeHtml(k)}</code>`).join("")}
     </div>
   `
 }
@@ -363,29 +365,29 @@ function renderPreview(): void {
 
   const fieldsHtml = state.fields.map((f) => `
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px;">
-      <span><strong>${f.label}</strong></span>
-      <span style="color: var(--text-muted);">${f.type} (${f.uiType})${f.type === "number" ? ` [${f.min}–${f.max}]` : ""}</span>
+      <span><strong>${escapeHtml(f.label)}</strong></span>
+      <span style="color: var(--text-muted);">${escapeHtml(f.type)} (${escapeHtml(f.uiType)})${f.type === "number" ? ` [${escapeHtml(String(f.min))}–${escapeHtml(String(f.max))}]` : ""}</span>
     </div>
   `).join("")
 
   const badgesHtml = state.badges.map((b) => `
-    <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--${b.color}); color: var(--bg-primary);">
-      ${b.label} (≥${b.min})
+    <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--${escapeHtml(b.color)}); color: var(--bg-primary);">
+      ${escapeHtml(b.label)} (≥${escapeHtml(String(b.min))})
     </span>
   `).join(" ")
 
   previewEl.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-      <strong style="font-size: 16px;">${state.name || "Untitled"}</strong>
+      <strong style="font-size: 16px;">${escapeHtml(state.name || "Untitled")}</strong>
       <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-primary); border: 1px solid var(--border);">
-        ${state.archetype}
+        ${escapeHtml(state.archetype)}
       </span>
       <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);">
         custom
       </span>
     </div>
-    ${state.description ? `<p style="font-size: 12px; color: var(--text-muted); margin: 0 0 10px;">${state.description}</p>` : ""}
-    ${state.formula ? `<p style="font-size: 12px; font-family: monospace; margin: 0 0 10px;"><strong>Formula:</strong> ${state.formula}</p>` : ""}
+    ${state.description ? `<p style="font-size: 12px; color: var(--text-muted); margin: 0 0 10px;">${escapeHtml(state.description)}</p>` : ""}
+    ${state.formula ? `<p style="font-size: 12px; font-family: monospace; margin: 0 0 10px;"><strong>Formula:</strong> ${escapeHtml(state.formula)}</p>` : ""}
     <div style="margin-bottom: 8px;">
       <strong style="font-size: 12px;">Fields (${state.fields.length})</strong>
       ${fieldsHtml}

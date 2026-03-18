@@ -63,13 +63,9 @@ export async function emitWebhook(
     try {
       const isLocalDev = process.env.NODE_ENV !== "production"
       const isInternal = subscriber.url.includes(".internal")
-      const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
 
-      if (isLocalDev && isInternal) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-pinning] — intentional: dev-only TLS bypass for .internal self-signed certs
-      }
-
-      const response = await fetch(subscriber.url, {
+      // Scoped TLS bypass via undici Agent — no global process.env mutation
+      const fetchOpts: RequestInit & { dispatcher?: unknown } = {
         method: "POST",
         signal: controller.signal,
         headers: {
@@ -80,12 +76,20 @@ export async function emitWebhook(
           ...(subscriber.headers ?? {}),
         },
         body: payload,
-      })
+      }
 
       if (isLocalDev && isInternal) {
-        if (originalTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTls
+        try {
+          const { Agent } = await import("undici")
+          fetchOpts.dispatcher = new Agent({
+            connect: { rejectUnauthorized: false },
+          })
+        } catch {
+          // undici not available — proceed without TLS bypass
+        }
       }
+
+      const response = await fetch(subscriber.url, fetchOpts as RequestInit)
 
       lastStatusCode = response.status
 

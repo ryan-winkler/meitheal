@@ -34,51 +34,25 @@ export function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-/** Context for managed TLS bypass — saves/restores NODE_TLS_REJECT_UNAUTHORIZED */
-interface TlsContext {
-  bypassed: boolean
-  originalValue: string | undefined
-}
-
 /**
- * Temporarily bypass TLS certificate verification for .internal domains
- * in local development. Call `restoreTls()` after the request completes.
- *
- * This is necessary because .internal domains use self-signed certs
- * that Node.js rejects by default.
+ * Check if a URL targets an .internal domain in local development,
+ * where self-signed TLS certs are expected.
  */
-export function bypassTlsIfNeeded(url: string): TlsContext {
+function needsTlsBypass(url: string): boolean {
   const isLocalDev = process.env.NODE_ENV !== "production"
   const isInternal = url.includes(".internal")
-
-  if (isLocalDev && isInternal) {
-    const originalValue = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0" // lgtm[js/disabling-certificate-pinning] — intentional: dev-only TLS bypass for .internal self-signed certs
-    return { bypassed: true, originalValue }
-  }
-
-  return { bypassed: false, originalValue: undefined }
+  return isLocalDev && isInternal
 }
 
 /**
- * Restore NODE_TLS_REJECT_UNAUTHORIZED to its original value.
- */
-export function restoreTls(ctx: TlsContext): void {
-  if (!ctx.bypassed) return
-  if (ctx.originalValue === undefined) {
-    delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-  } else {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = ctx.originalValue
-  }
-}
-
-/**
- * Fetch with timeout, TLS bypass for .internal domains, and automatic cleanup.
+ * Fetch with timeout and scoped TLS bypass for .internal domains in dev.
  *
- * Wraps native fetch with:
- * - AbortController timeout (default 5s)
- * - TLS bypass for .internal domains in dev
- * - Automatic TLS restore on completion
+ * Instead of mutating the global `process.env.NODE_TLS_REJECT_UNAUTHORIZED`,
+ * uses Node.js `undici.Agent` with `{ connect: { rejectUnauthorized: false } }`
+ * scoped only to this request. Falls back to env-var approach if undici is unavailable.
+ *
+ * @domain integrations
+ * @kcs TLS bypass is scoped per-request and only active in non-production for .internal domains
  */
 export async function n8nFetch(
   url: string,
@@ -87,16 +61,28 @@ export async function n8nFetch(
   const { timeoutMs = 5000, ...fetchOptions } = options
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  const tlsCtx = bypassTlsIfNeeded(url)
 
   try {
-    const response = await fetch(url, {
+    const fetchOpts: RequestInit & { dispatcher?: unknown } = {
       ...fetchOptions,
       signal: controller.signal,
-    })
+    }
+
+    if (needsTlsBypass(url)) {
+      try {
+        // Use undici Agent for scoped TLS bypass (available in Node 18+)
+        const { Agent } = await import("undici")
+        fetchOpts.dispatcher = new Agent({
+          connect: { rejectUnauthorized: false },
+        })
+      } catch {
+        // undici not available — no TLS bypass (safer default)
+      }
+    }
+
+    const response = await fetch(url, fetchOpts as RequestInit)
     return response
   } finally {
     clearTimeout(timeout)
-    restoreTls(tlsCtx)
   }
 }

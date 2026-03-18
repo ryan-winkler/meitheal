@@ -14,6 +14,7 @@ import { parse as parseYaml } from "yaml"
 import { getCustomFramework } from "@domains/strategy/custom-framework-repository"
 import { parseFrameworkConfig, frameworkConfigToRaw } from "@meitheal/domain-strategy"
 import { stringify as stringifyYaml } from "yaml"
+import { safeErrorMessage } from "@lib/safe-error"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../../content/frameworks")
@@ -55,7 +56,7 @@ export const GET: APIRoute = async ({ params }) => {
     )
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "EXPORT_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "EXPORT_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }

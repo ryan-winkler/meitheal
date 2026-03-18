@@ -18,6 +18,7 @@ import { getOverrides, saveOverrides, resetOverrides } from "@domains/strategy/f
 import { getCustomFramework, updateCustomFramework, deleteCustomFramework } from "@domains/strategy/custom-framework-repository"
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig, FrameworkOverrides } from "@meitheal/domain-strategy"
+import { safeErrorMessage } from "@lib/safe-error"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
@@ -70,7 +71,7 @@ export const GET: APIRoute = async ({ params }) => {
     )
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_FETCH_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_FETCH_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -116,7 +117,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_UPDATE_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_UPDATE_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -151,7 +152,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_DELETE_FAILED", message: String(error) }),
+      JSON.stringify({ ok: false, errorCode: "FRAMEWORK_DELETE_FAILED", message: safeErrorMessage(error) }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
