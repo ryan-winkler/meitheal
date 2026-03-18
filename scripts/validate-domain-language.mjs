@@ -11,7 +11,7 @@
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-import { execSync } from "node:child_process"
+import { execFileSync } from "node:child_process"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -54,8 +54,24 @@ for (const rule of DEPRECATED_TERMS) {
   if (rule.skipCheck) continue
 
   try {
-    const cmd = `grep -rn --include="*.ts" --include="*.astro" --include="*.mjs" "${rule.term}" "${root}/apps" "${root}/packages" "${root}/scripts" 2>/dev/null || true`
-    const output = execSync(cmd, { encoding: "utf-8" }).trim()
+    const args = [
+      "-rn",
+      "--include=*.ts",
+      "--include=*.astro",
+      "--include=*.mjs",
+      rule.term,
+      `${root}/apps`,
+      `${root}/packages`,
+      `${root}/scripts`,
+    ]
+    let output = ""
+    try {
+      output = execFileSync("grep", args, { encoding: "utf-8" }).trim()
+    } catch (e) {
+      // grep exits 1 when no matches — treat as empty
+      if (e.status !== 1) throw e
+      output = ""
+    }
 
     if (!output) continue
 
