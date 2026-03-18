@@ -22,6 +22,63 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
 >
   <SettingsSectionIntro section={dangerZoneSection} />
   <div class="settings-grid">
+
+  <!-- Archiving & Data Retention -->
+  <SettingsPanelCard
+    title="📦 Archiving & Data Retention"
+    subtitle="Remove completed tasks you no longer need"
+    tone="default"
+  >
+    <SettingsCallout title="What gets deleted?" icon="ℹ" tone="warning">
+      This permanently deletes tasks with status <strong>complete</strong> or
+      <strong>archived</strong> that were last updated before the chosen cutoff.
+      Active, pending, and in-progress tasks are never affected.
+    </SettingsCallout>
+
+    <div class="retention-controls" style="margin-top: 16px;">
+      <label for="retention-months-select" style="display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">
+        Delete completed tasks older than
+      </label>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select
+          id="retention-months-select"
+          class="form-select"
+          style="min-width: 160px;"
+        >
+          <option value="" selected disabled>Choose period…</option>
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12">12 months</option>
+          <option value="24">24 months</option>
+        </select>
+        <button
+          class="btn"
+          id="retention-preview-btn"
+          disabled
+          style="border-color: var(--warning); color: var(--warning);"
+        >🔍 Preview</button>
+      </div>
+
+      <div
+        id="retention-preview-result"
+        style="margin-top: 12px; display: none; padding: 12px 16px; border-radius: 8px; background: var(--bg-hover); border: 1px solid var(--border); font-size: 13px;"
+        role="status"
+        aria-live="polite"
+      >
+        <!-- Populated by controller -->
+      </div>
+    </div>
+
+    <SettingsActionRow style="margin-top: 16px;">
+      <button
+        class="btn"
+        id="retention-delete-btn"
+        disabled
+        style="border-color: var(--danger); color: var(--danger);"
+      >🗑 Delete Tasks</button>
+    </SettingsActionRow>
+  </SettingsPanelCard>
+
   <!-- Danger Zone -->
   <SettingsPanelCard
     title={t("settings.danger_title", locale)}
@@ -50,3 +107,4 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
   </SettingsPanelCard>
   </div>
 </section>
+

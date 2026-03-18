@@ -295,6 +295,11 @@
   .content {
     padding-bottom: max(72px, calc(56px + env(safe-area-inset-bottom))) !important;
   }
+
+  /* Raise toast notifications above the mobile tab bar */
+  .fixed.bottom-4 {
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  }
 }
 
 /* ===== PRA-16: Mobile Bottom Tab Bar ===== */

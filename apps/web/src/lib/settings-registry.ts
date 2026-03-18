@@ -141,16 +141,16 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "danger-zone-settings",
     label: "Danger Zone",
     icon: "⚠",
-    description: "Purge and reset operations",
-    navDetail: "Protected reset and purge operations",
+    description: "Archiving, data retention, purge, and reset operations",
+    navDetail: "Data retention, protected reset, and purge operations",
     statusLabel: "Protected",
     summaryTitle: "Protected",
     summaryDetail: "Protected actions",
     introTitle: "Keep destructive actions isolated and deliberate",
     introDescription:
-      "Resets and purges live here behind clear warnings so they never blend into everyday preference changes or mobile quick taps.",
-    featuredTasks: ["Review consequences", "Purge all tasks", "Reset settings"],
-    keywords: ["reset", "purge", "delete", "danger", "factory reset"],
+      "Resets, purges, and data retention controls live here behind clear warnings so they never blend into everyday preference changes or mobile quick taps.",
+    featuredTasks: ["Delete old completed tasks", "Purge all tasks", "Reset settings"],
+    keywords: ["reset", "purge", "delete", "danger", "factory reset", "archive", "retention", "old tasks", "data cleanup", "completed tasks"],
   },
 ]
 
@@ -287,6 +287,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     anchorId: "purge-tasks",
     sectionId: "danger-zone-settings",
     keywords: ["purge", "reset", "delete all", "factory reset"],
+  },
+  {
+    id: "field-retention",
+    label: "Data Retention",
+    anchorId: "retention-months-select",
+    sectionId: "danger-zone-settings",
+    keywords: ["retention", "archive", "delete completed", "old tasks", "cleanup", "data slim", "3 months", "6 months", "12 months", "24 months"],
   },
   {
     id: "field-rules-presets",
