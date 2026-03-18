@@ -157,4 +157,25 @@
 
 ---
 
-*Roadmap revised: 2026-03-15 — phase status and parallel tracks refreshed*
+### Phase 04.1: Human-Agent DDD Core (INSERTED)
+
+**Goal:** Replace `Epic -> Story -> Task` with `Area -> Goal -> Project -> Task -> Routine`, add bot-safe orchestration primitives, and define an offline-safe merge and compatibility translation strategy before execution.
+
+**Success Criteria:**
+1. `Goal` and `Project` are treated as aggregate roots, not `task_type` aliases.
+2. `Task` behavior is modeled via `task_kind` (`standard_action`, `shopping_item`, `checklist`) instead of hierarchy labels.
+3. Bot handoff uses explicit owner, lock, orchestration, proposal, and audit-ledger primitives.
+4. Offline/PWA sync has a documented field-family merge strategy instead of whole-row last-write-wins.
+5. HA todo, Grocy, and Vikunja/Trello translation rules are defined without bloating the core UI model.
+
+**Depends on:** Phase 4
+**Plans:** 0 plans
+
+Plans:
+- [ ] Research + discuss the target domain model and schema contract
+- [ ] Confirm board/area/project semantics and compatibility boundaries
+- [ ] Plan execution only after discuss-phase approval
+
+---
+
+*Roadmap revised: 2026-03-18 — added Phase 04.1 Human-Agent DDD Core research/discuss track*

@@ -1,8 +1,25 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-03-16
+**Analysis Date:** 2026-03-18
 
 ## Tech Debt
+
+**Dual Task Schema Source of Truth:**
+- Issue: `apps/web/drizzle/schema.ts` and `apps/web/src/domains/tasks/persistence/store.ts` both describe task persistence, but only the latter is the live runtime schema for the main app
+- Impact: Planning or implementing a hierarchy/orchestration refactor in only one location will leave the repo in a misleading partial state
+- Fix approach: Treat Drizzle as the clean contract target, but update live SQL bootstrap, repositories, and APIs in the same execution phase
+
+**Hierarchy Coupled to `task_type`:**
+- Issue: `epic`, `story`, and `task` currently drive persistence, validation, filters, icons, strategy presets, and multiple pages
+- Files: `packages/domain-tasks/src/task.ts`, `packages/domain-strategy/src/rule-types.ts`, `apps/web/src/pages/api/tasks/*`, `apps/web/src/lib/*`, `apps/web/src/components/settings/SettingsRules.astro`
+- Impact: Future `Goal/Project/Task/Routine` work is a broad semantic refactor, not a rename
+- Fix approach: Separate hierarchy relations from execution behavior and introduce a dedicated `task_kind`
+
+**`board_id` Saturation:**
+- Issue: `board_id` is the main grouping primitive across UI, APIs, search, HA events, templates, and integrations
+- Files: `apps/web/src/domains/tasks/persistence/*`, `apps/web/src/pages/api/boards/*`, `apps/web/src/lib/task-api-client.ts`, `apps/web/src/components/layout/SidebarBoardSwitcher.astro`, `apps/web/src/domains/todo/todo-bridge.ts`
+- Impact: Introducing both durable `Area` and finite `Project` semantics will be messy unless compatibility boundaries are decided early
+- Fix approach: Define whether current boards become project surfaces, area surfaces, or an adapter layer
 
 **`@ts-nocheck` in `kanban-controller.ts`:**
 - ✅ **Resolved:** `@ts-nocheck` removed from `kanban-controller.ts` (2026-03-16)
@@ -82,6 +99,18 @@
 
 ## Fragile Areas
 
+**Offline Sync Contract Mismatch:**
+- Files: `apps/web/src/domains/offline/sync-engine.ts`, `apps/web/src/domains/offline/offline-store.ts`, `apps/web/src/pages/api/v1/tasks.ts`, `apps/web/src/pages/api/tasks/[id].ts`
+- Why fragile: The offline engine posts to `/api/v1/tasks`, but the richer optimistic-locking contract exists on `/api/tasks/[id]`, and there is no general `PUT /api/v1/tasks/:id`
+- Safe modification: Move offline replay onto the canonical `/api/tasks` surface before adding bot scratchpads, proposed artifacts, or checklist-family merges
+- Test coverage: none today for this contract mismatch
+
+**Integration Normalization Gaps:**
+- Files: `apps/web/src/domains/todo/todo-bridge.ts`, `apps/web/src/domains/integrations/vikunja-compat/store.ts`, `apps/web/src/domains/grocy/grocy-bridge.ts`
+- Why fragile: Inbound sources currently write or map directly into flat task rows rather than through one normalized task-ingress contract
+- Safe modification: Introduce a shared normalization helper before expanding task semantics
+- Test coverage: partial via integration behavior tests, but no shared normalization seam yet
+
 **Ingress Path Handling:**
 - Files: `apps/web/scripts/serve.mjs`, `apps/web/src/middleware.ts`, `apps/web/src/layouts/Layout.astro`
 - Why fragile: Three separate layers all handle path rewriting. A change in any one layer can break the others.
@@ -131,6 +160,12 @@
 - Risk: Data loss during sync conflicts
 - Priority: High
 
+**Task Model Refactor Blast Radius:**
+- What's not tested: coordinated replacement of `epic/story` semantics across rules UI, task modal, kanban, filters, compat docs, and integrations
+- Files: task model is referenced across 25+ files for hierarchy and 35+ files for `board_id`
+- Risk: semantic regressions where one surface still treats strategic items as executable tasks
+- Priority: High
+
 ---
 
-*Concerns audit: 2026-03-16*
+*Concerns audit: 2026-03-18*

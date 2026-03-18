@@ -3,7 +3,7 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** UX/UI optimization pass on strategic rules components; docs update
+**Active Tracks:** UX/UI optimization pass on strategic rules components; docs update; Phase 04.1 human-agent-ddd-core research/discuss
 **Last Completed Local Work:** Strategic Rules Engine — domain modules, APIs, settings UI, task view integration, 9 domain tests — 2026-03-16
 **Session Date:** 2026-03-16
 
@@ -132,6 +132,19 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Each WP tested independently with full regression suite (286+ tests)
 - FilterToolbar uses `meitheal:filter-change` CustomEvent for cross-view consistency
 - Card quick actions use existing schema columns — pure UI additions, no backend changes
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 04.1 added: Human-Agent DDD Core
+
+### Active Research Notes
+
+- Pre-release hard cut is preferred over migrating `epic` and `story` semantics forward
+- The live task schema is currently split between `apps/web/drizzle/schema.ts` and `apps/web/src/domains/tasks/persistence/store.ts`
+- Offline sync currently targets `/api/v1/tasks`, while optimistic locking exists only on `/api/tasks/[id]`
+- `board_id` is deeply embedded today, but future modeling likely needs both durable `Area` semantics and finite `Project` semantics
 
 ## Sessions
 

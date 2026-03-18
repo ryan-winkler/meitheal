@@ -1,6 +1,6 @@
 # External Integrations
 
-**Analysis Date:** 2026-03-15
+**Analysis Date:** 2026-03-18
 
 ## APIs & External Services
 
@@ -27,6 +27,7 @@
 - Bidirectional sync with HA todo entities
   - Bridge: `@domains/todo/todo-bridge.ts` (596 lines)
   - Status mapping: `@domains/todo/todo-status-mapper.ts`
+  - Current limitation: bridge writes flat task rows directly; it does not yet normalize checklist/project/agent semantics through a shared ingress mapper
 
 **HA Calendar:**
 - Calendar entity sync for task scheduling
@@ -51,6 +52,7 @@
 - Drop-in compatible REST API for Vikunja clients
   - Store: `@domains/integrations/vikunja-compat/store.ts` (596 lines)
   - API routes: `apps/web/src/pages/api/v1/`
+  - Current limitation: Vikunja `project_id` lives in a compat side table today, so future internal `Project` semantics should be translated here instead of overloaded onto `board_id`
 
 ## Data Storage
 
@@ -60,11 +62,13 @@
   - Store: `@domains/tasks/persistence/store.ts` (905 lines)
   - Repository: `@domains/tasks/persistence/task-repository.ts` (892 lines)
   - Connection: File-based, path configured via environment
+- Important nuance: `apps/web/drizzle/schema.ts` is not the only schema truth. The live task table shape is still created and evolved in `@domains/tasks/persistence/store.ts`.
 
 **Offline Storage:**
 - IndexedDB (browser-side) via `@domains/offline/offline-store.ts`
 - Sync engine: `@domains/offline/sync-engine.ts`
 - Tab sync: `@domains/offline/tab-sync.ts`
+- Current limitation: offline sync replays to `/api/v1/tasks` semantics and stores only a thin task shape, which is insufficient for future bot handoff + checklist merge behavior
 
 **File Storage:**
 - Local filesystem only (SQLite DB file)
@@ -136,4 +140,4 @@
 
 ---
 
-*Integration audit: 2026-03-15*
+*Integration audit: 2026-03-18*

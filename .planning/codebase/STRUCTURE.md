@@ -1,6 +1,6 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-16
+**Analysis Date:** 2026-03-18
 
 ## Directory Layout
 
@@ -86,6 +86,12 @@ meitheal/
 - Contains: Bridge services, persistence layers, sync engines
 - Key files: `ha/ha-startup.ts`, `tasks/persistence/store.ts`, `todo/todo-bridge.ts`
 - Each domain has an `index.ts` barrel export
+- Hierarchy/orchestration touch points:
+  - `tasks/persistence/store.ts` — live task schema bootstrap
+  - `tasks/persistence/task-repository.ts` — explicit column lists and CRUD
+  - `todo/todo-bridge.ts` — inbound/outbound task normalization pressure
+  - `integrations/vikunja-compat/store.ts` — external project/task translation
+  - `offline/` — PWA sync and conflict handling
 
 **`apps/web/src/lib/`:**
 - Purpose: Client-side controllers (page interactivity) and shared utilities
@@ -123,6 +129,10 @@ meitheal/
 - Purpose: Pure domain logic packages — no framework dependencies
 - Contains: Type definitions, business rules, adapter interfaces
 - Key files: `domain-tasks/src/task.ts` (aggregate), `domain-strategy/src/rice.ts` (RICE scoring), `domain-observability/src/logger.ts`
+- Hierarchy semantics currently live in:
+  - `packages/domain-tasks/src/task.ts`
+  - `packages/domain-strategy/src/rule-types.ts`
+  - `packages/domain-strategy/src/rule-resolver.ts`
 
 **`tests/`:**
 - Purpose: Playwright test suite (separate workspace package)
@@ -145,6 +155,8 @@ meitheal/
 - `apps/web/src/domains/tasks/persistence/task-repository.ts`: All task queries
 - `apps/web/src/domains/ha/ha-startup.ts`: HA integration bootstrap
 - `apps/web/src/lib/task-modal-controller.ts`: Task detail modal behavior
+- `apps/web/drizzle/schema.ts`: clean schema target, but not the only live schema source
+- `apps/web/src/domains/tasks/persistence/store.ts`: runtime schema bootstrap that must be kept in sync with any future Drizzle contract
 
 **Layout & Styling:**
 - `apps/web/src/layouts/Layout.astro`: Main layout (1,255 LoC) — includes task modal, search hub launcher, nav
@@ -173,6 +185,10 @@ meitheal/
 - Create: `apps/web/src/domains/{name}/`
 - Add `index.ts` barrel export
 - API routes: `apps/web/src/pages/api/{name}/`
+- For the planned human-agent hierarchy work, likely candidates are:
+  - `domains/strategy/` for `Goal`/`Project` evaluation semantics
+  - `domains/tasks/` for task/routine orchestration primitives
+  - `domains/integrations/` or `domains/todo/` for shared ingress normalization
 
 **New Shared Component:**
 - UI: `apps/web/src/components/ui/{Name}.astro`
@@ -215,4 +231,4 @@ meitheal/
 
 ---
 
-*Structure analysis: 2026-03-16*
+*Structure analysis: 2026-03-18*

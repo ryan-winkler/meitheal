@@ -587,6 +587,143 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // ─── Phase 04.1a: Human-Agent DDD Core — New Hierarchy Tables ───
+
+  // Areas: classification (not aggregate root) — domains of life
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS areas (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT '📁',
+      color TEXT NOT NULL DEFAULT '#6366F1',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS areas_position_idx ON areas(position)")
+
+  // Auto-create default area if none exist
+  const areaCount = await client.execute("SELECT COUNT(*) as cnt FROM areas")
+  if (Number(areaCount.rows[0]?.cnt ?? 0) === 0) {
+    const now = Date.now()
+    await client.execute({
+      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: ["uncategorized", "Uncategorized", "📁", "#6366F1", 0, now, now],
+    })
+  }
+
+  // Goals: aggregate root — outcomes you're pursuing
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      area_id TEXT REFERENCES areas(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      target_date TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS goals_area_id_idx ON goals(area_id)")
+  await client.execute("CREATE INDEX IF NOT EXISTS goals_status_idx ON goals(status)")
+
+  // Projects: aggregate root — time-bounded container of tasks toward a goal
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      icon TEXT NOT NULL DEFAULT '📋',
+      color TEXT NOT NULL DEFAULT '#6366F1',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS projects_goal_id_idx ON projects(goal_id)")
+  await client.execute("CREATE INDEX IF NOT EXISTS projects_status_idx ON projects(status)")
+  await client.execute("CREATE INDEX IF NOT EXISTS projects_goal_status_idx ON projects(goal_id, status)")
+
+  // Task: task_kind — behavioral classification (replaces task_type hierarchy role)
+  if (!(await hasColumn(client, "tasks", "task_kind"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'standard_action'")
+    // Migrate existing task_type values → task_kind
+    await client.execute("UPDATE tasks SET task_kind = 'standard_action' WHERE task_type IN ('task', 'epic', 'story')")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_task_kind_idx ON tasks(task_kind)")
+
+  // Task: project_id — links task to a project (nullable, progressive disclosure)
+  if (!(await hasColumn(client, "tasks", "project_id"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_project_id_idx ON tasks(project_id)")
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_project_status_idx ON tasks(project_id, status)")
+
+  // Domain events: entity_type — discriminator for goal/project/task events
+  if (!(await hasColumn(client, "domain_events", "entity_type"))) {
+    await client.execute("ALTER TABLE domain_events ADD COLUMN entity_type TEXT NOT NULL DEFAULT 'task'")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS domain_events_entity_type_idx ON domain_events(entity_type)")
+
+  // Task templates: rename is_habit → is_routine, frequency → cadence
+  if (!(await hasColumn(client, "task_templates", "is_routine"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN is_routine INTEGER NOT NULL DEFAULT 0")
+    // Migrate existing habits
+    if (await hasColumn(client, "task_templates", "is_habit")) {
+      await client.execute("UPDATE task_templates SET is_routine = is_habit")
+    }
+  }
+  if (!(await hasColumn(client, "task_templates", "cadence"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN cadence TEXT NOT NULL DEFAULT 'daily'")
+    // Migrate existing frequency values
+    if (await hasColumn(client, "task_templates", "frequency")) {
+      await client.execute("UPDATE task_templates SET cadence = frequency")
+    }
+  }
+  if (!(await hasColumn(client, "task_templates", "streak_current"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN streak_current INTEGER NOT NULL DEFAULT 0")
+  }
+  if (!(await hasColumn(client, "task_templates", "streak_best"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN streak_best INTEGER NOT NULL DEFAULT 0")
+  }
+
+  // ─── Phase 04.1b: Bot Orchestration Core — Task Columns ───
+
+  // owner: 'human' (default) or 'bot:<agent_name>'
+  if (!(await hasColumn(client, "tasks", "owner"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN owner TEXT NOT NULL DEFAULT 'human'")
+  }
+  // lock_holder: bot agent name holding the lock (null = unlocked)
+  if (!(await hasColumn(client, "tasks", "lock_holder"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN lock_holder TEXT")
+  }
+  // lock_expires_at: Unix timestamp when the lock auto-expires
+  if (!(await hasColumn(client, "tasks", "lock_expires_at"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN lock_expires_at INTEGER")
+  }
+  // handoff_state: bot orchestration lifecycle state machine
+  if (!(await hasColumn(client, "tasks", "handoff_state"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN handoff_state TEXT NOT NULL DEFAULT 'idle'")
+  }
+  // proposal_json: structured bot proposal for human review
+  if (!(await hasColumn(client, "tasks", "proposal_json"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN proposal_json TEXT")
+  }
+  // proposal_hash: SHA-256 of proposal content for TOCTOU prevention
+  if (!(await hasColumn(client, "tasks", "proposal_hash"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN proposal_hash TEXT")
+  }
+  // agent_scratchpad: ephemeral bot working notes (NEVER returned in API responses)
+  if (!(await hasColumn(client, "tasks", "agent_scratchpad"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN agent_scratchpad TEXT")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_handoff_state_idx ON tasks(handoff_state)")
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_lock_expires_idx ON tasks(lock_expires_at)")
+
   ensured = true;
 
 }

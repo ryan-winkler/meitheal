@@ -22,6 +22,17 @@ import { normalizeStatus, STATUS } from "../../../lib/status-config";
 /** Generic task row — all fields returned raw from the database */
 export type TaskRow = Record<string, unknown>;
 
+/**
+ * Strip agent_scratchpad from task rows before returning to callers.
+ * The scratchpad is ephemeral bot working data that must NEVER appear in API responses.
+ */
+function sanitizeRows(rows: TaskRow[]): TaskRow[] {
+  return rows.map(row => {
+    const { agent_scratchpad: _, ...rest } = row
+    return rest
+  })
+}
+
 /** Status count for dashboard statistics */
 export interface StatusCount {
   status: string;
@@ -92,7 +103,7 @@ export class TaskRepository {
   /** Recent tasks for dashboard hero section */
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, board_id, color, ticket_number, task_type, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, board_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
        FROM tasks ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as TaskRow[];
@@ -112,7 +123,7 @@ export class TaskRepository {
   /** Open (non-complete) tasks ordered by priority then due date */
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, assigned_to, board_id, ticket_number, task_type
+      sql: `SELECT id, title, status, priority, due_date, assigned_to, board_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
             FROM tasks WHERE status NOT IN (?)
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
@@ -171,7 +182,7 @@ export class TaskRepository {
   /** All tasks for kanban board, ordered by position then priority */
   async getKanbanTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, board_id, custom_fields, start_date, end_date, progress, color, is_favorite, task_type, parent_id, ticket_number, assigned_to, kanban_position, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, board_id, custom_fields, start_date, end_date, progress, color, is_favorite, task_type, task_kind, project_id, owner, handoff_state, parent_id, ticket_number, assigned_to, kanban_position, created_at, updated_at
        FROM tasks ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC`,
     );
     return result.rows as TaskRow[];
@@ -278,7 +289,7 @@ export class TaskRepository {
   /** All tasks with date fields for Gantt chart rendering */
   async getGanttTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, status, priority, due_date, start_date, color, task_type, progress, ticket_number, parent_id
+      `SELECT id, title, status, priority, due_date, start_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
     return result.rows as TaskRow[];
@@ -295,7 +306,7 @@ export class TaskRepository {
             ORDER BY due_date ASC`,
       args: [todayStr, STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return sanitizeRows(result.rows as TaskRow[]);
   }
 
   /** Tasks due on a specific date (non-complete) */
@@ -306,7 +317,7 @@ export class TaskRepository {
             ORDER BY priority DESC, created_at ASC`,
       args: [dateStr, STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return sanitizeRows(result.rows as TaskRow[]);
   }
 
   /** Unscheduled tasks (no due date, non-complete) */
@@ -318,7 +329,7 @@ export class TaskRepository {
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return sanitizeRows(result.rows as TaskRow[]);
   }
 
   /**
@@ -344,7 +355,7 @@ export class TaskRepository {
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE, todayStr, endStr],
     });
-    return result.rows as TaskRow[];
+    return sanitizeRows(result.rows as TaskRow[]);
   }
 
   /** Count tasks completed today (status=complete AND updated_at today) — SMT-03 */
@@ -371,7 +382,7 @@ export class TaskRepository {
             ORDER BY due_date ASC, priority DESC, created_at ASC`,
       args: [startDate, endDate, STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return sanitizeRows(result.rows as TaskRow[]);
   }
 
   // ── Write Methods (API routes) ────────────────────────────────────────
@@ -404,7 +415,8 @@ export class TaskRepository {
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
                    t.framework_payload, t.calendar_sync_state, t.board_id, t.custom_fields,
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
-                   t.is_favorite, t.task_type, t.ticket_number, t.assigned_to, t.checklists,
+                   t.is_favorite, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
+                   t.ticket_number, t.assigned_to, t.checklists,
                    t.recurrence_rule, t.created_at, t.updated_at,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
             FROM tasks t
@@ -425,7 +437,8 @@ export class TaskRepository {
       `SELECT id, title, description, status, priority, due_date, labels,
               framework_payload, calendar_sync_state, board_id, custom_fields,
               parent_id, time_tracked, start_date, end_date, progress, color,
-              is_favorite, task_type, ticket_number, recurrence_rule,
+              is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+              ticket_number, recurrence_rule,
               checklists, reminder_at, created_at, updated_at
        FROM tasks ORDER BY updated_at DESC`
     );
@@ -472,7 +485,8 @@ export class TaskRepository {
     const selectSql = `SELECT id, title, description, status, priority, due_date, labels,
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               board_id, custom_fields, start_date, end_date, progress, color,
-                              is_favorite, task_type, ticket_number, assigned_to, created_at, updated_at
+                              is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+                              ticket_number, assigned_to, created_at, updated_at
                        FROM tasks${where}
                        ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
@@ -686,7 +700,8 @@ export class TaskRepository {
       sql: `SELECT id, title, description, status, priority, due_date, labels,
                    framework_payload, calendar_sync_state, board_id, custom_fields,
                    parent_id, time_tracked, start_date, end_date, progress, color,
-                   is_favorite, task_type, ticket_number, assigned_to, checklists, created_at, updated_at
+                   is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+                   ticket_number, assigned_to, checklists, created_at, updated_at
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
@@ -698,7 +713,8 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT title, description, status, priority, due_date, labels,
                    framework_payload, board_id, custom_fields, parent_id,
-                   task_type, start_date, end_date, progress, color, is_favorite, assigned_to
+                   task_type, task_kind, project_id, owner, handoff_state,
+                   start_date, end_date, progress, color, is_favorite, assigned_to
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });

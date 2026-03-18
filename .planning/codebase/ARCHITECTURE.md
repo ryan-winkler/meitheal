@@ -1,6 +1,6 @@
 # Architecture
 
-**Analysis Date:** 2026-03-16
+**Analysis Date:** 2026-03-18
 
 ## Pattern Overview
 
@@ -110,6 +110,9 @@
 - Tab coordination: `@domains/offline/tab-sync.ts`
 - Settings shell: `settings-store.ts` caches `/api/settings` reads and preserves existing persisted keys while the shell manages summaries, quick jumps, detail-mode state, deep links, and companion actions client-side.
 - Search hub: `SearchHub.astro` ships a static registry for pages/actions/settings while `/api/search` supplies live task/board/filter results.
+- Caveat: the task schema is currently split. `apps/web/drizzle/schema.ts` models the Drizzle/event side, while `@domains/tasks/persistence/store.ts` is the live schema bootstrap and migration path for the app runtime.
+- Caveat: hierarchy semantics are still encoded in `task_type` (`epic | story | task`) across persistence, UI, and strategy rules, so a future `Goal/Project/Task/Routine` refactor is architectural, not cosmetic.
+- Caveat: integration ingress paths (`todo-bridge.ts`, `vikunja-compat/store.ts`, `grocy-bridge.ts`) do not yet share one normalized task-ingress contract.
 
 ## Key Abstractions
 
@@ -169,4 +172,4 @@
 
 ---
 
-*Architecture analysis: 2026-03-16*
+*Architecture analysis: 2026-03-18*
