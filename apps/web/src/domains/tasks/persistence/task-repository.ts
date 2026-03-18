@@ -767,6 +767,74 @@ export class TaskRepository {
     await this.client.execute("DELETE FROM tasks");
   }
 
+  /**
+   * Count completed/archived tasks older than a cutoff timestamp.
+   * Used for dry-run preview before destructive deletion.
+   * @param cutoffMs - Epoch milliseconds; tasks with updated_at < this are counted
+   */
+  async countCompletedBefore(cutoffMs: number): Promise<number> {
+    const result = await this.client.execute({
+      sql: `SELECT COUNT(*) as cnt FROM tasks
+            WHERE status IN ('complete', 'archived')
+              AND updated_at < ?`,
+      args: [cutoffMs],
+    });
+    return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+  }
+
+  /**
+   * Permanently delete completed/archived tasks older than a cutoff timestamp.
+   * Cascades to: task_activity_log, comments, task_links.
+   *
+   * @param cutoffMs - Epoch milliseconds; tasks with updated_at < this are deleted
+   * @returns Number of tasks deleted
+   *
+   * @safety Only touches tasks with status IN ('complete', 'archived').
+   * Active, pending, and in-progress tasks are NEVER affected regardless of age.
+   */
+  async deleteCompletedBefore(cutoffMs: number): Promise<number> {
+    // 1. Collect IDs first — needed for cascaded deletes
+    const idResult = await this.client.execute({
+      sql: `SELECT id FROM tasks
+            WHERE status IN ('complete', 'archived')
+              AND updated_at < ?`,
+      args: [cutoffMs],
+    });
+    const ids = idResult.rows.map((r) => String((r as Record<string, unknown>).id));
+    if (ids.length === 0) return 0;
+
+    // 2. Cascade: delete related records in batches of 100 to avoid SQLite limits
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      const placeholders = batch.map(() => "?").join(", ");
+
+      await this.client.execute({
+        sql: `DELETE FROM task_activity_log WHERE task_id IN (${placeholders})`,
+        args: batch,
+      });
+      await this.client.execute({
+        sql: `DELETE FROM comments WHERE task_id IN (${placeholders})`,
+        args: batch,
+      });
+      try {
+        await this.client.execute({
+          sql: `DELETE FROM task_links WHERE source_task_id IN (${placeholders}) OR target_task_id IN (${placeholders})`,
+          args: [...batch, ...batch],
+        });
+      } catch { /* task_links table may not exist yet */ }
+    }
+
+    // 3. Delete the tasks themselves
+    await this.client.execute({
+      sql: `DELETE FROM tasks
+            WHERE status IN ('complete', 'archived')
+              AND updated_at < ?`,
+      args: [cutoffMs],
+    });
+
+    return ids.length;
+  }
+
   /** Fetch recurrence data for cloning (used by auto-create on completion) */
   async getRecurrenceData(id: string): Promise<TaskRow | null> {
     const result = await this.client.execute({

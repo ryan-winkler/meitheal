@@ -471,6 +471,52 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       </main>
     </div>
 
+    <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
+    <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
+      <a href="/today" class="mobile-tab-bar__item" data-page="today">
+        <span class="mobile-tab-bar__icon">☀️</span>
+        <span class="mobile-tab-bar__label">Today</span>
+      </a>
+      <a href="/kanban" class="mobile-tab-bar__item" data-page="kanban">
+        <span class="mobile-tab-bar__icon">📋</span>
+        <span class="mobile-tab-bar__label">Kanban</span>
+      </a>
+      <a href="/table" class="mobile-tab-bar__item" data-page="table">
+        <span class="mobile-tab-bar__icon">📊</span>
+        <span class="mobile-tab-bar__label">Table</span>
+      </a>
+      <a href="/calendar" class="mobile-tab-bar__item" data-page="calendar">
+        <span class="mobile-tab-bar__icon">📅</span>
+        <span class="mobile-tab-bar__label">Calendar</span>
+      </a>
+      <a href="/settings" class="mobile-tab-bar__item" data-page="settings">
+        <span class="mobile-tab-bar__icon">⚙️</span>
+        <span class="mobile-tab-bar__label">Settings</span>
+      </a>
+    </nav>
+
+    <!-- Mobile tab bar: highlight active page -->
+    <script is:inline>
+      (function() {
+        var bar = document.getElementById("mobile-tab-bar");
+        if (!bar) return;
+        var path = window.location.pathname;
+        // Strip ingress prefix if present
+        var ip = window.__ingress_path || "";
+        if (ip && path.startsWith(ip)) path = path.slice(ip.length);
+        // Match page name from path
+        var page = path.replace(/^\//, "").split("/")[0] || "today";
+        // Dashboard (root) maps to "today"
+        if (page === "" || page === "index") page = "today";
+        var items = bar.querySelectorAll(".mobile-tab-bar__item");
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].getAttribute("data-page") === page) {
+            items[i].classList.add("active");
+          }
+        }
+      })();
+    </script>
+
     <!-- Sidebar toggle logic: click + keyboard shortcut -->
     <script is:inline>
       (function () {
