@@ -719,7 +719,7 @@ export class TaskRepository {
     framework_payload: string; parent_id: string | null;
     area_id: string; custom_fields: string; project_id?: string | null; start_date: string | null;
     end_date: string | null; progress: number; color: string | null;
-    is_favorite: number; task_type: string; ticket_number: number;
+    is_favorite: number; task_type: string; task_kind?: string; ticket_number: number;
     assigned_to: string | null; checklists?: string | null;
     recurrence_rule?: string | null;
   }): Promise<string> {
@@ -728,15 +728,15 @@ export class TaskRepository {
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id,
                                area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
-                               task_type, ticket_number, assigned_to, checklists, recurrence_rule,
+                               task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id, data.title, data.description, data.status, data.priority,
         data.due_date, data.labels, data.framework_payload,
         STATUS.PENDING, data.parent_id, data.project_id ?? null, data.area_id, data.custom_fields,
         data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
-        data.task_type, data.ticket_number, data.assigned_to,
+        data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],

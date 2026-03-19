@@ -9,6 +9,7 @@ import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { normalizeStatus, STATUS } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
+import { isValidTaskKind } from "@meitheal/domain-tasks"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
@@ -76,6 +77,7 @@ export const GET: APIRoute = async ({ url }) => {
       color: r.color ?? null,
       is_favorite: Number(r.is_favorite ?? 0),
       task_type: r.task_type ?? "task",
+      task_kind: r.task_kind ?? "standard_action",
       assigned_to: r.assigned_to ?? null,
       created_at: r.created_at,
       updated_at: r.updated_at,
@@ -241,18 +243,22 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 
+  // Phase 04.1: Task kind (behavioral classification)
+  const rawTaskKind = typeof body.task_kind === "string" ? body.task_kind.trim().toLowerCase() : "standard_action"
+  const task_kind = isValidTaskKind(rawTaskKind) ? rawTaskKind : "standard_action"
+
   const project_id = typeof body.project_id === "string" ? body.project_id : null
 
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id,
     start_date, end_date, progress, color, is_favorite,
-    task_type, ticket_number, assigned_to, checklists,
+    task_type, task_kind, ticket_number, assigned_to, checklists,
   })
 
   const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
-  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, assigned_to, created_at: now, updated_at: now }
+  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, created_at: now, updated_at: now }
 
   dispatchTaskEvent("task.created", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 
