@@ -231,7 +231,7 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
       areas.map((area) => ({
         id: String(area.id),
         kind: "area" as const,
-        title: String(area.title ?? "Untitled area"),
+        title: String(area.name ?? "Untitled area"),
         subtitle: "Open in Kanban",
         href: `/kanban?area=${encodeURIComponent(String(area.id))}`,
         icon: typeof area.icon === "string" ? area.icon : "📋",

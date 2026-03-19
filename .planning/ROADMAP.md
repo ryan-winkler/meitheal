@@ -69,6 +69,23 @@
 6. Tier 1 browser verification covers hub launch and at least one navigation flow.
 7. Tier 2 HA verification confirms ingress-safe behavior once Docker access is available.
 
+## Parallel Phase 14: Unified Page Shell Rollout
+
+**Status:** ✅ Dashboard-first slice complete
+
+**Goal:** Apply the mature Settings shell language to the dashboard first, then use that implementation to drive the rollout plan for habits and other Home Assistant-facing pages.
+
+**Requirements:** SHELL-01→05
+
+**Success Criteria:**
+1. Dashboard uses `UnifiedBar` plus hash-based section navigation instead of the legacy topbar slot layout.
+2. Shared bar behavior is reusable outside Settings without reintroducing settings-only ids or controller assumptions.
+3. Dashboard search launches the global SearchHub with the right scope and keeps Home Assistant ingress behavior intact.
+4. Dashboard browser verification covers section navigation, quick add, and task detail handoff after the shell change.
+5. Research, context, and optimization artifacts capture the next rollout order for habits and the remaining pages.
+
+**Dependencies:** Phase 08/08.1 shell patterns, Phase 09 SearchHub, Layout ingress fetch wrapper.
+
 ## Parallel Phase 08.2: Settings Controller Decomposition
 
 **Status:** 🔵 In Progress

@@ -9,6 +9,101 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
 
+function clearPreviewResult(previewResult: HTMLElement): void {
+  previewResult.replaceChildren()
+}
+
+function appendPreviewLine(
+  previewResult: HTMLElement,
+  text: string,
+  {
+    color,
+    strong = false,
+    subtle = false,
+  }: {
+    color?: string
+    strong?: boolean
+    subtle?: boolean
+  } = {},
+): void {
+  const line = document.createElement("span")
+  if (color) line.style.color = color
+  if (subtle) {
+    line.style.fontSize = "12px"
+    line.style.color = "var(--text-muted)"
+    line.style.marginTop = "4px"
+    line.style.display = "inline-block"
+  }
+  if (strong) {
+    const strongEl = document.createElement("strong")
+    strongEl.textContent = text
+    line.appendChild(strongEl)
+  } else {
+    line.textContent = text
+  }
+  previewResult.appendChild(line)
+}
+
+function renderRetentionPreview(
+  previewResult: HTMLElement,
+  {
+    count,
+    months,
+    cutoffDate,
+  }: {
+    count: number
+    months: number | string
+    cutoffDate?: string
+  },
+): void {
+  clearPreviewResult(previewResult)
+
+  if (count === 0) {
+    appendPreviewLine(
+      previewResult,
+      `✅ No completed tasks older than ${months} months. Nothing to delete.`,
+      { color: "var(--success)" },
+    )
+    return
+  }
+
+  const lead = document.createElement("span")
+  lead.style.color = "var(--warning)"
+  lead.append("⚠ ")
+
+  const countStrong = document.createElement("strong")
+  countStrong.textContent = String(count)
+  lead.appendChild(countStrong)
+  lead.append(
+    ` completed/archived task${count === 1 ? "" : "s"} last updated before `,
+  )
+
+  const cutoffStrong = document.createElement("strong")
+  cutoffStrong.textContent = cutoffDate ?? ""
+  lead.appendChild(cutoffStrong)
+  lead.append(" will be permanently deleted.")
+
+  previewResult.appendChild(lead)
+  previewResult.appendChild(document.createElement("br"))
+  appendPreviewLine(
+    previewResult,
+    "This includes their comments, activity logs, and task links.",
+    { subtle: true },
+  )
+}
+
+function renderRetentionDeleteSuccess(
+  previewResult: HTMLElement,
+  deletedCount: number,
+): void {
+  clearPreviewResult(previewResult)
+  appendPreviewLine(
+    previewResult,
+    `✅ ${deletedCount} task${deletedCount === 1 ? "" : "s"} permanently deleted.`,
+    { color: "var(--success)" },
+  )
+}
+
 export function initDangerZoneSettings(): void {
   initRetentionSettings()
 
@@ -128,14 +223,17 @@ function initRetentionSettings(): void {
       lastCutoffDate = data.cutoffDate
 
       if (data.count === 0) {
-        previewResult.innerHTML = `<span style="color: var(--success);">✅ No completed tasks older than ${months} months. Nothing to delete.</span>`
+        renderRetentionPreview(previewResult, {
+          count: 0,
+          months,
+        })
         deleteBtn.disabled = true
       } else {
-        previewResult.innerHTML =
-          `<span style="color: var(--warning);">⚠ <strong>${data.count}</strong> completed/archived task${data.count === 1 ? "" : "s"}` +
-          ` last updated before <strong>${data.cutoffDate}</strong> will be permanently deleted.</span>` +
-          `<br><span style="font-size: 12px; color: var(--text-muted); margin-top: 4px; display: inline-block;">` +
-          `This includes their comments, activity logs, and task links.</span>`
+        renderRetentionPreview(previewResult, {
+          count: data.count,
+          months: data.months,
+          cutoffDate: data.cutoffDate,
+        })
         deleteBtn.disabled = false
         deleteBtn.textContent = `🗑 Delete ${data.count} Task${data.count === 1 ? "" : "s"}`
       }
@@ -176,7 +274,7 @@ function initRetentionSettings(): void {
         const data = await res.json() as { deleted: number }
         showToast(`Deleted ${data.deleted} old task${data.deleted === 1 ? "" : "s"}`)
         // Reset UI state
-        previewResult.innerHTML = `<span style="color: var(--success);">✅ ${data.deleted} task${data.deleted === 1 ? "" : "s"} permanently deleted.</span>`
+        renderRetentionDeleteSuccess(previewResult, data.deleted)
         deleteBtn.disabled = true
         deleteBtn.textContent = "🗑 Delete Tasks"
         lastPreviewCount = 0
@@ -197,4 +295,3 @@ function initRetentionSettings(): void {
     }
   })
 }
-

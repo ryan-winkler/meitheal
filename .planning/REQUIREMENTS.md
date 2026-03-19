@@ -70,6 +70,14 @@
 - [x] **SET-11**: Add mobile quick-jump UX plus guided App & PWA and Danger Zone trust surfaces
 - [ ] **SET-12**: Re-run Tier 2 HA verification for the polished Settings UX once Docker access is available
 
+## Unified Page Shell Rollout (SHELL)
+
+- [x] **SHELL-01**: Dashboard adopts `UnifiedBar` with hash-linked sections and Home Assistant-safe deep links
+- [x] **SHELL-02**: Shared bar interactions are reusable outside Settings without settings-only DOM ids or selectors
+- [x] **SHELL-03**: Dashboard keeps SearchHub launch, new-task action, and task-detail handoff intact after the shell migration
+- [x] **SHELL-04**: Tier 1 browser verification covers dashboard section navigation plus core interaction regression checks
+- [x] **SHELL-05**: Research/context/KCS artifacts record the rollout path for habits and the remaining pages
+
 ## Smart Today Maturation (STM)
 
 - [x] **STM-01**: Unified `TaskListItem.astro` component shared across Today + all views
@@ -185,6 +193,7 @@ All above — 28 requirements (reduced from 35 after audit)
 | 3 | PGD-01→05 |
 | 4 | SMT-01→03, VER-01→03 |
 | 8 | SET-01→12 |
+| 14 | SHELL-01→05 |
 | Parallel | STRAT-01→08 |
 | 04.2-PRA | PRA-01→30 |
 

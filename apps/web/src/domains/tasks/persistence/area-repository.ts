@@ -11,7 +11,7 @@ import type { InValue } from "@libsql/client"
 export interface AreaRow {
   [key: string]: unknown
   id: string
-  title: string
+  name: string
   icon: string
   color: string
   position: number
@@ -33,7 +33,7 @@ export class AreaRepository {
   /** List all areas ordered by position */
   async findAll(): Promise<AreaRow[]> {
     const result = await this.client.execute(
-      "SELECT id, title, icon, color, position, wip_limit, created_at, updated_at FROM areas ORDER BY position ASC, created_at ASC"
+      "SELECT id, name, icon, color, position, created_at, updated_at FROM areas ORDER BY position ASC, created_at ASC"
     )
     return result.rows as unknown as AreaRow[]
   }
@@ -52,12 +52,12 @@ export class AreaRepository {
 
   /** Insert a new area */
   async create(data: {
-    id: string; title: string; icon: string; color: string; position: number
+    id: string; name: string; icon: string; color: string; position: number
   }): Promise<void> {
     const now = Date.now()
     await this.client.execute({
-      sql: "INSERT INTO areas (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [data.id, data.title, data.icon, data.color, data.position, now, now],
+      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [data.id, data.name, data.icon, data.color, data.position, now, now],
     })
   }
 

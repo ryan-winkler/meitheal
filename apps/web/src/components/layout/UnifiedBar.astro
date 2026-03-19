@@ -116,6 +116,8 @@ const {
         <a
           class="unified-bar__tab"
           href={`#${tab.id}`}
+          data-unified-bar-section-link
+          data-unified-bar-section={tab.id}
           data-settings-section-link
           data-settings-summary={tab.id}
           data-section-id={tab.id}
@@ -134,7 +136,7 @@ const {
       <button
         type="button"
         class="unified-bar__new-task-btn"
-        id="unified-bar-new-task"
+        id={`${barId}-new-task`}
         title={newTaskLabel}
         aria-label={newTaskLabel}
       >

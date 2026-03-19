@@ -7,6 +7,22 @@
 3. Confirm Loki receives labeled streams.
 4. Confirm Grafana dashboards resolve data source.
 
+## Dashboard Shell Verification
+
+Use this after changing dashboard shell, search-launcher, or top-level navigation behavior.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/dashboard-shell.spec.ts`.
+2. Query `GET /api/search?scope=all` and confirm it returns `200` because the dashboard shell now depends on SearchHub.
+3. Confirm the dashboard URL can move between:
+
+- `#dashboard-overview`
+- `#dashboard-momentum`
+- `#dashboard-capture`
+- `#dashboard-open`
+- `#dashboard-recent`
+
+4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
+
 ## Task -> Calendar Traceability
 
 Use `request_id` or `task_id` to follow lifecycle records:

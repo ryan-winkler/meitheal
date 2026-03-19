@@ -3,9 +3,28 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** UX/UI optimization pass on strategic rules components; docs update; Phase 04.1 human-agent-ddd-core research/discuss
-**Last Completed Local Work:** Strategic Rules Engine — domain modules, APIs, settings UI, task view integration, 9 domain tests — 2026-03-16
-**Session Date:** 2026-03-16
+**Active Tracks:** Dashboard-first shell rollout complete locally; habits/page rollout follow-up queued; docs update; Phase 04.1 human-agent-ddd-core research/discuss
+**Last Completed Local Work:** Dashboard shell rollout — shared unified bar helpers, dashboard section shell, search area fix, 3 browser checks — 2026-03-19
+**Session Date:** 2026-03-19
+
+## Parallel Phase 14 Summary (COMPLETE ✅)
+
+**Objective:** Apply the mature Settings shell language to the dashboard first, then capture the rollout path for habits and later pages.
+
+### Delivered on 2026-03-19
+- Replaced the legacy dashboard topbar slot with `UnifiedBar`, a dashboard section registry, and hash-linked sections for overview, momentum, capture, focus queue, and recent work.
+- Added reusable `UnifiedBar` controller helpers so switcher, SearchHub launch, new-task launch, and tab overflow no longer live only inside the settings controller.
+- Refactored `dashboard-controller.ts` into a lifecycle-safe page boot path that owns shell navigation, quick add, queue filtering, and task-detail handoff.
+- Added focused browser coverage for dashboard tab navigation, SearchHub launch, and the shared new-task modal entry point.
+- Fixed a pre-existing search bug uncovered during verification: area search now reads `areas.name` instead of the stale `areas.title` column.
+
+### Verification
+- Tier 1: `git diff --check` — passed.
+- Tier 1: `pnpm --filter @meitheal/web build` — passed, with existing Astro/Vite warnings only.
+- Tier 1: `pnpm check` — passed, with existing Astro/Vite warnings only.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/dashboard-shell.spec.ts` — 3 passed.
+- Tier 1: `curl -sS -o /tmp/dashboard-search.json -w '%{http_code}\n' 'http://127.0.0.1:4321/api/search?scope=all'` — returned `200`.
+- Tier 2: not required for this slice because no ingress, middleware, or HA transport logic changed.
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
 
@@ -98,6 +117,7 @@
 - Phase 08: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 08.1: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
+- Next page rollout: extract the habits inline script into a lifecycle-safe controller, then apply the same unified shell pattern proven on the dashboard.
 
 ## Phase 7 Summary (IN PROGRESS)
 

@@ -4,6 +4,13 @@ import {
   type SettingsSectionId,
 } from "@lib/settings-registry"
 import { showToast } from "@lib/toast"
+import {
+  initUnifiedBarNewTaskButton,
+  initUnifiedBarSearchLauncher,
+  initUnifiedBarTabOverflow,
+  initUnifiedBarTitleSwitcher,
+  setUnifiedBarSwitcherActiveState,
+} from "@lib/unified-bar-controller"
 
 function setShellDetailView(isDetailView: boolean): void {
   const shell = document.getElementById("settings-shell")
@@ -49,11 +56,14 @@ function resolveSectionId(anchorId: string): SettingsSectionId | null {
 
 function updateActiveSectionState(sectionId: SettingsSectionId): void {
   document
-    .querySelectorAll<HTMLElement>("[data-settings-nav], [data-settings-summary]")
+    .querySelectorAll<HTMLElement>(
+      "[data-settings-nav], [data-settings-summary], [data-unified-bar-section]",
+    )
     .forEach((link) => {
       const active =
         link.dataset.settingsNav === sectionId ||
-        link.dataset.settingsSummary === sectionId
+        link.dataset.settingsSummary === sectionId ||
+        link.dataset.unifiedBarSection === sectionId
 
       link.classList.toggle("is-active", active)
       link.setAttribute("aria-current", active ? "location" : "false")
@@ -62,8 +72,7 @@ function updateActiveSectionState(sectionId: SettingsSectionId): void {
       link.setAttribute("tabindex", active ? "0" : "-1")
     })
 
-  /* Notify overflow menu to refresh active state */
-  window.dispatchEvent(new CustomEvent("settings:section-changed", { detail: { sectionId } }))
+  setUnifiedBarSwitcherActiveState("settings-bar", sectionId)
 }
 
 function syncSummaryStatuses(): void {
@@ -138,7 +147,7 @@ function clearSearchState(): void {
 
 function initSectionLinks(): void {
   document
-    .querySelectorAll<HTMLElement>("[data-settings-section-link]")
+    .querySelectorAll<HTMLElement>("[data-settings-section-link], [data-unified-bar-section-link]")
     .forEach((link) => {
       pageLifecycle.on(link, "click", (event) => {
         event.preventDefault()
@@ -263,164 +272,30 @@ function syncActiveSectionFromHash(): void {
 /** Title switcher — the page title acts as a dropdown trigger showing ALL
  *  sections. Replaces both the old hamburger and overflow concepts. */
 function initTitleSwitcher(): void {
-  const bar = document.getElementById("settings-bar")
-  const barId = bar?.id ?? "settings-bar"
-  const btn = document.getElementById(`${barId}-switcher-btn`) as HTMLElement | null
-  const dropdown = document.getElementById(`${barId}-switcher-dropdown`) as HTMLElement | null
-  if (!btn || !dropdown) return
-
-  let isOpen = false
-
-  function toggleDropdown(open?: boolean): void {
-    isOpen = open ?? !isOpen
-    dropdown!.classList.toggle("is-open", isOpen)
-    btn!.setAttribute("aria-expanded", isOpen ? "true" : "false")
-  }
-
-  function closeDropdown(): void {
-    toggleDropdown(false)
-  }
-
-  /** Update active state in dropdown items */
-  function updateActiveState(activeSectionId?: string): void {
-    const items = dropdown!.querySelectorAll<HTMLElement>(".unified-bar__switcher-item")
-    items.forEach((item) => {
-      const isActive = item.dataset.sectionId === activeSectionId
-      item.classList.toggle("is-active", isActive)
-    })
-  }
-
-  /* Toggle on button click */
-  pageLifecycle.on(btn, "click", (e) => {
-    e.stopPropagation()
-    toggleDropdown()
-    if (isOpen) {
-      const activeItem = dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item.is-active")
-        ?? dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item")
-      activeItem?.focus()
-    }
-  })
-
-  /* Handle item clicks */
-  dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item").forEach((item) => {
-    pageLifecycle.on(item, "click", (e) => {
-      e.stopPropagation()
-      const sectionId = item.dataset.sectionId
-      if (!sectionId) return
-      closeDropdown()
+  initUnifiedBarTitleSwitcher({
+    barId: "settings-bar",
+    onSelect: (sectionId) => {
       clearSearchState()
       scrollToAnchor(sectionId)
-    })
+    },
   })
 
-  /* Keyboard navigation */
-  pageLifecycle.on(dropdown, "keydown", (event) => {
-    const e = event as KeyboardEvent
-    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item"))
-    const currentIndex = items.findIndex((item) => item === document.activeElement)
-
-    if (e.key === "Escape") {
-      e.preventDefault()
-      closeDropdown()
-      btn.focus()
-      return
-    }
-
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault()
-      const direction = e.key === "ArrowDown" ? 1 : -1
-      const nextIndex = (currentIndex + direction + items.length) % items.length
-      items[nextIndex]?.focus()
-    }
-  })
-
-  /* Close on outside click */
-  pageLifecycle.on(document, "click", (e) => {
-    if (isOpen && !btn.contains(e.target as Node) && !dropdown.contains(e.target as Node)) {
-      closeDropdown()
-    }
-  })
-
-  /* Close on scroll */
-  pageLifecycle.on(window, "scroll", () => {
-    if (isOpen) closeDropdown()
-  }, { passive: true } as AddEventListenerOptions)
-
-  /* Listen for section changes */
-  window.addEventListener("settings:section-changed", ((e: CustomEvent) => {
-    updateActiveState(e.detail?.sectionId)
-  }) as EventListener)
-
-  /* Set initial state */
   const hash = window.location.hash.replace("#", "")
-  if (hash) updateActiveState(hash)
+  if (hash) {
+    setUnifiedBarSwitcherActiveState("settings-bar", hash)
+  }
 }
 
 /** Search launcher — clicking the search button in the UnifiedBar opens
  *  the global SearchHub modal, pre-scoped to the bar's data-search-scope. */
 function initSearchLauncher(): void {
-  const bar = document.getElementById("settings-bar")
-  const barId = bar?.id ?? "settings-bar"
-  const launcher = document.getElementById(`${barId}-search-launcher`) as HTMLButtonElement | null
-  if (!launcher) return
-
-  const scope = launcher.dataset.searchScope || bar?.dataset.searchScope || ""
-
-  pageLifecycle.on(launcher, "click", () => {
-    window.openSearchHub?.(scope ? { scope } : undefined)
-  })
+  initUnifiedBarSearchLauncher("settings-bar")
 }
 
 /** Tab overflow — uses ResizeObserver to show only tabs that fit in the
  *  available space. Hidden tabs are still accessible via the title dropdown. */
 function initTabOverflow(): void {
-  const bar = document.getElementById("settings-bar")
-  const barId = bar?.id ?? "settings-bar"
-  const tabsContainer = document.getElementById(`${barId}-tabs`) as HTMLElement | null
-  if (!tabsContainer) return
-
-  const tabs = Array.from(tabsContainer.querySelectorAll<HTMLElement>("[data-unified-bar-tab]"))
-  if (tabs.length === 0) return
-
-  function recalcOverflow(): void {
-    /* First, reset all tabs to visible for measurement */
-    tabs.forEach((tab) => {
-      tab.removeAttribute("data-overflow-hidden")
-      tab.removeAttribute("tabindex")
-    })
-
-    const containerWidth = tabsContainer!.clientWidth
-    let usedWidth = 0
-    let overflow = false
-
-    tabs.forEach((tab) => {
-      if (overflow) {
-        tab.setAttribute("data-overflow-hidden", "")
-        tab.setAttribute("tabindex", "-1")
-        return
-      }
-
-      /* Measure the tab's natural width including gap */
-      const tabWidth = tab.offsetWidth + 4 /* 4px gap */
-      usedWidth += tabWidth
-
-      if (usedWidth > containerWidth) {
-        overflow = true
-        tab.setAttribute("data-overflow-hidden", "")
-        tab.setAttribute("tabindex", "-1")
-      }
-    })
-  }
-
-  const observer = new ResizeObserver(() => {
-    recalcOverflow()
-  })
-  observer.observe(tabsContainer)
-
-  /* Initial calc */
-  requestAnimationFrame(recalcOverflow)
-
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  initUnifiedBarTabOverflow("settings-bar")
 }
 
 function initGoToTop(): void {
@@ -470,22 +345,9 @@ function initGoToTop(): void {
  *  Uses window.openNewTaskModal() (same pattern as kanban/dashboard controllers).
  *  Includes a retry tick for late-loaded scripts. */
 function initNewTaskButton(): void {
-  const btn = document.getElementById("unified-bar-new-task") as HTMLButtonElement | null
-  if (!btn) return
-
-  pageLifecycle.on(btn, "click", () => {
-    if (typeof window.openNewTaskModal === "function") {
-      window.openNewTaskModal()
-    } else {
-      // NewTaskModal script may still be initializing — retry after a tick
-      requestAnimationFrame(() => {
-        if (typeof window.openNewTaskModal === "function") {
-          window.openNewTaskModal()
-        } else {
-          showToast("Task modal not ready — try again", "warning")
-        }
-      })
-    }
+  initUnifiedBarNewTaskButton({
+    barId: "settings-bar",
+    fallbackMessage: "Task modal not ready - try again",
   })
 }
 
