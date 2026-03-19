@@ -151,7 +151,7 @@
 
   /* When sidebar is collapsed, shrink main content offset */
   body.sidebar-collapsed .main-content {
-    margin-left: 48px;
+    margin-left: 60px;
   }
 
   /* — Collapsed sidebar: hide text, center icons — */

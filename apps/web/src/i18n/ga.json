@@ -16,7 +16,10 @@
     "board": "Clár",
     "default_board": "Réamhshocraithe",
     "create_board": "Cruthaigh clár nua",
-    "area": "Réimse"
+    "area": "Réimse",
+    "new_area": "Réimse Nua",
+    "all_areas": "Gach Réimse",
+    "prompt_area_name": "Ainm an réimse:"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",

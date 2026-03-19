@@ -14,6 +14,8 @@ const { locale } = Astro.props;
   id="area-switcher"
   role="region"
   aria-label="Area selector"
+  data-i18n-all-areas={t("sidebar.all_areas", locale)}
+  data-i18n-prompt={t("sidebar.prompt_area_name", locale)}
 >
   <div class="area-switcher-label">{t("sidebar.area", locale)}</div>
   <div class="relative w-full">
@@ -33,11 +35,11 @@ const { locale } = Astro.props;
   <button
     class="area-add-btn mt-2 w-full bg-bg-primary hover:bg-bg-hover border border-border rounded-md py-1.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
     id="add-area-btn"
-    title={t("sidebar.create_board", locale)}
-    aria-label={t("sidebar.create_board", locale)}
+    title={t("sidebar.new_area", locale)}
+    aria-label={t("sidebar.new_area", locale)}
   >
     <Icon name="plus" size={16} />
-    New Area
+    {t("sidebar.new_area", locale)}
   </button>
 </div>
 
@@ -82,7 +84,10 @@ const { locale } = Astro.props;
         // "All Areas" option first
         const allOpt = document.createElement("option");
         allOpt.value = "all";
-        allOpt.textContent = "🗂 All Areas";
+        const switcher = document.getElementById("area-switcher");
+        const allAreasText = switcher?.dataset.i18nAllAreas || "All Areas";
+        
+        allOpt.textContent = `🗂 ${allAreasText}`;
         select.appendChild(allOpt);
         boards.forEach((b: { id: string; title: string; icon: string }) => {
           const opt = document.createElement("option");
@@ -141,7 +146,9 @@ const { locale } = Astro.props;
 
     // Add new board
     addBtn?.addEventListener("click", async () => {
-      const title = prompt("Area name:");
+      const switcher = document.getElementById("area-switcher");
+      const promptText = switcher?.dataset.i18nPrompt || "Area name:";
+      const title = prompt(promptText);
       if (!title?.trim()) return;
       try {
         const res = await fetch((window.__ingress_path || "") + "/api/areas", {
