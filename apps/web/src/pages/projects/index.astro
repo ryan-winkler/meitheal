@@ -5,6 +5,7 @@
  */
 import Layout from "../../layouts/Layout.astro";
 import Icon from "../../components/ui/Icon.astro";
+import ProgressRing from "../../components/ui/ProgressRing.astro";
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import {
@@ -129,12 +130,7 @@ const statusLabels: Record<string, string> = {
               </div>
             )}
             <div class="project-card-footer">
-              <div class="project-progress">
-                <div class="project-progress-track">
-                  <div class="project-progress-bar" style={`width: ${progress}%`} />
-                </div>
-                <span class="project-progress-text">{progress}%</span>
-              </div>
+              <ProgressRing percent={progress} size={36} strokeWidth={3} color={proj.color} />
               <span class="project-task-count">
                 {proj.completedCount}/{proj.taskCount} tasks
               </span>

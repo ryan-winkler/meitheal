@@ -43,9 +43,6 @@
     {
       "path": "docs",
       "name": "📖 Docs"
-    },
-    {
-      "path": "../../.gemini/antigravity/brain"
     }
   ],
   "settings": {
@@ -82,6 +79,7 @@
     "git.autofetch": true,
     "typescript.disableAutomaticTypeAcquisition": false,
     "files.autoSave": "onFocusChange",
+    "liveServer.settings.multiRootWorkspaceName": "meitheal",
   },
   "extensions": {
     "recommendations": [

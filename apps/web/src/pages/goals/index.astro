@@ -1,5 +1,6 @@
 ---
 import Layout from "../../layouts/Layout.astro"
+import ProgressRing from "../../components/ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 
@@ -13,6 +14,7 @@ let goals: Array<{
   areaName: string | null
   areaIcon: string | null
   projectCount: number
+  completedProjectCount: number
 }> = []
 
 try {
@@ -27,7 +29,9 @@ try {
 
   for (const g of rawGoals) {
     const area = g.area_id ? areaMap.get(g.area_id as string) : null
-    const projectCount = projects.filter((p) => String(p.goal_id) === String(g.id)).length
+    const goalProjects = projects.filter((p) => String(p.goal_id) === String(g.id))
+    const projectCount = goalProjects.length
+    const completedProjectCount = goalProjects.filter((p) => String(p.status) === "completed").length
 
     goals.push({
       id: g.id as string,
@@ -39,6 +43,7 @@ try {
       areaName: area ? String(area.name) : null,
       areaIcon: area ? String(area.icon ?? "📁") : null,
       projectCount,
+      completedProjectCount,
     })
   }
 } catch {
@@ -96,6 +101,14 @@ const statusLabels: Record<string, string> = {
               <p class="goal-card-desc">{goal.description.slice(0, 120)}{goal.description.length > 120 ? "…" : ""}</p>
             )}
             <div class="goal-card-meta">
+              {goal.projectCount > 0 && (
+                <ProgressRing
+                  percent={goal.projectCount > 0 ? Math.round((goal.completedProjectCount / goal.projectCount) * 100) : 0}
+                  size={32}
+                  strokeWidth={3}
+                  label={`${goal.completedProjectCount}/${goal.projectCount} projects complete`}
+                />
+              )}
               {goal.areaName && (
                 <span class="goal-meta-area">{goal.areaIcon} {goal.areaName}</span>
               )}

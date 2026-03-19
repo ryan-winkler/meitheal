@@ -12,6 +12,7 @@
     "habits": "Habits",
     "projects": "Projects",
     "goals": "Goals",
+    "eisenhower": "Eisenhower",
     "skip_to_content": "Skip to content"
   },
   "sidebar": {
@@ -634,6 +635,20 @@
     "go_calendar": "🗓️ Go to Calendar",
     "export_csv": "📥 Export Tasks CSV",
     "tasks_section": "Tasks"
+  },
+  "eisenhower": {
+    "title": "Eisenhower Matrix",
+    "subtitle": "Prioritise by urgency and importance",
+    "do_first": "Do First",
+    "do_first_desc": "Urgent + Important",
+    "schedule": "Schedule",
+    "schedule_desc": "Important, not urgent",
+    "delegate": "Delegate",
+    "delegate_desc": "Urgent, not important",
+    "eliminate": "Eliminate",
+    "eliminate_desc": "Neither urgent nor important",
+    "empty_quadrant": "No tasks in this quadrant",
+    "drag_hint": "Drag tasks between quadrants to re-prioritise"
   },
   "common": {
     "save": "Save",

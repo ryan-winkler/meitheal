@@ -1,0 +1,261 @@
+---
+/**
+ * Eisenhower Matrix — Urgency × Importance prioritisation view
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Classic 2×2 decision matrix:
+ *   Q1 — Urgent + Important     → Do First
+ *   Q2 — Important, not urgent  → Schedule
+ *   Q3 — Urgent, not important  → Delegate
+ *   Q4 — Neither                → Eliminate
+ *
+ * Tasks are partitioned server-side via priority + due date heuristics.
+ * Drag-and-drop between quadrants updates task priority/due date via PATCH.
+ *
+ * @kcs Eisenhower quadrant assignment uses:
+ *   - Priority ≥ 4 AND (overdue OR due today) → Q1
+ *   - Priority ≥ 4                            → Q2
+ *   - Priority < 4 AND (overdue OR due today)  → Q3
+ *   - Everything else                          → Q4
+ */
+import Layout from "../layouts/Layout.astro"
+import TaskListItem from "../components/tasks/TaskListItem.astro"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
+
+const { tasks } = await getTasksForView()
+const openTasks = tasks.filter((t) => !t.is_done)
+
+// ── Quadrant partitioning ────────────────────────────────
+const today = new Date()
+today.setHours(0, 0, 0, 0)
+
+function isDueSoon(t: TaskViewItem): boolean {
+  if (!t.due_date) return false
+  const d = new Date(t.due_date)
+  d.setHours(0, 0, 0, 0)
+  return d <= today
+}
+
+const q1: TaskViewItem[] = [] // Do First  — urgent + important
+const q2: TaskViewItem[] = [] // Schedule  — important, not urgent
+const q3: TaskViewItem[] = [] // Delegate  — urgent, not important
+const q4: TaskViewItem[] = [] // Eliminate — neither
+
+for (const t of openTasks) {
+  const important = t.priority >= 4
+  const urgent = isDueSoon(t) || t.is_overdue
+
+  if (important && urgent) q1.push(t)
+  else if (important) q2.push(t)
+  else if (urgent) q3.push(t)
+  else q4.push(t)
+}
+
+interface Quadrant {
+  id: string
+  label: string
+  desc: string
+  color: string
+  tasks: TaskViewItem[]
+}
+
+const quadrants: Quadrant[] = [
+  { id: "do-first",  label: "eisenhower.do_first",  desc: "eisenhower.do_first_desc",  color: "#ef4444", tasks: q1 },
+  { id: "schedule",  label: "eisenhower.schedule",   desc: "eisenhower.schedule_desc",  color: "#3b82f6", tasks: q2 },
+  { id: "delegate",  label: "eisenhower.delegate",   desc: "eisenhower.delegate_desc",  color: "#f59e0b", tasks: q3 },
+  { id: "eliminate", label: "eisenhower.eliminate",   desc: "eisenhower.eliminate_desc", color: "#6b7280", tasks: q4 },
+]
+---
+
+<Layout title="Eisenhower Matrix" currentPage="eisenhower">
+  <main id="eisenhower-page" class="eisenhower">
+    <header class="eisenhower__header">
+      <h1 class="eisenhower__title" data-i18n="eisenhower.title">Eisenhower Matrix</h1>
+      <p class="eisenhower__subtitle" data-i18n="eisenhower.subtitle">Prioritise by urgency and importance</p>
+    </header>
+
+    <div class="eisenhower__grid">
+      {quadrants.map((q, idx) => (
+        <section
+          class="eisenhower__quadrant"
+          data-quadrant={q.id}
+          style={`--q-color: ${q.color}`}
+        >
+          <header class="quadrant__header">
+            <span class="quadrant__badge">{idx === 0 ? "🔥" : idx === 1 ? "📅" : idx === 2 ? "👥" : "🗑️"}</span>
+            <div class="quadrant__heading">
+              <h2 class="quadrant__title" data-i18n={q.label}>{q.label}</h2>
+              <span class="quadrant__desc" data-i18n={q.desc}>{q.desc}</span>
+            </div>
+            <span class="quadrant__count">{q.tasks.length}</span>
+          </header>
+
+          <div class="quadrant__tasks" data-drop-zone={q.id}>
+            {q.tasks.length === 0 ? (
+              <div class="quadrant__empty" data-i18n="eisenhower.empty_quadrant">
+                No tasks in this quadrant
+              </div>
+            ) : (
+              q.tasks.map((t) => (
+                <TaskListItem task={t} />
+              ))
+            )}
+          </div>
+        </section>
+      ))}
+    </div>
+
+    <p class="eisenhower__hint" data-i18n="eisenhower.drag_hint">
+      Drag tasks between quadrants to re-prioritise
+    </p>
+  </main>
+
+  <script>
+    import { initEisenhowerPage } from "@lib/eisenhower-controller"
+    document.addEventListener("astro:page-load", () => initEisenhowerPage())
+  </script>
+</Layout>
+
+<style>
+  .eisenhower {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .eisenhower__header {
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  .eisenhower__title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f59e0b));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0;
+  }
+  .eisenhower__subtitle {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+  }
+
+  /* ── 2×2 Grid ── */
+  .eisenhower__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 16px;
+    min-height: calc(100vh - 180px);
+  }
+
+  @media (max-width: 768px) {
+    .eisenhower__grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+      min-height: unset;
+    }
+  }
+
+  /* ── Quadrant ── */
+  .eisenhower__quadrant {
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--q-color);
+    border-radius: var(--radius-md, 10px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 200ms, border-color 200ms;
+  }
+  .eisenhower__quadrant.quadrant--drag-over {
+    border-color: var(--q-color);
+    box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.15);
+  }
+
+  /* ── Quadrant header ── */
+  .quadrant__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .quadrant__badge {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+  .quadrant__heading {
+    flex: 1;
+    min-width: 0;
+  }
+  .quadrant__title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .quadrant__desc {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 1px;
+  }
+  .quadrant__count {
+    flex-shrink: 0;
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    min-width: 24px;
+    text-align: center;
+  }
+
+  /* ── Task list inside quadrant ── */
+  .quadrant__tasks {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 80px;
+  }
+
+  .quadrant__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 80px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+    opacity: 0.7;
+  }
+
+  /* ── Hint ── */
+  .eisenhower__hint {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 16px;
+    opacity: 0.6;
+  }
+
+  /* ── Reduced Motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .eisenhower__quadrant {
+      transition: none;
+    }
+  }
+</style>

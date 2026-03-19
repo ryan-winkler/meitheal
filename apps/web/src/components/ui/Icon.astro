@@ -20,7 +20,8 @@ export interface Props {
     | "trophy"
     | "habit"
     | "folder"
-    | "target";
+    | "target"
+    | "eisenhower";
   class?: string;
   size?: number;
 }
@@ -233,6 +234,18 @@ const { name, class: className = "", size = 20 } = Astro.props;
         <circle cx="12" cy="12" r="10" />
         <circle cx="12" cy="12" r="6" />
         <circle cx="12" cy="12" r="2" />
+      </>
+    )
+  }
+  {
+    name === "eisenhower" && (
+      <>
+        <rect x="3" y="3" width="8" height="8" rx="1" />
+        <rect x="13" y="3" width="8" height="8" rx="1" />
+        <rect x="3" y="13" width="8" height="8" rx="1" />
+        <rect x="13" y="13" width="8" height="8" rx="1" />
+        <path d="M7 7l-2 2" />
+        <path d="M5 7l2 2" />
       </>
     )
   }

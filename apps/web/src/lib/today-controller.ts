@@ -79,6 +79,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupCalendarEvents()            // G28
   setupMigrationPrompt(container)  // G27
   setupContextGrouping(container)  // G29
+  setupFocusStack(container)       // PRA-02
 
   // Hash deep-link: #task-{id} scroll into view
   const hash = window.location.hash
@@ -1451,4 +1452,90 @@ export async function cancelRecurrence(taskId: string) {
   } catch {
     showToast("Failed to cancel recurrence", "error")
   }
+}
+
+// ── Focus Stack (PRA-02) ──────────────────────────────────────────────────
+
+/**
+ * Sets up the Focus Stack hero section — completion, celebration, and click handlers.
+ * PRA-02: ADHD decision support — top 3 actionable tasks with clear next action.
+ *
+ * @kcs Focus Stack cards animate out on completion and fire a celebration
+ * when all 3 are cleared. "celebrateFocusStackClear" lives in celebrations.ts.
+ */
+function setupFocusStack(container: HTMLElement) {
+  const stack = container.querySelector("#section-focus-stack") as HTMLElement | null
+  if (!stack) return
+
+  const totalCards = stack.querySelectorAll(".focus-card").length
+  let completedCards = 0
+
+  // ── Complete button handler ──
+  lm.on(stack, "click", async (e: Event) => {
+    const target = e.target as HTMLElement
+
+    // Complete button
+    const completeBtn = target.closest(".focus-card__complete") as HTMLButtonElement | null
+    if (completeBtn) {
+      e.stopPropagation()
+      const id = completeBtn.dataset.id
+      if (!id) return
+
+      completeBtn.disabled = true
+      const card = completeBtn.closest(".focus-card") as HTMLElement
+
+      try {
+        await taskApi.updateTask(id, { status: "complete" })
+        showToast("common.task_completed")
+        onTaskCompleted()
+
+        // Animate card out
+        card?.classList.add("focus-card--completing")
+        completedCards++
+
+        // Also mark in main task list if visible
+        const mainCheckbox = container.querySelector(
+          `.tli__checkbox[data-id="${id}"]`
+        ) as HTMLInputElement | null
+        if (mainCheckbox) {
+          mainCheckbox.checked = true
+          mainCheckbox.closest(".tli")?.classList.add("tli--done")
+        }
+
+        setTimeout(() => {
+          card?.remove()
+
+          // All cleared → celebration!
+          if (completedCards >= totalCards) {
+            import("@lib/celebrations").then(({ celebrateFocusStackClear }) => {
+              celebrateFocusStackClear()
+            })
+            // Replace stack content with cleared message
+            stack.innerHTML = `
+              <div class="focus-stack--cleared">
+                <div style="font-size: 32px;">🎉</div>
+                <div class="focus-stack__cleared-msg">Focus Stack cleared!</div>
+                <div class="focus-stack__cleared-sub">Great focus session — take a breath</div>
+              </div>
+            `
+          }
+        }, 350)
+      } catch {
+        completeBtn.disabled = false
+        showToast("common.failed_update", "error")
+      }
+      return
+    }
+
+    // Click card body → open task detail
+    const focusCard = target.closest(".focus-card") as HTMLElement | null
+    if (focusCard) {
+      const taskId = focusCard.dataset.id
+      if (taskId) {
+        window.dispatchEvent(
+          new CustomEvent("meitheal:open-task-detail", { detail: { id: taskId } })
+        )
+      }
+    }
+  })
 }

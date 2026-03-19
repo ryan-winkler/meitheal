@@ -77,6 +77,7 @@ const PRECACHE_PATHS = [
   "/habits",
   "/projects",
   "/goals",
+  "/eisenhower",
   "/gantt",
   "/manifest.webmanifest",
   "/icon-192.png",

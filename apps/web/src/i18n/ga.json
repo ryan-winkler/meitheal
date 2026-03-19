@@ -11,6 +11,7 @@
     "habits": "Nósanna",
     "projects": "Tionscadail",
     "goals": "Spriocanna",
+    "eisenhower": "Eisenhower",
     "skip_to_content": "Léim go dtí an t-ábhar"
   },
   "sidebar": {
@@ -631,6 +632,20 @@
     "go_calendar": "🗓️ Téigh go Féilire",
     "export_csv": "📥 Easpórtáil Tascanna CSV",
     "tasks_section": "Tascanna"
+  },
+  "eisenhower": {
+    "title": "Maitrís Eisenhower",
+    "subtitle": "Tosaigh de réir práinne agus tábhachta",
+    "do_first": "Déan ar Dtús",
+    "do_first_desc": "Práinneach + Tábhachtach",
+    "schedule": "Sceideal",
+    "schedule_desc": "Tábhachtach, ní práinneach",
+    "delegate": "Tarmlig",
+    "delegate_desc": "Práinneach, ní tábhachtach",
+    "eliminate": "Díscaradh",
+    "eliminate_desc": "Ní práinneach ná tábhachtach",
+    "empty_quadrant": "Gan tascanna sa cheathrainn seo",
+    "drag_hint": "Tarraing tascanna idir ceathrainn chun athtosaíocht a dhéanamh"
   },
   "common": {
     "save": "Sábháil",

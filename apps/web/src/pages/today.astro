@@ -36,6 +36,7 @@ let pinnedTasks: TaskViewItem[] = []
 let todayTasks: TaskViewItem[] = []
 let noDueTasks: TaskViewItem[] = []
 let suggestedTasks: TaskViewItem[] = []
+let focusStackTasks: TaskViewItem[] = []
 let completedTodayCount = 0
 let totalOpenCount = 0
 let currentStreak = 0
@@ -102,6 +103,22 @@ try {
   // Remove suggested from noDueTasks to avoid double-showing
   const suggestedIds = new Set(suggestedTasks.map(t => t.id))
   noDueTasks = noDueTasks.filter(t => !suggestedIds.has(t.id))
+
+  // Focus Stack — top 3 actionable tasks ranked by urgency for ADHD decision support
+  // Ranking: overdue first → highest priority → nearest due date
+  const focusCandidates = tasks
+    .filter(t => !t.is_done && (t.due_date === todayStr || (t.due_date && new Date(t.due_date) < today)))
+    .sort((a, b) => {
+      const aOverdue = a.due_date && a.due_date < todayStr ? 1 : 0
+      const bOverdue = b.due_date && b.due_date < todayStr ? 1 : 0
+      if (aOverdue !== bOverdue) return bOverdue - aOverdue
+      const aPri = Number(a.priority ?? 3)
+      const bPri = Number(b.priority ?? 3)
+      if (aPri !== bPri) return aPri - bPri
+      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
+      return 0
+    })
+  focusStackTasks = focusCandidates.slice(0, 3)
 
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + noDueTasks.length
 
@@ -208,6 +225,50 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
       style="display: none; font-size: 11px; color: var(--text-muted); margin-top: 4px; padding-left: 2px;"
     ></div>
   </div>
+
+  <!-- Focus Stack — ADHD decision support hero (PRA-02) -->
+  {focusStackTasks.length > 0 && (
+    <div class="focus-stack" id="section-focus-stack">
+      <div class="focus-stack__header">
+        <span class="focus-stack__title">🧠 Focus Stack</span>
+        <span class="focus-stack__subtitle">Your top {focusStackTasks.length} — just do these</span>
+      </div>
+      <div class="focus-stack__cards">
+        {focusStackTasks.map((task, i) => (
+          <div
+            class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
+            data-id={task.id}
+            data-focus-index={i}
+          >
+            <span class="focus-card__step">{i + 1}</span>
+            <div class="focus-card__body">
+              <span class="focus-card__title">{task.title}</span>
+              <div class="focus-card__meta">
+                {task.priority && task.priority <= 2 && (
+                  <span class="focus-card__priority" data-pri={task.priority}>
+                    {task.priority === 1 ? "▲ Critical" : "↑ High"}
+                  </span>
+                )}
+                {task.due_date && (
+                  <span class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}>
+                    {task.is_overdue ? `⚠ Overdue` : `📅 ${task.due_date}`}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="focus-card__complete btn btn-sm"
+              data-id={task.id}
+              title="Complete this task"
+            >
+              ✓
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
 
   <!-- Filter Bar -->
   <div class="today-filter-bar" id="today-filter-bar">
@@ -851,7 +912,164 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
-  /* ── Reduced motion ──────────────────────────────────── */
+  /* ── Focus Stack (PRA-02) ────────────────────────────────── */
+  .focus-stack {
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb), 0.02));
+    border: 1px solid rgba(var(--accent-rgb), 0.18);
+    border-radius: var(--radius-md, 10px);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .focus-stack::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f59e0b));
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .focus-stack__header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .focus-stack__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .focus-stack__subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .focus-stack__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .focus-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    transition: border-color 200ms, box-shadow 200ms, opacity 200ms, transform 200ms;
+    cursor: pointer;
+  }
+  .focus-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.12);
+    transform: translateX(2px);
+  }
+  .focus-card--overdue {
+    border-left: 3px solid var(--error, #ef4444);
+  }
+  .focus-card--completing {
+    opacity: 0;
+    transform: translateX(40px) scale(0.95);
+    transition: opacity 300ms ease, transform 300ms ease;
+  }
+
+  .focus-card__step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #f59e0b));
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.3);
+  }
+
+  .focus-card__body {
+    flex: 1;
+    min-width: 0;
+  }
+  .focus-card__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .focus-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+  .focus-card__priority[data-pri="1"] {
+    color: var(--error, #ef4444);
+    font-weight: 600;
+  }
+  .focus-card__priority[data-pri="2"] {
+    color: #f59e0b;
+    font-weight: 600;
+  }
+  .focus-card__due--overdue {
+    color: var(--error, #ef4444);
+    font-weight: 600;
+  }
+
+  .focus-card__complete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 200ms;
+    padding: 0;
+  }
+  .focus-card__complete:hover {
+    border-color: #22c55e;
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+  }
+
+  .focus-stack--cleared {
+    text-align: center;
+    padding: 24px 16px;
+  }
+  .focus-stack--cleared .focus-stack__cleared-msg {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 4px;
+  }
+  .focus-stack--cleared .focus-stack__cleared-sub {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── Reduced Motion ──────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .daily-stats-progress-fill,
     .today-section__list,

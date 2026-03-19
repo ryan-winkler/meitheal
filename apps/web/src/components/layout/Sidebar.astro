@@ -54,6 +54,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
   habits: { href: "/habits", i18nKey: "nav.habits", icon: "habit" },
   projects: { href: "/projects", i18nKey: "nav.projects", icon: "folder" },
   goals: { href: "/goals", i18nKey: "nav.goals", icon: "target" },
+  eisenhower: { href: "/eisenhower", i18nKey: "nav.eisenhower", icon: "eisenhower" },
 };
 
 type NavKey = string;
@@ -68,6 +69,7 @@ const DEFAULT_ORDER: NavKey[] = [
   "habits",
   "projects",
   "goals",
+  "eisenhower",
 ];
 
 interface CustomNavItem {
