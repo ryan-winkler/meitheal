@@ -23,6 +23,11 @@
 import Layout from "../layouts/Layout.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const { tasks } = await getTasksForView()
 const openTasks = tasks.filter((t) => !t.is_done)
@@ -62,18 +67,18 @@ interface Quadrant {
 }
 
 const quadrants: Quadrant[] = [
-  { id: "do-first",  label: "eisenhower.do_first",  desc: "eisenhower.do_first_desc",  color: "#ef4444", tasks: q1 },
-  { id: "schedule",  label: "eisenhower.schedule",   desc: "eisenhower.schedule_desc",  color: "#3b82f6", tasks: q2 },
-  { id: "delegate",  label: "eisenhower.delegate",   desc: "eisenhower.delegate_desc",  color: "#f59e0b", tasks: q3 },
-  { id: "eliminate", label: "eisenhower.eliminate",   desc: "eisenhower.eliminate_desc", color: "#6b7280", tasks: q4 },
+  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  color: "#ef4444", tasks: q1 },
+  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  color: "#3b82f6", tasks: q2 },
+  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  color: "#f59e0b", tasks: q3 },
+  { id: "eliminate", label: t("eisenhower.eliminate", locale),   desc: t("eisenhower.eliminate_desc", locale), color: "#6b7280", tasks: q4 },
 ]
 ---
 
-<Layout title="Eisenhower Matrix" currentPage="eisenhower">
+<Layout title="Eisenhower Matrix">
   <main id="eisenhower-page" class="eisenhower">
     <header class="eisenhower__header">
-      <h1 class="eisenhower__title" data-i18n="eisenhower.title">Eisenhower Matrix</h1>
-      <p class="eisenhower__subtitle" data-i18n="eisenhower.subtitle">Prioritise by urgency and importance</p>
+      <h1 class="eisenhower__title">{t("eisenhower.title", locale)}</h1>
+      <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
     </header>
 
     <div class="eisenhower__grid">
@@ -86,16 +91,16 @@ const quadrants: Quadrant[] = [
           <header class="quadrant__header">
             <span class="quadrant__badge">{idx === 0 ? "🔥" : idx === 1 ? "📅" : idx === 2 ? "👥" : "🗑️"}</span>
             <div class="quadrant__heading">
-              <h2 class="quadrant__title" data-i18n={q.label}>{q.label}</h2>
-              <span class="quadrant__desc" data-i18n={q.desc}>{q.desc}</span>
+              <h2 class="quadrant__title">{q.label}</h2>
+              <span class="quadrant__desc">{q.desc}</span>
             </div>
             <span class="quadrant__count">{q.tasks.length}</span>
           </header>
 
           <div class="quadrant__tasks" data-drop-zone={q.id}>
             {q.tasks.length === 0 ? (
-              <div class="quadrant__empty" data-i18n="eisenhower.empty_quadrant">
-                No tasks in this quadrant
+              <div class="quadrant__empty">
+                {t("eisenhower.empty_quadrant", locale)}
               </div>
             ) : (
               q.tasks.map((t) => (
@@ -107,8 +112,8 @@ const quadrants: Quadrant[] = [
       ))}
     </div>
 
-    <p class="eisenhower__hint" data-i18n="eisenhower.drag_hint">
-      Drag tasks between quadrants to re-prioritise
+    <p class="eisenhower__hint">
+      {t("eisenhower.drag_hint", locale)}
     </p>
   </main>
 
