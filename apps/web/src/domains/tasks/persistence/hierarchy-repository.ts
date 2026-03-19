@@ -28,6 +28,12 @@ export interface GoalRow {
   description: string | null
   status: string
   target_date: string | null
+  /** Metric tracking type: count, percentage, currency, boolean, custom */
+  metric_type: string | null
+  /** Target value for goal completion (e.g. 100 for percentage, 50000 for savings) */
+  metric_target: number | null
+  /** Current progress value toward metric_target */
+  metric_current: number
   created_at: number
   updated_at: number
 }
@@ -157,11 +163,12 @@ export class HierarchyRepository {
 
   async createGoal(data: {
     id: string; title: string; area_id?: string | null | undefined; description?: string; status?: string; target_date?: string | null | undefined
+    metric_type?: string | null; metric_target?: number | null; metric_current?: number
   }): Promise<void> {
     const now = Date.now()
     await this.client.execute({
-      sql: `INSERT INTO goals (id, area_id, title, description, status, target_date, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO goals (id, area_id, title, description, status, target_date, metric_type, metric_target, metric_current, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id,
         data.area_id ?? null,
@@ -169,6 +176,9 @@ export class HierarchyRepository {
         data.description ?? null,
         data.status ?? "active",
         data.target_date ?? null,
+        data.metric_type ?? null,
+        data.metric_target ?? null,
+        data.metric_current ?? 0,
         now,
         now,
       ],
@@ -177,6 +187,7 @@ export class HierarchyRepository {
 
   async updateGoal(id: string, data: {
     title?: string; area_id?: string | null; description?: string | null; status?: string; target_date?: string | null
+    metric_type?: string | null; metric_target?: number | null; metric_current?: number
   }): Promise<boolean> {
     const sets: string[] = []
     const args: (string | number | null)[] = []
@@ -186,6 +197,9 @@ export class HierarchyRepository {
     if (data.description !== undefined) { sets.push("description = ?"); args.push(data.description) }
     if (data.status !== undefined) { sets.push("status = ?"); args.push(data.status) }
     if (data.target_date !== undefined) { sets.push("target_date = ?"); args.push(data.target_date) }
+    if (data.metric_type !== undefined) { sets.push("metric_type = ?"); args.push(data.metric_type) }
+    if (data.metric_target !== undefined) { sets.push("metric_target = ?"); args.push(data.metric_target) }
+    if (data.metric_current !== undefined) { sets.push("metric_current = ?"); args.push(data.metric_current) }
 
     if (sets.length === 0) return false
 
@@ -329,6 +343,9 @@ export class HierarchyRepository {
       description: row.description ? String(row.description) : null,
       status: String(row.status ?? "active"),
       target_date: row.target_date ? String(row.target_date) : null,
+      metric_type: row.metric_type ? String(row.metric_type) : null,
+      metric_target: row.metric_target != null ? Number(row.metric_target) : null,
+      metric_current: Number(row.metric_current ?? 0),
       created_at: Number(row.created_at),
       updated_at: Number(row.updated_at),
     }

@@ -58,6 +58,33 @@ export const GET: APIRoute = async () => {
 
     const remaining = dueToday + carriedForward
 
+    // Focus Stack — top 3 actionable tasks ranked by urgency for ADHD decision support
+    // Ranking: overdue first → highest priority → nearest due date → most recently updated
+    const actionable = tasks
+      .filter(t => !t.is_done && (t.due_date === todayStr || (t.due_date && new Date(t.due_date) < today)))
+      .sort((a, b) => {
+        // Overdue tasks first
+        const aOverdue = a.due_date && a.due_date < todayStr ? 1 : 0
+        const bOverdue = b.due_date && b.due_date < todayStr ? 1 : 0
+        if (aOverdue !== bOverdue) return bOverdue - aOverdue
+        // Higher priority (lower number = higher priority)
+        const aPri = Number(a.priority ?? 3)
+        const bPri = Number(b.priority ?? 3)
+        if (aPri !== bPri) return aPri - bPri
+        // Nearest due date
+        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
+        return 0
+      })
+      .slice(0, 3)
+      .map(t => ({
+        id: String(t.id),
+        title: String(t.title ?? ""),
+        priority: Number(t.priority ?? 3),
+        due_date: t.due_date ? String(t.due_date) : null,
+        is_overdue: Boolean(t.due_date && t.due_date < todayStr),
+        board_id: t.board_id ? String(t.board_id) : null,
+      }))
+
     // Gamification stats
     let streak = 0
     let todayXP = 0
@@ -75,6 +102,8 @@ export const GET: APIRoute = async () => {
       completedToday,
       carriedForward,
       remaining,
+      /** Top 3 actionable tasks ranked by urgency — ADHD Focus Stack */
+      focusStack: actionable,
       streak,
       todayXP,
       timestamp: new Date().toISOString(),

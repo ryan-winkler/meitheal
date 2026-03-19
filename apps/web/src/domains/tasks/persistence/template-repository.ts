@@ -22,6 +22,10 @@ export interface RoutineTemplateRow {
   icon: string
   cadence: string
   position: number
+  /** Number of streak freezes consumed this cycle */
+  streak_freezes_used: number
+  /** Maximum allowed streak freezes per cycle (default 3) */
+  streak_freeze_limit: number
   created_at: number
   updated_at: number
 }
@@ -128,6 +132,7 @@ export class TemplateRepository {
   /** Update a template */
   async update(id: string, data: {
     name?: string; templateJson?: string; icon?: string; cadence?: string
+    streak_freezes_used?: number; streak_freeze_limit?: number
     /** @deprecated Use cadence */
     frequency?: string
   }): Promise<void> {
@@ -139,6 +144,8 @@ export class TemplateRepository {
     if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
     const cadence = data.cadence ?? data.frequency
     if (cadence !== undefined) { sets.push("cadence = ?"); args.push(cadence) }
+    if (data.streak_freezes_used !== undefined) { sets.push("streak_freezes_used = ?"); args.push(data.streak_freezes_used) }
+    if (data.streak_freeze_limit !== undefined) { sets.push("streak_freeze_limit = ?"); args.push(data.streak_freeze_limit) }
 
     if (sets.length === 0) return
 
@@ -168,6 +175,8 @@ export class TemplateRepository {
         icon: String(row.icon ?? "✅"),
         cadence: String(row.cadence ?? row.frequency ?? "daily"),
         position: Number(row.position ?? 0),
+        streak_freezes_used: Number(row.streak_freezes_used ?? 0),
+        streak_freeze_limit: Number(row.streak_freeze_limit ?? 3),
         created_at: Number(row.created_at),
         updated_at: Number(row.updated_at),
       }

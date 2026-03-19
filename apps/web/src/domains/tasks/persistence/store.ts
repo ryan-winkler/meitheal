@@ -817,10 +817,16 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freeze_limit INTEGER NOT NULL DEFAULT 3")
   }
 
+  // WIP limits (PRA-07): per-board work-in-progress cap for ADHD focus
+  // 0 = unlimited (default), positive integer = max active tasks per column
+  if (!(await hasColumn(client, "boards", "wip_limit"))) {
+    await client.execute("ALTER TABLE boards ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
+  }
+
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 3
+  const targetVersion = 4
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

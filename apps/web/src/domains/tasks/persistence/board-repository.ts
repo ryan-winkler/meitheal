@@ -15,6 +15,8 @@ export interface BoardRow {
   icon: unknown
   color: unknown
   position: unknown
+  /** WIP limit per status column — 0 = unlimited */
+  wip_limit: unknown
   created_at: unknown
   updated_at: unknown
 }
@@ -25,7 +27,7 @@ export class BoardRepository {
   /** List all boards ordered by position */
   async findAll(): Promise<BoardRow[]> {
     const result = await this.client.execute(
-      "SELECT id, title, icon, color, position, created_at, updated_at FROM boards ORDER BY position ASC, created_at ASC"
+      "SELECT id, title, icon, color, position, wip_limit, created_at, updated_at FROM boards ORDER BY position ASC, created_at ASC"
     )
     return result.rows as unknown as BoardRow[]
   }

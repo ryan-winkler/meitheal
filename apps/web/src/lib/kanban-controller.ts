@@ -146,16 +146,30 @@ export function initKanbanBoard(): void {
           }
         }
 
-        // Gamification: confetti + record completion when dropped to complete
+        // Gamification: priority-aware celebrations + record completion when dropped to complete
         if (newStatus === "complete") {
           var ff = window.__featureFlags || {};
-          if (ff.confetti !== false && typeof window.triggerConfetti === "function") window.triggerConfetti();
-          if (ff.gamification !== false) {
+          if (ff.confetti !== false) {
             var cardPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
+            var cardTitle = card.querySelector(".kanban-title-text")?.textContent?.trim() || "Task";
+            // Use celebrations module for priority-aware confetti
+            import("@lib/celebrations").then(({ celebrateHighPriorityComplete, fireConfetti }) => {
+              if (cardPriority <= 1) {
+                celebrateHighPriorityComplete(cardTitle)
+              } else {
+                fireConfetti({ particleCount: 32, duration: 1200 })
+              }
+            }).catch(() => {
+              // Fallback to window.triggerConfetti for legacy compat
+              if (typeof window.triggerConfetti === "function") window.triggerConfetti()
+            })
+          }
+          if (ff.gamification !== false) {
+            var gamPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
             fetch("/api/gamification", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ priority: cardPriority }),
+              body: JSON.stringify({ priority: gamPriority }),
             }).catch(function() {});
           }
         }
