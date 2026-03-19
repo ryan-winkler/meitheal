@@ -241,16 +241,18 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 
+  const project_id = typeof body.project_id === "string" ? body.project_id : null
+
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
-    framework_payload, parent_id, area_id, custom_fields,
+    framework_payload, parent_id, area_id, custom_fields, project_id,
     start_date, end_date, progress, color, is_favorite,
     task_type, ticket_number, assigned_to, checklists,
   })
 
   const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
-  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, assigned_to, created_at: now, updated_at: now }
+  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, assigned_to, created_at: now, updated_at: now }
 
   dispatchTaskEvent("task.created", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 
