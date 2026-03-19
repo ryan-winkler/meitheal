@@ -106,44 +106,44 @@ const upcomingSignal =
     slot="custom-header"
   />
 
-  <div id="upcoming-shell" class="upcoming-shell">
+  <div id="upcoming-shell" class="page-shell">
     <section
       id="upcoming-overview"
-      class="upcoming-shell__section upcoming-shell__section--overview"
+      class="page-shell__section page-shell__section--overview"
       data-upcoming-section
     >
-      <div class="upcoming-hero">
-        <div class="upcoming-hero__eyebrow">Home Assistant Native Planning Horizon</div>
-        <div class="upcoming-hero__title-row">
-          <div class="upcoming-hero__copy">
-            <h1 class="upcoming-hero__title">See the next week without losing today</h1>
-            <p class="upcoming-hero__description">
+      <div class="page-hero">
+        <div class="page-hero__eyebrow">Home Assistant Native Planning Horizon</div>
+        <div class="page-hero__title-row">
+          <div class="page-hero__copy">
+            <h1 class="page-hero__title">See the next week without losing today</h1>
+            <p class="page-hero__description">
               Upcoming keeps the next 48 hours separate from the rest of the week so
               you can scan, complete, and hand work back to Today or Calendar without
               rebuilding context.
             </p>
           </div>
 
-          <div class="upcoming-hero__chips" aria-label="Upcoming quick jumps">
-            <a href="#upcoming-next" class="upcoming-hero__chip" data-upcoming-section-link>
+          <div class="page-hero__chips" aria-label="Upcoming quick jumps">
+            <a href="#upcoming-next" class="page-hero__chip" data-upcoming-section-link>
               Next 48h
             </a>
-            <a href="#upcoming-week" class="upcoming-hero__chip" data-upcoming-section-link>
+            <a href="#upcoming-week" class="page-hero__chip" data-upcoming-section-link>
               Week Ahead
             </a>
-            <a href="#upcoming-flow" class="upcoming-hero__chip" data-upcoming-section-link>
+            <a href="#upcoming-flow" class="page-hero__chip" data-upcoming-section-link>
               Flow
             </a>
           </div>
         </div>
 
-        <div class="upcoming-hero__status">
-          <span class="upcoming-hero__status-label">Current signal</span>
+        <div class="page-hero__status">
+          <span class="page-hero__status-label">Current signal</span>
           <strong id="upcoming-signal-summary">{upcomingSignal}</strong>
         </div>
       </div>
 
-      <div class="upcoming-summary-grid">
+      <div class="page-summary-grid">
         <div class="stat-card">
           <span class="stat-value">{totalTasks}</span>
           <span class="stat-label">Next 7 Days</span>
@@ -170,12 +170,12 @@ const upcomingSignal =
       }
     </section>
 
-    <section id="upcoming-next" class="upcoming-shell__section" data-upcoming-section>
-      <div class="upcoming-shell__intro">
+    <section id="upcoming-next" class="page-shell__section" data-upcoming-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="upcoming-shell__eyebrow">Next 48h</div>
-          <h2 class="upcoming-shell__title">Prioritize the immediate commitment window</h2>
-          <p class="upcoming-shell__description">
+          <div class="page-shell__eyebrow">Next 48h</div>
+          <h2 class="page-shell__title">Prioritize the immediate commitment window</h2>
+          <p class="page-shell__description">
             Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.
           </p>
         </div>
@@ -305,12 +305,12 @@ const upcomingSignal =
       </div>
     </section>
 
-    <section id="upcoming-week" class="upcoming-shell__section" data-upcoming-section>
-      <div class="upcoming-shell__intro">
+    <section id="upcoming-week" class="page-shell__section" data-upcoming-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="upcoming-shell__eyebrow">Week Ahead</div>
-          <h2 class="upcoming-shell__title">Keep the rest of the week visible but lightweight</h2>
-          <p class="upcoming-shell__description">
+          <div class="page-shell__eyebrow">Week Ahead</div>
+          <h2 class="page-shell__title">Keep the rest of the week visible but lightweight</h2>
+          <p class="page-shell__description">
             The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.
           </p>
         </div>
@@ -438,23 +438,23 @@ const upcomingSignal =
       </div>
     </section>
 
-    <section id="upcoming-flow" class="upcoming-shell__section" data-upcoming-section>
-      <div class="upcoming-shell__intro">
+    <section id="upcoming-flow" class="page-shell__section" data-upcoming-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="upcoming-shell__eyebrow">Flow</div>
-          <h2 class="upcoming-shell__title">Move back to execution or into planning without reorienting</h2>
-          <p class="upcoming-shell__description">
+          <div class="page-shell__eyebrow">Flow</div>
+          <h2 class="page-shell__title">Move back to execution or into planning without reorienting</h2>
+          <p class="page-shell__description">
             Upcoming is the bridge between the daily cockpit and the calendar horizon.
           </p>
         </div>
       </div>
 
-      <div class="upcoming-flow-grid">
-        <a class="card upcoming-flow-card" href="/today">
+      <div class="page-flow-grid">
+        <a class="card page-flow-card" href="/today">
           <strong>☀️ Back to Today</strong>
           <p>Return to the focused execution surface when a scheduled task becomes immediate.</p>
         </a>
-        <a class="card upcoming-flow-card" href="/calendar">
+        <a class="card page-flow-card" href="/calendar">
           <strong>🗓️ Open Calendar</strong>
           <p>Move into month planning and connected event context when the week needs reshaping.</p>
         </a>
@@ -464,171 +464,6 @@ const upcomingSignal =
 </Layout>
 
 <style>
-  .upcoming-shell {
-    display: grid;
-    gap: 28px;
-  }
-
-  .upcoming-shell__section {
-    display: grid;
-    gap: 16px;
-    scroll-margin-top: 88px;
-  }
-
-  .upcoming-shell__section--overview {
-    gap: 18px;
-  }
-
-  .upcoming-shell__section--flash {
-    animation: upcoming-section-flash 900ms ease;
-  }
-
-  .upcoming-shell__intro {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 16px;
-  }
-
-  .upcoming-shell__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 8px;
-  }
-
-  .upcoming-shell__title {
-    font-size: clamp(1.5rem, 2.8vw, 2rem);
-    line-height: 1.1;
-    margin: 0;
-    color: var(--text-primary);
-  }
-
-  .upcoming-shell__description {
-    margin: 8px 0 0;
-    max-width: 66ch;
-    color: var(--text-muted);
-    line-height: 1.6;
-  }
-
-  .upcoming-hero {
-    display: grid;
-    gap: 18px;
-    padding: 24px 22px;
-    border-radius: 24px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)));
-    box-shadow: var(--shadow-sm);
-  }
-
-  .upcoming-hero__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--accent) 82%, white);
-  }
-
-  .upcoming-hero__title-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 24px;
-    align-items: flex-start;
-  }
-
-  .upcoming-hero__title {
-    margin: 0;
-    font-size: clamp(2rem, 4vw, 3rem);
-    line-height: 1.02;
-    color: var(--text-primary);
-  }
-
-  .upcoming-hero__description {
-    margin: 12px 0 0;
-    max-width: 60ch;
-    color: color-mix(in srgb, var(--text-muted) 85%, white);
-    line-height: 1.65;
-  }
-
-  .upcoming-hero__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-end;
-  }
-
-  .upcoming-hero__chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 38px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
-    color: var(--text-primary);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .upcoming-hero__chip:hover {
-    border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
-  }
-
-  .upcoming-hero__status {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 6px;
-    max-width: 320px;
-    padding: 14px 16px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  }
-
-  .upcoming-hero__status-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .upcoming-summary-grid,
-  .upcoming-flow-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-  }
-
-  .upcoming-flow-card {
-    display: grid;
-    gap: 8px;
-    text-decoration: none;
-    color: inherit;
-    padding: 18px;
-  }
-
-  .upcoming-flow-card p {
-    margin: 0;
-    color: var(--text-muted);
-    line-height: 1.55;
-  }
-
-  @keyframes upcoming-section-flash {
-    0% {
-      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
-    }
-    100% {
-      box-shadow: 0 0 0 22px transparent;
-    }
-  }
-
   .day-header {
     transition: background 0.15s;
     cursor: pointer;
@@ -692,17 +527,7 @@ const upcomingSignal =
     color: var(--success);
   }
 
-  @media (max-width: 900px) {
-    .upcoming-hero__title-row,
-    .upcoming-shell__intro {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .upcoming-hero__chips {
-      justify-content: flex-start;
-    }
-  }
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
 </style>
 
 <script>

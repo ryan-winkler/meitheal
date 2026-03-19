@@ -1,0 +1,222 @@
+/**
+ * Page Shell — shared hero, section, flow, and summary grid styles.
+ *
+ * Eliminates duplication across task view pages (calendar, upcoming, table,
+ * kanban, today, dashboard). Each page sets `--shell-accent` for color variation.
+ *
+ * Usage in .astro pages:
+ *   <div class="page-shell">
+ *     <section class="page-shell__section page-shell__section--overview" data-X-section>
+ *       <div class="page-hero"> ... </div>
+ *       <div class="page-summary-grid"> <div class="stat-card"> ... </div> </div>
+ *     </section>
+ *     <section class="page-shell__section" data-X-section>
+ *       <div class="page-shell__intro"> ... </div>
+ *     </section>
+ *     <section class="page-shell__section" data-X-section>
+ *       <div class="page-flow-grid"> <a class="page-flow-card"> ... </a> </div>
+ *     </section>
+ *   </div>
+ *
+ * @domain tasks (presentation)
+ * @bounded-context tasks
+ */
+
+/* ── Shell container ────────────────────────────────────────────────────── */
+
+.page-shell {
+  display: grid;
+  gap: 28px;
+}
+
+.page-shell__section {
+  display: grid;
+  gap: 16px;
+  scroll-margin-top: var(--unified-bar-height, 88px);
+}
+
+.page-shell__section--overview {
+  gap: 18px;
+}
+
+.page-shell__section--flash {
+  animation: page-section-flash 900ms ease;
+}
+
+/* ── Section intro (heading row with action buttons) ────────────────────── */
+
+.page-shell__intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.page-shell__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.page-shell__title {
+  font-size: clamp(1.5rem, 2.8vw, 2rem);
+  line-height: 1.1;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.page-shell__description {
+  margin: 8px 0 0;
+  max-width: 66ch;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ── Hero block (overview banner with gradient background) ──────────────── */
+
+.page-hero {
+  display: grid;
+  gap: 18px;
+  padding: 24px 22px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--shell-accent, var(--accent)) 28%, var(--border));
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--shell-accent, var(--accent)) 18%, transparent), transparent 38%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--shell-accent, var(--accent)) 8%, var(--bg-secondary)));
+  box-shadow: var(--shadow-sm);
+}
+
+.page-hero__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--shell-accent, var(--accent)) 82%, white);
+}
+
+.page-hero__title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.page-hero__title {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+  color: var(--text-primary);
+}
+
+.page-hero__description {
+  margin: 12px 0 0;
+  max-width: 60ch;
+  color: color-mix(in srgb, var(--text-muted) 85%, white);
+  line-height: 1.65;
+}
+
+.page-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.page-hero__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--shell-accent, var(--accent)) 28%, var(--border));
+  background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.page-hero__chip:hover {
+  border-color: color-mix(in srgb, var(--shell-accent, var(--accent)) 44%, var(--border));
+  background: color-mix(in srgb, var(--shell-accent, var(--accent)) 10%, var(--bg-primary));
+}
+
+.page-hero__status {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--shell-accent, var(--accent)) 24%, var(--border));
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+}
+
+.page-hero__status-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Summary & flow grids ───────────────────────────────────────────────── */
+
+.page-summary-grid,
+.page-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.page-flow-card {
+  display: grid;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+  padding: 18px;
+}
+
+.page-flow-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+/* ── Section flash keyframe ─────────────────────────────────────────────── */
+
+@keyframes page-section-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--shell-accent, var(--accent)) 22%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 22px transparent;
+  }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .page-hero__title-row,
+  .page-shell__intro {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .page-hero__chips {
+    justify-content: flex-start;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .page-shell__section--flash {
+    animation: none;
+  }
+  .page-hero__chip {
+    transition: none;
+  }
+}

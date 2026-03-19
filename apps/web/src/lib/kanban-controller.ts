@@ -275,7 +275,7 @@ export function initKanbanArea(): void {
       sectionSelector: "[data-kanban-section]",
       sectionIds: KANBAN_SECTIONS.map((section) => section.id),
       defaultSectionId: "kanban-overview",
-      flashClass: "kanban-shell__section--flash",
+      flashClass: "page-shell__section--flash",
       sectionLinkSelectors: ["[data-kanban-section-link]"],
     });
 

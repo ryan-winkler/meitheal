@@ -66,7 +66,7 @@ function init() {
     sectionSelector: "[data-table-section]",
     sectionIds: TABLE_SECTIONS.map((section) => section.id),
     defaultSectionId: "table-overview",
-    flashClass: "table-shell__section--flash",
+    flashClass: "page-shell__section--flash",
     sectionLinkSelectors: ["[data-table-section-link]"],
   })
 

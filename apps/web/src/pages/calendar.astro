@@ -169,43 +169,43 @@ const calendarSignal =
 
   <TaskViewTabs activeView="calendar" />
 
-  <div id="calendar-shell" class="calendar-shell">
+  <div id="calendar-shell" class="page-shell">
     <section
       id="calendar-overview"
-      class="calendar-shell__section calendar-shell__section--overview"
+      class="page-shell__section page-shell__section--overview"
       data-calendar-section
     >
-      <div class="calendar-hero">
-        <div class="calendar-hero__eyebrow">Home Assistant Native Calendar Surface</div>
-        <div class="calendar-hero__title-row">
-          <div class="calendar-hero__copy">
-            <h1 class="calendar-hero__title">{monthName}</h1>
-            <p class="calendar-hero__description">
+      <div class="page-hero">
+        <div class="page-hero__eyebrow">Home Assistant Native Calendar Surface</div>
+        <div class="page-hero__title-row">
+          <div class="page-hero__copy">
+            <h1 class="page-hero__title">{monthName}</h1>
+            <p class="page-hero__description">
               Move between month planning, day detail, and route-level task views
               without losing the connected event context that Home Assistant brings in.
             </p>
           </div>
 
-          <div class="calendar-hero__chips" aria-label="Calendar quick jumps">
-            <a href="#calendar-month" class="calendar-hero__chip" data-calendar-section-link>
+          <div class="page-hero__chips" aria-label="Calendar quick jumps">
+            <a href="#calendar-month" class="page-hero__chip" data-calendar-section-link>
               Month Grid
             </a>
-            <a href="#calendar-agenda" class="calendar-hero__chip" data-calendar-section-link>
+            <a href="#calendar-agenda" class="page-hero__chip" data-calendar-section-link>
               Agenda
             </a>
-            <a href="#calendar-flow" class="calendar-hero__chip" data-calendar-section-link>
+            <a href="#calendar-flow" class="page-hero__chip" data-calendar-section-link>
               Flow
             </a>
           </div>
         </div>
 
-        <div class="calendar-hero__status">
-          <span class="calendar-hero__status-label">Current signal</span>
+        <div class="page-hero__status">
+          <span class="page-hero__status-label">Current signal</span>
           <strong id="calendar-signal-summary">{calendarSignal}</strong>
         </div>
       </div>
 
-      <div class="calendar-summary-grid">
+      <div class="page-summary-grid">
         <div class="stat-card">
           <span class="stat-value">{monthTotal}</span>
           <span class="stat-label">Items This Month</span>
@@ -221,12 +221,12 @@ const calendarSignal =
       </div>
     </section>
 
-    <section id="calendar-month" class="calendar-shell__section" data-calendar-section>
-      <div class="calendar-shell__intro">
+    <section id="calendar-month" class="page-shell__section" data-calendar-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="calendar-shell__eyebrow">Month</div>
-          <h2 class="calendar-shell__title">Navigate the month and keep the grid primary</h2>
-          <p class="calendar-shell__description">
+          <div class="page-shell__eyebrow">Month</div>
+          <h2 class="page-shell__title">Navigate the month and keep the grid primary</h2>
+          <p class="page-shell__description">
             Month controls stay close to the grid so date changes still feel direct and predictable.
           </p>
         </div>
@@ -316,12 +316,12 @@ const calendarSignal =
       </div>
     </section>
 
-    <section id="calendar-agenda" class="calendar-shell__section" data-calendar-section>
-      <div class="calendar-shell__intro">
+    <section id="calendar-agenda" class="page-shell__section" data-calendar-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="calendar-shell__eyebrow">Agenda</div>
-          <h2 class="calendar-shell__title">Open any day for tasks and connected events</h2>
-          <p class="calendar-shell__description">
+          <div class="page-shell__eyebrow">Agenda</div>
+          <h2 class="page-shell__title">Open any day for tasks and connected events</h2>
+          <p class="page-shell__description">
             The agenda drawer stays lightweight and is populated when you click a day in the month grid.
           </p>
         </div>
@@ -333,23 +333,23 @@ const calendarSignal =
       </div>
     </section>
 
-    <section id="calendar-flow" class="calendar-shell__section" data-calendar-section>
-      <div class="calendar-shell__intro">
+    <section id="calendar-flow" class="page-shell__section" data-calendar-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="calendar-shell__eyebrow">Flow</div>
-          <h2 class="calendar-shell__title">Move between plan and execution without losing context</h2>
-          <p class="calendar-shell__description">
+          <div class="page-shell__eyebrow">Flow</div>
+          <h2 class="page-shell__title">Move between plan and execution without losing context</h2>
+          <p class="page-shell__description">
             Calendar connects the month horizon to Today, Upcoming, and the secondary task-view strip.
           </p>
         </div>
       </div>
 
-      <div class="calendar-flow-grid">
-        <a class="card calendar-flow-card" href="/today">
+      <div class="page-flow-grid">
+        <a class="card page-flow-card" href="/today">
           <strong>☀️ Back to Today</strong>
           <p>Return to the daily execution cockpit when a date becomes action.</p>
         </a>
-        <a class="card calendar-flow-card" href="/upcoming">
+        <a class="card page-flow-card" href="/upcoming">
           <strong>📅 Open Upcoming</strong>
           <p>Move into the next-week view when month planning narrows into a near-term schedule.</p>
         </a>
@@ -387,54 +387,7 @@ const calendarSignal =
 </Layout>
 
 <style>
-  .calendar-shell {
-    display: grid;
-    gap: 28px;
-  }
-
-  .calendar-shell__section {
-    display: grid;
-    gap: 16px;
-    scroll-margin-top: 88px;
-  }
-
-  .calendar-shell__section--overview {
-    gap: 18px;
-  }
-
-  .calendar-shell__section--flash {
-    animation: calendar-section-flash 900ms ease;
-  }
-
-  .calendar-shell__intro {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 16px;
-  }
-
-  .calendar-shell__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 8px;
-  }
-
-  .calendar-shell__title {
-    font-size: clamp(1.5rem, 2.8vw, 2rem);
-    line-height: 1.1;
-    margin: 0;
-    color: var(--text-primary);
-  }
-
-  .calendar-shell__description {
-    margin: 8px 0 0;
-    max-width: 66ch;
-    color: var(--text-muted);
-    line-height: 1.6;
-  }
+  /* Calendar-specific styles (shared shell/hero/flow in _page-shell.css) */
 
   .calendar-shell__agenda-card {
     padding: 18px;
@@ -448,122 +401,6 @@ const calendarSignal =
     border: 1px solid color-mix(in srgb, var(--info, #60a5fa) 35%, var(--border));
     background: color-mix(in srgb, var(--info, #60a5fa) 10%, transparent);
     color: var(--text-primary);
-  }
-
-  .calendar-hero {
-    display: grid;
-    gap: 18px;
-    padding: 24px 22px;
-    border-radius: 24px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)));
-    box-shadow: var(--shadow-sm);
-  }
-
-  .calendar-hero__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--accent) 82%, white);
-  }
-
-  .calendar-hero__title-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 24px;
-    align-items: flex-start;
-  }
-
-  .calendar-hero__title {
-    margin: 0;
-    font-size: clamp(2rem, 4vw, 3rem);
-    line-height: 1.02;
-    color: var(--text-primary);
-  }
-
-  .calendar-hero__description {
-    margin: 12px 0 0;
-    max-width: 60ch;
-    color: color-mix(in srgb, var(--text-muted) 85%, white);
-    line-height: 1.65;
-  }
-
-  .calendar-hero__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-end;
-  }
-
-  .calendar-hero__chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 38px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
-    color: var(--text-primary);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .calendar-hero__chip:hover {
-    border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
-  }
-
-  .calendar-hero__status {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 6px;
-    max-width: 320px;
-    padding: 14px 16px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  }
-
-  .calendar-hero__status-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .calendar-summary-grid,
-  .calendar-flow-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-  }
-
-  .calendar-flow-card {
-    display: grid;
-    gap: 8px;
-    text-decoration: none;
-    color: inherit;
-    padding: 18px;
-  }
-
-  .calendar-flow-card p {
-    margin: 0;
-    color: var(--text-muted);
-    line-height: 1.55;
-  }
-
-  @keyframes calendar-section-flash {
-    0% {
-      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
-    }
-    100% {
-      box-shadow: 0 0 0 22px transparent;
-    }
   }
 
   .calendar-controls {
@@ -894,17 +731,7 @@ const calendarSignal =
     font-size: 12px;
   }
 
-  @media (max-width: 900px) {
-    .calendar-hero__title-row,
-    .calendar-shell__intro {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .calendar-hero__chips {
-      justify-content: flex-start;
-    }
-  }
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
 </style>
 
 <script>

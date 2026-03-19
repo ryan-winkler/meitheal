@@ -23,7 +23,7 @@ export function initCalendarPage(): void {
     sectionSelector: "[data-calendar-section]",
     sectionIds: CALENDAR_SECTIONS.map((section) => section.id),
     defaultSectionId: "calendar-overview",
-    flashClass: "calendar-shell__section--flash",
+    flashClass: "page-shell__section--flash",
     sectionLinkSelectors: ["[data-calendar-section-link]"],
   })
 
