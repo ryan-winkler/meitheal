@@ -200,10 +200,20 @@ const navItems = order
   role="navigation"
   aria-label="Main Navigation"
 >
-  <div class="sidebar-header pb-4 mb-0 border-b border-border/50">
+  <div class="sidebar-header flex items-center gap-2 pb-4 mb-0 px-2" style="padding-left: 0.5rem; padding-right: 0.5rem;">
+    <button
+      type="button"
+      class="sidebar-toggle-top flex items-center justify-center p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors flex-shrink-0 relative w-8 h-8"
+      id="sidebar-toggle-btn"
+      aria-label="Toggle sidebar (Ctrl+B)"
+      title="Toggle sidebar (Ctrl+B)"
+    >
+      <Icon name="menu-open" class="sidebar-icon-expanded w-5 h-5 flex-shrink-0 absolute" />
+      <Icon name="menu" class="sidebar-icon-collapsed w-5 h-5 flex-shrink-0 absolute hidden" />
+    </button>
     <a
       href="/"
-      class="sidebar-brand text-xl font-bold tracking-tight text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline"
+      class="sidebar-brand text-xl font-bold tracking-tight text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
       aria-label="Meitheal Home"
       title="Ag Obair le Chéile — Working Together"
     >
@@ -242,19 +252,12 @@ const navItems = order
         <circle cx="50" cy="30" r="7" fill="#F59E0B"></circle>
         <circle cx="25" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
         <circle cx="75" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
-      </svg> <span class="sidebar-brand-text">Meitheal</span>
+      </svg>
+      <div class="flex flex-col min-w-0">
+        <span class="sidebar-brand-text truncate">Meitheal</span>
+        <span class="sidebar-ipa text-[10px] italic text-text-muted opacity-80 font-medium tracking-wide leading-none select-none mt-0.5">/ˈmʲɛhəlˠ/</span>
+      </div>
     </a>
-    <span
-      class="sidebar-ipa"
-      aria-hidden="true"
-      style="display:block;font-size:10px;font-style:italic;color:var(--text-secondary);opacity:0.85;font-weight:500;letter-spacing:0.3px;padding-left:2.25rem;margin-top:1px;line-height:1;user-select:none"
-      >/ˈmʲɛhəlˠ/</span
-    >
-    <span
-      class="sidebar-tooltip"
-      aria-hidden="true"
-      >Ag Obair le Chéile&ensp;·&ensp;Working Together</span
-    >
   </div>
 
   <div class="sidebar-scroll">
@@ -271,29 +274,7 @@ const navItems = order
 
   <SidebarFooter locale={locale} />
 
-  <!-- Sidebar toggle: persistent at bottom -->
-  <button
-    type="button"
-    class="sidebar-toggle"
-    id="sidebar-toggle-btn"
-    aria-label="Toggle sidebar (Ctrl+B)"
-    title="Toggle sidebar (Ctrl+B)"
-  >
-    <svg
-      width="10"
-      height="14"
-      viewBox="0 0 10 14"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M8 1L2 7L8 13"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"></path>
-    </svg>
-  </button>
+
 </nav>
 
 <style>
@@ -318,18 +299,14 @@ const navItems = order
     overflow-x: hidden;
     min-height: 0;
     padding-top: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
 
+  /* Hide scrollbar WebKit */
   .sidebar-scroll::-webkit-scrollbar {
-    width: 4px;
-  }
-  .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 4px;
+    display: none;
   }
 
   .sidebar-header {

@@ -41,6 +41,40 @@ const { locale } = Astro.props;
     <Icon name="plus" size={16} />
     {t("sidebar.new_area", locale)}
   </button>
+  <!-- Custom New Area Dialog -->
+  <dialog id="new-area-dialog" class="bg-bg-primary border border-border rounded-lg shadow-xl p-0 w-[90%] max-w-sm backdrop:bg-black/50 backdrop:backdrop-blur-sm" aria-labelledby="new-area-title">
+    <form id="new-area-form" class="flex flex-col m-0">
+      <div class="px-5 py-4 border-b border-border/50">
+        <h3 id="new-area-title" class="text-lg font-semibold text-text-primary m-0">{t("sidebar.new_area", locale)}</h3>
+      </div>
+      <div class="p-5">
+        <label for="new-area-input" class="block text-sm font-medium text-text-secondary mb-2">{t("sidebar.prompt_area_name", locale)}</label>
+        <input 
+          type="text" 
+          id="new-area-input" 
+          name="area_name" 
+          class="w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+          autocomplete="off"
+          required
+        />
+      </div>
+      <div class="px-5 py-3 border-t border-border/50 bg-bg-secondary/30 flex justify-end gap-3 rounded-b-lg">
+        <button 
+          type="button" 
+          id="new-area-cancel" 
+          class="px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+        >
+          {t("common.cancel", locale)}
+        </button>
+        <button 
+          type="submit" 
+          class="px-4 py-2 text-sm font-medium bg-accent text-white rounded-md hover:bg-accent/90 transition-colors cursor-pointer"
+        >
+          {t("common.save", locale)}
+        </button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <style>
@@ -63,6 +97,15 @@ const { locale } = Astro.props;
     font-weight: 600;
     color: var(--text-muted);
   }
+  
+  /* Reset dialog max-width and margin for centering */
+  #new-area-dialog {
+    margin: auto;
+  }
+  #new-area-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+  }
 </style>
 
 <script>
@@ -72,6 +115,11 @@ const { locale } = Astro.props;
       "area-select",
     ) as HTMLSelectElement | null;
     const addBtn = document.getElementById("add-area-btn");
+    const dialog = document.getElementById("new-area-dialog") as HTMLDialogElement | null;
+    const form = document.getElementById("new-area-form") as HTMLFormElement | null;
+    const input = document.getElementById("new-area-input") as HTMLInputElement | null;
+    const cancelBtn = document.getElementById("new-area-cancel");
+
     if (!select) return;
 
     // Load boards from API
@@ -144,21 +192,37 @@ const { locale } = Astro.props;
       applyAreaFilter();
     });
 
-    // Add new board
-    addBtn?.addEventListener("click", async () => {
-      const switcher = document.getElementById("area-switcher");
-      const promptText = switcher?.dataset.i18nPrompt || "Area name:";
-      const title = prompt(promptText);
-      if (!title?.trim()) return;
+    // Add new board dialog handling
+    addBtn?.addEventListener("click", () => {
+      if (dialog && input) {
+        input.value = "";
+        dialog.showModal();
+        // Give input focus on next frame
+        setTimeout(() => input.focus(), 10);
+      }
+    });
+
+    cancelBtn?.addEventListener("click", () => {
+      dialog?.close();
+    });
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!input || !dialog) return;
+
+      const title = input.value.trim();
+      if (!title) return;
+
       try {
         const res = await fetch((window.__ingress_path || "") + "/api/areas", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: title.trim() }),
+          body: JSON.stringify({ title }),
         });
         if (res.ok) {
           const area = await res.json();
           localStorage.setItem("meitheal_active_area", area.id);
+          dialog.close();
           document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "area-switch" } }));
         }
       } catch {

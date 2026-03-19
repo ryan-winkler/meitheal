@@ -279,6 +279,11 @@
   display: none !important;
 }
 
+/* Mobile: hide top task-view-tabs when bottom tab bar provides the same navigation */
+.task-view-tabs {
+  display: none !important;
+}
+
   /* Mobile: safe-area-inset padding for iOS notch / dynamic island */
   .topbar {
     padding-top: max(8px, env(safe-area-inset-top)) !important;

@@ -145,7 +145,11 @@ if (backlogMode === "hidden" || backlogMode === "disabled") {
   columns = columns.filter((col) => col.key !== "backlog");
 }
 
-import { PRIORITY_COLORS as priorityColors, PRIORITY_CSS_CLASSES as priorityClasses, PRIORITY_ICONS as priorityIcons } from "../lib/priority-config";
+import {
+  PRIORITY_COLORS as priorityColors,
+  PRIORITY_CSS_CLASSES as priorityClasses,
+  PRIORITY_ICONS as priorityIcons,
+} from "../lib/priority-config";
 
 const priorityLabels: Record<number, string> = {
   1: t("priority.critical", locale),
@@ -156,10 +160,7 @@ const priorityLabels: Record<number, string> = {
 };
 
 // Phase 20: Agile type metadata
-const typeConfig: Record<
-  string,
-  { label: string; color: string }
-> = {
+const typeConfig: Record<string, { label: string; color: string }> = {
   epic: { label: "Epic", color: "#8b5cf6" },
   story: { label: "Story", color: "#3b82f6" },
   task: { label: "Task", color: "#6366F1" },
@@ -177,7 +178,22 @@ const typeConfig: Record<
       id="manage-lanes-btn"
       title={t("kanban.manage_swimlanes", locale)}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings-2"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="7" r="3"/><circle cx="8" cy="17" r="3"/></svg>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="lucide lucide-settings-2"
+        ><path d="M20 7h-9"></path><path d="M14 17H5"></path><circle
+          cx="17"
+          cy="7"
+          r="3"></circle><circle cx="8" cy="17" r="3"></circle></svg
+      >
       <span class="hide-mobile">{t("kanban.manage_lanes", locale)}</span>
     </button>
     <button type="button" class="btn btn-primary" id="kanban-new-task-btn"
@@ -188,12 +204,10 @@ const typeConfig: Record<
   <TaskViewTabs activeView="kanban" />
 
   {/* Label filter bar */}
-  {/* Shared FilterToolbar — replaces inline type-toolbar + LabelFilterBar (Phase 2) */}
-  <FilterToolbar
-    view="kanban"
-    showGroupBy
-    showUserPills
-  />
+  {
+    /* Shared FilterToolbar — replaces inline type-toolbar + LabelFilterBar (Phase 2) */
+  }
+  <FilterToolbar view="kanban" showGroupBy showUserPills />
 
   <!-- Lane management panel -->
   <div class="lane-mgmt hidden" id="lane-mgmt">
@@ -204,8 +218,7 @@ const typeConfig: Record<
           type="button"
           class="btn-icon lane-mgmt-close"
           id="lane-mgmt-close"
-          aria-label="Close"
-          >✕</button
+          aria-label="Close">✕</button
         >
       </div>
       <div id="lane-list"></div>
@@ -219,8 +232,7 @@ const typeConfig: Record<
         <button
           type="button"
           class="btn btn-primary lane-mgmt-add-btn"
-          id="add-lane-btn"
-          >{t("kanban.add_lane", locale)}</button
+          id="add-lane-btn">{t("kanban.add_lane", locale)}</button
         >
       </div>
     </div>
@@ -229,14 +241,50 @@ const typeConfig: Record<
   <!-- P5-2: SVG icon defs — shared across all cards to avoid duplication -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
     <defs>
-      <symbol id="icon-child" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>
+      <symbol
+        id="icon-child"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path
+          d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path><path d="m15 9 6-6"
+        ></path>
       </symbol>
-      <symbol id="icon-assign" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>
+      <symbol
+        id="icon-assign"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle
+          cx="9"
+          cy="7"
+          r="4"></circle><line x1="19" x2="19" y1="8" y2="14"></line><line
+          x1="22"
+          x2="16"
+          y1="11"
+          y2="11"></line>
       </symbol>
-      <symbol id="icon-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 20a7.966 7.966 0 0 1-5.002-1.756l.002.001v-.683c0-1.794 1.492-3.25 3.333-3.25h3.334c1.84 0 3.333 1.456 3.333 3.25v.683A7.966 7.966 0 0 1 12 20Z"/><path d="M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10"/><circle cx="12" cy="10" r="3"/>
+      <symbol
+        id="icon-palette"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M12 20a7.966 7.966 0 0 1-5.002-1.756l.002.001v-.683c0-1.794 1.492-3.25 3.333-3.25h3.334c1.84 0 3.333 1.456 3.333 3.25v.683A7.966 7.966 0 0 1 12 20Z"
+        ></path><path d="M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10"
+        ></path><circle cx="12" cy="10" r="3"></circle>
       </symbol>
     </defs>
   </svg>
@@ -260,11 +308,10 @@ const typeConfig: Record<
             data-wip-limit={String(col.wipLimit)}
             role="region"
             aria-label={`${col.label} Swimlane`}
-
           >
             <div class="kanban-column-header" data-column-key={col.key}>
               <span class="kanban-column-title">
-                <span class={`column-status-dot status-${col.key}`}></span>
+                <span class={`column-status-dot status-${col.key}`} />
                 {col.label}
               </span>
               <span class="kanban-header-right">
@@ -295,11 +342,13 @@ const typeConfig: Record<
                     data-swimlane-type={type}
                   >
                     <div class="swimlane-header" data-type={type}>
-                      <span class={`swimlane-toggle ${count === 0 ? 'opacity-30 pointer-events-none' : ''}`}>▼</span>
-                      <TaskTypeIcon type={type} size={16} />
-                      <span class="swimlane-label">
-                        {tc.label}
+                      <span
+                        class={`swimlane-toggle ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
+                      >
+                        ▼
                       </span>
+                      <TaskTypeIcon type={type} size={16} />
+                      <span class="swimlane-label">{tc.label}</span>
                       <span class="swimlane-count">{count}</span>
                     </div>
                     <div class="swimlane-cards">
@@ -376,16 +425,21 @@ const typeConfig: Record<
                     style={`--card-accent: ${task.color ? String(task.color) : tc.color};`}
                   >
                     <div class="kanban-card-header">
-                      <div
-                        class="kanban-card-title"
-                      >
-                        <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
-                        <span
-                          class="kanban-ticket-key"
-                        >
+                      <div class="kanban-card-title">
+                        <TaskTypeIcon
+                          type={tt}
+                          size={16}
+                          class="kanban-type-icon"
+                        />
+                        <span class="kanban-ticket-key">
                           {formatTicketKey(Number(task.ticket_number))}
                         </span>
-                        <span class="kanban-title-text" data-task-id={String(task.id)}>{String(task.title)}</span>
+                        <span
+                          class="kanban-title-text"
+                          data-task-id={String(task.id)}
+                        >
+                          {String(task.title)}
+                        </span>
                       </div>
                       {Number(task.is_favorite ?? 0) === 1 && (
                         <span
@@ -412,11 +466,9 @@ const typeConfig: Record<
                     )}
                     <div class="kanban-card-meta">
                       <span
-                        class={`priority-dot ${priorityClasses[p] ?? 'priority-medium'}`}
-                        title={priorityLabels[p]}
-                      />
-                      <span class={`priority-label ${priorityClasses[p] ?? 'priority-medium'}`}>
-                        {priorityIcons[p] ?? '→'} {priorityLabels[p]}
+                        class={`priority-label ${priorityClasses[p] ?? "priority-medium"}`}
+                      >
+                        {priorityIcons[p] ?? "→"} {priorityLabels[p]}
                       </span>
                       {task.due_date ? (
                         <span
@@ -429,7 +481,6 @@ const typeConfig: Record<
                               : "📅"}{" "}
                           {formatRegionalDate(dueDate, {
                             format: dateFormat,
-                            timezone,
                           })}
                         </span>
                       ) : null}
@@ -462,19 +513,27 @@ const typeConfig: Record<
                       )}
                       {(() => {
                         try {
-                          const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
+                          const cl = task.checklists
+                            ? typeof task.checklists === "string"
+                              ? JSON.parse(String(task.checklists))
+                              : task.checklists
+                            : [];
                           if (Array.isArray(cl) && cl.length > 0) {
-                            const done = cl.filter((i: {done: boolean}) => i.done).length;
+                            const done = cl.filter(
+                              (i: { done: boolean }) => i.done,
+                            ).length;
                             return (
                               <span
-                                class={`kanban-meta-checklist${done === cl.length ? ' checklist-complete' : ''}`}
+                                class={`kanban-meta-checklist${done === cl.length ? " checklist-complete" : ""}`}
                                 title={`Checklist: ${done}/${cl.length}`}
                               >
                                 ✓ {done}/{cl.length}
                               </span>
                             );
                           }
-                        } catch { /* skip */ }
+                        } catch {
+                          /* skip */
+                        }
                         return null;
                       })()}
                       {(commentCounts[String(task.id)] ?? 0) > 0 && (
@@ -517,7 +576,11 @@ const typeConfig: Record<
                       </div>
                     )}
                     {/* Labels */}
-                    <LabelBadges labels={task.labels as string} compact max={4} />
+                    <LabelBadges
+                      labels={task.labels as string}
+                      compact
+                      max={4}
+                    />
                     {/* Custom fields */}
                     {(() => {
                       try {
@@ -589,7 +652,9 @@ const typeConfig: Record<
                         title="Add child task"
                         aria-label={`Add subtask to: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <svg aria-hidden="true" width="12" height="12"><use href="#icon-child"/></svg>
+                        <svg aria-hidden="true" width="12" height="12">
+                          <use href="#icon-child" />
+                        </svg>
                       </button>
                       <button
                         class="card-action-btn card-assign-btn"
@@ -599,7 +664,9 @@ const typeConfig: Record<
                         aria-label={`Assign user to: ${String(task.title ?? "").slice(0, 50)}`}
                         aria-haspopup="true"
                       >
-                        <svg aria-hidden="true" width="12" height="12"><use href="#icon-assign"/></svg>
+                        <svg aria-hidden="true" width="12" height="12">
+                          <use href="#icon-assign" />
+                        </svg>
                       </button>
                       <button
                         class="card-action-btn card-color-btn"
@@ -609,7 +676,9 @@ const typeConfig: Record<
                         aria-label={`Set color for: ${String(task.title ?? "").slice(0, 50)}`}
                         aria-haspopup="true"
                       >
-                        <svg aria-hidden="true" width="12" height="12"><use href="#icon-palette"/></svg>
+                        <svg aria-hidden="true" width="12" height="12">
+                          <use href="#icon-palette" />
+                        </svg>
                       </button>
                       <button
                         class="card-action-btn card-more-btn"
@@ -652,8 +721,8 @@ const typeConfig: Record<
   </div>
 
   <script>
-    import { initKanbanArea } from '../lib/kanban-controller'
-    document.addEventListener('astro:page-load', () => initKanbanArea())
+    import { initKanbanArea } from "../lib/kanban-controller";
+    document.addEventListener("astro:page-load", () => initKanbanArea());
   </script>
 </Layout>
 
@@ -677,7 +746,8 @@ const typeConfig: Record<
       min-height: auto;
       gap: 12px;
     }
-    .user-filters { /* Responsive layout for user filters */
+    .user-filters {
+      /* Responsive layout for user filters */
       flex-direction: column;
       align-items: stretch;
     }
@@ -731,7 +801,12 @@ const typeConfig: Record<
     border-radius: 6px;
     background: rgba(99, 102, 241, 0.05);
     margin-top: 8px;
-    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
+    transition:
+      background 0.2s,
+      color 0.2s,
+      border-color 0.2s,
+      opacity 0.2s,
+      transform 0.2s;
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
@@ -745,12 +820,16 @@ const typeConfig: Record<
     gap: 8px;
     box-shadow: var(--shadow-sm);
     cursor: grab;
-    transition: background 200ms cubic-bezier(0.4, 0, 0.2, 1), color 200ms cubic-bezier(0.4, 0, 0.2, 1), transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      background 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
   }
   .kanban-card::before {
-    content: '';
+    content: "";
     position: absolute;
     inset-inline-start: 0;
     inset-block-start: 0;
@@ -781,12 +860,29 @@ const typeConfig: Record<
     flex-shrink: 0;
   }
   /* Priority color classes — single source of truth: priority-config.ts */
-  .priority-dot.priority-critical, .priority-label.priority-critical { --prio-color: var(--prio-critical); }
-  .priority-dot.priority-high, .priority-label.priority-high { --prio-color: var(--prio-high); }
-  .priority-dot.priority-medium, .priority-label.priority-medium { --prio-color: var(--prio-medium); }
-  .priority-dot.priority-low, .priority-label.priority-low { --prio-color: var(--prio-low); }
-  .priority-dot.priority-minimal, .priority-label.priority-minimal { --prio-color: var(--prio-none); }
-  .priority-dot[class*="priority-"] { background: var(--prio-color); }
+  .priority-dot.priority-critical,
+  .priority-label.priority-critical {
+    --prio-color: var(--prio-critical);
+  }
+  .priority-dot.priority-high,
+  .priority-label.priority-high {
+    --prio-color: var(--prio-high);
+  }
+  .priority-dot.priority-medium,
+  .priority-label.priority-medium {
+    --prio-color: var(--prio-medium);
+  }
+  .priority-dot.priority-low,
+  .priority-label.priority-low {
+    --prio-color: var(--prio-low);
+  }
+  .priority-dot.priority-minimal,
+  .priority-label.priority-minimal {
+    --prio-color: var(--prio-none);
+  }
+  .priority-dot[class*="priority-"] {
+    background: var(--prio-color);
+  }
   .priority-label {
     font-size: 11px;
     color: var(--prio-color, var(--text-muted));
@@ -806,8 +902,12 @@ const typeConfig: Record<
   .kanban-meta-checklist.checklist-complete {
     color: var(--color-green-500, #22c55e);
   }
-  .kanban-meta-comments { gap: 3px; }
-  .kanban-meta-recurrence { font-size: 13px; }
+  .kanban-meta-comments {
+    gap: 3px;
+  }
+  .kanban-meta-recurrence {
+    font-size: 13px;
+  }
   .kanban-empty {
     text-align: center;
     padding: 30px;
@@ -825,7 +925,12 @@ const typeConfig: Record<
     color: var(--text-muted);
     cursor: pointer;
     font-size: 13px;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease,
+      opacity 150ms ease,
+      transform 150ms ease;
   }
   .kanban-add-btn:hover {
     border-color: var(--accent);
@@ -900,7 +1005,12 @@ const typeConfig: Record<
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     color: var(--text-muted);
-    transition: background 150ms, color 150ms, border-color 150ms, opacity 150ms, transform 150ms;
+    transition:
+      background 150ms,
+      color 150ms,
+      border-color 150ms,
+      opacity 150ms,
+      transform 150ms;
   }
   .card-action-btn:hover {
     background: var(--bg-hover);
@@ -951,7 +1061,9 @@ const typeConfig: Record<
     min-width: 160px;
     padding: 4px;
     animation: popover-in 150ms ease-out;
-    transition: opacity 150ms ease, transform 150ms ease;
+    transition:
+      opacity 150ms ease,
+      transform 150ms ease;
   }
   .quick-action-popover.popover-exiting {
     opacity: 0;
@@ -959,12 +1071,23 @@ const typeConfig: Record<
     pointer-events: none;
   }
   @keyframes popover-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
   }
   .popover-title {
     font-size: 11px;
@@ -1009,7 +1132,10 @@ const typeConfig: Record<
     border-radius: 50%;
     border: 2px solid transparent;
     cursor: pointer;
-    transition: transform 100ms, border-color 100ms, box-shadow 100ms;
+    transition:
+      transform 100ms,
+      border-color 100ms,
+      box-shadow 100ms;
     position: relative;
   }
   .color-swatch:hover {
@@ -1023,10 +1149,12 @@ const typeConfig: Record<
   }
   .color-swatch.swatch-active {
     border-color: var(--text-primary);
-    box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--text-primary);
+    box-shadow:
+      0 0 0 2px var(--bg-card),
+      0 0 0 4px var(--text-primary);
   }
   .color-swatch.swatch-active::after {
-    content: '✓';
+    content: "✓";
     position: absolute;
     inset: 0;
     display: flex;
@@ -1058,7 +1186,12 @@ const typeConfig: Record<
     text-decoration: none;
     color: var(--text-secondary);
     font-size: 16px;
-    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
+    transition:
+      background 200ms,
+      color 200ms,
+      border-color 200ms,
+      opacity 200ms,
+      transform 200ms;
     border-right: 1px solid var(--border);
   }
   .view-btn:last-child {
@@ -1186,7 +1319,12 @@ const typeConfig: Record<
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
+    transition:
+      background 200ms,
+      color 200ms,
+      border-color 200ms,
+      opacity 200ms,
+      transform 200ms;
     white-space: nowrap;
   }
   .filter-toolbar__type-btn:hover {
@@ -1232,7 +1370,12 @@ const typeConfig: Record<
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
+    transition:
+      background 200ms,
+      color 200ms,
+      border-color 200ms,
+      opacity 200ms,
+      transform 200ms;
     white-space: nowrap;
   }
   .filter-toolbar__user-btn:hover {
@@ -1266,7 +1409,9 @@ const typeConfig: Record<
     color: var(--danger);
     border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -1286,9 +1431,15 @@ const typeConfig: Record<
     display: inline-block;
     flex-shrink: 0;
   }
-  .type-dot-epic { background: var(--type-epic); }
-  .type-dot-story { background: var(--type-story); }
-  .type-dot-task { background: var(--type-task); }
+  .type-dot-epic {
+    background: var(--type-epic);
+  }
+  .type-dot-story {
+    background: var(--type-story);
+  }
+  .type-dot-task {
+    background: var(--type-task);
+  }
   .type-group-btn.active {
     background: var(--accent-light);
     border-color: var(--accent);
@@ -1308,9 +1459,21 @@ const typeConfig: Record<
     flex-shrink: 0;
     line-height: 1;
   }
-  .type-badge-epic { background: color-mix(in srgb, var(--type-epic) 12%, transparent); color: var(--type-epic); border-color: color-mix(in srgb, var(--type-epic) 25%, transparent); }
-  .type-badge-story { background: color-mix(in srgb, var(--type-story) 12%, transparent); color: var(--type-story); border-color: color-mix(in srgb, var(--type-story) 25%, transparent); }
-  .type-badge-task { background: color-mix(in srgb, var(--type-task) 12%, transparent); color: var(--type-task); border-color: color-mix(in srgb, var(--type-task) 25%, transparent); }
+  .type-badge-epic {
+    background: color-mix(in srgb, var(--type-epic) 12%, transparent);
+    color: var(--type-epic);
+    border-color: color-mix(in srgb, var(--type-epic) 25%, transparent);
+  }
+  .type-badge-story {
+    background: color-mix(in srgb, var(--type-story) 12%, transparent);
+    color: var(--type-story);
+    border-color: color-mix(in srgb, var(--type-story) 25%, transparent);
+  }
+  .type-badge-task {
+    background: color-mix(in srgb, var(--type-task) 12%, transparent);
+    color: var(--type-task);
+    border-color: color-mix(in srgb, var(--type-task) 25%, transparent);
+  }
 
   /* Hide actions visually to prevent overlapping with content */
   .kanban-quick-actions[aria-hidden="true"] {
