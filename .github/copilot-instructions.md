@@ -38,5 +38,6 @@ Refer to `AGENTS.md` and the inline docs for full conventions. Key points:
 ## Verification Requirements
 
 - For ingress, HA API/WebSocket, Supervisor, addon lifecycle, or sync changes, use Tier 2 before claiming verification
-- Start Tier 2 by reopening the checked-in `.devcontainer/devcontainer.json` in Antigravity or VS Code and running `Start Home Assistant`, or headlessly with `./scripts/devcontainer-up.sh status || ./scripts/devcontainer-up.sh up`
+- Start Tier 2 by reopening the checked-in `.devcontainer/devcontainer.json` in Antigravity or VS Code and running `Start Home Assistant`
+- Use `./scripts/devcontainer-up.sh` for status, recovery, and logs around that devcontainer environment
 - Do not claim HA integration verification from Tier 1 alone

@@ -36,13 +36,12 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     title={t("settings.data_title", locale)}
     subtitle={t("settings.data_subtitle", locale)}
   >
-    <SettingsCallout title="Use this for backup and recovery" icon="🗂">
-      Export tasks or settings before major changes, and keep a local copy if
-      you want fast recovery outside Home Assistant.
+    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="🗂">
+      {t("settings.callout_data_desc", locale)}
     </SettingsCallout>
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" style="margin-bottom: 8px;"
-        >Export Tasks</label
+        >{t("settings.export_tasks", locale)}</label
       >
       <SettingsActionRow>
         <a
@@ -50,7 +49,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           class="btn btn-primary"
           id="export-json-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >📥 Download JSON</a
+          >{t("settings.download_json", locale)}</a
         >
         <a
           href="/api/export/tasks.csv"
@@ -58,20 +57,19 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           class="btn btn-secondary"
           id="export-csv-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >📊 Download CSV</a
+          >{t("settings.download_csv", locale)}</a
         >
         <button
           type="button"
           class="btn btn-secondary"
           id="export-db-btn"
-          style="flex: 1; text-align: center;">🗄️ Raw DB</button
+          style="flex: 1; text-align: center;">{t("settings.raw_db", locale)}</button
         >
       </SettingsActionRow>
       <small
         style="color: var(--text-muted); font-size: 11px; display: block; margin-top: 6px;"
       >
-        Export your tasks to JSON/CSV, or download the entire raw SQLite
-        database file for full local-first data sovereignty.
+        {t("settings.export_hint", locale)}
       </small>
     </div>
 
@@ -80,7 +78,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
       style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;"
     >
       <label class="form-label" style="margin-bottom: 8px;"
-        >Settings Configuration</label
+        >{t("settings.settings_config", locale)}</label
       >
       <SettingsActionRow>
         <a
@@ -89,13 +87,13 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           class="btn btn-secondary"
           id="export-settings-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >⚙️ Export Config</a
+          >{t("settings.export_config", locale)}</a
         >
         <label
           class="btn btn-secondary"
           style="flex: 1; text-align: center; cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center;"
         >
-          🔄 Import Config
+          {t("settings.import_config", locale)}
           <input
             type="file"
             id="import-settings-input"
@@ -107,44 +105,27 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
       <small
         style="color: var(--text-muted); font-size: 11px; display: block; margin-top: 6px;"
       >
-        Backup or restore your tokens, shortcuts, UI layouts, and active
-        integrations. Restoring will trigger a page reload.
+        {t("settings.config_hint", locale)}
       </small>
     </div>
   </SettingsPanelCard>
 
   <!-- About -->
   <SettingsPanelCard
-    title="App Readiness & Companion"
-    subtitle="Installability, offline health, browser handoff, and Home Assistant companion reopening."
+    title={t("settings.app_readiness_title", locale)}
+    subtitle={t("settings.app_readiness_subtitle", locale)}
     tone="accent"
   >
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsCallout title="Recommended path" icon="📲" tone="info">
-        Install from a standalone browser tab when you want the full PWA prompt.
-        Use Companion and x-callback links when you need to reopen the same section
-        inside the Home Assistant app, Siri Shortcuts, or automations.
+      <SettingsCallout title={t("settings.app_readiness_callout_title", locale)} icon="📲" tone="info">
+        {t("settings.app_readiness_callout_desc", locale)}
       </SettingsCallout>
-      <p>
-        <a
-          href="https://en.wiktionary.org/wiki/meitheal"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px;"
-          >Meitheal</a
-        >
-        (IPA: /ˈmɛhəl/) — from Irish: a cooperative work party where neighbours
-        come together to help with farming, harvesting, or building. The tradition
-        reflects a core principle: <em>work shared is work halved</em>.
-      </p>
-      <p>
-        A Home Assistant-native, Astro-first task and life management engine —
-        built for people who think in systems.
-      </p>
+      <p set:html={t("settings.pwa_about_p1", locale)}></p>
+      <p>{t("settings.pwa_about_p2", locale)}</p>
       <p style="margin-top: 8px;">
-        Version: <code>{version}</code>
+        {t("settings.pwa_version", locale)} <code>{version}</code>
       </p>
       <div
         id="pwa-status-compact"
@@ -161,12 +142,17 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             aria-label="PWA status indicator"></span>
           <span
             style="font-size: 13px; color: var(--text-secondary);"
-            id="pwa-compact-label">PWA: Checking...</span
+            id="pwa-compact-label"
+            data-active-text={t("settings.pwa_active", locale)}
+            data-http-text={t("settings.pwa_req_https", locale)}
+            >{t("settings.pwa_checking", locale)}</span
           >
           <span
             class="badge badge-pending"
             id="pwa-compact-badge"
-            style="font-size: 11px;">Checking</span
+            data-active-text={t("settings.pwa_active_badge", locale)}
+            data-http-text={t("settings.pwa_req_https_badge", locale)}
+            style="font-size: 11px;">{t("settings.pwa_checking_badge", locale)}</span
           >
           <span
             id="pwa-compact-version"
@@ -176,30 +162,30 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             href="#"
             id="pwa-install-settings-btn"
             class="pwa-subtle-link"
-            style="display: none;">install</a
+            style="display: none;">{t("settings.pwa_install", locale)}</a
           >
           <a
             href="#"
             id="pwa-update-settings-btn"
             class="pwa-subtle-link"
-            style="display: none;">update available</a
+            style="display: none;">{t("settings.pwa_update_available", locale)}</a
           >
           <span
             id="pwa-installed-badge"
             class="badge badge-active"
-            style="font-size: 11px; display: none;">✓ Installed</span
+            style="font-size: 11px; display: none;">{t("settings.pwa_installed", locale)}</span
           >
           <span class="pwa-link-separator" aria-hidden="true">·</span>
           <a
             href="#"
             id="pwa-popout-btn"
             class="pwa-subtle-link"
-            title="Open in a standalone browser tab (required for install prompt)"
-            >open in browser ↗</a
+            title={t("settings.pwa_open_browser_title", locale)}
+            >{t("settings.pwa_open_browser", locale)}</a
           >
           <span class="pwa-link-separator" aria-hidden="true">·</span>
           <a href="#" id="pwa-uninstall-btn" class="pwa-subtle-link"
-            >uninstall</a
+            >{t("settings.pwa_uninstall", locale)}</a
           >
         </div>
         <!-- Uninstall instructions (hidden by default) -->
@@ -210,15 +196,9 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           <strong style="color: var(--text-secondary);"
             >How to uninstall:</strong
           ><br />
-          <strong>Chrome/Edge:</strong> Open the installed app → ⋮ menu → "Uninstall
-          Meitheal"<br />
-          <strong>Safari:</strong> Long-press the icon on your home screen → Remove<br
-          />
-          <strong>Firefox:</strong> Not applicable (does not support PWA install)<br
-          />
+          <p set:html={t("settings.pwa_uninstall_how", locale)}></p>
           <small style="margin-top: 4px; display: block;"
-            >Your data is safe — uninstalling the PWA only removes the
-            shortcut and cached shell.</small
+            >{t("settings.pwa_uninstall_safe", locale)}</small
           >
         </div>
         <details
@@ -228,17 +208,12 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           <summary
             style="font-size: 12px; color: var(--accent); cursor: pointer; list-style: none;"
           >
-            Why is PWA unavailable?
+            {t("settings.pwa_why_unavailable", locale)}
           </summary>
           <div
             style="margin-top: 6px; font-size: 12px; color: var(--text-muted); line-height: 1.6; padding: 8px 12px; background: var(--bg-secondary); border-radius: 8px;"
+            set:html={t("settings.pwa_why_unavailable_desc", locale)}
           >
-            PWA features (offline support, install prompt) require HTTPS.
-            Options:
-            <strong>Nabu Casa</strong> (automatic), <strong
-              >DuckDNS + Let's Encrypt</strong
-            > (free), or a <strong>reverse proxy</strong>. The app works fully
-            without HTTPS.
           </div>
         </details>
         <!-- PWA Troubleshooting -->
@@ -246,33 +221,32 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           <summary
             class="pwa-subtle-link"
             style="list-style: none; cursor: pointer; display: inline;"
-            >troubleshooting</summary
+            >{t("settings.pwa_troubleshooting", locale)}</summary
           >
           <div class="pwa-troubleshoot-panel">
             <p
               style="margin: 0 0 8px; font-size: 12px; color: var(--text-muted);"
             >
-              If the app is behaving unexpectedly, these self-help actions may
-              resolve it.
+              {t("settings.pwa_troubleshoot_desc", locale)}
             </p>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
               <button
                 type="button"
                 id="pwa-clear-cache-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >🗑 Clear Cache</button
+                >{t("settings.pwa_clear_cache", locale)}</button
               >
               <button
                 type="button"
                 id="pwa-force-update-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >🔄 Force SW Update</button
+                >{t("settings.pwa_force_update", locale)}</button
               >
               <button
                 type="button"
                 id="pwa-clear-offline-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >📴 Clear Offline Data</button
+                >{t("settings.pwa_clear_offline", locale)}</button
               >
             </div>
             <div
@@ -282,13 +256,13 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 type="button"
                 id="pwa-push-notif-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >🔔 Push Notifications</button
+                >{t("settings.pwa_push_notif", locale)}</button
               >
               <button
                 type="button"
                 id="pwa-reset-hints-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >🔁 Reset All Hints</button
+                >{t("settings.pwa_reset_hints", locale)}</button
               >
             </div>
             <div
@@ -304,11 +278,8 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           data-companion-xcallback="app-pwa-settings"
         >
           <div class="settings-companion-card__copy">
-            <strong>Open this section in Home Assistant Companion</strong>
-            <p>
-              Use the documented <code>homeassistant://navigate</code> URL
-              handler to jump straight back into this section, or copy an
-              x-callback URL for iOS Shortcuts and automation flows.
+            <strong>{t("settings.pwa_companion_title", locale)}</strong>
+            <p set:html={t("settings.pwa_companion_desc", locale)}>
             </p>
           </div>
           <div class="settings-companion-card__actions">
@@ -316,20 +287,20 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
               href="#"
               class="btn btn-primary"
               data-companion-link="app-pwa-settings"
-              >Open in Companion</a
+              >{t("settings.pwa_companion_open", locale)}</a
             >
             <button
               type="button"
               class="btn btn-secondary"
               data-companion-xcallback-button
             >
-              Copy x-callback URL
+              {t("settings.pwa_companion_copy_url", locale)}
             </button>
             <a
               href="#app-pwa-settings"
               class="btn btn-ghost"
               data-settings-section-link
-              >Stay here</a
+              >{t("settings.pwa_companion_stay", locale)}</a
             >
           </div>
           <code
@@ -337,9 +308,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             data-companion-xcallback-preview
           ></code>
           <small class="settings-companion-card__hint">
-            Use these companion links in the mobile app, Siri Shortcuts, or
-            HA automation payloads without leaving ingress-safe Settings
-            routes.
+            {t("settings.pwa_companion_hint", locale)}
           </small>
         </div>
       </div>
@@ -353,7 +322,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >🐛 Report an Issue</a
+        >{t("settings.pwa_report_issue", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal/discussions"
@@ -361,7 +330,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >💬 Discussions</a
+        >{t("settings.pwa_discussions", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal"
@@ -369,7 +338,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >⭐ Star on GitHub</a
+        >{t("settings.pwa_star_github", locale)}</a
       >
     </SettingsActionRow>
   </SettingsPanelCard>
@@ -494,9 +463,11 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 
     if (isSecure && hasSW) {
       dot.className = "pwa-compact-dot pwa-compact-dot--active";
-      label.textContent = "PWA: Active";
-      badge.textContent = "Active";
-      badge.className = "badge badge-active";
+      if (label && label.dataset.activeText) label.textContent = label.dataset.activeText;
+      if (badge && badge.dataset.activeText) {
+        badge.textContent = badge.dataset.activeText;
+        badge.className = "badge badge-active";
+      }
       badge.style.fontSize = "11px";
 
       // Query SW version
@@ -523,9 +494,11 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
       });
     } else {
       dot.className = "pwa-compact-dot pwa-compact-dot--unavailable";
-      label.textContent = "PWA: Requires HTTPS";
-      badge.textContent = "HTTP only";
-      badge.className = "badge badge-pending";
+      if (label && label.dataset.httpText) label.textContent = label.dataset.httpText;
+      if (badge && badge.dataset.httpText) {
+        badge.textContent = badge.dataset.httpText;
+        badge.className = "badge badge-pending";
+      }
       badge.style.fontSize = "11px";
       if (details) details.style.display = "block";
     }

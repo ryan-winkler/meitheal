@@ -28,10 +28,8 @@ const { locale } = Astro.props
       </div>
     </div>
 
-    <SettingsCallout title="Recommended setup order" icon="🔌">
-      Connect Home Assistant first so Meitheal can discover entities and choose the
-      right defaults automatically. Then enable calendars or todo lists, and finish
-      with outgoing automations like n8n or webhooks.
+    <SettingsCallout title={t("settings.integrations_recommended_title", locale)} icon="🔌">
+      {t("settings.integrations_recommended_desc", locale)}
     </SettingsCallout>
 
     <IntegrationHA />

@@ -846,6 +846,11 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE task_templates ADD COLUMN completion_history TEXT NOT NULL DEFAULT '[]'")
   }
 
+  // Schema migration: rename 'name' to 'title' in areas table if it exists (Board -> Area migration gap)
+  if (await hasColumn(client, "areas", "name")) {
+    await client.execute("ALTER TABLE areas RENAME COLUMN name TO title");
+  }
+
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0

@@ -310,7 +310,7 @@ const typeConfig: Record<
                       data-task-type={type}
                       aria-label={`Add ${type} to ${col.label}`}
                     >
-                      + {t("kanban.add_task", locale)}
+                      {t("kanban.add_task", locale)}
                     </button>
                   </div>
                 );
@@ -632,7 +632,7 @@ const typeConfig: Record<
               data-status={col.key}
               aria-label={`Add task to ${col.label}`}
             >
-              + {t("kanban.add_task", locale)}
+              {t("kanban.add_task", locale)}
             </button>
           </div>
         );

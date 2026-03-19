@@ -48,11 +48,15 @@ Per the [official HA app testing guide](https://developers.home-assistant.io/doc
 
 ### Terminal-first alternative
 
-If you are not using an editor-managed container, start the same stack with:
+If you need to inspect or recover the supporting HA services from a terminal,
+use:
 
 ```bash
 ./scripts/devcontainer-up.sh up
 ```
+
+Use the checked-in devcontainer in Antigravity or VS Code for repo-mounted Tier
+2 verification.
 
 ### What This Gives You
 

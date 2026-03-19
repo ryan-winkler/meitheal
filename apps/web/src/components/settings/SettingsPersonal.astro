@@ -28,34 +28,33 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     title={t("settings.language_title", locale)}
     subtitle={t("settings.language_subtitle", locale)}
   >
-    <SettingsCallout title="Most-used personal controls" icon="🎨">
-      Adjust language, theme, accent color, timezone, and date defaults here.
-      Changes apply across Meitheal immediately.
+    <SettingsCallout title={t("settings.callout_personal_title", locale)} icon="🎨">
+      {t("settings.callout_personal_desc", locale)}
     </SettingsCallout>
     <div class="form-group" style="margin-top: 12px;">
-      <label class="form-label" for="locale-select">Display Language</label>
+      <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
       <select
         class="form-select"
         id="locale-select"
         style="max-width: 240px;"
       >
-        <option value="en">English</option>
-        <option value="ga">Gaeilge</option>
+        <option value="en">{t("settings.language_en", locale)}</option>
+        <option value="ga">{t("settings.language_ga", locale)}</option>
       </select>
     </div>
     <div class="form-group" style="margin-top: 12px;">
-      <label class="form-label" for="theme-select">🎨 Theme</label>
+      <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
       <select class="form-select" id="theme-select" style="max-width: 240px;">
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-        <option value="auto">Auto (System)</option>
-        <option value="custom">Custom</option>
+        <option value="dark">{t("settings.theme_dark", locale)}</option>
+        <option value="light">{t("settings.theme_light", locale)}</option>
+        <option value="auto">{t("settings.theme_auto", locale)}</option>
+        <option value="custom">{t("settings.theme_custom", locale)}</option>
       </select>
     </div>
 
     <!-- Accent Color -->
     <div class="form-group" style="margin-top: 12px;">
-      <label class="form-label">🎨 Accent Color</label>
+      <label class="form-label">{t("settings.accent_title", locale)}</label>
       <div
         style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"
       >
@@ -63,60 +62,60 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           type="button"
           class="accent-swatch"
           data-color="#6366F1"
-          title="Indigo (Default)"
+          title={t("settings.accent_indigo", locale)}
           style="background: #6366F1;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#14b8a6"
-          title="Teal"
+          title={t("settings.accent_teal", locale)}
           style="background: #14b8a6;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#3b82f6"
-          title="Blue"
+          title={t("settings.accent_blue", locale)}
           style="background: #3b82f6;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#8b5cf6"
-          title="Violet"
+          title={t("settings.accent_violet", locale)}
           style="background: #8b5cf6;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#ec4899"
-          title="Pink"
+          title={t("settings.accent_pink", locale)}
           style="background: #ec4899;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#f59e0b"
-          title="Amber"
+          title={t("settings.accent_amber", locale)}
           style="background: #f59e0b;"></button>
         <button
           type="button"
           class="accent-swatch"
           data-color="#ef4444"
-          title="Red"
+          title={t("settings.accent_red", locale)}
           style="background: #ef4444;"></button>
         <input
           type="color"
           id="accent-color-custom"
-          title="Custom color"
+          title={t("settings.accent_custom", locale)}
           style="width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; padding: 0; cursor: pointer; background: transparent;"
         />
         <button
           type="button"
           id="accent-reset"
           class="btn btn-ghost"
-          style="font-size: 11px; padding: 4px 8px;">Reset</button
+          style="font-size: 11px; padding: 4px 8px;">{t("settings.accent_reset", locale)}</button
         >
       </div>
       <small
         style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;"
-        >Changes apply immediately across all pages.</small
+        >{t("settings.accent_hint", locale)}</small
       >
     </div>
     <div
@@ -132,7 +131,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           class="btn btn-secondary"
           style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
         >
-          🎨 Import CSS Theme
+          {t("settings.theme_import", locale)}
           <input
             type="file"
             id="custom-theme-input"
@@ -141,7 +140,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           />
         </label>
         <small style="color: var(--text-muted); font-size: 11px;"
-          >Max 50KB · .css only · 1 theme</small
+          >{t("settings.theme_import_hint", locale)}</small
         >
       </div>
       <div
@@ -159,13 +158,13 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           id="custom-theme-delete"
           class="btn-icon"
           style="color: var(--danger); font-size: 14px; padding: 2px 6px;"
-          title="Remove custom theme"
-          aria-label="Remove custom theme">×</button
+          title={t("settings.theme_remove", locale)}
+          aria-label={t("settings.theme_remove", locale)}>×</button
         >
       </div>
     </div>
     <div class="form-group" style="margin-top: 12px;">
-      <label class="form-label" for="timezone-select">Timezone</label>
+      <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
       <select
         class="form-select"
         id="timezone-select"
@@ -186,30 +185,30 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
       </select>
     </div>
     <div class="form-group" style="margin-top: 12px;">
-      <label class="form-label" for="week-start-select">Week Starts On</label>
+      <label class="form-label" for="week-start-select">{t("settings.week_start_title", locale)}</label>
       <select
         class="form-select"
         id="week-start-select"
         style="max-width: 240px;"
       >
-        <option value="monday">Monday</option>
-        <option value="sunday">Sunday</option>
-        <option value="saturday">Saturday</option>
+        <option value="monday">{t("settings.week_start_monday", locale)}</option>
+        <option value="sunday">{t("settings.week_start_sunday", locale)}</option>
+        <option value="saturday">{t("settings.week_start_saturday", locale)}</option>
       </select>
     </div>
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" for="date-format-select"
-        >Date Display Format</label
+        >{t("settings.date_format_title", locale)}</label
       >
       <select
         class="form-select"
         id="date-format-select"
         style="max-width: 300px;"
       >
-        <option value="relative">Relative (e.g. "2 days ago")</option>
-        <option value="absolute-iso">Absolute ISO (2026-03-01)</option>
-        <option value="absolute-eu">Absolute EU (01/03/2026)</option>
-        <option value="absolute-us">Absolute US (03/01/2026)</option>
+        <option value="relative">{t("settings.date_format_relative", locale)}</option>
+        <option value="absolute-iso">{t("settings.date_format_absolute_iso", locale)}</option>
+        <option value="absolute-eu">{t("settings.date_format_absolute_eu", locale)}</option>
+        <option value="absolute-us">{t("settings.date_format_absolute_us", locale)}</option>
       </select>
     </div>
   </SettingsPanelCard>
@@ -219,9 +218,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     title={t("settings.shortcuts_title", locale)}
     subtitle={t("settings.shortcuts_subtitle", locale)}
   >
-    <SettingsCallout title="Fastest daily moves" icon="⌨">
-      These shortcuts work best when you want to stay in flow instead of opening
-      extra navigation or modals.
+    <SettingsCallout title={t("settings.callout_shortcuts_title", locale)} icon="⌨">
+      {t("settings.callout_shortcuts_desc", locale)}
     </SettingsCallout>
     <div class="shortcut-grid" style="margin-top: 14px;">
       <div class="shortcut-row">
@@ -231,10 +229,10 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <kbd>/</kbd><span>{t("settings.shortcut_search", locale)}</span>
       </div>
       <div class="shortcut-row">
-        <kbd>Ctrl</kbd> + <kbd>B</kbd><span>Toggle sidebar</span>
+        <kbd>Ctrl</kbd> + <kbd>B</kbd><span>{t("settings.shortcut_toggle_sidebar", locale)}</span>
       </div>
       <div class="shortcut-row">
-        <kbd>Ctrl</kbd> + <kbd>K</kbd><span>Command palette</span>
+        <kbd>Ctrl</kbd> + <kbd>K</kbd><span>{t("settings.shortcut_cmd_palette", locale)}</span>
       </div>
       <div class="shortcut-row">
         <kbd>l</kbd><span>{t("settings.shortcut_list", locale)}</span>
@@ -261,58 +259,37 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <kbd>?</kbd><span>{t("settings.shortcut_help", locale)}</span>
       </div>
       <div class="shortcut-row">
-        <kbd>Home</kbd><span>Scroll to top (Settings)</span>
+        <kbd>Home</kbd><span>{t("settings.shortcut_scroll_top", locale)}</span>
       </div>
     </div>
   </SettingsPanelCard>
 
   <!-- Help & Support -->
   <SettingsPanelCard
-    title="Help & Support"
-    subtitle="Documentation, guides, and community resources."
+    title={t("settings.help_support_title", locale)}
+    subtitle={t("settings.help_support_subtitle", locale)}
   >
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsDisclosure title="📖 Getting Started" open={true}>
-          <p style="margin: 0 0 8px 0;">
-            <strong>Meitheal</strong> is a local-first task and life management
-            engine built for Home Assistant. Your data lives on your device. No
-            cloud required.
-          </p>
+      <SettingsDisclosure title={t("settings.help_getting_started", locale)} open={true}>
+          <p style="margin: 0 0 8px 0;" set:html={t("settings.help_started_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
-            <li>
-              Create tasks with <kbd
-                style="font-size: 11px; padding: 1px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px;"
-                >n</kbd
-              > or the + button
-            </li>
-            <li>Switch views: Kanban, Table, Calendar, Today, Upcoming</li>
-            <li>Drag and drop to reorder, prioritize, and schedule</li>
-            <li>
-              Configure integrations (Calendar, Todo, Grocy) in the
-              Integrations tab
-            </li>
-            <li>All data is exportable as JSON, CSV, or raw SQLite</li>
+            <li set:html={t("settings.help_started_li1", locale)}></li>
+            <li set:html={t("settings.help_started_li2", locale)}></li>
+            <li set:html={t("settings.help_started_li3", locale)}></li>
+            <li set:html={t("settings.help_started_li4", locale)}></li>
+            <li set:html={t("settings.help_started_li5", locale)}></li>
           </ul>
       </SettingsDisclosure>
-      <SettingsDisclosure title="🏗️ Architecture">
-          <p style="margin: 0 0 8px 0;">Meitheal is built with:</p>
+      <SettingsDisclosure title={t("settings.help_architecture", locale)}>
+          <p style="margin: 0 0 8px 0;" set:html={t("settings.help_arch_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
-            <li><strong>Astro</strong> for SSR and static generation</li>
-            <li>
-              <strong>SQLite</strong> (better-sqlite3) for local-first persistence
-            </li>
-            <li>
-              <strong>Home Assistant WebSocket API</strong> for calendar and todo
-              sync
-            </li>
-            <li>
-              <strong>Service Worker</strong> for offline caching (requires HTTPS)
-            </li>
-            <li>
-              <strong>Domain-Driven Design</strong> with bounded contexts per feature
-            </li>
+            <li set:html={t("settings.help_arch_li1", locale)}></li>
+            <li set:html={t("settings.help_arch_li2", locale)}></li>
+            <li set:html={t("settings.help_arch_li3", locale)}></li>
+            <li set:html={t("settings.help_arch_li4", locale)}></li>
+            <li set:html={t("settings.help_arch_li5", locale)}></li>
           </ul>
       </SettingsDisclosure>
     </div>
@@ -325,7 +302,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >📄 Full README</a
+        >{t("settings.help_readme", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal/wiki"
@@ -333,7 +310,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >📚 Wiki</a
+        >{t("settings.help_wiki", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal/blob/main/CHANGELOG.md"
@@ -341,7 +318,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         rel="noopener noreferrer"
         class="btn btn-secondary"
         style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-        >📋 Changelog</a
+        >{t("settings.help_changelog", locale)}</a
       >
     </SettingsActionRow>
   </SettingsPanelCard>

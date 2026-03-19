@@ -4,6 +4,8 @@
 
 	// List of extensions which should be recommended for users of this workspace.
 	"recommendations": [
+		"ms-vscode-remote.remote-containers",
+		"astro-build.astro-vscode",
 		"golang.go",
 		"formulahendry.docker-explorer"
 

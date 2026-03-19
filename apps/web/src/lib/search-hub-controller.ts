@@ -353,7 +353,11 @@ pageLifecycle.onPageLoad(() => {
       renderSections([...staticSections, ...response.sections])
     } catch {
       resultsEl.innerHTML = ""
-      resultsEl.appendChild(createEmptyState("Search is unavailable right now"))
+      if (!query) {
+        resultsEl.appendChild(createEmptyState("Start typing to search..."))
+      } else {
+        resultsEl.appendChild(createEmptyState("Search is unavailable right now"))
+      }
     }
   }
 

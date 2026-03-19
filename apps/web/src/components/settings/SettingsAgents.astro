@@ -22,10 +22,9 @@ const { locale } = Astro.props;
     <div class="card" style="grid-column: 1 / -1;">
       <div class="card-header">
         <div>
-          <div class="card-title">Agents & AI</div>
+          <div class="card-title">{t("settings.agents_title", locale)}</div>
           <div class="card-subtitle">
-            Configure Home Assistant conversation agents, external AI providers,
-            and agent-to-agent protocols.
+            {t("settings.agents_subtitle", locale)}
           </div>
         </div>
       </div>
@@ -34,29 +33,25 @@ const { locale } = Astro.props;
       <div class="integration-section">
         <div class="integration-header">
           <div>
-            <strong>🏠 HA Conversation Agent</strong>
+            <strong>{t("settings.ha_agent_title", locale)}</strong>
             <div class="integration-desc">
-              Select which Home Assistant conversation agent powers the "Ask
-              Assistant" chat (✦ button). This connects to HA's built-in Assist
-              pipeline or any configured LLM agent (Google AI, OpenAI, Ollama).
+              {t("settings.ha_agent_desc", locale)}
             </div>
           </div>
-          <span class="badge badge-active" id="ha-agent-status">Default</span>
+          <span class="badge badge-active" id="ha-agent-status">{t("settings.default", locale)}</span>
         </div>
         <div class="integration-config">
           <div class="form-group">
             <label class="form-label" for="ha-agent-select-settings"
-              >Conversation Agent</label
+              >{t("settings.ha_agent_label", locale)}</label
             >
-            <select class="form-select" id="ha-agent-select-settings">
-              <option value="" selected>Default (built-in Assist)</option>
+            <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)}>
+              <option value="" selected>{t("settings.ha_agent_default", locale)}</option>
             </select>
             <small
               style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;"
             >
-              Agents are registered in HA → Settings → Voice Assistants. Add
-              Google Generative AI, OpenAI, or Ollama integrations to see more
-              options here.
+              {t("settings.ha_agent_help", locale)}
             </small>
           </div>
           <div
@@ -67,14 +62,17 @@ const { locale } = Astro.props;
               type="button"
               class="btn btn-primary"
               id="save-ha-agent"
-              style="font-size: 13px;">Save Agent Setting</button
-            >
+              style="font-size: 13px;"
+              data-text-saved={t("settings.agent_setting_saved", locale)}
+              data-text-failed={t("settings.agent_setting_failed", locale)}>{t("settings.save_ha_agent", locale)}</button>
             <button
               type="button"
               class="btn btn-ghost"
               id="test-ha-agent"
-              style="font-size: 13px;">Test</button
-            >
+              style="font-size: 13px;"
+              data-text-testing={t("settings.testing", locale)}
+              data-text-unavailable={t("settings.agent_unavailable", locale)}
+              data-text-failed={t("settings.connection_failed", locale)}>{t("settings.test", locale)}</button>
             <span
               id="ha-agent-test-result"
               style="font-size: 12px; color: var(--text-muted);"></span>
@@ -88,25 +86,30 @@ const { locale } = Astro.props;
       <div class="integration-section">
         <div class="integration-header">
           <div>
-            <strong>🤖 External AI Provider</strong>
+            <strong>{t("settings.ext_ai_title", locale)}</strong>
             <div class="integration-desc">
-              Configure which external AI service the "Ask AI" button sends
-              tasks to (separate from HA Assist). Generates a pre-filled prompt
-              with task context for analysis.
+              {t("settings.ext_ai_desc", locale)}
             </div>
           </div>
           <span class="badge badge-active" id="ext-ai-badge">ChatGPT</span>
         </div>
         <div class="integration-config">
           <div class="form-group">
-            <label class="form-label" for="ai-provider">Provider</label>
-            <select class="form-select" id="ai-provider">
-              <option value="chatgpt" selected>ChatGPT</option>
-              <option value="claude">Claude</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="ollama">Ollama (local)</option>
-              <option value="ha_llm">Home Assistant (LLM)</option>
-              <option value="custom">Custom URL</option>
+            <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
+            <select class="form-select" id="ai-provider"
+              data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
+              data-name-claude={t("settings.ext_ai_claude", locale)}
+              data-name-gemini={t("settings.ext_ai_gemini", locale)}
+              data-name-ollama={t("settings.ext_ai_ollama", locale)}
+              data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
+              data-name-custom={t("settings.ext_ai_custom", locale)}
+            >
+              <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
+              <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
+              <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
+              <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
+              <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
+              <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
             </select>
           </div>
           <div
@@ -114,7 +117,7 @@ const { locale } = Astro.props;
             id="ai-custom-url-group"
             style="display: none;"
           >
-            <label class="form-label" for="ai-custom-url">Custom API URL</label>
+            <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
             <input
               type="url"
               class="form-input"
@@ -126,8 +129,7 @@ const { locale } = Astro.props;
             type="button"
             class="btn btn-primary"
             id="save-ai"
-            style="font-size: 13px;">Save AI Settings</button
-          >
+            style="font-size: 13px;">{t("settings.save_ai_settings", locale)}</button>
         </div>
       </div>
 
@@ -137,15 +139,13 @@ const { locale } = Astro.props;
       <div class="integration-section">
         <div class="integration-header">
           <div>
-            <strong>🔗 Agent Protocols</strong>
+            <strong>{t("settings.agent_protocols_title", locale)}</strong>
             <div class="integration-desc">
-              Expose Meitheal tools to AI agents via A2A, WebMCP, and MCP
-              protocols. Enable agent-to-agent collaboration, browser agent
-              tools, and tool discovery.
+              {t("settings.agent_protocols_desc", locale)}
             </div>
           </div>
           <span class="badge badge-active" id="agent-protocols-status"
-            >Active</span
+            >{t("settings.active", locale)}</span
           >
         </div>
         <div class="integration-config">
@@ -162,20 +162,18 @@ const { locale } = Astro.props;
                 <span class="toggle-slider"></span>
               </label>
               <div>
-                <strong style="font-size: 14px;">A2A (Agent-to-Agent)</strong>
+                <strong style="font-size: 14px;">{t("settings.a2a_title", locale)}</strong>
                 <div
                   style="color: var(--text-muted); font-size: 12px; margin-top: 2px;"
                 >
-                  Serve an Agent Card at <code
-                    >/.well-known/agent.json</code
-                  > so other AI agents can discover and delegate tasks to Meitheal.
+                  <span set:html={t("settings.a2a_desc", locale)} />
                   <a
                     href="/api/a2a/agent-card"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="protocol-link"
                     data-path="/api/a2a/agent-card"
-                    style="color: var(--accent);">View Agent Card →</a
+                    style="color: var(--accent);">{t("settings.view_agent_card", locale)}</a
                   >
                 </div>
               </div>
@@ -195,17 +193,15 @@ const { locale } = Astro.props;
                 <span class="toggle-slider"></span>
               </label>
               <div>
-                <strong style="font-size: 14px;">WebMCP (Browser Agent)</strong>
+                <strong style="font-size: 14px;">{t("settings.webmcp_title", locale)}</strong>
                 <span
                   style="font-size: 10px; padding: 2px 6px; background: var(--accent); color: #fff; border-radius: 4px; margin-left: 6px; vertical-align: middle;"
-                  >Experimental</span
+                  >{t("settings.experimental", locale)}</span
                 >
                 <div
                   style="color: var(--text-muted); font-size: 12px; margin-top: 2px;"
                 >
-                  Register Meitheal tools with your browser's AI assistant
-                  (Chrome EPP). Allows browser agents to create tasks, search,
-                  and navigate boards.
+                  {t("settings.webmcp_desc", locale)}
                 </div>
               </div>
             </div>
@@ -221,19 +217,18 @@ const { locale } = Astro.props;
                 <span class="toggle-slider"></span>
               </label>
               <div>
-                <strong style="font-size: 14px;">MCP Discovery</strong>
+                <strong style="font-size: 14px;">{t("settings.mcp_discovery_title", locale)}</strong>
                 <div
                   style="color: var(--text-muted); font-size: 12px; margin-top: 2px;"
                 >
-                  Serve tool definitions at <code>/.well-known/mcp.json</code> for
-                  MCP-compatible clients.
+                  <span set:html={t("settings.mcp_discovery_desc", locale)} />
                   <a
                     href="/.well-known/mcp.json"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="protocol-link"
                     data-path="/.well-known/mcp.json"
-                    style="color: var(--accent);">View MCP manifest →</a
+                    style="color: var(--accent);">{t("settings.view_mcp_manifest", locale)}</a
                   >
                 </div>
               </div>
@@ -243,7 +238,7 @@ const { locale } = Astro.props;
           <button
             class="btn btn-primary"
             id="save-agent-protocols"
-            style="font-size: 13px;">Save Agent Protocol Settings</button
+            style="font-size: 13px;">{t("settings.save_protocol_settings", locale)}</button
           >
         </div>
       </div>
@@ -256,10 +251,9 @@ const { locale } = Astro.props;
     <div class="card" style="grid-column: 1 / -1;">
       <div class="card-header">
         <div>
-          <div class="card-title">🤝 Bot Handoff</div>
+          <div class="card-title">{t("settings.bot_handoff_title", locale)}</div>
           <div class="card-subtitle">
-            Control how AI agents propose changes to your tasks.
-            Bots use a claim → propose → accept/reject workflow.
+            {t("settings.bot_handoff_subtitle", locale)}
           </div>
         </div>
       </div>
@@ -272,10 +266,9 @@ const { locale } = Astro.props;
             <span class="toggle-slider"></span>
           </label>
           <div>
-            <strong style="font-size: 14px;">Allow Bot Proposals</strong>
+            <strong style="font-size: 14px;">{t("settings.bot_allow_proposals", locale)}</strong>
             <div style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
-              When enabled, AI agents (HA Assist, MCP, n8n) can claim tasks and submit
-              proposals for your review before changes are applied.
+              {t("settings.bot_allow_proposals_desc", locale)}
             </div>
           </div>
         </div>
@@ -287,17 +280,16 @@ const { locale } = Astro.props;
             <span class="toggle-slider"></span>
           </label>
           <div>
-            <strong style="font-size: 14px;">Auto-Accept Safe Changes</strong>
+            <strong style="font-size: 14px;">{t("settings.bot_auto_accept", locale)}</strong>
             <div style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
-              Automatically accept proposals that only change status (e.g. pending → active)
-              or add labels. Title, description, and priority changes always require manual review.
+              {t("settings.bot_auto_accept_desc", locale)}
             </div>
           </div>
         </div>
 
         <!-- Lock timeout -->
         <div class="form-group" style="padding-top: 12px;">
-          <label class="form-label" for="bot-lock-timeout">Lock Timeout (minutes)</label>
+          <label class="form-label" for="bot-lock-timeout">{t("settings.bot_lock_timeout", locale)}</label>
           <div style="display: flex; align-items: center; gap: 12px;">
             <input
               type="number"
@@ -309,8 +301,7 @@ const { locale } = Astro.props;
               style="width: 80px;"
             />
             <span style="color: var(--text-muted); font-size: 12px;">
-              How long a bot can hold a task lock before it auto-releases.
-              Shorter = less risk of stuck tasks. Default: 5 minutes.
+              {t("settings.bot_lock_timeout_desc", locale)}
             </span>
           </div>
         </div>
@@ -320,7 +311,11 @@ const { locale } = Astro.props;
           class="btn btn-primary"
           id="save-bot-settings"
           style="font-size: 13px; margin-top: 12px;"
-        >Save Bot Settings</button>
+          data-text-saved={t("settings.bot_settings_saved", locale)}
+          data-text-failed={t("settings.bot_settings_failed", locale)}
+        >
+          {t("settings.save_bot_settings", locale)}
+        </button>
       </div>
     </div>
   </div>
@@ -414,7 +409,7 @@ const { locale } = Astro.props;
   function updateAgentBadge() {
     if (haAgentStatus) {
       const selected = haAgentSelect.options[haAgentSelect.selectedIndex];
-      haAgentStatus.textContent = selected?.text || "Default";
+      haAgentStatus.textContent = selected?.text || haAgentSelect.dataset.default || "Default";
     }
   }
 
@@ -430,15 +425,15 @@ const { locale } = Astro.props;
           value: haAgentSelect.value,
         }),
       });
-      showToast("Agent setting saved.", "success");
+      showToast(saveHaAgentBtn?.dataset.textSaved || "Agent setting saved.", "success");
       updateAgentBadge();
     } catch {
-      showToast("Failed to save agent setting.", "error");
+      showToast(saveHaAgentBtn?.dataset.textFailed || "Failed to save agent setting.", "error");
     }
   });
 
   testHaAgentBtn?.addEventListener("click", async () => {
-    if (testResult) testResult.textContent = "Testing…";
+    if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textTesting || "Testing…";
     try {
       const body: Record<string, string> = { text: "Hello" };
       if (haAgentSelect.value) body.agent_id = haAgentSelect.value;
@@ -453,10 +448,10 @@ const { locale } = Astro.props;
         const data = await res.json();
         if (testResult) testResult.textContent = `✅ "${data.speech}"`;
       } else {
-        if (testResult) testResult.textContent = "❌ Agent unavailable";
+        if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textUnavailable || "❌ Agent unavailable";
       }
     } catch {
-      if (testResult) testResult.textContent = "❌ Connection failed";
+      if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textFailed || "❌ Connection failed";
     }
     // Auto-clear result after 5s (success or error)
     setTimeout(() => {
@@ -472,17 +467,16 @@ const { locale } = Astro.props;
   ) as HTMLSelectElement;
   const customUrlGroup = document.getElementById("ai-custom-url-group");
 
-  const AI_NAMES: Record<string, string> = {
-    chatgpt: "ChatGPT",
-    claude: "Claude",
-    gemini: "Gemini",
-    ollama: "Ollama",
-    ha_llm: "HA LLM",
-    custom: "Custom",
-  };
-
   function updateExtAiBadge() {
     if (extBadge && aiProvider) {
+      const AI_NAMES: Record<string, string> = {
+        chatgpt: aiProvider.dataset.nameChatgpt || "ChatGPT",
+        claude: aiProvider.dataset.nameClaude || "Claude",
+        gemini: aiProvider.dataset.nameGemini || "Gemini",
+        ollama: aiProvider.dataset.nameOllama || "Ollama",
+        ha_llm: aiProvider.dataset.nameHaLlm || "HA LLM",
+        custom: aiProvider.dataset.nameCustom || "Custom",
+      };
       extBadge.textContent = AI_NAMES[aiProvider.value] || aiProvider.value;
     }
   }
@@ -553,9 +547,9 @@ const { locale } = Astro.props;
           body: JSON.stringify(s),
         });
       }
-      showToast("Bot settings saved.", "success");
+      showToast(saveBotBtn?.dataset.textSaved || "Bot settings saved.", "success");
     } catch {
-      showToast("Failed to save bot settings.", "error");
+      showToast(saveBotBtn?.dataset.textFailed || "Failed to save bot settings.", "error");
     }
   });
 

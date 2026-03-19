@@ -153,7 +153,7 @@ const { class: className } = Astro.props
 
   function applyFieldVisibility() {
     const prefs = loadFieldPrefs()
-    const board = document.querySelector(".kanban-board")
+    const area = document.querySelector(".kanban-board")
     if (!area) return
 
     ALL_FIELDS.forEach(field => {

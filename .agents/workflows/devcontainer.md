@@ -10,8 +10,8 @@ Start, stop, or check the HA Supervisor devcontainer stack.
 
 This workflow supports both Antigravity and VS Code. The repo ships a checked-in
 [`/.devcontainer/devcontainer.json`](../../.devcontainer/devcontainer.json)
-configuration for editor-managed containers, and a headless
-`./scripts/devcontainer-up.sh` helper for terminal-first agents.
+configuration for editor-managed containers, plus a
+`./scripts/devcontainer-up.sh` helper for stack status, recovery, and logs.
 
 ## Editor-managed startup
 
@@ -26,10 +26,11 @@ Use this path when you want the repo mounted directly inside the container.
 supervisor_run
 ```
 
-## Headless startup
+## Stack management from a terminal
 
-Use this path for bots, terminal-only workflows, or when you only need the HA
-stack running.
+Use this path to inspect, recover, or tail the supporting HA stack. For full
+Tier 2 verification with the repo mounted inside the container, use the
+editor-managed startup above.
 
 ### Start the stack
 
@@ -64,10 +65,12 @@ Access points after startup:
 
 ## Agent preflight
 
-Before claiming Tier 2 verification, run:
+Before claiming Tier 2 verification, confirm the editor-managed devcontainer is
+running. Use the helper script to inspect or recover the supporting stack:
 
 ```bash
-./scripts/devcontainer-up.sh status || ./scripts/devcontainer-up.sh up
+./scripts/devcontainer-up.sh status
+./scripts/devcontainer-up.sh up
 ```
 
 ## When to use

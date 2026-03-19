@@ -25,20 +25,17 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
 
   <!-- Archiving & Data Retention -->
   <SettingsPanelCard
-    title="📦 Archiving & Data Retention"
-    subtitle="Remove completed tasks you no longer need"
+    title={t("settings.danger_archive_title", locale)}
+    subtitle={t("settings.danger_archive_subtitle", locale)}
     tone="default"
   >
-    <SettingsCallout title="What gets deleted?" icon="ℹ" tone="warning">
-      <strong>Complete</strong> = work is done, task stays visible.
-      <strong>Archived</strong> = complete task hidden from daily views.
-      This control permanently deletes both, based on when they were last
-      updated. Active and in-progress tasks are never touched.
+    <SettingsCallout title={t("settings.danger_archive_callout_title", locale)} icon="ℹ" tone="warning">
+      <span set:html={t("settings.danger_archive_callout_desc", locale)}></span>
     </SettingsCallout>
 
     <div class="retention-controls" style="margin-top: 16px;">
       <label for="retention-months-select" style="display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">
-        Delete completed tasks older than
+        {t("settings.danger_archive_label", locale)}
       </label>
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <select
@@ -46,18 +43,18 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           class="form-select"
           style="min-width: 160px;"
         >
-          <option value="" selected disabled>Choose period…</option>
-          <option value="3">3 months</option>
-          <option value="6">6 months</option>
-          <option value="12">12 months</option>
-          <option value="24">24 months</option>
+          <option value="" selected disabled>{t("settings.danger_archive_choose", locale)}</option>
+          <option value="3">{t("settings.danger_archive_months", locale, { count: "3" })}</option>
+          <option value="6">{t("settings.danger_archive_months", locale, { count: "6" })}</option>
+          <option value="12">{t("settings.danger_archive_months", locale, { count: "12" })}</option>
+          <option value="24">{t("settings.danger_archive_months", locale, { count: "24" })}</option>
         </select>
         <button
           class="btn"
           id="retention-preview-btn"
           disabled
           style="border-color: var(--warning); color: var(--warning);"
-        >🔍 Preview</button>
+        >{t("settings.danger_archive_preview", locale)}</button>
       </div>
 
       <div
@@ -77,7 +74,7 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
         disabled
         aria-describedby="retention-preview-result"
         style="border-color: var(--danger); color: var(--danger);"
-      >🗑 Delete Tasks</button>
+      >{t("settings.danger_archive_delete", locale)}</button>
     </SettingsActionRow>
   </SettingsPanelCard>
 
@@ -87,23 +84,21 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     subtitle={t("settings.danger_subtitle", locale)}
     tone="danger"
   >
-    <SettingsCallout title="Protected actions" icon="⚠" tone="danger">
-      These actions are intentionally separated from everyday settings because
-      they remove data or revert behavior globally. Double-check exports before
-      using them.
+    <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="⚠" tone="danger">
+      {t("settings.danger_zone_callout_desc", locale)}
     </SettingsCallout>
     <SettingsActionRow style="margin-top: 16px;">
       <button
         class="btn"
         id="purge-tasks"
         style="border-color: var(--danger); color: var(--danger);"
-        >🗑 Purge All Tasks</button
+        >{t("settings.danger_purge_tasks", locale)}</button
       >
       <button
         class="btn"
         id="reset-settings"
         style="border-color: var(--danger); color: var(--danger);"
-        >🔄 Reset Settings</button
+        >{t("settings.danger_reset_settings", locale)}</button
       >
     </SettingsActionRow>
   </SettingsPanelCard>

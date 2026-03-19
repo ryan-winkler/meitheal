@@ -15,44 +15,51 @@ import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
 import FrameworkWizard from "./FrameworkWizard.astro"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
 
 const frameworks = [
-  { id: "rice", label: "RICE", description: "Reach × Impact × Confidence ÷ Effort", icon: "📊" },
-  { id: "drice", label: "DRICE", description: "Domain-aware RICE with DDD weighting", icon: "🎯" },
-  { id: "heart", label: "HEART", description: "Happiness, Engagement, Adoption, Retention, Task Success", icon: "❤️" },
-  { id: "ddd", label: "DDD", description: "Domain-Driven Design boundary audit", icon: "🏗️" },
-  { id: "kcs", label: "KCS", description: "Knowledge-Centered Support checklist", icon: "📚" },
-  { id: "wsjf", label: "WSJF", description: "Weighted Shortest Job First (SAFe)", icon: "⚖️" },
-  { id: "moscow", label: "MoSCoW", description: "Must / Should / Could / Won't prioritization", icon: "🏷️" },
-  { id: "ice", label: "ICE", description: "Impact × Confidence × Ease scoring", icon: "🧊" },
+  { id: "rice", label: "RICE", description: t("settings.frameworks.rice_desc", locale), icon: "📊" },
+  { id: "drice", label: "DRICE", description: t("settings.frameworks.drice_desc", locale), icon: "🎯" },
+  { id: "heart", label: "HEART", description: t("settings.frameworks.heart_desc", locale), icon: "❤️" },
+  { id: "ddd", label: "DDD", description: t("settings.frameworks.ddd_desc", locale), icon: "🏗️" },
+  { id: "kcs", label: "KCS", description: t("settings.frameworks.kcs_desc", locale), icon: "📚" },
+  { id: "wsjf", label: "WSJF", description: t("settings.frameworks.wsjf_desc", locale), icon: "⚖️" },
+  { id: "moscow", label: "MoSCoW", description: t("settings.frameworks.moscow_desc", locale), icon: "🏷️" },
+  { id: "ice", label: "ICE", description: t("settings.frameworks.ice_desc", locale), icon: "🧊" },
 ]
 
 const taskTypes = [
-  { id: "epic", label: "Epic", icon: "⚡" },
-  { id: "story", label: "Story", icon: "📖" },
-  { id: "task", label: "Task", icon: "✅" },
-  { id: "documentation", label: "Documentation", icon: "📝" },
+  { id: "epic", label: t("settings.task_types.epic", locale), icon: "⚡" },
+  { id: "story", label: t("settings.task_types.story", locale), icon: "📖" },
+  { id: "task", label: t("settings.task_types.task", locale), icon: "✅" },
+  { id: "documentation", label: t("settings.task_types.documentation", locale), icon: "📝" },
 ]
 
 const aiCapabilities = [
-  { key: "canAutoScore", label: "Auto-score", description: "Allow AI to automatically score using assigned frameworks" },
-  { key: "canAutoClose", label: "Auto-close", description: "Allow AI to close tasks when criteria are met" },
-  { key: "canChangePriority", label: "Change priority", description: "Allow AI to adjust task priority" },
-  { key: "canSuggestLabels", label: "Suggest labels", description: "Allow AI to suggest labels and tags" },
+  { key: "canAutoScore", label: t("settings.ai_cap.autoscore", locale), description: t("settings.ai_cap.autoscore_desc", locale) },
+  { key: "canAutoClose", label: t("settings.ai_cap.autoclose", locale), description: t("settings.ai_cap.autoclose_desc", locale) },
+  { key: "canChangePriority", label: t("settings.ai_cap.priority", locale), description: t("settings.ai_cap.priority_desc", locale) },
+  { key: "canSuggestLabels", label: t("settings.ai_cap.labels", locale), description: t("settings.ai_cap.labels_desc", locale) },
 ]
 
 const presets = [
-  { id: "strategic", label: "Strategic", description: "RICE + DDD + KCS — full scoring for epics and stories", icon: "🎯" },
-  { id: "ux-focused", label: "UX-Focused", description: "HEART + KCS — user experience metrics for stories", icon: "❤️" },
-  { id: "agile-delivery", label: "Agile Delivery", description: "WSJF for epics, ICE for stories — SAFe-inspired", icon: "🚀" },
-  { id: "balanced", label: "Balanced", description: "MoSCoW for epics, RICE for stories — strategic + tactical", icon: "⚖️" },
-  { id: "simple", label: "Simple", description: "No frameworks — minimal guardrails for quick tasks", icon: "⚡" },
+  { id: "strategic", label: t("settings.presets.strategic", locale), description: t("settings.presets.strategic_desc", locale), icon: "🎯" },
+  { id: "ux-focused", label: t("settings.presets.ux", locale), description: t("settings.presets.ux_desc", locale), icon: "❤️" },
+  { id: "agile-delivery", label: t("settings.presets.agile", locale), description: t("settings.presets.agile_desc", locale), icon: "🚀" },
+  { id: "balanced", label: t("settings.presets.balanced", locale), description: t("settings.presets.balanced_desc", locale), icon: "⚖️" },
+  { id: "simple", label: t("settings.presets.simple", locale), description: t("settings.presets.simple_desc", locale), icon: "⚡" },
 ]
 ---
 
 <div id="rules-lenses-settings">
   <!-- Preset Quick-Apply -->
-  <SettingsPanelCard title="Rule Presets" subtitle="Choose a starting configuration — customise below">
+  <SettingsPanelCard title={t("settings.rules_presets_title", locale)} subtitle={t("settings.rules_presets_subtitle", locale)}>
     <div class="rules-presets" id="rules-presets">
       {presets.map((preset) => (
         <button
@@ -70,26 +77,26 @@ const presets = [
     </div>
     <div class="rules-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn btn-ghost btn-sm" id="rules-restore-defaults" type="button" title="Reset all rules to default presets">
-        ↺ Restore Defaults
+        {t("settings.rules_restore_defaults", locale)}
       </button>
       <button class="btn btn-ghost btn-sm" id="rules-export-btn" type="button" title="Export rules and framework configs as JSON">
-        📤 Export Rules
+        {t("settings.rules_export", locale)}
       </button>
       <label class="btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
-        📥 Import Rules
+        {t("settings.rules_import", locale)}
         <input type="file" id="rules-import-input" accept=".json" hidden />
       </label>
       <button class="btn btn-accent btn-sm" id="fw-create-btn" type="button" title="Create a custom evaluation framework">
-        ✨ Create Framework
+        {t("settings.rules_create_framework", locale)}
       </button>
       <button class="btn btn-ghost btn-sm" id="fw-import-btn" type="button" title="Import a framework from YAML">
-        📋 Import YAML
+        {t("settings.rules_import_yaml", locale)}
       </button>
     </div>
   </SettingsPanelCard>
 
   <!-- Per-Type Framework Assignment -->
-  <SettingsPanelCard title="Framework Assignment" subtitle="Choose which strategic lenses apply to each task type">
+  <SettingsPanelCard title={t("settings.rules_assignment_title", locale)} subtitle={t("settings.rules_assignment_subtitle", locale)}>
     <div class="rules-assignment-grid" id="rules-assignment-grid">
       {taskTypes.map((type) => (
         <div class="rules-assignment-row" data-task-type={type.id}>
@@ -119,7 +126,7 @@ const presets = [
   </SettingsPanelCard>
 
   <!-- AI Scope Configuration -->
-  <SettingsDisclosure title="AI Scope per Task Type" subtitle="Control what AI agents are allowed to do for each type" id="ai-scope-disclosure">
+  <SettingsDisclosure title={t("settings.rules_ai_scope_title", locale)} subtitle={t("settings.rules_ai_scope_subtitle", locale)} id="ai-scope-disclosure">
     <div class="rules-ai-scope" id="rules-ai-scope">
       {taskTypes.map((type) => (
         <div class="rules-ai-type-block" data-task-type={type.id}>
@@ -148,13 +155,13 @@ const presets = [
           </div>
           <div class="rules-ai-instructions">
             <label class="form-label" for={`ai-instructions-${type.id}`}>
-              Custom AI Instructions
+              {t("settings.rules_ai_custom_instructions", locale)}
             </label>
             <textarea
               class="form-input rules-ai-textarea"
               id={`ai-instructions-${type.id}`}
               data-task-type={type.id}
-              placeholder={`Optional instructions for AI agents working on ${type.label.toLowerCase()}s...`}
+              placeholder={t("settings.rules_ai_instructions_placeholder", locale).replace("{type}", type.label.toLowerCase())}
               rows="2"
             ></textarea>
           </div>
@@ -164,7 +171,7 @@ const presets = [
   </SettingsDisclosure>
 
   <!-- Framework Config Editor -->
-  <SettingsDisclosure title="Framework Configuration" subtitle="Edit weights, descriptions, and formulas for each framework" id="framework-config-disclosure">
+  <SettingsDisclosure title={t("settings.rules_fw_config_title", locale)} subtitle={t("settings.rules_fw_config_subtitle", locale)} id="framework-config-disclosure">
     <div class="rules-framework-configs" id="rules-framework-configs">
       {frameworks.map((fw) => (
         <div class="rules-fw-config" data-framework={fw.id}>
@@ -178,14 +185,14 @@ const presets = [
               class="btn btn-ghost btn-sm rules-fw-reset"
               data-framework={fw.id}
               type="button"
-              title={`Reset ${fw.label} to defaults`}
+              title={t("settings.rules_fw_reset_title", locale).replace("{label}", fw.label)}
             >
-              ↺ Reset
+              {t("settings.rules_fw_reset", locale)}
             </button>
           </div>
           <div class="rules-fw-config-fields" data-framework={fw.id}>
             <p class="text-muted" style="font-size: 12px; margin: 4px 0;">
-              Loading {fw.label} configuration…
+              {t("settings.rules_fw_loading", locale).replace("{label}", fw.label)}
             </p>
           </div>
         </div>
@@ -194,63 +201,63 @@ const presets = [
   </SettingsDisclosure>
 
   <!-- Framework Reference -->
-  <SettingsDisclosure title="Framework Reference" subtitle="Learn about each strategic evaluation framework" id="framework-ref-disclosure">
+  <SettingsDisclosure title={t("settings.rules_fw_ref_title", locale)} subtitle={t("settings.rules_fw_ref_subtitle", locale)} id="framework-ref-disclosure">
     <div class="rules-fw-reference">
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>📊 RICE</strong>
           <a href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Intercom Blog →</a>
         </div>
-        <p><strong>Reach × Impact × Confidence ÷ Effort</strong>. Prioritization framework from Intercom for scoring tasks by audience reach, impact, confidence, and effort.</p>
+        <p set:html={t("settings.rules_fw_ref_rice_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>🎯 DRICE</strong>
           <a href="https://www.lennysnewsletter.com/p/introducing-drice-a-modern-prioritization" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Lenny's Newsletter →</a>
         </div>
-        <p>Extended RICE that factors in <strong>dependency weight</strong> — how many other tasks are blocked by this one.</p>
+        <p set:html={t("settings.rules_fw_ref_drice_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>🏗️ DDD</strong>
           <a href="https://martinfowler.com/bliki/DomainDrivenDesign.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Fowler →</a>
         </div>
-        <p><strong>Domain-Driven Design</strong>. Evaluates tasks through bounded context alignment, ubiquitous language, and strategic/tactical pattern fit.</p>
+        <p set:html={t("settings.rules_fw_ref_ddd_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>❤️ HEART</strong>
           <a href="https://www.heartframework.com/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">heartframework.com →</a>
         </div>
-        <p><strong>Happiness, Engagement, Adoption, Retention, Task success</strong>. Google's UX metrics framework for holistic UX impact scoring.</p>
+        <p set:html={t("settings.rules_fw_ref_heart_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>📚 KCS</strong>
           <a href="https://library.serviceinnovation.org/KCS" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Service Innovation →</a>
         </div>
-        <p><strong>Knowledge-Centered Service</strong>. Evaluates documentation tasks: is knowledge captured at creation, reusable, and continuously improved?</p>
+        <p set:html={t("settings.rules_fw_ref_kcs_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>⚖️ WSJF</strong>
           <a href="https://www.scaledagileframework.com/wsjf/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">SAFe Docs →</a>
         </div>
-        <p><strong>Weighted Shortest Job First</strong>. Calculates Cost of Delay ÷ Job Duration to sequence work for maximum economic benefit.</p>
+        <p set:html={t("settings.rules_fw_ref_wsjf_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>🏷️ MoSCoW</strong>
           <a href="https://www.agilebusiness.org/dsdm-project-framework/moscow-prioririsation.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">DSDM Docs →</a>
         </div>
-        <p><strong>Must / Should / Could / Won't</strong> prioritization. Classifies requirements into four categories for scope and stakeholder management.</p>
+        <p set:html={t("settings.rules_fw_ref_moscow_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
           <strong>🧊 ICE</strong>
           <a href="https://growthmethod.com/growth-scoring/ice/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Growth Method →</a>
         </div>
-        <p><strong>Impact × Confidence × Ease</strong>. Lightweight scoring system for rapid experiment prioritization, each dimension scored 1-10.</p>
+        <p set:html={t("settings.rules_fw_ref_ice_desc", locale)} />
       </div>
     </div>
   </SettingsDisclosure>
@@ -262,12 +269,12 @@ const presets = [
   <dialog id="fw-import-dialog" class="fw-wizard-dialog">
     <div class="fw-wizard-content" style="max-width: 520px;">
       <header class="fw-wizard-header">
-        <h3 class="fw-wizard-title">Import Framework from YAML</h3>
+        <h3 class="fw-wizard-title">{t("settings.rules_import_dialog_title", locale)}</h3>
         <button class="fw-wizard-close" id="fw-import-close" type="button" aria-label="Close">&times;</button>
       </header>
       <div style="padding: 20px;">
         <div class="fw-field-group">
-          <label class="form-label" for="fw-import-yaml">Paste YAML definition</label>
+          <label class="form-label" for="fw-import-yaml">{t("settings.rules_import_dialog_label", locale)}</label>
           <textarea
             class="form-input"
             id="fw-import-yaml"
@@ -278,8 +285,8 @@ const presets = [
         </div>
         <div id="fw-import-errors" class="fw-wizard-errors" hidden></div>
         <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
-          <button class="btn btn-ghost" id="fw-import-cancel" type="button">Cancel</button>
-          <button class="btn btn-accent" id="fw-import-submit" type="button">Import Framework</button>
+          <button class="btn btn-ghost" id="fw-import-cancel" type="button">{t("settings.rules_cancel", locale)}</button>
+          <button class="btn btn-accent" id="fw-import-submit" type="button">{t("settings.rules_import_submit", locale)}</button>
         </div>
       </div>
     </div>

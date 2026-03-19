@@ -470,7 +470,7 @@ for (let week = 0; week < 6; week++) {
     visibility: hidden;
   }
   .day-drawer[aria-hidden="false"] {
-    pointer-events: all;
+    pointer-events: auto;
     visibility: visible;
   }
   .day-drawer-backdrop {
@@ -708,7 +708,7 @@ for (let week = 0; week < 6; week++) {
           drawerTasks.querySelectorAll<HTMLElement>(".day-drawer-item[data-task-id]").forEach((el) => {
             el.addEventListener("click", () => {
               const tid = el.dataset.taskId
-              if (tid) window.location.href = (window.__ingress_path || "") + `/tasks#task=${tid}`
+              if (tid) window.location.href = (window.__ingress_path || "") + `/table#task=${tid}`
             })
           })
         }

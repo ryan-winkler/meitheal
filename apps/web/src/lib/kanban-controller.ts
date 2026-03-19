@@ -568,10 +568,10 @@ export function initKanbanArea(): void {
         // Close on scroll (P1-4)
         const board = document.querySelector(".kanban-scroll-area, .kanban-board");
         const onScroll = () => close();
-        kanbanBoard?.addEventListener("scroll", onScroll, { once: true });
+        board?.addEventListener("scroll", onScroll, { once: true });
         window.addEventListener("scroll", onScroll, { once: true });
         _scrollCleanup = () => {
-          kanbanBoard?.removeEventListener("scroll", onScroll);
+          board?.removeEventListener("scroll", onScroll);
           window.removeEventListener("scroll", onScroll);
         };
 
@@ -1324,10 +1324,10 @@ export function initKanbanArea(): void {
     // T-1914: Keyboard navigation for kanban board
     (() => {
       const board = document.querySelector(".kanban-board");
-      if (!kanbanBoard) return;
+      if (!board) return;
 
       // Swimlane collapse event delegation
-      kanbanBoard.addEventListener("click", (e) => {
+      board.addEventListener("click", (e) => {
         const header = e.target.closest(".swimlane-header");
         if (header && !e.target.closest("button")) {
           const group = header.closest(".swimlane-group");
@@ -1348,8 +1348,8 @@ export function initKanbanArea(): void {
 
       let focusedCard = null;
 
-      kanbanBoard.addEventListener("keydown", (e) => {
-        const cards = Array.from(kanbanBoard.querySelectorAll(".kanban-card"));
+      board.addEventListener("keydown", (e) => {
+        const cards = Array.from(board.querySelectorAll(".kanban-card"));
         if (!cards.length) return;
 
         if (!focusedCard || !document.contains(focusedCard)) {
@@ -1361,7 +1361,7 @@ export function initKanbanArea(): void {
           currentCol.querySelectorAll(".kanban-card"),
         );
         const colIdx = colCards.indexOf(focusedCard);
-        const columns = Array.from(kanbanBoard.querySelectorAll(".kanban-column"));
+        const columns = Array.from(board.querySelectorAll(".kanban-column"));
         const colPos = columns.indexOf(currentCol);
 
         let nextCard = null;
@@ -1409,15 +1409,15 @@ export function initKanbanArea(): void {
       // card tabindex/focus instead.
 
       // Focus first card when board gets focus
-      kanbanBoard.addEventListener("focus", () => {
-        const firstCard = kanbanBoard.querySelector(".kanban-card");
+      board.addEventListener("focus", () => {
+        const firstCard = board.querySelector(".kanban-card");
         if (firstCard) {
           focusedCard = firstCard;
           focusedCard.classList.add("kb-focused");
         }
       });
 
-      kanbanBoard.addEventListener("blur", () => {
+      board.addEventListener("blur", () => {
         if (focusedCard) focusedCard.classList.remove("kb-focused");
       });
     })();
@@ -1682,7 +1682,7 @@ export function initKanbanArea(): void {
               cardsContainer.appendChild(group);
 
               // Restore saved collapse state for dynamic swimlane
-              const collapseKey = `meitheal-swimlane-dyn-${key}`;
+              const collapseKey = `meitheal-swimlane-${key}`;
               if (localStorage.getItem(collapseKey) === "collapsed") {
                 swimlaneCards.classList.add("collapsed");
                 toggleSpan.classList.add("collapsed");
@@ -1700,7 +1700,7 @@ export function initKanbanArea(): void {
         const cards = group.querySelector(".swimlane-cards");
         const toggle = header.querySelector(".swimlane-toggle");
         const type = header.dataset.type || "unknown";
-        const storageKey = `meitheal-kanban-swimlane-${type}`;
+        const storageKey = `meitheal-swimlane-${type}`;
 
         // Restore saved collapse state
         const saved = localStorage.getItem(storageKey);
@@ -1714,16 +1714,6 @@ export function initKanbanArea(): void {
         }
 
         header.style.cursor = "pointer";
-        header.addEventListener("click", () => {
-          if (!cards) return;
-          const isCollapsed = cards.classList.toggle("collapsed");
-          if (toggle) {
-            toggle.classList.toggle("collapsed", isCollapsed);
-            toggle.textContent = isCollapsed ? "▶" : "▼";
-          }
-          group.classList.toggle("swimlane-collapsed", isCollapsed);
-          localStorage.setItem(storageKey, isCollapsed ? "collapsed" : "expanded");
-        });
       });
     })();
 
@@ -1921,9 +1911,9 @@ export function initKanbanArea(): void {
 
       // Use event delegation on the board container
       var board = document.querySelector(".kanban-board");
-      if (!kanbanBoard) return;
+      if (!board) return;
 
-      kanbanBoard.addEventListener(
+      board.addEventListener(
         "touchstart",
         function (e) {
           var card = e.target.closest('.kanban-card[draggable="true"]');
@@ -1946,7 +1936,7 @@ export function initKanbanArea(): void {
         { passive: true },
       );
 
-      kanbanBoard.addEventListener(
+      board.addEventListener(
         "touchmove",
         function (e) {
           var t = e.touches[0];
@@ -1985,7 +1975,7 @@ export function initKanbanArea(): void {
         { passive: false },
       );
 
-      kanbanBoard.addEventListener(
+      board.addEventListener(
         "touchend",
         function (e) {
           cancelHold();
@@ -2028,7 +2018,7 @@ export function initKanbanArea(): void {
       );
 
       // Cancel drag on context menu / multi-touch
-      kanbanBoard.addEventListener(
+      board.addEventListener(
         "touchcancel",
         function () {
           cleanup();
