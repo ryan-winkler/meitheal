@@ -200,7 +200,7 @@
   body.sidebar-collapsed .area-switcher,
   body.sidebar-collapsed .hierarchy-tree,
   body.sidebar-collapsed .sidebar-footer a > span:not(.nav-icon),
-  body.sidebar-collapsed .sidebar-footer .sidebar-footer-text,
+  body.sidebar-collapsed .sidebar-footer .status-indicator,
   body.sidebar-collapsed .sidebar-gamification-wrapper {
     display: none !important;
   }
