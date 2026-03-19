@@ -655,7 +655,7 @@ async function startTriage() {
     showTriageTask()
 
     const overlay = document.getElementById("triage-overlay")
-    if (overlay) overlay.style.display = ""
+    if (overlay) overlay.classList.remove("triage-overlay--hidden")
   } catch {
     showToast("common.failed_update", "error")
   }
@@ -694,7 +694,7 @@ function updateTriagePreview() {
 
 function closeTriage() {
   const overlay = document.getElementById("triage-overlay")
-  if (overlay) overlay.style.display = "none"
+  if (overlay) overlay.classList.add("triage-overlay--hidden")
   triageTasks = []
   triageIndex = 0
 }
@@ -757,7 +757,7 @@ function setupTriageListeners() {
 
   // Close on Escape key
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.getElementById("triage-overlay")?.style.display !== "none") {
+    if (e.key === "Escape" && !document.getElementById("triage-overlay")?.classList.contains("triage-overlay--hidden")) {
       closeTriage()
     }
   })

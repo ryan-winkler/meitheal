@@ -126,7 +126,7 @@ const quadrants: Quadrant[] = [
     )}
 
     {/* ── Triage overlay (one-at-a-time classification) ── */}
-    <div id="triage-overlay" class="triage-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Task triage">
+    <div id="triage-overlay" class="triage-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Task triage">
       <div class="triage-card">
         <header class="triage-card__header">
           <h2 class="triage-card__title">{t("eisenhower.triage_title", locale)}</h2>
@@ -789,6 +789,9 @@ const quadrants: Quadrant[] = [
   @keyframes triage-fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+  .triage-overlay--hidden {
+    display: none !important;
   }
   .triage-card {
     width: 90%;

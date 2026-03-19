@@ -26,11 +26,249 @@ const __signal = pageLifecycle.signal;
 // Window globals (typed in types/window.d.ts):
 //   showToast, __featureFlags, triggerConfetti, openTaskDetail
 
+interface LanePanelLane {
+  id: string
+  label: string
+  builtIn: boolean
+  position: number
+  wip_limit: number
+}
+
+function initLaneManagementPanel(): void {
+  const manageLanesBtn = document.getElementById("manage-lanes-btn")
+  const laneMgmt = document.getElementById("lane-mgmt")
+  const laneList = document.getElementById("lane-list")
+  const newLaneInput = document.getElementById("new-lane-input") as HTMLInputElement | null
+  const addLaneBtn = document.getElementById("add-lane-btn")
+  const laneMgmtClose = document.getElementById("lane-mgmt-close")
+
+  if (!manageLanesBtn || !laneMgmt || !laneList || !newLaneInput || !addLaneBtn) {
+    log.warn("Lane management panel skipped due to missing DOM contract", {
+      hasManageLanesBtn: Boolean(manageLanesBtn),
+      hasLaneMgmt: Boolean(laneMgmt),
+      hasLaneList: Boolean(laneList),
+      hasNewLaneInput: Boolean(newLaneInput),
+      hasAddLaneBtn: Boolean(addLaneBtn),
+    })
+    return
+  }
+
+  log.debug("Lane management panel initialized")
+
+  async function fetchLanes(): Promise<LanePanelLane[]> {
+    try {
+      const res = await fetch("/api/lanes")
+      if (!res.ok) return []
+
+      const data = await res.json()
+      return Array.isArray(data?.lanes) ? data.lanes : []
+    } catch (error) {
+      log.warn("Failed to fetch lanes for management panel", error)
+      return []
+    }
+  }
+
+  function notify(message: string, variant: "error" | "success" | "warning" = "success") {
+    if (window.showToast) {
+      window.showToast(message, variant)
+      return
+    }
+
+    const toast = document.createElement("div")
+    toast.className = `toast ${variant}`
+    toast.textContent = message
+    document.getElementById("toast-container")?.appendChild(toast)
+    setTimeout(() => toast.remove(), 3000)
+  }
+
+  async function renderLaneList(): Promise<void> {
+    const lanes = await fetchLanes()
+    laneList.innerHTML = lanes
+      .map(
+        (lane) => `
+          <div class="lane-item" data-id="${lane.id}" data-position="${lane.position}">
+            <span class="lane-item-label">${lane.builtIn ? "🔒" : "📌"} ${lane.label}</span>
+            <label class="lane-wip-label" title="WIP limit (0 = unlimited)">
+              WIP: <input type="number" class="lane-wip-input" data-id="${lane.id}" value="${lane.wip_limit}" min="0" max="99" />
+            </label>
+            ${
+              lane.builtIn
+                ? '<span class="lane-builtin-label">built-in</span>'
+                : `
+                  <button type="button" class="lane-action-btn edit lane-edit" data-id="${lane.id}" data-label="${lane.label}" title="Rename" aria-label="Rename lane">✎</button>
+                  <button type="button" class="lane-action-btn remove lane-remove" data-id="${lane.id}" title="Remove" aria-label="Remove lane">×</button>
+                `
+            }
+          </div>
+        `,
+      )
+      .join("")
+  }
+
+  function closeLaneMgmt(): void {
+    laneMgmt.classList.add("hidden")
+  }
+
+  pageLifecycle.on(manageLanesBtn, "click", () => {
+    const isOpen = !laneMgmt.classList.contains("hidden")
+    log.debug("Toggling lane management panel", { isOpen })
+    laneMgmt.classList.toggle("hidden", isOpen)
+
+    if (!isOpen) {
+      void renderLaneList()
+    }
+  })
+
+  pageLifecycle.on(laneMgmt, "click", (event) => {
+    if (event.target === laneMgmt) {
+      closeLaneMgmt()
+    }
+  })
+
+  pageLifecycle.on(document, "keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent
+    if (keyboardEvent.key === "Escape" && !laneMgmt.classList.contains("hidden")) {
+      closeLaneMgmt()
+    }
+  })
+
+  if (laneMgmtClose) {
+    pageLifecycle.on(laneMgmtClose, "click", closeLaneMgmt)
+  }
+
+  pageLifecycle.on(laneList, "change", async (event) => {
+    const input = (event.target as HTMLElement).closest<HTMLInputElement>(".lane-wip-input")
+    if (!input) return
+
+    const laneId = input.dataset.id
+    if (!laneId) return
+
+    try {
+      await fetch(`/api/lanes/${laneId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wip_limit: Math.max(0, Number.parseInt(input.value, 10) || 0) }),
+      })
+      document.dispatchEvent(
+        new CustomEvent("meitheal:tasks-changed", {
+          detail: { action: "kanban-wip-update" },
+        }),
+      )
+    } catch (error) {
+      log.warn("Failed to update lane WIP limit", error)
+      notify("Failed to update lane WIP limit", "error")
+    }
+  })
+
+  pageLifecycle.on(laneList, "click", async (event) => {
+    const target = event.target as HTMLElement
+
+    const editButton = target.closest<HTMLElement>(".lane-edit")
+    if (editButton) {
+      const laneId = editButton.dataset.id
+      const currentLabel = editButton.dataset.label ?? ""
+      if (!laneId) return
+
+      const newName = window.prompt("Rename lane:", currentLabel)
+      if (!newName?.trim()) return
+
+      try {
+        await fetch(`/api/lanes/${laneId}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ label: newName.trim() }),
+        })
+        await renderLaneList()
+        document.dispatchEvent(
+          new CustomEvent("meitheal:tasks-changed", {
+            detail: { action: "kanban-lane-rename" },
+          }),
+        )
+      } catch (error) {
+        log.warn("Failed to rename lane", error)
+        notify("Failed to rename lane", "error")
+      }
+      return
+    }
+
+    const removeButton = target.closest<HTMLElement>(".lane-remove")
+    if (!removeButton) return
+
+    const laneId = removeButton.dataset.id
+    if (!laneId) return
+
+    const ok = await window.confirmDialog({
+      message: "Tasks in this lane will move to Pending.",
+      variant: "warning",
+      confirmText: "Delete Lane",
+      title: "Delete Lane",
+    })
+    if (!ok) return
+
+    try {
+      await fetch(`/api/lanes/${laneId}`, {
+        method: "DELETE",
+      })
+      await renderLaneList()
+      document.dispatchEvent(
+        new CustomEvent("meitheal:tasks-changed", {
+          detail: { action: "kanban-lane-delete" },
+        }),
+      )
+    } catch (error) {
+      log.warn("Failed to remove lane", error)
+      notify("Failed to remove lane", "error")
+    }
+  })
+
+  pageLifecycle.on(addLaneBtn, "click", async () => {
+    const raw = newLaneInput.value.trim()
+    const name = raw.replace(/[<>]/g, "")
+    if (!name || name.length > 50) {
+      notify("Lane name must be 1-50 characters", "error")
+      return
+    }
+
+    try {
+      const res = await fetch("/api/lanes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label: name }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        notify(err.error || "Failed to create lane", "error")
+        return
+      }
+
+      newLaneInput.value = ""
+      await renderLaneList()
+      document.dispatchEvent(
+        new CustomEvent("meitheal:tasks-changed", {
+          detail: { action: "kanban-lane-create" },
+        }),
+      )
+    } catch (error) {
+      log.warn("Failed to create lane", error)
+      notify("Failed to create lane", "error")
+    }
+  })
+}
+
 /**
  * Initialize all Kanban board interactivity.
  * Called from the pageLifecycle boot path in kanban.astro.
  */
 export function initKanbanArea(): void {
+    const shell = document.getElementById("kanban-shell")
+    if (shell?.dataset.kanbanBooted === "true") {
+      return
+    }
+    if (shell) {
+      shell.dataset.kanbanBooted = "true"
+    }
+
     initPageShellNavigation({
       barId: "kanban-bar",
       shellId: "kanban-shell",
@@ -40,6 +278,8 @@ export function initKanbanArea(): void {
       flashClass: "kanban-shell__section--flash",
       sectionLinkSelectors: ["[data-kanban-section-link]"],
     });
+
+    initLaneManagementPanel();
 
     function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
@@ -1079,233 +1319,6 @@ export function initKanbanArea(): void {
           window.openNewTaskModal();
         }
       });
-
-    // Lane management (API-backed, server-persisted)
-    const manageLanesBtn = document.getElementById("manage-lanes-btn");
-    const laneMgmt = document.getElementById("lane-mgmt");
-    const laneList = document.getElementById("lane-list");
-    const newLaneInput = document.getElementById("new-lane-input") as HTMLInputElement | null;
-    const addLaneBtn = document.getElementById("add-lane-btn");
-
-    async function fetchLanes() {
-      try {
-        const res = await fetch("/api/lanes");
-        if (res.ok) {
-          const data = await res.json();
-          return data.lanes || [];
-        }
-      } catch { /* non-fatal */ }
-      return [];
-    }
-
-    async function renderLaneList() {
-      if (!laneList) return;
-
-      const lanes = await fetchLanes();
-      laneList.innerHTML = lanes
-        .map(
-          (lane) => `
-        <div class="lane-item" data-id="${lane.id}" data-position="${lane.position}">
-          <span class="lane-drag-handle" title="Drag to reorder">⠿</span>
-          <span class="lane-item-label">${lane.builtIn ? "🔒" : "📌"} ${lane.label}</span>
-          <label class="lane-wip-label" title="WIP limit (0 = unlimited)">
-            WIP: <input type="number" class="lane-wip-input" data-id="${lane.id}" value="${lane.wip_limit}" min="0" max="99" />
-          </label>
-          ${
-            !lane.builtIn
-              ? `
-            <button type="button" class="lane-action-btn edit lane-edit" data-id="${lane.id}" data-label="${lane.label}" title="Rename" aria-label="Rename lane">✎</button>
-            <button type="button" class="lane-action-btn remove lane-remove" data-id="${lane.id}" title="Remove" aria-label="Remove lane">×</button>
-          `
-              : '<span class="lane-builtin-label">built-in</span>'
-          }
-        </div>
-      `,
-        )
-        .join("");
-
-      // WIP limit change handlers
-      laneList.querySelectorAll(".lane-wip-input").forEach((input) => {
-        input.addEventListener("change", async () => {
-          const laneId = input.dataset.id;
-          const wipLimit = Math.max(0, parseInt(input.value) || 0);
-          try {
-            await fetch(`/api/lanes/${laneId}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ wip_limit: wipLimit }),
-            });
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-wip-update" } }));
-          } catch { /* non-fatal */ }
-        });
-      });
-
-      // Edit handlers
-      laneList.querySelectorAll(".lane-edit").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const laneId = btn.dataset.id;
-          const currentLabel = btn.dataset.label;
-          const newName = prompt("Rename lane:", currentLabel);
-          if (newName?.trim()) {
-            try {
-              await fetch(
-                `/api/lanes/${laneId}`,
-                {
-                  method: "PUT",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ label: newName.trim() }),
-                },
-              );
-              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-rename" } }));
-            } catch { /* non-fatal */ }
-          }
-        });
-      });
-
-      // Remove handlers
-      laneList.querySelectorAll(".lane-remove").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const laneId = btn.dataset.id;
-          const ok = await window.confirmDialog({
-            message: "Tasks in this lane will move to Pending.",
-            variant: "warning",
-            confirmText: "Delete Lane",
-            title: "Delete Lane",
-          });
-          if (!ok) return;
-          try {
-            await fetch(`/api/lanes/${laneId}`, {
-              method: "DELETE",
-            });
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-delete" } }));
-          } catch { /* non-fatal */ }
-        });
-      });
-
-      // Drag to reorder lanes
-      let draggedItem = null;
-      laneList.querySelectorAll(".lane-item").forEach((item) => {
-        const handle = item.querySelector(".lane-drag-handle");
-        if (!handle) return;
-
-        handle.addEventListener("mousedown", () => {
-          item.setAttribute("draggable", "true");
-        });
-        handle.addEventListener("mouseup", () => {
-          item.removeAttribute("draggable");
-        });
-
-        item.addEventListener("dragstart", (e) => {
-          draggedItem = item;
-          item.style.opacity = "0.5";
-          e.dataTransfer.effectAllowed = "move";
-        });
-        item.addEventListener("dragend", async () => {
-          item.style.opacity = "";
-          item.removeAttribute("draggable");
-          draggedItem = null;
-
-          // Collect new order and save positions
-          const items = laneList.querySelectorAll(".lane-item");
-          const updates = [];
-          items.forEach((el, idx) => {
-            updates.push(
-              fetch(
-                `/api/lanes/${el.dataset.id}`,
-                {
-                  method: "PUT",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ position: idx }),
-                },
-              ),
-            );
-          });
-          await Promise.all(updates);
-          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-reorder" } }));
-        });
-        item.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          if (draggedItem && draggedItem !== item) {
-            const rect = item.getBoundingClientRect();
-            const mid = rect.top + rect.height / 2;
-            if (e.clientY < mid) {
-              item.parentElement.insertBefore(draggedItem, item);
-            } else {
-              item.parentElement.insertBefore(draggedItem, item.nextSibling);
-            }
-          }
-        });
-      });
-    }
-
-    // Helper to close lanes panel
-    function closeLaneMgmt() {
-      if (laneMgmt) laneMgmt.classList.add("hidden");
-    }
-
-    // T-1904: Toggle lanes panel
-    if (manageLanesBtn && laneMgmt) {
-      pageLifecycle.on(manageLanesBtn, "click", () => {
-        const isOpen = !laneMgmt.classList.contains("hidden");
-        laneMgmt.classList.toggle("hidden", isOpen);
-        if (!isOpen) {
-          void renderLaneList();
-        }
-      });
-    }
-
-    // Close on backdrop click (click on outer lane-mgmt, not inner content)
-    if (laneMgmt) {
-      pageLifecycle.on(laneMgmt, "click", (e) => {
-        if (e.target === laneMgmt) closeLaneMgmt();
-      });
-    }
-
-    // Close on Escape key
-    pageLifecycle.on(document, "keydown", (e) => {
-      if (e.key === "Escape" && laneMgmt && !laneMgmt.classList.contains("hidden")) {
-        closeLaneMgmt();
-      }
-    });
-
-    // Close button
-    const laneMgmtClose = document.getElementById("lane-mgmt-close");
-    if (laneMgmtClose) {
-      pageLifecycle.on(laneMgmtClose, "click", closeLaneMgmt);
-    }
-
-    // T-1905: Lane creation via API
-    if (addLaneBtn && newLaneInput) {
-      pageLifecycle.on(addLaneBtn, "click", async () => {
-        const raw = newLaneInput.value.trim();
-        const name = raw.replace(/[<>]/g, "");
-        if (!name || name.length < 1 || name.length > 50) {
-          const t = document.createElement("div");
-          t.className = "toast error";
-          t.textContent = "Lane name must be 1-50 characters";
-          document.getElementById("toast-container")?.appendChild(t);
-          setTimeout(() => t.remove(), 3000);
-          return;
-        }
-        try {
-          const res = await fetch("/api/lanes", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ label: name }),
-          });
-          if (res.ok) {
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-label-create" } }));
-          } else {
-            const err = await res.json();
-            const t = document.createElement("div");
-            t.className = "toast error";
-            t.textContent = err.error || "Failed to create lane";
-            document.getElementById("toast-container")?.appendChild(t);
-            setTimeout(() => t.remove(), 3000);
-          }
-        } catch { /* non-fatal */ }
-      });
-    }
 
     // T-1907: Search filters Kanban cards in real-time
     (() => {
