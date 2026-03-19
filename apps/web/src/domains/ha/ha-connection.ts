@@ -43,7 +43,29 @@ let connecting = false;
 let lastError: string | null = null;
 let reconnectAttempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null; // Guard against rapid reconnect races
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
+
+// ── Connection Status Events ──
+// Allows sidebar/UI to subscribe to connection state changes
+
+export type HAConnectionState = "connected" | "disconnected" | "reconnecting" | "error";
+type StatusListener = (state: HAConnectionState, detail?: string) => void;
+const statusListeners: Set<StatusListener> = new Set();
+
+/** Subscribe to connection state changes — returns unsubscribe function */
+export function onHAConnectionStatus(listener: StatusListener): () => void {
+  statusListeners.add(listener);
+  return () => { statusListeners.delete(listener) };
+}
+
+function emitStatus(state: HAConnectionState, detail?: string): void {
+  for (const listener of statusListeners) {
+    try { listener(state, detail) } catch { /* never crash emitter */ }
+  }
+}
 
 // ── Public API ──
 
@@ -89,6 +111,8 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
 
     connection.addEventListener("disconnected", () => {
+      stopHeartbeat();
+      emitStatus("disconnected");
       logger.log("warn", {
         event: "ha.connection.disconnected", domain: "ha", component: "ha-connection",
         request_id: SYS_REQ, message: "Disconnected from HA Core — auto-reconnect will attempt",
@@ -97,11 +121,17 @@ export async function getHAConnection(): Promise<Connection | null> {
 
     connection.addEventListener("ready", () => {
       reconnectAttempts = 0;
+      startHeartbeat();
+      emitStatus("connected", `HA ${connection?.haVersion}`);
       logger.log("info", {
         event: "ha.connection.reconnected", domain: "ha", component: "ha-connection",
         request_id: SYS_REQ, message: "Reconnected to HA Core",
       });
     });
+
+    // Start initial heartbeat
+    startHeartbeat();
+    emitStatus("connected", `HA ${connection.haVersion}`);
 
     // Phase 52: Subscribe to actionable notifications from Companion Apps
     connection.subscribeEvents((event: unknown) => {
@@ -199,6 +229,7 @@ export async function getHAConnection(): Promise<Connection | null> {
       : err === ERR_INVALID_AUTH ? "INVALID_AUTH" : "UNKNOWN";
     lastError = errorCode;
     reconnectAttempts++;
+    emitStatus("reconnecting", `attempt ${reconnectAttempts}, ${errorCode}`);
 
     logger.log("error", {
       event: "ha.connection.failed", domain: "ha", component: "ha-connection",
@@ -213,6 +244,42 @@ export async function getHAConnection(): Promise<Connection | null> {
     return null;
   } finally {
     connecting = false;
+  }
+}
+
+// ── Heartbeat ──
+
+function startHeartbeat(): void {
+  stopHeartbeat();
+  heartbeatInterval = setInterval(() => {
+    if (!connection) { stopHeartbeat(); return }
+    const timeout = setTimeout(() => {
+      logger.log("warn", {
+        event: "ha.heartbeat.timeout", domain: "ha", component: "ha-connection",
+        request_id: SYS_REQ, message: "Heartbeat pong not received within 10s — closing stale connection",
+      });
+      emitStatus("error", "heartbeat timeout");
+      // Force close — the library will trigger reconnect
+      connection?.close();
+      connection = null;
+    }, HEARTBEAT_TIMEOUT_MS);
+
+    connection.sendMessagePromise({ type: "ping" })
+      .then(() => { clearTimeout(timeout) })
+      .catch(() => {
+        clearTimeout(timeout);
+        logger.log("warn", {
+          event: "ha.heartbeat.failed", domain: "ha", component: "ha-connection",
+          request_id: SYS_REQ, message: "Heartbeat ping failed",
+        });
+      });
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 }
 
@@ -240,9 +307,11 @@ export async function getHAConfig(): Promise<HassConfig | null> {
 }
 
 export function closeHAConnection(): void {
+  stopHeartbeat();
   if (connection) {
     connection.close();
     connection = null;
+    emitStatus("disconnected", "manual close");
     logger.log("info", {
       event: "ha.connection.closed", domain: "ha", component: "ha-connection",
       request_id: SYS_REQ, message: "HA Core connection closed",
