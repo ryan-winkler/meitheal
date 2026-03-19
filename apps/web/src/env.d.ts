@@ -31,9 +31,9 @@ interface Window {
   /** Guard: search hub keyboard listener bound */
   __searchHubKeyboardBound?: boolean
 
-  // ── Board / Filter ──
+  // ── Area / Filter ──
   /** Currently active board ID */
-  __activeBoard?: string
+  __activeArea?: string
   /** Guard: filter state loaded */
   __filterStateLoaded?: boolean
   /** Filter visibility function exposed for cross-component use */

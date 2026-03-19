@@ -7,7 +7,7 @@
  *
  * Renders a configurable filter toolbar with:
  * - Type toggle buttons (Epic/Story/Task)
- * - Board filter selector (populated client-side from /api/boards)
+ * - Area filter selector (populated client-side from /api/areas)
  * - Group-by selector
  * - Status, Priority, RICE, User select filters (opt-in per view)
  * - Label filter bar (lazy-loaded)
@@ -72,7 +72,7 @@ const defaultGroupByOptions = view === "table"
       { value: "none", label: "No Grouping" },
       { value: "type", label: "Group by Type" },
       { value: "priority", label: "Group by Priority" },
-      { value: "board", label: "Group by Board" },
+      { value: "area", label: "Group by Area" },
       { value: "assignee", label: "Group by Assignee" },
       { value: "status", label: "Group by Status" },
       { value: "rice", label: "Group by RICE" },
@@ -80,7 +80,7 @@ const defaultGroupByOptions = view === "table"
   : [
       { value: "none", label: t("kanban.group_none", locale) },
       { value: "type", label: t("kanban.group_type", locale) },
-      { value: "board", label: t("kanban.group_board", locale) },
+      { value: "area", label: t("kanban.group_area", locale) },
       { value: "priority", label: t("kanban.group_priority", locale) },
       { value: "assigned", label: t("kanban.group_assignee", locale) || "Group by Assignee" },
       { value: "status", label: t("kanban.group_status", locale) || "Group by Status" },
@@ -200,9 +200,9 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </select>
   )}
 
-  {/* Board filter — populated client-side from /api/boards */}
-  <select class="form-select filter-toolbar__select" id={`${prefix}-filter-board`} aria-label="Filter by board">
-    <option value="">All Boards</option>
+  {/* Area filter — populated client-side from /api/areas */}
+  <select class="form-select filter-toolbar__select" id={`${prefix}-filter-area`} aria-label="Filter by area">
+    <option value="">All Areas</option>
   </select>
 
   {/* Group-by selector */}
@@ -221,7 +221,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       <option value="status">Then by Status</option>
       <option value="priority">Then by Priority</option>
       <option value="type">Then by Type</option>
-      <option value="board">Then by Board</option>
+      <option value="area">Then by Area</option>
       <option value="rice">Then by RICE</option>
     </select>
   )}
@@ -311,7 +311,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const prioritySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-priority`)
     const riceSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-rice`)
     const userSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-user`)
-    const boardSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-board`)
+    const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-area`)
     const groupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-group-by`)
     const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
@@ -340,7 +340,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       { id: "type", label: "Task Type" },
       { id: "assigned", label: "Assignee" },
       { id: "labels", label: "Labels" },
-      { id: "board", label: "Board ID" },
+      { id: "area", label: "Area ID" },
     ]
 
     const operators = [
@@ -511,7 +511,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         priority: prioritySel?.value ?? "",
         rice: riceSel?.value ?? "",
         user: activeUser,
-        board: boardSel?.value ?? "",
+        area: areaSel?.value ?? "",
         groupBy: groupBySel?.value ?? "none",
         subGroupBy: subGroupBySel?.value ?? "none",
         types: activeTypes.length === typeToggles.length ? [] : activeTypes,
@@ -536,7 +536,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     })
 
     // Select change listeners
-    ;[statusSel, prioritySel, riceSel, userSel, boardSel, groupBySel, subGroupBySel].forEach((sel) => {
+    ;[statusSel, prioritySel, riceSel, userSel, areaSel, groupBySel, subGroupBySel].forEach((sel) => {
       sel?.addEventListener("change", emitChange)
     })
 
@@ -574,7 +574,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     // Clear all button
     clearBtn?.addEventListener("click", () => {
       if (search) search.value = ""
-      ;[statusSel, prioritySel, riceSel, userSel, boardSel].forEach((sel) => {
+      ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
         if (sel) sel.value = ""
       })
       if (groupBySel) groupBySel.value = "none"
@@ -601,12 +601,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     })
 
     // Load boards into board selector (idempotent via DOM attribute)
-    async function loadBoards() {
-      if (!boardSel || boardSel.dataset.populated) return
-      boardSel.dataset.populated = "true"
+    async function loadAreas() {
+      if (!areaSel || areaSel.dataset.populated) return
+      areaSel.dataset.populated = "true"
       
       try {
-        const res = await fetch("/api/boards")
+        const res = await fetch("/api/areas")
         if (!res.ok) return
         const data = await res.json()
         const boards: { id: string; title: string; icon?: string }[] = data.boards || []
@@ -615,12 +615,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           const opt = document.createElement("option")
           opt.value = b.id
           opt.textContent = `${b.icon ?? "📋"} ${b.title}`
-          boardSel.appendChild(opt)
+          areaSel.appendChild(opt)
         })
       } catch { /* offline fallback */ }
     }
 
-    loadBoards()
+    loadAreas()
   }
 
   // Initialize toolbars

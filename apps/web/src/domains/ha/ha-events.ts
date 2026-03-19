@@ -19,15 +19,15 @@ const SYS_REQ = "ha-system";
 export type MeithealEventType =
   | "meitheal_task_created" | "meitheal_task_updated"
   | "meitheal_task_completed" | "meitheal_task_deleted"
-  | "meitheal_task_overdue" | "meitheal_board_updated"
+  | "meitheal_task_overdue" | "meitheal_area_updated"
   | "meitheal_calendar_synced" | "meitheal_calendar_event_created"
   | "meitheal_test";
 
 export interface MeithealTaskEventData {
   task_id: string;
   title: string;
-  board_id?: string;
-  board_name?: string;
+  area_id?: string;
+  area_name?: string;
   priority?: string;
   due_date?: string;
   assigned_to?: string;
@@ -40,8 +40,8 @@ export interface MeithealTaskEventData {
   description?: string;
 }
 
-export interface MeithealBoardEventData {
-  board_id: string; board_name: string; task_count?: number;
+export interface MeithealAreaEventData {
+  area_id: string; area_name: string; task_count?: number;
 }
 
 export interface MeithealCalendarEventData {
@@ -56,7 +56,7 @@ export interface MeithealCalendarEventData {
 
 export async function fireHAEvent(
   eventType: MeithealEventType,
-  eventData: MeithealTaskEventData | MeithealBoardEventData | MeithealCalendarEventData,
+  eventData: MeithealTaskEventData | MeithealAreaEventData | MeithealCalendarEventData,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -84,6 +84,6 @@ export const emitTaskUpdated = (d: MeithealTaskEventData) => fireHAEvent("meithe
 export const emitTaskCompleted = (d: MeithealTaskEventData) => fireHAEvent("meitheal_task_completed", d);
 export const emitTaskDeleted = (d: MeithealTaskEventData) => fireHAEvent("meitheal_task_deleted", d);
 export const emitTaskOverdue = (d: MeithealTaskEventData) => fireHAEvent("meitheal_task_overdue", d);
-export const emitBoardUpdated = (d: MeithealBoardEventData) => fireHAEvent("meitheal_board_updated", d);
+export const emitAreaUpdated = (d: MeithealAreaEventData) => fireHAEvent("meitheal_area_updated", d);
 export const emitCalendarSynced = (d: MeithealCalendarEventData) => fireHAEvent("meitheal_calendar_synced", d);
 export const emitCalendarEventCreated = (d: MeithealCalendarEventData) => fireHAEvent("meitheal_calendar_event_created", d);

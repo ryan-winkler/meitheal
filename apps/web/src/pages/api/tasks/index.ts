@@ -38,8 +38,8 @@ export const GET: APIRoute = async ({ url }) => {
     const parsedPriority = Math.min(5, Math.max(1, Number(priority) || 0))
     if (parsedPriority > 0) findOpts.priority = parsedPriority
   }
-  const boardId = url.searchParams.get("board_id")
-  if (boardId) findOpts.boardId = boardId
+  const areaId = url.searchParams.get("area_id")
+  if (areaId) findOpts.areaId = areaId
   if (taskType && VALID_TASK_TYPES.includes(taskType as TaskType)) findOpts.taskType = taskType
   const parentId = url.searchParams.get("parent_id")
   if (parentId) findOpts.parentId = parentId
@@ -68,7 +68,7 @@ export const GET: APIRoute = async ({ url }) => {
       calendar_sync_state: r.calendar_sync_state ?? "pending",
       parent_id: r.parent_id ?? null,
       time_tracked: Number(r.time_tracked ?? 0),
-      board_id: r.board_id ?? "default",
+      area_id: r.area_id ?? "default",
       custom_fields: typeof r.custom_fields === "string" ? r.custom_fields : "{}",
       start_date: r.start_date ?? null,
       end_date: r.end_date ?? null,
@@ -192,8 +192,8 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 
-  // Board and custom fields
-  const board_id = typeof body.board_id === "string" ? body.board_id : "default"
+  // Area and custom fields
+  const area_id = typeof body.area_id === "string" ? body.area_id : "default"
 
   let custom_fields = "{}"
   if (body.custom_fields !== undefined) {
@@ -243,14 +243,14 @@ export const POST: APIRoute = async ({ request }) => {
 
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
-    framework_payload, parent_id, board_id, custom_fields,
+    framework_payload, parent_id, area_id, custom_fields,
     start_date, end_date, progress, color, is_favorite,
     task_type, ticket_number, assigned_to, checklists,
   })
 
   const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
-  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, board_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, assigned_to, created_at: now, updated_at: now }
+  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, assigned_to, created_at: now, updated_at: now }
 
   dispatchTaskEvent("task.created", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 

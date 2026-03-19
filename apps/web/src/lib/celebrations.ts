@@ -113,8 +113,8 @@ export function celebrateDailyGoalComplete(completed: number): void {
 }
 
 /** Show WIP limit warning toast (amber, not blocking) */
-export function warnWipLimitReached(boardTitle: string, limit: number): void {
-  showToast(`⚠️ ${boardTitle}: WIP limit (${limit}) reached — finish something first`, "error")
+export function warnWipLimitReached(areaTitle: string, limit: number): void {
+  showToast(`⚠️ ${areaTitle}: WIP limit (${limit}) reached — finish something first`, "error")
 }
 
 // ─── Streak Milestone Detection ───────────────────────────────────────

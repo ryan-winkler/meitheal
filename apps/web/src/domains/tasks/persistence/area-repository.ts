@@ -1,14 +1,14 @@
 /**
- * BoardRepository — domain service for board-related database queries.
- * @domain Task Management (Boards context)
+ * AreaRepository — domain service for board-related database queries.
+ * @domain Task Management (Areas context)
  *
  * Provides typed, parameterized query methods for board CRUD operations.
- * Used by /api/boards/* API routes.
+ * Used by /api/areas/* API routes.
  */
 import type { Client } from "@libsql/client"
 import type { InValue } from "@libsql/client"
 
-export interface BoardRow {
+export interface AreaRow {
   [key: string]: unknown
   id: unknown
   title: unknown
@@ -21,26 +21,26 @@ export interface BoardRow {
   updated_at: unknown
 }
 
-export class BoardRepository {
+export class AreaRepository {
   constructor(private client: Client) {}
 
-  /** List all boards ordered by position */
-  async findAll(): Promise<BoardRow[]> {
+  /** List all areas ordered by position */
+  async findAll(): Promise<AreaRow[]> {
     const result = await this.client.execute(
-      "SELECT id, title, icon, color, position, wip_limit, created_at, updated_at FROM boards ORDER BY position ASC, created_at ASC"
+      "SELECT id, title, icon, color, position, wip_limit, created_at, updated_at FROM areas ORDER BY position ASC, created_at ASC"
     )
-    return result.rows as unknown as BoardRow[]
+    return result.rows as unknown as AreaRow[]
   }
 
   /** Count total boards (for abuse limits) */
   async count(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as c FROM boards")
+    const result = await this.client.execute("SELECT COUNT(*) as c FROM areas")
     return Number(result.rows[0]?.c || 0)
   }
 
   /** Get the next available position */
   async getNextPosition(): Promise<number> {
-    const result = await this.client.execute("SELECT COALESCE(MAX(position), 0) + 1 as next_pos FROM boards")
+    const result = await this.client.execute("SELECT COALESCE(MAX(position), 0) + 1 as next_pos FROM areas")
     return Number(result.rows[0]?.next_pos ?? 0)
   }
 
@@ -50,7 +50,7 @@ export class BoardRepository {
   }): Promise<void> {
     const now = Date.now()
     await this.client.execute({
-      sql: "INSERT INTO boards (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT INTO areas (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: [data.id, data.title, data.icon, data.color, data.position, now, now],
     })
   }
@@ -71,7 +71,7 @@ export class BoardRepository {
     args.push(id)
 
     await this.client.execute({
-      sql: `UPDATE boards SET ${updates.join(", ")} WHERE id = ?`,
+      sql: `UPDATE areas SET ${updates.join(", ")} WHERE id = ?`,
       args,
     })
   }
@@ -79,11 +79,11 @@ export class BoardRepository {
   /** Delete a board and reassign its tasks to 'default' */
   async delete(id: string): Promise<void> {
     await this.client.execute({
-      sql: "UPDATE tasks SET board_id = 'default' WHERE board_id = ?",
+      sql: "UPDATE tasks SET area_id = 'default' WHERE area_id = ?",
       args: [id],
     })
     await this.client.execute({
-      sql: "DELETE FROM boards WHERE id = ?",
+      sql: "DELETE FROM areas WHERE id = ?",
       args: [id],
     })
   }

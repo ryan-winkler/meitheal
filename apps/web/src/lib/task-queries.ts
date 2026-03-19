@@ -26,7 +26,7 @@ export interface TaskViewItem {
   labels: string[];
   rice: number | null;
   calendar_sync_state: string | null;
-  board_id: string;
+  area_id: string;
   custom_fields: Record<string, unknown>;
   start_date: string | null;
   end_date: string | null;
@@ -111,7 +111,7 @@ function isOverdue(dueDate: string | null, isDone: boolean): boolean {
 
 const TASK_VIEW_SQL = `
   SELECT id, title, description, status, priority, due_date, labels,
-         framework_payload, calendar_sync_state, board_id, custom_fields,
+         framework_payload, calendar_sync_state, area_id, custom_fields,
          start_date, end_date, progress, color, is_favorite, task_type,
          parent_id, ticket_number, assigned_to, checklists, created_at, updated_at
   FROM tasks
@@ -179,7 +179,7 @@ export async function getTasksForView(): Promise<TaskViewResult> {
         labels: safeParseLabels(row.labels),
         rice,
         calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
-        board_id: String(row.board_id ?? "default"),
+        area_id: String(row.area_id ?? "default"),
         custom_fields: safeParseJson<Record<string, unknown>>(row.custom_fields, {}),
         start_date: row.start_date ? String(row.start_date) : null,
         end_date: row.end_date ? String(row.end_date) : null,

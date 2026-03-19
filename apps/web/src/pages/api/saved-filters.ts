@@ -5,7 +5,7 @@
  *
  * @domain domain-tasks
  * @kcs saved filter query format: JSON object with optional keys:
- *   status, priority, board_id, search, rice, task_type, sort
+ *   status, priority, area_id, search, rice, task_type, sort
  */
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"

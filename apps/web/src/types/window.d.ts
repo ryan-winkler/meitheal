@@ -32,7 +32,7 @@ interface MeithealWindowExtensions {
 
   // === App State ===
   /** Currently active board ID for filtering */
-  __activeBoard?: string;
+  __activeArea?: string;
   /** Base path for Meitheal (set by Layout.astro for ingress) */
   __meitheal_base?: string;
   /** HA ingress path prefix */

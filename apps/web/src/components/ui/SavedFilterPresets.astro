@@ -139,7 +139,7 @@ const { class: className } = Astro.props
         // Apply all filter values from the preset via URL params
         const url = new URL(window.location.href)
         // Clear existing filter params
-        const filterKeys = ["search", "status", "priority", "rice", "user", "board", "types", "labels", "groupBy", "subGroupBy", "sort", "advancedFilter", "columns"]
+        const filterKeys = ["search", "status", "priority", "rice", "user", "area", "types", "labels", "groupBy", "subGroupBy", "sort", "advancedFilter", "columns"]
         filterKeys.forEach((k) => url.searchParams.delete(k))
 
         // Set params from preset

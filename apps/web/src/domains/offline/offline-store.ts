@@ -25,7 +25,7 @@ export interface OfflineTask {
   updatedAt: string
   createdAt: string
   syncedAt: string | null
-  boardId: string | null
+  areaId: string | null
   labels: string | null
   kind: string
   sortOrder: number
@@ -67,7 +67,7 @@ function openDatabase(): Promise<IDBDatabase> {
         taskStore.createIndex("status", "status", { unique: false })
         taskStore.createIndex("updatedAt", "updatedAt", { unique: false })
         taskStore.createIndex("priority", "priority", { unique: false })
-        taskStore.createIndex("boardId", "boardId", { unique: false })
+        taskStore.createIndex("areaId", "areaId", { unique: false })
       } else {
         // V3 migration: add indexes to existing store
         const tx = (event.target as IDBOpenDBRequest).transaction!
@@ -75,8 +75,8 @@ function openDatabase(): Promise<IDBDatabase> {
         if (!taskStore.indexNames.contains("priority")) {
           taskStore.createIndex("priority", "priority", { unique: false })
         }
-        if (!taskStore.indexNames.contains("boardId")) {
-          taskStore.createIndex("boardId", "boardId", { unique: false })
+        if (!taskStore.indexNames.contains("areaId")) {
+          taskStore.createIndex("areaId", "areaId", { unique: false })
         }
       }
 

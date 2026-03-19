@@ -310,27 +310,27 @@
               }
             }, 8000);
           }
-          // Board switcher
-          (async function initBoardSwitcher() {
+          // Area switcher
+          (async function initAreaSwitcher() {
             const select = document.getElementById(
-              "board-select",
+              "area-select",
             ) as HTMLSelectElement | null;
-            const addBtn = document.getElementById("add-board-btn");
+            const addBtn = document.getElementById("add-area-btn");
             if (!select) return;
 
             // Load boards from API
             try {
               const res = await fetch(
-                (window.__ingress_path || "") + "/api/boards",
+                (window.__ingress_path || "") + "/api/areas",
               );
               if (res.ok) {
                 const data = await res.json();
                 const boards = data.boards ?? [];
                 select.innerHTML = "";
-                // "All Boards" option first
+                // "All Areas" option first
                 const allOpt = document.createElement("option");
                 allOpt.value = "all";
-                allOpt.textContent = "🗂 All Boards";
+                allOpt.textContent = "🗂 All Areas";
                 select.appendChild(allOpt);
                 boards.forEach(
                   (b: { id: string; title: string; icon: string }) => {
@@ -347,13 +347,13 @@
 
             // Restore active board from localStorage
             const saved =
-              localStorage.getItem("meitheal_active_board") ?? "all";
+              localStorage.getItem("meitheal_active_area") ?? "all";
             if (select.querySelector(`option[value="${saved}"]`)) {
               select.value = saved;
             }
 
             // Expose active board globally for page scripts
-            window.__activeBoard = select.value;
+            window.__activeArea = select.value;
 
             // Apply board filter to visible items
             function isDoneStatus(s: string) {
@@ -361,50 +361,50 @@
             }
 
             // strategic lens payload integration
-            function applyBoardFilter() {
-              const board = select!.value;
-              window.__activeBoard = board;
+            function applyAreaFilter() {
+              const area = select!.value;
+              window.__activeArea = area;
               // Filter task items (tasks page)
               document
-                .querySelectorAll(".task-item[data-board]")
+                .querySelectorAll(".task-item[data-area]")
                 .forEach((el) => {
                   const item = el as HTMLElement;
                   item.style.display =
-                    board === "all" || item.dataset.board === board
+                    area === "all" || item.dataset.area === area
                       ? ""
                       : "none";
                 });
               // Filter kanban cards
               document
-                .querySelectorAll(".kanban-card[data-board]")
+                .querySelectorAll(".kanban-card[data-area]")
                 .forEach((el) => {
                   const card = el as HTMLElement;
                   card.style.display =
-                    board === "all" || card.dataset.board === board
+                    area === "all" || card.dataset.area === area
                       ? ""
                       : "none";
                 });
               // Filter table rows
               document
-                .querySelectorAll("#task-table tbody tr[data-board]")
+                .querySelectorAll("#task-table tbody tr[data-area]")
                 .forEach((el) => {
                   const row = el as HTMLElement;
                   row.style.display =
-                    board === "all" || row.dataset.board === board
+                    area === "all" || row.dataset.area === area
                       ? ""
                       : "none";
                 });
             }
 
             // Apply on load
-            applyBoardFilter();
+            applyAreaFilter();
 
             // Switch board → save + filter
             select.addEventListener(
               "change",
               () => {
-                localStorage.setItem("meitheal_active_board", select.value);
-                applyBoardFilter();
+                localStorage.setItem("meitheal_active_area", select.value);
+                applyAreaFilter();
               },
               { signal },
             );
@@ -413,11 +413,11 @@
             addBtn?.addEventListener(
               "click",
               async () => {
-                const title = prompt("Board name:");
+                const title = prompt("Area name:");
                 if (!title?.trim()) return;
                 try {
                   const res = await fetch(
-                    (window.__ingress_path || "") + "/api/boards",
+                    (window.__ingress_path || "") + "/api/areas",
                     {
                       method: "POST",
                       headers: { "content-type": "application/json" },
@@ -425,8 +425,8 @@
                     },
                   );
                   if (res.ok) {
-                    const board = await res.json();
-                    localStorage.setItem("meitheal_active_board", board.id);
+                    const area = await res.json();
+                    localStorage.setItem("meitheal_active_area", area.id);
                     window.location.reload();
                   }
                 } catch {

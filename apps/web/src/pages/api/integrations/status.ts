@@ -53,7 +53,7 @@ export const GET: APIRoute = async () => {
         ha_event_bus: {
           available: !!process.env.SUPERVISOR_TOKEN,
           connected: haStatus.connected,
-          event_types: ["meitheal_task_created", "meitheal_task_updated", "meitheal_task_completed", "meitheal_task_deleted", "meitheal_task_overdue", "meitheal_board_updated"],
+          event_types: ["meitheal_task_created", "meitheal_task_updated", "meitheal_task_completed", "meitheal_task_deleted", "meitheal_task_overdue", "meitheal_area_updated"],
           enabled_events: n8nEvents.length > 0 ? n8nEvents : defaultEvents,
         },
         standalone_webhook: {

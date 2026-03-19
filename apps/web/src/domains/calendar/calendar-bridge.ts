@@ -457,7 +457,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           // Atomic INSERT...SELECT to prevent ticket_number race under concurrent sync
           await client.execute({
             sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                    labels, framework_payload, calendar_sync_state, board_id,
+                    labels, framework_payload, calendar_sync_state, area_id,
                     custom_fields, task_type, idempotency_key, request_id,
                     ticket_number, created_at, updated_at)
                   VALUES (?, ?, ?, 'pending', 3, ?, ?, '{}', 'synced', 'default',
@@ -1062,7 +1062,7 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
           // Atomic INSERT...SELECT to prevent ticket_number race under concurrent sync
           await client.execute({
             sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                    labels, framework_payload, calendar_sync_state, board_id,
+                    labels, framework_payload, calendar_sync_state, area_id,
                     custom_fields, task_type, idempotency_key, request_id,
                     ticket_number, created_at, updated_at)
                   VALUES (?, ?, ?, 'backlog', 3, ?, ?, '{}', 'synced', 'default',

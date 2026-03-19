@@ -89,7 +89,7 @@ export const GET: APIRoute = async () => {
       p5_lowest: 0,
     }
     const labelCounts = new Map<string, number>()
-    const boardCounts = new Map<string, number>()
+    const areaCounts = new Map<string, number>()
 
     for (const task of tasks) {
       const updatedDay = task.updated_at?.split("T")[0] ?? ""
@@ -129,11 +129,11 @@ export const GET: APIRoute = async () => {
           }
         }
 
-        // Board breakdown
-        if (task.board_id) {
-          boardCounts.set(
-            String(task.board_id),
-            (boardCounts.get(String(task.board_id)) ?? 0) + 1,
+        // Area breakdown
+        if (task.area_id) {
+          areaCounts.set(
+            String(task.area_id),
+            (areaCounts.get(String(task.area_id)) ?? 0) + 1,
           )
         }
       }
@@ -162,9 +162,9 @@ export const GET: APIRoute = async () => {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([label, count]) => ({ label, count }))
-    const boardActivity = Array.from(boardCounts.entries())
+    const areaActivity = Array.from(areaCounts.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([boardId, count]) => ({ boardId, count }))
+      .map(([areaId, count]) => ({ areaId, count }))
 
     // Compute averages
     const avgPerDay = totalCompleted / 7
@@ -191,7 +191,7 @@ export const GET: APIRoute = async () => {
       velocity,
       priorityBreakdown,
       topLabels,
-      boardActivity,
+      areaActivity,
     }
 
     apiLogger.log("info", {

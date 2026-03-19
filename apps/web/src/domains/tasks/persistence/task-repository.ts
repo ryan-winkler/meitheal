@@ -48,8 +48,8 @@ export interface DashboardStats {
   overdue: number;
 }
 
-/** Board metadata */
-export interface BoardInfo {
+/** Area metadata */
+export interface AreaInfo {
   id: string;
   name: string;
   color: string;
@@ -103,7 +103,7 @@ export class TaskRepository {
   /** Recent tasks for dashboard hero section */
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, board_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
        FROM tasks ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as TaskRow[];
@@ -112,7 +112,7 @@ export class TaskRepository {
   /** Tasks belonging to a specific project, ordered by priority */
   async findByProjectId(projectId: string): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, board_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at
+      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at
             FROM tasks WHERE project_id = ?
             ORDER BY priority ASC, created_at DESC`,
       args: [projectId],
@@ -134,7 +134,7 @@ export class TaskRepository {
   /** Open (non-complete) tasks ordered by priority then due date */
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, assigned_to, board_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
+      sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
             FROM tasks WHERE status NOT IN (?)
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
@@ -172,20 +172,20 @@ export class TaskRepository {
   }
 
   /** All boards (for card badges on dashboard) */
-  async getBoards(): Promise<Record<string, BoardInfo>> {
-    const result = await this.client.execute("SELECT id, title, color FROM boards");
-    const boardMap: Record<string, BoardInfo> = {
+  async getAreas(): Promise<Record<string, AreaInfo>> {
+    const result = await this.client.execute("SELECT id, title, color FROM areas");
+    const areaMap: Record<string, AreaInfo> = {
       default: { id: "default", name: "Default", color: "#6366F1" },
     };
     for (const b of result.rows) {
       const br = b as Record<string, unknown>;
-      boardMap[String(br.id)] = {
+      areaMap[String(br.id)] = {
         id: String(br.id),
         name: String(br.title ?? "Default"),
         color: String(br.color ?? "#6366F1"),
       };
     }
-    return boardMap;
+    return areaMap;
   }
 
   // ── Kanban (kanban.astro) ───────────────────────────────────────────
@@ -193,7 +193,7 @@ export class TaskRepository {
   /** All tasks for kanban board, ordered by position then priority */
   async getKanbanTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, board_id, custom_fields, start_date, end_date, progress, color, is_favorite, task_type, task_kind, project_id, owner, handoff_state, parent_id, ticket_number, assigned_to, kanban_position, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, area_id, custom_fields, start_date, end_date, progress, color, is_favorite, task_type, task_kind, project_id, owner, handoff_state, parent_id, ticket_number, assigned_to, kanban_position, created_at, updated_at
        FROM tasks ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC`,
     );
     return result.rows as TaskRow[];
@@ -424,7 +424,7 @@ export class TaskRepository {
     }
     const result = await this.client.execute({
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
-                   t.framework_payload, t.calendar_sync_state, t.board_id, t.custom_fields,
+                   t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
                    t.is_favorite, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
@@ -446,7 +446,7 @@ export class TaskRepository {
   async exportAll(): Promise<TaskRow[]> {
     const result = await this.client.execute(
       `SELECT id, title, description, status, priority, due_date, labels,
-              framework_payload, calendar_sync_state, board_id, custom_fields,
+              framework_payload, calendar_sync_state, area_id, custom_fields,
               parent_id, time_tracked, start_date, end_date, progress, color,
               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
               ticket_number, recurrence_rule,
@@ -460,7 +460,7 @@ export class TaskRepository {
   async findAll(opts: {
     status?: string;
     priority?: number;
-    boardId?: string;
+    areaId?: string;
     taskType?: string;
     parentId?: string;
     search?: string;
@@ -483,7 +483,7 @@ export class TaskRepository {
 
     if (opts.status) { conditions.push("status = ?"); args.push(normalizeStatus(opts.status)); }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
-    if (opts.boardId) { conditions.push("board_id = ?"); args.push(opts.boardId); }
+    if (opts.areaId) { conditions.push("area_id = ?"); args.push(opts.areaId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
     if (opts.search) { conditions.push("(title LIKE ? OR description LIKE ?)"); args.push(`%${opts.search}%`, `%${opts.search}%`); }
@@ -495,7 +495,7 @@ export class TaskRepository {
 
     const selectSql = `SELECT id, title, description, status, priority, due_date, labels,
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
-                              board_id, custom_fields, start_date, end_date, progress, color,
+                              area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at
                        FROM tasks${where}
@@ -599,7 +599,7 @@ export class TaskRepository {
 
     const result = await this.client.execute({
       sql: `SELECT tasks.id, tasks.ticket_number, tasks.title, tasks.description, tasks.status,
-                   tasks.priority, tasks.labels, tasks.custom_fields, tasks.board_id, tasks.task_type,
+                   tasks.priority, tasks.labels, tasks.custom_fields, tasks.area_id, tasks.task_type,
                    tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date,
                    comment_index.comment_blob
             FROM tasks
@@ -655,7 +655,7 @@ export class TaskRepository {
     id: string; title: string; description: string; status: string;
     priority: number; due_date: string | null; labels: string;
     framework_payload: string; parent_id: string | null;
-    board_id: string; custom_fields: string; start_date: string | null;
+    area_id: string; custom_fields: string; start_date: string | null;
     end_date: string | null; progress: number; color: string | null;
     is_favorite: number; task_type: string; ticket_number: number;
     assigned_to: string | null; checklists?: string | null;
@@ -665,14 +665,14 @@ export class TaskRepository {
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                framework_payload, calendar_sync_state, parent_id, time_tracked,
-                               board_id, custom_fields, start_date, end_date, progress, color, is_favorite,
+                               area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                                task_type, ticket_number, assigned_to, checklists, recurrence_rule,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id, data.title, data.description, data.status, data.priority,
         data.due_date, data.labels, data.framework_payload,
-        STATUS.PENDING, data.parent_id, data.board_id, data.custom_fields,
+        STATUS.PENDING, data.parent_id, data.area_id, data.custom_fields,
         data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
         data.task_type, data.ticket_number, data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,
@@ -709,7 +709,7 @@ export class TaskRepository {
     // Re-fetch the updated row
     const result = await this.client.execute({
       sql: `SELECT id, title, description, status, priority, due_date, labels,
-                   framework_payload, calendar_sync_state, board_id, custom_fields,
+                   framework_payload, calendar_sync_state, area_id, custom_fields,
                    parent_id, time_tracked, start_date, end_date, progress, color,
                    is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                    ticket_number, assigned_to, checklists, created_at, updated_at
@@ -723,7 +723,7 @@ export class TaskRepository {
   async getFieldsForDiff(id: string): Promise<TaskRow | null> {
     const result = await this.client.execute({
       sql: `SELECT title, description, status, priority, due_date, labels,
-                   framework_payload, board_id, custom_fields, parent_id,
+                   framework_payload, area_id, custom_fields, parent_id,
                    task_type, task_kind, project_id, owner, handoff_state,
                    start_date, end_date, progress, color, is_favorite, assigned_to
             FROM tasks WHERE id = ? LIMIT 1`,
@@ -803,34 +803,42 @@ export class TaskRepository {
     const ids = idResult.rows.map((r) => String((r as Record<string, unknown>).id));
     if (ids.length === 0) return 0;
 
-    // 2. Cascade: delete related records in batches of 100 to avoid SQLite limits
-    for (let i = 0; i < ids.length; i += 100) {
-      const batch = ids.slice(i, i + 100);
-      const placeholders = batch.map(() => "?").join(", ");
+    // 2. Transaction: cascade deletes are atomic — all or nothing
+    await this.client.execute("BEGIN");
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        const placeholders = batch.map(() => "?").join(", ");
 
-      await this.client.execute({
-        sql: `DELETE FROM task_activity_log WHERE task_id IN (${placeholders})`,
-        args: batch,
-      });
-      await this.client.execute({
-        sql: `DELETE FROM comments WHERE task_id IN (${placeholders})`,
-        args: batch,
-      });
-      try {
         await this.client.execute({
-          sql: `DELETE FROM task_links WHERE source_task_id IN (${placeholders}) OR target_task_id IN (${placeholders})`,
-          args: [...batch, ...batch],
+          sql: `DELETE FROM task_activity_log WHERE task_id IN (${placeholders})`,
+          args: batch,
         });
-      } catch { /* task_links table may not exist yet */ }
-    }
+        await this.client.execute({
+          sql: `DELETE FROM comments WHERE task_id IN (${placeholders})`,
+          args: batch,
+        });
+        try {
+          await this.client.execute({
+            sql: `DELETE FROM task_links WHERE source_task_id IN (${placeholders}) OR target_task_id IN (${placeholders})`,
+            args: [...batch, ...batch],
+          });
+        } catch { /* task_links table may not exist yet */ }
+      }
 
-    // 3. Delete the tasks themselves
-    await this.client.execute({
-      sql: `DELETE FROM tasks
-            WHERE status IN ('complete', 'archived')
-              AND updated_at < ?`,
-      args: [cutoffMs],
-    });
+      // 3. Delete the tasks themselves
+      await this.client.execute({
+        sql: `DELETE FROM tasks
+              WHERE status IN ('complete', 'archived')
+                AND updated_at < ?`,
+        args: [cutoffMs],
+      });
+
+      await this.client.execute("COMMIT");
+    } catch (err) {
+      await this.client.execute("ROLLBACK");
+      throw err;
+    }
 
     return ids.length;
   }
@@ -839,7 +847,7 @@ export class TaskRepository {
   async getRecurrenceData(id: string): Promise<TaskRow | null> {
     const result = await this.client.execute({
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels,
-                   board_id, parent_id, task_type, assigned_to, checklists, custom_fields
+                   area_id, parent_id, task_type, assigned_to, checklists, custom_fields
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
@@ -872,7 +880,7 @@ export class TaskRepository {
 
      await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               recurrence_rule, recurrence_anchor, board_id, parent_id, task_type, assigned_to,
+                               recurrence_rule, recurrence_anchor, area_id, parent_id, task_type, assigned_to,
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -886,7 +894,7 @@ export class TaskRepository {
         sourceTask.labels ? String(sourceTask.labels) : "[]",
         recurrenceRule,
         sourceTask.recurrence_anchor ? String(sourceTask.recurrence_anchor) : "due_date",
-        sourceTask.board_id ? String(sourceTask.board_id) : "default",
+        sourceTask.area_id ? String(sourceTask.area_id) : "default",
         sourceTask.parent_id ? String(sourceTask.parent_id) : null,
         sourceTask.task_type ? String(sourceTask.task_type) : "task",
         sourceTask.assigned_to ? String(sourceTask.assigned_to) : null,

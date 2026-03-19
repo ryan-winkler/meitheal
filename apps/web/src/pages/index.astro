@@ -23,7 +23,7 @@ let openTasks: Record<string, unknown>[] = [];
 let stats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
 let gamificationStats = { currentStreak: 0, todayCompleted: 0, totalCompleted: 0, longestStreak: 0, totalPoints: 0 };
 let gamificationWeekly: Array<{ date: string; completedCount: number; streakCount: number; points: number }> = [];
-let boardMap: Record<string, { name: string; color: string }> = {
+let areaMap: Record<string, { name: string; color: string }> = {
   default: { name: "Default", color: "#6366F1" },
 };
 
@@ -35,8 +35,8 @@ try {
   openTasks = await repo.getOpenTasks(15);
   stats = await repo.getStatusCounts();
   stats.overdue = await repo.getOverdueCount();
-  const boards = await repo.getBoards();
-  boardMap = Object.fromEntries(
+  const boards = await repo.getAreas();
+  areaMap = Object.fromEntries(
     Object.entries(boards).map(([k, v]) => [
       k,
       { name: v.name, color: v.color },
@@ -172,7 +172,7 @@ import { getPriorityColor } from "../lib/priority-config";
       href="/tasks?status=overdue"
       id="stat-overdue"
       class={`stat-card stat-card-link stat-card-entrance ${stats.overdue > 0 ? "stat-card-danger" : ""}`}
-      title="Tasks past their due date across all boards"
+      title="Tasks past their due date across all areas"
     >
       <span class="stat-icon">⏰</span>
       <div>
@@ -385,8 +385,8 @@ import { getPriorityColor } from "../lib/priority-config";
                     : p === 5
                       ? "#6b7280"
                       : "#eab308";
-            const boardId = String(task.board_id ?? "default");
-            const board = boardMap[boardId] ?? {
+            const areaId = String(task.area_id ?? "default");
+            const area = areaMap[areaId] ?? {
               name: "Default",
               color: "#6366F1",
             };
@@ -397,7 +397,7 @@ import { getPriorityColor } from "../lib/priority-config";
               <div
                 class={`bento-card ${isDone ? "bento-card-done" : ""}`}
                 data-id={String(task.id)}
-                data-board={boardId}
+                data-area={areaId}
                 style={`border-left: 3px solid ${taskColor};`}
               >
                 <div class="bento-card-body">
@@ -416,10 +416,10 @@ import { getPriorityColor } from "../lib/priority-config";
                       {statusLabels[String(task.status)] ?? String(task.status)}
                     </span>
                     <span
-                      class="bento-board-badge"
-                      style={`background: ${board.color}20; color: ${board.color}; border-color: ${board.color}40;`}
+                      class="bento-area-badge"
+                      style={`background: ${area.color}20; color: ${area.color}; border-color: ${area.color}40;`}
                     >
-                      {board.name}
+                      {area.name}
                     </span>
                     {task.due_date && (
                       <span class="bento-card-due">

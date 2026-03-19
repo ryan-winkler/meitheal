@@ -37,25 +37,32 @@ function monthsToCutoffMs(months: number): number {
   return cutoff.getTime()
 }
 
+/** Validate and extract the months query parameter */
+function validateMonths(url: URL): { months: number } | Response {
+  const monthsParam = Number(url.searchParams.get("months"))
+  if (!VALID_MONTHS.has(monthsParam)) {
+    return new Response(
+      JSON.stringify({ error: "months must be 3, 6, 12, or 24" }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    )
+  }
+  return { months: monthsParam }
+}
+
 /** GET — dry-run preview: count tasks that would be deleted */
 export const GET: APIRoute = async ({ url }) => {
   try {
-    const monthsParam = Number(url.searchParams.get("months"))
-    if (!VALID_MONTHS.has(monthsParam)) {
-      return new Response(
-        JSON.stringify({ error: "months must be 3, 6, 12, or 24" }),
-        { status: 400, headers: { "content-type": "application/json" } },
-      )
-    }
+    const result = validateMonths(url)
+    if (result instanceof Response) return result
+    const { months } = result
 
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
-    const cutoffMs = monthsToCutoffMs(monthsParam)
-    const count = await repo.countCompletedBefore(cutoffMs)
+    const cutoffMs = monthsToCutoffMs(months)
     const cutoffDate = new Date(cutoffMs).toISOString().split("T")[0]
 
     return new Response(
-      JSON.stringify({ count, months: monthsParam, cutoffDate }),
+      JSON.stringify({ count: await repo.countCompletedBefore(cutoffMs), months, cutoffDate }),
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err) {
@@ -71,13 +78,9 @@ export const GET: APIRoute = async ({ url }) => {
 /** DELETE — permanently remove completed/archived tasks older than threshold */
 export const DELETE: APIRoute = async ({ url }) => {
   try {
-    const monthsParam = Number(url.searchParams.get("months"))
-    if (!VALID_MONTHS.has(monthsParam)) {
-      return new Response(
-        JSON.stringify({ error: "months must be 3, 6, 12, or 24" }),
-        { status: 400, headers: { "content-type": "application/json" } },
-      )
-    }
+    const result = validateMonths(url)
+    if (result instanceof Response) return result
+    const { months } = result
 
     const confirm = url.searchParams.get("confirm")
     if (confirm !== "true") {
@@ -90,7 +93,7 @@ export const DELETE: APIRoute = async ({ url }) => {
     await ensureSchema()
     const client = getPersistenceClient()
     const repo = new TaskRepository(client)
-    const cutoffMs = monthsToCutoffMs(monthsParam)
+    const cutoffMs = monthsToCutoffMs(months)
     const cutoffDate = new Date(cutoffMs).toISOString().split("T")[0]
 
     const deleted = await repo.deleteCompletedBefore(cutoffMs)
@@ -103,8 +106,8 @@ export const DELETE: APIRoute = async ({ url }) => {
         args: [
           crypto.randomUUID(),
           "retention-delete",
-          `Permanently deleted ${deleted} completed/archived tasks older than ${monthsParam} months (before ${cutoffDate})`,
-          JSON.stringify({ months: monthsParam, cutoffDate, deletedCount: deleted }),
+          `Permanently deleted ${deleted} completed/archived tasks older than ${months} months (before ${cutoffDate})`,
+          JSON.stringify({ months, cutoffDate, deletedCount: deleted }),
           Date.now(),
         ],
       })
@@ -117,12 +120,12 @@ export const DELETE: APIRoute = async ({ url }) => {
       domain: "tasks",
       component: "delete-completed",
       request_id: "retention-delete",
-      message: `Permanently deleted ${deleted} tasks older than ${monthsParam} months`,
-      metadata: { months: monthsParam, cutoffDate, deletedCount: deleted },
+      message: `Permanently deleted ${deleted} tasks older than ${months} months`,
+      metadata: { months, cutoffDate, deletedCount: deleted },
     })
 
     return new Response(
-      JSON.stringify({ ok: true, deleted, months: monthsParam, cutoffDate }),
+      JSON.stringify({ ok: true, deleted, months, cutoffDate }),
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err) {

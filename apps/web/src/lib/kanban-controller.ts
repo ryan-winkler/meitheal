@@ -30,7 +30,7 @@ const __signal = pageLifecycle.signal;
  * Initialize all Kanban board interactivity.
  * Called on `astro:page-load` from kanban.astro.
  */
-export function initKanbanBoard(): void {
+export function initKanbanArea(): void {
     function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
       if (!/^[A-Za-z0-9_-]+$/.test(normalizedTaskId)) {
@@ -568,10 +568,10 @@ export function initKanbanBoard(): void {
         // Close on scroll (P1-4)
         const board = document.querySelector(".kanban-scroll-area, .kanban-board");
         const onScroll = () => close();
-        board?.addEventListener("scroll", onScroll, { once: true });
+        kanbanBoard?.addEventListener("scroll", onScroll, { once: true });
         window.addEventListener("scroll", onScroll, { once: true });
         _scrollCleanup = () => {
-          board?.removeEventListener("scroll", onScroll);
+          kanbanBoard?.removeEventListener("scroll", onScroll);
           window.removeEventListener("scroll", onScroll);
         };
 
@@ -625,7 +625,7 @@ export function initKanbanBoard(): void {
         if (!parentId) return;
 
         const card = btn.closest(".kanban-card");
-        const boardId = card?.dataset.board || "";
+        const areaId = card?.dataset.area || "";
 
         btn.disabled = true;
         btn.classList.add("btn-loading");
@@ -638,7 +638,7 @@ export function initKanbanBoard(): void {
               parent_id: parentId,
               status: "pending",
               priority: Number(parentPriority),
-              board_id: boardId || undefined,
+              area_id: areaId || undefined,
               task_type: "task",
             }),
           });
@@ -1324,10 +1324,10 @@ export function initKanbanBoard(): void {
     // T-1914: Keyboard navigation for kanban board
     (() => {
       const board = document.querySelector(".kanban-board");
-      if (!board) return;
+      if (!kanbanBoard) return;
 
       // Swimlane collapse event delegation
-      board.addEventListener("click", (e) => {
+      kanbanBoard.addEventListener("click", (e) => {
         const header = e.target.closest(".swimlane-header");
         if (header && !e.target.closest("button")) {
           const group = header.closest(".swimlane-group");
@@ -1348,8 +1348,8 @@ export function initKanbanBoard(): void {
 
       let focusedCard = null;
 
-      board.addEventListener("keydown", (e) => {
-        const cards = Array.from(board.querySelectorAll(".kanban-card"));
+      kanbanBoard.addEventListener("keydown", (e) => {
+        const cards = Array.from(kanbanBoard.querySelectorAll(".kanban-card"));
         if (!cards.length) return;
 
         if (!focusedCard || !document.contains(focusedCard)) {
@@ -1361,7 +1361,7 @@ export function initKanbanBoard(): void {
           currentCol.querySelectorAll(".kanban-card"),
         );
         const colIdx = colCards.indexOf(focusedCard);
-        const columns = Array.from(board.querySelectorAll(".kanban-column"));
+        const columns = Array.from(kanbanBoard.querySelectorAll(".kanban-column"));
         const colPos = columns.indexOf(currentCol);
 
         let nextCard = null;
@@ -1404,20 +1404,20 @@ export function initKanbanBoard(): void {
         }
       });
 
-      // Board-level tabindex removed — it causes drag ghost artifacts and
+      // Area-level tabindex removed — it causes drag ghost artifacts and
       // makes the entire board draggable. Keyboard nav works via individual
       // card tabindex/focus instead.
 
       // Focus first card when board gets focus
-      board.addEventListener("focus", () => {
-        const firstCard = board.querySelector(".kanban-card");
+      kanbanBoard.addEventListener("focus", () => {
+        const firstCard = kanbanBoard.querySelector(".kanban-card");
         if (firstCard) {
           focusedCard = firstCard;
           focusedCard.classList.add("kb-focused");
         }
       });
 
-      board.addEventListener("blur", () => {
+      kanbanBoard.addEventListener("blur", () => {
         if (focusedCard) focusedCard.classList.remove("kb-focused");
       });
     })();
@@ -1509,16 +1509,16 @@ export function initKanbanBoard(): void {
       async function applyGroupBy(mode) {
         localStorage.setItem("meitheal-kanban-group-by", mode);
 
-        let boardTitleMap = {};
-        if (mode === "board") {
+        let areaTitleMap = {};
+        if (mode === "area") {
           try {
-            const res = await fetch((window.__ingress_path || "") + "/api/boards");
+            const res = await fetch((window.__ingress_path || "") + "/api/areas");
             if (res.ok) {
               const data = await res.json();
-              (data.boards || []).forEach(b => { boardTitleMap[b.id] = `${b.icon || '📋'} ${b.title}`; });
+              (data.boards || []).forEach(b => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.title}`; });
             }
           } catch { /* use raw IDs as fallback */ }
-          boardTitleMap["default"] = "📋 Default";
+          areaTitleMap["default"] = "📋 Default";
         }
 
         // Ungroup everything first
@@ -1585,9 +1585,9 @@ export function initKanbanBoard(): void {
                 if (countEl) countEl.textContent = Array.from(cards).filter(window.isCardVisible).length;
               });
           });
-        } else if (mode === "board" || mode === "priority") {
+        } else if (mode === "area" || mode === "priority") {
           // Dynamic swimlane generation for board/priority
-          const dataAttr = mode === "board" ? "board" : "priority";
+          const dataAttr = mode === "area" ? "area" : "priority";
           const icons =
             mode === "priority"
               ? {
@@ -1647,7 +1647,7 @@ export function initKanbanBoard(): void {
               const header = document.createElement("div");
               header.className = "swimlane-header";
               const label =
-                icons[key] || (mode === "board" ? (boardTitleMap[key] || `📋 ${key}`) : defaultLabel);
+                icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel);
               const toggleSpan = document.createElement("span");
               toggleSpan.className = "swimlane-toggle";
               toggleSpan.textContent = "▼";
@@ -1921,9 +1921,9 @@ export function initKanbanBoard(): void {
 
       // Use event delegation on the board container
       var board = document.querySelector(".kanban-board");
-      if (!board) return;
+      if (!kanbanBoard) return;
 
-      board.addEventListener(
+      kanbanBoard.addEventListener(
         "touchstart",
         function (e) {
           var card = e.target.closest('.kanban-card[draggable="true"]');
@@ -1946,7 +1946,7 @@ export function initKanbanBoard(): void {
         { passive: true },
       );
 
-      board.addEventListener(
+      kanbanBoard.addEventListener(
         "touchmove",
         function (e) {
           var t = e.touches[0];
@@ -1985,7 +1985,7 @@ export function initKanbanBoard(): void {
         { passive: false },
       );
 
-      board.addEventListener(
+      kanbanBoard.addEventListener(
         "touchend",
         function (e) {
           cancelHold();
@@ -2028,7 +2028,7 @@ export function initKanbanBoard(): void {
       );
 
       // Cancel drag on context menu / multi-touch
-      board.addEventListener(
+      kanbanBoard.addEventListener(
         "touchcancel",
         function () {
           cleanup();

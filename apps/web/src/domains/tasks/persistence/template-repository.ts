@@ -79,7 +79,7 @@ export class TemplateRepository {
     const now = Date.now()
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type,
-            recurrence_rule, checklists, custom_fields, board_id, framework_payload,
+            recurrence_rule, checklists, custom_fields, area_id, framework_payload,
             calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?)`,
       args: [
@@ -93,7 +93,7 @@ export class TemplateRepository {
         template.recurrence_rule ? String(template.recurrence_rule) : null,
         JSON.stringify(template.checklists ?? []),
         JSON.stringify(template.custom_fields ?? {}),
-        String(template.board_id ?? "default"),
+        String(template.area_id ?? "default"),
         STATUS.PENDING,
         crypto.randomUUID(),
         crypto.randomUUID(),
@@ -313,7 +313,7 @@ export class TemplateRepository {
 
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, task_kind,
-            due_date, checklists, custom_fields, board_id, source_template_id, ticket_number,
+            due_date, checklists, custom_fields, area_id, source_template_id, ticket_number,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?, ?, '{}', 'pending', ?, ?, ?, ?)`,
       args: [
@@ -327,7 +327,7 @@ export class TemplateRepository {
         today,
         checklists,
         JSON.stringify(template.custom_fields ?? {}),
-        String(template.board_id ?? "default"),
+        String(template.area_id ?? "default"),
         templateId,
         ticketNumber,
         crypto.randomUUID(),

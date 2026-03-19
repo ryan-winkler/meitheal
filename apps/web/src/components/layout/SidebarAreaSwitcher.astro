@@ -10,17 +10,17 @@ const { locale } = Astro.props;
 ---
 
 <div
-  class="board-switcher"
-  id="board-switcher"
+  class="area-switcher"
+  id="area-switcher"
   role="region"
-  aria-label="Board selector"
+  aria-label="Area selector"
 >
-  <div class="board-switcher-label">{t("sidebar.board", locale)}</div>
+  <div class="area-switcher-label">{t("sidebar.area", locale)}</div>
   <div class="relative w-full">
     <select
-      class="board-select appearance-none w-full bg-bg-primary border border-border rounded-md py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-      id="board-select"
-      aria-label="Select active board"
+      class="area-select appearance-none w-full bg-bg-primary border border-border rounded-md py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+      id="area-select"
+      aria-label="Select active area"
     >
       <option value="default">📋 {t("sidebar.default_board", locale)}</option>
     </select>
@@ -31,18 +31,18 @@ const { locale } = Astro.props;
     </div>
   </div>
   <button
-    class="board-add-btn mt-2 w-full bg-bg-primary hover:bg-bg-hover border border-border rounded-md py-1.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
-    id="add-board-btn"
+    class="area-add-btn mt-2 w-full bg-bg-primary hover:bg-bg-hover border border-border rounded-md py-1.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+    id="add-area-btn"
     title={t("sidebar.create_board", locale)}
     aria-label={t("sidebar.create_board", locale)}
   >
     <Icon name="plus" size={16} />
-    New Board
+    New Area
   </button>
 </div>
 
 <style>
-  .board-switcher {
+  .area-switcher {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -54,7 +54,7 @@ const { locale } = Astro.props;
     margin-bottom: 1rem;
   }
 
-  .board-switcher-label {
+  .area-switcher-label {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -64,25 +64,25 @@ const { locale } = Astro.props;
 </style>
 
 <script>
-  // Board Switcher
-  (async function initBoardSwitcher() {
+  // Area Switcher
+  (async function initAreaSwitcher() {
     const select = document.getElementById(
-      "board-select",
+      "area-select",
     ) as HTMLSelectElement | null;
-    const addBtn = document.getElementById("add-board-btn");
+    const addBtn = document.getElementById("add-area-btn");
     if (!select) return;
 
     // Load boards from API
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/boards");
+      const res = await fetch((window.__ingress_path || "") + "/api/areas");
       if (res.ok) {
         const data = await res.json();
         const boards = data.boards ?? [];
         select.innerHTML = "";
-        // "All Boards" option first
+        // "All Areas" option first
         const allOpt = document.createElement("option");
         allOpt.value = "all";
-        allOpt.textContent = "🗂 All Boards";
+        allOpt.textContent = "🗂 All Areas";
         select.appendChild(allOpt);
         boards.forEach((b: { id: string; title: string; icon: string }) => {
           const opt = document.createElement("option");
@@ -96,63 +96,63 @@ const { locale } = Astro.props;
     }
 
     // Restore active board from localStorage
-    const saved = localStorage.getItem("meitheal_active_board") ?? "all";
+    const saved = localStorage.getItem("meitheal_active_area") ?? "all";
     if (select.querySelector(`option[value="${saved}"]`)) {
       select.value = saved;
     }
 
     // Expose active board globally for page scripts
-    window.__activeBoard = select.value;
+    window.__activeArea = select.value;
 
     // Apply board filter to visible items
-    function applyBoardFilter() {
-      const board = select!.value;
-      window.__activeBoard = board;
+    function applyAreaFilter() {
+      const area = select!.value;
+      window.__activeArea = area;
       // Filter task items (tasks page)
-      document.querySelectorAll(".task-item[data-board]").forEach((el) => {
+      document.querySelectorAll(".task-item[data-area]").forEach((el) => {
         const item = el as HTMLElement;
         item.style.display =
-          board === "all" || item.dataset.board === board ? "" : "none";
+          area === "all" || item.dataset.area === area ? "" : "none";
       });
       // Filter kanban cards
-      document.querySelectorAll(".kanban-card[data-board]").forEach((el) => {
+      document.querySelectorAll(".kanban-card[data-area]").forEach((el) => {
         const card = el as HTMLElement;
         card.style.display =
-          board === "all" || card.dataset.board === board ? "" : "none";
+          area === "all" || card.dataset.area === area ? "" : "none";
       });
       // Filter table rows
       document
-        .querySelectorAll("#task-table tbody tr[data-board]")
+        .querySelectorAll("#task-table tbody tr[data-area]")
         .forEach((el) => {
           const row = el as HTMLElement;
           row.style.display =
-            board === "all" || row.dataset.board === board ? "" : "none";
+            area === "all" || row.dataset.area === area ? "" : "none";
         });
     }
 
     // Apply on load
-    applyBoardFilter();
+    applyAreaFilter();
 
     // Switch board → save + filter
     select.addEventListener("change", () => {
-      localStorage.setItem("meitheal_active_board", select.value);
-      applyBoardFilter();
+      localStorage.setItem("meitheal_active_area", select.value);
+      applyAreaFilter();
     });
 
     // Add new board
     addBtn?.addEventListener("click", async () => {
-      const title = prompt("Board name:");
+      const title = prompt("Area name:");
       if (!title?.trim()) return;
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/boards", {
+        const res = await fetch((window.__ingress_path || "") + "/api/areas", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ title: title.trim() }),
         });
         if (res.ok) {
-          const board = await res.json();
-          localStorage.setItem("meitheal_active_board", board.id);
-          document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "board-switch" } }));
+          const area = await res.json();
+          localStorage.setItem("meitheal_active_area", area.id);
+          document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "area-switch" } }));
         }
       } catch {
         /* ignore */

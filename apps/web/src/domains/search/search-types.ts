@@ -27,7 +27,7 @@ export interface SearchResultItem {
   id: string
   kind:
     | "task"
-    | "board"
+    | "area"
     | "saved_filter"
     | "setting"
     | "page"

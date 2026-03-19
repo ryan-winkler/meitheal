@@ -41,7 +41,7 @@ function getIconForItem(item: SearchResultItem): string {
   switch (item.kind) {
     case "task":
       return "✓"
-    case "board":
+    case "area":
       return "▦"
     case "saved_filter":
       return "⌘"

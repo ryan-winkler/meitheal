@@ -45,7 +45,7 @@ export const POST: APIRoute = async ({ params }) => {
             labels: row.labels ? String(row.labels) : "[]",
             framework_payload: row.framework_payload ? String(row.framework_payload) : "{}",
             parent_id: row.parent_id ? String(row.parent_id) : null,
-            board_id: row.board_id ? String(row.board_id) : "default",
+            area_id: row.area_id ? String(row.area_id) : "default",
             custom_fields: row.custom_fields ? String(row.custom_fields) : "{}",
             start_date: row.start_date ? String(row.start_date) : null,
             end_date: row.end_date ? String(row.end_date) : null,

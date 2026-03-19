@@ -16,7 +16,7 @@ const ALLOWED_KEYS = new Set([
     "vikunja-url", "vikunja-token",
     "calendar-entity", "calendar_entity", "cal_entity", "calendar_entities", "caldav_url", "calendar_sync_enabled", "calendar_write_back", "calendar_sync_interval_ms",
     // ── UI Preferences ──
-    "default-board", "theme", "default-view", "wip-limit",
+    "default-area", "theme", "default-view", "wip-limit",
     "show-description", "column-order", "locale",
     "sidebar-collapsed", "sidebar_config",
     "timezone", "week_start", "date_format",

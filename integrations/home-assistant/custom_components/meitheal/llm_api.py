@@ -808,7 +808,7 @@ API_PROMPT = (
     "- When they ask 'what did I finish?' — list completed tasks.\n"
     "- When they ask 'what areas?', 'show my projects' — list areas.\n"
     "- When they ask 'how are my goals?', 'goal progress' — list goals.\n"
-    "- When they say 'move task to X' — move to a different board/project.\n"
+    "- When they say 'move task to X' — move to a different area/project.\n"
     "- When they say 'update goal progress' — set goal progress percentage.\n"
     "- Priority levels: 1=urgent, 2=high, 3=medium (default), 4=low, 5=lowest.\n"
     "- When a task title includes '#label', extract and set the label.\n"
@@ -1048,20 +1048,20 @@ class ListGoalsTool(Tool):
 
 
 class MoveTaskToProjectTool(Tool):
-    """Move a task to a different project/board."""
+    """Move a task to a different project/area."""
 
     name = "meitheal_move_task"
     description = (
-        "Move a task to a different project or board. "
-        "Use when the user says 'move X to project Y', 'put this in the Work board', "
+        "Move a task to a different project or area. "
+        "Use when the user says 'move X to project Y', 'put this in the Work area', "
         "'reorganize tasks', or 'change the project for this task'. "
-        "You need the task_id and the target board_id — use meitheal_search_tasks "
+        "You need the task_id and the target area_id — use meitheal_search_tasks "
         "and meitheal_list_areas to find them."
     )
     parameters = vol.Schema(
         {
             vol.Required("task_id", description="Task ID to move"): str,
-            vol.Required("board_id", description="Target board/project ID"): str,
+            vol.Required("area_id", description="Target area/project ID"): str,
         }
     )
 
@@ -1071,7 +1071,7 @@ class MoveTaskToProjectTool(Tool):
         tool_input: ToolInput,
         llm_context: LLMContext,
     ) -> JsonObjectType:
-        """Move task to a different board."""
+        """Move task to a different area."""
         coordinator = _get_coordinator(hass)
         if not coordinator:
             return {"error": "Meitheal not available"}
@@ -1079,11 +1079,11 @@ class MoveTaskToProjectTool(Tool):
         try:
             await coordinator.async_update_task(
                 tool_input.tool_args["task_id"],
-                {"board_id": tool_input.tool_args["board_id"]},
+                {"area_id": tool_input.tool_args["area_id"]},
             )
             return {
                 "success": True,
-                "message": f"Task moved to board {tool_input.tool_args['board_id']}",
+                "message": f"Task moved to area {tool_input.tool_args['area_id']}",
             }
         except Exception as err:
             return {"error": str(err)}

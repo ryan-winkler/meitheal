@@ -528,31 +528,31 @@
               document.getElementById("td-time-tracked") as HTMLInputElement
             ).value = String(t.time_tracked ?? 0);
             // Populate board dropdown
-            const boardSelect = document.getElementById(
-              "td-board",
+            const areaSelect = document.getElementById(
+              "td-area",
             ) as HTMLSelectElement;
-            const currentBoardId = String(t.board_id ?? "default");
+            const currentAreaId = String(t.area_id ?? "default");
             try {
               const boardRes = await fetch(
-                (window.__ingress_path || "") + "/api/boards",
+                (window.__ingress_path || "") + "/api/areas",
                 { signal: modalSignal },
               );
               if (boardRes.ok) {
-                const boardData = await boardRes.json();
-                const boards = boardData.boards ?? [];
-                boardSelect.innerHTML = "";
+                const areaData = await boardRes.json();
+                const boards = areaData.boards ?? [];
+                areaSelect.innerHTML = "";
                 boards.forEach(
                   (b: { id: string; title: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
                     opt.textContent = `${b.icon} ${b.title}`;
-                    boardSelect.appendChild(opt);
+                    areaSelect.appendChild(opt);
                   },
                 );
-                boardSelect.value = currentBoardId;
+                areaSelect.value = currentAreaId;
               }
             } catch {
-              boardSelect.innerHTML = `<option value="${currentBoardId}">${currentBoardId}</option>`;
+              areaSelect.innerHTML = `<option value="${currentAreaId}">${currentAreaId}</option>`;
             }
             // Phase 20: Agile hierarchy type
             (
@@ -1148,8 +1148,8 @@
             saveTD("task_type", (e.target as HTMLSelectElement).value);
           });
         // Phase 26: board change auto-save
-        document.getElementById("td-board")?.addEventListener("change", (e) => {
-          saveTD("board_id", (e.target as HTMLSelectElement).value);
+        document.getElementById("td-area")?.addEventListener("change", (e) => {
+          saveTD("area_id", (e.target as HTMLSelectElement).value);
         });
         // Assigned To: auto-save on change + toast feedback (UX2)
         document
@@ -1261,7 +1261,7 @@
             if (!title) return;
             addSubInput.disabled = true;
             try {
-              const parentBoardEl = document.getElementById("td-board") as HTMLSelectElement | null;
+              const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null;
               const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
               const parentType = parentTypeEl?.value ?? "task";
               const childType = parentType === "epic" ? "story" : "task";
@@ -1271,7 +1271,7 @@
                 body: JSON.stringify({
                   title,
                   parent_id: currentTaskId,
-                  board_id: parentBoardEl?.value ?? "default",
+                  area_id: parentAreaEl?.value ?? "default",
                   task_type: childType,
                   status: "pending",
                 }),
@@ -2451,9 +2451,9 @@
               if (createBtn) createBtn.click();
               else
                 window.location.href = (window.__ingress_path || "") + "/tasks";
-            } else if (action === "new-board") {
+            } else if (action === "new-area") {
               const boardBtn = document.querySelector(
-                ".board-add-btn",
+                ".area-add-btn",
               ) as HTMLElement;
               if (boardBtn) boardBtn.click();
             } else if (action === "go-dashboard") {

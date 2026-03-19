@@ -36,7 +36,7 @@ const HA_EVENT_MAP: Record<string, MeithealEventType> = {
   "task.completed": "meitheal_task_completed",
   "task.deleted": "meitheal_task_deleted",
   "task.overdue": "meitheal_task_overdue",
-  "board.updated": "meitheal_board_updated",
+  "area.updated": "meitheal_area_updated",
 };
 
 /**
@@ -126,7 +126,7 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         const eventData: MeithealTaskEventData = {
           task_id: String(payload.id ?? ""),
           title: String(payload.title ?? ""),
-          ...(payload.board_id ? { board_id: String(payload.board_id) } : {}),
+          ...(payload.area_id ? { area_id: String(payload.area_id) } : {}),
           ...(payload.board_name ? { board_name: String(payload.board_name) } : {}),
           ...(payload.priority != null ? { priority: String(payload.priority) } : {}),
           ...(payload.due_date ? { due_date: String(payload.due_date) } : {}),

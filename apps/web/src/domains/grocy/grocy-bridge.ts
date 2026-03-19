@@ -556,7 +556,7 @@ async function mergeGrocyChores(chores: GrocyChore[]): Promise<number> {
       const taskId = crypto.randomUUID();
       await client.execute({
         sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                labels, framework_payload, calendar_sync_state, board_id,
+                labels, framework_payload, calendar_sync_state, area_id,
                 custom_fields, task_type, idempotency_key, request_id,
                 created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'synced', 'default', '{}', 'task', ?, ?, ?, ?)`,
@@ -598,8 +598,8 @@ async function mergeGrocyTasks(
       if (match.taskUpdatedAt > match.syncUpdatedAt && !task.done) continue;
 
       await client.execute({
-        sql: `UPDATE tasks SET title = ?, status = ?, due_date = ?, description = COALESCE(?, description), board_id = ?, updated_at = ? WHERE id = ?`,
-        args: [taskData.title, taskData.status, taskData.dueDate, taskData.description, taskData.boardId ?? "default", nowMs, match.taskId],
+        sql: `UPDATE tasks SET title = ?, status = ?, due_date = ?, description = COALESCE(?, description), area_id = ?, updated_at = ? WHERE id = ?`,
+        args: [taskData.title, taskData.status, taskData.dueDate, taskData.description, taskData.areaId ?? "default", nowMs, match.taskId],
       });
       await client.execute({
         sql: "UPDATE grocy_sync_confirmations SET payload = ?, updated_at = ? WHERE grocy_entity_type = 'task' AND grocy_entity_id = ?",
@@ -610,7 +610,7 @@ async function mergeGrocyTasks(
       const meithealTaskId = crypto.randomUUID();
       await client.execute({
         sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                labels, framework_payload, calendar_sync_state, board_id,
+                labels, framework_payload, calendar_sync_state, area_id,
                 custom_fields, task_type, idempotency_key, request_id,
                 created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'synced', ?, '{}', 'task', ?, ?, ?, ?)`,
@@ -618,7 +618,7 @@ async function mergeGrocyTasks(
           meithealTaskId, taskData.title, taskData.description ?? "", taskData.status,
           taskData.priority, taskData.dueDate,
           JSON.stringify(taskData.labels),
-          taskData.boardId ?? "default",
+          taskData.areaId ?? "default",
           `grocy-task-${task.taskId}`, crypto.randomUUID(), nowMs, nowMs,
         ],
       });
@@ -663,7 +663,7 @@ async function mergeShoppingList(
   const taskId = crypto.randomUUID();
   await client.execute({
     sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-            labels, framework_payload, calendar_sync_state, board_id,
+            labels, framework_payload, calendar_sync_state, area_id,
             custom_fields, task_type, idempotency_key, request_id,
             created_at, updated_at)
           VALUES (?, ?, ?, '${STATUS.PENDING}', 3, NULL, ?, '{}', 'synced', 'default', '{}', 'task', ?, ?, ?, ?)`,

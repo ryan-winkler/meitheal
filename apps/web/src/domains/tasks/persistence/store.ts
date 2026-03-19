@@ -320,9 +320,9 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE tasks ADD COLUMN time_tracked INTEGER NOT NULL DEFAULT 0");
   }
 
-  // Phase 15: Boards for DDD domain separation
+  // Phase 15: Areas for DDD domain separation
   await client.execute(`
-    CREATE TABLE IF NOT EXISTS boards (
+    CREATE TABLE IF NOT EXISTS areas (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       icon TEXT NOT NULL DEFAULT '📋',
@@ -333,20 +333,20 @@ export async function ensureSchema(): Promise<void> {
     )
   `);
 
-  // Auto-create default board if none exist
-  const boardCount = await client.execute("SELECT COUNT(*) as cnt FROM boards");
-  if (Number(boardCount.rows[0]?.cnt ?? 0) === 0) {
+  // Auto-create default area if none exist
+  const areaCount = await client.execute("SELECT COUNT(*) as cnt FROM areas");
+  if (Number(areaCount.rows[0]?.cnt ?? 0) === 0) {
     const now = Date.now();
     await client.execute({
-      sql: "INSERT INTO boards (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT INTO areas (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: ["default", "Default", "📋", "#6366F1", 0, now, now],
     });
   }
 
-  // Add board_id to tasks
-  if (!(await hasColumn(client, "tasks", "board_id"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN board_id TEXT NOT NULL DEFAULT 'default'");
-    await client.execute("UPDATE tasks SET board_id = 'default' WHERE board_id = 'default'");
+  // Add area_id to tasks
+  if (!(await hasColumn(client, "tasks", "area_id"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN area_id TEXT NOT NULL DEFAULT 'default'");
+    await client.execute("UPDATE tasks SET area_id = 'default' WHERE area_id = 'default'");
   }
 
   // Custom fields JSON storage per task
@@ -541,7 +541,7 @@ export async function ensureSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks(status)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_priority_idx ON tasks(priority)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks(parent_id)");
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_board_id_idx ON tasks(board_id)");
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_area_id_idx ON tasks(area_id)");
   // Human-readable ticket IDs — auto-incrementing ticket_number
   if (!(await hasColumn(client, "tasks", "ticket_number"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN ticket_number INTEGER");
@@ -570,8 +570,8 @@ export async function ensureSchema(): Promise<void> {
   }
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_kanban_position_idx ON tasks(status, kanban_position)");
 
-  // Composite index for kanban board queries — filters by both board_id and status
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_board_status_idx ON tasks(board_id, status)");
+  // Composite index for kanban board queries — filters by both area_id and status
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_board_status_idx ON tasks(area_id, status)");
 
   // Custom (non-HA) users — for families sharing one HA instance
   await client.execute(`
@@ -819,21 +819,21 @@ export async function ensureSchema(): Promise<void> {
 
   // WIP limits (PRA-07): per-board work-in-progress cap for ADHD focus
   // 0 = unlimited (default), positive integer = max active tasks per column
-  if (!(await hasColumn(client, "boards", "wip_limit"))) {
-    await client.execute("ALTER TABLE boards ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
+  if (!(await hasColumn(client, "areas", "wip_limit"))) {
+    await client.execute("ALTER TABLE areas ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
   }
 
   // Area metadata (PRA-14): energy budget + review cadence for ADHD planning
   // energy_budget: weekly hours cap for this area (0 = unlimited)
   // review_cadence: days between reviews (0 = no scheduled review)
-  if (!(await hasColumn(client, "boards", "energy_budget"))) {
-    await client.execute("ALTER TABLE boards ADD COLUMN energy_budget REAL NOT NULL DEFAULT 0")
+  if (!(await hasColumn(client, "areas", "energy_budget"))) {
+    await client.execute("ALTER TABLE areas ADD COLUMN energy_budget REAL NOT NULL DEFAULT 0")
   }
-  if (!(await hasColumn(client, "boards", "review_cadence"))) {
-    await client.execute("ALTER TABLE boards ADD COLUMN review_cadence INTEGER NOT NULL DEFAULT 0")
+  if (!(await hasColumn(client, "areas", "review_cadence"))) {
+    await client.execute("ALTER TABLE areas ADD COLUMN review_cadence INTEGER NOT NULL DEFAULT 0")
   }
-  if (!(await hasColumn(client, "boards", "last_reviewed_at"))) {
-    await client.execute("ALTER TABLE boards ADD COLUMN last_reviewed_at INTEGER")
+  if (!(await hasColumn(client, "areas", "last_reviewed_at"))) {
+    await client.execute("ALTER TABLE areas ADD COLUMN last_reviewed_at INTEGER")
   }
 
   // Schema version tracking (PRA-23): set version after all migrations complete

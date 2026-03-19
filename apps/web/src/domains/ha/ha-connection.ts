@@ -207,7 +207,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     for (const eventType of [
       "meitheal_task_created", "meitheal_task_completed",
       "meitheal_task_updated", "meitheal_task_deleted",
-      "meitheal_board_updated",
+      "meitheal_area_updated",
     ]) {
       connection.subscribeEvents((event: unknown) => {
         try {

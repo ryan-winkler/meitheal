@@ -24,8 +24,8 @@ export interface FilterState {
   rice: string
   sort: string
   user: string
-  /** Board filter — show only tasks from this board (empty = all) */
-  board: string
+  /** Area filter — show only tasks from this board (empty = all) */
+  area: string
   /** Active type filters — multi-select (empty = all types visible) */
   types: string[]
   /** Primary group-by dimension */
@@ -58,7 +58,7 @@ export const GROUP_BY_OPTIONS = [
   "none",
   "type",
   "priority",
-  "board",
+  "area",
   "assignee",
   "status",
   "rice",
@@ -102,7 +102,7 @@ function parseJsonParam(val: string | null | undefined): any | null {
 // =============================================================================
 
 /** All persisted filter keys (scalar + array) */
-const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "board", "groupBy", "subGroupBy"] as const
+const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "area", "groupBy", "subGroupBy"] as const
 const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
@@ -158,7 +158,7 @@ export function loadFilterState(): Partial<FilterState> {
       rice: urlParams.get("rice") ?? "",
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
       user: urlParams.get("user") ?? "",
-      board: urlParams.get("board") ?? "",
+      area: urlParams.get("area") ?? "",
       types: deserializeArray(urlParams.get("types")),
       groupBy: urlParams.get("groupBy") ?? "none",
       subGroupBy: urlParams.get("subGroupBy") ?? "none",
@@ -301,9 +301,9 @@ export function isTaskVisible(
     }
   }
 
-  // Board
-  if (state.board) {
-    if (el.dataset.board !== state.board) return false
+  // Area
+  if (state.area) {
+    if (el.dataset.area !== state.area) return false
   }
 
   // Type filter (multi-select — if types array has values, task must be one of them)
@@ -345,8 +345,8 @@ export function getGroupKey(el: HTMLElement, groupBy: string): string {
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"
     case "priority":
       return el.dataset.priority ?? "3"
-    case "board":
-      return el.dataset.board ?? "default"
+    case "area":
+      return el.dataset.area ?? "default"
     case "assignee":
       return el.dataset.assigned || "__unassigned__"
     case "status":
@@ -400,8 +400,8 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
     case "assignee":
       if (key === "__unassigned__") return { label: "Unassigned", icon: "∅", color: "#6b7280" }
       return { label: key.replace(/^(ha_|custom_)/, ""), icon: "👤", color: "#6366F1" }
-    case "board":
-      if (key === "default") return { label: "Default Board", icon: "📋", color: "#6366F1" }
+    case "area":
+      if (key === "default") return { label: "Default Area", icon: "📋", color: "#6366F1" }
       return { label: key, icon: "📋", color: "#6366F1" }
     default:
       return { label: "All Tasks", icon: "📋", color: "#6b7280" }

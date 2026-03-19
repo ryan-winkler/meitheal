@@ -142,8 +142,8 @@ export const PUT: APIRoute = async ({ params, request }) => {
       return new Response(JSON.stringify({ error: "custom_fields must be a valid JSON object string" }), { status: 400, headers: { "content-type": "application/json" } })
     }
   }
-  if (typeof body.board_id === "string") {
-    sanitized.board_id = body.board_id
+  if (typeof body.area_id === "string") {
+    sanitized.area_id = body.area_id
   }
   if (body.start_date !== undefined) {
     sanitized.start_date = typeof body.start_date === "string" ? body.start_date : null

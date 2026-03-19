@@ -18,8 +18,8 @@ interface MeithealTaskData {
   priority: number;
   dueDate: string | null;
   labels: string[];
-  /** Board ID — defaults to 'default', set to Grocy category name when available (#12) */
-  boardId?: string;
+  /** Area ID — defaults to 'default', set to Grocy category name when available (#12) */
+  areaId?: string;
 }
 
 /**
@@ -45,8 +45,8 @@ export function choreToTask(chore: GrocyChore): MeithealTaskData {
     .filter(Boolean)
     .join("\n");
 
-  // Map periodType → boardId for logical grouping (e.g. "daily" → "daily-chores")
-  const boardId = chore.periodType
+  // Map periodType → areaId for logical grouping (e.g. "daily" → "daily-chores")
+  const areaId = chore.periodType
     ? `${chore.periodType.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-chores` || "default"
     : "default";
 
@@ -57,7 +57,7 @@ export function choreToTask(chore: GrocyChore): MeithealTaskData {
     priority: chore.isOverdue ? 1 : 3,
     dueDate: chore.nextEstimatedExecutionTime?.split(" ")[0] ?? null,
     labels,
-    boardId,
+    areaId,
   };
 }
 
@@ -66,7 +66,7 @@ export function choreToTask(chore: GrocyChore): MeithealTaskData {
  *
  * - Grocy tasks are simpler (name, due_date, done, category)
  * - Labels: "grocy-task", "synced from grocy"
- * - Category name → boardId (slugified) when provided (#12)
+ * - Category name → areaId (slugified) when provided (#12)
  *
  * @param task - Grocy task from adapter
  * @param categoryName - Optional category name from getCategories() map
@@ -80,7 +80,7 @@ export function taskToTask(task: GrocyTask, categoryName?: string): MeithealTask
   }
 
   // Slugify category name for board ID (e.g. "House Chores" → "house-chores")
-  const boardId = categoryName
+  const areaId = categoryName
     ? categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "default"
     : "default";
 
@@ -91,7 +91,7 @@ export function taskToTask(task: GrocyTask, categoryName?: string): MeithealTask
     priority: 3,
     dueDate: task.dueDate,
     labels,
-    boardId,
+    areaId,
   };
 }
 

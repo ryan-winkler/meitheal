@@ -71,6 +71,28 @@ Recommended paths:
 - DuckDNS + Let's Encrypt
 - Reverse proxy with TLS
 
+### Delete old completed tasks
+
+1. Go to `Settings → Danger Zone`.
+2. In the **Archiving & Data Retention** card, select a period (3, 6, 12, or 24 months).
+3. Click **Preview** to see how many tasks would be deleted.
+4. Click **Delete Tasks** and confirm in the dialog.
+
+The deletion cascades to comments, activity logs, and task links. An audit trail entry is created.
+
+> **Tip:** Export your data first via `App & PWA → Export` before deleting.
+
+### Preview shows 0 tasks but I have old completed tasks
+
+This feature uses the `updated_at` timestamp. If a completed task was edited recently (e.g. notes added), its `updated_at` resets and it won't match the age filter. This is by design — it protects recently-touched data.
+
+### What's the difference between Archive and Delete?
+
+- **Archive**: Hides a completed task from default views. Data is preserved. Reversible.
+- **Delete**: Permanently removes the task and all related data. Irreversible.
+
+See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language reference.
+
 ## HEART Acceptance Lens
 
 - Happiness: the summary cards should make system state understandable at a glance.

@@ -12,7 +12,7 @@ export const GET: APIRoute = async () => {
         const allTasks = await repo.exportAll()
 
         if (allTasks.length === 0) {
-            return new Response("ticket_key,id,parent_id,title,description,status,priority,task_type,board_id,labels,due_date,created_at,updated_at\n", {
+            return new Response("ticket_key,id,parent_id,title,description,status,priority,task_type,area_id,labels,due_date,created_at,updated_at\n", {
                 status: 200,
                 headers: {
                     "Content-Type": "text/csv; charset=utf-8",
@@ -23,7 +23,7 @@ export const GET: APIRoute = async () => {
 
         const headers = [
             "ticket_key", "id", "parent_id", "title", "description", "status", "priority",
-            "task_type", "board_id", "labels", "due_date", "recurrence_rule",
+            "task_type", "area_id", "labels", "due_date", "recurrence_rule",
             "checklists", "reminder_at", "created_at", "updated_at",
         ]
 
@@ -45,7 +45,7 @@ export const GET: APIRoute = async () => {
             escapeCsv(t.status),
             escapeCsv(t.priority),
             escapeCsv(t.task_type),
-            escapeCsv(t.board_id),
+            escapeCsv(t.area_id),
             escapeCsv(t.labels),
             escapeCsv(t.due_date),
             escapeCsv(t.recurrence_rule),

@@ -183,7 +183,7 @@ const typeConfig: Record<
     >
   </div>
 
-  <TaskViewTabs activeView="board" />
+  <TaskViewTabs activeView="kanban" />
 
   {/* Label filter bar */}
   {/* Shared FilterToolbar — replaces inline type-toolbar + LabelFilterBar (Phase 2) */}
@@ -366,11 +366,11 @@ const typeConfig: Record<
                     data-priority={String(p)}
                     data-status={String(task.status)}
                     data-task-type={tt}
-                    data-board={String(task.board_id ?? "default")}
+                    data-area={String(task.area_id ?? "default")}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
-                    data-board-id={task.project_id}
+                    data-area-id={task.project_id}
                     style={`--card-accent: ${task.color ? String(task.color) : tc.color};`}
                   >
                     <div class="kanban-card-header">
@@ -650,8 +650,8 @@ const typeConfig: Record<
   </div>
 
   <script>
-    import { initKanbanBoard } from '../lib/kanban-controller'
-    document.addEventListener('astro:page-load', () => initKanbanBoard())
+    import { initKanbanArea } from '../lib/kanban-controller'
+    document.addEventListener('astro:page-load', () => initKanbanArea())
   </script>
 </Layout>
 

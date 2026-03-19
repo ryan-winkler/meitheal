@@ -9,7 +9,7 @@
  * - Bulk actions (status, priority, board, delete)
  * - Column sorting (within groups when grouped)
  * - Table scroll shadow detection
- * - Board selector population from /api/boards
+ * - Area selector population from /api/areas
  *
  * @domain tasks
  * @bounded-context tasks (view-layer controller)
@@ -35,7 +35,7 @@ import {
 // Types
 // =============================================================================
 
-interface BoardInfo {
+interface AreaInfo {
   id: string
   title: string
   icon?: string
@@ -48,7 +48,7 @@ interface BoardInfo {
 
 let currentGroupBy = "none"
 let currentSubGroupBy = "none"
-let boardMap: Record<string, BoardInfo> = {}
+let areaMap: Record<string, AreaInfo> = {}
 let currentFilterState: Partial<FilterState> = {}
 const __signal = pageLifecycle.signal
 
@@ -72,7 +72,7 @@ function init() {
   setupBulkActions()
   setupSortableHeaders()
   setupTableOverflow()
-  loadBoards() // Still needed for grouping header labels + bulk board selector
+  loadAreas() // Still needed for grouping header labels + bulk board selector
 
   // Listen for unified filter events from FilterToolbar
   document.addEventListener("meitheal:filter-change", ((e: CustomEvent) => {
@@ -87,7 +87,7 @@ function init() {
       priority: detail.priority ?? "",
       rice: detail.rice ?? "",
       user: detail.user ?? "",
-      board: detail.board ?? "",
+      area: detail.area ?? "",
       types: detail.types ?? [],
     }
 
@@ -145,36 +145,36 @@ function init() {
 }
 
 // =============================================================================
-// Board Data Loading
+// Area Data Loading
 // =============================================================================
 
-async function loadBoards() {
+async function loadAreas() {
   try {
-    const res = await fetch("/api/boards", { signal: __signal })
+    const res = await fetch("/api/areas", { signal: __signal })
     if (!res.ok) return
     const data = await res.json()
-    const boards: BoardInfo[] = data.boards || []
+    const boards: AreaInfo[] = data.boards || []
 
     boards.forEach((b) => {
-      boardMap[b.id] = b
+      areaMap[b.id] = b
     })
 
-    // NOTE: Board filter <select> is populated by FilterToolbar's client script
+    // NOTE: Area filter <select> is populated by FilterToolbar's client script
     // We only populate the bulk board selector and update group headers here
 
     // Populate bulk board selector
-    const bulkBoard = document.getElementById("bulk-board") as HTMLSelectElement | null
-    if (bulkBoard) {
+    const bulkArea = document.getElementById("bulk-area") as HTMLSelectElement | null
+    if (bulkArea) {
       boards.forEach((b) => {
         const opt = document.createElement("option")
         opt.value = b.id
         opt.textContent = `${b.icon ?? "📋"} ${b.title}`
-        bulkBoard.appendChild(opt)
+        bulkArea.appendChild(opt)
       })
     }
 
     // Update group headers with board names if grouped by board
-    if (currentGroupBy === "board") {
+    if (currentGroupBy === "area") {
       updateGroupHeaderLabels()
     }
 
@@ -229,7 +229,7 @@ function restoreFilterControls() {
   setVal("table-filter-priority", s.priority)
   setVal("table-filter-rice", s.rice)
   setVal("table-filter-user", s.user)
-  setVal("table-filter-board", s.board)
+  setVal("table-filter-area", s.area)
   setVal("table-group-by", s.groupBy ?? "none")
 
   // Restore type toggles
@@ -253,7 +253,7 @@ function setupFilterListeners() {
   const priorityFilter = document.getElementById("table-filter-priority") as HTMLSelectElement | null
   const riceFilter = document.getElementById("table-filter-rice") as HTMLSelectElement | null
   const userFilter = document.getElementById("table-filter-user") as HTMLSelectElement | null
-  const boardFilter = document.getElementById("table-filter-board") as HTMLSelectElement | null
+  const areaFilter = document.getElementById("table-filter-area") as HTMLSelectElement | null
   const clearBtn = document.getElementById("clear-filters")
 
   const onFilterChange = () => {
@@ -264,7 +264,7 @@ function setupFilterListeners() {
       priority: priorityFilter?.value ?? "",
       rice: riceFilter?.value ?? "",
       user: userFilter?.value ?? "",
-      board: boardFilter?.value ?? "",
+      area: areaFilter?.value ?? "",
     }
     saveFilterState(currentFilterState)
     applyAllFilters()
@@ -275,7 +275,7 @@ function setupFilterListeners() {
   priorityFilter?.addEventListener("change", onFilterChange)
   riceFilter?.addEventListener("change", onFilterChange)
   userFilter?.addEventListener("change", onFilterChange)
-  boardFilter?.addEventListener("change", onFilterChange)
+  areaFilter?.addEventListener("change", onFilterChange)
 
   clearBtn?.addEventListener("click", () => {
     clearFilterState()
@@ -285,7 +285,7 @@ function setupFilterListeners() {
     if (priorityFilter) priorityFilter.value = ""
     if (riceFilter) riceFilter.value = ""
     if (userFilter) userFilter.value = ""
-    if (boardFilter) boardFilter.value = ""
+    if (areaFilter) areaFilter?.value = ""
 
     // Reset type toggles to all active
     document.querySelectorAll<HTMLButtonElement>(".type-toggle").forEach((btn) => {
@@ -539,8 +539,8 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
 }
 
 function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
-  if (groupBy === "board" && boardMap[key]) {
-    const b = boardMap[key]
+  if (groupBy === "area" && areaMap[key]) {
+    const b = areaMap[key]
     return { label: b.title, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1" }
   }
   return getGroupDisplay(groupBy, key)
@@ -745,15 +745,15 @@ function renderSummaryRows() {
 
 function updateGroupHeaderLabels() {
   // Called after boards load — updates board group header labels
-  document.querySelectorAll<HTMLElement>(".group-header-row[data-group-by='board']").forEach((header) => {
+  document.querySelectorAll<HTMLElement>(".group-header-row[data-group-by='area']").forEach((header) => {
     const key = header.dataset.groupKey ?? ""
-    if (boardMap[key]) {
+    if (areaMap[key]) {
       const label = header.querySelector<HTMLElement>(".group-label")
       const icon = header.querySelector<HTMLElement>(".group-icon")
       const dot = header.querySelector<HTMLElement>(".group-dot")
-      if (label) label.textContent = boardMap[key].title
-      if (icon) icon.textContent = boardMap[key].icon ?? "📋"
-      if (dot) dot.style.background = (boardMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
+      if (label) label.textContent = areaMap[key].title
+      if (icon) icon.textContent = areaMap[key].icon ?? "📋"
+      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
     }
   })
 }
@@ -971,7 +971,7 @@ function setupBulkActions() {
   const selectedCountEl = document.getElementById("selected-count")
   const bulkStatus = document.getElementById("bulk-status") as HTMLSelectElement | null
   const bulkPriority = document.getElementById("bulk-priority") as HTMLSelectElement | null
-  const bulkBoard = document.getElementById("bulk-board") as HTMLSelectElement | null
+  const bulkArea = document.getElementById("bulk-area") as HTMLSelectElement | null
   const bulkDelete = document.getElementById("bulk-delete")
   const bulkClose = document.getElementById("bulk-close")
 
@@ -1016,14 +1016,14 @@ function setupBulkActions() {
   })
 
   // Bulk board change
-  bulkBoard?.addEventListener("change", async () => {
-    const val = bulkBoard.value
+  bulkArea?.addEventListener("change", async () => {
+    const val = bulkArea.value
     if (!val) return
     const ids = getSelectedIds()
     if (ids.length === 0) return
 
-    await bulkUpdateField("board_id", val, ids)
-    bulkBoard.value = ""
+    await bulkUpdateField("area_id", val, ids)
+    bulkArea.value = ""
   })
 
   // Bulk delete
@@ -1106,8 +1106,8 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[]) {
             const sel = row.querySelector<HTMLSelectElement>(`select[data-field="priority"]`)
             if (sel) sel.value = String(value)
           }
-          if (field === "board_id") {
-            row.dataset.board = String(value)
+          if (field === "area_id") {
+            row.dataset.area = String(value)
           }
         }
       }

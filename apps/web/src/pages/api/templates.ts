@@ -6,7 +6,7 @@
  *
  * @domain domain-tasks
  * @kcs template_json schema: { title, description, priority, labels, task_type,
- *   recurrence_rule, checklists, custom_fields, board_id }
+ *   recurrence_rule, checklists, custom_fields, area_id }
  */
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"

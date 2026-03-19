@@ -267,14 +267,14 @@ test("assigned_to does not interfere with other task columns", async () => {
 
   await client.execute({
     sql: `INSERT INTO tasks (id, title, status, priority, due_date, labels, assigned_to,
-                             task_type, board_id, idempotency_key, request_id, created_at, updated_at)
+                             task_type, area_id, idempotency_key, request_id, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: ["multi-1", "Full task", "active", 1, "2026-03-10", '["urgent"]', "ha_ryan",
-      "story", "board-1", "idem-multi", "req-multi", now, now],
+      "story", "area-1", "idem-multi", "req-multi", now, now],
   });
 
   const result = await client.execute({
-    sql: "SELECT id, title, status, priority, due_date, labels, assigned_to, task_type, board_id FROM tasks WHERE id = ?",
+    sql: "SELECT id, title, status, priority, due_date, labels, assigned_to, task_type, area_id FROM tasks WHERE id = ?",
     args: ["multi-1"],
   });
 
@@ -286,7 +286,7 @@ test("assigned_to does not interfere with other task columns", async () => {
   expect(row.labels).toBe('["urgent"]');
   expect(row.assigned_to).toBe("ha_ryan");
   expect(row.task_type).toBe("story");
-  expect(row.board_id).toBe("board-1");
+  expect(row.area_id).toBe("area-1");
 });
 
 // ── RICE Scoring Compatibility Test ──

@@ -154,11 +154,11 @@ const { class: className } = Astro.props
   function applyFieldVisibility() {
     const prefs = loadFieldPrefs()
     const board = document.querySelector(".kanban-board")
-    if (!board) return
+    if (!area) return
 
     ALL_FIELDS.forEach(field => {
       const isVisible = field.alwaysVisible || (prefs[field.id] !== undefined ? prefs[field.id] : field.defaultVisible)
-      board.classList.toggle(`hide-field-${field.id}`, !isVisible)
+      area.classList.toggle(`hide-field-${field.id}`, !isVisible)
     })
   }
 

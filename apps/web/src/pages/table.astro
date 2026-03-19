@@ -218,7 +218,7 @@ const treeRows = buildTreeRows(tasks);
                   <tr
                     data-id={task.id}
                     data-rice={task.rice !== null ? String(task.rice) : ""}
-                    data-board={task.board_id}
+                    data-area={task.area_id}
                     data-status={task.status}
                     data-priority={String(task.priority)}
                     data-assigned={String(task.assigned_to ?? "")}
@@ -452,8 +452,8 @@ const treeRows = buildTreeRows(tasks);
       <option value="4">{t("priority.low", locale)}</option>
       <option value="5">{t("priority.minimal", locale)}</option>
     </select>
-    <select class="form-select bulk-select" id="bulk-board">
-      <option value="">Board</option>
+    <select class="form-select bulk-select" id="bulk-area">
+      <option value="">Area</option>
     </select>
     <button
       type="button"

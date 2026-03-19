@@ -32,7 +32,7 @@ export interface TaskPatchPayload {
   start_date?: string | null
   end_date?: string | null
   labels?: string
-  board_id?: string
+  area_id?: string
   color?: string | null
   is_favorite?: number
   task_type?: string
@@ -53,7 +53,7 @@ export interface TaskCreatePayload {
   status?: string
   priority?: number
   due_date?: string | null
-  board_id?: string
+  area_id?: string
   task_type?: string
   assigned_to?: string | null
   [key: string]: unknown
@@ -78,8 +78,8 @@ export interface LanePayload {
   built_in: boolean
 }
 
-/** Board definition from GET /api/boards */
-export interface BoardPayload {
+/** Area definition from GET /api/areas */
+export interface AreaPayload {
   id: string
   title: string
   description?: string
@@ -279,17 +279,17 @@ export const taskApi = {
     return parseResponse<any>(res)
   },
 
-  // ── Boards ────────────────────────────────────────────────────────
+  // ── Areas ────────────────────────────────────────────────────────
 
-  /** GET /api/boards — list all boards */
-  async listBoards(): Promise<BoardPayload[]> {
-    const res = await safeFetch("/api/boards")
-    return (await parseResponse<BoardPayload[]>(res)) ?? []
+  /** GET /api/areas — list all areas */
+  async listAreas(): Promise<AreaPayload[]> {
+    const res = await safeFetch("/api/areas")
+    return (await parseResponse<AreaPayload[]>(res)) ?? []
   },
 
-  /** POST /api/boards — create a board */
-  async createBoard(payload: Partial<BoardPayload>): Promise<any> {
-    const res = await safeFetch("/api/boards", {
+  /** POST /api/areas — create a board */
+  async createArea(payload: Partial<AreaPayload>): Promise<any> {
+    const res = await safeFetch("/api/areas", {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),

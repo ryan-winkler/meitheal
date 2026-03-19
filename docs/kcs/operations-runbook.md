@@ -55,6 +55,27 @@ CI gate:
 1. `migration-check` job runs `db:migrate:check`.
 2. If pending migrations exist, CI fails closed.
 
+## Data Retention & Cleanup
+
+User-initiated deletion of old completed/archived tasks via Settings → Danger Zone.
+
+**API endpoints:**
+
+- `GET /api/tasks/delete-completed?months=3|6|12|24` — preview count
+- `DELETE /api/tasks/delete-completed?months=3|6|12|24&confirm=true` — execute
+
+**Audit trail:**
+
+Every retention delete is logged to `audit_trail` with event `retention-delete`, including the month threshold, cutoff date, and count of deleted tasks.
+
+**Investigation:**
+
+1. Query `audit_trail` for `request_id = 'retention-delete'` to see deletion history.
+2. Check structured logs: `{service="meitheal",domain="tasks"} |= "retention-delete.success"`.
+3. Cascaded data: each deletion removes associated `task_activity_log`, `comments`, and `task_links` rows inside a transaction.
+
+**Safety:** Only tasks with `status IN ('complete', 'archived')` and `updated_at < cutoff` are affected. Active work is never touched.
+
 ### IndexedDB Offline Schema Upgrades
 
 The client-side `offline-store.ts` uses an `onupgradeneeded` handler to manage IDB schema versions:

@@ -54,7 +54,7 @@ export const POST: APIRoute = async ({ request }) => {
         messageId: crypto.randomUUID(),
         parts: [
           {
-            text: "I couldn't determine which skill to use. Please specify a skill: task-management, task-search, framework-scoring, data-export, ha-calendar-sync, ha-entity-state, boards, labels, today-summary, or habits.",
+            text: "I couldn't determine which skill to use. Please specify a skill: task-management, task-search, framework-scoring, data-export, ha-calendar-sync, ha-entity-state, areas, labels, today-summary, or habits.",
           },
         ],
       });
@@ -171,11 +171,11 @@ async function handleSkill(
         requires: "Home Assistant connection configured in Settings",
       };
 
-    case "boards":
+    case "areas":
       return {
-        skill: "boards",
-        description: "List kanban boards with column configurations and task counts",
-        api_endpoint: "/api/boards",
+        skill: "areas",
+        description: "List kanban areas with column configurations and task counts",
+        api_endpoint: "/api/areas",
         supported_actions: ["list", "get"],
         input_received: dataPart?.data ?? textPart?.text ?? null,
       };

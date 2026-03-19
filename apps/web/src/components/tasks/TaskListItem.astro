@@ -82,7 +82,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-status={task.status}
   data-priority={String(task.priority)}
   data-rice={task.rice !== null ? String(task.rice) : ""}
-  data-board={task.board_id}
+  data-area={task.area_id}
   data-overdue={task.is_overdue ? "true" : "false"}
   data-favorite={task.is_favorite ? "true" : "false"}
   data-title={task.title.toLowerCase()}

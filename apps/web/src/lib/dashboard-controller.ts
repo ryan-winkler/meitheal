@@ -29,10 +29,10 @@ document
     const emptyState = taskList?.querySelector(".bento-empty-state")
     if (emptyState) emptyState.remove()
 
-    const activeBoard = window.__activeBoard ?? "default"
+    const activeArea = window.__activeArea ?? "default"
     const newCard = document.createElement("div")
     newCard.className = "bento-card"
-    newCard.dataset.board = activeBoard === "all" ? "default" : activeBoard
+    newCard.dataset.board = activeArea === "all" ? "default" : activeArea
     const stripe = document.createElement("div")
     stripe.className = "bento-card-stripe"
     stripe.style.background = "#eab308"
@@ -61,10 +61,10 @@ document
       )
 
     try {
-      const boardId = window.__activeBoard ?? "default"
+      const areaId = window.__activeArea ?? "default"
       await taskApi.createTask({
         title,
-        board_id: boardId === "all" ? "default" : boardId,
+        area_id: areaId === "all" ? "default" : areaId,
       })
       showToast("common.task_created")
       // Green flash on form

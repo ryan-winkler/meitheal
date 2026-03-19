@@ -356,7 +356,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
         await client.execute({
           sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                  labels, framework_payload, calendar_sync_state, board_id,
+                  labels, framework_payload, calendar_sync_state, area_id,
                   custom_fields, task_type, task_kind, ticket_number, idempotency_key, request_id,
                   created_at, updated_at)
                 VALUES (?, ?, ?, ?, 3, ?, ?, '{}', 'synced', 'default',

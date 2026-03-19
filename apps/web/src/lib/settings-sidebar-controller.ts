@@ -16,7 +16,7 @@ const DEFAULT_SIDEBAR = ["dashboard", "kanban", "tasks", "today", "upcoming", "c
 
 const SIDEBAR_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  kanban: "Kanban Board",
+  kanban: "Kanban Area",
   tasks: "Tasks List",
   table: "Table",
   today: "Today",

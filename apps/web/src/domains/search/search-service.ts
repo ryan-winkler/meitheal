@@ -1,4 +1,4 @@
-import { BoardRepository } from "@domains/tasks/persistence/board-repository"
+import { AreaRepository } from "@domains/tasks/persistence/area-repository"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { TaskRepository, type TaskRow } from "@domains/tasks/persistence/task-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -161,7 +161,7 @@ function buildSavedFilterHref(raw: unknown): string {
     params.set(target, String(value))
   }
 
-  if (parsed.board_id) params.set("board", String(parsed.board_id))
+  if (parsed.area_id) params.set("area", String(parsed.area_id))
   if (parsed.task_type) params.set("types", String(parsed.task_type))
   if (Array.isArray(parsed.labels) && parsed.labels.length > 0) {
     params.set("labels", parsed.labels.map((value) => String(value)).join(","))
@@ -186,7 +186,7 @@ function filterByQuery<T extends SearchResultItem>(items: T[], query: string): T
 export async function searchMeithealCatalog(options: SearchQueryOptions): Promise<SearchResponse> {
   const client = getPersistenceClient()
   const taskRepo = new TaskRepository(client)
-  const boardRepo = new BoardRepository(client)
+  const areaRepo = new AreaRepository(client)
   const settingsRepo = new SettingsRepository(client)
 
   const sections: SearchResultSection[] = []
@@ -226,25 +226,25 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
   }
 
   if (options.scope === "all" || options.scope === "views") {
-    const boards = await boardRepo.findAll()
-    const boardItems = filterByQuery(
-      boards.map((board) => ({
-        id: String(board.id),
-        kind: "board" as const,
-        title: String(board.title ?? "Untitled board"),
+    const areas = await areaRepo.findAll()
+    const areaItems = filterByQuery(
+      areas.map((area) => ({
+        id: String(area.id),
+        kind: "area" as const,
+        title: String(area.title ?? "Untitled area"),
         subtitle: "Open in Kanban",
-        href: `/kanban?board=${encodeURIComponent(String(board.id))}`,
-        icon: typeof board.icon === "string" ? board.icon : "📋",
-        color: typeof board.color === "string" ? board.color : null,
+        href: `/kanban?area=${encodeURIComponent(String(area.id))}`,
+        icon: typeof area.icon === "string" ? area.icon : "📋",
+        color: typeof area.color === "string" ? area.color : null,
       })),
       options.query,
     ).slice(0, Math.min(6, options.limit))
 
-    if (boardItems.length > 0) {
+    if (areaItems.length > 0) {
       sections.push({
-        id: "boards",
-        label: "Boards",
-        items: boardItems,
+        id: "areas",
+        label: "Areas",
+        items: areaItems,
       })
     }
 

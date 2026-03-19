@@ -82,7 +82,7 @@ export const GET: APIRoute = async () => {
         priority: Number(t.priority ?? 3),
         due_date: t.due_date ? String(t.due_date) : null,
         is_overdue: Boolean(t.due_date && t.due_date < todayStr),
-        board_id: t.board_id ? String(t.board_id) : null,
+        area_id: t.area_id ? String(t.area_id) : null,
       }))
 
     // Gamification stats
