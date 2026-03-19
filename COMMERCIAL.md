@@ -41,7 +41,7 @@ To maintain the ability to offer dual licensing, all contributors must sign our 
 
 For commercial licensing inquiries:
 
-- **Email**: licensing@meitheal.io
+- **Email**: licensing@coolockvillage.ie
 - **GitHub**: [Open a discussion](https://github.com/Coolock-Village/meitheal/discussions)
 
 ---

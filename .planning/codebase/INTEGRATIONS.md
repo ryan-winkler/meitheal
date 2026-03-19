@@ -1,6 +1,6 @@
 # External Integrations
 
-**Analysis Date:** 2026-03-18
+**Analysis Date:** 2026-03-19
 
 ## APIs & External Services
 
@@ -47,6 +47,12 @@
   - Context: `@domains/ai/ai-context-service.ts`
   - Python API: `meitheal-hub/llm_api.py`
   - API route: `apps/web/src/pages/api/parse-task.ts`
+- Agent surfaces are intentionally split:
+  - Astro MCP: `apps/web/src/pages/api/mcp.ts` — 18 tools
+  - HA custom-component MCP: `integrations/home-assistant/custom_components/meitheal/mcp_server.py` — 16 tools
+  - HA LLM API: `integrations/home-assistant/custom_components/meitheal/llm_api.py` — 21 tools
+  - A2A: dynamic agent card + message/task routes via `apps/web/src/pages/api/a2a/`
+  - WebMCP: documented experimental direction, not a mainstream active runtime surface yet
 
 **Vikunja v1 Compatibility:**
 - Drop-in compatible REST API for Vikunja clients
@@ -117,8 +123,9 @@
 ## Webhooks & Callbacks
 
 **Incoming:**
-- WebMCP: `apps/web/src/pages/api/mcp.ts` (560 lines)
+- Astro MCP: `apps/web/src/pages/api/mcp.ts`
 - A2A (Agent-to-Agent): `apps/web/src/pages/api/a2a/`
+- Static discovery: `public/.well-known/agent-card.json`, `public/.well-known/mcp.json`, `public/.well-known/jsondoc.json`
 - NFC: `apps/web/src/pages/api/nfc/`
 - Node-RED: `apps/web/src/pages/api/integrations/nodered/`
 

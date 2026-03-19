@@ -1,31 +1,35 @@
 # Meitheal
 
-> Meitheal (pronounced "meh-hal") is a cooperative task and life management engine running as a Home Assistant addon. It manages household tasks, to-do lists, projects, and calendar events with voice control, AI agent integration (LLM API, MCP, A2A), and deep Home Assistant event bus integration.
+Meitheal is a Home Assistant-native execution hub for households and homelabs.
+It connects task capture, daily planning, routines, projects, goals, search,
+calendar/todo sync, companion flows, voice assistants, and agent tooling inside
+one local-first system.
 
-Important notes:
-- Meitheal runs inside the Home Assistant Supervisor as an addon, not a standalone app
-- Authentication is handled by HA Supervisor ingress — no separate auth required
-- All 18 task tools are exposed across MCP and Home Assistant conversation surfaces
-- Voice commands work with HA's built-in Assist without any LLM configured
-- Tasks sync bidirectionally with HA todo entities and calendar entities
+## Core facts
 
-## API Reference
+- Runs as a Home Assistant add-on with Astro SSR, SQLite, and domain-driven design
+- Local-first and Home Assistant-native: ingress-safe, companion-friendly, and PWA-aware
+- Current UI surfaces include Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Gamification, Review, Gantt, Settings, and Offline
+- Home Assistant surfaces include `todo.meitheal_tasks`, task-count sensors, services, Assist intents, notifications, calendar/todo sync, and a bundled custom component
+- Agent surfaces are split by implementation:
+  - Astro MCP: 18 tools
+  - Home Assistant MCP: 16 tools
+  - Home Assistant LLM API: 21 tools
+  - A2A: dynamic agent card with 9 core skills plus 2 HA skills when configured
+  - WebMCP: experimental direction, not a mainstream shipped runtime surface yet
 
-- [Full API and tool reference](/llms-full.txt): Complete REST API, MCP tools, LLM tools, voice commands, services, data model, and event bus reference
+## Canonical docs
 
-## Agent Protocols
+- `README.md`
+- `meitheal-hub/DOCS.md`
+- `WEBMCP.md`
+- `docs/companion-app-setup.md`
+- `docs/kcs/pwa-offline-guide.md`
+- `docs/kcs/search-hub-guide.md`
+- `docs/decisions/ADR-007-hierarchy-model.md`
 
-- [MCP Discovery](/.well-known/mcp.json): MCP server discovery with 18 tools
-- [A2A Agent Card](/api/a2a/agent-card): Dynamic A2A agent card per Google A2A spec §8
-- [MCP Endpoint](/api/mcp): POST endpoint for MCP JSON-RPC tool calls
+## Ubiquitous language
 
-## HA Integration
-
-- [HA Services](/llms-full.txt): 6 callable services, including advanced `search_tasks`
-- [Device Triggers](/llms-full.txt): 6 automation triggers (task_created, task_completed, task_updated, task_deleted, task_overdue, board_updated)
-- [Sensors](/llms-full.txt): 3 sensors with rich attributes (active_tasks, overdue_tasks, total_tasks)
-
-## Optional
-
-- [GitHub Repository](https://github.com/Coolock-Village/meitheal): Source code, issues, and documentation
-- [Home Assistant Addon Config](https://github.com/Coolock-Village/meitheal/blob/main/addon/config.yaml): Addon configuration reference
+- Canonical model: `Area → Goal → Project → Task → Routine`
+- Compatibility note: some current UI, imports, and integration surfaces still expose legacy board, `task_type`, or `Epic/Story` language
+- Public docs treat the newer hierarchy as canonical and call legacy terms out only where they matter

@@ -1,71 +1,83 @@
-# WebMCP + A2A Agent Protocol Setup
+# WebMCP and A2A Setup
 
-**KCS Article** — How to enable and use agent protocols in Meitheal.
+This guide explains the current agent-facing protocol surfaces in Meitheal and how to talk about them accurately.
 
-## What Are Agent Protocols?
+## Current status
 
-Meitheal supports three complementary protocols that let AI agents interact with your task management system:
+| Surface | Status | Notes |
+|--------|--------|-------|
+| A2A | Live, lightweight | Dynamic agent card and message routes are available |
+| Astro MCP | Live | 18 tools in the Astro app |
+| Home Assistant MCP | Live | 16 tools via the custom component |
+| WebMCP | Experimental | Product direction documented, runtime browser registration not broadly active yet |
 
-| Protocol | Purpose | Status |
-| --- | --- | --- |
-| **A2A** | Agent-to-agent communication | Stable (RC v1.0) |
-| **WebMCP** | Browser agent tool access | Experimental |
-| **MCP** | Tool discovery for AI clients | Stable |
+## A2A
 
-## Enabling Agent Protocols
+### Routes
 
-1. Navigate to **Settings** → scroll to **🔗 Agent Protocols**
-2. Toggle the protocols you want to enable:
-   - **A2A** — Serves an Agent Card so other AI agents can discover Meitheal
-   - **WebMCP** — Registers tools with your browser's AI assistant (Chrome only)
-   - **MCP** — Serves tool definitions for MCP-compatible clients
-3. Click **Save Agent Protocol Settings**
-
-## Testing A2A
-
-Send a test message to the A2A endpoint:
-
-```bash
-curl -X POST http://localhost:4321/api/a2a/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": {
-      "role": "user",
-      "messageId": "test-001",
-      "parts": [{
-        "text": "Create a task titled Test from A2A",
-        "data": { "skill": "task-management" }
-      }]
-    }
-  }'
+```text
+GET  /api/a2a/agent-card
+POST /api/a2a/message
+GET  /api/a2a/tasks/{id}
+POST /api/a2a/tasks/{id}:cancel
 ```
 
-## Viewing the Agent Card
+### Static discovery
 
-Visit `http://localhost:4321/api/a2a/agent-card` to see the dynamic Agent Card.
+- `/.well-known/agent-card.json`
 
-The static fallback is at `http://localhost:4321/.well-known/agent-card.json`.
+### Dynamic skill model
 
-## Available Skills
+The dynamic agent card exposes 9 core skills:
 
-| Skill | Description | Requires HA |
-| --- | --- | --- |
-| `task-management` | CRUD tasks | No |
-| `task-search` | Search/filter tasks | No |
-| `framework-scoring` | RICE/HEART/KCS scoring | No |
-| `data-export` | Export JSON/CSV | No |
-| `ha-calendar-sync` | Sync to HA calendar | Yes |
-| `ha-entity-state` | Read HA entities | Yes |
+- task management
+- task search
+- framework scoring
+- data export
+- areas
+- labels
+- today summary
+- habits
+- weekly review
 
-## Security Notes
+When Home Assistant is configured, 2 HA skills are added:
 
-- A2A endpoints validate message structure before processing
-- WebMCP tools call through existing authenticated API routes
-- Webhook notifications use existing HMAC signing infrastructure
-- No new network dependencies are introduced
+- calendar sync
+- entity state
+
+### Important limitation
+
+The message route is live, but task-status and cancel routes currently return lightweight scaffolded task objects rather than persisted long-running task state.
+
+## Astro MCP
+
+Use:
+
+```text
+POST /api/mcp
+GET  /.well-known/mcp.json
+```
+
+Astro MCP currently exposes 18 tools. See `WEBMCP.md` or `llms-full.txt` for the full verified list.
+
+## Home Assistant MCP
+
+The Home Assistant custom component exposes a separate 16-tool MCP surface. It overlaps with Astro MCP but is not identical.
+
+Do not collapse the two into one shared count in user docs.
+
+## WebMCP
+
+WebMCP remains experimental.
+
+Treat it as:
+
+- a documented forward-looking browser-agent surface
+- a place for product exploration
+- not a mainstream shipped runtime feature on stable browsers today
 
 ## References
 
-- [A2A Protocol Specification](https://a2a-protocol.org/latest/)
-- [WebMCP Chrome EPP](https://developer.chrome.com/blog/webmcp-epp)
-- [MCP Documentation](https://modelcontextprotocol.io/)
+- `WEBMCP.md`
+- `public/llms-full.txt`
+- `integrations/home-assistant/custom_components/meitheal/README.md`

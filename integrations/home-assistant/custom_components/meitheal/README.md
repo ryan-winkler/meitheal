@@ -1,157 +1,142 @@
 # Meitheal Home Assistant Custom Component
 
-Python custom component that registers Meitheal as a first-class HA integration.
+The Meitheal custom component makes the add-on feel native inside Home Assistant. It exposes Meitheal tasks as HA entities and services, registers Assist-friendly surfaces, and adds richer agent tooling when the Home Assistant LLM and MCP features are available.
 
-## What It Does
+## What It Adds To Home Assistant
 
-| Entity / Service                | Type           | Purpose                            |
-| ------------------------------- | -------------- | ---------------------------------- |
-| `todo.meitheal_tasks`           | TodoListEntity | Meitheal tasks in HA todo dashboard |
-| `sensor.meitheal_active_tasks`  | Sensor         | Active task count                  |
-| `sensor.meitheal_overdue_tasks` | Sensor         | Overdue task count                 |
-| `sensor.meitheal_total_tasks`   | Sensor         | Total task count                   |
-| `meitheal.create_task`          | Service        | Create a task                      |
-| `meitheal.complete_task`        | Service        | Mark a task done                   |
-| `meitheal.sync_todo`            | Service        | Manual data refresh                |
-| `meitheal.search_tasks`         | Service        | Search tasks by IDs, text, status, priority, labels, custom fields, and comments |
-| `meitheal.get_overdue_tasks`    | Service        | List all overdue tasks             |
-| `meitheal.notify_overdue`       | Service        | Push overdue notification to HA    |
+### Entities
 
-All entities are grouped under a single **Meitheal** device (manufacturer: Coolock Village, model: Task Engine).
+| Entity | Type | Purpose |
+|-------|------|---------|
+| `todo.meitheal_tasks` | TodoListEntity | Meitheal task list inside Home Assistant |
+| `sensor.meitheal_active_tasks` | Sensor | Active task count |
+| `sensor.meitheal_overdue_tasks` | Sensor | Overdue task count |
+| `sensor.meitheal_total_tasks` | Sensor | Total task count |
 
-**Also includes:**
+### Services
 
-- **Diagnostics:** Download from Settings → Devices & Services → Meitheal → Download Diagnostics
-- **Device Triggers:** Automation triggers on task create/complete/delete events
-- **Companion App:** Android shortcuts, iOS Siri/Apple Watch/CarPlay integration
+| Service | Purpose |
+|--------|---------|
+| `meitheal.create_task` | Create a task |
+| `meitheal.complete_task` | Mark a task done |
+| `meitheal.sync_todo` | Force a refresh |
+| `meitheal.search_tasks` | Search tasks by text and filters |
+| `meitheal.get_overdue_tasks` | Return overdue tasks |
+| `meitheal.complete_task_by_tag` | Complete a task via NFC or tag-driven flows |
+| `meitheal.notify_overdue` | Push an overdue notification through Home Assistant |
 
-### LLM API Tools (Conversation Agents)
+### Voice and agent surfaces
 
-When HA 2026.3+ is available, Meitheal registers an LLM API that exposes these tools to all conversation agents (Google AI, OpenAI, Ollama):
-
-| Tool | Description |
-| ---- | ----------- |
-| `meitheal_search_tasks` | Search by keyword, IDs, labels, custom fields, comments, status, or priority |
-| `meitheal_get_task` | Get full task details by ID |
-| `meitheal_create_task` | Create a new task |
-| `meitheal_complete_task` | Mark a task as done |
-| `meitheal_delete_task` | Delete a task |
-| `meitheal_update_task` | Update task fields |
-| `meitheal_get_overdue` | List overdue tasks |
-| `meitheal_get_todays_tasks` | List tasks due today |
-| `meitheal_task_summary` | Get counts (active, overdue, total, done) |
-| `meitheal_daily_briefing` | Full daily summary with agenda |
-| `meitheal_batch_complete` | Mark multiple tasks as done |
+- Built-in Assist intents for core task flows
+- `Meitheal Tasks` Home Assistant LLM API with 21 tools
+- Home Assistant MCP surface with 16 tools
+- Companion-friendly exposure of `todo.meitheal_tasks`
 
 ## Installation
 
-**Automatic**: The Meitheal addon auto-installs this component on startup.
-No manual steps needed — the component is bundled in the Docker image and
-copied to `/homeassistant/custom_components/meitheal/` at boot.
+### Automatic
 
-**Manual**: Copy this directory to `<ha_config>/custom_components/meitheal/`.
-
-## Setup
-
-### Automatic (recommended)
-
-When the Meitheal addon starts, it registers itself via the HA Supervisor
-Discovery API. You'll see a notification in HA:
-
-1. Go to **Settings → Devices & Services**
-2. Look for the **"Meitheal Discovered"** notification
-3. Click **Configure** → **Submit**
-
-That's it — entities and services are created automatically.
+The Meitheal add-on bundles and installs this component automatically at startup. In the normal add-on flow, you do not need to copy files manually.
 
 ### Manual fallback
 
-If discovery doesn't trigger (e.g. running outside HA OS):
+If you are testing outside the normal add-on packaging flow, copy this directory to:
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **"Meitheal"**
-3. Enter the hostname (`local_meitheal`) and port (`3000`)
-4. Click **Submit**
+```text
+<ha_config>/custom_components/meitheal/
+```
 
-Legacy installs using `local_meitheal_hub` are auto-detected during setup.
+## Setup
+
+### Automatic discovery
+
+1. Start the Meitheal add-on
+2. Open **Settings → Devices & Services**
+3. Confirm the **Meitheal** discovery flow
+4. Submit the configuration
+
+### Manual fallback
+
+1. Open **Settings → Devices & Services → Add Integration**
+2. Search for **Meitheal**
+3. Enter the host and port if discovery is unavailable
 
 ## Architecture
 
 ```text
-HA Core ←→ custom_components/meitheal ←→ Meitheal addon REST API ←→ SQLite
+Home Assistant Core ←→ custom_components/meitheal ←→ Meitheal add-on REST/MCP/LLM surfaces ←→ SQLite
 ```
 
-The component is a thin REST proxy. All task storage stays in Meitheal's SQLite.
-Data refreshes every 30 seconds via `DataUpdateCoordinator`.
+The component is intentionally thin. It does not move the task database into Home Assistant. Meitheal remains the system of record.
 
-## How Discovery Works
+## Home Assistant LLM API
 
-```text
-Addon boots → healthcheck passes → POST /discovery to Supervisor
-                                          ↓
-                            Supervisor triggers config_flow
-                                          ↓
-                            async_step_hassio() validates connection
-                                          ↓
-                            User sees "Meitheal Discovered — Submit"
-```
+When Home Assistant supports the LLM API surface, `Meitheal Tasks` exposes 21 tools:
 
-The discovery call is idempotent — the Supervisor deduplicates on each boot.
+- `meitheal_search_tasks`
+- `meitheal_get_task`
+- `meitheal_create_task`
+- `meitheal_complete_task`
+- `meitheal_update_task`
+- `meitheal_get_overdue`
+- `meitheal_get_todays_tasks`
+- `meitheal_task_summary`
+- `meitheal_get_calendar_events`
+- `meitheal_get_upcoming`
+- `meitheal_daily_briefing`
+- `meitheal_delete_task`
+- `meitheal_batch_complete`
+- `meitheal_link_task`
+- `meitheal_unlink_task`
+- `meitheal_get_task_links`
+- `meitheal_remove_from_todo_list`
+- `meitheal_list_areas`
+- `meitheal_list_goals`
+- `meitheal_move_task`
+- `meitheal_set_goal_progress`
 
-## Voice Assistant Example
+These tools give conversation agents a much richer planning surface than the basic Assist intents alone.
 
-"Hey Google, add 'buy milk' to my Meitheal list"
-→ Calls `meitheal.create_task` → Task appears in Meitheal
+## Home Assistant MCP Surface
 
-## Automation Example
+The component also exposes a separate 16-tool MCP surface:
 
-```yaml
-automation:
-  - trigger:
-      platform: numeric_state
-      entity_id: sensor.meitheal_overdue_tasks
-      above: 3
-    action:
-      - service: notify.mobile_app
-        data:
-          message: "You have {{ states('sensor.meitheal_overdue_tasks') }} overdue tasks!"
-```
+- `createTask`
+- `searchTasks`
+- `completeTask`
+- `updateTask`
+- `deleteTask`
+- `getTask`
+- `getOverdueTasks`
+- `getTodaysTasks`
+- `getTaskSummary`
+- `dailyBriefing`
+- `getCalendarEvents`
+- `getUpcoming`
+- `batchComplete`
+- `linkTask`
+- `unlinkTask`
+- `getTaskLinks`
 
-## Notification System
+This surface overlaps with Astro MCP, but it is not identical.
 
-The addon dispatches notifications through HA services:
+## Assist and automations
 
-| Channel | Service | Trigger |
-|---------|---------|---------|
-| Sidebar Bell | `persistent_notification.create` | Task assignment, P1 escalation |
-| Mobile Push | `notify.mobile_app_*` | Assignment, due-date reminders |
-| Calendar Reminder | `calendar.create_event` | Tasks due within configurable window |
+- The component can auto-expose `todo.meitheal_tasks` to conversation agents
+- Built-in intents support task creation, completion, overdue checks, today summaries, and related flows
+- Automations can use services, sensors, and notification hooks to react to work, reminders, or review states
 
-**Actionable notifications:** Android/iOS users see "Open Task" and "✅ Mark Done" buttons on mobile push notifications. Marking done fires `MEITHEAL_TASK_DONE_{id}` event → handled by `ha-connection.ts`.
+## Notifications and mobile flows
 
-**Auto-dismiss:** All notification tags (urgent, assigned, due) are cleared when a task is completed.
+The Home Assistant integration supports actionable notifications, companion flows, shortcuts, and widgets through the broader Meitheal add-on setup.
 
-## HA Publishing Checklist Compliance
+## Publishing and quality
 
-This component passes both official HA code review checklists:
+This component is meant to stay aligned with Home Assistant publishing expectations:
 
-| Requirement | Status |
-|-------------|--------|
-| PEP8 style guidelines | ✅ |
-| Constants from `homeassistant.const` | ✅ |
-| Config flow (no YAML config) | ✅ |
-| `hass.data[DOMAIN]` for state | ✅ |
-| Event names prefixed with domain | ✅ |
-| Entities extend proper base classes | ✅ |
-| No I/O in properties | ✅ |
-| `has_entity_name` + `translation_key` | ✅ |
-| Device grouping via `DeviceInfo` | ✅ |
-| HA shared aiohttp session | ✅ |
-| Lifecycle cleanup (`async_shutdown`) | ✅ |
-| Diagnostics support | ✅ |
-| Services with voluptuous schemas | ✅ |
-
-References:
-
-- [Component checklist](https://developers.home-assistant.io/docs/creating_component_code_review)
-- [Platform checklist](https://developers.home-assistant.io/docs/creating_platform_code_review)
+- config flow instead of YAML configuration
+- proper entity and device grouping
+- diagnostics support
+- typed service schemas
+- lifecycle cleanup
+- thin integration boundary with the Meitheal add-on as the system of record

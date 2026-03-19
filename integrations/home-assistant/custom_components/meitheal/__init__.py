@@ -10,7 +10,7 @@ Registers Meitheal as a first-class HA integration with:
 - meitheal.sync_todo: Service to trigger manual sync
 - meitheal.search_tasks: Service to search tasks by keyword
 - meitheal.get_overdue_tasks: Service to retrieve overdue tasks
-- LLM API: Meitheal Tasks — 16 tools for Assist/conversation agents
+- LLM API: Meitheal Tasks — 21 tools for Assist/conversation agents
 
 IQS: Platinum tier compliance.
 """

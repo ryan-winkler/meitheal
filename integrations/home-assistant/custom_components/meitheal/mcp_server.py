@@ -11,7 +11,7 @@ The MCP spec is tool-based: client sends a tool call, server executes
 and returns the result. This module processes incoming tool calls and
 routes them to the coordinator.
 
-Tools (16 — parity with LLM API):
+Tools (16 — separate from the HA LLM API surface):
   - createTask, searchTasks, completeTask, updateTask, deleteTask, getTask
   - getOverdueTasks, getTodaysTasks, getTaskSummary, dailyBriefing
   - getCalendarEvents, getUpcoming, batchComplete

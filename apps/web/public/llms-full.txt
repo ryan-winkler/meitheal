@@ -1,265 +1,240 @@
-Meitheal — Home Assistant-Native Task Management Engine
-=======================================================
+# Meitheal
 
-Meitheal (pronounced "meh-hal") is a cooperative task and life management system
-running as a Home Assistant addon. It manages household tasks, to-do lists, and
-projects with voice control, automation integration, and multi-agent support.
+Meitheal is a Home Assistant-native execution hub for households and homelabs.
+It sits between task capture, daily planning, Home Assistant automations,
+calendar and todo sync, companion flows, voice assistants, and agent tooling.
 
-## Quick Start
+It is intentionally local-first, Astro-first, and Home Assistant-native.
 
-Meitheal exposes its API at the addon's base URL (default: http://local_meitheal:3000).
-All endpoints accept and return JSON.
+## Deployment model
 
-## Core API Endpoints
+- Primary runtime: Home Assistant add-on
+- Web runtime: Astro SSR
+- Persistence: SQLite-backed repositories
+- Auth model: Home Assistant ingress and Home Assistant integration surfaces
+- Cloud requirement: none
 
-### Tasks
+## Current user-facing surfaces
 
-- `GET /api/tasks` — List all tasks
-  Returns: `{ tasks: [{ id, title, status, priority, due_date, description, labels, position }] }`
+- Dashboard
+- Today
+- Kanban
+- Table
+- Upcoming
+- Calendar
+- Projects
+- Goals
+- Habits
+- Gamification
+- Review
+- Gantt
+- Settings
+- Offline fallback
 
-- `POST /api/tasks/create` — Create a task
-  Body: `{ title: string, frameworkPayload?: { description?: string } }`
-  Returns: `{ id, title, status, ... }`
+## Core product jobs
 
-- `PUT /api/tasks/:id` — Update a task
-  Body: `{ title?, status?, priority?, due_date?, description? }`
-  status values: "backlog", "todo", "in_progress", "done", "cancelled"
-  priority values: 1 (urgent) to 5 (lowest)
+### Capture and clarify work
 
-- `DELETE /api/tasks/:id` — Delete a task
+- quick-add and full task modal
+- descriptions, labels, due dates, favorites, recurrence, checklists
+- task links and saved filters
+- carried-forward triage and Today-focused workflows
 
-### Task Links (Jira-style relationships)
+### Work across multiple views
 
-- `GET /api/tasks/:id/links` — Get outbound + inbound links for a task
-  Returns: `{ outbound: [...], inbound: [...] }`
+- dashboard and Today planning
+- Kanban and Table management
+- Upcoming, Calendar, Gantt, Projects, Goals, Habits, and Review surfaces
+- shared SearchHub for tasks, views, settings, saved filters, and actions
 
-- `POST /api/tasks/:id/links` — Create a link
-  Body: `{ target_task_id: string, link_type: "related_to" | "blocked_by" | "blocks" | "duplicates" | "duplicated_by" }`
+### Connect work to the home
 
-- `DELETE /api/tasks/:id/links?link_id=xxx` — Remove a link
+- Home Assistant todo entity and calendar sync
+- Home Assistant services, sensors, notifications, and companion flows
+- optional Grocy, Node-RED, n8n, webhook, and compatibility integrations
 
-### Search & Filtering
+### Stay available everywhere
 
-- `GET /api/tasks?status=todo` — Filter by status
-- `GET /api/tasks?q=keyword` — Basic task list search across title + description
-- `GET /api/tasks?priority=1` — Filter by priority
-- `GET /api/search?scope=all&q=theme` — Universal search across tasks, boards, saved filters, settings, and actions
-- `GET /api/search?scope=tasks&task_fields=id,title,description,labels,custom_fields,comments&include_completed=1` — Advanced task search
+- searchable Settings shell
+- PWA installability and offline support
+- export and backup surfaces
 
-### Export
+### Work with voice and agents
 
-- `GET /api/export/tasks.json` — Export all tasks as JSON
-- `GET /api/export/tasks.csv` — Export all tasks as CSV
+- built-in Assist intents
+- Home Assistant LLM API
+- Astro MCP
+- Home Assistant MCP
+- A2A discovery and message routes
+- experimental WebMCP direction
 
-### Health
+## Ubiquitous language
 
-- `GET /api/health` — Health check endpoint
+Canonical vocabulary:
 
-### Home Assistant Integration
+- `Area` — life or operating domain
+- `Goal` — desired outcome
+- `Project` — bounded work in service of a goal
+- `Task` — concrete unit of work
+- `Routine` — repeatable work that spawns routine instances
 
-- `GET /api/ha/agents` — List available HA conversation agents
-- `POST /api/ha/assist` — Proxy to HA conversation.process
-  Body: `{ text: string, agent_id?: string, conversation_id?: string }`
-- `GET /api/ha/calendars` — List synced calendar entities
+Compatibility note:
 
-### Agent Protocol (A2A)
+- Some current UI, compatibility APIs, and integrations still expose legacy board, `task_type`, or `Epic/Story` language.
+- Public docs use the newer model as canonical and call legacy language out only where it affects the reader.
 
-- `GET /.well-known/agent.json` — Agent capability card (dynamic, per A2A spec §8)
-- `POST /api/a2a/message` — Send A2A message
+## Web app and API surface
 
-### MCP (Model Context Protocol)
+High-value routes:
 
-- `GET /.well-known/mcp.json` — MCP server discovery (18 tools)
-- `POST /api/mcp` — MCP tool execution endpoint (JSON-RPC 2.0)
+- `GET /api/tasks`
+- `POST /api/tasks/create`
+- `PUT /api/tasks/:id`
+- `DELETE /api/tasks/:id`
+- `GET /api/tasks/:id/links`
+- `POST /api/tasks/:id/links`
+- `DELETE /api/tasks/:id/links?link_id=...`
+- `GET /api/search`
+- `GET /api/settings`
+- `GET /api/health`
+- `GET /api/ha/calendars`
+- `POST /api/ha/assist`
 
-## MCP Tools (18 tools, same across Astro + Python servers)
+## A2A surface
 
-- `createTask` — Create task (title, description?, priority?, due_date?)
-- `searchTasks` — Search by keyword, status, priority, assignee, IDs, labels, custom fields, and comments
-- `completeTask` — Mark done by ID or title
-- `updateTask` — Update fields (title, status, priority, due_date, description)
-- `deleteTask` — Delete by ID
-- `getTask` — Full details by ID (includes is_overdue, labels, timestamps)
-- `getOverdueTasks` — All overdue tasks
-- `getTodaysTasks` — Today's tasks + overdue
-- `getTaskSummary` — Counts: total, active, overdue, done
-- `dailyBriefing` — Full briefing with tasks, calendar, weather, who's home
-- `getCalendarEvents` — HA calendar events synced into Meitheal
-- `getUpcoming` — Combined tasks + calendar view (configurable days_ahead)
-- `batchComplete` — Batch complete by label, priority, or title list
-- `assignTask` — Assign task to a HA or custom user
-- `listUsers` — List available users
-- `linkTask` — Create a Jira-style link between two tasks
-- `unlinkTask` — Remove a link by link ID
-- `getTaskLinks` — Get all outbound + inbound links for a task
+Discovery and routes:
 
-## Home Assistant Services
+- `GET /.well-known/agent-card.json` — static fallback agent card
+- `GET /api/a2a/agent-card` — dynamic agent card
+- `POST /api/a2a/message` — receive A2A messages
+- `GET /api/a2a/tasks/{id}` — task status
+- `POST /api/a2a/tasks/{id}:cancel` — cancel task
 
-These services can be called from HA automations, scripts, and voice:
+Dynamic skill model:
 
-- `meitheal.create_task` — Create a new task (params: title, description?)
-- `meitheal.complete_task` — Mark task done (params: task_id or title)
-- `meitheal.sync_todo` — Force refresh task data
-- `meitheal.search_tasks` — Search tasks (params: query, status?, priority?, include_completed?)
-- `meitheal.get_overdue_tasks` — Get all overdue tasks
-- `meitheal.notify_overdue` — Push overdue notification to HA
+- 9 core skills: task management, task search, framework scoring, data export, areas, labels, today summary, habits, weekly review
+- 2 HA skills when configured: calendar sync and entity state
 
-## LLM API Tools (for conversation agents)
+Important limitation:
 
-When "Meitheal Tasks" is selected in a conversation agent's LLM APIs:
+- The A2A routes are live but lightweight. Task-status and cancel routes currently return scaffolding rather than persisted long-running task state.
 
-- `meitheal_search_tasks` — Search by keyword, IDs, labels, custom fields, comments, status, or priority
-- `meitheal_get_task` — Get full task details by ID
-- `meitheal_create_task` — Create a new task
-- `meitheal_complete_task` — Mark done by ID or title
-- `meitheal_update_task` — Update priority, due date, status, description
-- `meitheal_delete_task` — Delete a task permanently
-- `meitheal_batch_complete` — Complete multiple tasks (by label, priority, or titles)
-- `meitheal_get_overdue` — List overdue tasks
-- `meitheal_get_todays_tasks` — Today's tasks + overdue
-- `meitheal_get_task_summary` — Active, overdue, done, total counts
-- `meitheal_get_calendar_events` — Calendar events from HA
-- `meitheal_get_upcoming` — Combined tasks + calendar upcoming view
-- `meitheal_daily_briefing` — Full day briefing (weather, tasks, calendar, who's home)
-- `meitheal_link_task` — Create a Jira-style link between two tasks
-- `meitheal_unlink_task` — Remove a link between tasks
-- `meitheal_get_task_links` — Get all outbound + inbound links for a task
+## Astro MCP
 
-## Voice Commands (no LLM required)
+Astro MCP is exposed at `POST /api/mcp`.
 
-These work with HA's built-in Assist without any LLM:
+Verified tool count: 18
 
-- "add [item] to my tasks" — creates a task
-- "done with [item]" / "mark [item] done" — completes a task
-- "delete [item]" / "remove [item]" — deletes a task
-- "show my tasks" / "what's on my list" — lists active tasks
-- "what's late" / "what's overdue" — shows overdue tasks
-- "today's tasks" / "what's due today" — today's agenda
-- "how many tasks" / "task count" — summary counts
-- "good morning" / "brief me" / "start my day" — daily briefing
+Tools:
 
-Also responds to "meitheal", "me hall", "may hall", "meh hall", or "MH":
-- "MH add buy groceries"
-- "meitheal today"
-- "me hall what's overdue"
+- `createTask`
+- `searchTasks`
+- `completeTask`
+- `updateTask`
+- `deleteTask`
+- `getTask`
+- `getCalendarEvents`
+- `getUpcoming`
+- `syncCalendar`
+- `getOverdueTasks`
+- `getTodaysTasks`
+- `getTaskSummary`
+- `batchComplete`
+- `assignTask`
+- `listUsers`
+- `linkTask`
+- `unlinkTask`
+- `getTaskLinks`
 
-### Irish Language (ga)
+## Home Assistant custom component
 
-- "cuir [item] le mo thascanna" — add task
-- "tá [item] déanta" / "déanta le [item]" — mark done
-- "taispeáin mo thascanna" — show tasks
-- "cad atá déanach" — what's overdue
-- "tascanna an lae inniu" — today's tasks
-- "cé mhéad tasc" — how many tasks
-- "maidin mhaith" — morning briefing
+Primary HA entities:
 
-## Event Bus Integration
+- `todo.meitheal_tasks`
+- `sensor.meitheal_active_tasks`
+- `sensor.meitheal_overdue_tasks`
+- `sensor.meitheal_total_tasks`
 
-Meitheal fires and listens to HA events on hass.bus:
+Primary HA services:
 
-### Outbound Events (fired by Meitheal, available for HA automations)
-- `meitheal_task_created` — { task_id, title, source }
-- `meitheal_task_completed` — { task_id, title, source }
-- `meitheal_task_updated` — { task_id, title, changed_fields, source }
-- `meitheal_task_deleted` — { task_id, title, source }
-- `meitheal_task_overdue` — { task_id, title, due_date }
-- `meitheal_board_updated` — { total, active, overdue, source }
+- `meitheal.create_task`
+- `meitheal.complete_task`
+- `meitheal.sync_todo`
+- `meitheal.search_tasks`
+- `meitheal.get_overdue_tasks`
+- `meitheal.complete_task_by_tag`
+- `meitheal.notify_overdue`
 
-### Dedup
-- Addon fires with `source: 'meitheal'`, component fires with `source: 'component'`
-- Each side filters its own events to prevent circular loops
+Voice and Assist:
 
-### Logbook Integration
-All task mutations appear in HA's history/logbook as `logbook_entry` events.
+- built-in Assist intents are registered without requiring an LLM
+- `todo.meitheal_tasks` can be exposed to Assist
+- the custom component auto-registers the `Meitheal Tasks` LLM API when supported by Home Assistant
 
-## Device Automation Triggers
+## Home Assistant LLM API
 
-6 triggers available in HA's Automation UI:
-- "Task was created in Meitheal"
-- "Task was completed in Meitheal"
-- "Task was updated in Meitheal"
-- "Task was deleted from Meitheal"
-- "Task became overdue in Meitheal"
-- "Meitheal board data changed"
+Surface name: `Meitheal Tasks`
 
-## Sensor Entities (with rich attributes for AI)
+Verified tool count: 21
 
-### sensor.meitheal_active_tasks
-- State: count of non-done tasks
-- Attributes: task_titles (top 10), priority_breakdown, has_urgent, with_due_date
+Tools:
 
-### sensor.meitheal_overdue_tasks
-- State: count of overdue tasks
-- Attributes: task_titles (top 10), due_dates, oldest_due
+- `meitheal_search_tasks`
+- `meitheal_get_task`
+- `meitheal_create_task`
+- `meitheal_complete_task`
+- `meitheal_update_task`
+- `meitheal_get_overdue`
+- `meitheal_get_todays_tasks`
+- `meitheal_task_summary`
+- `meitheal_get_calendar_events`
+- `meitheal_get_upcoming`
+- `meitheal_daily_briefing`
+- `meitheal_delete_task`
+- `meitheal_batch_complete`
+- `meitheal_link_task`
+- `meitheal_unlink_task`
+- `meitheal_get_task_links`
+- `meitheal_remove_from_todo_list`
+- `meitheal_list_areas`
+- `meitheal_list_goals`
+- `meitheal_move_task`
+- `meitheal_set_goal_progress`
 
-### sensor.meitheal_total_tasks
-- State: total task count
-- Attributes: status_breakdown, label_summary (top 10), done_count, in_progress_count
+## Home Assistant MCP
 
-### todo.meitheal_tasks
-- Full TodoListEntity with CRUD, move, due_date, description support
-- Exposed to Assist for voice commands
+The custom component also exposes a separate MCP surface.
 
-## Data Model
+Verified tool count: 16
 
-### Task Object
-```json
-{
-  "id": "string (UUID)",
-  "title": "string",
-  "status": "backlog | todo | in_progress | done | cancelled",
-  "priority": 1-5,
-  "description": "string | null",
-  "due_date": "ISO 8601 date | null",
-  "labels": ["string"],
-  "position": 0,
-  "created_at": "ISO 8601 datetime",
-  "updated_at": "ISO 8601 datetime",
-  "custom_fields": {
-    "field_name": "value"
-  }
-}
-```
+Tools:
 
-### Custom Field Types
+- `createTask`
+- `searchTasks`
+- `completeTask`
+- `updateTask`
+- `deleteTask`
+- `getTask`
+- `getOverdueTasks`
+- `getTodaysTasks`
+- `getTaskSummary`
+- `dailyBriefing`
+- `getCalendarEvents`
+- `getUpcoming`
+- `batchComplete`
+- `linkTask`
+- `unlinkTask`
+- `getTaskLinks`
 
-Typed custom fields defined in Settings:
-- `text` — Free text string
-- `number` — Numeric value
-- `url` — URL with clickable link
-- `date` — Date picker (YYYY-MM-DD)
-- `select` — Dropdown from predefined options
-- `checkbox` — Boolean toggle
+## WebMCP
 
-### Task Link Object
-```json
-{
-  "id": "string (UUID)",
-  "source_task_id": "UUID",
-  "target_task_id": "UUID",
-  "link_type": "related_to | blocked_by | blocks | duplicates | duplicated_by",
-  "created_at": "ISO 8601 datetime"
-}
-```
+WebMCP is currently an experimental product direction. Treat it as documented
+forward-looking protocol work, not as a mainstream runtime capability on stable
+browsers today.
 
-### Priority Scale
-- 1: Urgent (highest)
-- 2: High
-- 3: Medium (default)
-- 4: Low
-- 5: Lowest
+## Important operational notes
 
-### Status Flow
-backlog → todo → in_progress → done
-todo → cancelled
-
-## Authentication
-
-When running as an HA addon, requests through ingress are authenticated by
-the Supervisor. Direct API access requires the `SUPERVISOR_TOKEN` or
-HA long-lived access token in the Authorization header.
-
-## Diagnostics
-
-Settings → Integrations → Meitheal → Download Diagnostics exports:
-task stats, connection info, registered services, entity summary (no PII).
+- Meitheal is designed for Home Assistant add-on deployment first.
+- Do not assume one shared count or one shared tool list across all agent surfaces.
+- Some legacy task and board terminology is still present in compatibility layers.
+- Use Home Assistant auth and ingress expectations when describing access patterns.

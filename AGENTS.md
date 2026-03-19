@@ -5,7 +5,9 @@
 
 ## Project Identity
 
-Meitheal is a **task management and strategic planning hub** running as a **Home Assistant add-on** (HA Supervisor). Built with Astro SSR, Drizzle ORM (SQLite), and domain-driven design.
+Meitheal is a **Home Assistant-native household and homelab execution hub** that turns capture, planning, follow-through, automation, and agent workflows into one local-first system. It runs as a **Home Assistant add-on** (HA Supervisor) and is built with Astro SSR, SQLite/Drizzle repositories, and domain-driven design.
+
+Think of Meitheal as the coordination layer that sits between daily work, Home Assistant entities and automations, companion flows, voice assistants, and AI agents. It is intentionally not a generic corporate project-management clone.
 
 ## Hard Requirements
 

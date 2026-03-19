@@ -2,7 +2,15 @@
   "name": "meitheal-monorepo",
   "private": true,
   "version": "0.1.80",
-  "description": "Meitheal: The cooperative task and life engine for your home.",
+  "description": "Home Assistant-native household and homelab execution hub for tasks, routines, planning, and AI-assisted coordination.",
+  "homepage": "https://github.com/Coolock-Village/meitheal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Coolock-Village/meitheal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Coolock-Village/meitheal/issues"
+  },
   "packageManager": "pnpm@10.8.0",
   "scripts": {
     "check": "pnpm -r --if-present check",

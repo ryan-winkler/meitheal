@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Meitheal is a Home Assistant add-on for task/project management. The core feature-completion sprint landed subtasks, recurrence, checklist UX, SQL repository migration, Smart Today, and version tooling. The active parallel work now focuses on **cross-page shell quality**, **search/navigation ergonomics**, and **Astro-native maintainability**.
+Meitheal is a Home Assistant-native household and homelab execution hub, shipped as a Home Assistant add-on. The core feature-completion sprint landed subtasks, recurrence, checklist UX, SQL repository migration, Smart Today, version tooling, and a docs-narrative refresh that now explains the product in clearer non-developer language. The active parallel work now focuses on **cross-page shell quality**, **search/navigation ergonomics**, **DDD language evolution**, and **Astro-native maintainability**.
 
 ## Core Value
 
@@ -16,6 +16,8 @@ Keep Meitheal competitive as a Home Assistant-native execution engine: make crit
 - Settings now uses a searchable shell with grouped navigation, summary cards, App & PWA companion affordances, and real manifest screenshots
 - The dashboard and habits now use the mature unified shell language, with the next rollout order queued for Today, Upcoming, Calendar, Kanban, and Table
 - Universal search hub work is present locally with repo-wide typecheck green; remaining follow-up is Tier 2 HA verification and polish
+- Public docs now tell the current product story consistently across README, protocol docs, add-on docs, custom-component docs, LLM-facing assets, and contributor identity surfaces
+- The canonical hierarchy in public docs is now `Area -> Goal -> Project -> Task -> Routine`, with explicit compatibility notes where legacy `task_type`, `Epic/Story`, or Vikunja terms still appear
 - Tier 2 HA verification is currently blocked on this workstation by Docker socket permissions
 - A new research/discuss track, `human-agent-ddd-core`, is active to replace `Epic/Story` with `Area/Goal/Project/Task/Routine` and add bot-safe task orchestration semantics before execution code begins
 
@@ -25,7 +27,7 @@ Keep Meitheal competitive as a Home Assistant-native execution engine: make crit
 2. **Settings closeout** — complete Tier 2 verification for ingress-safe hashes, companion handoff, and PWA behavior
 3. **Search stabilization** — finish type-clean universal search orchestration through `domains/search/` and `/api/search`
 4. **Controller decomposition** — continue breaking oversized client controllers into lifecycle-safe modules
-5. **Docs/KCS accuracy** — keep README, AGENTS, planning docs, and runbooks synchronized with the shipped UX
+5. **Docs/KCS accuracy** — use Phase `04.3` as the baseline and keep README, AGENTS, protocol docs, planning docs, and runbooks synchronized with shipped UX and language
 6. **Human-agent DDD core** — define the new strategic hierarchy, task kinds, bot handoff model, and offline-safe merge contract before implementation
 
 ## Tech Stack

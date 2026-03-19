@@ -9,7 +9,7 @@ import {
 } from "@meitheal/integration-core";
 
 /**
- * POST /api/a2a/message:send — A2A Message Send
+ * POST /api/a2a/message — A2A Message Send
  *
  * Receives an agent message per A2A spec §11.3.1, routes to skill handler,
  * and returns an A2A Task with status.

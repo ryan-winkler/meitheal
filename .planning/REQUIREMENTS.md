@@ -112,6 +112,16 @@
 - [x] **STRAT-07**: Backup integration — export/import v2 format (rules + frameworks), restore defaults API with confirmation
 - [x] **STRAT-08**: Domain tests — 9 passing tests for rule resolution + weighted RICE scoring
 
+## Docs Narrative & Surface Alignment (DOC)
+
+- [x] **DOC-01**: Create a formal docs-refresh track with `04.3` context, research, plan, summary, verification, and a canonical persona-loop iteration
+- [x] **DOC-02**: Update the existing codebase map in place for the documentation pass, with current protocol and integration surfaces reflected in planning artifacts
+- [x] **DOC-03**: Rebuild the root `README.md` as a story-first guide for non-developer Home Assistant enthusiasts, organized around real jobs instead of a flat feature dump
+- [x] **DOC-04**: Refresh duplicated `llms.txt` and `llms-full.txt` surfaces with synchronized language, verified route references, and per-surface MCP/LLM capability counts
+- [x] **DOC-05**: Refresh add-on, custom-component, and protocol docs so Home Assistant, A2A, MCP, WebMCP, Assist, and companion flows are described accurately
+- [x] **DOC-06**: Apply transitional ubiquitous language across public docs — `Area → Goal → Project → Task → Routine` is canonical, while legacy `task_type`, Epic/Story, board, and Vikunja compatibility terms are framed explicitly as compatibility surfaces
+- [x] **DOC-07**: Refresh core README screenshots from the current UI and record Tier 1 verification for the documentation pass
+
 ## Scope
 
 ### v1 (this sprint)
@@ -197,6 +207,7 @@ All above — 33 requirements (expanded by the habits shell rollout follow-up)
 | 2 | SQL-01→05 |
 | 3 | PGD-01→05 |
 | 4 | SMT-01→03, VER-01→03 |
+| 04.3 | DOC-01→07 |
 | 8 | SET-01→12 |
 | 14 | SHELL-01→05 |
 | Parallel | STRAT-01→08 |

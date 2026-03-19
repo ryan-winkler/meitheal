@@ -3,9 +3,31 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** Dashboard + habits shell rollout complete locally; next page-shell research queued for Today/Upcoming/Calendar; docs update; Phase 04.1 human-agent-ddd-core research/discuss
-**Last Completed Local Work:** Habits shell rollout — UnifiedBar shell, lifecycle-safe controller extraction, server-rendered routine data, 3 browser checks — 2026-03-19
+**Active Tracks:** Dashboard + habits shell rollout complete locally; next page-shell research queued for Today/Upcoming/Calendar; Phase 04.1 human-agent-ddd-core research/discuss
+**Last Completed Local Work:** Parallel Phase 04.3 docs narrative & surface alignment — README, protocol docs, LLM assets, add-on/custom-component docs, screenshots, planning artifacts — 2026-03-19
 **Session Date:** 2026-03-19
+
+## Parallel Phase 04.3 Summary (COMPLETE ✅)
+
+**Objective:** Rebuild Meitheal's public story around the current product, refresh duplicated narrative surfaces, and formally capture the work through the GSD and persona-loop documentation flow.
+
+### Delivered on 2026-03-19
+- Added a formal `04.3` docs-refresh track in `.planning/` with context, research, plan, summary, and verification artifacts.
+- Created a canonical 7-file persona-loop iteration for the docs pass under `.planning/persona-loops/phase-04.3/iteration-01/`.
+- Rewrote `README.md` as a story-first introduction for non-developer Home Assistant users and tech enthusiasts, with capability groupings based on real jobs instead of a flat feature dump.
+- Updated the public narrative to treat `Area -> Goal -> Project -> Task -> Routine` as canonical while explicitly calling out legacy `task_type`, `Epic/Story`, and Vikunja compatibility wording where it still exists.
+- Synchronized both `llms` surfaces, refreshed `WEBMCP.md`, updated add-on and custom-component docs, and corrected protocol/KCS references for Astro MCP, HA MCP, HA LLM API, A2A, and WebMCP.
+- Updated only the project identity/context framing in `AGENTS.md`, `SKILL.md`, and `.skills/core-workflows/SKILL.md`, preserving contributor enforcement rules.
+- Re-ran the public screenshot captures against the current local UI under `docs/screenshots/`, confirming the tracked assets still reflect the shipped shell.
+- Corrected GitHub-facing version drift by realigning `apps/web/package.json` and the service-worker fallback version with the current `v0.2.35` release line, updated the live GitHub repository About metadata, and added repo/About plus version-sync checks to the publishing KCS.
+
+### Verification
+- Tier 1: `git diff --check` — passed.
+- Tier 1: `diff -u public/llms.txt apps/web/public/llms.txt` — no diff.
+- Tier 1: `diff -u public/llms-full.txt apps/web/public/llms-full.txt` — no diff.
+- Tier 1: `pnpm --filter @meitheal/web build` — passed, with existing Astro/Vite warnings only.
+- Tier 1: `rg -n "message:send|agent\\.json|/api/a2a/message:send|16 built-in LLM" README.md WEBMCP.md docs/kcs/webmcp-a2a-setup.md integrations/home-assistant/custom_components/meitheal/README.md integrations/home-assistant/custom_components/meitheal/__init__.py integrations/home-assistant/custom_components/meitheal/mcp_server.py public/llms.txt public/llms-full.txt apps/web/public/llms.txt apps/web/public/llms-full.txt` — no matches.
+- Tier 1: Playwright screenshot captures for dashboard, work view, and settings completed successfully against the local Astro server.
 
 ## Parallel Phase 14 Summary (COMPLETE ✅)
 

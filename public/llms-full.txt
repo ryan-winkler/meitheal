@@ -1,3 +1,240 @@
-Project: Meitheal
-Tagline: The cooperative task and life engine for your home.
-Core constraints: Astro-first, DDD/KCS, HA-native, local-first, observability-first.
+# Meitheal
+
+Meitheal is a Home Assistant-native execution hub for households and homelabs.
+It sits between task capture, daily planning, Home Assistant automations,
+calendar and todo sync, companion flows, voice assistants, and agent tooling.
+
+It is intentionally local-first, Astro-first, and Home Assistant-native.
+
+## Deployment model
+
+- Primary runtime: Home Assistant add-on
+- Web runtime: Astro SSR
+- Persistence: SQLite-backed repositories
+- Auth model: Home Assistant ingress and Home Assistant integration surfaces
+- Cloud requirement: none
+
+## Current user-facing surfaces
+
+- Dashboard
+- Today
+- Kanban
+- Table
+- Upcoming
+- Calendar
+- Projects
+- Goals
+- Habits
+- Gamification
+- Review
+- Gantt
+- Settings
+- Offline fallback
+
+## Core product jobs
+
+### Capture and clarify work
+
+- quick-add and full task modal
+- descriptions, labels, due dates, favorites, recurrence, checklists
+- task links and saved filters
+- carried-forward triage and Today-focused workflows
+
+### Work across multiple views
+
+- dashboard and Today planning
+- Kanban and Table management
+- Upcoming, Calendar, Gantt, Projects, Goals, Habits, and Review surfaces
+- shared SearchHub for tasks, views, settings, saved filters, and actions
+
+### Connect work to the home
+
+- Home Assistant todo entity and calendar sync
+- Home Assistant services, sensors, notifications, and companion flows
+- optional Grocy, Node-RED, n8n, webhook, and compatibility integrations
+
+### Stay available everywhere
+
+- searchable Settings shell
+- PWA installability and offline support
+- export and backup surfaces
+
+### Work with voice and agents
+
+- built-in Assist intents
+- Home Assistant LLM API
+- Astro MCP
+- Home Assistant MCP
+- A2A discovery and message routes
+- experimental WebMCP direction
+
+## Ubiquitous language
+
+Canonical vocabulary:
+
+- `Area` — life or operating domain
+- `Goal` — desired outcome
+- `Project` — bounded work in service of a goal
+- `Task` — concrete unit of work
+- `Routine` — repeatable work that spawns routine instances
+
+Compatibility note:
+
+- Some current UI, compatibility APIs, and integrations still expose legacy board, `task_type`, or `Epic/Story` language.
+- Public docs use the newer model as canonical and call legacy language out only where it affects the reader.
+
+## Web app and API surface
+
+High-value routes:
+
+- `GET /api/tasks`
+- `POST /api/tasks/create`
+- `PUT /api/tasks/:id`
+- `DELETE /api/tasks/:id`
+- `GET /api/tasks/:id/links`
+- `POST /api/tasks/:id/links`
+- `DELETE /api/tasks/:id/links?link_id=...`
+- `GET /api/search`
+- `GET /api/settings`
+- `GET /api/health`
+- `GET /api/ha/calendars`
+- `POST /api/ha/assist`
+
+## A2A surface
+
+Discovery and routes:
+
+- `GET /.well-known/agent-card.json` — static fallback agent card
+- `GET /api/a2a/agent-card` — dynamic agent card
+- `POST /api/a2a/message` — receive A2A messages
+- `GET /api/a2a/tasks/{id}` — task status
+- `POST /api/a2a/tasks/{id}:cancel` — cancel task
+
+Dynamic skill model:
+
+- 9 core skills: task management, task search, framework scoring, data export, areas, labels, today summary, habits, weekly review
+- 2 HA skills when configured: calendar sync and entity state
+
+Important limitation:
+
+- The A2A routes are live but lightweight. Task-status and cancel routes currently return scaffolding rather than persisted long-running task state.
+
+## Astro MCP
+
+Astro MCP is exposed at `POST /api/mcp`.
+
+Verified tool count: 18
+
+Tools:
+
+- `createTask`
+- `searchTasks`
+- `completeTask`
+- `updateTask`
+- `deleteTask`
+- `getTask`
+- `getCalendarEvents`
+- `getUpcoming`
+- `syncCalendar`
+- `getOverdueTasks`
+- `getTodaysTasks`
+- `getTaskSummary`
+- `batchComplete`
+- `assignTask`
+- `listUsers`
+- `linkTask`
+- `unlinkTask`
+- `getTaskLinks`
+
+## Home Assistant custom component
+
+Primary HA entities:
+
+- `todo.meitheal_tasks`
+- `sensor.meitheal_active_tasks`
+- `sensor.meitheal_overdue_tasks`
+- `sensor.meitheal_total_tasks`
+
+Primary HA services:
+
+- `meitheal.create_task`
+- `meitheal.complete_task`
+- `meitheal.sync_todo`
+- `meitheal.search_tasks`
+- `meitheal.get_overdue_tasks`
+- `meitheal.complete_task_by_tag`
+- `meitheal.notify_overdue`
+
+Voice and Assist:
+
+- built-in Assist intents are registered without requiring an LLM
+- `todo.meitheal_tasks` can be exposed to Assist
+- the custom component auto-registers the `Meitheal Tasks` LLM API when supported by Home Assistant
+
+## Home Assistant LLM API
+
+Surface name: `Meitheal Tasks`
+
+Verified tool count: 21
+
+Tools:
+
+- `meitheal_search_tasks`
+- `meitheal_get_task`
+- `meitheal_create_task`
+- `meitheal_complete_task`
+- `meitheal_update_task`
+- `meitheal_get_overdue`
+- `meitheal_get_todays_tasks`
+- `meitheal_task_summary`
+- `meitheal_get_calendar_events`
+- `meitheal_get_upcoming`
+- `meitheal_daily_briefing`
+- `meitheal_delete_task`
+- `meitheal_batch_complete`
+- `meitheal_link_task`
+- `meitheal_unlink_task`
+- `meitheal_get_task_links`
+- `meitheal_remove_from_todo_list`
+- `meitheal_list_areas`
+- `meitheal_list_goals`
+- `meitheal_move_task`
+- `meitheal_set_goal_progress`
+
+## Home Assistant MCP
+
+The custom component also exposes a separate MCP surface.
+
+Verified tool count: 16
+
+Tools:
+
+- `createTask`
+- `searchTasks`
+- `completeTask`
+- `updateTask`
+- `deleteTask`
+- `getTask`
+- `getOverdueTasks`
+- `getTodaysTasks`
+- `getTaskSummary`
+- `dailyBriefing`
+- `getCalendarEvents`
+- `getUpcoming`
+- `batchComplete`
+- `linkTask`
+- `unlinkTask`
+- `getTaskLinks`
+
+## WebMCP
+
+WebMCP is currently an experimental product direction. Treat it as documented
+forward-looking protocol work, not as a mainstream runtime capability on stable
+browsers today.
+
+## Important operational notes
+
+- Meitheal is designed for Home Assistant add-on deployment first.
+- Do not assume one shared count or one shared tool list across all agent surfaces.
+- Some legacy task and board terminology is still present in compatibility layers.
+- Use Home Assistant auth and ingress expectations when describing access patterns.

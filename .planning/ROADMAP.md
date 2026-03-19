@@ -233,6 +233,24 @@
 
 **Depends on:** Phase 04.1
 
+### Parallel Phase 04.3: Docs Narrative & Surface Alignment
+
+**Status:** ✅ Complete
+
+**Goal:** Rebuild Meitheal's public story so README, machine-readable docs, add-on docs, and protocol docs reflect the current product, the newer ubiquitous language, and the real Home Assistant-native surface area.
+
+**Requirements:** DOC-01→07
+
+**Success Criteria:**
+1. README explains Meitheal as a Home Assistant-native household and homelab execution hub, not just a feature list.
+2. Public docs organize capabilities around real user jobs: capture, plan, work, sync, stay available everywhere, and collaborate with voice/AI/agents.
+3. Canonical docs use transitional ubiquitous language: `Area → Goal → Project → Task → Routine` is primary, while legacy `task_type`, Epic/Story, boards, and Vikunja terms are called out as compatibility surfaces.
+4. `llms.txt`, `llms-full.txt`, add-on docs, protocol docs, and custom-component docs use verified route references and capability counts per surface instead of one global number.
+5. A formal docs-refresh phase and persona-loop artifact set exist in `.planning/` for future refreshes.
+6. README screenshots match the current dashboard, settings, and work/search surfaces.
+
+**Dependencies:** Existing codebase map, DDD audit artifacts, ADR-007 hierarchy model, and current protocol implementations in Astro and the Home Assistant custom component.
+
 ---
 
 ## Pre-Release Audit Phases (from 50-Persona Expert Audit)
