@@ -11,6 +11,9 @@
     "api": "/api",
     "health": "/api/health",
     "tasks": "/api/tasks",
+    "areas": "/api/areas",
+    "review_weekly": "/api/review/weekly",
+    "review_velocity": "/api/review/velocity",
     "grocy_stock": "/api/grocy/stock",
     "grocy_sync": "/api/grocy/sync",
     "a2a_agent_card": "/api/a2a/agent-card",
@@ -178,8 +181,8 @@
       }
     },
     {
-      "name": "getBoards",
-      "description": "List all kanban boards with their column configurations and task counts",
+      "name": "getAreas",
+      "description": "List all areas with their configurations and WIP limits",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -211,6 +214,32 @@
         "type": "object",
         "properties": {
           "active_only": { "type": "boolean", "default": true, "description": "Only return active habits" }
+        }
+      }
+    },
+    {
+      "name": "getHealth",
+      "description": "Get system health status including DB, HA connection, and addon version",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getWeeklyReview",
+      "description": "Get 7-day GTD review data: velocity, priority distribution, carried-forward, overdue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getVelocity",
+      "description": "Get task completion velocity over configurable window (1-90 days) with trend detection",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "days": { "type": "integer", "minimum": 1, "maximum": 90, "default": 14 }
         }
       }
     }

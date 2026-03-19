@@ -736,16 +736,55 @@ export class TaskRepository {
   async logActivity(
     taskId: string,
     changes: Array<{ field: string; oldValue: string | null; newValue: string }>,
+    opts?: { actor?: string; actor_type?: string; correlation_id?: string },
   ): Promise<void> {
     const now = Date.now();
-    const inserts = changes.map(({ field, oldValue, newValue }) =>
-      this.client.execute({
-        sql: `INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, created_at)
-              VALUES (?, ?, ?, ?, 'user', ?)`,
-        args: [taskId, field, oldValue, newValue, now] as InValue[],
+    const actorType = opts?.actor_type ?? "user"
+    const actor = opts?.actor ?? "user"
+    const correlationId = opts?.correlation_id ?? null
+    const inserts = changes.map(({ field, oldValue, newValue }) => {
+      const eventType = field === "status" ? "status_change" : "field_change"
+      const summary = `${field}: ${oldValue ?? '(empty)'} → ${newValue}`
+      return this.client.execute({
+        sql: `INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [taskId, field, oldValue, newValue, actor, actorType, eventType, summary, correlationId, now] as InValue[],
       })
-    );
+    });
     await Promise.all(inserts).catch(() => { });
+  }
+
+  /**
+   * Record a non-field-change timeline event (created, delegated, sync, etc.)
+   * Part of the Immutable Audit Ledger — every significant action gets recorded.
+   */
+  async recordTimelineEvent(taskId: string, event: {
+    event_type: string
+    actor: string
+    actor_type: string
+    summary: string
+    field?: string
+    old_value?: string | null
+    new_value?: string
+    correlation_id?: string
+  }): Promise<void> {
+    const now = Date.now()
+    await this.client.execute({
+      sql: `INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        taskId,
+        event.field ?? event.event_type,
+        event.old_value ?? null,
+        event.new_value ?? null,
+        event.actor,
+        event.actor_type,
+        event.event_type,
+        event.summary,
+        event.correlation_id ?? null,
+        now,
+      ] as InValue[],
+    }).catch(() => { })
   }
 
   /** Delete a single task and cascade-clean related data */
@@ -1034,7 +1073,7 @@ export class TaskRepository {
   /** Fetch paginated activity log for a task */
   async getActivityLog(taskId: string, limit: number, offset: number) {
     const result = await this.client.execute({
-      sql: `SELECT id, task_id, field, old_value, new_value, actor, created_at
+      sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
             FROM task_activity_log
             WHERE task_id = ?
             ORDER BY created_at DESC
@@ -1042,6 +1081,76 @@ export class TaskRepository {
       args: [taskId, limit, offset],
     });
     return result.rows;
+  }
+
+  /**
+   * Unified timeline: merges activity log + comments chronologically.
+   * Returns a combined view for the Immutable Audit Ledger UI.
+   */
+  async getTimeline(taskId: string, opts?: {
+    limit?: number
+    offset?: number
+    event_type?: string
+    actor_type?: string
+  }) {
+    const limit = Math.min(200, Math.max(1, opts?.limit ?? 50))
+    const offset = Math.max(0, opts?.offset ?? 0)
+
+    const conditions: string[] = ["task_id = ?"]
+    const args: InValue[] = [taskId]
+
+    if (opts?.event_type) {
+      conditions.push("event_type = ?")
+      args.push(opts.event_type)
+    }
+    if (opts?.actor_type) {
+      conditions.push("actor_type = ?")
+      args.push(opts.actor_type)
+    }
+
+    const where = conditions.join(" AND ")
+
+    // Unified query: activity log events + comments as 'comment' event_type
+    const result = await this.client.execute({
+      sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+            FROM (
+              SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+              FROM task_activity_log
+              WHERE ${where}
+
+              UNION ALL
+
+              SELECT id, task_id, 'comment' as field, NULL as old_value, content as new_value,
+                     author as actor, 'user' as actor_type, 'comment' as event_type,
+                     'Comment: ' || SUBSTR(content, 1, 100) as summary,
+                     NULL as correlation_id,
+                     CAST(strftime('%s', created_at) * 1000 AS INTEGER) as created_at
+              FROM comments
+              WHERE task_id = ?
+                ${opts?.event_type ? (opts.event_type === "comment" ? "" : "AND 0 = 1") : ""}
+                ${opts?.actor_type ? "AND author = ?" : ""}
+            )
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?`,
+      args: [
+        ...args,
+        taskId,
+        ...(opts?.actor_type ? [opts.actor_type] : []),
+        limit,
+        offset,
+      ],
+    })
+
+    // Count total for pagination
+    const countResult = await this.client.execute({
+      sql: `SELECT
+              (SELECT COUNT(*) FROM task_activity_log WHERE ${where}) +
+              (SELECT COUNT(*) FROM comments WHERE task_id = ?) as total`,
+      args: [...args, taskId],
+    })
+    const total = Number((countResult.rows[0] as Record<string, unknown>)?.total ?? 0)
+
+    return { events: result.rows, total, limit, offset }
   }
 
   // ── Task Link Methods ──────────────────────────────────────────────

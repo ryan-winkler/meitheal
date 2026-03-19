@@ -285,7 +285,7 @@ function setupFilterListeners() {
     if (priorityFilter) priorityFilter.value = ""
     if (riceFilter) riceFilter.value = ""
     if (userFilter) userFilter.value = ""
-    if (areaFilter) areaFilter?.value = ""
+    if (areaFilter) areaFilter.value = ""
 
     // Reset type toggles to all active
     document.querySelectorAll<HTMLButtonElement>(".type-toggle").forEach((btn) => {

@@ -1,8 +1,8 @@
 /**
- * AreaRepository — domain service for board-related database queries.
+ * AreaRepository — domain service for area-related database queries.
  * @domain Task Management (Areas context)
  *
- * Provides typed, parameterized query methods for board CRUD operations.
+ * Provides typed, parameterized query methods for area CRUD operations.
  * Used by /api/areas/* API routes.
  */
 import type { Client } from "@libsql/client"
@@ -10,15 +10,21 @@ import type { InValue } from "@libsql/client"
 
 export interface AreaRow {
   [key: string]: unknown
-  id: unknown
-  title: unknown
-  icon: unknown
-  color: unknown
-  position: unknown
+  id: string
+  title: string
+  icon: string
+  color: string
+  position: number
   /** WIP limit per status column — 0 = unlimited */
-  wip_limit: unknown
-  created_at: unknown
-  updated_at: unknown
+  wip_limit: number
+  /** Weekly hours cap — 0 = unlimited */
+  energy_budget: number
+  /** Days between reviews — 0 = no scheduled review */
+  review_cadence: number
+  /** Last reviewed timestamp (epoch ms) */
+  last_reviewed_at: number | null
+  created_at: number
+  updated_at: number
 }
 
 export class AreaRepository {
@@ -32,7 +38,7 @@ export class AreaRepository {
     return result.rows as unknown as AreaRow[]
   }
 
-  /** Count total boards (for abuse limits) */
+  /** Count total areas (for abuse limits) */
   async count(): Promise<number> {
     const result = await this.client.execute("SELECT COUNT(*) as c FROM areas")
     return Number(result.rows[0]?.c || 0)
@@ -44,7 +50,7 @@ export class AreaRepository {
     return Number(result.rows[0]?.next_pos ?? 0)
   }
 
-  /** Insert a new board */
+  /** Insert a new area */
   async create(data: {
     id: string; title: string; icon: string; color: string; position: number
   }): Promise<void> {
@@ -76,7 +82,7 @@ export class AreaRepository {
     })
   }
 
-  /** Delete a board and reassign its tasks to 'default' */
+  /** Delete an area and reassign its tasks to 'default' */
   async delete(id: string): Promise<void> {
     await this.client.execute({
       sql: "UPDATE tasks SET area_id = 'default' WHERE area_id = ?",

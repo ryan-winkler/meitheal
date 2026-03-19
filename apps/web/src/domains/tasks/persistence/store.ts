@@ -398,6 +398,22 @@ export async function ensureSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_task_id_idx ON task_activity_log(task_id)");
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_created_at_idx ON task_activity_log(created_at)");
 
+  // Immutable Audit Ledger columns (ADR-0014)
+  if (!(await hasColumn(client, "task_activity_log", "actor_type"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN actor_type TEXT NOT NULL DEFAULT 'user'")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "event_type"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN event_type TEXT NOT NULL DEFAULT 'field_change'")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "summary"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN summary TEXT")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "correlation_id"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN correlation_id TEXT")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS activity_log_event_type_idx ON task_activity_log(event_type)")
+  await client.execute("CREATE INDEX IF NOT EXISTS activity_log_actor_type_idx ON task_activity_log(actor_type)")
+
   // Phase 18: Comments table
   await client.execute(`
     CREATE TABLE IF NOT EXISTS comments (
@@ -661,29 +677,6 @@ export async function ensureSchema(): Promise<void> {
 
   // ─── Phase 04.1a: Human-Agent DDD Core — New Hierarchy Tables ───
 
-  // Areas: classification (not aggregate root) — domains of life
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS areas (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      icon TEXT NOT NULL DEFAULT '📁',
-      color TEXT NOT NULL DEFAULT '#6366F1',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  await client.execute("CREATE INDEX IF NOT EXISTS areas_position_idx ON areas(position)")
-
-  // Auto-create default area if none exist
-  const areaCount = await client.execute("SELECT COUNT(*) as cnt FROM areas")
-  if (Number(areaCount.rows[0]?.cnt ?? 0) === 0) {
-    const now = Date.now()
-    await client.execute({
-      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: ["uncategorized", "Uncategorized", "📁", "#6366F1", 0, now, now],
-    })
-  }
 
   // Goals: aggregate root — outcomes you're pursuing
   await client.execute(`
@@ -817,7 +810,7 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freeze_limit INTEGER NOT NULL DEFAULT 3")
   }
 
-  // WIP limits (PRA-07): per-board work-in-progress cap for ADHD focus
+  // WIP limits (PRA-07): per-area work-in-progress cap for ADHD focus
   // 0 = unlimited (default), positive integer = max active tasks per column
   if (!(await hasColumn(client, "areas", "wip_limit"))) {
     await client.execute("ALTER TABLE areas ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
@@ -836,10 +829,25 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE areas ADD COLUMN last_reviewed_at INTEGER")
   }
 
+  // PRA-13: Time-blocking columns for calendar-driven focus sessions
+  // time_block_start/end: ISO 8601 datetime for scheduled focus block
+  if (!(await hasColumn(client, "tasks", "time_block_start"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN time_block_start TEXT")
+  }
+  if (!(await hasColumn(client, "tasks", "time_block_end"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN time_block_end TEXT")
+  }
+
+  // PRA-12: Completion history for habit/template tracking
+  // JSON array of { date: ISO, completed: boolean } entries
+  if (!(await hasColumn(client, "task_templates", "completion_history"))) {
+    await client.execute("ALTER TABLE task_templates ADD COLUMN completion_history TEXT NOT NULL DEFAULT '[]'")
+  }
+
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 5
+  const targetVersion = 6
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

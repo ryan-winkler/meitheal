@@ -228,6 +228,48 @@ export const PUT: APIRoute = async ({ params, request }) => {
     }
   }
 
+  // PRA-13: Time-blocking fields for calendar-driven focus sessions
+  if (body.time_block_start !== undefined) {
+    sanitized.time_block_start = typeof body.time_block_start === "string" ? body.time_block_start : null
+  }
+  if (body.time_block_end !== undefined) {
+    sanitized.time_block_end = typeof body.time_block_end === "string" ? body.time_block_end : null
+  }
+
+  // PRA-08: blocked_by enforcement — prevent activating tasks that have open blockers
+  const ACTIVE_STATUSES = [STATUS.ACTIVE, "in_progress", "in-progress"]
+  if (sanitized.status !== undefined && ACTIVE_STATUSES.includes(String(sanitized.status))) {
+    try {
+      const client = getPersistenceClient()
+      const blockerResult = await client.execute({
+        sql: `SELECT tl.source_task_id, t.title, t.status, t.ticket_number
+              FROM task_links tl
+              JOIN tasks t ON t.id = tl.source_task_id
+              WHERE tl.target_task_id = ? AND tl.link_type = 'blocked_by'
+                AND t.status NOT IN ('complete', 'archived')
+              LIMIT 5`,
+        args: [resolvedId],
+      })
+      if (blockerResult.rows.length > 0) {
+        const blockers = blockerResult.rows.map(r => ({
+          id: String(r.source_task_id),
+          title: String(r.title ?? ""),
+          status: String(r.status ?? ""),
+          ticket_key: r.ticket_number ? formatTicketKey(Number(r.ticket_number)) : null,
+        }))
+        return new Response(JSON.stringify({
+          error: "Cannot activate: task is blocked by open dependencies",
+          blocked_by: blockers,
+        }), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    } catch {
+      // task_links table may not exist — skip enforcement
+    }
+  }
+
   if (Object.keys(sanitized).length === 0) {
     return new Response(JSON.stringify({ error: "No fields to update" }), {
       status: 400,

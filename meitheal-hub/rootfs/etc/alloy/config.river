@@ -15,7 +15,9 @@ loki.process "meitheal" {
       component = "component",
       message = "message",
       request_id = "request_id",
-      event = "event"
+      event = "event",
+      actor_type = "actor_type",
+      entity_type = "entity_type"
     }
   }
 
@@ -23,6 +25,7 @@ loki.process "meitheal" {
     values = {
       level = "level",
       domain = "domain",
+      actor_type = "actor_type",
       service = "service",
       addon = "addon",
       env = "env"
