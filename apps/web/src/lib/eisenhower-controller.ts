@@ -671,7 +671,7 @@ function showTriageTask() {
   const progressEl = document.getElementById("triage-progress")
   if (progressEl) progressEl.textContent = `${triageIndex + 1} / ${triageTasks.length}`
 
-  // Reset sliders
+  // Reset urgency/importance sliders
   const urgencySlider = document.getElementById("triage-urgency") as HTMLInputElement | null
   const importanceSlider = document.getElementById("triage-importance") as HTMLInputElement | null
   if (urgencySlider) urgencySlider.value = "0"
@@ -681,6 +681,18 @@ function showTriageTask() {
   const importanceVal = document.getElementById("triage-importance-val")
   if (urgencyVal) urgencyVal.textContent = "0"
   if (importanceVal) importanceVal.textContent = "0"
+
+  // Reset extended fields
+  const effortSelect = document.getElementById("triage-effort") as HTMLSelectElement | null
+  if (effortSelect) effortSelect.value = ""
+  const delaySelect = document.getElementById("triage-delay-impact") as HTMLSelectElement | null
+  if (delaySelect) delaySelect.value = "none"
+  document.querySelectorAll<HTMLInputElement>('input[name="triage-effort-type"]').forEach(r => r.checked = r.value === "")
+  document.querySelectorAll<HTMLInputElement>('input[name="triage-interest"]').forEach(r => r.checked = r.value === "")
+
+  // Collapse extended details between tasks
+  const details = document.querySelector<HTMLDetailsElement>('.triage-card__details')
+  if (details) details.removeAttribute('open')
 
   updateTriagePreview()
 }
@@ -723,11 +735,52 @@ async function triageSave() {
     return
   }
 
+  // Collect extended fields (may be empty — that's fine)
+  const payload: Record<string, unknown> = { urgency, importance }
+
+  const effortVal = (document.getElementById("triage-effort") as HTMLSelectElement)?.value
+  if (effortVal) payload.effort_minutes = Number(effortVal)
+
+  const effortTypeRadio = document.querySelector<HTMLInputElement>('input[name="triage-effort-type"]:checked')
+  if (effortTypeRadio?.value) payload.effort_type = effortTypeRadio.value
+
+  const delayVal = (document.getElementById("triage-delay-impact") as HTMLSelectElement)?.value
+  if (delayVal && delayVal !== "none") {
+    // Store delay_impact in framework_payload for cross-cutting access
+    const existingFP = await getExistingFrameworkPayload(task.id)
+    existingFP.delay_impact = delayVal
+    payload.framework_payload = JSON.stringify(existingFP)
+  }
+
+  const interestRadio = document.querySelector<HTMLInputElement>('input[name="triage-interest"]:checked')
+  if (interestRadio?.value) {
+    const existingFP = typeof payload.framework_payload === "string"
+      ? JSON.parse(payload.framework_payload as string)
+      : await getExistingFrameworkPayload(task.id)
+    existingFP.interest_tag = interestRadio.value
+    payload.framework_payload = JSON.stringify(existingFP)
+  }
+
   try {
-    await taskApi.updateTask(task.id, { urgency, importance })
+    await taskApi.updateTask(task.id, payload)
     triageNext()
   } catch {
     showToast("common.failed_update", "error")
+  }
+}
+
+/** Helper: fetch existing framework_payload for a task to merge into */
+async function getExistingFrameworkPayload(taskId: string): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch((window.__ingress_path || "") + `/api/tasks/${taskId}`)
+    if (!res.ok) return {}
+    const data = await res.json()
+    const fp = data.framework_payload
+    if (typeof fp === "string") return JSON.parse(fp)
+    if (typeof fp === "object" && fp !== null) return fp
+    return {}
+  } catch {
+    return {}
   }
 }
 

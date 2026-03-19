@@ -86,6 +86,10 @@ export interface TaskRow {
   urgency: number
   importance: number
   eisenhower_override: number
+  // ── Phase 7 (extended planning) ──
+  effort_minutes: number | null
+  effort_type: string | null
+  blocked_by: string | null
 }
 
 /**
@@ -727,6 +731,7 @@ export class TaskRepository {
     assigned_to: string | null; checklists?: string | null;
     recurrence_rule?: string | null;
     urgency?: number; importance?: number;
+    effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
   }): Promise<string> {
     const now = Date.now();
     await this.client.execute({
@@ -734,9 +739,9 @@ export class TaskRepository {
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id,
                                area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                                task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
-                               urgency, importance,
+                               urgency, importance, effort_minutes, effort_type, blocked_by,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id, data.title, data.description, data.status, data.priority,
         data.due_date, data.labels, data.framework_payload,
@@ -745,6 +750,7 @@ export class TaskRepository {
         data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,
         data.urgency ?? 0, data.importance ?? 0,
+        data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],
     });

@@ -32,6 +32,27 @@ err()  { echo -e "${RED}[devcontainer]${RESET} $*" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$PROJECT_ROOT/.devcontainer/docker-compose.yml"
+DEVCONTAINER_ENV_FILE="$PROJECT_ROOT/.devcontainer/.env"
+DEVCONTAINER_ENV_LOCAL_FILE="$PROJECT_ROOT/.devcontainer/.env.local"
+
+load_env_file() {
+  local env_file="$1"
+
+  if [[ -f "$env_file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+  fi
+}
+
+load_env_file "$DEVCONTAINER_ENV_FILE"
+load_env_file "$DEVCONTAINER_ENV_LOCAL_FILE"
+
+HA_UI_PORT="${HA_UI_PORT:-7123}"
+HA_SUPERVISOR_PORT="${HA_SUPERVISOR_PORT:-7357}"
+GROCY_HOST_PORT="${GROCY_HOST_PORT:-9192}"
+NODERED_HOST_PORT="${NODERED_HOST_PORT:-1880}"
 
 # ── Find compose command ──
 # Distrobox containers have a path mismatch (/var/home vs /home) that breaks
@@ -62,35 +83,52 @@ COMPOSE_CMD=$(find_compose)
 log "Using: ${BOLD}$COMPOSE_CMD${RESET}"
 log "Project: $PROJECT_ROOT"
 
+run_compose() {
+  if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
+    flatpak-spawn --host env \
+      "TZ=${TZ:-Europe/Dublin}" \
+      "NODE_RED_CREDENTIAL_SECRET=${NODE_RED_CREDENTIAL_SECRET:-dev-secret}" \
+      "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-meitheal-dev}" \
+      "HA_UI_PORT=${HA_UI_PORT}" \
+      "HA_SUPERVISOR_PORT=${HA_SUPERVISOR_PORT}" \
+      "GROCY_HOST_PORT=${GROCY_HOST_PORT}" \
+      "NODERED_HOST_PORT=${NODERED_HOST_PORT}" \
+      podman-compose -f "$COMPOSE_FILE" "$@"
+    return
+  fi
+
+  $COMPOSE_CMD -f "$COMPOSE_FILE" "$@"
+}
+
 # ── Commands ──
 case "${1:-up}" in
   up|start)
     log "Starting HA devcontainer stack..."
-    $COMPOSE_CMD -f "$COMPOSE_FILE" up -d
+    run_compose up -d
     echo ""
     log "Stack is up! Access points:"
-    echo -e "  ${BOLD}HA UI:${RESET}       http://localhost:7123/"
-    echo -e "  ${BOLD}Supervisor:${RESET}  http://localhost:7357/"
-    echo -e "  ${BOLD}Grocy:${RESET}       http://localhost:9192/"
-    echo -e "  ${BOLD}Node-RED:${RESET}    http://localhost:1880/"
+    echo -e "  ${BOLD}HA UI:${RESET}       http://localhost:${HA_UI_PORT}/"
+    echo -e "  ${BOLD}Supervisor:${RESET}  http://localhost:${HA_SUPERVISOR_PORT}/"
+    echo -e "  ${BOLD}Grocy:${RESET}       http://localhost:${GROCY_HOST_PORT}/"
+    echo -e "  ${BOLD}Node-RED:${RESET}    http://localhost:${NODERED_HOST_PORT}/"
     echo ""
     log "Run ${BOLD}./scripts/devcontainer-up.sh logs${RESET} to tail HA logs"
     ;;
   down|stop)
     log "Stopping devcontainer stack..."
-    $COMPOSE_CMD -f "$COMPOSE_FILE" down
+    run_compose down
     log "Stack stopped."
     ;;
   status|ps)
-    $COMPOSE_CMD -f "$COMPOSE_FILE" ps
+    run_compose ps
     ;;
   logs)
-    $COMPOSE_CMD -f "$COMPOSE_FILE" logs -f --tail=50 ha-devcontainer
+    run_compose logs -f --tail=50 ha-devcontainer
     ;;
   restart)
     log "Restarting devcontainer stack..."
-    $COMPOSE_CMD -f "$COMPOSE_FILE" down
-    $COMPOSE_CMD -f "$COMPOSE_FILE" up -d
+    run_compose down
+    run_compose up -d
     log "Stack restarted."
     ;;
   *)

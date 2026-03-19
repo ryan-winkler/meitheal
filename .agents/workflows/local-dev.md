@@ -85,11 +85,12 @@ If you need physical hardware (serial ports, USB, Zigbee):
 
 ### Deploy to Production
 
-1. Bump version in `config.yaml`, `run.sh`, `package.json`
-2. `git commit && git tag v{VERSION}`
-3. `git push origin main --tags`
-4. CI builds Docker images (`publish-addon-images.yml`)
-5. HA → Settings → Add-ons → Meitheal → **Restart**
+1. Choose the next version in the current release line. Unless explicitly asked otherwise, keep the existing line and prefer the next patch release (for example `0.2.x` stays `0.2.x`)
+2. Bump version in `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, and `apps/web/public/sw.js`
+3. `git commit && git tag v{VERSION}`
+4. `git push origin main --tags`
+5. CI builds Docker images (`publish-addon-images.yml`)
+6. HA → Settings → Add-ons → Meitheal → **Restart**
 
 ## Decision Matrix
 

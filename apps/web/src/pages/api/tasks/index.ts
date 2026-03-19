@@ -9,7 +9,7 @@ import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { normalizeStatus, STATUS } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
-import { isValidTaskKind, deriveEisenhowerQuadrant, isValidUrgency, isValidImportance } from "@meitheal/domain-tasks"
+import { isValidTaskKind, deriveEisenhowerQuadrant, isValidUrgency, isValidImportance, isValidEffortMinutes, isValidEffortType, VALID_EFFORT_TYPES } from "@meitheal/domain-tasks"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
@@ -259,17 +259,25 @@ export const POST: APIRoute = async ({ request }) => {
   const rawImportance = typeof body.importance === "number" ? body.importance : 0
   const importance = isValidImportance(Math.round(rawImportance)) ? Math.round(rawImportance) : 0
 
+  // Phase 07: Extended planning fields — effort, blocked_by
+  const rawEffortMinutes = body.effort_minutes != null ? Number(body.effort_minutes) : null
+  const effort_minutes = isValidEffortMinutes(rawEffortMinutes) ? rawEffortMinutes : null
+  const rawEffortType = typeof body.effort_type === "string" ? body.effort_type.trim().toLowerCase() : null
+  const effort_type = isValidEffortType(rawEffortType) ? rawEffortType : null
+  const blocked_by = typeof body.blocked_by === "string" && body.blocked_by.trim().length > 0
+    ? body.blocked_by.trim().slice(0, 500) : null
+
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id,
     start_date, end_date, progress, color, is_favorite,
     task_type, task_kind, ticket_number, assigned_to, checklists,
-    urgency, importance,
+    urgency, importance, effort_minutes, effort_type, blocked_by,
   })
 
   const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
-  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance, eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance), eisenhower_override: 0, created_at: now, updated_at: now }
+  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance), eisenhower_override: 0, created_at: now, updated_at: now }
 
   dispatchTaskEvent("task.created", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 

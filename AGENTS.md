@@ -133,6 +133,8 @@ Cross-context imports must occur through public package APIs, not deep path impo
 - Pushing to `main` does NOT deploy. Push a version tag (`v*`) to trigger CI Docker build
 - Version in `config.yaml` must match the tag (e.g., `version: "0.2.6"` ↔ `v0.2.6`)
 - Also bump `MEITHEAL_VERSION` in `run.sh` to match
+- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
+- Do not move to a new version line such as `0.2.x` → `0.3.x` without explicit user direction
 
 ## Verification Tiers (Mandatory)
 
@@ -169,6 +171,7 @@ Meitheal uses a dual-licensing strategy. Agents must respect these boundaries:
 | `apps/web/src/domains/integrations/vikunja-compat/` | AGPL-3.0 only | Third-party copyright — cannot be commercially relicensed |
 
 **Rules:**
+
 - All PRs require a signed CLA (enforced by `.github/workflows/cla.yml`)
 - Do not move AGPL-only code (e.g. vikunja-compat) into directories covered by the commercial license
 - Integration code in `integrations/` must only communicate with the core via network APIs (REST/WebSocket/MCP)

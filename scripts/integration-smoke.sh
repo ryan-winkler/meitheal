@@ -8,6 +8,25 @@
 #   --ci  Exit with non-zero on any failure (for CI pipelines)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEVCONTAINER_ENV_FILE="$PROJECT_ROOT/.devcontainer/.env"
+DEVCONTAINER_ENV_LOCAL_FILE="$PROJECT_ROOT/.devcontainer/.env.local"
+
+load_env_file() {
+  local env_file="$1"
+
+  if [ -f "$env_file" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$env_file"
+    set +a
+  fi
+}
+
+load_env_file "$DEVCONTAINER_ENV_FILE"
+load_env_file "$DEVCONTAINER_ENV_LOCAL_FILE"
+
 CI_MODE="${1:-}"
 PASS=0
 FAIL=0
@@ -20,9 +39,9 @@ DIM="\033[2m"
 RESET="\033[0m"
 
 # ── Config — override via env vars ──
-HA_URL="${HA_URL:-http://localhost:7123}"
-GROCY_URL="${GROCY_SMOKE_URL:-http://localhost:9192}"
-NODERED_URL="${NODERED_SMOKE_URL:-http://localhost:1880}"
+HA_URL="${HA_URL:-http://localhost:${HA_UI_PORT:-7123}}"
+GROCY_URL="${GROCY_SMOKE_URL:-http://localhost:${GROCY_HOST_PORT:-9192}}"
+NODERED_URL="${NODERED_SMOKE_URL:-http://localhost:${NODERED_HOST_PORT:-1880}}"
 HA_TOKEN="${HA_TOKEN:-}"  # Set if HA onboarding is complete
 
 check() {

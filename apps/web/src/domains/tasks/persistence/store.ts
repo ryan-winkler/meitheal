@@ -883,7 +883,20 @@ export async function ensureSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_urgency_idx ON tasks(urgency)")
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_importance_idx ON tasks(importance)")
 
+  // ─── Phase 07: Extended planning features — effort, blocked_by ───
 
+  // effort_minutes: NULL = unestimated, integer = estimated minutes (5/15/30/60/120/240)
+  if (!(await hasColumn(client, "tasks", "effort_minutes"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN effort_minutes INTEGER DEFAULT NULL")
+  }
+  // effort_type: NULL = unclassified, "deep" | "shallow" | "admin"
+  if (!(await hasColumn(client, "tasks", "effort_type"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN effort_type TEXT DEFAULT NULL")
+  }
+  // blocked_by: NULL = not blocked, free-text describing what's blocking
+  if (!(await hasColumn(client, "tasks", "blocked_by"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN blocked_by TEXT DEFAULT NULL")
+  }
 
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")

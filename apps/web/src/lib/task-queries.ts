@@ -48,6 +48,9 @@ export interface TaskViewItem {
   importance: number;
   eisenhower_quadrant: string;
   eisenhower_override: boolean;
+  effort_minutes: number | null;
+  effort_type: string | null;
+  blocked_by: string | null;
 }
 
 export interface TaskViewResult {
@@ -119,7 +122,8 @@ const TASK_VIEW_SQL = `
          framework_payload, calendar_sync_state, area_id, custom_fields,
          start_date, end_date, progress, color, is_favorite, task_type,
          parent_id, ticket_number, assigned_to, checklists, created_at, updated_at,
-         urgency, importance, eisenhower_override
+         urgency, importance, eisenhower_override,
+         effort_minutes, effort_type, blocked_by
   FROM tasks
   ORDER BY created_at DESC
 `;
@@ -206,6 +210,9 @@ export async function getTasksForView(): Promise<TaskViewResult> {
         importance: Number(row.importance ?? 0),
         eisenhower_quadrant: deriveEisenhowerQuadrant(Number(row.urgency ?? 0), Number(row.importance ?? 0)),
         eisenhower_override: Boolean(row.eisenhower_override),
+        effort_minutes: row.effort_minutes != null ? Number(row.effort_minutes) : null,
+        effort_type: row.effort_type ? String(row.effort_type) : null,
+        blocked_by: row.blocked_by ? String(row.blocked_by) : null,
       };
     });
 

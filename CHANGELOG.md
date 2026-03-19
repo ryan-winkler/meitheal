@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD024 -->
+
 # Changelog
 
 All notable changes to Meitheal are documented in this file.
@@ -31,7 +33,7 @@ All notable changes to Meitheal are documented in this file.
 - All JSON.parse calls verified in try/catch
 - All setInterval/setTimeout have typed refs with cleanup
 
-## [Unreleased]
+## [0.3.0] — 2026-03-19
 
 ### Added
 

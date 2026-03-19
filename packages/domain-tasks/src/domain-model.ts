@@ -219,6 +219,58 @@ export function isValidImportance(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= 5
 }
 
+// --- Extended Planning (Phase 07): effort, delay impact, interest ---
+
+/** Effort type — determines scheduling strategy */
+export type EffortType = "deep" | "shallow" | "admin"
+
+export const VALID_EFFORT_TYPES: readonly EffortType[] = ["deep", "shallow", "admin"] as const
+
+/** Delay impact — cost of not doing this task */
+export type DelayImpact = "none" | "inconvenient" | "costly" | "critical"
+
+export const VALID_DELAY_IMPACTS: readonly DelayImpact[] = [
+  "none", "inconvenient", "costly", "critical",
+] as const
+
+/** Interest-based tag — ADHD executive function triggers */
+export type InterestTag = "engaging" | "dreaded" | "neutral" | "quick-win"
+
+export const VALID_INTEREST_TAGS: readonly InterestTag[] = [
+  "engaging", "dreaded", "neutral", "quick-win",
+] as const
+
+/** Validate effort_minutes (null = unestimated, positive integer) */
+export function isValidEffortMinutes(value: number | null): boolean {
+  if (value === null) return true
+  return Number.isInteger(value) && value > 0 && value <= 480
+}
+
+/** Validate effort type */
+export function isValidEffortType(value: string | null): boolean {
+  if (value === null) return true
+  return VALID_EFFORT_TYPES.includes(value as EffortType)
+}
+
+/** Effort badge — icon, label, CSS color class based on minutes */
+export function effortBadge(minutes: number | null): { icon: string, label: string, cssClass: string } | null {
+  if (minutes === null) return null
+  if (minutes <= 5) return { icon: "⚡", label: `${minutes}m`, cssClass: "effort--quick" }
+  if (minutes <= 15) return { icon: "⚡", label: `${minutes}m`, cssClass: "effort--short" }
+  if (minutes <= 60) return { icon: "⏱️", label: `${minutes}m`, cssClass: "effort--medium" }
+  return { icon: "🏋️", label: `${Math.round(minutes / 60)}h`, cssClass: "effort--long" }
+}
+
+/** Format total minutes for display: "~2h 30m" or "~45m" */
+export function formatEffort(totalMinutes: number): string {
+  if (totalMinutes <= 0) return ""
+  const hours = Math.floor(totalMinutes / 60)
+  const mins = totalMinutes % 60
+  if (hours === 0) return `~${mins}m`
+  if (mins === 0) return `~${hours}h`
+  return `~${hours}h ${mins}m`
+}
+
 // --- Owner (human vs bot attribution) ---
 
 export type Owner = "human" | `bot:${string}`

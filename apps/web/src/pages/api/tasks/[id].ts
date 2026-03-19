@@ -247,6 +247,29 @@ export const PUT: APIRoute = async ({ params, request }) => {
     sanitized.eisenhower_override = body.eisenhower_override ? 1 : 0
   }
 
+  // Phase 07: Extended planning fields — effort, blocked_by
+  if (body.effort_minutes !== undefined) {
+    if (body.effort_minutes === null) {
+      sanitized.effort_minutes = null
+    } else if (typeof body.effort_minutes === "number") {
+      sanitized.effort_minutes = Math.min(480, Math.max(1, Math.round(body.effort_minutes)))
+    }
+  }
+  if (body.effort_type !== undefined) {
+    if (body.effort_type === null) {
+      sanitized.effort_type = null
+    } else if (typeof body.effort_type === "string") {
+      const et = body.effort_type.trim().toLowerCase()
+      if (["deep", "shallow", "admin"].includes(et)) {
+        sanitized.effort_type = et
+      }
+    }
+  }
+  if (body.blocked_by !== undefined) {
+    sanitized.blocked_by = typeof body.blocked_by === "string" && body.blocked_by.trim().length > 0
+      ? body.blocked_by.trim().slice(0, 500) : null
+  }
+
   // PRA-08: blocked_by enforcement — prevent activating tasks that have open blockers
   const ACTIVE_STATUSES: string[] = [STATUS.ACTIVE]
   if (sanitized.status !== undefined && ACTIVE_STATUSES.includes(String(sanitized.status))) {

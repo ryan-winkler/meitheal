@@ -41,3 +41,9 @@ Refer to `AGENTS.md` and the inline docs for full conventions. Key points:
 - Start Tier 2 by reopening the checked-in `.devcontainer/devcontainer.json` in Antigravity or VS Code and running `Start Home Assistant`
 - Use `./scripts/devcontainer-up.sh` for status, recovery, and logs around that devcontainer environment
 - Do not claim HA integration verification from Tier 1 alone
+
+## Versioning Guardrail
+
+- Preserve the current release line unless the user explicitly asks to move to a new one
+- When asked to "bump version" without more detail, stay on the existing line and prefer the next patch release
+- Example: if the repo is on `0.2.x`, bump within `0.2.x`; do not jump to `0.3.x` without explicit user direction
