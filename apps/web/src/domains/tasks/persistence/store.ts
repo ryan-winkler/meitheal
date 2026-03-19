@@ -823,10 +823,23 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE boards ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
   }
 
+  // Area metadata (PRA-14): energy budget + review cadence for ADHD planning
+  // energy_budget: weekly hours cap for this area (0 = unlimited)
+  // review_cadence: days between reviews (0 = no scheduled review)
+  if (!(await hasColumn(client, "boards", "energy_budget"))) {
+    await client.execute("ALTER TABLE boards ADD COLUMN energy_budget REAL NOT NULL DEFAULT 0")
+  }
+  if (!(await hasColumn(client, "boards", "review_cadence"))) {
+    await client.execute("ALTER TABLE boards ADD COLUMN review_cadence INTEGER NOT NULL DEFAULT 0")
+  }
+  if (!(await hasColumn(client, "boards", "last_reviewed_at"))) {
+    await client.execute("ALTER TABLE boards ADD COLUMN last_reviewed_at INTEGER")
+  }
+
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 4
+  const targetVersion = 5
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
