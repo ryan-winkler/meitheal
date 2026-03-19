@@ -107,7 +107,7 @@ const { timezone, dateFormat } = Astro.locals;
           <div class="stat-label">Done</div>
         </div>
         <div class="stat-block">
-          <div class="stat-value" style={progress === 100 ? "color: #22c55e" : ""}>{progress}%</div>
+          <div class={`stat-value ${progress === 100 ? "stat-complete" : ""}`}>{progress}%</div>
           <div class="stat-label">Progress</div>
         </div>
       </div>
@@ -258,10 +258,10 @@ const { timezone, dateFormat } = Astro.locals;
     border-radius: 9999px;
     text-transform: capitalize;
   }
-  .status-active { background: rgba(34,197,94,0.1); color: #22c55e; }
-  .status-completed { background: rgba(99,102,241,0.1); color: var(--accent); }
-  .status-paused { background: rgba(245,158,11,0.1); color: #f59e0b; }
-  .status-archived { background: rgba(107,114,128,0.1); color: #6b7280; }
+  .status-active { background: rgba(var(--success-rgb), 0.1); color: var(--success); }
+  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+  .status-paused { background: rgba(var(--warning-rgb), 0.1); color: var(--warning); }
+  .status-archived { background: rgba(var(--text-muted-rgb), 0.1); color: var(--text-muted); }
 
   .project-header-stats {
     display: flex;
@@ -279,6 +279,7 @@ const { timezone, dateFormat } = Astro.locals;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+  .stat-complete { color: var(--success) !important; }
 
   .project-progress-full {
     height: 6px;

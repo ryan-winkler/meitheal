@@ -1043,14 +1043,14 @@ const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTa
     font-weight: 700;
     cursor: pointer;
     flex-shrink: 0;
-    transition: all 200ms;
+    transition: border-color var(--transition), color var(--transition), background var(--transition), box-shadow var(--transition);
     padding: 0;
   }
   .focus-card__complete:hover {
-    border-color: #22c55e;
-    color: #22c55e;
-    background: rgba(34, 197, 94, 0.1);
-    box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(var(--success-rgb), 0.1);
+    box-shadow: 0 0 8px rgba(var(--success-rgb), 0.2);
   }
 
   .focus-stack--cleared {

@@ -190,6 +190,10 @@
       --prio-medium: #3b82f6;
       --prio-low: #22c55e;
       --prio-none: #64748b;
+
+      /* Semantic: status colors */
+      --success: #22c55e;
+      --success-rgb: 34 197 94;
   }
 
     /* Light theme overrides */
@@ -241,6 +245,10 @@
       --prio-medium: #2563eb;
       --prio-low: #16a34a;
       --prio-none: #64748b;
+
+      /* Semantic: status colors — light */
+      --success: #16a34a;
+      --success-rgb: 22 163 74;
     }
 
     /* Auto theme — follows OS preference */
@@ -293,6 +301,10 @@
         --prio-medium: #2563eb;
         --prio-low: #16a34a;
         --prio-none: #64748b;
+
+        /* Semantic: status colors — auto light */
+        --success: #16a34a;
+        --success-rgb: 22 163 74;
       }
     }
 
