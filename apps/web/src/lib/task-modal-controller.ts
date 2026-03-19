@@ -554,6 +554,33 @@
             } catch {
               areaSelect.innerHTML = `<option value="${currentAreaId}">${currentAreaId}</option>`;
             }
+            // Populate project dropdown
+            const projectSelect = document.getElementById(
+              "td-project",
+            ) as HTMLSelectElement;
+            const currentProjectId = String(t.project_id ?? "");
+            try {
+              const projRes = await fetch(
+                (window.__ingress_path || "") + "/api/projects",
+                { signal: modalSignal },
+              );
+              if (projRes.ok) {
+                const projData = await projRes.json();
+                const projects = projData.projects ?? projData ?? [];
+                projectSelect.innerHTML = '<option value="">No project</option>';
+                (projects as Array<{ id: string; title: string; icon?: string }>).forEach((p) => {
+                  const opt = document.createElement("option");
+                  opt.value = p.id;
+                  opt.textContent = `${p.icon ?? "📋"} ${p.title}`;
+                  projectSelect.appendChild(opt);
+                });
+                projectSelect.value = currentProjectId;
+              }
+            } catch {
+              if (currentProjectId) {
+                projectSelect.innerHTML = `<option value="">No project</option><option value="${currentProjectId}" selected>${currentProjectId}</option>`;
+              }
+            }
             // Phase 20: Agile hierarchy type
             (
               document.getElementById("td-task-type") as HTMLSelectElement
@@ -1150,6 +1177,10 @@
         // Phase 26: board change auto-save
         document.getElementById("td-area")?.addEventListener("change", (e) => {
           saveTD("area_id", (e.target as HTMLSelectElement).value);
+        });
+        // Project change auto-save
+        document.getElementById("td-project")?.addEventListener("change", (e) => {
+          saveTD("project_id", (e.target as HTMLSelectElement).value || null);
         });
         // Assigned To: auto-save on change + toast feedback (UX2)
         document
