@@ -1,97 +1,87 @@
-# Technology Stack
+# Codebase Stack — Meitheal
 
-**Analysis Date:** 2026-03-15
+> Last refreshed: 2026-03-19
 
-## Languages
+## Runtime & Language
 
-**Primary:**
-- TypeScript 5.9.3 — All application logic, domain packages, API routes, tests
-- CSS (Tailwind v4 + vanilla partials) — Styling via 18 partial files in `apps/web/src/styles/`
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Node.js | v22.22.1 | Runtime for SSR and build |
+| TypeScript | ^5.9.3 | Strict mode, path aliases |
+| pnpm | 10.8.0 | Workspaces monorepo manager |
 
-**Secondary:**
-- JavaScript (ESM) — Build scripts (`scripts/*.mjs`), `serve.mjs` ingress wrapper
-- Bash — `meitheal-hub/run.sh` addon lifecycle, `scripts/devcontainer-up.sh`
-- Python — `meitheal-hub/llm_api.py` HA LLM API integration
-- YAML — HA `config.yaml`, CI workflows, `repository.yaml`
+## Framework
 
-## Runtime
+| Component | Version | Role |
+|-----------|---------|------|
+| Astro | ^6.0.4 | SSR framework — `output: "server"` with `@astrojs/node` adapter |
+| Tailwind CSS | ^4.2.1 | Utility CSS via `@tailwindcss/vite` plugin (v4 — not `@astrojs/tailwind`) |
 
-**Environment:**
-- Node.js 22 (specified in CI `setup-node`)
-- pnpm 10.8.0 (`packageManager` field in root `package.json`)
-- Lockfile: `pnpm-lock.yaml` (present)
+**Astro config:** `apps/web/astro.config.mjs`
+- SSR server mode, `trailingSlash: "never"`, HTML compression, prefetch enabled
+- Custom `fontsource-relative-paths` Vite plugin fixes font 404s in HA ingress
+- Version injected from `meitheal-hub/config.yaml` at build time via `vite.define`
 
-**Production:**
-- Docker (multi-arch: `aarch64`, `amd64`)
-- HA Supervisor addon (ingress on port 3000)
-- `serve.mjs` HTTP wrapper → Astro standalone
+## Database
 
-## Frameworks
+| Component | Version | Role |
+|-----------|---------|------|
+| SQLite | (via libsql) | Embedded database |
+| `@libsql/client` | ^0.17.0 | SQLite client |
+| `drizzle-orm` | ^0.45.1 | Type-safe ORM |
+| `drizzle-kit` | ^0.31.9 | Migration tooling |
 
-**Core:**
-- Astro 6.0.4 — SSR (`output: "server"`), `@astrojs/node` adapter (standalone mode)
-- Tailwind CSS 4.2.1 — Via `@tailwindcss/vite` plugin (NOT `@astrojs/tailwind`)
-- Drizzle ORM 0.45.1 — SQLite persistence (`@libsql/client` 0.17.0)
-- Zod 4.3.6 — Schema validation
+**Schema:** `apps/web/drizzle/schema.ts`
+**Migrations:** `apps/web/drizzle/migrations/` (3 migrations: init, settings, todo_sync)
+**Config:** `apps/web/drizzle.config.ts`
 
-**Testing:**
-- Playwright 1.58.2 — E2E + unit test runner (`@meitheal/tests` package)
-- axe-core/playwright 4.11.1 — Accessibility testing
+## Dependencies (Production)
 
-**Build/Dev:**
-- Vite (bundled with Astro) — Dev server, HMR, custom plugins
-- drizzle-kit 0.31.9 — Migration generation
-- `@astrojs/check` 0.9.7 — Astro-specific type checking
+| Package | Purpose |
+|---------|---------|
+| `date-fns` ^4.1.0 | Date manipulation |
+| `date-fns-tz` ^3.2.0 | Timezone handling |
+| `home-assistant-js-websocket` ^9.6.0 | HA WebSocket API client |
+| `marked` ^17.0.4 | Markdown rendering |
+| `sanitize-html` ^2.17.1 | HTML sanitization |
+| `undici` ^7.24.3 | HTTP client (fetch) |
+| `ws` ^8.19.0 | WebSocket server |
+| `yaml` ^2.8.2 | YAML parsing (config.yaml) |
+| `zod` ^4.3.6 | Schema validation |
 
-## Key Dependencies
+## Fonts
 
-**Critical:**
-- `home-assistant-js-websocket` 9.6.0 — HA WebSocket API client
-- `date-fns` 4.1.0 + `date-fns-tz` 3.2.0 — Date handling
-- `marked` 17.0.4 — Markdown rendering
-- `sanitize-html` 2.17.1 — XSS prevention
-- `ws` 8.19.0 — WebSocket client (server-side HA comms)
-- `undici` 7.24.3 — HTTP client for Supervisor API
+| Package | Font |
+|---------|------|
+| `@fontsource-variable/geist` | UI body text |
+| `@fontsource-variable/inter` | Headings |
+| `@fontsource/jetbrains-mono` | Monospace code |
+| `@fontsource/outfit` | Display/branding |
 
-**Typography:**
-- `@fontsource-variable/geist` 5.2.8 — Primary UI font
-- `@fontsource-variable/inter` 5.2.8 — Alternate font
-- `@fontsource/jetbrains-mono` 5.2.8 — Monospace / code
-- `@fontsource/outfit` 5.2.8 — Display font
+## Workspace Packages
 
-**Overrides (security):**
-- `lodash` ≥4.17.23, `svgo` ≥4.0.1, `undici` ≥7.24.0, `devalue` ≥5.6.4, `esbuild` ≥0.25.0
+| Package | Path | Lines | Purpose |
+|---------|------|-------|---------|
+| `@meitheal/domain-auth` | `packages/domain-auth/` | 37 | Ingress detection, CSRF |
+| `@meitheal/domain-observability` | `packages/domain-observability/` | 222 | Structured JSON logging |
+| `@meitheal/domain-strategy` | `packages/domain-strategy/` | 674 | RICE scoring, rule resolver |
+| `@meitheal/domain-tasks` | `packages/domain-tasks/` | 716 | Domain model, handoff, tasks |
+| `@meitheal/integration-core` | `packages/integration-core/` | 1855 | A2A, CalDAV, Grocy, HA calendar, webhooks |
 
-## Configuration
+## Build & Scripts
 
-**Astro (`apps/web/astro.config.mjs`):**
-- `output: "server"` (full SSR)
-- `trailingSlash: "never"`
-- `compressHTML: true`, `prefetch: true`
-- Custom Vite plugin: `fontsource-relative-paths` (fixes font URLs behind HA ingress)
-- `vite.define`: `__MEITHEAL_ASTRO_FIRST__`, `__MEITHEAL_VERSION__`
+| Script | Command | Effect |
+|--------|---------|--------|
+| `dev` | `astro dev` | Local dev server |
+| `build` / `check` | `astro build` | Production build + typecheck |
+| `db:migrate` | `node scripts/migrate.mjs` | Run SQLite migrations |
+| `schema:drift` | `node scripts/schema-drift-check.mjs` | Verify schema matches migrations |
+| `perf:budget` | `node scripts/perf-budget-check.mjs` | Bundle size check |
 
-**TypeScript (`apps/web/tsconfig.json`):**
-- Extends `../../tsconfig.base.json`
-- Path aliases: `@domains/*` → `src/domains/*`, `@lib/*` → `src/lib/*`, `@i18n/*` → `src/i18n/*`
+## Deployment
 
-**Version Management:**
-- Single source of truth: `meitheal-hub/config.yaml` → `version` field
-- `scripts/bump-version.mjs` — Atomic bump across config.yaml, run.sh, package.json
-- `scripts/check-version-sync.mjs` — CI validation
-
-## Platform Requirements
-
-**Development:**
-- Node 22, pnpm 10.8+
-- SQLite (via libsql, file-based)
-- Optional: HA devcontainer for Tier 2 testing
-
-**Production:**
-- Home Assistant Supervisor (add-on)
-- Docker multi-arch (`ghcr.io/coolock-village/meitheal-{arch}`)
-- Ingress enabled (port 3000, entry `/`)
-
----
-
-*Stack analysis: 2026-03-15*
+- **Target:** Home Assistant add-on (HA Supervisor)
+- **Add-on config:** `meitheal-hub/config.yaml`
+- **Runtime wrapper:** `apps/web/scripts/serve.mjs` (70 lines — normalizes `//` paths)
+- **CI:** Push `v*` tags triggers Docker build via `.github/workflows/`
+- **Service worker:** `apps/web/public/sw.js`

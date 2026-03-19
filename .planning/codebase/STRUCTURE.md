@@ -1,234 +1,121 @@
-# Codebase Structure
+# Codebase Structure — Meitheal
 
-**Analysis Date:** 2026-03-18
+> Last refreshed: 2026-03-19
 
-## Directory Layout
+## Top-Level Layout
 
 ```
 meitheal/
 ├── apps/
-│   ├── api/                    # Cloudflare Workers API (legacy/secondary)
-│   └── web/                    # Main Astro SSR application
-│       ├── .astro/             # Astro build cache (gitignored)
-│       ├── .data/              # Runtime data directory
-│       ├── dist/               # Production build output
-│       ├── drizzle/            # Drizzle ORM schema & migrations
-│       │   └── migrations/     # SQL migration files
-│       ├── public/             # Static assets (styles/, .well-known/)
-│       ├── scripts/            # Build/runtime scripts (serve.mjs, migrate.mjs, bump-version.mjs)
-│       └── src/
-│           ├── components/     # Astro components (server-rendered)
-│           │   ├── gamification/
-│           │   ├── ha/         # Home Assistant UI components
-│           │   ├── layout/     # Sidebar, TopNavigation, SearchHub
-│           │   ├── pomodoro/
-│           │   ├── pwa/
-│           │   ├── settings/   # Settings shell primitives + section panels
-│           │   │   └── integrations/  # Integration sub-components (HA, Calendar, Todo, etc.)
-│           │   ├── tasks/
-│           │   └── ui/         # Shared UI (FilterToolbar, StatusBadge, TaskTypeIcon, etc.)
-│           ├── content/        # Astro content collections (frameworks)
-│           ├── domains/        # In-app domain modules
-│           │   ├── ai/         # LLM/Assist integration
-│           │   ├── auth/       # Ingress auth, CSRF
-│           │   ├── calendar/   # Calendar sync bridge
-│           │   ├── gamification/
-│           │   ├── grocy/      # Grocy integration
-│           │   ├── ha/         # HA WebSocket, services, events
-│           │   ├── habits/
-│           │   ├── integrations/ # Vikunja compat layer
-│           │   ├── labels/     # Label management
-│           │   ├── notifications/
-│           │   ├── offline/    # IndexedDB, sync, SW
-│           │   ├── pomodoro/
-│           │   ├── search/     # Universal search orchestration
-│           │   ├── strategy/   # RICE scoring
-│           │   ├── tasks/      # Task persistence, sync
-│           │   └── todo/       # HA todo list sync
-│           ├── i18n/           # Internationalization
-│           ├── layouts/        # Layout.astro (main layout)
-│           ├── lib/            # Client controllers & utilities (50+ modules)
-│           ├── pages/          # Astro pages + API routes
-│           │   └── api/        # REST API (15+ subdirectories, including search)
-│           └── styles/         # CSS partials (18 files)
-├── meitheal-hub/               # HA add-on packaging
-│   ├── config.yaml             # Add-on manifest (version source of truth)
-│   ├── Dockerfile              # Multi-arch Docker build
-│   ├── run.sh                  # Add-on entrypoint
-│   ├── llm_api.py              # Python LLM API for HA
-│   └── DOCS.md                 # User-facing add-on documentation
-├── packages/                   # Domain packages (pure logic)
-│   ├── domain-auth/            # Auth interfaces & CSRF
-│   ├── domain-observability/   # Structured logger
-│   ├── domain-strategy/        # RICE scoring engine
-│   ├── domain-tasks/           # Task aggregate & types
-│   └── integration-core/       # Adapter interfaces & impls
-├── tests/                      # Test package (@meitheal/tests)
-│   ├── e2e/                    # 48 E2E spec files
-│   ├── governance/             # 2 governance spec files
-│   ├── unit/                   # 1 unit spec file
-│   └── scripts/                # Test utilities
-├── scripts/                    # Root-level build scripts
-├── .agents/                    # Agent rules & workflows
-├── .planning/                  # GSD planning docs
-│   ├── codebase/               # THIS directory
-│   ├── phases/                 # Phase planning documents
-│   └── research/               # Research outputs
-├── .github/workflows/ci.yml    # CI pipeline
-├── .coderabbit.yaml            # CodeRabbit config
-└── pnpm-workspace.yaml         # Monorepo workspace definition
+│   ├── web/                    # Astro SSR app (primary)
+│   └── api/                    # Legacy API (unused)
+├── packages/
+│   ├── domain-auth/            # Ingress, CSRF (37 lines)
+│   ├── domain-observability/   # Structured logging (222 lines)
+│   ├── domain-strategy/        # RICE, rules (674 lines)
+│   ├── domain-tasks/           # Task domain model (716 lines)
+│   └── integration-core/      # Adapters: A2A, CalDAV, Grocy, HA, webhooks (1855 lines)
+├── integrations/
+│   ├── home-assistant/         # Apache-2.0 — HA API client boundary
+│   ├── nodered/                # Apache-2.0 — Node-RED flows
+│   └── blueprints/             # HA blueprints
+├── meitheal-hub/               # HA add-on config (config.yaml, run.sh, rootfs, translations)
+├── tests/
+│   ├── e2e/                    # 60+ spec files
+│   ├── governance/             # IQS + repo standards
+│   └── unit/                   # Unit tests
+├── docs/
+│   ├── decisions/              # ADRs
+│   ├── kcs/                    # KCS runbooks
+│   └── methodologies/          # Process docs
+├── .planning/
+│   ├── codebase/               # ← these files
+│   ├── phases/                 # GSD phase plans
+│   ├── research/               # Research & audits
+│   └── STATE.md                # Current project state
+├── .agents/workflows/          # GSD workflow definitions
+├── .skills/core-workflows/     # Skill definitions
+└── .zeroclaw/                  # Agent soul/personality
 ```
 
-## Directory Purposes
+## apps/web/src/ — Primary Application
 
-**`apps/web/src/domains/`:**
-- Purpose: Application-specific domain logic bound to Astro/HA runtime
-- Contains: Bridge services, persistence layers, sync engines
-- Key files: `ha/ha-startup.ts`, `tasks/persistence/store.ts`, `todo/todo-bridge.ts`
-- Each domain has an `index.ts` barrel export
-- Hierarchy/orchestration touch points:
-  - `tasks/persistence/store.ts` — live task schema bootstrap
-  - `tasks/persistence/task-repository.ts` — explicit column lists and CRUD
-  - `todo/todo-bridge.ts` — inbound/outbound task normalization pressure
-  - `integrations/vikunja-compat/store.ts` — external project/task translation
-  - `offline/` — PWA sync and conflict handling
+### Pages (15 files, 11,406 lines total)
 
-**`apps/web/src/lib/`:**
-- Purpose: Client-side controllers (page interactivity) and shared utilities
-- Contains: Page controllers (kanban, table, settings, task-modal), API client, filter engine, toast, validation
-- Key files: `kanban-controller.ts` (2,019 LoC), `task-modal-controller.ts` (2,417 LoC), `search-hub-controller.ts`
-- **Settings controllers** (decomposed from monolithic 3,205 LoC file, all using `pageLifecycle.on()` + `escapeHtml()`):
-  - `settings-controller.ts` (~160 LoC coordinator, re-exports)
-  - `settings-theme-controller.ts` (appearance/theme)
-  - `settings-sidebar-controller.ts` (navigation layout)
-  - `settings-integrations-ha-controller.ts` (HA connection, webhooks)
-  - `settings-integrations-n8n-controller.ts` (n8n/Node-RED integration)
-  - `settings-integrations-grocy-controller.ts` (Grocy inventory)
-  - `settings-integrations-sync-controller.ts` (calendar/todo sync)
-  - `settings-ai-controller.ts` (agent & AI config)
-  - `settings-data-controller.ts` (import/export/backup/custom fields)
-  - `settings-danger-controller.ts` (purge/reset)
-  - `settings-shell-controller.ts`, `settings-store.ts`, `settings-registry.ts`, `settings-page.ts`
-- **Shared utilities:** `page-lifecycle.ts` (event listener lifecycle management via AbortController), `managed-listeners.ts` (memory-safe addEventListener/removeEventListener with auto-cleanup on `astro:before-swap`), `safe-html.ts` (XSS prevention), `toast.ts`, `confirm-dialog.ts`, `ha-theme-bridge.ts` (HA→Meitheal CSS var sync), `priority-config.ts` (priority definitions with `PRIORITY_ICONS` for WCAG 2.2 a11y)
+| File | Lines | Description |
+|------|-------|-------------|
+| `kanban.astro` | 1877 | Kanban board with lanes, drag-and-drop, grouping |
+| `today.astro` | 1410 | Daily task view with habits, stats, flow |
+| `eisenhower.astro` | 1337 | 2×2 urgency/importance matrix |
+| `habits.astro` | 1162 | Habit tracker with streaks |
+| `table.astro` | 1030 | Data grid with sort, filter, columns |
+| `calendar.astro` | 917 | Monthly calendar with HA events |
+| `index.astro` | 883 | Dashboard overview |
+| `upcoming.astro` | 715 | Next 7 days task view |
+| `settings.astro` | 577 | Settings shell |
+| `gamification.astro` | 542 | XP, streaks, achievements |
+| `review.astro` | 393 | Weekly review |
+| `gantt.astro` | 391 | Timeline/Gantt view |
 
-**`apps/web/src/components/ui/`:**
-- Purpose: Reusable Astro UI components
-- Contains: `FilterToolbar.astro` (640 LoC), `StatusBadge.astro`, `TaskTypeIcon.astro`, `EmptyState.astro`, `LabelPicker.astro`
+### Controllers (28 files, 16,528 lines total)
 
-**`apps/web/src/components/settings/`:**
-- Purpose: Settings shell navigation, summaries, shared UX primitives, and grouped section panels
-- Contains: `SettingsShellNav.astro`, `SettingsSummaryCard.astro`, `SettingsSectionIntro.astro`, `SettingsPanelCard.astro`, `SettingsCallout.astro`, `SettingsActionRow.astro`, `SettingsDisclosure.astro`, `SettingsStatusChip.astro`, `SettingsGeneral.astro`, `SettingsIntegrations.astro` (1,403 LoC, composes 6 sub-components), `SettingsAgents.astro`, `SettingsLabels.astro`, `SettingsSystem.astro`
-- **`integrations/`** subdirectory: `IntegrationHA.astro`, `IntegrationCalendar.astro`, `IntegrationTodo.astro`, `IntegrationGrocy.astro`, `IntegrationN8n.astro`, `IntegrationWebhooks.astro`
+| File | Lines | Description |
+|------|-------|-------------|
+| `task-modal-controller.ts` | 2522 | Task detail/edit modal |
+| `kanban-controller.ts` | 2063 | Kanban board logic |
+| `today-controller.ts` | 1548 | Today page logic |
+| `table-controller.ts` | 1352 | Table view logic |
+| `eisenhower-controller.ts` | 999 | Eisenhower matrix logic (standalone) |
+| `habits-controller.ts` | 907 | Habit tracking |
+| `page-shell-controller.ts` | 258 | Shared shell: tabs, scroll spy, overflow |
+| `unified-bar-controller.ts` | 186 | Bar: title, search, new task, tabs |
 
-**`apps/web/src/styles/`:**
-- Purpose: CSS design system via partials
-- Contains: `_tokens.css` (design tokens), `_base.css`, `_buttons.css`, `_cards.css`, `_forms.css`, `_kanban.css` (578 LoC), `_table.css` (551 LoC), `_responsive.css` (536 LoC), `_modal.css`, `_layout.css`
-- Entry: `global.css` imports all partials
+### Components (65 files, 16,105 lines total)
 
-**`packages/`:**
-- Purpose: Pure domain logic packages — no framework dependencies
-- Contains: Type definitions, business rules, adapter interfaces
-- Key files: `domain-tasks/src/task.ts` (aggregate), `domain-strategy/src/rice.ts` (RICE scoring), `domain-observability/src/logger.ts`
-- Hierarchy semantics currently live in:
-  - `packages/domain-tasks/src/task.ts`
-  - `packages/domain-strategy/src/rule-types.ts`
-  - `packages/domain-strategy/src/rule-resolver.ts`
+Key directories:
+- `layout/` — UnifiedBar, Sidebar, SearchHub, TopNavigation
+- `tasks/` — TaskListItem, TaskDetailModal, NewTaskModal, TaskViewTabs, StrategicEvaluator
+- `settings/` — 15 settings panel components
+- `ui/` — FilterToolbar, CardCustomizer, ColumnCustomizer, BotBadge
+- `ha/` — AskAssistModal, TypingIndicator
+- `gamification/` — Confetti, GamificationWidget, StreakBadge
+- `pomodoro/` — PomodoroTimer
+- `pwa/` — PwaInstallBanner
 
-**`tests/`:**
-- Purpose: Playwright test suite (separate workspace package)
-- Contains: 48 e2e specs, 2 governance specs, 1 unit spec
-- Key files: `playwright.config.ts`, `e2e/_helpers.ts`
+### Domains (16 directories)
 
-## Key File Locations
+| Domain | Key files | Purpose |
+|--------|-----------|---------|
+| `auth/` | `ingress-policy.ts`, `ingress.ts` | HA ingress auth |
+| `ha/` | `ha-connection.ts`, `ha-events.ts`, `ha-services.ts` | HA WebSocket bridge |
+| `tasks/` | `task-repository.ts`, `task-sync-service.ts` | Task persistence |
+| `calendar/` | `caldav-client.ts`, `calendar-bridge.ts` | Calendar sync |
+| `search/` | `search-service.ts` | Universal search |
+| `offline/` | `sw-register.ts`, `sync-engine.ts`, `offline-store.ts` | PWA/offline |
+| `todo/` | `todo-bridge.ts`, `todo-status-mapper.ts` | HA todo sync |
+| `strategy/` | `rule-repository.ts`, `framework-repository.ts` | Strategic frameworks |
+| `gamification/` | `achievement-engine.ts`, `streak-tracker.ts` | XP system |
+| `habits/` | `habit-service.ts` | Habit CRUD |
+| `pomodoro/` | `pomodoro-service.ts` | Timer logic |
+| `grocy/` | `grocy-bridge.ts`, `grocy-mapper.ts` | Grocery integration |
+| `labels/` | `label-store.ts`, `label-color-resolver.ts` | Label management |
+| `notifications/` | `due-date-reminders.ts` | Push notifications |
+| `ai/` | `ai-context-service.ts`, `ha-assist-service.ts` | AI/LLM integration |
+| `integrations/` | `vikunja-compat/` | Vikunja API compat layer |
 
-**Entry Points:**
-- `apps/web/scripts/serve.mjs`: Production HTTP server
-- `apps/web/astro.config.mjs`: Astro configuration
-- `apps/web/src/middleware.ts`: Request pipeline
+### API Routes (100+ files)
 
-**Configuration:**
-- `meitheal-hub/config.yaml`: Add-on manifest (version, arch, capabilities)
-- `apps/web/tsconfig.json`: TypeScript config with path aliases
-- `pnpm-workspace.yaml`: Monorepo workspace definition
+Organized under `apps/web/src/pages/api/`:
+- `/api/tasks/` — CRUD, reorder, proposals, time tracking
+- `/api/ha/` — connection, calendars, events, services, agents
+- `/api/integrations/` — calendar sync, n8n, nodered
+- `/api/settings.ts` — flat key-value settings
+- `/api/search.ts` — universal search
+- `/api/labels.ts`, `/api/areas/`, `/api/goals/`, `/api/projects/` — hierarchy
+- `/api/v1/` — Vikunja compat API
 
-**Core Logic:**
-- `apps/web/src/domains/tasks/persistence/task-repository.ts`: All task queries
-- `apps/web/src/domains/ha/ha-startup.ts`: HA integration bootstrap
-- `apps/web/src/lib/task-modal-controller.ts`: Task detail modal behavior
-- `apps/web/drizzle/schema.ts`: clean schema target, but not the only live schema source
-- `apps/web/src/domains/tasks/persistence/store.ts`: runtime schema bootstrap that must be kept in sync with any future Drizzle contract
+### i18n
 
-**Layout & Styling:**
-- `apps/web/src/layouts/Layout.astro`: Main layout (1,255 LoC) — includes task modal, search hub launcher, nav
-- `apps/web/src/styles/global.css`: CSS entry point importing all partials
-
-## Naming Conventions
-
-**Files:**
-- kebab-case for all source files: `task-modal-controller.ts`, `ha-startup.ts`
-- PascalCase for Astro components: `FilterToolbar.astro`, `StatusBadge.astro`
-- UPPERCASE for GSD/planning docs: `STACK.md`, `ARCHITECTURE.md`
-- Underscore prefix for CSS partials: `_kanban.css`, `_tokens.css`
-
-**Directories:**
-- kebab-case: `domain-tasks/`, `integration-core/`, `vikunja-compat/`
-- Short noun for domains: `ha/`, `ai/`, `todo/`, `offline/`
-
-## Where to Add New Code
-
-**New Page:**
-- Page: `apps/web/src/pages/{name}.astro`
-- Controller: `apps/web/src/lib/{name}-controller.ts`
-- CSS: `apps/web/src/styles/_{name}.css` (import in `global.css`)
-
-**New Domain Module:**
-- Create: `apps/web/src/domains/{name}/`
-- Add `index.ts` barrel export
-- API routes: `apps/web/src/pages/api/{name}/`
-- For the planned human-agent hierarchy work, likely candidates are:
-  - `domains/strategy/` for `Goal`/`Project` evaluation semantics
-  - `domains/tasks/` for task/routine orchestration primitives
-  - `domains/integrations/` or `domains/todo/` for shared ingress normalization
-
-**New Shared Component:**
-- UI: `apps/web/src/components/ui/{Name}.astro`
-- Layout: `apps/web/src/components/layout/{Name}.astro`
-
-**New Domain Package (pure logic):**
-- Create: `packages/domain-{name}/`
-- Add `package.json` with `@meitheal/domain-{name}` name
-- Export from `src/index.ts`
-- Reference in `pnpm-workspace.yaml`
-
-**New Test:**
-- E2E: `tests/e2e/{feature}.spec.ts`
-- Unit: `tests/unit/{module}.spec.ts`
-
-**New Utility:**
-- Shared helpers: `apps/web/src/lib/{utility-name}.ts`
-
-## Special Directories
-
-**`.astro/`:**
-- Purpose: Astro build/collection cache
-- Generated: Yes
-- Committed: No (gitignored)
-
-**`dist/`:**
-- Purpose: Production build output
-- Generated: Yes (by `astro build`)
-- Committed: No
-
-**`.data/`:**
-- Purpose: Runtime SQLite database files
-- Generated: Yes (at runtime)
-- Committed: No
-
-**`meitheal-hub/`:**
-- Purpose: HA add-on packaging (Dockerfile, run.sh, config.yaml)
-- Generated: No
-- Committed: Yes
-
----
-
-*Structure analysis: 2026-03-18*
+Two locale files:
+- `apps/web/src/i18n/en.json` — English (primary)
+- `apps/web/src/i18n/ga.json` — Irish (Gaeilge)
