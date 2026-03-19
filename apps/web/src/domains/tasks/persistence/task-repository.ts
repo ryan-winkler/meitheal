@@ -16,11 +16,73 @@
 import type { Client } from "@libsql/client";
 import type { InValue } from "@libsql/client";
 import { normalizeStatus, STATUS } from "../../../lib/status-config";
+import { logApiError } from "../../../lib/api-logger";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-/** Generic task row — all fields returned raw from the database */
-export type TaskRow = Record<string, unknown>;
+/**
+ * Typed task row — maps every column in the `tasks` table.
+ *
+ * The index signature `[key: string]: unknown` is kept intentionally so
+ * existing `as TaskRow` casts from libSQL's generic `Row` type still compile,
+ * while all known fields now provide autocompletion and type-safe access.
+ *
+ * @see store.ts ensureSchema() for the canonical column definitions.
+ */
+export interface TaskRow {
+  [key: string]: unknown
+  // ── Core (CREATE TABLE) ──
+  id: string
+  endeavor_id: string | null
+  title: string
+  description: string | null
+  status: string
+  framework_payload: string
+  calendar_sync_state: string
+  idempotency_key: string
+  request_id: string
+  created_at: number
+  updated_at: number
+  // ── Phase 2 additions ──
+  priority: number
+  due_date: string | null
+  labels: string
+  parent_id: string | null
+  time_tracked: number
+  area_id: string
+  custom_fields: string
+  start_date: string | null
+  end_date: string | null
+  progress: number
+  color: string | null
+  is_favorite: number
+  task_type: string
+  summary: string | null
+  // ── Phase 3 (recurrence, checklists, NFC) ──
+  recurrence_rule: string | null
+  recurrence_anchor: string
+  rotation_mode: string | null
+  nfc_tag_id: string | null
+  checklists: string
+  reminder_at: string | null
+  source_template_id: string | null
+  ticket_number: number | null
+  assigned_to: string | null
+  kanban_position: number | null
+  // ── Phase 4 (DDD hierarchy + human-agent) ──
+  task_kind: string
+  project_id: string | null
+  owner: string
+  lock_holder: string | null
+  lock_expires_at: number | null
+  handoff_state: string
+  proposal_json: string | null
+  proposal_hash: string | null
+  agent_scratchpad: string | null
+  // ── Phase 6 (time-blocking) ──
+  time_block_start: string | null
+  time_block_end: string | null
+}
 
 /**
  * Strip agent_scratchpad from task rows before returning to callers.
@@ -29,7 +91,7 @@ export type TaskRow = Record<string, unknown>;
 function sanitizeRows(rows: TaskRow[]): TaskRow[] {
   return rows.map(row => {
     const { agent_scratchpad: _, ...rest } = row
-    return rest
+    return rest as unknown as TaskRow
   })
 }
 
@@ -106,7 +168,7 @@ export class TaskRepository {
       `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
        FROM tasks ORDER BY created_at DESC LIMIT ${limit}`,
     );
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** Tasks belonging to a specific project, ordered by priority */
@@ -117,7 +179,7 @@ export class TaskRepository {
             ORDER BY priority ASC, created_at DESC`,
       args: [projectId],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   /** Favorited, non-complete tasks */
@@ -128,7 +190,7 @@ export class TaskRepository {
             ORDER BY updated_at DESC LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** Open (non-complete) tasks ordered by priority then due date */
@@ -140,7 +202,7 @@ export class TaskRepository {
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** Count tasks grouped by status for dashboard stats */
@@ -196,7 +258,7 @@ export class TaskRepository {
       `SELECT id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, area_id, custom_fields, start_date, end_date, progress, color, is_favorite, task_type, task_kind, project_id, owner, handoff_state, parent_id, ticket_number, assigned_to, kanban_position, created_at, updated_at
        FROM tasks ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC`,
     );
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** Comment counts per task (for kanban card badges) */
@@ -303,7 +365,7 @@ export class TaskRepository {
       `SELECT id, title, status, priority, due_date, start_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   // ── Today (today.astro) ─────────────────────────────────────────────
@@ -317,7 +379,7 @@ export class TaskRepository {
             ORDER BY due_date ASC`,
       args: [todayStr, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   /** Tasks due on a specific date (non-complete) */
@@ -328,7 +390,7 @@ export class TaskRepository {
             ORDER BY priority DESC, created_at ASC`,
       args: [dateStr, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   /** Unscheduled tasks (no due date, non-complete) */
@@ -340,7 +402,7 @@ export class TaskRepository {
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   /**
@@ -366,7 +428,7 @@ export class TaskRepository {
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE, todayStr, endStr],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   /** Count tasks completed today (status=complete AND updated_at today) — SMT-03 */
@@ -393,7 +455,7 @@ export class TaskRepository {
             ORDER BY due_date ASC, priority DESC, created_at ASC`,
       args: [startDate, endDate, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as TaskRow[]);
+    return sanitizeRows(result.rows as unknown as TaskRow[]);
   }
 
   // ── Write Methods (API routes) ────────────────────────────────────────
@@ -435,7 +497,7 @@ export class TaskRepository {
             WHERE t.id = ? OR t.ticket_number = ? LIMIT 1`,
       args: [idOrKey, parsedTicketNum],
     });
-    return (result.rows[0] as TaskRow) ?? null;
+    return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
   /**
@@ -453,7 +515,7 @@ export class TaskRepository {
               checklists, reminder_at, created_at, updated_at
        FROM tasks ORDER BY updated_at DESC`
     );
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** List tasks with optional filters, pagination, and sorting. */
@@ -508,7 +570,7 @@ export class TaskRepository {
     ]);
 
     const total = Number((countResult.rows[0] as Record<string, unknown>)?.cnt ?? 0);
-    return { tasks: result.rows as TaskRow[], total };
+    return { tasks: result.rows as unknown as TaskRow[], total };
   }
 
   /** Advanced catalog search used by the universal search hub and HA search bridges. */
@@ -615,7 +677,7 @@ export class TaskRepository {
       args,
     });
 
-    return result.rows as TaskRow[];
+    return result.rows as unknown as TaskRow[];
   }
 
   /** Get the next sequential ticket number for MTH-N key assignment */
@@ -716,7 +778,7 @@ export class TaskRepository {
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
-    return (result.rows[0] as TaskRow) ?? null;
+    return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
   /** Fetch old field values for activity log diffing before an update */
@@ -729,29 +791,38 @@ export class TaskRepository {
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
-    return (result.rows[0] as TaskRow) ?? null;
+    return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
-  /** Log field-level activity changes (fire-and-forget) */
+  /**
+   * Log field-level activity changes (fire-and-forget).
+   * Uses a single multi-row INSERT for performance — avoids N parallel statements.
+   */
   async logActivity(
     taskId: string,
     changes: Array<{ field: string; oldValue: string | null; newValue: string }>,
     opts?: { actor?: string; actor_type?: string; correlation_id?: string },
   ): Promise<void> {
-    const now = Date.now();
+    if (changes.length === 0) return
+    const now = Date.now()
     const actorType = opts?.actor_type ?? "user"
     const actor = opts?.actor ?? "user"
     const correlationId = opts?.correlation_id ?? null
-    const inserts = changes.map(({ field, oldValue, newValue }) => {
+
+    const placeholders: string[] = []
+    const args: InValue[] = []
+    for (const { field, oldValue, newValue } of changes) {
       const eventType = field === "status" ? "status_change" : "field_change"
       const summary = `${field}: ${oldValue ?? '(empty)'} → ${newValue}`
-      return this.client.execute({
-        sql: `INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [taskId, field, oldValue, newValue, actor, actorType, eventType, summary, correlationId, now] as InValue[],
-      })
-    });
-    await Promise.all(inserts).catch(() => { });
+      placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      args.push(taskId, field, oldValue, newValue, actor, actorType, eventType, summary, correlationId, now)
+    }
+
+    await this.client.execute({
+      sql: `INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+            VALUES ${placeholders.join(", ")}`,
+      args,
+    }).catch((err) => logApiError("audit-activity", "Failed to write activity log entries", err))
   }
 
   /**
@@ -784,7 +855,7 @@ export class TaskRepository {
         event.correlation_id ?? null,
         now,
       ] as InValue[],
-    }).catch(() => { })
+    }).catch((err) => logApiError("audit-timeline", "Failed to write timeline event", err))
   }
 
   /** Delete a single task and cascade-clean related data */
@@ -890,7 +961,7 @@ export class TaskRepository {
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
-    return (result.rows[0] as TaskRow) ?? null;
+    return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
   /**
@@ -1086,6 +1157,7 @@ export class TaskRepository {
   /**
    * Unified timeline: merges activity log + comments chronologically.
    * Returns a combined view for the Immutable Audit Ledger UI.
+   * Uses a single query with COUNT(*) OVER() window function for pagination.
    */
   async getTimeline(taskId: string, opts?: {
     limit?: number
@@ -1110,47 +1182,82 @@ export class TaskRepository {
 
     const where = conditions.join(" AND ")
 
-    // Unified query: activity log events + comments as 'comment' event_type
+    // Skip comments subquery when filtering by event_type that isn't 'comment'
+    const includeComments = !opts?.event_type || opts.event_type === "comment"
+
+    // Build unified query with COUNT(*) OVER() to avoid a second round-trip
+    const commentSubquery = includeComments
+      ? `UNION ALL
+         SELECT id, task_id, 'comment' as field, NULL as old_value, content as new_value,
+                author as actor, 'user' as actor_type, 'comment' as event_type,
+                'Comment: ' || SUBSTR(content, 1, 100) as summary,
+                NULL as correlation_id,
+                CAST(strftime('%s', created_at) * 1000 AS INTEGER) as created_at
+         FROM comments
+         WHERE task_id = ?
+           ${opts?.actor_type ? "AND author = ?" : ""}`
+      : ""
+
+    const commentArgs: InValue[] = includeComments
+      ? [taskId, ...(opts?.actor_type ? [opts.actor_type] : [])]
+      : []
+
     const result = await this.client.execute({
-      sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+      sql: `SELECT *, COUNT(*) OVER() as _total
             FROM (
               SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
               FROM task_activity_log
               WHERE ${where}
-
-              UNION ALL
-
-              SELECT id, task_id, 'comment' as field, NULL as old_value, content as new_value,
-                     author as actor, 'user' as actor_type, 'comment' as event_type,
-                     'Comment: ' || SUBSTR(content, 1, 100) as summary,
-                     NULL as correlation_id,
-                     CAST(strftime('%s', created_at) * 1000 AS INTEGER) as created_at
-              FROM comments
-              WHERE task_id = ?
-                ${opts?.event_type ? (opts.event_type === "comment" ? "" : "AND 0 = 1") : ""}
-                ${opts?.actor_type ? "AND author = ?" : ""}
+              ${commentSubquery}
             )
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?`,
       args: [
         ...args,
-        taskId,
-        ...(opts?.actor_type ? [opts.actor_type] : []),
+        ...commentArgs,
         limit,
         offset,
       ],
     })
 
-    // Count total for pagination
-    const countResult = await this.client.execute({
-      sql: `SELECT
-              (SELECT COUNT(*) FROM task_activity_log WHERE ${where}) +
-              (SELECT COUNT(*) FROM comments WHERE task_id = ?) as total`,
-      args: [...args, taskId],
-    })
-    const total = Number((countResult.rows[0] as Record<string, unknown>)?.total ?? 0)
+    const total = result.rows.length > 0
+      ? Number((result.rows[0] as Record<string, unknown>)?._total ?? 0)
+      : 0
 
-    return { events: result.rows, total, limit, offset }
+    // Strip the _total window column from output rows
+    const events = result.rows.map((row) => {
+      const { _total, ...rest } = row as Record<string, unknown>
+      return rest
+    })
+
+    return { events, total, limit, offset }
+  }
+
+  /**
+   * Purge all activity log entries for a specific task.
+   * GDPR right to erasure — allows deleting audit trail without deleting the task itself.
+   * @returns Number of records deleted
+   */
+  async purgeActivityLog(taskId: string): Promise<number> {
+    const result = await this.client.execute({
+      sql: "DELETE FROM task_activity_log WHERE task_id = ?",
+      args: [taskId],
+    })
+    return result.rowsAffected
+  }
+
+  /**
+   * Retention-based cleanup — delete activity log entries older than a cutoff.
+   * Use for regular maintenance to prevent unbounded audit log growth.
+   * @param cutoffMs - Epoch milliseconds; entries with created_at < this are deleted
+   * @returns Number of records deleted
+   */
+  async purgeActivityLogBefore(cutoffMs: number): Promise<number> {
+    const result = await this.client.execute({
+      sql: "DELETE FROM task_activity_log WHERE created_at < ?",
+      args: [cutoffMs],
+    })
+    return result.rowsAffected
   }
 
   // ── Task Link Methods ──────────────────────────────────────────────
