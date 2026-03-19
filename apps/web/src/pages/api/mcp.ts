@@ -23,7 +23,7 @@ import { apiJson, apiError } from "../../lib/api-response";
 const MCP_TOOLS = [
   {
     name: "createTask",
-    description: "Create a new task with title, description, priority, labels, and due date",
+    description: "Create a new task with title, description, priority, urgency, importance, labels, and due date",
     inputSchema: {
       type: "object" as const,
       required: ["title"],
@@ -31,6 +31,8 @@ const MCP_TOOLS = [
         title: { type: "string", description: "Task title" },
         description: { type: "string", description: "Task description" },
         priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority 1-5 (1=urgent)" },
+        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Urgency 0-5 (Eisenhower x-axis, 0=unclassified)" },
+        importance: { type: "integer", minimum: 0, maximum: 5, description: "Importance 0-5 (Eisenhower y-axis, 0=unclassified)" },
         due_date: { type: "string", format: "date", description: "Due date YYYY-MM-DD" },
         assigned_to: { type: "string", description: "User ID to assign the task to" },
       },
@@ -38,13 +40,16 @@ const MCP_TOOLS = [
   },
   {
     name: "searchTasks",
-    description: "Search tasks by keyword, status, priority, assignee, labels, custom fields, comments, or task IDs",
+    description: "Search tasks by keyword, status, priority, urgency, importance, Eisenhower quadrant, assignee, labels, custom fields, comments, or task IDs",
     inputSchema: {
       type: "object" as const,
       properties: {
         query: { type: "string", description: "Search keyword" },
         status: { type: "string", enum: ["backlog", "pending", "active", "complete"] },
         priority: { type: "integer", minimum: 1, maximum: 5 },
+        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Filter by urgency (Eisenhower)" },
+        importance: { type: "integer", minimum: 0, maximum: 5, description: "Filter by importance (Eisenhower)" },
+        eisenhower_quadrant: { type: "string", enum: ["do-first", "schedule", "delegate", "not-now"], description: "Filter by Eisenhower quadrant" },
         assigned_to: { type: "string", description: "Filter by assigned user ID" },
         include_completed: { type: "boolean" },
       },
@@ -63,7 +68,7 @@ const MCP_TOOLS = [
   },
   {
     name: "updateTask",
-    description: "Update task fields",
+    description: "Update task fields including Eisenhower urgency/importance",
     inputSchema: {
       type: "object" as const,
       required: ["id"],
@@ -72,6 +77,9 @@ const MCP_TOOLS = [
         title: { type: "string" },
         status: { type: "string", enum: ["backlog", "pending", "active", "complete"] },
         priority: { type: "integer", minimum: 1, maximum: 5 },
+        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Urgency 0-5 (Eisenhower x-axis)" },
+        importance: { type: "integer", minimum: 0, maximum: 5, description: "Importance 0-5 (Eisenhower y-axis)" },
+        eisenhower_override: { type: "boolean", description: "Set true if manually placed in quadrant" },
         due_date: { type: "string", format: "date" },
         description: { type: "string" },
       },
@@ -300,6 +308,8 @@ async function executeTool(
           title: args.title,
           frameworkPayload: args.description ? { description: args.description } : undefined,
           priority: args.priority,
+          urgency: args.urgency,
+          importance: args.importance,
           dueDate: args.due_date,
           assigned_to: args.assigned_to,
         }),

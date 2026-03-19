@@ -1,0 +1,40 @@
+name: Eisenhower Matrix
+version: "1.0.0"
+archetype: matrix
+
+# Badge display — show quadrant label on task cards across views
+badge_thresholds:
+  - min: 8
+    label: "Do First 🔥"
+    color: "danger"
+  - min: 4
+    label: "Schedule 📅"
+    color: "info"
+  - min: 2
+    label: "Delegate 👥"
+    color: "warning"
+  - min: 0
+    label: "Not Now 📦"
+    color: "bg-secondary"
+
+# Two scoring fields: urgency (x-axis) and importance (y-axis)
+# Combined score = urgency + importance (used for badge thresholds)
+fields:
+  - key: urgency
+    label: Urgency
+    description: How time-sensitive is this task?
+    help_text: "0 = Unclassified, 1 = Not urgent, 5 = Critical deadline"
+    type: number
+    ui_type: slider
+    min: 0
+    max: 5
+    weight: 1
+  - key: importance
+    label: Importance
+    description: How much does this task matter to your goals?
+    help_text: "0 = Unclassified, 1 = Low impact, 5 = Core strategic goal"
+    type: number
+    ui_type: slider
+    min: 0
+    max: 5
+    weight: 1

@@ -63,13 +63,15 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
 
 
 class SearchTasksTool(Tool):
-    """Search Meitheal tasks by keyword, status, priority, and richer task fields."""
+    """Search Meitheal tasks by keyword, status, priority, urgency/importance."""
 
     name = "meitheal_search_tasks"
     description = (
         "Search tasks in Meitheal, the household task manager. "
         "You can filter by keyword (matches title, description, labels, custom fields, comments, and task IDs), "
-        "status (backlog, todo, in_progress, or done), or priority (1=urgent, 5=low). "
+        "status (backlog, todo, in_progress, or done), priority (1=urgent, 5=low), "
+        "urgency (0-5, Eisenhower x-axis), importance (0-5, Eisenhower y-axis), "
+        "or Eisenhower quadrant (do-first, schedule, delegate, not-now). "
         "Use this when the user asks about their tasks, to-do list, or task list."
     )
     parameters = vol.Schema(
@@ -83,6 +85,18 @@ class SearchTasksTool(Tool):
                 "priority",
                 description="Filter by priority (1 = highest/urgent, 5 = lowest)",
             ): vol.All(int, vol.Range(min=1, max=5)),
+            vol.Optional(
+                "urgency",
+                description="Filter by urgency (Eisenhower x-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
+            vol.Optional(
+                "importance",
+                description="Filter by importance (Eisenhower y-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
+            vol.Optional(
+                "eisenhower_quadrant",
+                description="Filter by Eisenhower quadrant: do-first, schedule, delegate, or not-now",
+            ): vol.In(["do-first", "schedule", "delegate", "not-now"]),
             vol.Optional(
                 "include_completed",
                 description="Include completed tasks in the results",
@@ -144,6 +158,9 @@ class GetTaskDetailsTool(Tool):
                     "status": task.status,
                     "description": task.description or "",
                     "priority": task.priority,
+                    "urgency": getattr(task, "urgency", 0),
+                    "importance": getattr(task, "importance", 0),
+                    "eisenhower_quadrant": getattr(task, "eisenhower_quadrant", None),
                     "due_date": task.due_date,
                     "labels": task.labels,
                     "is_overdue": task.is_overdue,
@@ -160,7 +177,8 @@ class CreateTaskTool(Tool):
     name = "meitheal_create_task"
     description = (
         "Create a new task in Meitheal, the household task manager. "
-        "Provide at minimum a title. Optionally include a description. "
+        "Provide at minimum a title. Optionally include a description, "
+        "urgency (0-5 Eisenhower), and importance (0-5 Eisenhower). "
         "Use this when the user says things like 'add a task', 'remind me to', "
         "'create a todo', or 'I need to'."
     )
@@ -168,6 +186,14 @@ class CreateTaskTool(Tool):
         {
             vol.Required("title", description="Task title"): str,
             vol.Optional("description", description="Task description or notes"): str,
+            vol.Optional(
+                "urgency",
+                description="Urgency 0-5 (Eisenhower x-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
+            vol.Optional(
+                "importance",
+                description="Importance 0-5 (Eisenhower y-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
         }
     )
 
@@ -242,11 +268,11 @@ class UpdateTaskTool(Tool):
 
     name = "meitheal_update_task"
     description = (
-        "Update a task in Meitheal. You can change the priority, due date, "
-        "description, status, or title. You need the task ID — use "
+        "Update a task in Meitheal. You can change the priority, urgency, importance, "
+        "due date, description, status, or title. You need the task ID — use "
         "meitheal_search_tasks first to find it. "
         "Use this when the user says 'change', 'update', 'set priority', "
-        "'reschedule', or 'modify'."
+        "'set urgency', 'make this important', 'reschedule', or 'modify'."
     )
     parameters = vol.Schema(
         {
@@ -257,6 +283,14 @@ class UpdateTaskTool(Tool):
                 "priority",
                 description="New priority (1=urgent, 2=high, 3=medium, 4=low, 5=lowest)",
             ): vol.All(int, vol.Range(min=1, max=5)),
+            vol.Optional(
+                "urgency",
+                description="New urgency (Eisenhower x-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
+            vol.Optional(
+                "importance",
+                description="New importance (Eisenhower y-axis: 0=unclassified, 5=critical)",
+            ): vol.All(int, vol.Range(min=0, max=5)),
             vol.Optional(
                 "status",
                 description="New status: backlog, todo, in_progress, or done",
@@ -278,7 +312,7 @@ class UpdateTaskTool(Tool):
 
         task_id = tool_input.tool_args["task_id"]
         updates: dict[str, Any] = {}
-        for field in ("title", "description", "priority", "status", "due_date"):
+        for field in ("title", "description", "priority", "urgency", "importance", "status", "due_date"):
             if field in tool_input.tool_args:
                 updates[field] = tool_input.tool_args[field]
 
@@ -781,11 +815,12 @@ API_PROMPT = (
     "running as a Home Assistant addon. Meitheal manages the household's tasks, "
     "to-do lists, projects, and calendar events synced from Home Assistant.\n\n"
     "## What You Can Do\n"
-    "- **Search tasks** by keyword, status (backlog/todo/in_progress/done), or priority (1-5)\n"
-    "- **Create tasks** with a title and optional description\n"
+    "- **Search tasks** by keyword, status (backlog/todo/in_progress/done), priority (1-5), "
+    "urgency (0-5), importance (0-5), or Eisenhower quadrant (do-first/schedule/delegate/not-now)\n"
+    "- **Create tasks** with title, description, urgency, and importance\n"
     "- **Complete tasks** by ID or title\n"
     "- **Delete tasks** permanently\n"
-    "- **Update tasks** — change priority, due date, status, title, or description\n"
+    "- **Update tasks** — change priority, urgency, importance, due date, status, title, or description\n"
     "- **Batch complete** — mark multiple tasks done by label or priority\n"
     "- **Check overdue tasks** — what's past due\n"
     "- **Get today's tasks** — what's on the agenda right now\n"

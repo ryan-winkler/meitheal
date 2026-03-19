@@ -5,35 +5,40 @@
  * @bounded-context tasks (presentation)
  *
  * Handles:
- * - Drag-and-drop between quadrants (updates priority/due_date)
+ * - Drag-and-drop between quadrants (updates urgency/importance)
  * - Click to open task detail modal
  * - Count badge updates after drag
+ * - WIP limit warnings for Q1
  *
- * @kcs Quadrant → priority/due_date mapping:
- *   Q1 (do-first)  → priority 5, due_date = today
- *   Q2 (schedule)   → priority 5, due_date cleared (future)
- *   Q3 (delegate)   → priority 2, due_date = today
- *   Q4 (eliminate)   → priority 1, due_date cleared
+ * @kcs Quadrant → urgency/importance mapping:
+ *   Q1 (do-first)  → urgency 5, importance 5
+ *   Q2 (schedule)   → urgency 1, importance 5
+ *   Q3 (delegate)   → urgency 5, importance 1
+ *   Q4 (not-now)    → urgency 1, importance 1
  */
 
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
 
 // =============================================================================
-// Quadrant → task field mapping
+// Quadrant → task field mapping (urgency/importance, NOT priority/due_date)
 // =============================================================================
 
 interface QuadrantUpdate {
-  priority: number
-  due_date: string | null
+  urgency: number
+  importance: number
+  eisenhower_override: boolean
 }
 
 const QUADRANT_MAP: Record<string, QuadrantUpdate> = {
-  "do-first": { priority: 5, due_date: new Date().toISOString().slice(0, 10) },
-  schedule: { priority: 5, due_date: null },
-  delegate: { priority: 2, due_date: new Date().toISOString().slice(0, 10) },
-  eliminate: { priority: 1, due_date: null },
+  "do-first": { urgency: 5, importance: 5, eisenhower_override: true },
+  schedule:   { urgency: 1, importance: 5, eisenhower_override: true },
+  delegate:   { urgency: 5, importance: 1, eisenhower_override: true },
+  "not-now":  { urgency: 1, importance: 1, eisenhower_override: true },
 }
+
+/** Q1 soft WIP limit — shows warning if exceeded */
+const Q1_WIP_LIMIT = 5
 
 // =============================================================================
 // Main init
@@ -45,6 +50,7 @@ export function initEisenhowerPage() {
 
   setupDragAndDrop(page)
   setupClickToOpen(page)
+  checkWipLimits(page)
 }
 
 // =============================================================================
@@ -56,15 +62,25 @@ function setupDragAndDrop(page: HTMLElement) {
   const taskItems = page.querySelectorAll<HTMLElement>(".tli")
   for (const item of taskItems) {
     item.draggable = true
+    item.setAttribute("role", "listitem")
+    item.style.cursor = "grab"
+
     item.addEventListener("dragstart", (e: DragEvent) => {
-      const id = item.querySelector<HTMLElement>("[data-id]")?.dataset.id
-      if (id) {
-        e.dataTransfer?.setData("text/plain", id)
+      // Fix: data-id is on .tli itself, not a child element
+      const id = item.dataset.id ?? item.querySelector<HTMLElement>("[data-id]")?.dataset.id
+      if (id && e.dataTransfer) {
+        e.dataTransfer.setData("text/plain", id)
+        e.dataTransfer.effectAllowed = "move"
         item.classList.add("tli--dragging")
+        // Subtle visual feedback
+        requestAnimationFrame(() => {
+          item.style.opacity = "0.5"
+        })
       }
     })
     item.addEventListener("dragend", () => {
       item.classList.remove("tli--dragging")
+      item.style.opacity = ""
     })
   }
 
@@ -79,8 +95,12 @@ function setupDragAndDrop(page: HTMLElement) {
       quadrantEl?.classList.add("quadrant--drag-over")
     })
 
-    zone.addEventListener("dragleave", () => {
-      quadrantEl?.classList.remove("quadrant--drag-over")
+    zone.addEventListener("dragleave", (e: DragEvent) => {
+      // Only remove if actually leaving the zone (not entering a child)
+      const related = e.relatedTarget as HTMLElement | null
+      if (!zone.contains(related)) {
+        quadrantEl?.classList.remove("quadrant--drag-over")
+      }
     })
 
     zone.addEventListener("drop", async (e: DragEvent) => {
@@ -93,8 +113,9 @@ function setupDragAndDrop(page: HTMLElement) {
 
       const update = QUADRANT_MAP[targetQuadrant]!
 
-      // Move the DOM element visually
-      const draggedItem = page.querySelector<HTMLElement>(`.tli:has([data-id="${taskId}"])`)
+      // Fix: find by data-id on .tli itself (not nested selector)
+      const draggedItem = page.querySelector<HTMLElement>(`.tli[data-id="${taskId}"]`)
+        ?? page.querySelector<HTMLElement>(`.tli:has([data-id="${taskId}"])`)
       if (!draggedItem) return
 
       // Remove "empty" placeholder if present
@@ -102,9 +123,21 @@ function setupDragAndDrop(page: HTMLElement) {
       if (emptyEl) emptyEl.remove()
 
       zone.appendChild(draggedItem)
-      updateCounts(page)
 
-      // Persist
+      // Show manual override indicator
+      let pinEl = draggedItem.querySelector(".tli__pin")
+      if (!pinEl) {
+        pinEl = document.createElement("span")
+        pinEl.className = "tli__pin"
+        pinEl.textContent = "📌"
+        pinEl.setAttribute("title", "Manually placed")
+        draggedItem.appendChild(pinEl)
+      }
+
+      updateCounts(page)
+      checkWipLimits(page)
+
+      // Persist — updates urgency/importance, NOT priority/due_date
       try {
         await taskApi.updateTask(taskId, { ...update })
         showToast("common.task_updated")
@@ -142,6 +175,30 @@ function updateCounts(page: HTMLElement) {
 }
 
 // =============================================================================
+// WIP limit warnings
+// =============================================================================
+
+function checkWipLimits(page: HTMLElement) {
+  const q1Section = page.querySelector<HTMLElement>('[data-quadrant="do-first"]')
+  if (!q1Section) return
+
+  const count = q1Section.querySelectorAll(".tli").length
+  const existing = q1Section.querySelector(".quadrant__wip-warning")
+
+  if (count > Q1_WIP_LIMIT && !existing) {
+    const warning = document.createElement("div")
+    warning.className = "quadrant__wip-warning"
+    warning.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    const header = q1Section.querySelector(".quadrant__header")
+    header?.insertAdjacentElement("afterend", warning)
+  } else if (count <= Q1_WIP_LIMIT && existing) {
+    existing.remove()
+  } else if (existing) {
+    existing.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+  }
+}
+
+// =============================================================================
 // Click to open task detail
 // =============================================================================
 
@@ -149,7 +206,7 @@ function setupClickToOpen(page: HTMLElement) {
   page.addEventListener("click", (e: Event) => {
     const target = e.target as HTMLElement
 
-    // Don't intercept checkbox clicks or drag handles
+    // Don't intercept checkbox clicks, buttons, or drag handles
     if (
       target.closest("input[type='checkbox']") ||
       target.closest("button") ||
@@ -161,8 +218,8 @@ function setupClickToOpen(page: HTMLElement) {
     const taskItem = target.closest<HTMLElement>(".tli")
     if (!taskItem) return
 
-    const idEl = taskItem.querySelector<HTMLElement>("[data-id]")
-    const taskId = idEl?.dataset.id
+    // Fix: data-id is on .tli itself
+    const taskId = taskItem.dataset.id ?? taskItem.querySelector<HTMLElement>("[data-id]")?.dataset.id
     if (taskId) {
       window.dispatchEvent(
         new CustomEvent("meitheal:open-task-detail", { detail: { id: taskId } }),

@@ -645,8 +645,10 @@
     "schedule_desc": "Important, not urgent",
     "delegate": "Delegate",
     "delegate_desc": "Urgent, not important",
-    "eliminate": "Eliminate",
+    "eliminate": "Not Now",
     "eliminate_desc": "Neither urgent nor important",
+    "not_now": "Not Now",
+    "not_now_desc": "Neither urgent nor important",
     "empty_quadrant": "No tasks in this quadrant",
     "drag_hint": "Drag tasks between quadrants to re-prioritise"
   },

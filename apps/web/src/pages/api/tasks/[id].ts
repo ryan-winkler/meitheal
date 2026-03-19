@@ -236,6 +236,17 @@ export const PUT: APIRoute = async ({ params, request }) => {
     sanitized.time_block_end = typeof body.time_block_end === "string" ? body.time_block_end : null
   }
 
+  // Phase 06: Eisenhower urgency/importance (0-5 integer)
+  if (typeof body.urgency === "number") {
+    sanitized.urgency = Math.min(5, Math.max(0, Math.round(body.urgency)))
+  }
+  if (typeof body.importance === "number") {
+    sanitized.importance = Math.min(5, Math.max(0, Math.round(body.importance)))
+  }
+  if (body.eisenhower_override !== undefined) {
+    sanitized.eisenhower_override = body.eisenhower_override ? 1 : 0
+  }
+
   // PRA-08: blocked_by enforcement — prevent activating tasks that have open blockers
   const ACTIVE_STATUSES: string[] = [STATUS.ACTIVE]
   if (sanitized.status !== undefined && ACTIVE_STATUSES.includes(String(sanitized.status))) {

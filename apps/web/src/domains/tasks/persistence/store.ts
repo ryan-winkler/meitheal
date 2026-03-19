@@ -850,12 +850,45 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE task_templates ADD COLUMN completion_history TEXT NOT NULL DEFAULT '[]'")
   }
 
+  // ─── Phase 06: Eisenhower Matrix — First-class urgency/importance ───
+
+  // urgency: 0-5 (0 = unclassified), indexed for Eisenhower matrix queries
+  if (!(await hasColumn(client, "tasks", "urgency"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 0")
+    // Backfill: derive urgency from due_date proximity (overdue/due today → 4, has due date → 2, else 0)
+    await client.execute(`UPDATE tasks SET urgency = CASE
+      WHEN due_date IS NOT NULL AND date(due_date) <= date('now') THEN 4
+      WHEN due_date IS NOT NULL AND date(due_date) <= date('now', '+3 days') THEN 3
+      WHEN due_date IS NOT NULL THEN 2
+      ELSE 0
+    END WHERE urgency = 0`)
+  }
+  // importance: 0-5 (0 = unclassified), indexed for Eisenhower matrix queries
+  if (!(await hasColumn(client, "tasks", "importance"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN importance INTEGER NOT NULL DEFAULT 0")
+    // Backfill: derive importance from priority (P1=5, P2=4, P3=3, P4=2, P5=1)
+    await client.execute(`UPDATE tasks SET importance = CASE
+      WHEN priority = 1 THEN 5
+      WHEN priority = 2 THEN 4
+      WHEN priority = 3 THEN 3
+      WHEN priority = 4 THEN 2
+      WHEN priority = 5 THEN 1
+      ELSE 0
+    END WHERE importance = 0`)
+  }
+  // eisenhower_override: 1 = user manually placed via drag-and-drop, 0 = auto-derived
+  if (!(await hasColumn(client, "tasks", "eisenhower_override"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN eisenhower_override INTEGER NOT NULL DEFAULT 0")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_urgency_idx ON tasks(urgency)")
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_importance_idx ON tasks(importance)")
+
 
 
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 6
+  const targetVersion = 7
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

@@ -11,6 +11,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
+import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
 
 // =============================================================================
 // Types
@@ -43,6 +44,10 @@ export interface TaskViewItem {
   is_overdue: boolean;
   is_done: boolean;
   framework_payload: Record<string, unknown>;
+  urgency: number;
+  importance: number;
+  eisenhower_quadrant: string;
+  eisenhower_override: boolean;
 }
 
 export interface TaskViewResult {
@@ -113,7 +118,8 @@ const TASK_VIEW_SQL = `
   SELECT id, title, description, status, priority, due_date, labels,
          framework_payload, calendar_sync_state, area_id, custom_fields,
          start_date, end_date, progress, color, is_favorite, task_type,
-         parent_id, ticket_number, assigned_to, checklists, created_at, updated_at
+         parent_id, ticket_number, assigned_to, checklists, created_at, updated_at,
+         urgency, importance, eisenhower_override
   FROM tasks
   ORDER BY created_at DESC
 `;
@@ -196,6 +202,10 @@ export async function getTasksForView(): Promise<TaskViewResult> {
         is_overdue: overdue,
         is_done: isDone,
         framework_payload: fp,
+        urgency: Number(row.urgency ?? 0),
+        importance: Number(row.importance ?? 0),
+        eisenhower_quadrant: deriveEisenhowerQuadrant(Number(row.urgency ?? 0), Number(row.importance ?? 0)),
+        eisenhower_override: Boolean(row.eisenhower_override),
       };
     });
 

@@ -1,24 +1,22 @@
 ---
 /**
- * Eisenhower Matrix — Urgency × Importance prioritisation view
+ * Eisenhower Matrix — Schema-driven urgency × importance prioritisation view
  *
  * @domain tasks
  * @bounded-context tasks (presentation)
  *
- * Classic 2×2 decision matrix:
- *   Q1 — Urgent + Important     → Do First
- *   Q2 — Important, not urgent  → Schedule
- *   Q3 — Urgent, not important  → Delegate
- *   Q4 — Neither                → Eliminate
+ * Quadrant assignment is derived from schema columns:
+ *   urgency (0-5), importance (0-5), threshold = 3
  *
- * Tasks are partitioned server-side via priority + due date heuristics.
- * Drag-and-drop between quadrants updates task priority/due date via PATCH.
+ *   Q1 — Do First   → urgency ≥ 3 AND importance ≥ 3
+ *   Q2 — Schedule    → importance ≥ 3, urgency < 3
+ *   Q3 — Delegate    → urgency ≥ 3, importance < 3
+ *   Q4 — Not Now     → both < 3
  *
- * @kcs Eisenhower quadrant assignment uses:
- *   - Priority ≥ 4 AND (overdue OR due today) → Q1
- *   - Priority ≥ 4                            → Q2
- *   - Priority < 4 AND (overdue OR due today)  → Q3
- *   - Everything else                          → Q4
+ * Drag-and-drop between quadrants updates urgency/importance via PATCH.
+ * eisenhower_override = 1 flags manually placed tasks (📌 indicator).
+ *
+ * @kcs Phase 06: replaces old heuristic derivation (priority + due date)
  */
 import Layout from "../layouts/Layout.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
@@ -32,45 +30,39 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 const { tasks } = await getTasksForView()
 const openTasks = tasks.filter((t) => !t.is_done)
 
-// ── Quadrant partitioning ────────────────────────────────
-const today = new Date()
-today.setHours(0, 0, 0, 0)
-
-function isDueSoon(t: TaskViewItem): boolean {
-  if (!t.due_date) return false
-  const d = new Date(t.due_date)
-  d.setHours(0, 0, 0, 0)
-  return d <= today
-}
-
+// ── Schema-driven quadrant partitioning ────────────────────────
 const q1: TaskViewItem[] = [] // Do First  — urgent + important
 const q2: TaskViewItem[] = [] // Schedule  — important, not urgent
 const q3: TaskViewItem[] = [] // Delegate  — urgent, not important
-const q4: TaskViewItem[] = [] // Eliminate — neither
+const q4: TaskViewItem[] = [] // Not Now   — neither
 
 for (const t of openTasks) {
-  const important = t.priority >= 4
-  const urgent = isDueSoon(t) || t.is_overdue
-
-  if (important && urgent) q1.push(t)
-  else if (important) q2.push(t)
-  else if (urgent) q3.push(t)
-  else q4.push(t)
+  switch (t.eisenhower_quadrant) {
+    case "do-first": q1.push(t); break
+    case "schedule": q2.push(t); break
+    case "delegate": q3.push(t); break
+    case "not-now": q4.push(t); break
+    default: q4.push(t) // unclassified (urgency=0, importance=0)
+  }
 }
+
+// Tasks with both urgency=0 and importance=0 need triage
+const unclassifiedCount = openTasks.filter((t) => t.urgency === 0 && t.importance === 0).length
 
 interface Quadrant {
   id: string
   label: string
   desc: string
-  color: string
+  colorToken: string
+  emoji: string
   tasks: TaskViewItem[]
 }
 
 const quadrants: Quadrant[] = [
-  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  color: "#ef4444", tasks: q1 },
-  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  color: "#3b82f6", tasks: q2 },
-  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  color: "#f59e0b", tasks: q3 },
-  { id: "eliminate", label: t("eisenhower.eliminate", locale),   desc: t("eisenhower.eliminate_desc", locale), color: "#6b7280", tasks: q4 },
+  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  colorToken: "var(--danger)", emoji: "🔥", tasks: q1 },
+  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  colorToken: "var(--info)", emoji: "📅", tasks: q2 },
+  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  colorToken: "var(--warning)", emoji: "👥", tasks: q3 },
+  { id: "not-now",   label: t("eisenhower.not_now", locale),    desc: t("eisenhower.not_now_desc", locale),   colorToken: "var(--text-muted)", emoji: "📦", tasks: q4 },
 ]
 ---
 
@@ -81,15 +73,26 @@ const quadrants: Quadrant[] = [
       <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
     </header>
 
+    {/* ── Triage banner — nudge for unclassified tasks ── */}
+    {unclassifiedCount > 0 && (
+      <div class="eisenhower__triage-banner" role="status">
+        <span class="triage-banner__icon">📋</span>
+        <span class="triage-banner__text">
+          <strong>{unclassifiedCount}</strong> {unclassifiedCount === 1 ? "task needs" : "tasks need"} classification
+        </span>
+        <span class="triage-banner__hint">Drag them to the right quadrant</span>
+      </div>
+    )}
+
     <div class="eisenhower__grid">
-      {quadrants.map((q, idx) => (
+      {quadrants.map((q) => (
         <section
           class="eisenhower__quadrant"
           data-quadrant={q.id}
-          style={`--q-color: ${q.color}`}
+          style={`--q-color: ${q.colorToken}`}
         >
           <header class="quadrant__header">
-            <span class="quadrant__badge">{idx === 0 ? "🔥" : idx === 1 ? "📅" : idx === 2 ? "👥" : "🗑️"}</span>
+            <span class="quadrant__badge">{q.emoji}</span>
             <div class="quadrant__heading">
               <h2 class="quadrant__title">{q.label}</h2>
               <span class="quadrant__desc">{q.desc}</span>
@@ -97,14 +100,21 @@ const quadrants: Quadrant[] = [
             <span class="quadrant__count">{q.tasks.length}</span>
           </header>
 
-          <div class="quadrant__tasks" data-drop-zone={q.id}>
+          <div class="quadrant__tasks" data-drop-zone={q.id} role="list">
             {q.tasks.length === 0 ? (
               <div class="quadrant__empty">
                 {t("eisenhower.empty_quadrant", locale)}
               </div>
             ) : (
-              q.tasks.map((t) => (
-                <TaskListItem task={t} />
+              q.tasks.map((task) => (
+                <div class="eisenhower__task-wrapper" data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}>
+                  <TaskListItem task={task} />
+                  <div class="eisenhower__task-meta">
+                    {task.eisenhower_override && (
+                      <span class="tli__pin" title="Manually placed">📌</span>
+                    )}
+                  </div>
+                </div>
               ))
             )}
           </div>
@@ -139,7 +149,7 @@ const quadrants: Quadrant[] = [
   .eisenhower__title {
     font-size: 1.5rem;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f59e0b));
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--warning)));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -248,6 +258,77 @@ const quadrants: Quadrant[] = [
     opacity: 0.7;
   }
 
+  /* ── Task wrapper (task + pin indicator) ── */
+  .eisenhower__task-wrapper {
+    position: relative;
+  }
+  .tli__pin {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.6875rem;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  /* ── WIP warning ── */
+  :global(.quadrant__wip-warning) {
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.1);
+    color: var(--warning);
+    font-size: 0.75rem;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.15);
+  }
+
+  /* ── Drag feedback ── */
+  :global(.tli--dragging) {
+    opacity: 0.5;
+    transform: rotate(2deg);
+  }
+
+  /* ── Triage banner ── */
+  .eisenhower__triage-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
+    border: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    border-radius: var(--radius-md, 10px);
+    padding: 10px 16px;
+    margin-bottom: 16px;
+  }
+  .triage-banner__icon {
+    font-size: 1.125rem;
+    flex-shrink: 0;
+  }
+  .triage-banner__text {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+  }
+  .triage-banner__hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  /* ── Task meta overlay (pin, badges) ── */
+  .eisenhower__task-meta {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    pointer-events: none;
+  }
+
+  /* ── Unclassified task highlight ── */
+  .eisenhower__task-wrapper[data-unclassified] {
+    border-left: 2px dashed rgba(var(--warning-rgb, 245, 158, 11), 0.4);
+    border-radius: 4px;
+    padding-left: 4px;
+  }
+
   /* ── Hint ── */
   .eisenhower__hint {
     text-align: center;
@@ -261,6 +342,9 @@ const quadrants: Quadrant[] = [
   @media (prefers-reduced-motion: reduce) {
     .eisenhower__quadrant {
       transition: none;
+    }
+    :global(.tli--dragging) {
+      transform: none;
     }
   }
 </style>

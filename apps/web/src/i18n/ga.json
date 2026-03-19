@@ -642,8 +642,10 @@
     "schedule_desc": "Tábhachtach, ní práinneach",
     "delegate": "Tarmlig",
     "delegate_desc": "Práinneach, ní tábhachtach",
-    "eliminate": "Díscaradh",
+    "eliminate": "Ní Anois",
     "eliminate_desc": "Ní práinneach ná tábhachtach",
+    "not_now": "Ní Anois",
+    "not_now_desc": "Ní práinneach ná tábhachtach",
     "empty_quadrant": "Gan tascanna sa cheathrainn seo",
     "drag_hint": "Tarraing tascanna idir ceathrainn chun athtosaíocht a dhéanamh"
   },

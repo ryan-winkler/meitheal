@@ -171,6 +171,54 @@ export interface Area {
   updatedAt: number
 }
 
+// --- Eisenhower Matrix (urgency × importance strategic lens) ---
+
+/**
+ * Eisenhower quadrant — derived from urgency + importance scores.
+ * - do-first:  urgent + important (Q1)
+ * - schedule:  important, not urgent (Q2)
+ * - delegate:  urgent, not important (Q3)
+ * - not-now:   neither urgent nor important (Q4)
+ *
+ * Note: "not-now" replaces the traditional "eliminate" label — gentler framing
+ * for ADHD users (see persona audit: Wall of Awful).
+ */
+export type EisenhowerQuadrant = "do-first" | "schedule" | "delegate" | "not-now"
+
+export const VALID_EISENHOWER_QUADRANTS: readonly EisenhowerQuadrant[] = [
+  "do-first",
+  "schedule",
+  "delegate",
+  "not-now",
+] as const
+
+/** Urgency/Importance threshold — scores at or above this are "high" */
+const EISENHOWER_THRESHOLD = 3
+
+/**
+ * Derive Eisenhower quadrant from urgency + importance scores.
+ * Both are 0-5 integers. 0 = unclassified (treated as low).
+ * Threshold: ≥3 = high, <3 = low.
+ */
+export function deriveEisenhowerQuadrant(urgency: number, importance: number): EisenhowerQuadrant {
+  const urgent = urgency >= EISENHOWER_THRESHOLD
+  const important = importance >= EISENHOWER_THRESHOLD
+  if (urgent && important) return "do-first"
+  if (important) return "schedule"
+  if (urgent) return "delegate"
+  return "not-now"
+}
+
+/** Validate urgency value (0-5 integer, 0 = unclassified) */
+export function isValidUrgency(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= 5
+}
+
+/** Validate importance value (0-5 integer, 0 = unclassified) */
+export function isValidImportance(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= 5
+}
+
 // --- Owner (human vs bot attribution) ---
 
 export type Owner = "human" | `bot:${string}`

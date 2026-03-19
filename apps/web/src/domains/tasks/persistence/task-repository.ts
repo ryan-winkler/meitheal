@@ -82,6 +82,10 @@ export interface TaskRow {
   // ── Phase 6 (time-blocking) ──
   time_block_start: string | null
   time_block_end: string | null
+  // ── Phase 6 (Eisenhower matrix) ──
+  urgency: number
+  importance: number
+  eisenhower_override: number
 }
 
 /**
@@ -722,6 +726,7 @@ export class TaskRepository {
     is_favorite: number; task_type: string; task_kind?: string; ticket_number: number;
     assigned_to: string | null; checklists?: string | null;
     recurrence_rule?: string | null;
+    urgency?: number; importance?: number;
   }): Promise<string> {
     const now = Date.now();
     await this.client.execute({
@@ -729,8 +734,9 @@ export class TaskRepository {
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id,
                                area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                                task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
+                               urgency, importance,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id, data.title, data.description, data.status, data.priority,
         data.due_date, data.labels, data.framework_payload,
@@ -738,6 +744,7 @@ export class TaskRepository {
         data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
         data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,
+        data.urgency ?? 0, data.importance ?? 0,
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],
     });
@@ -774,7 +781,8 @@ export class TaskRepository {
                    framework_payload, calendar_sync_state, area_id, custom_fields,
                    parent_id, time_tracked, start_date, end_date, progress, color,
                    is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                   ticket_number, assigned_to, checklists, created_at, updated_at
+                   ticket_number, assigned_to, checklists, urgency, importance,
+                   eisenhower_override, created_at, updated_at
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
@@ -787,7 +795,8 @@ export class TaskRepository {
       sql: `SELECT title, description, status, priority, due_date, labels,
                    framework_payload, area_id, custom_fields, parent_id,
                    task_type, task_kind, project_id, owner, handoff_state,
-                   start_date, end_date, progress, color, is_favorite, assigned_to
+                   start_date, end_date, progress, color, is_favorite, assigned_to,
+                   urgency, importance, eisenhower_override
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
