@@ -9,6 +9,7 @@
  */
 
 import { createClientLogger } from "@lib/client-logger"
+import { shouldEnableIDB } from "@lib/companion-detect"
 
 const log = createClientLogger("offline", "store")
 
@@ -103,7 +104,8 @@ function openDatabase(): Promise<IDBDatabase> {
 
 let dbInstance: IDBDatabase | null = null
 
-async function getDb(): Promise<IDBDatabase> {
+async function getDb(): Promise<IDBDatabase | null> {
+  if (!shouldEnableIDB()) return null
   if (dbInstance) return dbInstance
   dbInstance = await openDatabase()
   return dbInstance
@@ -112,6 +114,8 @@ async function getDb(): Promise<IDBDatabase> {
 // --- Task CRUD ---
 
 export async function putTask(task: OfflineTask): Promise<void> {
+  const db = await getDb()
+  if (!db) return
   if (navigator.storage && navigator.storage.estimate) {
     try {
       const { usage, quota } = await navigator.storage.estimate()
@@ -131,7 +135,6 @@ export async function putTask(task: OfflineTask): Promise<void> {
       if (e instanceof Error && e.message.includes("quota")) throw e
     }
   }
-  const db = await getDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.tasks, "readwrite")
     const store = tx.objectStore(STORES.tasks)
@@ -144,6 +147,7 @@ export async function putTask(task: OfflineTask): Promise<void> {
 
 export async function getTask(id: string): Promise<OfflineTask | undefined> {
   const db = await getDb()
+  if (!db) return undefined
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.tasks, "readonly")
     const store = tx.objectStore(STORES.tasks)
@@ -155,6 +159,7 @@ export async function getTask(id: string): Promise<OfflineTask | undefined> {
 
 export async function getAllTasks(): Promise<OfflineTask[]> {
   const db = await getDb()
+  if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.tasks, "readonly")
     const store = tx.objectStore(STORES.tasks)
@@ -166,6 +171,7 @@ export async function getAllTasks(): Promise<OfflineTask[]> {
 
 export async function deleteTask(id: string): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.tasks, "readwrite")
     const store = tx.objectStore(STORES.tasks)
@@ -181,6 +187,7 @@ const MAX_QUEUE_DEPTH = 100
 
 export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "createdAt" | "retryCount">): Promise<string> {
   const db = await getDb()
+  if (!db) return ""
 
   // Check queue depth warning
   const depth = await getSyncQueueDepth()
@@ -211,6 +218,7 @@ export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "creat
 
 async function deduplicateUpdate(entityId: string, table: string): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
@@ -235,6 +243,7 @@ async function deduplicateUpdate(entityId: string, table: string): Promise<void>
 
 export async function getSyncQueue(): Promise<PendingSyncOperation[]> {
   const db = await getDb()
+  if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readonly")
     const store = tx.objectStore(STORES.pendingSync)
@@ -247,6 +256,7 @@ export async function getSyncQueue(): Promise<PendingSyncOperation[]> {
 
 export async function removeSyncOp(id: string): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
@@ -258,6 +268,7 @@ export async function removeSyncOp(id: string): Promise<void> {
 
 export async function incrementRetryCount(id: string): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
@@ -279,6 +290,7 @@ export async function incrementRetryCount(id: string): Promise<void> {
 
 export async function getSyncQueueDepth(): Promise<number> {
   const db = await getDb()
+  if (!db) return 0
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readonly")
     const store = tx.objectStore(STORES.pendingSync)
@@ -294,6 +306,7 @@ const SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export async function cleanupExpiredSyncOps(): Promise<number> {
   const db = await getDb()
+  if (!db) return 0
   const cutoff = new Date(Date.now() - SYNC_TTL_MS).toISOString()
   let removed = 0
 
@@ -341,6 +354,7 @@ export interface TaskAttachment {
 
 export async function saveAttachment(attachment: TaskAttachment): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)
@@ -353,6 +367,7 @@ export async function saveAttachment(attachment: TaskAttachment): Promise<void> 
 
 export async function getAttachmentsByTaskId(taskId: string): Promise<TaskAttachment[]> {
   const db = await getDb()
+  if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readonly")
     const store = tx.objectStore(STORES.taskAttachments)
@@ -365,6 +380,7 @@ export async function getAttachmentsByTaskId(taskId: string): Promise<TaskAttach
 
 export async function deleteAttachment(id: string): Promise<void> {
   const db = await getDb()
+  if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)
