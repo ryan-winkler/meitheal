@@ -1515,7 +1515,7 @@ export function initKanbanArea(): void {
             const res = await fetch((window.__ingress_path || "") + "/api/areas");
             if (res.ok) {
               const data = await res.json();
-              (data.boards || []).forEach(b => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.title}`; });
+              (data.areas || []).forEach(b => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.name}`; });
             }
           } catch { /* use raw IDs as fallback */ }
           areaTitleMap["default"] = "📋 Default";

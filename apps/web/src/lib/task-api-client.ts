@@ -54,6 +54,7 @@ export interface TaskCreatePayload {
   priority?: number
   due_date?: string | null
   area_id?: string
+  project_id?: string | null
   task_type?: string
   assigned_to?: string | null
   [key: string]: unknown
@@ -81,8 +82,32 @@ export interface LanePayload {
 /** Area definition from GET /api/areas */
 export interface AreaPayload {
   id: string
+  name: string
+  icon?: string
+  color?: string
+  position?: number
+  [key: string]: unknown
+}
+
+/** Goal definition from GET /api/goals */
+export interface GoalPayload {
+  id: string
   title: string
-  description?: string
+  area_id?: string | null
+  description?: string | null
+  status: string
+  target_date?: string | null
+  [key: string]: unknown
+}
+
+/** Project definition from GET /api/projects */
+export interface ProjectPayload {
+  id: string
+  title: string
+  goal_id?: string | null
+  description?: string | null
+  status: string
+  icon?: string
   color?: string
   position?: number
   [key: string]: unknown
@@ -287,7 +312,7 @@ export const taskApi = {
     return (await parseResponse<AreaPayload[]>(res)) ?? []
   },
 
-  /** POST /api/areas — create a board */
+  /** POST /api/areas — create an area */
   async createArea(payload: Partial<AreaPayload>): Promise<any> {
     const res = await safeFetch("/api/areas", {
       method: "POST",
@@ -295,6 +320,76 @@ export const taskApi = {
       body: JSON.stringify(payload),
     })
     return parseResponse<any>(res)
+  },
+
+  // ── Goals ────────────────────────────────────────────────────────
+
+  /** GET /api/goals — list all goals */
+  async listGoals(params?: Record<string, string>): Promise<GoalPayload[]> {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
+    const res = await safeFetch(`/api/goals${qs}`)
+    const data = await parseResponse<{ goals: GoalPayload[] }>(res)
+    return data?.goals ?? []
+  },
+
+  /** POST /api/goals — create a goal */
+  async createGoal(payload: Partial<GoalPayload>): Promise<any> {
+    const res = await safeFetch("/api/goals", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    })
+    return parseResponse<any>(res)
+  },
+
+  /** PUT /api/goals/:id — update a goal */
+  async updateGoal(id: string, payload: Partial<GoalPayload>): Promise<any> {
+    const res = await safeFetch(`/api/goals/${enc(id)}`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    })
+    return parseResponse<any>(res)
+  },
+
+  /** DELETE /api/goals/:id — delete a goal */
+  async deleteGoal(id: string): Promise<void> {
+    await safeFetch(`/api/goals/${enc(id)}`, { method: "DELETE" })
+  },
+
+  // ── Projects ─────────────────────────────────────────────────────
+
+  /** GET /api/projects — list all projects */
+  async listProjects(params?: Record<string, string>): Promise<ProjectPayload[]> {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
+    const res = await safeFetch(`/api/projects${qs}`)
+    const data = await parseResponse<{ projects: ProjectPayload[] }>(res)
+    return data?.projects ?? []
+  },
+
+  /** POST /api/projects — create a project */
+  async createProject(payload: Partial<ProjectPayload>): Promise<any> {
+    const res = await safeFetch("/api/projects", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    })
+    return parseResponse<any>(res)
+  },
+
+  /** PUT /api/projects/:id — update a project */
+  async updateProject(id: string, payload: Partial<ProjectPayload>): Promise<any> {
+    const res = await safeFetch(`/api/projects/${enc(id)}`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    })
+    return parseResponse<any>(res)
+  },
+
+  /** DELETE /api/projects/:id — delete a project */
+  async deleteProject(id: string): Promise<void> {
+    await safeFetch(`/api/projects/${enc(id)}`, { method: "DELETE" })
   },
 
   // ── Lanes ─────────────────────────────────────────────────────────

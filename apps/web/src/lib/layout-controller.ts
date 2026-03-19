@@ -325,7 +325,7 @@
               );
               if (res.ok) {
                 const data = await res.json();
-                const boards = data.boards ?? [];
+                const boards = data.areas ?? [];
                 select.innerHTML = "";
                 // "All Areas" option first
                 const allOpt = document.createElement("option");
@@ -333,10 +333,10 @@
                 allOpt.textContent = "🗂 All Areas";
                 select.appendChild(allOpt);
                 boards.forEach(
-                  (b: { id: string; title: string; icon: string }) => {
+                  (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.title}`;
+                    opt.textContent = `${b.icon} ${b.name}`;
                     select.appendChild(opt);
                   },
                 );
@@ -421,7 +421,7 @@
                     {
                       method: "POST",
                       headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ title: title.trim() }),
+                      body: JSON.stringify({ name: title.trim() }),
                     },
                   );
                   if (res.ok) {

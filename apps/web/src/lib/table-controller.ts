@@ -37,7 +37,7 @@ import {
 
 interface AreaInfo {
   id: string
-  title: string
+  name: string
   icon?: string
   color?: string
 }
@@ -153,7 +153,7 @@ async function loadAreas() {
     const res = await fetch("/api/areas", { signal: __signal })
     if (!res.ok) return
     const data = await res.json()
-    const boards: AreaInfo[] = data.boards || []
+    const boards: AreaInfo[] = data.areas || []
 
     boards.forEach((b) => {
       areaMap[b.id] = b
@@ -168,7 +168,7 @@ async function loadAreas() {
       boards.forEach((b) => {
         const opt = document.createElement("option")
         opt.value = b.id
-        opt.textContent = `${b.icon ?? "📋"} ${b.title}`
+        opt.textContent = `${b.icon ?? "📋"} ${b.name}`
         bulkArea.appendChild(opt)
       })
     }
@@ -541,7 +541,7 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
 function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
   if (groupBy === "area" && areaMap[key]) {
     const b = areaMap[key]
-    return { label: b.title, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1" }
+    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1" }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -751,7 +751,7 @@ function updateGroupHeaderLabels() {
       const label = header.querySelector<HTMLElement>(".group-label")
       const icon = header.querySelector<HTMLElement>(".group-icon")
       const dot = header.querySelector<HTMLElement>(".group-dot")
-      if (label) label.textContent = areaMap[key].title
+      if (label) label.textContent = areaMap[key].name
       if (icon) icon.textContent = areaMap[key].icon ?? "📋"
       if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
     }

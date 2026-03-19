@@ -609,12 +609,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         const res = await fetch("/api/areas")
         if (!res.ok) return
         const data = await res.json()
-        const boards: { id: string; title: string; icon?: string }[] = data.boards || []
+        const boards: { id: string; name: string; icon?: string }[] = data.areas || []
         
         boards.forEach((b) => {
           const opt = document.createElement("option")
           opt.value = b.id
-          opt.textContent = `${b.icon ?? "📋"} ${b.title}`
+          opt.textContent = `${b.icon ?? "📋"} ${b.name}`
           areaSel.appendChild(opt)
         })
       } catch { /* offline fallback */ }

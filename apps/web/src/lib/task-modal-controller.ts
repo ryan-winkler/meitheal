@@ -539,13 +539,13 @@
               );
               if (boardRes.ok) {
                 const areaData = await boardRes.json();
-                const boards = areaData.boards ?? [];
+                const boards = areaData.areas ?? [];
                 areaSelect.innerHTML = "";
                 boards.forEach(
-                  (b: { id: string; title: string; icon: string }) => {
+                  (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.title}`;
+                    opt.textContent = `${b.icon} ${b.name}`;
                     areaSelect.appendChild(opt);
                   },
                 );
