@@ -4,5 +4,8 @@
   "git.autofetch": "all",
   "chatgpt.openOnStartup": true,
   "files.autoSave": "onFocusChange",
-  "files.autoSaveWhenNoErrors": false
+  "files.autoSaveWhenNoErrors": false,
+  "geminicodeassist.agentYoloMode": true,
+  "github.copilot.chat.agent.autoFix": true,
+  "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true
 }
