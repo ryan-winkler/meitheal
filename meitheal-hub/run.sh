@@ -135,7 +135,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   #
   # After discovery, the custom component registers:
   # - TodoListEntity (todo.meitheal_tasks) for built-in Assist intents
-  # - MeithealLLMAPI (16 tools) for advanced conversation agents
+  # - MeithealLLMAPI (20 tools) for advanced conversation agents
   # - 3 sensors (active, overdue, total task counts)
   # - 5 services (create, complete, sync, search, get_overdue)
   #
@@ -169,5 +169,31 @@ fi
 if [ -f /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river ]; then
   echo "Alloy config present at /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river"
 fi
+
+# ── Graceful shutdown ──
+# HA Supervisor sends SIGTERM on addon stop/restart. Trap it to
+# gracefully terminate the Node process and allow in-flight requests
+# to complete (up to 10s timeout).
+graceful_shutdown() {
+  echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  if [ -n "${WEB_PID:-}" ] && kill -0 "${WEB_PID}" 2>/dev/null; then
+    kill -TERM "${WEB_PID}" 2>/dev/null || true
+    # Wait up to 10s for graceful exit
+    for i in $(seq 1 10); do
+      if ! kill -0 "${WEB_PID}" 2>/dev/null; then
+        echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+        exit 0
+      fi
+      sleep 1
+    done
+    # Force kill after 10s
+    kill -9 "${WEB_PID}" 2>/dev/null || true
+    echo "{\"event\":\"addon.stopped\",\"graceful\":false,\"reason\":\"force_kill_after_10s\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  fi
+  exit 0
+}
+
+trap 'graceful_shutdown SIGTERM' SIGTERM
+trap 'graceful_shutdown SIGINT' SIGINT
 
 wait -n
