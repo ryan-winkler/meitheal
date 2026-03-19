@@ -443,7 +443,7 @@
             if (t.description) {
               // Render markdown preview (save=false prevents re-saving)
               try {
-                const dirtyHtml = marked.parse(t.description || "*No description provided.*") as string;
+                const dirtyHtml = String(marked.parse(String(t.description) || "*No description provided.*"));
                 if (descPreview) descPreview.innerHTML = sanitizeClient(dirtyHtml);
               } catch {}
               descEditContainer?.classList.add("hidden");
@@ -767,11 +767,12 @@
             }
 
             window.refreshChecklistsVisuals = () => {
-              const list = window.__currentChecklists || [];
+              type ChecklistItem = { id: string; text: string; done: boolean }
+              const list = (window.__currentChecklists || []) as ChecklistItem[];
               if (checklistsContainer) {
                 checklistsContainer.innerHTML = "";
                 let doneCount = 0;
-                list.forEach((item: any, index: number) => {
+                list.forEach((item: ChecklistItem, index: number) => {
                   if (item.done) doneCount++;
                   const row = document.createElement("div");
                   row.className = "flex items-center gap-2 group";
@@ -1063,11 +1064,7 @@
             this.style.height = this.scrollHeight + "px";
           });
         }
-        document
-          .getElementById("td-title")
-          ?.addEventListener("blur", (e) =>
-            saveTD("title", (e.target as HTMLInputElement).value),
-          );
+        // Duplicate title blur listener removed — already handled above at line 1066
         document
           .getElementById("td-description")
           ?.addEventListener("blur", (e) =>

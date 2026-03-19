@@ -53,8 +53,8 @@ interface MeithealWindowExtensions {
   refreshChecklistsVisuals?: () => void;
 
   // === Strategic Lens ===
-  /** Attaches strategic lens overlay to a task card */
-  attachStrategicLens?: (taskId: string, element: HTMLElement) => void;
+  /** Attaches strategic lens evaluator for a task (registered by StrategicEvaluator.astro) */
+  attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>) => void;
 
   // === Gamification ===
   /** Triggers confetti animation (registered by Confetti.astro) */
