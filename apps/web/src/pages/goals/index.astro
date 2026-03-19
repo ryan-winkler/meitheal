@@ -74,12 +74,23 @@ const statusLabels: Record<string, string> = {
     ) : (
       <div class="goal-list">
         {goals.map((goal) => (
-          <div class="goal-card" data-goal-id={goal.id}>
+          <div class="goal-card" data-goal-id={goal.id} data-goal-status={goal.status}>
             <div class="goal-card-header">
               <h3 class="goal-card-title">{goal.title}</h3>
-              <span class={`goal-status-badge status-${goal.status}`}>
-                {statusLabels[goal.status] ?? goal.status}
-              </span>
+              <div class="goal-card-actions">
+                <span class={`goal-status-badge status-${goal.status}`}>
+                  {statusLabels[goal.status] ?? goal.status}
+                </span>
+                <div class="goal-actions-row">
+                  {goal.status === "active" && (
+                    <button type="button" class="goal-action-btn goal-complete-btn" data-goal-id={goal.id} title="Mark completed" aria-label="Mark goal completed">✓</button>
+                  )}
+                  {goal.status === "completed" && (
+                    <button type="button" class="goal-action-btn goal-reactivate-btn" data-goal-id={goal.id} title="Reactivate" aria-label="Reactivate goal">↩</button>
+                  )}
+                  <button type="button" class="goal-action-btn goal-delete-btn" data-goal-id={goal.id} title="Delete goal" aria-label="Delete goal">🗑</button>
+                </div>
+              </div>
             </div>
             {goal.description && (
               <p class="goal-card-desc">{goal.description.slice(0, 120)}{goal.description.length > 120 ? "…" : ""}</p>
@@ -101,7 +112,7 @@ const statusLabels: Record<string, string> = {
 </Layout>
 
 <style>
-  @reference "../../../src/styles/global.css";
+  @reference "../../styles/global.css";
 
   .goals-page {
     max-width: 900px;
@@ -172,6 +183,11 @@ const statusLabels: Record<string, string> = {
     border-color: var(--accent);
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
+  .goal-card--removing {
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: opacity 200ms, transform 200ms;
+  }
 
   .goal-card-header {
     display: flex;
@@ -222,6 +238,47 @@ const statusLabels: Record<string, string> = {
     gap: 1rem;
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+
+  .goal-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .goal-actions-row {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  .goal-card:hover .goal-actions-row {
+    opacity: 1;
+  }
+  .goal-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 150ms, border-color 150ms;
+  }
+  .goal-action-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+  .goal-delete-btn:hover {
+    border-color: var(--error, #ef4444);
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .goal-complete-btn:hover {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.08);
   }
 
   /* Inline create form — reuses project pattern */
@@ -427,4 +484,68 @@ const statusLabels: Record<string, string> = {
 
   createBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
   emptyBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
+
+  // --- Goal card actions (delegated) ---
+  document.querySelector(".goal-list")?.addEventListener("click", async (e: Event) => {
+    const target = e.target as HTMLElement;
+    const btn = target.closest<HTMLButtonElement>(".goal-action-btn");
+    if (!btn) return;
+
+    const goalId = btn.dataset.goalId;
+    if (!goalId) return;
+
+    const base = (window.__ingress_path || "") + `/api/goals/${goalId}`;
+
+    // Delete
+    if (btn.classList.contains("goal-delete-btn")) {
+      if (!confirm("Delete this goal? This cannot be undone.")) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch(base, { method: "DELETE" });
+        if (r.ok) {
+          const card = btn.closest(".goal-card");
+          if (card) {
+            card.classList.add("goal-card--removing");
+            setTimeout(() => { card.remove(); updateCount(); }, 200);
+          }
+        }
+      } catch { btn.disabled = false; }
+      return;
+    }
+
+    // Complete
+    if (btn.classList.contains("goal-complete-btn")) {
+      btn.disabled = true;
+      try {
+        const r = await fetch(base, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "completed" }),
+        });
+        if (r.ok) window.location.reload();
+      } catch { btn.disabled = false; }
+      return;
+    }
+
+    // Reactivate
+    if (btn.classList.contains("goal-reactivate-btn")) {
+      btn.disabled = true;
+      try {
+        const r = await fetch(base, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "active" }),
+        });
+        if (r.ok) window.location.reload();
+      } catch { btn.disabled = false; }
+    }
+  });
+
+  function updateCount() {
+    const countEl = document.querySelector(".goals-count");
+    const remaining = document.querySelectorAll(".goal-card").length;
+    if (countEl) countEl.textContent = `${remaining} goal${remaining !== 1 ? "s" : ""}`;
+    // Show empty state if none left
+    if (remaining === 0) window.location.reload();
+  }
 </script>

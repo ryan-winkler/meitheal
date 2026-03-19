@@ -3,8 +3,8 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** Dashboard-first shell rollout complete locally; habits/page rollout follow-up queued; docs update; Phase 04.1 human-agent-ddd-core research/discuss
-**Last Completed Local Work:** Dashboard shell rollout — shared unified bar helpers, dashboard section shell, search area fix, 3 browser checks — 2026-03-19
+**Active Tracks:** Dashboard + habits shell rollout complete locally; next page-shell research queued for Today/Upcoming/Calendar; docs update; Phase 04.1 human-agent-ddd-core research/discuss
+**Last Completed Local Work:** Habits shell rollout — UnifiedBar shell, lifecycle-safe controller extraction, server-rendered routine data, 3 browser checks — 2026-03-19
 **Session Date:** 2026-03-19
 
 ## Parallel Phase 14 Summary (COMPLETE ✅)
@@ -25,6 +25,24 @@
 - Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/dashboard-shell.spec.ts` — 3 passed.
 - Tier 1: `curl -sS -o /tmp/dashboard-search.json -w '%{http_code}\n' 'http://127.0.0.1:4321/api/search?scope=all'` — returned `200`.
 - Tier 2: not required for this slice because no ingress, middleware, or HA transport logic changed.
+
+## Parallel Phase 14.1 Summary (COMPLETE ✅)
+
+**Objective:** Apply the mature shell language to `/habits` while extracting the legacy inline script into a lifecycle-safe, Astro-first controller path.
+
+### Delivered on 2026-03-19
+- Rebuilt `apps/web/src/pages/habits.astro` around `UnifiedBar`, hash-linked sections, a Home Assistant-native hero, server-rendered routine data, and a reusable create-habit bar action.
+- Added `apps/web/src/lib/habits-registry.ts` for canonical habits shell section metadata and `apps/web/src/lib/habits-controller.ts` for lifecycle-safe shell navigation plus habit CRUD orchestration.
+- Removed the habits page’s long inline script and replaced it with a controller boot path that preserves create, edit, delete, complete, checklist, and streak flows.
+- Tightened the habits edit path so description and priority now round-trip through the underlying routine template instead of silently resetting on edit.
+- Added focused browser coverage for habits shell navigation, SearchHub launch, and the unified create-habit modal handoff.
+
+### Verification
+- Tier 1: `git diff --check` — passed.
+- Tier 1: `pnpm check` — passed, with existing Astro/Vite warnings only.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/habits-shell.spec.ts` — 3 passed.
+- Tier 1: `curl -sS -o /tmp/habits-page.html -w '%{http_code}\n' 'http://127.0.0.1:4321/habits'` — returned `200`.
+- Tier 2: not required for this slice because no ingress, middleware, Home Assistant transport, or add-on lifecycle logic changed.
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
 
@@ -117,7 +135,7 @@
 - Phase 08: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 08.1: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
-- Next page rollout: extract the habits inline script into a lifecycle-safe controller, then apply the same unified shell pattern proven on the dashboard.
+- Next page rollout order: Today, Upcoming, Calendar, Kanban, then Table. Today/Upcoming/Calendar already have stronger section narratives, while Kanban/Table need denser toolbar integration work.
 
 ## Phase 7 Summary (IN PROGRESS)
 

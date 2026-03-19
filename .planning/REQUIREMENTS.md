@@ -1,8 +1,8 @@
 # Core Feature Completion — Requirements (Revised)
 
 **Project:** Meitheal Core Feature Completion Sprint
-**Version:** v1.3 (updated after Strategic Rules pivot — 2026-03-16)
-**Date:** 2026-03-16
+**Version:** v1.4 (updated after habits shell rollout — 2026-03-19)
+**Date:** 2026-03-19
 
 > [!IMPORTANT]
 > Requirements now reflect the current repository state after Phases 1, 2, 4 and the Settings redesign work landed.
@@ -77,6 +77,11 @@
 - [x] **SHELL-03**: Dashboard keeps SearchHub launch, new-task action, and task-detail handoff intact after the shell migration
 - [x] **SHELL-04**: Tier 1 browser verification covers dashboard section navigation plus core interaction regression checks
 - [x] **SHELL-05**: Research/context/KCS artifacts record the rollout path for habits and the remaining pages
+- [x] **SHELL-06**: Habits adopts `UnifiedBar` with hash-linked sections and Home Assistant-safe deep links
+- [x] **SHELL-07**: Habits replaces the page-local inline script with a lifecycle-safe controller plus section registry
+- [x] **SHELL-08**: Habits keeps create, edit, delete, complete, streak, and checklist flows intact after the shell migration
+- [x] **SHELL-09**: Tier 1 browser verification covers habits shell navigation, SearchHub launch, and the habit modal entry point
+- [x] **SHELL-10**: KCS/runbook/persona artifacts record the post-habits rollout order for Today, Upcoming, Calendar, Kanban, and Table
 
 ## Smart Today Maturation (STM)
 
@@ -110,7 +115,7 @@
 ## Scope
 
 ### v1 (this sprint)
-All above — 28 requirements (reduced from 35 after audit)
+All above — 33 requirements (expanded by the habits shell rollout follow-up)
 
 ### v2 (deferred)
 - NLP quick add, calendar drag-to-reschedule, Pomodoro timer, time tracking UI

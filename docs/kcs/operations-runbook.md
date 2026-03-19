@@ -23,6 +23,22 @@ Use this after changing dashboard shell, search-launcher, or top-level navigatio
 
 4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
 
+## Habits Shell Verification
+
+Use this after changing habits shell, shell navigation, or the habits controller path.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/habits-shell.spec.ts`.
+2. Query `GET /habits` and confirm it returns `200`.
+3. Confirm the habits URL can move between:
+
+- `#habits-overview`
+- `#habits-rhythm`
+- `#habits-library`
+- `#habits-flow`
+
+4. Confirm the shell `New Habit` button opens the shared habits modal.
+5. Confirm the shell search launcher still opens SearchHub instead of a page-local search surface.
+
 ## Task -> Calendar Traceability
 
 Use `request_id` or `task_id` to follow lifecycle records:

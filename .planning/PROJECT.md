@@ -14,14 +14,14 @@ Keep Meitheal competitive as a Home Assistant-native execution engine: make crit
 - SQL repository migration delivered across task/board/settings-related routes
 - Smart Today and version-tooling phases delivered
 - Settings now uses a searchable shell with grouped navigation, summary cards, App & PWA companion affordances, and real manifest screenshots
-- A new dashboard-first shell rollout track is starting to apply the mature Settings navigation language to the dashboard, habits, and later task views without breaking ingress-safe behavior
+- The dashboard and habits now use the mature unified shell language, with the next rollout order queued for Today, Upcoming, Calendar, Kanban, and Table
 - Universal search hub work is present locally with repo-wide typecheck green; remaining follow-up is Tier 2 HA verification and polish
 - Tier 2 HA verification is currently blocked on this workstation by Docker socket permissions
 - A new research/discuss track, `human-agent-ddd-core`, is active to replace `Epic/Story` with `Area/Goal/Project/Task/Routine` and add bot-safe task orchestration semantics before execution code begins
 
 ## Active Goals
 
-1. **Dashboard shell rollout** — ship the mature unified bar + section shell on the dashboard and capture the rollout map for habits and the remaining pages
+1. **Page shell rollout** — extend the mature unified bar + section shell from dashboard and habits into the remaining Home Assistant-facing task views
 2. **Settings closeout** — complete Tier 2 verification for ingress-safe hashes, companion handoff, and PWA behavior
 3. **Search stabilization** — finish type-clean universal search orchestration through `domains/search/` and `/api/search`
 4. **Controller decomposition** — continue breaking oversized client controllers into lifecycle-safe modules

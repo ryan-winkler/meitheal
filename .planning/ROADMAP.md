@@ -2,7 +2,7 @@
 
 **Project:** Meitheal Core Feature Completion Sprint
 **Phases:** 4 (consolidated from 6 after audit)
-**Requirements:** 28
+**Requirements:** 33
 **Date:** 2026-03-15
 **Status:** 🔄 Core phases complete, parallel polish phases active
 
@@ -85,6 +85,23 @@
 5. Research, context, and optimization artifacts capture the next rollout order for habits and the remaining pages.
 
 **Dependencies:** Phase 08/08.1 shell patterns, Phase 09 SearchHub, Layout ingress fetch wrapper.
+
+## Parallel Phase 14.1: Habits Shell Rollout
+
+**Status:** ✅ Local implementation complete
+
+**Goal:** Apply the mature Settings/dashboard shell language to `/habits` while replacing the page-local inline script with an Astro-first, lifecycle-safe controller path.
+
+**Requirements:** SHELL-06→10
+
+**Success Criteria:**
+1. Habits uses `UnifiedBar`, hash-linked sections, and Home Assistant-safe deep links instead of a bespoke header.
+2. The habits page loads its initial routine data server-side and boots a lifecycle-safe controller instead of a long inline page script.
+3. Habit create, edit, delete, complete, checklist, and streak flows remain intact after the shell migration.
+4. Tier 1 browser verification covers habits section navigation, SearchHub launch, and the shared habit-create modal.
+5. Research, persona-loop, KCS, and runbook artifacts capture the next rollout order for Today, Upcoming, Calendar, Kanban, and Table.
+
+**Dependencies:** Parallel Phase 14 dashboard shell helpers, `/api/habits`, `TemplateRepository`, `pageLifecycle`.
 
 ## Parallel Phase 08.2: Settings Controller Decomposition
 
