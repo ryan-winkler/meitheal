@@ -21,6 +21,8 @@
  */
 
 import { taskApi } from "@lib/task-api-client"
+import { initPageShellNavigation } from "@lib/page-shell-controller"
+import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
 import { showToast } from "@lib/toast"
 
 // =============================================================================
@@ -48,8 +50,16 @@ const Q1_WIP_LIMIT = 5
 // =============================================================================
 
 export function initEisenhowerPage() {
-  const page = document.getElementById("eisenhower-page")
+  const page = document.getElementById("eisenhower-shell")
   if (!page) return
+
+  initPageShellNavigation({
+    barId: "eisenhower-bar",
+    shellId: "eisenhower-shell",
+    sectionSelector: "[data-eisenhower-section]",
+    sectionIds: EISENHOWER_SECTIONS.map((s) => s.id),
+    defaultSectionId: "eisenhower-overview",
+  })
 
   setupDragAndDrop(page)
   setupClickToOpen(page)

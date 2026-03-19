@@ -48,6 +48,12 @@ export function initPageShellNavigation<SectionId extends string>({
     log.warn("Unified bar root not found", { barId, shellId: shellId ?? null })
   }
 
+  // Set --unified-bar-height so pages can use it for scroll-margin-top
+  if (bar) {
+    const barHeight = bar.offsetHeight
+    document.documentElement.style.setProperty("--unified-bar-height", `${barHeight}px`)
+  }
+
   const sectionIdSet = new Set(sectionIds)
 
   function resolveSectionId(anchorId: string): SectionId | null {

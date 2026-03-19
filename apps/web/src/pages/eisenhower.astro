@@ -19,8 +19,10 @@
  * @kcs Phase 06: replaces old heuristic derivation (priority + due date)
  */
 import Layout from "../layouts/Layout.astro"
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
+import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 
@@ -106,13 +108,38 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 ---
 
 <Layout title="Eisenhower Matrix">
-  <main id="eisenhower-page" class="eisenhower">
-    <header class="eisenhower__header">
-      <div class="eisenhower__header-row">
-        <div>
-          <h1 class="eisenhower__title">{t("eisenhower.title", locale)}</h1>
-          <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
-        </div>
+  <UnifiedBar
+    title="Eisenhower"
+    titleIcon="🎯"
+    tabs={EISENHOWER_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="eisenhower-bar"
+    slot="custom-header"
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="unified-bar__new-task-btn eisenhower__review-btn-bar"
+      data-action="start-review"
+      title={t("eisenhower.review_title", locale)}
+      aria-label={t("eisenhower.review_title", locale)}
+    >
+      <span class="unified-bar__new-task-label">🔍 {t("eisenhower.review_cta", locale)}</span>
+    </button>
+  </UnifiedBar>
+
+  <main id="eisenhower-shell" class="eisenhower">
+    <section
+      id="eisenhower-overview"
+      class="eisenhower__overview-section"
+      data-eisenhower-section
+    >
+      <div class="eisenhower__overview-row">
         {completedToday > 0 && (
           <div class="eisenhower__completed-today" title={t("eisenhower.completed_today", locale)}>
             <span class="completed-today__icon">🏆</span>
@@ -120,15 +147,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
             <span class="completed-today__label">{t("eisenhower.completed_today", locale)}</span>
           </div>
         )}
-        <button
-          class="eisenhower__review-btn"
-          data-action="start-review"
-          title={t("eisenhower.review_title", locale)}
-        >
-          🔍 {t("eisenhower.review_cta", locale)}
-        </button>
+        <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
       </div>
-    </header>
+    </section>
 
     {/* ── Mobile tab bar (visible < 768px) ── */}
     <nav class="eisenhower__mobile-tabs" role="tablist" aria-label="Quadrant tabs">
@@ -299,6 +320,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
       </div>
     </div>
 
+    <section id="eisenhower-matrix" data-eisenhower-section>
     <div class="eisenhower__grid">
       {quadrants.map((q) => (
         <section
@@ -448,6 +470,33 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     <p class="eisenhower__hint">
       {t("eisenhower.drag_hint", locale)}
     </p>
+    </section>
+
+    <section id="eisenhower-flow" class="eisenhower__flow-section" data-eisenhower-section>
+      <h2 class="eisenhower__flow-heading">Flow</h2>
+      <div class="eisenhower__flow-grid">
+        <a href="/today" class="eisenhower__flow-card">
+          <span class="flow-card__icon">☀️</span>
+          <span class="flow-card__label">Today</span>
+          <span class="flow-card__desc">Committed daily work surface</span>
+        </a>
+        <a href="/upcoming" class="eisenhower__flow-card">
+          <span class="flow-card__icon">📅</span>
+          <span class="flow-card__label">Upcoming</span>
+          <span class="flow-card__desc">Next 7 days at a glance</span>
+        </a>
+        <a href="/kanban" class="eisenhower__flow-card">
+          <span class="flow-card__icon">📋</span>
+          <span class="flow-card__label">Kanban</span>
+          <span class="flow-card__desc">Workflow board by status</span>
+        </a>
+        <a href="/calendar" class="eisenhower__flow-card">
+          <span class="flow-card__icon">🗓️</span>
+          <span class="flow-card__label">Calendar</span>
+          <span class="flow-card__desc">Monthly timeline view</span>
+        </a>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -464,30 +513,21 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     min-height: 100vh;
   }
 
-  /* ── Header ── */
-  .eisenhower__header {
-    margin-bottom: 24px;
+  /* ── Overview section ── */
+  .eisenhower__overview-section {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+    margin-bottom: 16px;
   }
-  .eisenhower__header-row {
+  .eisenhower__overview-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 24px;
-    text-align: center;
-  }
-  .eisenhower__title {
-    font-size: 1.5rem;
-    font-weight: 800;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--warning)));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin: 0;
+    gap: 16px;
+    flex-wrap: wrap;
   }
   .eisenhower__subtitle {
     font-size: 0.8125rem;
     color: var(--text-muted);
-    margin: 4px 0 0;
+    margin: 0;
   }
 
   /* ── Completed today counter ── */
@@ -533,6 +573,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
 
   /* ── 2×2 Grid ── */
+  #eisenhower-matrix {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+  }
   .eisenhower__grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -754,18 +797,12 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
 
   /* ── WIP warning ── */
-  :global(.quadrant__wip-warning) {
+  .quadrant__wip-warning {
     background: rgba(var(--warning-rgb, 245, 158, 11), 0.1);
     color: var(--warning);
     font-size: 0.75rem;
     padding: 6px 12px;
     border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.15);
-  }
-
-  /* ── Drag feedback ── */
-  :global(.tli--dragging) {
-    opacity: 0.5;
-    transform: rotate(2deg);
   }
 
   /* ── Triage banner ── */
@@ -924,18 +961,67 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     opacity: 0.6;
   }
 
+  /* ── Flow section ── */
+  .eisenhower__flow-section {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .eisenhower__flow-heading {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 16px;
+  }
+  .eisenhower__flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .eisenhower__flow-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: border-color 150ms, background 150ms;
+  }
+  .eisenhower__flow-card:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+  .flow-card__icon { font-size: 1.25rem; }
+  .flow-card__label { font-size: 0.875rem; font-weight: 600; }
+  .flow-card__desc { font-size: 0.75rem; color: var(--text-muted); }
+
   /* ── Reduced Motion ── */
   @media (prefers-reduced-motion: reduce) {
     .eisenhower__quadrant {
       transition: none;
     }
-    :global(.tli--dragging) {
-      transform: none;
+    .eisenhower__flow-card {
+      transition: none;
     }
   }
 </style>
 
 <style is:global>
+  /* ── Drag feedback (global — class added by JS) ── */
+  .tli--dragging {
+    opacity: 0.5;
+    transform: rotate(2deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tli--dragging {
+      transform: none;
+    }
+  }
+
   /* ── Triage overlay (global to ensure position:fixed works) ── */
   .triage-overlay {
     position: fixed;
