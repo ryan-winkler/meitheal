@@ -43,13 +43,13 @@ try {
   const goals = await repo.findAllGoals({});
   const areas = await repo.findAllAreas();
 
-  const goalMap = new Map(goals.map((g: Record<string, unknown>) => [g.id, g]));
-  const areaMap = new Map(areas.map((a: Record<string, unknown>) => [a.id, a]));
+  const goalMap = new Map(goals.map((g) => [g.id, g]));
+  const areaMap = new Map(areas.map((a) => [a.id, a]));
 
   for (const proj of rawProjects) {
     const goal = proj.goal_id ? goalMap.get(proj.goal_id as string) : null;
-    const area = goal && (goal as Record<string, unknown>).area_id
-      ? areaMap.get((goal as Record<string, unknown>).area_id as string)
+    const area = goal?.area_id
+      ? areaMap.get(goal.area_id as string)
       : null;
 
     const tasks = await taskRepo.findByProjectId(proj.id as string);
@@ -63,8 +63,8 @@ try {
       color: (proj.color as string) || "#6366F1",
       status: (proj.status as string) || "active",
       goal_id: (proj.goal_id as string | null) ?? null,
-      goalTitle: goal ? (goal as Record<string, unknown>).title as string : null,
-      areaName: area ? (area as Record<string, unknown>).name as string : null,
+      goalTitle: goal ? String(goal.title) : null,
+      areaName: area ? String(area.name) : null,
       taskCount: tasks.length,
       completedCount: completed,
     });
@@ -292,13 +292,89 @@ const statusLabels: Record<string, string> = {
 </style>
 
 <script>
-  function handleNewProject() {
-    const title = prompt("Project name:");
-    if (!title?.trim()) return;
+  // --- Inline project creation form ---
+  const createBtn = document.getElementById("new-project-btn");
+  const emptyBtn = document.getElementById("empty-new-project-btn");
+  let formVisible = false;
+
+  function ensureCreateForm(): HTMLElement {
+    let form = document.getElementById("project-create-inline");
+    if (form) return form;
+
+    // Insert form after the page header, before grid/empty state
+    const container = document.querySelector(".project-grid") || document.querySelector(".empty-state");
+    if (!container?.parentElement) return document.createElement("div");
+
+    form = document.createElement("div");
+    form.id = "project-create-inline";
+    form.className = "project-create-form";
+    form.innerHTML = `
+      <div class="create-form-inner">
+        <input
+          type="text"
+          id="project-create-input"
+          class="create-form-input"
+          placeholder="Project name…"
+          maxlength="100"
+          autocomplete="off"
+          aria-label="New project name"
+        />
+        <div class="create-form-actions">
+          <button type="button" id="project-create-submit" class="btn btn-primary btn-sm">Create</button>
+          <button type="button" id="project-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        </div>
+      </div>
+    `;
+    container.parentElement.insertBefore(form, container);
+
+    // Wire submit
+    form.querySelector("#project-create-submit")?.addEventListener("click", submitCreate);
+    form.querySelector("#project-create-cancel")?.addEventListener("click", hideCreate);
+
+    // Keyboard: Enter to submit, Escape to cancel
+    form.querySelector("#project-create-input")?.addEventListener("keydown", (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === "Enter") submitCreate();
+      if (ke.key === "Escape") hideCreate();
+    });
+
+    return form;
+  }
+
+  function showCreate() {
+    const form = ensureCreateForm();
+    form.style.display = "block";
+    formVisible = true;
+    requestAnimationFrame(() => {
+      (form.querySelector("#project-create-input") as HTMLInputElement)?.focus();
+    });
+  }
+
+  function hideCreate() {
+    const form = document.getElementById("project-create-inline");
+    if (form) {
+      form.style.display = "none";
+      (form.querySelector("#project-create-input") as HTMLInputElement).value = "";
+    }
+    formVisible = false;
+  }
+
+  function submitCreate() {
+    const input = document.getElementById("project-create-input") as HTMLInputElement | null;
+    const title = input?.value?.trim();
+    if (!title) {
+      input?.focus();
+      return;
+    }
+
+    const submitBtn = document.getElementById("project-create-submit") as HTMLButtonElement;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Creating…";
+
     fetch((window.__ingress_path || "") + "/api/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: title.trim() }),
+      body: JSON.stringify({ title }),
     })
       .then((r) => {
         if (r.ok) return r.json();
@@ -308,10 +384,79 @@ const statusLabels: Record<string, string> = {
         window.location.href = (window.__ingress_path || "") + `/projects/${data.id}`;
       })
       .catch(() => {
-        alert("Failed to create project");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Create";
+        input?.focus();
+        // Show inline error
+        const form = document.getElementById("project-create-inline");
+        if (form && !form.querySelector(".create-form-error")) {
+          const err = document.createElement("span");
+          err.className = "create-form-error";
+          err.textContent = "Failed to create project. Try again.";
+          form.querySelector(".create-form-inner")?.appendChild(err);
+          setTimeout(() => err.remove(), 3000);
+        }
       });
   }
 
-  document.getElementById("new-project-btn")?.addEventListener("click", handleNewProject);
-  document.getElementById("empty-new-project-btn")?.addEventListener("click", handleNewProject);
+  createBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
+  emptyBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
 </script>
+
+<style>
+  .project-create-form {
+    display: none;
+    margin-bottom: 1rem;
+    animation: form-slide-in 200ms ease;
+  }
+  @keyframes form-slide-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .create-form-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .create-form-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .create-form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .create-form-input::placeholder { color: var(--text-muted); }
+  .create-form-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+  .create-form-error {
+    font-size: 12px;
+    color: var(--error, #ef4444);
+    margin-left: 0.5rem;
+    flex-shrink: 0;
+  }
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+  @media (max-width: 480px) {
+    .create-form-inner {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+</style>

@@ -124,6 +124,23 @@ const { timezone, dateFormat } = Astro.locals;
       <span class="text-sm text-text-muted">{tasks.length} total</span>
     </div>
 
+    {/* Inline task creation form */}
+    <div class="task-create-form" id="task-create-inline" style="display:none">
+      <input
+        type="text"
+        id="task-create-input"
+        class="task-create-input"
+        placeholder="Task title…"
+        maxlength="200"
+        autocomplete="off"
+        aria-label="New task title"
+      />
+      <div class="task-create-actions">
+        <button type="button" id="task-create-submit" class="btn btn-primary btn-sm">Add</button>
+        <button type="button" id="task-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+      </div>
+    </div>
+
     {tasks.length === 0 ? (
       <div class="project-tasks-empty">
         <p>No tasks in this project yet. Add one to get started.</p>
@@ -368,16 +385,42 @@ const { timezone, dateFormat } = Astro.locals;
 </style>
 
 <script>
-  // Add task to this project
-  document.getElementById("add-task-to-project-btn")?.addEventListener("click", () => {
-    const title = prompt("Task title:");
-    if (!title?.trim()) return;
+  // --- Inline task creation ---
+  const addBtn = document.getElementById("add-task-to-project-btn");
+  const createForm = document.getElementById("task-create-inline") as HTMLElement;
+  const createInput = document.getElementById("task-create-input") as HTMLInputElement;
+  const submitBtn = document.getElementById("task-create-submit") as HTMLButtonElement;
+  const cancelBtn = document.getElementById("task-create-cancel") as HTMLButtonElement;
+  let taskFormVisible = false;
+
+  function showTaskForm() {
+    createForm.style.display = "flex";
+    taskFormVisible = true;
+    requestAnimationFrame(() => createInput?.focus());
+  }
+
+  function hideTaskForm() {
+    createForm.style.display = "none";
+    createInput.value = "";
+    taskFormVisible = false;
+  }
+
+  function submitTask() {
+    const title = createInput?.value?.trim();
+    if (!title) {
+      createInput?.focus();
+      return;
+    }
+
     const projectId = window.location.pathname.split("/").pop();
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Adding…";
+
     fetch((window.__ingress_path || "") + "/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        title: title.trim(),
+        title,
         project_id: projectId,
       }),
     })
@@ -388,7 +431,19 @@ const { timezone, dateFormat } = Astro.locals;
           throw new Error("Failed");
         }
       })
-      .catch(() => alert("Failed to add task"));
+      .catch(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Add";
+        createInput?.focus();
+      });
+  }
+
+  addBtn?.addEventListener("click", () => taskFormVisible ? hideTaskForm() : showTaskForm());
+  submitBtn?.addEventListener("click", submitTask);
+  cancelBtn?.addEventListener("click", hideTaskForm);
+  createInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitTask();
+    if (e.key === "Escape") hideTaskForm();
   });
 
   // Click task to open edit modal
@@ -403,3 +458,44 @@ const { timezone, dateFormat } = Astro.locals;
     });
   });
 </script>
+
+<style>
+  .task-create-form {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(var(--accent-rgb), 0.03);
+    animation: task-form-in 200ms ease;
+  }
+  @keyframes task-form-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .task-create-input {
+    flex: 1;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .task-create-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .task-create-input::placeholder { color: var(--text-muted); }
+  .task-create-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+</style>

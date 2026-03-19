@@ -75,6 +75,7 @@ const PRECACHE_PATHS = [
   "/settings",
   "/gamification",
   "/habits",
+  "/projects",
   "/gantt",
   "/manifest.webmanifest",
   "/icon-192.png",
@@ -174,7 +175,17 @@ self.addEventListener("install", (event) => {
       })
       .catch(() => { /* Use hardcoded fallback */ })
       .then(() => caches.open(CACHES.precache))
-      .then((cache) => cache.addAll(getPrecacheUrls()))
+      .then((cache) => {
+        // Precache each URL individually — one 404 shouldn't break the whole install
+        const urls = getPrecacheUrls();
+        return Promise.allSettled(
+          urls.map((url) =>
+            cache.add(url).catch(() => {
+              // Ignore individual failures (e.g. SSR pages that 404 during install)
+            })
+          )
+        );
+      })
   );
 });
 
