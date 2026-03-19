@@ -39,6 +39,104 @@ Use this after changing habits shell, shell navigation, or the habits controller
 4. Confirm the shell `New Habit` button opens the shared habits modal.
 5. Confirm the shell search launcher still opens SearchHub instead of a page-local search surface.
 
+## Today Shell Verification
+
+Use this after changing the Today shell, Today controller, or task-detail handoff logic.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/today-shell.spec.ts`.
+2. Confirm the Today URL can move between:
+
+- `#today-overview`
+- `#today-focus`
+- `#today-triage`
+- `#today-work`
+- `#today-habits`
+
+3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
+4. Confirm the shell `New Task` button opens the shared task modal.
+5. Confirm clicking a Today task still opens the shared task detail surface.
+
+## Upcoming Shell Verification
+
+Use this after changing the Upcoming shell or `upcoming-controller.ts`.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/upcoming-shell.spec.ts`.
+2. Confirm the Upcoming URL can move between:
+
+- `#upcoming-overview`
+- `#upcoming-next`
+- `#upcoming-week`
+- `#upcoming-flow`
+
+3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
+4. Confirm the shell `New Task` button opens the shared task modal.
+5. Confirm clicking an Upcoming task opens the shared task detail surface without routing away from `/upcoming`.
+
+## Calendar Shell Verification
+
+Use this after changing the Calendar shell, `calendar-controller.ts`, or route-switch behavior.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/calendar-shell.spec.ts`.
+2. Confirm the Calendar URL can move between:
+
+- `#calendar-overview`
+- `#calendar-month`
+- `#calendar-agenda`
+- `#calendar-flow`
+
+3. Confirm `TaskViewTabs` still preserve the current query string when switching routes.
+4. Confirm clicking a month cell opens the day drawer.
+5. Confirm `Add Task` from the day drawer opens the shared task modal.
+
+## Kanban Shell Verification
+
+Use this after changing the Kanban shell or `kanban-controller.ts`.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/kanban-shell.spec.ts`.
+2. Confirm the Kanban URL can move between:
+
+- `#kanban-overview`
+- `#kanban-lanes`
+- `#kanban-fields`
+- `#kanban-flow`
+
+3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
+4. Confirm `Manage Lanes` still opens the lane-management surface.
+5. Confirm `TaskViewTabs` preserve the current query string when switching routes.
+
+## Table Shell Verification
+
+Use this after changing the Table shell or `table-controller.ts`.
+
+1. Run `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/table-shell.spec.ts`.
+2. Confirm the Table URL can move between:
+
+- `#table-overview`
+- `#table-filters`
+- `#table-fields`
+- `#table-flow`
+
+3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
+4. Confirm the shell `New Task` button opens the shared task modal.
+5. Confirm clicking a table row still opens the shared task detail surface.
+
+## Cross-Page Shell Program Verification
+
+Use this before closing the full 14.2→14.7 rollout family.
+
+1. Run:
+
+- `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/today-shell.spec.ts`
+- `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/upcoming-shell.spec.ts`
+- `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/calendar-shell.spec.ts`
+- `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/kanban-shell.spec.ts`
+- `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/table-shell.spec.ts`
+
+2. Confirm Calendar, Kanban, and Table preserve filters when switching via `TaskViewTabs`.
+3. Confirm Today, Upcoming, Calendar, and Table still open the shared task detail surface.
+4. Confirm no page introduces page-local search or page-local AI launchers.
+5. Run Tier 2 ingress verification in the HA devcontainer before marking the full phase family complete.
+
 ## Task -> Calendar Traceability
 
 Use `request_id` or `task_id` to follow lifecycle records:

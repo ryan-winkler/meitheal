@@ -661,7 +661,19 @@
     "schedule_q2": "Sceidealaigh an Seachtain Seo",
     "schedule_q2_title": "Socraigh spriocdháta go deireadh na seachtaine seo",
     "completed_today": "déanta inniu",
-    "wip_warning": "{count} tasc i nDéan Ar Dtús — an féidir aon cheann a aistriú go Sceidealaigh? (teorainn: {limit})"
+    "wip_warning": "{count} tasc i nDéan Ar Dtús — an féidir aon cheann a aistriú go Sceidealaigh? (teorainn: {limit})",
+    "triage_single": "tasc ag teastáil aicmiú",
+    "triage_plural": "tascanna ag teastáil aicmiú",
+    "start_triage": "Tosaigh Tiaráiste",
+    "start_triage_title": "Aicmigh tascanna gan rangú ceann ar cheann",
+    "triage_title": "Mód Tiaráiste",
+    "triage_urgency": "Práinn",
+    "triage_importance": "Tábhacht",
+    "triage_not_urgent": "Neamhphráinneach",
+    "triage_not_important": "Neamhthábhachtach",
+    "triage_critical": "Criticiúil",
+    "triage_skip": "Scar",
+    "triage_classify": "Aicmigh"
   },
   "common": {
     "save": "Sábháil",

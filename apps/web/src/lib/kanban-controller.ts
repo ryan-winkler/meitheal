@@ -1084,7 +1084,7 @@ export function initKanbanArea(): void {
     const manageLanesBtn = document.getElementById("manage-lanes-btn");
     const laneMgmt = document.getElementById("lane-mgmt");
     const laneList = document.getElementById("lane-list");
-    const newLaneInput = document.getElementById("new-lane-input");
+    const newLaneInput = document.getElementById("new-lane-input") as HTMLInputElement | null;
     const addLaneBtn = document.getElementById("add-lane-btn");
 
     async function fetchLanes() {
@@ -1099,6 +1099,8 @@ export function initKanbanArea(): void {
     }
 
     async function renderLaneList() {
+      if (!laneList) return;
+
       const lanes = await fetchLanes();
       laneList.innerHTML = lanes
         .map(
@@ -1242,59 +1244,68 @@ export function initKanbanArea(): void {
     }
 
     // T-1904: Toggle lanes panel
-    manageLanesBtn?.addEventListener("click", () => {
-      const isOpen = !laneMgmt.classList.contains("hidden");
-      laneMgmt.classList.toggle("hidden", isOpen);
-      if (!isOpen) renderLaneList();
-    });
+    if (manageLanesBtn && laneMgmt) {
+      pageLifecycle.on(manageLanesBtn, "click", () => {
+        const isOpen = !laneMgmt.classList.contains("hidden");
+        laneMgmt.classList.toggle("hidden", isOpen);
+        if (!isOpen) {
+          void renderLaneList();
+        }
+      });
+    }
 
     // Close on backdrop click (click on outer lane-mgmt, not inner content)
-    laneMgmt?.addEventListener("click", (e) => {
-      if (e.target === laneMgmt) closeLaneMgmt();
-    });
+    if (laneMgmt) {
+      pageLifecycle.on(laneMgmt, "click", (e) => {
+        if (e.target === laneMgmt) closeLaneMgmt();
+      });
+    }
 
     // Close on Escape key
-    document.addEventListener("keydown", (e) => {
+    pageLifecycle.on(document, "keydown", (e) => {
       if (e.key === "Escape" && laneMgmt && !laneMgmt.classList.contains("hidden")) {
         closeLaneMgmt();
       }
     });
 
     // Close button
-    document
-      .getElementById("lane-mgmt-close")
-      ?.addEventListener("click", closeLaneMgmt);
+    const laneMgmtClose = document.getElementById("lane-mgmt-close");
+    if (laneMgmtClose) {
+      pageLifecycle.on(laneMgmtClose, "click", closeLaneMgmt);
+    }
 
     // T-1905: Lane creation via API
-    addLaneBtn?.addEventListener("click", async () => {
-      const raw = newLaneInput.value.trim();
-      const name = raw.replace(/[<>]/g, "");
-      if (!name || name.length < 1 || name.length > 50) {
-        const t = document.createElement("div");
-        t.className = "toast error";
-        t.textContent = "Lane name must be 1-50 characters";
-        document.getElementById("toast-container")?.appendChild(t);
-        setTimeout(() => t.remove(), 3000);
-        return;
-      }
-      try {
-        const res = await fetch("/api/lanes", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ label: name }),
-        });
-        if (res.ok) {
-          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-label-create" } }));
-        } else {
-          const err = await res.json();
+    if (addLaneBtn && newLaneInput) {
+      pageLifecycle.on(addLaneBtn, "click", async () => {
+        const raw = newLaneInput.value.trim();
+        const name = raw.replace(/[<>]/g, "");
+        if (!name || name.length < 1 || name.length > 50) {
           const t = document.createElement("div");
           t.className = "toast error";
-          t.textContent = err.error || "Failed to create lane";
+          t.textContent = "Lane name must be 1-50 characters";
           document.getElementById("toast-container")?.appendChild(t);
           setTimeout(() => t.remove(), 3000);
+          return;
         }
-      } catch { /* non-fatal */ }
-    });
+        try {
+          const res = await fetch("/api/lanes", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ label: name }),
+          });
+          if (res.ok) {
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-label-create" } }));
+          } else {
+            const err = await res.json();
+            const t = document.createElement("div");
+            t.className = "toast error";
+            t.textContent = err.error || "Failed to create lane";
+            document.getElementById("toast-container")?.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+          }
+        } catch { /* non-fatal */ }
+      });
+    }
 
     // T-1907: Search filters Kanban cards in real-time
     (() => {

@@ -700,9 +700,7 @@ function setupKeyboardNav(container: HTMLElement) {
         if (focusedIndex >= 0 && focusedIndex < items.length) {
           const id = items[focusedIndex]?.dataset.id
           if (id) {
-            document.dispatchEvent(
-              new CustomEvent("meitheal:open-task-detail", { detail: { id } })
-            )
+            openTaskDetailHandoff(id)
           }
         }
         break
@@ -1543,9 +1541,7 @@ function setupFocusStack(container: HTMLElement) {
     if (focusCard) {
       const taskId = focusCard.dataset.id
       if (taskId) {
-        window.dispatchEvent(
-          new CustomEvent("meitheal:open-task-detail", { detail: { id: taskId } })
-        )
+        openTaskDetailHandoff(taskId)
       }
     }
   })

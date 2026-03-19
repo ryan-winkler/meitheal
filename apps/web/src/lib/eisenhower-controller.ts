@@ -58,6 +58,7 @@ export function initEisenhowerPage() {
   setupFocusMode(page)
   setupMobileTabs(page)
   checkWipLimits(page)
+  setupTriageListeners()
 }
 
 // =============================================================================
@@ -266,6 +267,18 @@ function setupActionButtons(page: HTMLElement) {
         case "assign-q3":
           await assignQ3(page)
           break
+        case "start-triage":
+          await startTriage()
+          return // Skip the disable/re-enable flow
+        case "close-triage":
+          closeTriage()
+          return
+        case "triage-skip":
+          triageNext()
+          return
+        case "triage-save":
+          await triageSave()
+          return
       }
     } finally {
       btn.removeAttribute("disabled")
@@ -594,4 +607,158 @@ async function assignQ3(page: HTMLElement) {
   if (successCount > 0) {
     showToast("common.task_updated")
   }
+}
+
+// ─── Triage Mode ───────────────────────────────────────────────
+
+interface TriageTask {
+  id: string
+  title: string
+}
+
+let triageTasks: TriageTask[] = []
+let triageIndex = 0
+
+/** Derive quadrant label + emoji from urgency × importance values */
+function quadrantPreview(urgency: number, importance: number): string {
+  if (urgency === 0 && importance === 0) return "🔍 Set values to classify"
+  const urgent = urgency >= 3
+  const important = importance >= 3
+  if (urgent && important) return "🔴 Do First"
+  if (!urgent && important) return "🔵 Schedule"
+  if (urgent && !important) return "🟡 Delegate"
+  return "⚪ Not Now"
+}
+
+/** Open the triage overlay by fetching unclassified tasks */
+async function startTriage() {
+  try {
+    const res = await fetch(
+      (window.__ingress_path || "") + "/api/tasks?status=open"
+    )
+    if (!res.ok) { showToast("common.failed_update", "error"); return }
+    const data = await res.json()
+    const raw = Array.isArray(data) ? data : (data.tasks ?? [])
+    triageTasks = raw
+      .filter((t: Record<string, unknown>) =>
+        (t.urgency === 0 || t.urgency == null) &&
+        (t.importance === 0 || t.importance == null)
+      )
+      .map((t: Record<string, unknown>) => ({ id: String(t.id), title: String(t.title ?? "Untitled") }))
+
+    if (triageTasks.length === 0) {
+      showToast("common.empty")
+      return
+    }
+
+    triageIndex = 0
+    showTriageTask()
+
+    const overlay = document.getElementById("triage-overlay")
+    if (overlay) overlay.style.display = ""
+  } catch {
+    showToast("common.failed_update", "error")
+  }
+}
+
+function showTriageTask() {
+  const task = triageTasks[triageIndex]
+  if (!task) { closeTriage(); return }
+
+  const nameEl = document.getElementById("triage-task-name")
+  if (nameEl) nameEl.textContent = task.title
+
+  const progressEl = document.getElementById("triage-progress")
+  if (progressEl) progressEl.textContent = `${triageIndex + 1} / ${triageTasks.length}`
+
+  // Reset sliders
+  const urgencySlider = document.getElementById("triage-urgency") as HTMLInputElement | null
+  const importanceSlider = document.getElementById("triage-importance") as HTMLInputElement | null
+  if (urgencySlider) urgencySlider.value = "0"
+  if (importanceSlider) importanceSlider.value = "0"
+
+  const urgencyVal = document.getElementById("triage-urgency-val")
+  const importanceVal = document.getElementById("triage-importance-val")
+  if (urgencyVal) urgencyVal.textContent = "0"
+  if (importanceVal) importanceVal.textContent = "0"
+
+  updateTriagePreview()
+}
+
+function updateTriagePreview() {
+  const u = Number((document.getElementById("triage-urgency") as HTMLInputElement)?.value ?? 0)
+  const i = Number((document.getElementById("triage-importance") as HTMLInputElement)?.value ?? 0)
+  const preview = document.getElementById("triage-quadrant-preview")
+  if (preview) preview.textContent = quadrantPreview(u, i)
+}
+
+function closeTriage() {
+  const overlay = document.getElementById("triage-overlay")
+  if (overlay) overlay.style.display = "none"
+  triageTasks = []
+  triageIndex = 0
+}
+
+function triageNext() {
+  triageIndex++
+  if (triageIndex >= triageTasks.length) {
+    closeTriage()
+    showToast("common.task_updated")
+    window.location.reload()
+  } else {
+    showTriageTask()
+  }
+}
+
+async function triageSave() {
+  const task = triageTasks[triageIndex]
+  if (!task) return
+
+  const urgency = Number((document.getElementById("triage-urgency") as HTMLInputElement)?.value ?? 0)
+  const importance = Number((document.getElementById("triage-importance") as HTMLInputElement)?.value ?? 0)
+
+  if (urgency === 0 && importance === 0) {
+    // Don't save if both are unset — same as skip
+    triageNext()
+    return
+  }
+
+  try {
+    await taskApi.updateTask(task.id, { urgency, importance })
+    triageNext()
+  } catch {
+    showToast("common.failed_update", "error")
+  }
+}
+
+/** Setup triage slider input listeners */
+function setupTriageListeners() {
+  const urgencySlider = document.getElementById("triage-urgency")
+  const importanceSlider = document.getElementById("triage-importance")
+  const urgencyVal = document.getElementById("triage-urgency-val")
+  const importanceVal = document.getElementById("triage-importance-val")
+
+  urgencySlider?.addEventListener("input", () => {
+    if (urgencyVal) urgencyVal.textContent = (urgencySlider as HTMLInputElement).value
+    updateTriagePreview()
+  })
+
+  importanceSlider?.addEventListener("input", () => {
+    if (importanceVal) importanceVal.textContent = (importanceSlider as HTMLInputElement).value
+    updateTriagePreview()
+  })
+
+  // Close on overlay backdrop click
+  document.getElementById("triage-overlay")?.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).classList.contains("triage-overlay")) {
+      closeTriage()
+    }
+  })
+
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.getElementById("triage-overlay")?.style.display !== "none") {
+      closeTriage()
+    }
+  })
 }

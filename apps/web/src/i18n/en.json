@@ -664,7 +664,19 @@
     "schedule_q2": "Schedule This Week",
     "schedule_q2_title": "Set due date to end of this week for all Schedule tasks",
     "completed_today": "done today",
-    "wip_warning": "{count} tasks in Do First — can any move to Schedule? (limit: {limit})"
+    "wip_warning": "{count} tasks in Do First — can any move to Schedule? (limit: {limit})",
+    "triage_single": "task needs classification",
+    "triage_plural": "tasks need classification",
+    "start_triage": "Start Triage",
+    "start_triage_title": "Classify unassigned tasks one at a time",
+    "triage_title": "Triage Mode",
+    "triage_urgency": "Urgency",
+    "triage_importance": "Importance",
+    "triage_not_urgent": "Not urgent",
+    "triage_not_important": "Not important",
+    "triage_critical": "Critical",
+    "triage_skip": "Skip",
+    "triage_classify": "Classify"
   },
   "common": {
     "save": "Save",
