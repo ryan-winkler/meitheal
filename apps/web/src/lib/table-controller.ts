@@ -21,6 +21,7 @@ import { onTaskCompleted } from "@lib/gamification-hook"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { TABLE_SECTIONS } from "@lib/table-registry"
 import {
   saveFilterState,
@@ -965,9 +966,7 @@ function setupRowClicks() {
 
       const id = row.dataset.id
       if (id) {
-        document.dispatchEvent(
-          new CustomEvent("meitheal:open-task", { detail: { taskId: id } })
-        )
+        openTaskDetailHandoff(id)
       }
     })
   })

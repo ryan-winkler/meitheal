@@ -660,7 +660,8 @@
     "assign_q3_title": "Sann gach tasc Toscaire do dhuine",
     "schedule_q2": "Sceidealaigh an Seachtain Seo",
     "schedule_q2_title": "Socraigh spriocdháta go deireadh na seachtaine seo",
-    "completed_today": "déanta inniu"
+    "completed_today": "déanta inniu",
+    "wip_warning": "{count} tasc i nDéan Ar Dtús — an féidir aon cheann a aistriú go Sceidealaigh? (teorainn: {limit})"
   },
   "common": {
     "save": "Sábháil",

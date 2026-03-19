@@ -53,6 +53,9 @@ const unclassifiedCount = openTasks.filter((t) => t.urgency === 0 && t.importanc
 const todayStr = new Date().toISOString().slice(0, 10)
 const completedToday = tasks.filter((t) => t.is_done && t.updated_at?.startsWith(todayStr)).length
 
+// WIP limit threshold for Q1 (Dan Ariely / Kelly McGonigal audit)
+const Q1_WIP_LIMIT = 5
+
 interface Quadrant {
   id: string
   label: string
@@ -150,6 +153,13 @@ const quadrants: Quadrant[] = [
               >
                 🎯 {t("eisenhower.commit_q1", locale)}
               </button>
+            </div>
+          )}
+
+          {/* ── Q1 WIP limit warning ── */}
+          {q.id === "do-first" && q.tasks.length > Q1_WIP_LIMIT && (
+            <div class="quadrant__wip-warning" role="alert">
+              ⚠️ {t("eisenhower.wip_warning", locale).replace("{count}", String(q.tasks.length)).replace("{limit}", String(Q1_WIP_LIMIT))}
             </div>
           )}
 
@@ -648,6 +658,22 @@ const quadrants: Quadrant[] = [
     background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
     color: var(--danger, #ef4444);
     border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+  }
+
+  /* ── WIP limit warning (Q1 > threshold) ── */
+  .quadrant__wip-warning {
+    padding: 6px 12px;
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
+    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    color: var(--warning, #f59e0b);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-align: center;
+    animation: wip-pulse 3s ease-in-out infinite;
+  }
+  @keyframes wip-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
   }
 
   /* ── Quick-capture inputs ── */

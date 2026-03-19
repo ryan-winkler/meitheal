@@ -35,6 +35,7 @@ import {
 } from "./filter-state"
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
 import { initPageShellNavigation } from "./page-shell-controller"
+import { openTaskDetailHandoff } from "./task-detail-handoff"
 import { TODAY_SECTIONS } from "./today-registry"
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -311,9 +312,7 @@ function setupEventDelegation(container: HTMLElement) {
     if (taskItem && !target.closest("button") && !target.closest("input")) {
       const id = taskItem.dataset.id
       if (id) {
-        document.dispatchEvent(
-          new CustomEvent("meitheal:open-task-detail", { detail: { id } })
-        )
+        openTaskDetailHandoff(id)
       }
     }
   })

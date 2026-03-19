@@ -1,8 +1,8 @@
 import { createClientLogger } from "@lib/client-logger"
-import { buildIngressPagePath } from "@lib/page-shell-links"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { taskApi } from "@lib/task-api-client"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { showToast } from "@lib/toast"
 import { CALENDAR_SECTIONS } from "@lib/calendar-registry"
 
@@ -98,7 +98,7 @@ function initDrawerControls(): void {
       const taskId = item?.dataset.taskId
       if (!taskId) return
 
-      window.location.href = buildIngressPagePath("/table", `task=${taskId}`)
+      openTaskDetailHandoff(taskId)
     })
   }
 }

@@ -663,7 +663,8 @@
     "assign_q3_title": "Assign all Delegate tasks to a person",
     "schedule_q2": "Schedule This Week",
     "schedule_q2_title": "Set due date to end of this week for all Schedule tasks",
-    "completed_today": "done today"
+    "completed_today": "done today",
+    "wip_warning": "{count} tasks in Do First — can any move to Schedule? (limit: {limit})"
   },
   "common": {
     "save": "Save",

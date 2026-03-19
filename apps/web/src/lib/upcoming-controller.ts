@@ -1,8 +1,8 @@
 import { createClientLogger } from "@lib/client-logger"
 import { onTaskCompleted } from "@lib/gamification-hook"
-import { buildIngressPagePath } from "@lib/page-shell-links"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { showToast } from "@lib/toast"
 import { taskApi } from "@lib/task-api-client"
 import { UPCOMING_SECTIONS } from "@lib/upcoming-registry"
@@ -59,7 +59,7 @@ function initTaskLinks(): void {
     const openTask = () => {
       const id = item.dataset.id
       if (!id) return
-      window.location.href = buildIngressPagePath("/tasks", `task-${id}`)
+      openTaskDetailHandoff(id)
     }
 
     pageLifecycle.on(item, "click", (event) => {
