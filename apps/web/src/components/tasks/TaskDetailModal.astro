@@ -307,6 +307,34 @@
                </div>
 
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
+                   <span title="Eisenhower Matrix dimension">⚡</span> Urgency
+                 </span>
+                 <select id="td-urgency" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="0">0 — Unset</option>
+                    <option value="1">1 — Low</option>
+                    <option value="2">2</option>
+                    <option value="3">3 — Medium</option>
+                    <option value="4">4</option>
+                    <option value="5">5 — Critical</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
+                   <span title="Eisenhower Matrix dimension">⭐</span> Importance
+                 </span>
+                 <select id="td-importance" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="0">0 — Unset</option>
+                    <option value="1">1 — Low</option>
+                    <option value="2">2</option>
+                    <option value="3">3 — Medium</option>
+                    <option value="4">4</option>
+                    <option value="5">5 — Critical</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Assignee</span>
                  <select id="td-assigned-to" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
                     <option value="">Unassigned</option>

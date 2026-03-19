@@ -1,3 +1,4 @@
+import { createClientLogger } from "@lib/client-logger"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import {
   initUnifiedBarNewTaskButton,
@@ -6,6 +7,8 @@ import {
   initUnifiedBarTitleSwitcher,
   setUnifiedBarSwitcherActiveState,
 } from "@lib/unified-bar-controller"
+
+const log = createClientLogger("app", "page-shell")
 
 export interface PageShellNavigationOptions<SectionId extends string> {
   barId: string
@@ -40,6 +43,11 @@ export function initPageShellNavigation<SectionId extends string>({
   enableNewTaskButton = true,
   newTaskFallbackMessage = "Task modal not ready - try again",
 }: PageShellNavigationOptions<SectionId>): PageShellNavigationHandle<SectionId> {
+  const bar = document.getElementById(barId)
+  if (!bar) {
+    log.warn("Unified bar root not found", { barId, shellId: shellId ?? null })
+  }
+
   const sectionIdSet = new Set(sectionIds)
 
   function resolveSectionId(anchorId: string): SectionId | null {
@@ -77,7 +85,10 @@ export function initPageShellNavigation<SectionId extends string>({
     behavior: ScrollBehavior = "smooth",
   ): void {
     const target = document.getElementById(anchorId)
-    if (!target) return
+    if (!target) {
+      log.warn("Shell anchor target not found", { barId, anchorId })
+      return
+    }
 
     target.scrollIntoView({ behavior, block: "start" })
     history.replaceState(null, "", `#${anchorId}`)
@@ -111,6 +122,14 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   const sections = document.querySelectorAll<HTMLElement>(sectionSelector)
+  if (sections.length === 0) {
+    log.warn("No shell sections matched selector", {
+      barId,
+      sectionSelector,
+      shellId: shellId ?? null,
+    })
+  }
+
   if (sections.length > 0) {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -217,6 +236,12 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   syncFromHash()
+  log.info("Initialized page shell navigation", {
+    barId,
+    shellId: shellId ?? null,
+    sectionCount: sections.length,
+    defaultSectionId,
+  })
 
   const hash = window.location.hash.replace("#", "")
   if (hash) {

@@ -17,7 +17,6 @@ const __signal = pageLifecycle.signal;
  *      and touch drag handling. All DOM-based, no framework.
  *
  * Window globals used (set by Layout.astro):
- *   - window.__ingress_path: HA ingress path prefix
  *   - window.showToast: Toast notification function
  *   - window.__featureFlags: Feature flag object
  *   - window.triggerConfetti: Confetti effect on task completion
@@ -25,12 +24,11 @@ const __signal = pageLifecycle.signal;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Window globals (typed in types/window.d.ts):
-//   __ingress_path, showToast, __featureFlags,
-//   triggerConfetti, openTaskDetail
+//   showToast, __featureFlags, triggerConfetti, openTaskDetail
 
 /**
  * Initialize all Kanban board interactivity.
- * Called on `astro:page-load` from kanban.astro.
+ * Called from the pageLifecycle boot path in kanban.astro.
  */
 export function initKanbanArea(): void {
     initPageShellNavigation({
@@ -48,7 +46,7 @@ export function initKanbanArea(): void {
       if (!/^[A-Za-z0-9_-]+$/.test(normalizedTaskId)) {
         throw new Error("Invalid task id")
       }
-      return `${window.__ingress_path || ""}/api/tasks/${encodeURIComponent(normalizedTaskId)}${suffix}`
+      return `/api/tasks/${encodeURIComponent(normalizedTaskId)}${suffix}`
     }
 
     async function handleDrop(e: DragEvent) {
@@ -286,7 +284,7 @@ export function initKanbanArea(): void {
           .filter(Boolean);
 
         try {
-          await fetch((window.__ingress_path || "") + "/api/tasks/reorder", {
+          await fetch("/api/tasks/reorder", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ ordered_ids: orderedIds }),
@@ -481,7 +479,7 @@ export function initKanbanArea(): void {
           }
           const task = await res.json();
           const dupRes = await fetch(
-            (window.__ingress_path || "") + "/api/tasks",
+            "/api/tasks",
             {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -642,7 +640,7 @@ export function initKanbanArea(): void {
         btn.disabled = true;
         btn.classList.add("btn-loading");
         try {
-          const res = await fetch((window.__ingress_path || "") + "/api/tasks", {
+          const res = await fetch("/api/tasks", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -705,7 +703,7 @@ export function initKanbanArea(): void {
         // Fetch users
         let users = [];
         try {
-          const res = await fetch((window.__ingress_path || "") + "/api/users");
+          const res = await fetch("/api/users");
           if (res.ok) {
             const data = await res.json();
             users = data.users || [];
@@ -1030,7 +1028,7 @@ export function initKanbanArea(): void {
             const payload = { title, status };
             if (taskType) payload.task_type = taskType;
             const res = await fetch(
-              (window.__ingress_path || "") + "/api/tasks",
+              "/api/tasks",
               {
                 method: "POST",
                 headers: { "content-type": "application/json" },
@@ -1091,7 +1089,7 @@ export function initKanbanArea(): void {
 
     async function fetchLanes() {
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/lanes");
+        const res = await fetch("/api/lanes");
         if (res.ok) {
           const data = await res.json();
           return data.lanes || [];
@@ -1130,7 +1128,7 @@ export function initKanbanArea(): void {
           const laneId = input.dataset.id;
           const wipLimit = Math.max(0, parseInt(input.value) || 0);
           try {
-            await fetch(`${window.__ingress_path || ""}/api/lanes/${laneId}`, {
+            await fetch(`/api/lanes/${laneId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ wip_limit: wipLimit }),
@@ -1149,7 +1147,7 @@ export function initKanbanArea(): void {
           if (newName?.trim()) {
             try {
               await fetch(
-                `${window.__ingress_path || ""}/api/lanes/${laneId}`,
+                `/api/lanes/${laneId}`,
                 {
                   method: "PUT",
                   headers: { "content-type": "application/json" },
@@ -1174,7 +1172,7 @@ export function initKanbanArea(): void {
           });
           if (!ok) return;
           try {
-            await fetch(`${window.__ingress_path || ""}/api/lanes/${laneId}`, {
+            await fetch(`/api/lanes/${laneId}`, {
               method: "DELETE",
             });
             document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-delete" } }));
@@ -1211,7 +1209,7 @@ export function initKanbanArea(): void {
           items.forEach((el, idx) => {
             updates.push(
               fetch(
-                `${window.__ingress_path || ""}/api/lanes/${el.dataset.id}`,
+                `/api/lanes/${el.dataset.id}`,
                 {
                   method: "PUT",
                   headers: { "content-type": "application/json" },
@@ -1280,7 +1278,7 @@ export function initKanbanArea(): void {
         return;
       }
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/lanes", {
+        const res = await fetch("/api/lanes", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ label: name }),
@@ -1524,7 +1522,7 @@ export function initKanbanArea(): void {
         let areaTitleMap = {};
         if (mode === "area") {
           try {
-            const res = await fetch((window.__ingress_path || "") + "/api/areas");
+            const res = await fetch("/api/areas");
             if (res.ok) {
               const data = await res.json();
               (data.areas || []).forEach(b => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.name}`; });
@@ -1774,7 +1772,7 @@ export function initKanbanArea(): void {
       if (!container) return;
 
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/users");
+        const res = await fetch("/api/users");
         if (!res.ok) return;
         const data = await res.json();
         const users = data.users || [];

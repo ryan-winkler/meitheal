@@ -455,6 +455,12 @@
             (
               document.getElementById("td-priority") as HTMLSelectElement
             ).value = String(t.priority ?? 3);
+
+            // Eisenhower dimensions
+            const urgencyEl = document.getElementById("td-urgency") as HTMLSelectElement | null;
+            if (urgencyEl) urgencyEl.value = String(t.urgency ?? 0);
+            const importanceEl = document.getElementById("td-importance") as HTMLSelectElement | null;
+            if (importanceEl) importanceEl.value = String(t.importance ?? 0);
             const progress = Number(t.progress ?? 0);
             (document.getElementById("td-progress") as HTMLInputElement).value =
               String(progress);
@@ -1156,6 +1162,18 @@
           .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
             saveTD("priority", Number((e.target as HTMLSelectElement).value)),
+          );
+        // Eisenhower urgency auto-save
+        document
+          .getElementById("td-urgency")
+          ?.addEventListener("change", (e) =>
+            saveTD("urgency", Number((e.target as HTMLSelectElement).value)),
+          );
+        // Eisenhower importance auto-save
+        document
+          .getElementById("td-importance")
+          ?.addEventListener("change", (e) =>
+            saveTD("importance", Number((e.target as HTMLSelectElement).value)),
           );
         // Phase 20: task_type auto-save
         document
