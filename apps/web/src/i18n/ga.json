@@ -654,7 +654,10 @@
     "defer_q4_title": "Bog gach tasc Ní Anois go riaráiste",
     "complete_q4": "Cuir i gCrích Iad Uilig",
     "complete_q4_title": "Marcáil gach tasc Ní Anois mar chríochnaithe",
-    "quick_add_placeholder": "Cuir tasc leis go tapa… (brúigh Iontráil)"
+    "quick_add_placeholder": "Cuir tasc leis go tapa… (brúigh Iontráil)",
+    "focus_mode": "Mód fócais",
+    "assign_q3": "Sann Go Tapa",
+    "assign_q3_title": "Sann gach tasc Toscaire do dhuine"
   },
   "common": {
     "save": "Sábháil",

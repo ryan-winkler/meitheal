@@ -55,6 +55,8 @@ export function initEisenhowerPage() {
   setupClickToOpen(page)
   setupActionButtons(page)
   setupQuickCapture(page)
+  setupFocusMode(page)
+  setupMobileTabs(page)
   checkWipLimits(page)
 }
 
@@ -258,6 +260,9 @@ function setupActionButtons(page: HTMLElement) {
         case "complete-q4":
           await completeQ4(page)
           break
+        case "assign-q3":
+          await assignQ3(page)
+          break
       }
     } finally {
       btn.removeAttribute("disabled")
@@ -442,4 +447,111 @@ function setupClickToOpen(page: HTMLElement) {
       )
     }
   })
+}
+
+// =============================================================================
+// Focus mode (desktop: expand one quadrant full-width)
+// =============================================================================
+
+function setupFocusMode(page: HTMLElement) {
+  const grid = page.querySelector<HTMLElement>(".eisenhower__grid")
+  if (!grid) return
+
+  page.addEventListener("click", (e: Event) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-focus-quadrant]")
+    if (!btn) return
+
+    const quadrantId = btn.dataset.focusQuadrant
+    if (!quadrantId) return
+
+    const quadrantEl = page.querySelector<HTMLElement>(`[data-quadrant="${quadrantId}"]`)
+    if (!quadrantEl) return
+
+    const isAlreadyFocused = quadrantEl.classList.contains("quadrant--focused")
+
+    // Clear all focus states
+    grid.classList.remove("grid--focused")
+    for (const q of page.querySelectorAll(".quadrant--focused")) {
+      q.classList.remove("quadrant--focused")
+    }
+
+    // Toggle: if already focused, go back to grid; otherwise focus this one
+    if (!isAlreadyFocused) {
+      grid.classList.add("grid--focused")
+      quadrantEl.classList.add("quadrant--focused")
+    }
+  })
+}
+
+// =============================================================================
+// Mobile tab switching
+// =============================================================================
+
+function setupMobileTabs(page: HTMLElement) {
+  const tabs = page.querySelectorAll<HTMLElement>("[data-tab-quadrant]")
+  const quadrants = page.querySelectorAll<HTMLElement>(".eisenhower__quadrant")
+
+  if (tabs.length === 0) return
+
+  // Activate first quadrant by default on mobile
+  const firstQuadrant = quadrants[0]
+  if (firstQuadrant) firstQuadrant.classList.add("quadrant--tab-active")
+
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tabQuadrant
+      if (!target) return
+
+      // Switch active tab
+      for (const t of tabs) {
+        t.classList.remove("mobile-tab--active")
+        t.setAttribute("aria-selected", "false")
+      }
+      tab.classList.add("mobile-tab--active")
+      tab.setAttribute("aria-selected", "true")
+
+      // Switch visible quadrant
+      for (const q of quadrants) {
+        q.classList.remove("quadrant--tab-active")
+      }
+      const targetQ = page.querySelector<HTMLElement>(`[data-quadrant="${target}"]`)
+      targetQ?.classList.add("quadrant--tab-active")
+    })
+  }
+}
+
+// =============================================================================
+// Q3 quick-assign
+// =============================================================================
+
+/**
+ * Q3 Assign: prompts for assignee name and updates all Q3 tasks.
+ */
+async function assignQ3(page: HTMLElement) {
+  const q3Zone = page.querySelector<HTMLElement>('[data-drop-zone="delegate"]')
+  if (!q3Zone) return
+
+  const tasks = q3Zone.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  const assignee = prompt("Assign all Delegate tasks to:")
+  if (!assignee || !assignee.trim()) return
+
+  let successCount = 0
+
+  for (const task of tasks) {
+    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
+    if (!id) continue
+
+    try {
+      await taskApi.updateTask(id, { assigned_to: assignee.trim() })
+      successCount++
+    } catch {
+      // Continue with remaining tasks
+    }
+  }
+
+  if (successCount > 0) {
+    showToast("common.task_updated")
+  }
 }

@@ -657,7 +657,10 @@
     "defer_q4_title": "Move all Not Now tasks to backlog",
     "complete_q4": "Complete All",
     "complete_q4_title": "Mark all Not Now tasks as done",
-    "quick_add_placeholder": "Quick add task… (press Enter)"
+    "quick_add_placeholder": "Quick add task… (press Enter)",
+    "focus_mode": "Focus mode",
+    "assign_q3": "Quick Assign",
+    "assign_q3_title": "Assign all Delegate tasks to a person"
   },
   "common": {
     "save": "Save",

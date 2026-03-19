@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import {
   ensureSchema,
@@ -7,6 +8,7 @@ import {
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { STATUS } from "../lib/status-config";
+import { CALENDAR_SECTIONS } from "../lib/calendar-registry";
 
 const { weekStart = "monday" } = Astro.locals;
 
@@ -131,6 +133,12 @@ for (let week = 0; week < 6; week++) {
   if (row.every((d) => !d.isCurrentMonth) && week > 0) break;
   grid.push(row);
 }
+
+const scheduledDayCount = Object.keys(tasksByDay).length
+const calendarSignal =
+  monthTotal === 0
+    ? "No tasks or connected events on this month yet"
+    : `${monthTotal} items tracked across ${scheduledDayCount} days`
 ---
 
 <Layout title={`Meitheal — ${monthName}`}>

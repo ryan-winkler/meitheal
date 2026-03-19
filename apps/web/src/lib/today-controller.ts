@@ -34,6 +34,8 @@ import {
   matchesRiceFilter,
 } from "./filter-state"
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
+import { initPageShellNavigation } from "./page-shell-controller"
+import { TODAY_SECTIONS } from "./today-registry"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -62,6 +64,16 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   installPageCleanup(lm)
 
   const container = options?.container ?? document.body
+
+  initPageShellNavigation({
+    barId: "today-bar",
+    shellId: "today-shell",
+    sectionSelector: "[data-today-section]",
+    sectionIds: TODAY_SECTIONS.map((section) => section.id),
+    defaultSectionId: "today-overview",
+    flashClass: "today-shell__section--flash",
+    sectionLinkSelectors: ["[data-today-section-link]"],
+  })
 
   setupEventDelegation(container)
   setupQuickAdd(container)

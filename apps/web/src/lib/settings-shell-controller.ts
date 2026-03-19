@@ -11,6 +11,11 @@ import {
   initUnifiedBarTitleSwitcher,
   setUnifiedBarSwitcherActiveState,
 } from "@lib/unified-bar-controller"
+import {
+  buildCompanionNavigateUrl,
+  buildCompanionXCallbackUrl,
+  buildIngressPagePath,
+} from "@lib/page-shell-links"
 
 function setShellDetailView(isDetailView: boolean): void {
   const shell = document.getElementById("settings-shell")
@@ -192,17 +197,11 @@ function initIntersectionTracking(): void {
 }
 
 function buildCompanionNavigateHref(sectionId: SettingsSectionId): string {
-  const ingressPath = window.__ingress_path || ""
-  const path = `${ingressPath}/settings#${sectionId}`
-  return `homeassistant://navigate${path}`
+  return buildCompanionNavigateUrl(buildIngressPagePath("/settings", sectionId))
 }
 
 function buildCompanionXCallbackHref(sectionId: SettingsSectionId): string {
-  const ingressPath = window.__ingress_path || ""
-  const path = `${ingressPath}/settings#${sectionId}`
-  return `homeassistant://x-callback-url/navigate?path=${encodeURIComponent(
-    path,
-  )}`
+  return buildCompanionXCallbackUrl(buildIngressPagePath("/settings", sectionId))
 }
 
 function initCompanionLinks(): void {

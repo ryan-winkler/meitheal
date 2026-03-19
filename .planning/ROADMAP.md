@@ -103,6 +103,103 @@
 
 **Dependencies:** Parallel Phase 14 dashboard shell helpers, `/api/habits`, `TemplateRepository`, `pageLifecycle`.
 
+## Parallel Phase 14.2: Unified Bar Cross-Page Reset
+
+**Status:** 🔵 In Progress
+
+**Goal:** Reset the remaining shell rollout around one explicit cross-page audit, page-context map, persona-loop, and backlog so Today, Upcoming, Calendar, Kanban, and Table can adopt the mature shell without losing route-switch context.
+
+**Requirements:** SHELL-11→15
+
+**Success Criteria:**
+1. Step 0 audit lane exists with a 50-persona audit, consolidated report, and explicit page-context map.
+2. Roadmap, requirements, and state record a new 14.2→14.7 phase family for the remaining pages.
+3. The two-layer shell decision is locked: `UnifiedBar` for top-level page sections, `TaskViewTabs` preserved on Calendar, Kanban, and Table.
+4. Persona-loop artifacts exist for the cross-page reset and record any tooling mismatches discovered while following the installed workflow.
+5. Verification confirms that older shell deferrals and newly discovered optimizations are represented in the backlog before code delivery starts.
+
+**Dependencies:** Parallel Phases 14 and 14.1, SearchHub upgrade, current codebase map, and Home Assistant companion route guidance.
+
+## Parallel Phase 14.3: Today Shell Rollout
+
+**Status:** 🔵 In Progress
+
+**Goal:** Apply the mature unified shell to `/today` and reframe the existing Today cockpit into explicit overview, focus, triage, work, and habits sections.
+
+**Requirements:** SHELL-16→18
+
+**Success Criteria:**
+1. Today uses `UnifiedBar` with `today-overview`, `today-focus`, `today-triage`, `today-work`, and `today-habits`.
+2. Existing Today interactions remain intact: clear done, quick add, filters, focus stack, task-detail handoff, and habits section.
+3. SearchHub and Assist launch from the shell without introducing duplicate page-local launchers.
+4. Tier 1 browser verification covers shell navigation, search, new-task launch, and the existing Today action surfaces.
+
+**Dependencies:** Phase 14.2 reset artifacts, existing `today-controller.ts`, SearchHub, pageLifecycle.
+
+## Parallel Phase 14.4: Upcoming Shell Rollout
+
+**Status:** 🔵 In Progress
+
+**Goal:** Extract `/upcoming` into a lifecycle-safe controller, then apply the unified shell while preserving direct completion, day-group accordions, and Today/Calendar handoff.
+
+**Requirements:** SHELL-19→21
+
+**Success Criteria:**
+1. Upcoming replaces its inline scripts with a dedicated controller before the shell rollout lands.
+2. Upcoming uses `UnifiedBar` with `upcoming-overview`, `upcoming-next`, `upcoming-week`, and `upcoming-flow`.
+3. Day-group accordion behavior, quick completion, and task-detail handoff continue to work after the shell migration.
+4. Tier 1 browser verification covers shell navigation, search, create-task handoff, and completion from the grouped list.
+
+**Dependencies:** Phase 14.2 reset artifacts, SearchHub, pageLifecycle, shared task APIs.
+
+## Parallel Phase 14.5: Calendar Shell Rollout
+
+**Status:** 🔵 In Progress
+
+**Goal:** Extract `/calendar` into a lifecycle-safe controller, then apply the unified shell while preserving month controls, HA sync, day drawer behavior, and the secondary task-view switcher.
+
+**Requirements:** SHELL-22→24
+
+**Success Criteria:**
+1. Calendar replaces its inline scripts with a dedicated controller before the shell rollout lands.
+2. Calendar uses `UnifiedBar` with `calendar-overview`, `calendar-month`, `calendar-agenda`, and `calendar-flow`, while keeping `TaskViewTabs` beneath it.
+3. Prev/next/today controls, sync action, inline previews, and day drawer behavior remain intact.
+4. Tier 1 browser verification covers shell navigation, search, sync action, day drawer open, and route-switch continuity.
+
+**Dependencies:** Phase 14.2 reset artifacts, SearchHub, pageLifecycle, calendar sync APIs, `TaskViewTabs`.
+
+## Parallel Phase 14.6: Kanban Shell Rollout
+
+**Status:** 🔵 In Progress
+
+**Goal:** Apply the mature shell to `/kanban` without flattening lane management, field customization, or route-switch context.
+
+**Requirements:** SHELL-25→27
+
+**Success Criteria:**
+1. Kanban uses `UnifiedBar` with `kanban-overview`, `kanban-lanes`, `kanban-fields`, and `kanban-flow`, while keeping `TaskViewTabs` beneath it.
+2. `Manage Lanes` and `New Task` remain shell actions; field emphasis moves into the page sections instead of competing with the action cluster.
+3. Existing filter, board, drag, quick-action, and task-detail behavior remain intact after the shell migration.
+4. Tier 1 browser verification covers shell navigation, search, manage-lanes, new-task launch, and route-switch continuity.
+
+**Dependencies:** Phase 14.2 reset artifacts, existing `kanban-controller.ts`, SearchHub, pageLifecycle, `TaskViewTabs`.
+
+## Parallel Phase 14.7: Table Shell Rollout
+
+**Status:** 🔵 In Progress
+
+**Goal:** Apply the mature shell to `/table` without flattening filters, presets, fields, or route-switch context.
+
+**Requirements:** SHELL-28→30
+
+**Success Criteria:**
+1. Table uses `UnifiedBar` with `table-overview`, `table-filters`, `table-fields`, and `table-flow`, while keeping `TaskViewTabs` beneath it.
+2. Filter toolbar, saved presets, column customizer, and raw table behavior remain intact after the shell migration.
+3. `New Task` remains the shell action while field and filter density move into anchored sections.
+4. Tier 1 browser verification covers shell navigation, search, new-task launch, and route-switch continuity.
+
+**Dependencies:** Phase 14.2 reset artifacts, existing `table-controller.ts`, SearchHub, pageLifecycle, `TaskViewTabs`.
+
 ## Parallel Phase 08.2: Settings Controller Decomposition
 
 **Status:** 🔵 In Progress

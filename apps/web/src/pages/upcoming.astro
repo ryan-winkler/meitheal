@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import {
@@ -71,6 +72,7 @@ import {
 } from "../lib/priority-config";
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
+import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
 
 const typeIcons: Record<string, string> = {
   epic: "🎯",
@@ -79,165 +81,554 @@ const typeIcons: Record<string, string> = {
 };
 
 const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
+const nextDays = days.slice(0, 2)
+const weekDays = days.slice(2)
+const nextWindowCount = nextDays.reduce((sum, day) => sum + day.tasks.length, 0)
+const weekAheadCount = weekDays.reduce((sum, day) => sum + day.tasks.length, 0)
+const upcomingSignal =
+  totalTasks === 0
+    ? "No tasks scheduled in the next 7 days"
+    : `${nextWindowCount} tasks due in the next 48 hours`
 ---
 
 <Layout title="Meitheal — Upcoming">
-  <span slot="page-title">📅 Upcoming</span>
-  <div slot="actions">
-    <a href="/today" class="btn btn-ghost" style="font-size: 13px;">☀️ Today</a>
-    <a href="/calendar" class="btn btn-ghost" style="font-size: 13px;"
-      >🗓️ Calendar</a
+  <UnifiedBar
+    title="Upcoming"
+    titleIcon="📅"
+    tabs={UPCOMING_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="upcoming-bar"
+    slot="custom-header"
+  />
+
+  <div id="upcoming-shell" class="upcoming-shell">
+    <section
+      id="upcoming-overview"
+      class="upcoming-shell__section upcoming-shell__section--overview"
+      data-upcoming-section
     >
-    <button
-      type="button"
-      class="btn btn-primary"
-      id="create-task-btn"
-      style="font-size: 13px;">+ New Task</button
-    >
-  </div>
-
-  <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-    {totalTasks}
-    {totalTasks === 1 ? "task" : "tasks"} in the next 7 days
-  </div>
-
-  {
-    totalTasks === 0 && (
-      <EmptyState
-        title="No upcoming tasks"
-        description="Your schedule is clear for the next 7 days."
-        actionText="Plan something"
-        actionHref="/table"
-      />
-    )
-  }
-
-  <div class="upcoming-grid">
-    {
-      days.map((day) => (
-        <div
-          class={`card ${day.tasks.length === 0 ? "day-empty" : ""}`}
-          style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
-        >
-          <div
-            class="day-header"
-            style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
-            role="button"
-            tabindex="0"
-            aria-expanded="true"
-          >
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
-              <span
-                style={`font-size: 13px; font-weight: ${day.isToday || day.isTomorrow ? "600" : "500"}; color: ${day.isToday ? "var(--accent)" : "var(--text-primary)"};`}
-              >
-                {day.label}
-              </span>
-            </div>
-            {day.tasks.length > 0 && (
-              <span style="font-size: 11px; background: var(--accent); color: white; padding: 1px 6px; border-radius: 8px; font-weight: 600;">
-                {day.tasks.length}
-              </span>
-            )}
-            {day.tasks.length === 0 && (
-              <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">
-                —
-              </span>
-            )}
+      <div class="upcoming-hero">
+        <div class="upcoming-hero__eyebrow">Home Assistant Native Planning Horizon</div>
+        <div class="upcoming-hero__title-row">
+          <div class="upcoming-hero__copy">
+            <h1 class="upcoming-hero__title">See the next week without losing today</h1>
+            <p class="upcoming-hero__description">
+              Upcoming keeps the next 48 hours separate from the rest of the week so
+              you can scan, complete, and hand work back to Today or Calendar without
+              rebuilding context.
+            </p>
           </div>
-          {day.tasks.length > 0 && (
-            <div class="task-list">
-              {day.tasks.map((task) => {
-                const p = Number(task.priority ?? 3);
-                const tt = String(task.task_type ?? "task");
-                const status = normalizeStatus(String(task.status ?? "pending"));
-                return (
-                  <div
-                    class="task-item"
-                    data-id={String(task.id)}
-                    style="cursor:pointer; padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); transition: background 0.15s;"
-                    role="button"
-                    tabindex="0"
-                    aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
-                  >
-                    <input
-                      type="checkbox"
-                      class="task-checkbox"
-                      data-id={String(task.id)}
-                      aria-label={`Complete ${String(task.title)}`}
-                    />
-                    <span
-                      style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
-                      title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                    >
-                      ●
-                    </span>
-                    <div style="flex: 1; min-width: 0;">
-                      <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        <span style="margin-right: 3px; font-size: 11px;">
-                          {typeIcons[tt] ?? ""}
-                        </span>
-                        {String(task.title)}
-                      </div>
-                      <div class="flex items-center gap-2 mt-2">
-                        <LabelBadges labels={task.labels as string} compact max={3} />
-                      </div>
-                    </div>
-                    <StatusBadge status={String(task.status)} />
-                    {task.color && (
-                      <span
-                        style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
-                      />
-                    )}
-                    {task.recurrence_rule && (
-                      <span
-                        style="font-size: 10px; color: var(--text-muted);"
-                        title="Recurring"
-                      >
-                        🔁
-                      </span>
-                    )}
-                    {(() => {
-                      try {
-                        const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
-                        if (Array.isArray(cl) && cl.length > 0) {
-                          const done = cl.filter((i: {done: boolean}) => i.done).length;
-                          return (
-                            <span
-                              style={`font-size: 10px; color: ${done === cl.length ? 'var(--success)' : 'var(--text-muted)'};`}
-                              title={`Checklist: ${done}/${cl.length}`}
-                            >
-                              ✓ {done}/{cl.length}
-                            </span>
-                          );
-                        }
-                      } catch { /* skip */ }
-                      return null;
-                    })()}
-                    {task.assigned_to && (
-                      <span
-                        class="avatar avatar--sm"
-                        title={`Assigned to ${String(task.assigned_to)}`}
-                        aria-label={`Assigned to ${String(task.assigned_to)}`}
-                      >
-                        {String(task.assigned_to)
-                          .replace(/^(ha_|custom_)/, "")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+
+          <div class="upcoming-hero__chips" aria-label="Upcoming quick jumps">
+            <a href="#upcoming-next" class="upcoming-hero__chip" data-upcoming-section-link>
+              Next 48h
+            </a>
+            <a href="#upcoming-week" class="upcoming-hero__chip" data-upcoming-section-link>
+              Week Ahead
+            </a>
+            <a href="#upcoming-flow" class="upcoming-hero__chip" data-upcoming-section-link>
+              Flow
+            </a>
+          </div>
         </div>
-      ))
-    }
+
+        <div class="upcoming-hero__status">
+          <span class="upcoming-hero__status-label">Current signal</span>
+          <strong id="upcoming-signal-summary">{upcomingSignal}</strong>
+        </div>
+      </div>
+
+      <div class="upcoming-summary-grid">
+        <div class="stat-card">
+          <span class="stat-value">{totalTasks}</span>
+          <span class="stat-label">Next 7 Days</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{nextWindowCount}</span>
+          <span class="stat-label">Next 48h</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{weekAheadCount}</span>
+          <span class="stat-label">Week Ahead</span>
+        </div>
+      </div>
+
+      {
+        totalTasks === 0 && (
+          <EmptyState
+            title="No upcoming tasks"
+            description="Your schedule is clear for the next 7 days."
+            actionText="Plan something"
+            actionHref="/table"
+          />
+        )
+      }
+    </section>
+
+    <section id="upcoming-next" class="upcoming-shell__section" data-upcoming-section>
+      <div class="upcoming-shell__intro">
+        <div>
+          <div class="upcoming-shell__eyebrow">Next 48h</div>
+          <h2 class="upcoming-shell__title">Prioritize the immediate commitment window</h2>
+          <p class="upcoming-shell__description">
+            Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.
+          </p>
+        </div>
+      </div>
+
+      <div class="upcoming-grid">
+        {
+          nextDays.map((day) => (
+            <div
+              class={`card ${day.tasks.length === 0 ? "day-empty" : ""}`}
+              style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
+            >
+              <div
+                class="day-header"
+                style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
+                role="button"
+                tabindex="0"
+                aria-expanded="true"
+              >
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
+                  <span
+                    style={`font-size: 13px; font-weight: ${day.isToday || day.isTomorrow ? "600" : "500"}; color: ${day.isToday ? "var(--accent)" : "var(--text-primary)"};`}
+                  >
+                    {day.label}
+                  </span>
+                </div>
+                {day.tasks.length > 0 && (
+                  <span style="font-size: 11px; background: var(--accent); color: white; padding: 1px 6px; border-radius: 8px; font-weight: 600;">
+                    {day.tasks.length}
+                  </span>
+                )}
+                {day.tasks.length === 0 && (
+                  <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+                    —
+                  </span>
+                )}
+              </div>
+              {day.tasks.length > 0 && (
+                <div class="task-list">
+                  {day.tasks.map((task) => {
+                    const p = Number(task.priority ?? 3);
+                    const tt = String(task.task_type ?? "task");
+                    return (
+                      <div
+                        class="task-item"
+                        data-id={String(task.id)}
+                        style="cursor:pointer; padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); transition: background 0.15s;"
+                        role="button"
+                        tabindex="0"
+                        aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
+                      >
+                        <input
+                          type="checkbox"
+                          class="task-checkbox"
+                          data-id={String(task.id)}
+                          aria-label={`Complete ${String(task.title)}`}
+                        />
+                        <span
+                          style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
+                          title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
+                        >
+                          ●
+                        </span>
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            <span style="margin-right: 3px; font-size: 11px;">
+                              {typeIcons[tt] ?? ""}
+                            </span>
+                            {String(task.title)}
+                          </div>
+                          <div class="flex items-center gap-2 mt-2">
+                            <LabelBadges labels={task.labels as string} compact max={3} />
+                          </div>
+                        </div>
+                        <StatusBadge status={String(task.status)} />
+                        {task.color && (
+                          <span
+                            style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
+                          />
+                        )}
+                        {task.recurrence_rule && (
+                          <span
+                            style="font-size: 10px; color: var(--text-muted);"
+                            title="Recurring"
+                          >
+                            🔁
+                          </span>
+                        )}
+                        {(() => {
+                          try {
+                            const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
+                            if (Array.isArray(cl) && cl.length > 0) {
+                              const done = cl.filter((i: {done: boolean}) => i.done).length;
+                              return (
+                                <span
+                                  style={`font-size: 10px; color: ${done === cl.length ? 'var(--success)' : 'var(--text-muted)'};`}
+                                  title={`Checklist: ${done}/${cl.length}`}
+                                >
+                                  ✓ {done}/{cl.length}
+                                </span>
+                              );
+                            }
+                          } catch { /* skip */ }
+                          return null;
+                        })()}
+                        {task.assigned_to && (
+                          <span
+                            class="avatar avatar--sm"
+                            title={`Assigned to ${String(task.assigned_to)}`}
+                            aria-label={`Assigned to ${String(task.assigned_to)}`}
+                          >
+                            {String(task.assigned_to)
+                              .replace(/^(ha_|custom_)/, "")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section id="upcoming-week" class="upcoming-shell__section" data-upcoming-section>
+      <div class="upcoming-shell__intro">
+        <div>
+          <div class="upcoming-shell__eyebrow">Week Ahead</div>
+          <h2 class="upcoming-shell__title">Keep the rest of the week visible but lightweight</h2>
+          <p class="upcoming-shell__description">
+            The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.
+          </p>
+        </div>
+      </div>
+
+      <div class="upcoming-grid">
+        {
+          weekDays.map((day) => (
+            <div
+              class={`card ${day.tasks.length === 0 ? "day-empty" : ""}`}
+              style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
+            >
+              <div
+                class="day-header"
+                style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
+                role="button"
+                tabindex="0"
+                aria-expanded="true"
+              >
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
+                  <span style="font-size: 13px; font-weight: 500; color: var(--text-primary);">
+                    {day.label}
+                  </span>
+                </div>
+                {day.tasks.length > 0 && (
+                  <span style="font-size: 11px; background: var(--accent); color: white; padding: 1px 6px; border-radius: 8px; font-weight: 600;">
+                    {day.tasks.length}
+                  </span>
+                )}
+                {day.tasks.length === 0 && (
+                  <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+                    —
+                  </span>
+                )}
+              </div>
+              {day.tasks.length > 0 && (
+                <div class="task-list">
+                  {day.tasks.map((task) => {
+                    const p = Number(task.priority ?? 3);
+                    const tt = String(task.task_type ?? "task");
+                    return (
+                      <div
+                        class="task-item"
+                        data-id={String(task.id)}
+                        style="cursor:pointer; padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); transition: background 0.15s;"
+                        role="button"
+                        tabindex="0"
+                        aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
+                      >
+                        <input
+                          type="checkbox"
+                          class="task-checkbox"
+                          data-id={String(task.id)}
+                          aria-label={`Complete ${String(task.title)}`}
+                        />
+                        <span
+                          style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
+                          title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
+                        >
+                          ●
+                        </span>
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            <span style="margin-right: 3px; font-size: 11px;">
+                              {typeIcons[tt] ?? ""}
+                            </span>
+                            {String(task.title)}
+                          </div>
+                          <div class="flex items-center gap-2 mt-2">
+                            <LabelBadges labels={task.labels as string} compact max={3} />
+                          </div>
+                        </div>
+                        <StatusBadge status={String(task.status)} />
+                        {task.color && (
+                          <span
+                            style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
+                          />
+                        )}
+                        {task.recurrence_rule && (
+                          <span
+                            style="font-size: 10px; color: var(--text-muted);"
+                            title="Recurring"
+                          >
+                            🔁
+                          </span>
+                        )}
+                        {(() => {
+                          try {
+                            const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
+                            if (Array.isArray(cl) && cl.length > 0) {
+                              const done = cl.filter((i: {done: boolean}) => i.done).length;
+                              return (
+                                <span
+                                  style={`font-size: 10px; color: ${done === cl.length ? 'var(--success)' : 'var(--text-muted)'};`}
+                                  title={`Checklist: ${done}/${cl.length}`}
+                                >
+                                  ✓ {done}/{cl.length}
+                                </span>
+                              );
+                            }
+                          } catch { /* skip */ }
+                          return null;
+                        })()}
+                        {task.assigned_to && (
+                          <span
+                            class="avatar avatar--sm"
+                            title={`Assigned to ${String(task.assigned_to)}`}
+                            aria-label={`Assigned to ${String(task.assigned_to)}`}
+                          >
+                            {String(task.assigned_to)
+                              .replace(/^(ha_|custom_)/, "")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section id="upcoming-flow" class="upcoming-shell__section" data-upcoming-section>
+      <div class="upcoming-shell__intro">
+        <div>
+          <div class="upcoming-shell__eyebrow">Flow</div>
+          <h2 class="upcoming-shell__title">Move back to execution or into planning without reorienting</h2>
+          <p class="upcoming-shell__description">
+            Upcoming is the bridge between the daily cockpit and the calendar horizon.
+          </p>
+        </div>
+      </div>
+
+      <div class="upcoming-flow-grid">
+        <a class="card upcoming-flow-card" href="/today">
+          <strong>☀️ Back to Today</strong>
+          <p>Return to the focused execution surface when a scheduled task becomes immediate.</p>
+        </a>
+        <a class="card upcoming-flow-card" href="/calendar">
+          <strong>🗓️ Open Calendar</strong>
+          <p>Move into month planning and connected event context when the week needs reshaping.</p>
+        </a>
+      </div>
+    </section>
   </div>
 </Layout>
 
 <style>
+  .upcoming-shell {
+    display: grid;
+    gap: 28px;
+  }
+
+  .upcoming-shell__section {
+    display: grid;
+    gap: 16px;
+    scroll-margin-top: 88px;
+  }
+
+  .upcoming-shell__section--overview {
+    gap: 18px;
+  }
+
+  .upcoming-shell__section--flash {
+    animation: upcoming-section-flash 900ms ease;
+  }
+
+  .upcoming-shell__intro {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .upcoming-shell__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .upcoming-shell__title {
+    font-size: clamp(1.5rem, 2.8vw, 2rem);
+    line-height: 1.1;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .upcoming-shell__description {
+    margin: 8px 0 0;
+    max-width: 66ch;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .upcoming-hero {
+    display: grid;
+    gap: 18px;
+    padding: 24px 22px;
+    border-radius: 24px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
+      linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)));
+    box-shadow: var(--shadow-sm);
+  }
+
+  .upcoming-hero__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--accent) 82%, white);
+  }
+
+  .upcoming-hero__title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  .upcoming-hero__title {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.02;
+    color: var(--text-primary);
+  }
+
+  .upcoming-hero__description {
+    margin: 12px 0 0;
+    max-width: 60ch;
+    color: color-mix(in srgb, var(--text-muted) 85%, white);
+    line-height: 1.65;
+  }
+
+  .upcoming-hero__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .upcoming-hero__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .upcoming-hero__chip:hover {
+    border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+  }
+
+  .upcoming-hero__status {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 320px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  }
+
+  .upcoming-hero__status-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .upcoming-summary-grid,
+  .upcoming-flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .upcoming-flow-card {
+    display: grid;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+    padding: 18px;
+  }
+
+  .upcoming-flow-card p {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  @keyframes upcoming-section-flash {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 22px transparent;
+    }
+  }
+
   .day-header {
     transition: background 0.15s;
     cursor: pointer;
@@ -300,98 +691,25 @@ const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
     background: rgba(var(--success-rgb), 0.15);
     color: var(--success);
   }
+
+  @media (max-width: 900px) {
+    .upcoming-hero__title-row,
+    .upcoming-shell__intro {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .upcoming-hero__chips {
+      justify-content: flex-start;
+    }
+  }
 </style>
 
 <script>
-  import { taskApi } from "../lib/task-api-client"
-  import { onTaskCompleted } from "../lib/gamification-hook"
+  import { initUpcomingPage } from "../lib/upcoming-controller"
+  import { pageLifecycle } from "../lib/page-lifecycle"
 
-  function setupUpcomingPage() {
-    // Task checkbox completion
-    document
-      .querySelectorAll<HTMLInputElement>(".task-checkbox:not([data-initialized])")
-      .forEach((cb) => {
-        cb.dataset.initialized = 'true';
-        cb.addEventListener("change", async () => {
-          const id = cb.dataset.id;
-          if (!id) return;
-          try {
-            await taskApi.updateTask(id, {
-              status: cb.checked ? "complete" : "pending",
-            });
-            const item = cb.closest(".task-item") as HTMLElement | null;
-            if (cb.checked && item) {
-              onTaskCompleted();
-              item.style.opacity = "0.4";
-              item.style.transition = "opacity 0.3s";
-              setTimeout(() => item.remove(), 800);
-            }
-          } catch {
-            /* retry silently */
-          }
-        });
-      });
-
-    // Click to open task detail
-    document.querySelectorAll<HTMLElement>(".task-item:not([data-initialized])").forEach((item) => {
-      item.dataset.initialized = 'true';
-      item.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).tagName === "INPUT") return;
-        const id = item.dataset.id;
-        if (id)
-          window.location.href =
-            (window.__ingress_path || "") + `/tasks#task-${id}`;
-      });
-      item.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          const id = (e.target as HTMLElement).dataset?.id;
-          if (id)
-            window.location.href =
-              (window.__ingress_path || "") + `/tasks#task-${id}`;
-        }
-      });
-    });
-  }
-
-  // Initialize on full page load
-  setupUpcomingPage();
-
-  // Re-initialize on Astro View Transition navigation
-  document.addEventListener('astro:page-load', setupUpcomingPage);
-</script>
-
-<script is:inline>
-  function initUpcomingAccordions() {
-    document.querySelectorAll('.day-header:not([data-accordion-init])').forEach(header => {
-      header.setAttribute('data-accordion-init', 'true');
-      header.addEventListener('click', () => {
-        const isExpanded = header.getAttribute('aria-expanded') === 'true';
-        header.setAttribute('aria-expanded', String(!isExpanded));
-        const list = header.nextElementSibling;
-        if (list && list.classList.contains('task-list')) {
-          if (isExpanded) {
-             list.classList.add('collapsed');
-          } else {
-             list.classList.remove('collapsed');
-          }
-        }
-      });
-
-      header.addEventListener('keydown', (e) => {
-         if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            header.click();
-         }
-      });
-    });
-  }
-
-  // Run on first load and on astro navigation
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initUpcomingAccordions);
-  } else {
-    initUpcomingAccordions();
-  }
-  document.addEventListener('astro:page-load', initUpcomingAccordions);
+  pageLifecycle.onPageLoad(() => {
+    initUpcomingPage()
+  })
 </script>

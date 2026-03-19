@@ -3,7 +3,7 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** Dashboard + habits shell rollout complete locally; next page-shell research queued for Today/Upcoming/Calendar; Phase 04.1 human-agent-ddd-core research/discuss
+**Active Tracks:** Dashboard + habits shell rollout complete locally; unified bar cross-page reset and delivery active for Today/Upcoming/Calendar/Kanban/Table; Phase 04.1 human-agent-ddd-core research/discuss
 **Last Completed Local Work:** Parallel Phase 04.3 docs narrative & surface alignment — README, protocol docs, LLM assets, add-on/custom-component docs, screenshots, planning artifacts — 2026-03-19
 **Session Date:** 2026-03-19
 
@@ -65,6 +65,21 @@
 - Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/habits-shell.spec.ts` — 3 passed.
 - Tier 1: `curl -sS -o /tmp/habits-page.html -w '%{http_code}\n' 'http://127.0.0.1:4321/habits'` — returned `200`.
 - Tier 2: not required for this slice because no ingress, middleware, Home Assistant transport, or add-on lifecycle logic changed.
+
+## Parallel Phase 14.2 Summary (IN PROGRESS 🔵)
+
+**Objective:** Reset the remaining shell rollout around one explicit audit, page-context map, persona-loop, and backlog so the remaining pages can adopt the mature shell without losing route-level context or Home Assistant-native behavior.
+
+### Delivered on 2026-03-19
+- Added a Step 0 research lane under `.planning/research/unified-bar-cross-page/` with a 50-persona audit, consolidated report, and explicit context map for Today, Upcoming, Calendar, Kanban, and Table.
+- Added a new 14.2→14.7 phase family to the roadmap for the reset plus one delivery slice per remaining page.
+- Locked the two-layer shell rule in planning: `UnifiedBar` as the page shell, `TaskViewTabs` preserved for Calendar, Kanban, and Table.
+- Generated a fresh persona-loop iteration for the reset lane and documented the installed-tooling mismatch where the helper only supports integer phases.
+- Wrote reset context, research, and verification artifacts so older shell findings and newly discovered gaps are carried into execution instead of getting lost between slices.
+
+### Verification
+- Tier 1: audit lane files exist and planning docs reflect the new phase family.
+- Tier 2: not applicable for the planning reset itself; retained as the closeout gate for the delivery program.
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
 
@@ -158,6 +173,7 @@
 - Phase 08.1: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
 - Next page rollout order: Today, Upcoming, Calendar, Kanban, then Table. Today/Upcoming/Calendar already have stronger section narratives, while Kanban/Table need denser toolbar integration work.
+- Cross-page shell reset is active as Phase 14.2, followed by delivery phases 14.3 through 14.7.
 
 ## Phase 7 Summary (IN PROGRESS)
 
