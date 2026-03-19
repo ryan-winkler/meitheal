@@ -4,6 +4,14 @@
 
 All notable changes to Meitheal are documented in this file.
 
+## [0.3.1] — 2026-03-19
+
+### Changed
+
+- Refreshed codebase planning docs for architecture, conventions, integrations, stack, and structure
+- Added unified bar cross-page integration and verification reports under `.planning/research/unified-bar-cross-page/`
+- Cut a `0.3.1` patch release from current `main` to republish Home Assistant add-on artifacts
+
 ## [0.1.95] — 2026-03-08
 
 ### Added
