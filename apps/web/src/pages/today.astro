@@ -191,41 +191,41 @@ const todayCompletionPercent = Math.round(
     </button>
   </UnifiedBar>
 
-  <div id="today-shell" class="today-shell">
+  <div id="page-shell" class="page-shell">
     <section
       id="today-overview"
-      class="today-shell__section today-shell__section--overview"
+      class="page-shell__section page-shell__section--overview"
       data-today-section
     >
-      <div class="today-hero">
-        <div class="today-hero__eyebrow">Home Assistant Native Daily Cockpit</div>
-        <div class="today-hero__title-row">
-          <div class="today-hero__copy">
-            <h1 class="today-hero__title">A calmer command surface for today</h1>
-            <p class="today-hero__description">
+      <div class="page-hero">
+        <div class="page-hero__eyebrow">Home Assistant Native Daily Cockpit</div>
+        <div class="page-hero__title-row">
+          <div class="page-hero__copy">
+            <h1 class="page-hero__title">A calmer command surface for today</h1>
+            <p class="page-hero__description">
               Capture quickly, see what is truly due, and keep habits, calendar context,
               and task flow aligned inside the same local-first execution surface.
             </p>
           </div>
 
-          <div class="today-hero__chips" aria-label="Today quick jumps">
-            <a href="#today-focus" class="today-hero__chip" data-today-section-link>
+          <div class="page-hero__chips" aria-label="Today quick jumps">
+            <a href="#today-focus" class="page-hero__chip" data-today-section-link>
               Focus
             </a>
-            <a href="#today-triage" class="today-hero__chip" data-today-section-link>
+            <a href="#today-triage" class="page-hero__chip" data-today-section-link>
               Triage
             </a>
-            <a href="#today-work" class="today-hero__chip" data-today-section-link>
+            <a href="#today-work" class="page-hero__chip" data-today-section-link>
               Work
             </a>
-            <a href="#today-habits" class="today-hero__chip" data-today-section-link>
+            <a href="#today-habits" class="page-hero__chip" data-today-section-link>
               Habits
             </a>
           </div>
         </div>
 
-        <div class="today-hero__status">
-          <span class="today-hero__status-label">Current signal</span>
+        <div class="page-hero__status">
+          <span class="page-hero__status-label">Current signal</span>
           <strong id="today-signal-summary">{todayHeroSignal}</strong>
         </div>
       </div>
@@ -290,12 +290,12 @@ const todayCompletionPercent = Math.round(
       </div>
     </section>
 
-    <section id="today-focus" class="today-shell__section" data-today-section>
-      <div class="today-shell__intro">
+    <section id="today-focus" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="today-shell__eyebrow">Focus</div>
-          <h2 class="today-shell__title">See the next best move before the long list</h2>
-          <p class="today-shell__description">
+          <div class="page-shell__eyebrow">Focus</div>
+          <h2 class="page-shell__title">See the next best move before the long list</h2>
+          <p class="page-shell__description">
             The focus stack and filters work together here so triage feels deliberate
             instead of reactive.
           </p>
@@ -398,12 +398,12 @@ const todayCompletionPercent = Math.round(
       </div>
     </section>
 
-    <section id="today-triage" class="today-shell__section" data-today-section>
-      <div class="today-shell__intro">
+    <section id="today-triage" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="today-shell__eyebrow">Triage</div>
-          <h2 class="today-shell__title">Reduce carry-over before it crowds out today</h2>
-          <p class="today-shell__description">
+          <div class="page-shell__eyebrow">Triage</div>
+          <h2 class="page-shell__title">Reduce carry-over before it crowds out today</h2>
+          <p class="page-shell__description">
             Overdue work and suggestions belong together so the page helps you make
             cleanup choices first.
           </p>
@@ -453,12 +453,12 @@ const todayCompletionPercent = Math.round(
       )}
     </section>
 
-    <section id="today-work" class="today-shell__section" data-today-section>
-      <div class="today-shell__intro">
+    <section id="today-work" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="today-shell__eyebrow">Work</div>
-          <h2 class="today-shell__title">Run the actual queue without losing context</h2>
-          <p class="today-shell__description">
+          <div class="page-shell__eyebrow">Work</div>
+          <h2 class="page-shell__title">Run the actual queue without losing context</h2>
+          <p class="page-shell__description">
             Pinned work, today’s commitments, calendar context, and unscheduled tasks
             stay together as the main operating surface.
           </p>
@@ -545,12 +545,12 @@ const todayCompletionPercent = Math.round(
       )}
     </section>
 
-    <section id="today-habits" class="today-shell__section" data-today-section>
-      <div class="today-shell__intro">
+    <section id="today-habits" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
         <div>
-          <div class="today-shell__eyebrow">Habits</div>
-          <h2 class="today-shell__title">Keep routines attached to real work</h2>
-          <p class="today-shell__description">
+          <div class="page-shell__eyebrow">Habits</div>
+          <h2 class="page-shell__title">Keep routines attached to real work</h2>
+          <p class="page-shell__description">
             Habits stay visible here as execution support, not as a separate tracking
             world detached from the rest of Meitheal.
           </p>
@@ -606,54 +606,7 @@ const todayCompletionPercent = Math.round(
 </Layout>
 
 <style>
-  .today-shell {
-    display: grid;
-    gap: 28px;
-  }
-
-  .today-shell__section {
-    display: grid;
-    gap: 16px;
-    scroll-margin-top: 88px;
-  }
-
-  .today-shell__section--overview {
-    gap: 18px;
-  }
-
-  .today-shell__section--flash {
-    animation: today-section-flash 900ms ease;
-  }
-
-  .today-shell__intro {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 16px;
-  }
-
-  .today-shell__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 8px;
-  }
-
-  .today-shell__title {
-    font-size: clamp(1.5rem, 2.8vw, 2rem);
-    line-height: 1.1;
-    margin: 0;
-    color: var(--text-primary);
-  }
-
-  .today-shell__description {
-    margin: 8px 0 0;
-    max-width: 66ch;
-    color: var(--text-muted);
-    line-height: 1.6;
-  }
+  /* Shared shell/hero/flow CSS is in _page-shell.css */
 
   .today-shell__capture-card {
     margin-bottom: 0;
@@ -679,102 +632,6 @@ const todayCompletionPercent = Math.round(
     color: var(--text-muted);
   }
 
-  .today-hero {
-    display: grid;
-    gap: 18px;
-    padding: 24px 22px;
-    border-radius: 24px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
-      linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)));
-    box-shadow: var(--shadow-sm);
-  }
-
-  .today-hero__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--accent) 82%, white);
-  }
-
-  .today-hero__title-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 24px;
-    align-items: flex-start;
-  }
-
-  .today-hero__title {
-    margin: 0;
-    font-size: clamp(2rem, 4.2vw, 3rem);
-    line-height: 1.02;
-    color: var(--text-primary);
-  }
-
-  .today-hero__description {
-    margin: 12px 0 0;
-    max-width: 58ch;
-    color: color-mix(in srgb, var(--text-muted) 85%, white);
-    line-height: 1.65;
-  }
-
-  .today-hero__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-end;
-  }
-
-  .today-hero__chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 38px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
-    color: var(--text-primary);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
-  }
-
-  .today-hero__chip:hover {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
-  }
-
-  .today-hero__status {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 6px;
-    max-width: 320px;
-    padding: 14px 16px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  }
-
-  .today-hero__status-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  @keyframes today-section-flash {
-    0% {
-      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
-    }
-    100% {
-      box-shadow: 0 0 0 22px transparent;
-    }
-  }
 
   /* ── Filter Bar ──────────────────────────────────────────────── */
   .today-filter-bar {
@@ -812,17 +669,7 @@ const todayCompletionPercent = Math.round(
     outline-offset: -1px;
   }
 
-  @media (max-width: 900px) {
-    .today-hero__title-row,
-    .today-shell__intro {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .today-hero__chips {
-      justify-content: flex-start;
-    }
-  }
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
   .today-filter-bar .btn-sm {
     padding: 5px 8px;
     font-size: 13px;

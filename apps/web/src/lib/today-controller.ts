@@ -72,7 +72,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     sectionSelector: "[data-today-section]",
     sectionIds: TODAY_SECTIONS.map((section) => section.id),
     defaultSectionId: "today-overview",
-    flashClass: "today-shell__section--flash",
+    flashClass: "page-shell__section--flash",
     sectionLinkSelectors: ["[data-today-section-link]"],
   })
 
