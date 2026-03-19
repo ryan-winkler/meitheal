@@ -3,8 +3,8 @@
 ## Current Position
 
 **Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** Dashboard + habits shell rollout complete locally; unified bar cross-page reset and delivery active for Today/Upcoming/Calendar/Kanban/Table; Phase 04.1 human-agent-ddd-core research/discuss
-**Last Completed Local Work:** Parallel Phase 04.3 docs narrative & surface alignment — README, protocol docs, LLM assets, add-on/custom-component docs, screenshots, planning artifacts — 2026-03-19
+**Active Tracks:** Unified bar cross-page program implemented locally across Today, Upcoming, Calendar, Kanban, and Table; Tier 2 ingress/companion closeout still pending; Phase 04.1 human-agent-ddd-core research/discuss
+**Last Completed Local Work:** Parallel Phases 14.2→14.7 unified bar cross-page reset and rollout — audit, planning reset, page-shell rollout, docs, and e2e verification — 2026-03-19
 **Session Date:** 2026-03-19
 
 ## Parallel Phase 04.3 Summary (COMPLETE ✅)
@@ -66,7 +66,7 @@
 - Tier 1: `curl -sS -o /tmp/habits-page.html -w '%{http_code}\n' 'http://127.0.0.1:4321/habits'` — returned `200`.
 - Tier 2: not required for this slice because no ingress, middleware, Home Assistant transport, or add-on lifecycle logic changed.
 
-## Parallel Phase 14.2 Summary (IN PROGRESS 🔵)
+## Parallel Phase 14.2 Summary (COMPLETE LOCALLY ✅)
 
 **Objective:** Reset the remaining shell rollout around one explicit audit, page-context map, persona-loop, and backlog so the remaining pages can adopt the mature shell without losing route-level context or Home Assistant-native behavior.
 
@@ -79,7 +79,78 @@
 
 ### Verification
 - Tier 1: audit lane files exist and planning docs reflect the new phase family.
-- Tier 2: not applicable for the planning reset itself; retained as the closeout gate for the delivery program.
+- Tier 1 follow-through: Today, Upcoming, Calendar, Kanban, and Table are now implemented locally against the reset plan.
+- Tier 2: the supporting devcontainer stack can now be started from the terminal, but full editor-managed ingress/companion verification remains pending for `SHELL-33`.
+
+## Parallel Phase 14.3 Summary (COMPLETE LOCALLY ✅)
+
+**Objective:** Apply the mature shell to `/today` while preserving Smart Today behavior and the shared task-detail surface.
+
+### Delivered on 2026-03-19
+- Rebuilt `/today` around `UnifiedBar`, explicit overview/focus/triage/work/habits sections, and same-route shell anchors.
+- Preserved clear-done, quick add, filters, focus stack, habits, SearchHub, Assist, and task-detail handoff.
+- Added focused browser coverage for Today shell navigation, search, new-task launch, and task-detail handoff.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/today-shell.spec.ts` — 4 passed.
+- Tier 1: `curl http://127.0.0.1:4321/today` — returned `200`.
+
+## Parallel Phase 14.4 Summary (COMPLETE LOCALLY ✅)
+
+**Objective:** Extract `/upcoming` into a lifecycle-safe controller and apply the mature shell without losing grouped-day behavior or task-detail handoff.
+
+### Delivered on 2026-03-19
+- Replaced the page’s inline scripts with `upcoming-controller.ts`.
+- Rebuilt `/upcoming` around the unified shell and explicit overview/next/week/flow sections.
+- Preserved grouped day accordions, completion, SearchHub, Assist, `New Task`, and task-detail handoff.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/upcoming-shell.spec.ts` — 4 passed.
+- Tier 1: `curl http://127.0.0.1:4321/upcoming` — returned `200`.
+
+## Parallel Phase 14.5 Summary (COMPLETE LOCALLY ✅)
+
+**Objective:** Extract `/calendar` into a lifecycle-safe controller and apply the mature shell while preserving the task-view strip, month controls, and day drawer.
+
+### Delivered on 2026-03-19
+- Replaced the page’s inline scripts with `calendar-controller.ts`.
+- Rebuilt `/calendar` around the unified shell and explicit overview/month/agenda/flow sections.
+- Preserved `TaskViewTabs`, query-preserving view switching, sync, day drawer behavior, SearchHub, Assist, and task-modal handoff.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/calendar-shell.spec.ts` — 4 passed.
+- Tier 1: `curl http://127.0.0.1:4321/calendar` — returned `200`.
+
+## Parallel Phase 14.6 Summary (COMPLETE LOCALLY ✅)
+
+**Objective:** Apply the mature shell to `/kanban` while preserving board-first controls, lane management, and route-switch continuity.
+
+### Delivered on 2026-03-19
+- Rebuilt `/kanban` around the unified shell and explicit overview/lanes/fields/flow sections.
+- Preserved `TaskViewTabs`, query-preserving view switching, SearchHub, Assist, and shell-level `Manage Lanes`.
+- Normalized controller fetches to bare `/api/...` paths and added a dedicated lane-management panel initializer with idempotent boot behavior.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/kanban-shell.spec.ts` — 4 passed.
+- Tier 1: `curl http://127.0.0.1:4321/kanban` — returned `200`.
+
+## Parallel Phase 14.7 Summary (COMPLETE LOCALLY ✅)
+
+**Objective:** Apply the mature shell to `/table` while preserving filters, presets, fields, and row-detail handoff.
+
+### Delivered on 2026-03-19
+- Rebuilt `/table` around the unified shell and explicit overview/filters/fields/flow sections.
+- Preserved `TaskViewTabs`, query-preserving view switching, SearchHub, Assist, `New Task`, and table row-detail handoff.
+- Normalized row-detail handoff onto the shared task-detail helper path.
+
+### Verification
+- Tier 1: `pnpm check` — passed.
+- Tier 1: `E2E_BASE_URL=http://127.0.0.1:4321 pnpm --filter @meitheal/tests test tests/e2e/table-shell.spec.ts` — 5 passed.
+- Tier 1: `curl http://127.0.0.1:4321/table` — returned `200`.
 
 ## Parallel Phase 08 Summary (IMPLEMENTED LOCALLY, TIER 2 PENDING)
 
@@ -173,7 +244,7 @@
 - Phase 08.1: Run Tier 2 HA devcontainer verification for ingress-safe hashes, companion reopen flows, and App & PWA behavior once Docker access is available.
 - Phase 09: Run Tier 2 HA verification for ingress-aware search handoff and companion behavior once Docker access is available.
 - Next page rollout order: Today, Upcoming, Calendar, Kanban, then Table. Today/Upcoming/Calendar already have stronger section narratives, while Kanban/Table need denser toolbar integration work.
-- Cross-page shell reset is active as Phase 14.2, followed by delivery phases 14.3 through 14.7.
+- Cross-page shell reset and the 14.3→14.7 page rollouts are implemented locally; the remaining closeout gate is `SHELL-33` editor-managed Tier 2 ingress/companion verification.
 
 ## Phase 7 Summary (IN PROGRESS)
 

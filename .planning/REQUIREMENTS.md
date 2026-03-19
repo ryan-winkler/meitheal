@@ -87,23 +87,23 @@
 - [x] **SHELL-13**: Add a new 14.2→14.7 phase family covering reset, Today, Upcoming, Calendar, Kanban, and Table
 - [x] **SHELL-14**: Generate persona-loop artifacts for the cross-page reset and record the installed tooling mismatch where relevant
 - [x] **SHELL-15**: Goal-backward verify that prior shell deferrals and newly discovered page-context gaps are represented in the backlog
-- [ ] **SHELL-16**: Today adopts `UnifiedBar` with `today-overview`, `today-focus`, `today-triage`, `today-work`, and `today-habits`
-- [ ] **SHELL-17**: Today preserves clear-done, quick add, filters, focus stack, habits, SearchHub, Assist, and task-detail handoff after the shell migration
-- [ ] **SHELL-18**: Add Tier 1 browser coverage for the Today shell and its core actions
-- [ ] **SHELL-19**: Upcoming replaces inline scripts with a lifecycle-safe controller before adopting the unified shell
-- [ ] **SHELL-20**: Upcoming adopts `UnifiedBar` with `upcoming-overview`, `upcoming-next`, `upcoming-week`, and `upcoming-flow`
-- [ ] **SHELL-21**: Upcoming preserves day-group accordions, quick completion, task-detail handoff, SearchHub, and Assist after the shell migration
-- [ ] **SHELL-22**: Calendar replaces inline scripts with a lifecycle-safe controller before adopting the unified shell
-- [ ] **SHELL-23**: Calendar adopts `UnifiedBar` with `calendar-overview`, `calendar-month`, `calendar-agenda`, and `calendar-flow` while keeping `TaskViewTabs`
-- [ ] **SHELL-24**: Calendar preserves sync, month controls, inline previews, day drawer behavior, SearchHub, Assist, and route-switch continuity after the shell migration
-- [ ] **SHELL-25**: Kanban adopts `UnifiedBar` with `kanban-overview`, `kanban-lanes`, `kanban-fields`, and `kanban-flow` while keeping `TaskViewTabs`
-- [ ] **SHELL-26**: Kanban preserves lane management, filters, board interactions, SearchHub, Assist, and route-switch continuity after the shell migration
-- [ ] **SHELL-27**: Add Tier 1 browser coverage for the Kanban shell, lane actions, and route-switch continuity
-- [ ] **SHELL-28**: Table adopts `UnifiedBar` with `table-overview`, `table-filters`, `table-fields`, and `table-flow` while keeping `TaskViewTabs`
-- [ ] **SHELL-29**: Table preserves filters, saved presets, column customization, SearchHub, Assist, and route-switch continuity after the shell migration
-- [ ] **SHELL-30**: Add Tier 1 browser coverage for the Table shell and route-switch continuity
-- [ ] **SHELL-31**: Add Tier 1 browser coverage for the Upcoming and Calendar shell flows
-- [ ] **SHELL-32**: Add KCS/runbook coverage for Today, Upcoming, Calendar, Kanban, and Table shell behavior
+- [x] **SHELL-16**: Today adopts `UnifiedBar` with `today-overview`, `today-focus`, `today-triage`, `today-work`, and `today-habits`
+- [x] **SHELL-17**: Today preserves clear-done, quick add, filters, focus stack, habits, SearchHub, Assist, and task-detail handoff after the shell migration
+- [x] **SHELL-18**: Add Tier 1 browser coverage for the Today shell and its core actions
+- [x] **SHELL-19**: Upcoming replaces inline scripts with a lifecycle-safe controller before adopting the unified shell
+- [x] **SHELL-20**: Upcoming adopts `UnifiedBar` with `upcoming-overview`, `upcoming-next`, `upcoming-week`, and `upcoming-flow`
+- [x] **SHELL-21**: Upcoming preserves day-group accordions, quick completion, task-detail handoff, SearchHub, and Assist after the shell migration
+- [x] **SHELL-22**: Calendar replaces inline scripts with a lifecycle-safe controller before adopting the unified shell
+- [x] **SHELL-23**: Calendar adopts `UnifiedBar` with `calendar-overview`, `calendar-month`, `calendar-agenda`, and `calendar-flow` while keeping `TaskViewTabs`
+- [x] **SHELL-24**: Calendar preserves sync, month controls, inline previews, day drawer behavior, SearchHub, Assist, and route-switch continuity after the shell migration
+- [x] **SHELL-25**: Kanban adopts `UnifiedBar` with `kanban-overview`, `kanban-lanes`, `kanban-fields`, and `kanban-flow` while keeping `TaskViewTabs`
+- [x] **SHELL-26**: Kanban preserves lane management, filters, board interactions, SearchHub, Assist, and route-switch continuity after the shell migration
+- [x] **SHELL-27**: Add Tier 1 browser coverage for the Kanban shell, lane actions, and route-switch continuity
+- [x] **SHELL-28**: Table adopts `UnifiedBar` with `table-overview`, `table-filters`, `table-fields`, and `table-flow` while keeping `TaskViewTabs`
+- [x] **SHELL-29**: Table preserves filters, saved presets, column customization, SearchHub, Assist, and route-switch continuity after the shell migration
+- [x] **SHELL-30**: Add Tier 1 browser coverage for the Table shell and route-switch continuity
+- [x] **SHELL-31**: Add Tier 1 browser coverage for the Upcoming and Calendar shell flows
+- [x] **SHELL-32**: Add KCS/runbook coverage for Today, Upcoming, Calendar, Kanban, and Table shell behavior
 - [ ] **SHELL-33**: Complete Tier 2 Home Assistant ingress and companion verification for the full cross-page shell program
 
 ## Smart Today Maturation (STM)

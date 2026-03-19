@@ -774,7 +774,30 @@ const quadrants: Quadrant[] = [
     background: rgba(255, 255, 255, 0.05);
   }
 
-  /* ── Triage overlay ── */
+  /* Triage overlay styles are in <style is:global> below */
+
+  /* ── Hint ── */
+  .eisenhower__hint {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 16px;
+    opacity: 0.6;
+  }
+
+  /* ── Reduced Motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .eisenhower__quadrant {
+      transition: none;
+    }
+    :global(.tli--dragging) {
+      transform: none;
+    }
+  }
+</style>
+
+<style is:global>
+  /* ── Triage overlay (global to ensure position:fixed works) ── */
   .triage-overlay {
     position: fixed;
     inset: 0;
@@ -962,24 +985,5 @@ const quadrants: Quadrant[] = [
   }
   .triage-card__save:hover {
     background: rgba(var(--accent-rgb), 0.2);
-  }
-
-  /* ── Hint ── */
-  .eisenhower__hint {
-    text-align: center;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-top: 16px;
-    opacity: 0.6;
-  }
-
-  /* ── Reduced Motion ── */
-  @media (prefers-reduced-motion: reduce) {
-    .eisenhower__quadrant {
-      transition: none;
-    }
-    :global(.tli--dragging) {
-      transform: none;
-    }
   }
 </style>

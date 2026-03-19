@@ -105,7 +105,7 @@
 
 ## Parallel Phase 14.2: Unified Bar Cross-Page Reset
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local reset complete
 
 **Goal:** Reset the remaining shell rollout around one explicit cross-page audit, page-context map, persona-loop, and backlog so Today, Upcoming, Calendar, Kanban, and Table can adopt the mature shell without losing route-switch context.
 
@@ -122,7 +122,7 @@
 
 ## Parallel Phase 14.3: Today Shell Rollout
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local implementation complete
 
 **Goal:** Apply the mature unified shell to `/today` and reframe the existing Today cockpit into explicit overview, focus, triage, work, and habits sections.
 
@@ -138,7 +138,7 @@
 
 ## Parallel Phase 14.4: Upcoming Shell Rollout
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local implementation complete
 
 **Goal:** Extract `/upcoming` into a lifecycle-safe controller, then apply the unified shell while preserving direct completion, day-group accordions, and Today/Calendar handoff.
 
@@ -154,7 +154,7 @@
 
 ## Parallel Phase 14.5: Calendar Shell Rollout
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local implementation complete
 
 **Goal:** Extract `/calendar` into a lifecycle-safe controller, then apply the unified shell while preserving month controls, HA sync, day drawer behavior, and the secondary task-view switcher.
 
@@ -170,7 +170,7 @@
 
 ## Parallel Phase 14.6: Kanban Shell Rollout
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local implementation complete
 
 **Goal:** Apply the mature shell to `/kanban` without flattening lane management, field customization, or route-switch context.
 
@@ -186,7 +186,7 @@
 
 ## Parallel Phase 14.7: Table Shell Rollout
 
-**Status:** 🔵 In Progress
+**Status:** ✅ Local implementation complete
 
 **Goal:** Apply the mature shell to `/table` without flattening filters, presets, fields, or route-switch context.
 
