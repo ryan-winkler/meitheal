@@ -19,7 +19,9 @@ import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+import { TABLE_SECTIONS } from "@lib/table-registry"
 import {
   saveFilterState,
   loadFilterState,
@@ -57,6 +59,16 @@ const __signal = pageLifecycle.signal
 // =============================================================================
 
 function init() {
+  initPageShellNavigation({
+    barId: "table-bar",
+    shellId: "table-shell",
+    sectionSelector: "[data-table-section]",
+    sectionIds: TABLE_SECTIONS.map((section) => section.id),
+    defaultSectionId: "table-overview",
+    flashClass: "table-shell__section--flash",
+    sectionLinkSelectors: ["[data-table-section-link]"],
+  })
+
   const table = document.getElementById("task-table") as HTMLTableElement | null
   if (!table) return
 
@@ -1317,7 +1329,7 @@ function setupTableOverflow() {
   }
 
   checkOverflow()
-  window.addEventListener("resize", debounce(checkOverflow, 200))
+  pageLifecycle.on(window, "resize", debounce(checkOverflow, 200))
 }
 
 // =============================================================================
@@ -1336,7 +1348,6 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
 // Boot
 // =============================================================================
 
-document.addEventListener("DOMContentLoaded", init)
-
-// Also handle Astro view transitions
-document.addEventListener("astro:page-load", init)
+pageLifecycle.onPageLoad(() => {
+  init()
+})

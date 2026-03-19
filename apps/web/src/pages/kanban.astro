@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
@@ -16,6 +17,7 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
+import { KANBAN_SECTIONS } from "../lib/kanban-registry";
 
 const {
   ingressPath,
@@ -166,77 +168,129 @@ const typeConfig: Record<string, { label: string; color: string }> = {
   task: { label: "Task", color: "#6366F1" },
   bug: { label: "Bug", color: "#ef4444" },
 };
+const kanbanTaskCount = tasks.length;
+const kanbanSignal =
+  kanbanTaskCount === 0
+    ? "No active tasks on the board right now"
+    : `${kanbanTaskCount} tasks spread across ${columns.length} lanes`;
 ---
 
 <Layout title={`Meitheal — ${t("kanban.title", locale)}`}>
-  <span slot="page-title">{t("kanban.title", locale)}</span>
-  <div slot="actions" class="kanban-actions-slot">
-    <CardCustomizer />
+  <UnifiedBar
+    title={t("kanban.title", locale)}
+    titleIcon="▦"
+    tabs={KANBAN_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="kanban-bar"
+    slot="custom-header"
+  >
     <button
+      slot="actions"
       type="button"
-      class="btn btn-ghost flex items-center gap-2"
+      class="unified-bar__new-task-btn kanban-shell__manage-btn"
       id="manage-lanes-btn"
       title={t("kanban.manage_swimlanes", locale)}
+      aria-label={t("kanban.manage_swimlanes", locale)}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="lucide lucide-settings-2"
-        ><path d="M20 7h-9"></path><path d="M14 17H5"></path><circle
-          cx="17"
-          cy="7"
-          r="3"></circle><circle cx="8" cy="17" r="3"></circle></svg
-      >
-      <span class="hide-mobile">{t("kanban.manage_lanes", locale)}</span>
+      <span class="unified-bar__new-task-label">{t("kanban.manage_lanes", locale)}</span>
     </button>
-    <button type="button" class="btn btn-primary" id="kanban-new-task-btn"
-      >{t("kanban.new_task", locale)}</button
-    >
-  </div>
+  </UnifiedBar>
 
   <TaskViewTabs activeView="kanban" />
 
-  {/* Label filter bar */}
-  {
-    /* Shared FilterToolbar — replaces inline type-toolbar + LabelFilterBar (Phase 2) */
-  }
-  <FilterToolbar view="kanban" showGroupBy showUserPills />
+  <div id="kanban-shell" class="kanban-shell">
+    <section
+      id="kanban-overview"
+      class="kanban-shell__section kanban-shell__section--overview"
+      data-kanban-section
+    >
+      <div class="kanban-hero">
+        <div class="kanban-hero__eyebrow">Home Assistant Native Flow Board</div>
+        <div class="kanban-hero__title-row">
+          <div class="kanban-hero__copy">
+            <h1 class="kanban-hero__title">{t("kanban.title", locale)}</h1>
+            <p class="kanban-hero__description">
+              Keep lane context, drag-and-drop flow, and cross-view continuity without
+              crowding the board with competing chrome.
+            </p>
+          </div>
 
-  <!-- Lane management panel -->
-  <div class="lane-mgmt hidden" id="lane-mgmt">
-    <div class="lane-mgmt-inner">
-      <div class="lane-mgmt-header">
-        <strong>{t("kanban.manage_swimlanes", locale)}</strong>
-        <button
-          type="button"
-          class="btn-icon lane-mgmt-close"
-          id="lane-mgmt-close"
-          aria-label="Close">✕</button
-        >
+          <div class="kanban-hero__chips" aria-label="Kanban quick jumps">
+            <a href="#kanban-lanes" class="kanban-hero__chip" data-kanban-section-link>
+              Lanes
+            </a>
+            <a href="#kanban-fields" class="kanban-hero__chip" data-kanban-section-link>
+              Fields
+            </a>
+            <a href="#kanban-flow" class="kanban-hero__chip" data-kanban-section-link>
+              Flow
+            </a>
+          </div>
+        </div>
+
+        <div class="kanban-hero__status">
+          <span class="kanban-hero__status-label">Current signal</span>
+          <strong>{kanbanSignal}</strong>
+        </div>
       </div>
-      <div id="lane-list"></div>
-      <div class="lane-mgmt-add-row">
-        <input
-          type="text"
-          class="form-input lane-mgmt-add-input"
-          id="new-lane-input"
-          placeholder={t("kanban.new_lane_placeholder", locale)}
-        />
-        <button
-          type="button"
-          class="btn btn-primary lane-mgmt-add-btn"
-          id="add-lane-btn">{t("kanban.add_lane", locale)}</button
-        >
+
+      <div class="kanban-summary-grid">
+        <div class="stat-card">
+          <span class="stat-value">{kanbanTaskCount}</span>
+          <span class="stat-label">Tasks On Board</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{columns.length}</span>
+          <span class="stat-label">Visible Lanes</span>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
+
+    <section id="kanban-lanes" class="kanban-shell__section" data-kanban-section>
+      <div class="kanban-shell__intro">
+        <div>
+          <div class="kanban-shell__eyebrow">Lanes</div>
+          <h2 class="kanban-shell__title">Keep lane control close to the board</h2>
+          <p class="kanban-shell__description">
+            Filters and lane management stay attached to the board surface instead of competing in the shell.
+          </p>
+        </div>
+      </div>
+
+      <FilterToolbar view="kanban" showGroupBy showUserPills />
+
+      <div class="lane-mgmt hidden" id="lane-mgmt">
+        <div class="lane-mgmt-inner">
+          <div class="lane-mgmt-header">
+            <strong>{t("kanban.manage_swimlanes", locale)}</strong>
+            <button
+              type="button"
+              class="btn-icon lane-mgmt-close"
+              id="lane-mgmt-close"
+              aria-label="Close">✕</button
+            >
+          </div>
+          <div id="lane-list"></div>
+          <div class="lane-mgmt-add-row">
+            <input
+              type="text"
+              class="form-input lane-mgmt-add-input"
+              id="new-lane-input"
+              placeholder={t("kanban.new_lane_placeholder", locale)}
+            />
+            <button
+              type="button"
+              class="btn btn-primary lane-mgmt-add-btn"
+              id="add-lane-btn">{t("kanban.add_lane", locale)}</button
+            >
+          </div>
+        </div>
+      </div>
 
   <!-- P5-2: SVG icon defs — shared across all cards to avoid duplication -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -711,23 +765,243 @@ const typeConfig: Record<string, { label: string; color: string }> = {
     }
   </div>
 
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  >
+    </section>
+
+    <section id="kanban-fields" class="kanban-shell__section" data-kanban-section>
+      <div class="kanban-shell__intro">
+        <div>
+          <div class="kanban-shell__eyebrow">Fields</div>
+          <h2 class="kanban-shell__title">Control how much card detail the board reveals</h2>
+          <p class="kanban-shell__description">
+            Card field emphasis lives here so the top shell stays about navigation and flow.
+          </p>
+        </div>
+      </div>
+
+      <div class="card kanban-shell__fields-card">
+        <CardCustomizer />
+      </div>
+    </section>
+
+    <section id="kanban-flow" class="kanban-shell__section" data-kanban-section>
+      <div class="kanban-shell__intro">
+        <div>
+          <div class="kanban-shell__eyebrow">Flow</div>
+          <h2 class="kanban-shell__title">Move between board, table, and calendar views</h2>
+          <p class="kanban-shell__description">
+            The route strip keeps view switching separate, while this section explains the handoff.
+          </p>
+        </div>
+      </div>
+
+      <div class="kanban-flow-grid">
+        <a class="card kanban-flow-card" href="/table">
+          <strong>⊞ Open Table</strong>
+          <p>Switch to the dense field view when filtering and comparison work matter more than flow.</p>
+        </a>
+        <a class="card kanban-flow-card" href="/calendar">
+          <strong>🗓️ Open Calendar</strong>
+          <p>Move into the date-planning route when lane movement needs schedule context.</p>
+        </a>
+      </div>
+    </section>
+
+    <div
+      id="toast-container"
+      class="toast-container"
+      aria-live="polite"
+      role="status"
+      data-no-scroll-lock="true"
+    >
+    </div>
   </div>
 
   <script>
-    import { initKanbanArea } from "../lib/kanban-controller";
-    document.addEventListener("astro:page-load", () => initKanbanArea());
+    import { initKanbanArea } from "../lib/kanban-controller"
+    import { pageLifecycle } from "../lib/page-lifecycle"
+
+    pageLifecycle.onPageLoad(() => {
+      initKanbanArea()
+    })
   </script>
 </Layout>
 
 <style>
   @reference "../../src/styles/global.css";
+  .kanban-shell {
+    display: grid;
+    gap: 28px;
+  }
+
+  .kanban-shell__section {
+    display: grid;
+    gap: 16px;
+    scroll-margin-top: 88px;
+  }
+
+  .kanban-shell__section--overview {
+    gap: 18px;
+  }
+
+  .kanban-shell__section--flash {
+    animation: kanban-section-flash 900ms ease;
+  }
+
+  .kanban-shell__intro {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .kanban-shell__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .kanban-shell__title {
+    font-size: clamp(1.5rem, 2.8vw, 2rem);
+    line-height: 1.1;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .kanban-shell__description {
+    margin: 8px 0 0;
+    max-width: 66ch;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .kanban-shell__manage-btn {
+    min-height: 40px;
+    padding: 0 14px;
+  }
+
+  .kanban-shell__fields-card {
+    padding: 16px 18px;
+  }
+
+  .kanban-hero {
+    display: grid;
+    gap: 18px;
+    padding: 24px 22px;
+    border-radius: 24px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
+      linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 92%, transparent), color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)));
+    box-shadow: var(--shadow-sm);
+  }
+
+  .kanban-hero__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--accent) 82%, white);
+  }
+
+  .kanban-hero__title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  .kanban-hero__title {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.02;
+    color: var(--text-primary);
+  }
+
+  .kanban-hero__description {
+    margin: 12px 0 0;
+    max-width: 60ch;
+    color: color-mix(in srgb, var(--text-muted) 85%, white);
+    line-height: 1.65;
+  }
+
+  .kanban-hero__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .kanban-hero__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .kanban-hero__chip:hover {
+    border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+  }
+
+  .kanban-hero__status {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 320px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+    background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  }
+
+  .kanban-hero__status-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .kanban-summary-grid,
+  .kanban-flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .kanban-flow-card {
+    display: grid;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+    padding: 18px;
+  }
+
+  .kanban-flow-card p {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  @keyframes kanban-section-flash {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 22px transparent;
+    }
+  }
+
   .kanban-board {
     display: flex;
     gap: 10px;
@@ -740,6 +1014,16 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 
   /* Mobile: stack columns vertically */
   @media (max-width: 768px) {
+    .kanban-hero__title-row,
+    .kanban-shell__intro {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .kanban-hero__chips {
+      justify-content: flex-start;
+    }
+
     .kanban-board {
       flex-direction: column;
       overflow-x: hidden;

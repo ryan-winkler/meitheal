@@ -254,6 +254,9 @@ function setupActionButtons(page: HTMLElement) {
         case "commit-q1":
           await commitQ1ToToday(page)
           break
+        case "schedule-q2":
+          await scheduleQ2ThisWeek(page)
+          break
         case "defer-q4":
           await deferQ4ToBacklog(page)
           break
@@ -291,6 +294,43 @@ async function commitQ1ToToday(page: HTMLElement) {
 
     try {
       await taskApi.updateTask(id, { due_date: today })
+      successCount++
+    } catch {
+      // Continue with remaining tasks
+    }
+  }
+
+  if (successCount > 0) {
+    showToast("common.task_updated")
+  }
+}
+
+/**
+ * Q2 → Schedule This Week: sets due_date to end of current week (Sunday)
+ * for all Q2 tasks that don't already have a due date.
+ */
+async function scheduleQ2ThisWeek(page: HTMLElement) {
+  const q2Zone = page.querySelector<HTMLElement>('[data-drop-zone="schedule"]')
+  if (!q2Zone) return
+
+  const tasks = q2Zone.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  // Calculate next Sunday
+  const now = new Date()
+  const daysUntilSunday = 7 - now.getDay()
+  const endOfWeek = new Date(now)
+  endOfWeek.setDate(now.getDate() + (daysUntilSunday === 7 ? 0 : daysUntilSunday))
+  const endOfWeekStr = endOfWeek.toISOString().slice(0, 10)
+
+  let successCount = 0
+
+  for (const task of tasks) {
+    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
+    if (!id) continue
+
+    try {
+      await taskApi.updateTask(id, { due_date: endOfWeekStr })
       successCount++
     } catch {
       // Continue with remaining tasks

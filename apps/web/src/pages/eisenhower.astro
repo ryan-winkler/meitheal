@@ -49,6 +49,10 @@ for (const t of openTasks) {
 // Tasks with both urgency=0 and importance=0 need triage
 const unclassifiedCount = openTasks.filter((t) => t.urgency === 0 && t.importance === 0).length
 
+// Completed today count (for dopamine feedback)
+const todayStr = new Date().toISOString().slice(0, 10)
+const completedToday = tasks.filter((t) => t.is_done && t.updated_at?.startsWith(todayStr)).length
+
 interface Quadrant {
   id: string
   label: string
@@ -69,8 +73,19 @@ const quadrants: Quadrant[] = [
 <Layout title="Eisenhower Matrix">
   <main id="eisenhower-page" class="eisenhower">
     <header class="eisenhower__header">
-      <h1 class="eisenhower__title">{t("eisenhower.title", locale)}</h1>
-      <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
+      <div class="eisenhower__header-row">
+        <div>
+          <h1 class="eisenhower__title">{t("eisenhower.title", locale)}</h1>
+          <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
+        </div>
+        {completedToday > 0 && (
+          <div class="eisenhower__completed-today" title={t("eisenhower.completed_today", locale)}>
+            <span class="completed-today__icon">🏆</span>
+            <span class="completed-today__count">{completedToday}</span>
+            <span class="completed-today__label">{t("eisenhower.completed_today", locale)}</span>
+          </div>
+        )}
+      </div>
     </header>
 
     {/* ── Mobile tab bar (visible < 768px) ── */}
@@ -138,6 +153,19 @@ const quadrants: Quadrant[] = [
             </div>
           )}
 
+          {/* ── Q2 "Schedule This Week" action ── */}
+          {q.id === "schedule" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--primary"
+                data-action="schedule-q2"
+                title={t("eisenhower.schedule_q2_title", locale)}
+              >
+                📅 {t("eisenhower.schedule_q2", locale)}
+              </button>
+            </div>
+          )}
+
           {/* ── Q3 quick-assign action ── */}
           {q.id === "delegate" && q.tasks.length > 0 && (
             <div class="quadrant__action-bar">
@@ -177,8 +205,12 @@ const quadrants: Quadrant[] = [
                 {t("eisenhower.empty_quadrant", locale)}
               </div>
             ) : (
-              q.tasks.map((task) => (
-                <div class="eisenhower__task-wrapper" data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}>
+              q.tasks.map((task, idx) => (
+                <div
+                  class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
+                  data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
+                  data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
+                >
                   <TaskListItem task={task} compact={true} />
                   <div class="eisenhower__task-meta">
                     {task.eisenhower_override && (
@@ -226,6 +258,12 @@ const quadrants: Quadrant[] = [
   /* ── Header ── */
   .eisenhower__header {
     margin-bottom: 24px;
+  }
+  .eisenhower__header-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
     text-align: center;
   }
   .eisenhower__title {
@@ -241,6 +279,48 @@ const quadrants: Quadrant[] = [
     font-size: 0.8125rem;
     color: var(--text-muted);
     margin: 4px 0 0;
+  }
+
+  /* ── Completed today counter ── */
+  .eisenhower__completed-today {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(var(--success-rgb, 34, 197, 94), 0.08);
+    border: 1px solid rgba(var(--success-rgb, 34, 197, 94), 0.2);
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .completed-today__icon {
+    font-size: 1rem;
+  }
+  .completed-today__count {
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: var(--success, #22c55e);
+  }
+  .completed-today__label {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  /* ── Top-task spotlight (first task in Q1) ── */
+  .task-wrapper--top-task {
+    position: relative;
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(var(--accent-rgb), 0.04);
+    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.08);
+  }
+  .task-wrapper--top-task::before {
+    content: "👑";
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    font-size: 0.75rem;
+    z-index: 1;
   }
 
   /* ── 2×2 Grid ── */

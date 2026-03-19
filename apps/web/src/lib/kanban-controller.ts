@@ -1,6 +1,8 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
+import { KANBAN_SECTIONS } from "@lib/kanban-registry";
+import { initPageShellNavigation } from "@lib/page-shell-controller";
 import { pageLifecycle } from "@lib/page-lifecycle";
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html";
 
@@ -31,6 +33,16 @@ const __signal = pageLifecycle.signal;
  * Called on `astro:page-load` from kanban.astro.
  */
 export function initKanbanArea(): void {
+    initPageShellNavigation({
+      barId: "kanban-bar",
+      shellId: "kanban-shell",
+      sectionSelector: "[data-kanban-section]",
+      sectionIds: KANBAN_SECTIONS.map((section) => section.id),
+      defaultSectionId: "kanban-overview",
+      flashClass: "kanban-shell__section--flash",
+      sectionLinkSelectors: ["[data-kanban-section-link]"],
+    });
+
     function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
       if (!/^[A-Za-z0-9_-]+$/.test(normalizedTaskId)) {
