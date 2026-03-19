@@ -199,6 +199,18 @@ export function createLogger(config: LoggerConfig) {
   }
 }
 
+/** Valid actor types — use for API input validation */
+export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm"] as const
+export const VALID_ACTOR_TYPE_SET: ReadonlySet<string> = new Set(VALID_ACTOR_TYPES)
+
+/** Valid event types — use for API input validation */
+export const VALID_EVENT_TYPES: readonly TimelineEventType[] = [
+  "field_change", "status_change", "created", "deleted", "comment",
+  "delegated", "proposal_submitted", "proposal_accepted", "proposal_rejected",
+  "sync", "webhook", "locked", "unlocked",
+] as const
+export const VALID_EVENT_TYPE_SET: ReadonlySet<string> = new Set(VALID_EVENT_TYPES)
+
 export const defaultRedactionPatterns: RegExp[] = [
   /(bearer\s+)[a-z0-9\-._~+/]+=*/gi,
   /(authorization:\s*)[^\s]+/gi,

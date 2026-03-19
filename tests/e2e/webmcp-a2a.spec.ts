@@ -4,12 +4,12 @@ import { shouldSkipBrowserSpecs } from "./_helpers";
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run A2A/WebMCP checks");
 
 test.describe("A2A Agent Card Discovery", () => {
-  test("agent-card.json exists at well-known path", async ({
+  test("agent.json exists at well-known path", async ({
     request,
     baseURL,
   }) => {
     const response = await request.get(
-      `${baseURL}/.well-known/agent-card.json`
+      `${baseURL}/.well-known/agent.json`
     );
     expect(response.ok()).toBeTruthy();
     const card = await response.json();
@@ -205,7 +205,7 @@ test.describe("MCP Discovery", () => {
     const mcp = await response.json();
     expect(mcp.agent_protocols?.a2a).toBeDefined();
     expect(mcp.agent_protocols.a2a.agent_card).toBe(
-      "/.well-known/agent-card.json"
+      "/.well-known/agent.json"
     );
   });
 });

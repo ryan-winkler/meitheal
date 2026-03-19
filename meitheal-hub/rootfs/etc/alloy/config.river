@@ -36,6 +36,15 @@ loki.process "meitheal" {
     source = "message"
   }
 
+  // Retention hints: audit events kept 365d, errors 90d, debug 14d
+  stage.label_allow {
+    values = ["level", "domain", "actor_type", "service", "addon", "env"]
+  }
+
+  stage.tenant {
+    value = "meitheal"
+  }
+
   forward_to = [loki.write.default.receiver]
 }
 

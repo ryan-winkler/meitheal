@@ -14,6 +14,7 @@
 export interface A2AAgentCard {
   name: string;
   description: string;
+  url: string;
   supportedInterfaces: A2AAgentInterface[];
   provider: A2AAgentProvider;
   version: string;
@@ -29,6 +30,7 @@ export interface A2AAgentInterface {
   url: string;
   protocolBinding: "JSONRPC" | "GRPC" | "HTTP+JSON";
   protocolVersion: string;
+  authentication?: Record<string, unknown>;
 }
 
 export interface A2AAgentProvider {
@@ -40,6 +42,7 @@ export interface A2AAgentCapabilities {
   streaming: boolean;
   pushNotifications: boolean;
   extendedAgentCard?: boolean;
+  securityScheme?: string;
 }
 
 export interface A2AAgentSkill {
@@ -172,6 +175,51 @@ export const MEITHEAL_SKILLS: A2AAgentSkill[] = [
     inputModes: ["application/json", "text/plain"],
     outputModes: ["application/json", "text/csv"],
   },
+  {
+    id: "areas",
+    name: "Area Management",
+    description: "Create, read, update, and delete Areas (projects/domains) to organize tasks.",
+    tags: ["areas", "projects", "organization"],
+    examples: ["List all my areas", '{"action": "create", "name": "Work"}'],
+    inputModes: ["application/json", "text/plain"],
+    outputModes: ["application/json"],
+  },
+  {
+    id: "labels",
+    name: "Label Management",
+    description: "Create, read, update, and delete task labels for categorization.",
+    tags: ["labels", "tags", "categories"],
+    examples: ["What labels do I have?", '{"action": "create", "name": "urgent"}'],
+    inputModes: ["application/json", "text/plain"],
+    outputModes: ["application/json"],
+  },
+  {
+    id: "today-summary",
+    name: "Today Summary",
+    description: "Get a summary of tasks due today, carried forward, overdues, and daily gamification stats (streak, XP).",
+    tags: ["today", "stats", "gamification"],
+    examples: ["How many tasks are due today?", "What is my current streak?"],
+    inputModes: ["application/json", "text/plain"],
+    outputModes: ["application/json"],
+  },
+  {
+    id: "habits",
+    name: "Habits and Routines",
+    description: "Manage and track daily habits and recurring routines.",
+    tags: ["habits", "routines", "tracking"],
+    examples: ["Did I complete my morning routine?", "Mark water intake as done"],
+    inputModes: ["application/json", "text/plain"],
+    outputModes: ["application/json"],
+  },
+  {
+    id: "review-weekly",
+    name: "Weekly Review",
+    description: "Retrieve tasks completed in the past week and upcoming tasks for the next week to facilitate a weekly planning review.",
+    tags: ["review", "planning", "weekly"],
+    examples: ["Show me what I got done this week", "Help me plan my upcoming week"],
+    inputModes: ["application/json", "text/plain"],
+    outputModes: ["application/json"],
+  },
 ];
 
 /**
@@ -224,11 +272,13 @@ export function buildAgentCard(options: {
     name: "Meitheal",
     description:
       "A Home Assistant-native, Astro-first task and life management engine. Meitheal provides cooperative task orchestration with calendar sync, framework scoring, and offline-first PWA support.",
+    url: options.baseUrl,
     supportedInterfaces: [
       {
         url: `${options.baseUrl}/api/a2a`,
         protocolBinding: "HTTP+JSON",
         protocolVersion: "1.0",
+        authentication: { type: "bearer" },
       },
     ],
     provider: {
@@ -241,6 +291,7 @@ export function buildAgentCard(options: {
       streaming: false,
       pushNotifications: true,
       extendedAgentCard: false,
+      securityScheme: "bearer",
     },
     defaultInputModes: ["application/json", "text/plain"],
     defaultOutputModes: ["application/json"],

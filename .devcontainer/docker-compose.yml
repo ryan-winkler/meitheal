@@ -18,6 +18,7 @@ services:
   ha-devcontainer:
     image: ghcr.io/home-assistant/devcontainer:2-addons
     privileged: true
+    command: /sbin/init
     ports:
       - "7123:8123"
       - "7357:4357"

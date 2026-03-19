@@ -147,7 +147,7 @@ Changes **must** be verified in the correct environment tier before completion.
 | Addon lifecycle (start/stop/build) | 🏠 Tier 2 | HA devcontainer |
 | Final acceptance on real data | 🌐 Tier 3 | Production HA (`ha.internal`) |
 
-> **⚠️ AGENTS**: Do NOT mark HA integration work as verified using only Tier 1. If the devcontainer isn't running, start it with `./scripts/devcontainer-up.sh up`. See `.agents/workflows/devcontainer.md` for details.
+> **⚠️ AGENTS**: Do NOT mark HA integration work as verified using only Tier 1. Start Tier 2 either by reopening the checked-in `.devcontainer/devcontainer.json` in Antigravity or VS Code and running `Start Home Assistant`, or headlessly with `./scripts/devcontainer-up.sh status || ./scripts/devcontainer-up.sh up`. See `.agents/workflows/devcontainer.md` for details.
 
 ## KCS Rules
 
@@ -181,4 +181,3 @@ Meitheal uses a dual-licensing strategy. Agents must respect these boundaries:
 - `.zeroclaw/soul.md`
 - `docs/decisions/*.md`, `docs/kcs/*.md`
 - `public/.well-known/mcp.json`, `public/.well-known/jsondoc.json`
-

@@ -9,7 +9,7 @@ test("mcp discovery file exists", async ({ request, baseURL }) => {
 });
 
 test("a2a agent card file exists", async ({ request, baseURL }) => {
-  const response = await request.get(`${baseURL}/.well-known/agent-card.json`);
+  const response = await request.get(`${baseURL}/.well-known/agent.json`);
   expect(response.ok()).toBeTruthy();
   const card = await response.json();
   expect(card.name).toBe("Meitheal");

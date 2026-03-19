@@ -34,6 +34,10 @@ export default defineConfig({
   output: "server",
   trailingSlash: "never",
   adapter: node({ mode: "standalone" }),
+  redirects: {
+    "/.well-known/agent.json": "/api/a2a/agent-card",
+    "/.well-known/agent-card.json": "/api/a2a/agent-card"
+  },
   integrations: [],
   compressHTML: true,
   prefetch: true,

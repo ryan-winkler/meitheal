@@ -64,7 +64,7 @@ All endpoints accept and return JSON.
 
 ### Agent Protocol (A2A)
 
-- `GET /.well-known/agent-card.json` — Agent capability card (dynamic, per A2A spec §8)
+- `GET /.well-known/agent.json` — Agent capability card (dynamic, per A2A spec §8)
 - `POST /api/a2a/message` — Send A2A message
 
 ### MCP (Model Context Protocol)

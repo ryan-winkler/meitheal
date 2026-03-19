@@ -1,4 +1,4 @@
-# DDD Audit: Full Codebase Domain Map & Release Readiness
+can# DDD Audit: Full Codebase Domain Map & Release Readiness
 
 **Project:** Meitheal — Task Management & Strategic Planning Hub
 **Audited:** 2026-03-19

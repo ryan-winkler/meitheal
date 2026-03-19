@@ -425,6 +425,8 @@ export async function ensureSchema(): Promise<void> {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     )
   `);
+  // Composite index for timeline UNION query performance
+  await client.execute("CREATE INDEX IF NOT EXISTS comments_task_created_idx ON comments(task_id, created_at DESC)");
 
   // Kanban swim lanes — server-persisted lane configuration
   await client.execute(`
