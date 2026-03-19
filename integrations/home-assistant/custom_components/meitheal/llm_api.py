@@ -806,6 +806,10 @@ API_PROMPT = (
     "- When they ask 'what's coming up?' or 'what's my schedule?' — get upcoming items.\n"
     "- When they say 'good morning', 'brief me', or 'start my day' — give a daily briefing.\n"
     "- When they ask 'what did I finish?' — list completed tasks.\n"
+    "- When they ask 'what areas?', 'show my projects' — list areas.\n"
+    "- When they ask 'how are my goals?', 'goal progress' — list goals.\n"
+    "- When they say 'move task to X' — move to a different board/project.\n"
+    "- When they say 'update goal progress' — set goal progress percentage.\n"
     "- Priority levels: 1=urgent, 2=high, 3=medium (default), 4=low, 5=lowest.\n"
     "- When a task title includes '#label', extract and set the label.\n"
     "- When a task mentions 'urgent' or 'important', set priority to 1.\n"
@@ -975,6 +979,160 @@ class RemoveFromTodoListTool(Tool):
         }
 
 
+class ListAreasTool(Tool):
+    """List all areas (projects/areas in the hierarchy)."""
+
+    name = "meitheal_list_areas"
+    description = (
+        "List all areas and projects in Meitheal. Areas are top-level categories "
+        "for organizing tasks (like 'Home', 'Work', 'Health'). "
+        "Use when the user asks 'what areas do I have?', 'show my projects', "
+        "'list my areas', or 'what categories do I use?'."
+    )
+    parameters = vol.Schema({})
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: ToolInput,
+        llm_context: LLMContext,
+    ) -> JsonObjectType:
+        """List all areas."""
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return {"areas": [], "count": 0, "message": "Meitheal not available"}
+
+        try:
+            areas = await coordinator.async_list_areas()
+            return {"areas": areas, "count": len(areas)}
+        except Exception as err:
+            return {"error": str(err), "areas": [], "count": 0}
+
+
+class ListGoalsTool(Tool):
+    """List all goals with progress information."""
+
+    name = "meitheal_list_goals"
+    description = (
+        "List all goals in Meitheal with their progress percentage. "
+        "Goals are high-level objectives that group tasks and track completion. "
+        "Use when the user asks 'how are my goals?', 'show my goals', "
+        "'what am I working towards?', or 'goal progress'."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional(
+                "area_id",
+                description="Filter goals by area/project ID",
+            ): str,
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: ToolInput,
+        llm_context: LLMContext,
+    ) -> JsonObjectType:
+        """List all goals."""
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return {"goals": [], "count": 0, "message": "Meitheal not available"}
+
+        try:
+            area_id = tool_input.tool_args.get("area_id")
+            goals = await coordinator.async_list_goals(area_id=area_id)
+            return {"goals": goals, "count": len(goals)}
+        except Exception as err:
+            return {"error": str(err), "goals": [], "count": 0}
+
+
+class MoveTaskToProjectTool(Tool):
+    """Move a task to a different project/board."""
+
+    name = "meitheal_move_task"
+    description = (
+        "Move a task to a different project or board. "
+        "Use when the user says 'move X to project Y', 'put this in the Work board', "
+        "'reorganize tasks', or 'change the project for this task'. "
+        "You need the task_id and the target board_id — use meitheal_search_tasks "
+        "and meitheal_list_areas to find them."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("task_id", description="Task ID to move"): str,
+            vol.Required("board_id", description="Target board/project ID"): str,
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: ToolInput,
+        llm_context: LLMContext,
+    ) -> JsonObjectType:
+        """Move task to a different board."""
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return {"error": "Meitheal not available"}
+
+        try:
+            await coordinator.async_update_task(
+                tool_input.tool_args["task_id"],
+                {"board_id": tool_input.tool_args["board_id"]},
+            )
+            return {
+                "success": True,
+                "message": f"Task moved to board {tool_input.tool_args['board_id']}",
+            }
+        except Exception as err:
+            return {"error": str(err)}
+
+
+class SetGoalProgressTool(Tool):
+    """Update a goal's progress percentage."""
+
+    name = "meitheal_set_goal_progress"
+    description = (
+        "Update the progress of a goal (0-100%). "
+        "Use when the user says 'I'm 50% done with my fitness goal', "
+        "'update goal progress', or 'set progress to 75%'. "
+        "You need the goal_id — use meitheal_list_goals first to find it."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("goal_id", description="Goal ID to update"): str,
+            vol.Required(
+                "progress",
+                description="Progress percentage (0-100)",
+            ): vol.All(int, vol.Range(min=0, max=100)),
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: ToolInput,
+        llm_context: LLMContext,
+    ) -> JsonObjectType:
+        """Update goal progress."""
+        coordinator = _get_coordinator(hass)
+        if not coordinator:
+            return {"error": "Meitheal not available"}
+
+        try:
+            await coordinator.async_set_goal_progress(
+                goal_id=tool_input.tool_args["goal_id"],
+                progress=tool_input.tool_args["progress"],
+            )
+            return {
+                "success": True,
+                "message": f"Goal progress updated to {tool_input.tool_args['progress']}%",
+            }
+        except Exception as err:
+            return {"error": str(err)}
+
+
 class MeithealLLMAPI(API):
     """Meitheal LLM API — Exposes task tools to HA conversation agents."""
 
@@ -1004,6 +1162,10 @@ class MeithealLLMAPI(API):
                 UnlinkTaskTool(),
                 GetTaskLinksTool(),
                 RemoveFromTodoListTool(),
+                ListAreasTool(),
+                ListGoalsTool(),
+                MoveTaskToProjectTool(),
+                SetGoalProgressTool(),
             ],
         )
 
