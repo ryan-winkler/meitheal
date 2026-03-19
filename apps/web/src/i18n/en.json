@@ -650,7 +650,14 @@
     "not_now": "Not Now",
     "not_now_desc": "Neither urgent nor important",
     "empty_quadrant": "No tasks in this quadrant",
-    "drag_hint": "Drag tasks between quadrants to re-prioritise"
+    "drag_hint": "Drag tasks between quadrants to re-prioritise",
+    "commit_q1": "Commit to Today",
+    "commit_q1_title": "Set today as the due date for all Do First tasks",
+    "defer_q4": "Defer to Backlog",
+    "defer_q4_title": "Move all Not Now tasks to backlog",
+    "complete_q4": "Complete All",
+    "complete_q4_title": "Mark all Not Now tasks as done",
+    "quick_add_placeholder": "Quick add task… (press Enter)"
   },
   "common": {
     "save": "Save",

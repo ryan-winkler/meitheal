@@ -647,7 +647,14 @@
     "not_now": "Ní Anois",
     "not_now_desc": "Ní práinneach ná tábhachtach",
     "empty_quadrant": "Gan tascanna sa cheathrainn seo",
-    "drag_hint": "Tarraing tascanna idir ceathrainn chun athtosaíocht a dhéanamh"
+    "drag_hint": "Tarraing tascanna idir ceathrainn chun athtosaíocht a dhéanamh",
+    "commit_q1": "Tiomantas don Lá Inniu",
+    "commit_q1_title": "Socraigh an spriocdháta inniu do gach tasc Déan ar Dtús",
+    "defer_q4": "Cuir ar Ais",
+    "defer_q4_title": "Bog gach tasc Ní Anois go riaráiste",
+    "complete_q4": "Cuir i gCrích Iad Uilig",
+    "complete_q4_title": "Marcáil gach tasc Ní Anois mar chríochnaithe",
+    "quick_add_placeholder": "Cuir tasc leis go tapa… (brúigh Iontráil)"
   },
   "common": {
     "save": "Sábháil",

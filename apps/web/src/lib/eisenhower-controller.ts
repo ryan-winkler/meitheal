@@ -1,5 +1,5 @@
 /**
- * Eisenhower Matrix Controller — Drag-and-drop quadrant management
+ * Eisenhower Matrix Controller — Drag-and-drop + P2 interactions
  *
  * @domain tasks
  * @bounded-context tasks (presentation)
@@ -9,6 +9,9 @@
  * - Click to open task detail modal
  * - Count badge updates after drag
  * - WIP limit warnings for Q1
+ * - Q1 "Commit to Today" bridge (sets due_date = today)
+ * - Q4 batch actions (defer to backlog, complete all)
+ * - Quick-capture inline input per quadrant
  *
  * @kcs Quadrant → urgency/importance mapping:
  *   Q1 (do-first)  → urgency 5, importance 5
@@ -50,6 +53,8 @@ export function initEisenhowerPage() {
 
   setupDragAndDrop(page)
   setupClickToOpen(page)
+  setupActionButtons(page)
+  setupQuickCapture(page)
   checkWipLimits(page)
 }
 
@@ -118,24 +123,31 @@ function setupDragAndDrop(page: HTMLElement) {
         ?? page.querySelector<HTMLElement>(`.tli:has([data-id="${taskId}"])`)
       if (!draggedItem) return
 
+      // Get the wrapper (.eisenhower__task-wrapper) that contains the tli
+      const wrapper = draggedItem.closest<HTMLElement>(".eisenhower__task-wrapper") ?? draggedItem
+
       // Remove "empty" placeholder if present
       const emptyEl = zone.querySelector(".quadrant__empty")
       if (emptyEl) emptyEl.remove()
 
-      zone.appendChild(draggedItem)
+      zone.appendChild(wrapper)
 
       // Show manual override indicator
-      let pinEl = draggedItem.querySelector(".tli__pin")
-      if (!pinEl) {
-        pinEl = document.createElement("span")
+      const metaEl = wrapper.querySelector(".eisenhower__task-meta")
+      if (metaEl && !metaEl.querySelector(".tli__pin")) {
+        const pinEl = document.createElement("span")
         pinEl.className = "tli__pin"
         pinEl.textContent = "📌"
         pinEl.setAttribute("title", "Manually placed")
-        draggedItem.appendChild(pinEl)
+        metaEl.appendChild(pinEl)
       }
+
+      // Clear unclassified marker since we just classified it
+      wrapper.removeAttribute("data-unclassified")
 
       updateCounts(page)
       checkWipLimits(page)
+      updateTriageBanner(page)
 
       // Persist — updates urgency/importance, NOT priority/due_date
       try {
@@ -175,6 +187,25 @@ function updateCounts(page: HTMLElement) {
 }
 
 // =============================================================================
+// Triage banner update
+// =============================================================================
+
+function updateTriageBanner(page: HTMLElement) {
+  const banner = page.querySelector<HTMLElement>(".eisenhower__triage-banner")
+  if (!banner) return
+
+  const unclassifiedCount = page.querySelectorAll("[data-unclassified]").length
+  if (unclassifiedCount === 0) {
+    banner.style.display = "none"
+  } else {
+    const textEl = banner.querySelector(".triage-banner__text")
+    if (textEl) {
+      textEl.innerHTML = `<strong>${unclassifiedCount}</strong> ${unclassifiedCount === 1 ? "task needs" : "tasks need"} classification`
+    }
+  }
+}
+
+// =============================================================================
 // WIP limit warnings
 // =============================================================================
 
@@ -189,12 +220,196 @@ function checkWipLimits(page: HTMLElement) {
     const warning = document.createElement("div")
     warning.className = "quadrant__wip-warning"
     warning.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+    const actionBar = q1Section.querySelector(".quadrant__action-bar")
     const header = q1Section.querySelector(".quadrant__header")
-    header?.insertAdjacentElement("afterend", warning)
+    const insertAfter = actionBar ?? header
+    insertAfter?.insertAdjacentElement("afterend", warning)
   } else if (count <= Q1_WIP_LIMIT && existing) {
     existing.remove()
   } else if (existing) {
     existing.textContent = `⚠️ ${count} items — consider moving some to Schedule or Delegate`
+  }
+}
+
+// =============================================================================
+// Action buttons (Q1 Commit, Q4 Defer/Complete)
+// =============================================================================
+
+function setupActionButtons(page: HTMLElement) {
+  page.addEventListener("click", async (e: Event) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+    if (!btn) return
+
+    const action = btn.dataset.action
+    if (!action) return
+
+    // Prevent double-click
+    btn.setAttribute("disabled", "true")
+    btn.style.opacity = "0.5"
+
+    try {
+      switch (action) {
+        case "commit-q1":
+          await commitQ1ToToday(page)
+          break
+        case "defer-q4":
+          await deferQ4ToBacklog(page)
+          break
+        case "complete-q4":
+          await completeQ4(page)
+          break
+      }
+    } finally {
+      btn.removeAttribute("disabled")
+      btn.style.opacity = ""
+    }
+  })
+}
+
+/**
+ * Q1 → Today bridge: sets due_date = today on all Q1 tasks
+ * so they appear in the Today Focus Stack.
+ */
+async function commitQ1ToToday(page: HTMLElement) {
+  const q1Zone = page.querySelector<HTMLElement>('[data-drop-zone="do-first"]')
+  if (!q1Zone) return
+
+  const tasks = q1Zone.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  const today = new Date().toISOString().split("T")[0] ?? ""
+  let successCount = 0
+
+  for (const task of tasks) {
+    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
+    if (!id) continue
+
+    try {
+      await taskApi.updateTask(id, { due_date: today })
+      successCount++
+    } catch {
+      // Continue with remaining tasks
+    }
+  }
+
+  if (successCount > 0) {
+    showToast("common.task_updated")
+  }
+}
+
+/**
+ * Q4 Defer: moves all Q4 tasks to backlog status.
+ */
+async function deferQ4ToBacklog(page: HTMLElement) {
+  const q4Zone = page.querySelector<HTMLElement>('[data-drop-zone="not-now"]')
+  if (!q4Zone) return
+
+  const tasks = q4Zone.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  let successCount = 0
+
+  for (const task of tasks) {
+    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
+    if (!id) continue
+
+    try {
+      await taskApi.updateTask(id, { status: "backlog" })
+      successCount++
+    } catch {
+      // Continue with remaining tasks
+    }
+  }
+
+  if (successCount > 0) {
+    showToast("common.task_updated")
+    // Remove deferred tasks from the quadrant
+    for (const task of tasks) {
+      const wrapper = task.closest(".eisenhower__task-wrapper")
+      wrapper?.remove()
+    }
+    updateCounts(page)
+  }
+}
+
+/**
+ * Q4 Complete All: marks all Q4 tasks as done.
+ */
+async function completeQ4(page: HTMLElement) {
+  const q4Zone = page.querySelector<HTMLElement>('[data-drop-zone="not-now"]')
+  if (!q4Zone) return
+
+  const tasks = q4Zone.querySelectorAll<HTMLElement>(".tli")
+  if (tasks.length === 0) return
+
+  let successCount = 0
+
+  for (const task of tasks) {
+    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
+    if (!id) continue
+
+    try {
+      await taskApi.updateTask(id, { status: "done" })
+      successCount++
+    } catch {
+      // Continue with remaining tasks
+    }
+  }
+
+  if (successCount > 0) {
+    showToast("common.task_updated")
+    // Remove completed tasks from the quadrant
+    for (const task of tasks) {
+      const wrapper = task.closest(".eisenhower__task-wrapper")
+      wrapper?.remove()
+    }
+    updateCounts(page)
+  }
+}
+
+// =============================================================================
+// Quick-capture inputs
+// =============================================================================
+
+function setupQuickCapture(page: HTMLElement) {
+  const inputs = page.querySelectorAll<HTMLInputElement>("[data-quadrant-capture]")
+
+  for (const input of inputs) {
+    const quadrantId = input.dataset.quadrantCapture
+    if (!quadrantId || !(quadrantId in QUADRANT_MAP)) continue
+
+    const mapping = QUADRANT_MAP[quadrantId]!
+
+    input.addEventListener("keydown", async (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return
+      const title = input.value.trim()
+      if (!title) return
+
+      // Disable input while creating
+      input.disabled = true
+      input.style.opacity = "0.5"
+
+      try {
+        const result = await taskApi.createTask({
+          title,
+          urgency: mapping.urgency,
+          importance: mapping.importance,
+        })
+
+        if (result?.id) {
+          input.value = ""
+          showToast("common.task_created")
+          // Reload to show the new task in the right quadrant
+          window.location.reload()
+        }
+      } catch {
+        showToast("common.failed_create", "error")
+      } finally {
+        input.disabled = false
+        input.style.opacity = ""
+        input.focus()
+      }
+    })
   }
 }
 
@@ -206,10 +421,11 @@ function setupClickToOpen(page: HTMLElement) {
   page.addEventListener("click", (e: Event) => {
     const target = e.target as HTMLElement
 
-    // Don't intercept checkbox clicks, buttons, or drag handles
+    // Don't intercept checkbox clicks, buttons, inputs, or drag handles
     if (
       target.closest("input[type='checkbox']") ||
       target.closest("button") ||
+      target.closest("input") ||
       target.closest("a")
     ) {
       return

@@ -100,6 +100,39 @@ const quadrants: Quadrant[] = [
             <span class="quadrant__count">{q.tasks.length}</span>
           </header>
 
+          {/* ── Q1 "Commit to Today" bridge ── */}
+          {q.id === "do-first" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--primary"
+                data-action="commit-q1"
+                title={t("eisenhower.commit_q1_title", locale)}
+              >
+                🎯 {t("eisenhower.commit_q1", locale)}
+              </button>
+            </div>
+          )}
+
+          {/* ── Q4 action row ── */}
+          {q.id === "not-now" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--muted"
+                data-action="defer-q4"
+                title={t("eisenhower.defer_q4_title", locale)}
+              >
+                📥 {t("eisenhower.defer_q4", locale)}
+              </button>
+              <button
+                class="quadrant__action-btn quadrant__action-btn--danger"
+                data-action="complete-q4"
+                title={t("eisenhower.complete_q4_title", locale)}
+              >
+                ✅ {t("eisenhower.complete_q4", locale)}
+              </button>
+            </div>
+          )}
+
           <div class="quadrant__tasks" data-drop-zone={q.id} role="list">
             {q.tasks.length === 0 ? (
               <div class="quadrant__empty">
@@ -108,7 +141,7 @@ const quadrants: Quadrant[] = [
             ) : (
               q.tasks.map((task) => (
                 <div class="eisenhower__task-wrapper" data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}>
-                  <TaskListItem task={task} />
+                  <TaskListItem task={task} compact={true} />
                   <div class="eisenhower__task-meta">
                     {task.eisenhower_override && (
                       <span class="tli__pin" title="Manually placed">📌</span>
@@ -117,6 +150,17 @@ const quadrants: Quadrant[] = [
                 </div>
               ))
             )}
+          </div>
+
+          {/* ── Quick-capture input per quadrant ── */}
+          <div class="quadrant__quick-capture">
+            <input
+              type="text"
+              class="quick-capture__input"
+              data-quadrant-capture={q.id}
+              placeholder={t("eisenhower.quick_add_placeholder", locale)}
+              autocomplete="off"
+            />
           </div>
         </section>
       ))}
@@ -327,6 +371,80 @@ const quadrants: Quadrant[] = [
     border-left: 2px dashed rgba(var(--warning-rgb, 245, 158, 11), 0.4);
     border-radius: 4px;
     padding-left: 4px;
+  }
+
+  /* ── Quadrant action bars (Q1 Commit, Q4 Defer/Complete) ── */
+  .quadrant__action-bar {
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .quadrant__action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms, color 150ms;
+  }
+  .quadrant__action-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+  }
+  .quadrant__action-btn--primary {
+    border-color: rgba(var(--accent-rgb), 0.3);
+    color: var(--accent);
+  }
+  .quadrant__action-btn--primary:hover {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent);
+  }
+  .quadrant__action-btn--muted {
+    color: var(--text-muted);
+  }
+  .quadrant__action-btn--danger {
+    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.2);
+    color: var(--text-muted);
+  }
+  .quadrant__action-btn--danger:hover {
+    background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
+    color: var(--danger, #ef4444);
+    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+  }
+
+  /* ── Quick-capture inputs ── */
+  .quadrant__quick-capture {
+    padding: 6px 12px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    margin-top: auto;
+  }
+  .quick-capture__input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    outline: none;
+    transition: border-color 150ms, background 150ms;
+  }
+  .quick-capture__input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+  .quick-capture__input:focus {
+    border-color: var(--q-color);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   /* ── Hint ── */
