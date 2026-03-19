@@ -120,6 +120,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
             <span class="completed-today__label">{t("eisenhower.completed_today", locale)}</span>
           </div>
         )}
+        <button
+          class="eisenhower__review-btn"
+          data-action="start-review"
+          title={t("eisenhower.review_title", locale)}
+        >
+          🔍 {t("eisenhower.review_cta", locale)}
+        </button>
       </div>
     </header>
 
@@ -253,6 +260,40 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
           </button>
           <button class="triage-card__save" data-action="triage-save">
             {t("eisenhower.triage_classify", locale)} ✓
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    {/* ── Weekly Review overlay ── */}
+    <div id="review-overlay" class="review-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Weekly review">
+      <div class="review-card">
+        <header class="triage-card__header">
+          <h2 class="triage-card__title">{t("eisenhower.review_title", locale)}</h2>
+          <span class="triage-card__progress" id="review-progress">1 / ?</span>
+          <button class="triage-card__close" data-action="close-review" aria-label="Close review">✕</button>
+        </header>
+
+        <div class="review-card__source" id="review-source">
+          {/* Shows which quadrant the task came from */}
+        </div>
+
+        <div class="triage-card__task" id="review-task-name">
+          {/* Populated by JS */}
+        </div>
+
+        <footer class="review-card__actions">
+          <button class="review-action review-action--promote" data-action="review-promote" title={t("eisenhower.review_promote_title", locale)}>
+            ⬆️ {t("eisenhower.review_promote", locale)}
+          </button>
+          <button class="review-action review-action--archive" data-action="review-archive" title={t("eisenhower.review_archive_title", locale)}>
+            📥 {t("eisenhower.review_archive", locale)}
+          </button>
+          <button class="review-action review-action--delete" data-action="review-delete" title={t("eisenhower.review_delete_title", locale)}>
+            🗑️ {t("eisenhower.review_delete", locale)}
+          </button>
+          <button class="review-action review-action--skip" data-action="review-skip">
+            {t("eisenhower.review_skip", locale)} →
           </button>
         </footer>
       </div>
@@ -1198,4 +1239,99 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     white-space: nowrap;
   }
   .quadrant__effort-total:empty { display: none; }
+
+  /* ── Review CTA button ── */
+  .eisenhower__review-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.1);
+    color: #818cf8;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .eisenhower__review-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  /* ── Review overlay ── */
+  .review-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+  }
+  .review-card {
+    background: var(--card-bg, #1e1e2e);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 340px;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .review-card__source {
+    margin: 12px 0 8px;
+  }
+  .review-source__badge {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+  }
+  .review-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .review-action {
+    flex: 1 1 auto;
+    min-width: 110px;
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .review-action:hover { transform: translateY(-1px); }
+  .review-action--promote {
+    background: rgba(34, 197, 94, 0.12);
+    color: #22c55e;
+    border-color: rgba(34, 197, 94, 0.2);
+  }
+  .review-action--promote:hover { background: rgba(34, 197, 94, 0.25); }
+  .review-action--archive {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+  .review-action--archive:hover { background: rgba(59, 130, 246, 0.2); }
+  .review-action--delete {
+    background: rgba(239, 68, 68, 0.08);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.15);
+  }
+  .review-action--delete:hover { background: rgba(239, 68, 68, 0.2); }
+  .review-action--skip {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+  }
+  .review-action--skip:hover { background: rgba(255, 255, 255, 0.08); }
 </style>

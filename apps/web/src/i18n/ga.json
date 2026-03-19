@@ -691,7 +691,16 @@
     "interest_neutral": "Neodrach",
     "interest_dreaded": "Eaglach",
     "interest_quickwin": "Bua Tapa",
-    "growth_zone": "Crios Fáis"
+    "growth_zone": "Crios Fáis",
+    "review_cta": "Athbhreithniú Seachtainiúil",
+    "review_title": "Athbhreithniú Seachtainiúil",
+    "review_promote": "Ardaigh",
+    "review_promote_title": "Bog an tasc seo suas sraith amháin",
+    "review_archive": "Cartlannaigh",
+    "review_archive_title": "Marcáil mar chríochnaithe agus cartlannaigh",
+    "review_delete": "Scrios",
+    "review_delete_title": "Scrios an tasc seo go buan",
+    "review_skip": "Scar"
   },
   "common": {
     "save": "Sábháil",

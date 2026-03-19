@@ -694,7 +694,16 @@
     "interest_neutral": "Neutral",
     "interest_dreaded": "Dreaded",
     "interest_quickwin": "Quick Win",
-    "growth_zone": "Growth Zone"
+    "growth_zone": "Growth Zone",
+    "review_cta": "Weekly Review",
+    "review_title": "Weekly Review",
+    "review_promote": "Promote",
+    "review_promote_title": "Move this task up one priority tier",
+    "review_archive": "Archive",
+    "review_archive_title": "Mark as done and archive",
+    "review_delete": "Delete",
+    "review_delete_title": "Delete this task permanently",
+    "review_skip": "Skip"
   },
   "common": {
     "save": "Save",

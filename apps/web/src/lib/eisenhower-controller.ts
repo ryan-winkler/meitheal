@@ -59,6 +59,7 @@ export function initEisenhowerPage() {
   setupMobileTabs(page)
   checkWipLimits(page)
   setupTriageListeners()
+  setupReviewListeners()
 }
 
 // =============================================================================
@@ -278,6 +279,24 @@ function setupActionButtons(page: HTMLElement) {
           return
         case "triage-save":
           await triageSave()
+          return
+        case "start-review":
+          await startReview()
+          return
+        case "close-review":
+          closeReview()
+          return
+        case "review-promote":
+          await reviewAction("promote")
+          return
+        case "review-archive":
+          await reviewAction("archive")
+          return
+        case "review-delete":
+          await reviewAction("delete")
+          return
+        case "review-skip":
+          reviewNext()
           return
       }
     } finally {
@@ -812,6 +831,169 @@ function setupTriageListeners() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !document.getElementById("triage-overlay")?.classList.contains("triage-overlay--hidden")) {
       closeTriage()
+    }
+  })
+}
+
+// =============================================================================
+// Weekly Review Wizard
+// =============================================================================
+
+interface ReviewTask {
+  id: string
+  title: string
+  source: string // quadrant name: "not-now" | "delegate" | "schedule"
+  sourceLabel: string // human-readable: "Not Now" | "Delegate" | "Schedule"
+}
+
+let reviewTasks: ReviewTask[] = []
+let reviewIndex = 0
+let reviewStats = { promoted: 0, archived: 0, deleted: 0, skipped: 0 }
+
+const REVIEW_QUADRANT_ORDER = ["not-now", "delegate", "schedule"]
+const QUADRANT_LABELS: Record<string, string> = {
+  "not-now": "📦 Not Now (Q4)",
+  delegate: "👥 Delegate (Q3)",
+  schedule: "📅 Schedule (Q2)",
+}
+
+async function startReview() {
+  const page = document.getElementById("eisenhower-page")
+  if (!page) return
+
+  reviewTasks = []
+  reviewIndex = 0
+  reviewStats = { promoted: 0, archived: 0, deleted: 0, skipped: 0 }
+
+  // Collect tasks in quadrant order: Q4 → Q3 → Q2
+  for (const qId of REVIEW_QUADRANT_ORDER) {
+    const zone = page.querySelector<HTMLElement>(`[data-drop-zone="${qId}"]`)
+    if (!zone) continue
+
+    const items = zone.querySelectorAll<HTMLElement>(".tli")
+    for (const item of items) {
+      const id = item.dataset.id ?? item.querySelector<HTMLElement>("[data-id]")?.dataset.id
+      const title = item.querySelector(".tli__title")?.textContent?.trim() ?? "Untitled"
+      if (id) {
+        reviewTasks.push({ id, title, source: qId, sourceLabel: QUADRANT_LABELS[qId] ?? qId })
+      }
+    }
+  }
+
+  if (reviewTasks.length === 0) {
+    showToast("No tasks to review", "success")
+    return
+  }
+
+  const overlay = document.getElementById("review-overlay")
+  overlay?.classList.remove("triage-overlay--hidden")
+  showReviewTask()
+}
+
+function showReviewTask() {
+  const task = reviewTasks[reviewIndex]
+  if (!task) {
+    finishReview()
+    return
+  }
+
+  const nameEl = document.getElementById("review-task-name")
+  if (nameEl) nameEl.textContent = task.title
+
+  const sourceEl = document.getElementById("review-source")
+  if (sourceEl) sourceEl.innerHTML = `<span class="review-source__badge">${task.sourceLabel}</span>`
+
+  const progressEl = document.getElementById("review-progress")
+  if (progressEl) progressEl.textContent = `${reviewIndex + 1} / ${reviewTasks.length}`
+}
+
+function reviewAdvance() {
+  reviewIndex++
+  showReviewTask()
+}
+
+function reviewNext() {
+  reviewStats.skipped++
+  reviewAdvance()
+}
+
+async function reviewAction(action: "promote" | "archive" | "delete") {
+  const task = reviewTasks[reviewIndex]
+  if (!task) return
+
+  try {
+    switch (action) {
+      case "promote": {
+        // Promote: move up one tier (Q4→Q3, Q3→Q2, Q2→Q1)
+        const promotionMap: Record<string, QuadrantUpdate | undefined> = {
+          "not-now": QUADRANT_MAP["delegate"],
+          delegate: QUADRANT_MAP["schedule"],
+          schedule: QUADRANT_MAP["do-first"],
+        }
+        const update = promotionMap[task.source]
+        if (update) {
+          await taskApi.updateTask(task.id, { ...update })
+        }
+        reviewStats.promoted++
+        break
+      }
+      case "archive": {
+        await taskApi.updateTask(task.id, { status: "done" })
+        reviewStats.archived++
+        break
+      }
+      case "delete": {
+        await taskApi.deleteTask(task.id)
+        reviewStats.deleted++
+        break
+      }
+    }
+
+    // Track last_reviewed in framework_payload
+    const existingFP = await getExistingFrameworkPayload(task.id)
+    existingFP.last_reviewed = new Date().toISOString()
+    try {
+      await taskApi.updateTask(task.id, { framework_payload: JSON.stringify(existingFP) })
+    } catch {
+      // Non-critical — don't block on metadata save failure
+    }
+
+    reviewAdvance()
+  } catch {
+    showToast("common.failed_update", "error")
+  }
+}
+
+function finishReview() {
+  closeReview()
+  const parts: string[] = []
+  if (reviewStats.promoted > 0) parts.push(`⬆️ ${reviewStats.promoted} promoted`)
+  if (reviewStats.archived > 0) parts.push(`📥 ${reviewStats.archived} archived`)
+  if (reviewStats.deleted > 0) parts.push(`🗑️ ${reviewStats.deleted} deleted`)
+  if (reviewStats.skipped > 0) parts.push(`→ ${reviewStats.skipped} skipped`)
+  const summary = parts.length > 0 ? parts.join(", ") : "No changes made"
+  showToast(`Review complete: ${summary}`, "success")
+  // Reload to show updated state
+  setTimeout(() => window.location.reload(), 1200)
+}
+
+function closeReview() {
+  const overlay = document.getElementById("review-overlay")
+  overlay?.classList.add("triage-overlay--hidden")
+}
+
+function setupReviewListeners() {
+  // Close on overlay backdrop click
+  document.getElementById("review-overlay")?.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).classList.contains("review-overlay")) {
+      closeReview()
+    }
+  })
+
+  // Close on Escape key (when review is open)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !document.getElementById("review-overlay")?.classList.contains("triage-overlay--hidden")) {
+      closeReview()
     }
   })
 }
