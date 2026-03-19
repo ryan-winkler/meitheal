@@ -45,11 +45,11 @@ test("projects table exists after ensureSchema", async () => {
 
 // --- Default Area ---
 
-test("default 'Uncategorized' area is auto-created", async () => {
+test("default 'Default' area is auto-created", async () => {
   const client = getPersistenceClient()
-  const result = await client.execute("SELECT id, name FROM areas WHERE id = 'uncategorized'")
+  const result = await client.execute("SELECT id, name FROM areas WHERE id = 'default'")
   expect(result.rows.length).toBe(1)
-  expect(result.rows[0]?.name).toBe("Uncategorized")
+  expect(result.rows[0]?.name).toBe("Default")
 })
 
 // --- Task Columns ---

@@ -4,6 +4,13 @@
  * @domain integrations/calendar
  */
 import HelpTooltip from "../../ui/HelpTooltip.astro";
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-calendar">
@@ -16,8 +23,8 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div class="integration-card__title-row">
       <span class="integration-card__icon">📅</span>
       <div class="integration-card__title-info">
-        <strong>Calendar Sync</strong>
-        <span class="integration-card__desc">Bidirectional sync with HA calendars</span>
+        <strong>{t("settings.calendar_title", locale)}</strong>
+        <span class="integration-card__desc">{t("settings.calendar_desc", locale)}</span>
       </div>
     </div>
     <div class="integration-card__header-right">
@@ -25,9 +32,9 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
         type="button"
         class="info-btn"
         data-explainer="calendar"
-        aria-label="What is Calendar Sync?"
+        aria-label={t("settings.calendar_explainer", locale)}
         onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-pending" id="cal-status">Checking…</span>
+      <span class="badge badge-pending" id="cal-status">{t("settings.status_checking", locale)}</span>
       <span class="integration-card__chevron">▸</span>
     </div>
   </button>
@@ -35,12 +42,10 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
   <div class="integration-card__body" id="integration-calendar-body" aria-hidden="true">
     <!-- HA auto-sync info callout -->
     <div id="cal-auto-info" class="integration-callout integration-callout--success" style="display: none;">
-      <strong>✓ Automatic sync active</strong>
+      <strong>{t("settings.cal_auto_sync_active", locale)}</strong>
       <span id="cal-auto-entity" class="mono-text"></span>
       <div class="integration-callout__detail">
-        Running as an HA addon — Meitheal automatically detects your
-        calendar entities and syncs events bidirectionally (past 7 days →
-        next 30 days).
+        {t("settings.cal_auto_sync_desc", locale)}
       </div>
     </div>
 
@@ -48,21 +53,21 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div id="cal-entities-list" style="display: none; margin-bottom: 12px;">
       <div class="cal-entities-header">
         <div>
-          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">Your Calendars</label>
-          <span id="cal-count-badge" class="cal-count-badge">0 of 0 enabled</span>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">{t("settings.cal_your_calendars", locale)}</label>
+          <span id="cal-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
         </div>
         <div class="cal-bulk-actions">
-          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title="Enable all calendars">Enable All</button>
-          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title="Disable all calendars">Disable All</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title={t("settings.cal_enable_all", locale)}>{t("settings.cal_enable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title={t("settings.cal_disable_all", locale)}>{t("settings.cal_disable_all", locale)}</button>
         </div>
       </div>
       <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 8px;">
-        Toggle each calendar on or off. Only enabled calendars sync events with Meitheal.
+        {t("settings.cal_toggle_desc", locale)}
       </p>
       <div id="cal-entities-container" class="cal-toggle-list"></div>
       <div id="cal-no-entities" class="cal-empty-state" style="display: none;">
         <span class="cal-empty-icon">📭</span>
-        <span>No calendars detected. Make sure your Home Assistant integration is connected and has calendar entities.</span>
+        <span>{t("settings.cal_no_entities", locale)}</span>
       </div>
     </div>
 
@@ -70,20 +75,20 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       <!-- Manual entity input for advanced users -->
       <details class="caldav-section" style="margin-bottom: 10px;">
         <summary class="caldav-toggle">
-          <span>⌨ Manual Entity ID</span>
-          <small>For calendars not auto-detected</small>
+          <span>{t("settings.cal_manual_entity_title", locale)}</span>
+          <small>{t("settings.cal_manual_entity_desc", locale)}</small>
         </summary>
         <div class="form-group" style="margin-top: 10px;">
           <div class="form-label-row">
-            <label class="form-label" for="cal-entity">Calendar Entity ID</label>
+            <label class="form-label" for="cal-entity">{t("settings.cal_entity_id_label", locale)}</label>
             <HelpTooltip
-              text="Manually enter a calendar entity ID if it's not showing in the auto-detected list above. This is rarely needed."
+              text={t("settings.cal_entity_id_help", locale)}
               id="help-cal-entity"
             />
           </div>
           <input type="text" class="form-input" id="cal-entity-manual" placeholder="calendar.my_calendar" />
           <button type="button" class="btn btn-ghost" id="cal-add-manual" style="margin-top: 6px; font-size: 12px;">
-            + Add Calendar
+            {t("settings.cal_add_manual", locale)}
           </button>
         </div>
       </details>
@@ -91,88 +96,86 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       <!-- External CalDAV — collapsible -->
       <details class="caldav-section" id="caldav-details">
         <summary class="caldav-toggle">
-          <span>📡 External Calendar (CalDAV)</span>
-          <small>For Nextcloud, Radicale, Baikal — not needed for HA calendars</small>
+          <span>{t("settings.caldav_title", locale)}</span>
+          <small>{t("settings.caldav_desc", locale)}</small>
         </summary>
 
         <div class="form-group" style="margin-top: 10px;">
           <div class="form-label-row">
-            <label class="form-label" for="caldav-url">CalDAV Provider URL</label>
+            <label class="form-label" for="caldav-url">{t("settings.caldav_url_label", locale)}</label>
             <HelpTooltip
-              text="URL for your CalDAV server. Meitheal will discover calendars automatically."
+              text={t("settings.caldav_url_help", locale)}
               id="help-caldav-url"
             />
           </div>
           <input type="url" class="form-input" id="caldav-url" placeholder="https://your-server.com/dav/calendars/" />
-          <small class="form-hint" style="margin-top: 4px;">
-            <strong>Nextcloud:</strong> <code>https://your-nc.com/remote.php/dav/</code><br />
-            <strong>Radicale:</strong> <code>http://your-radicale:5232/user/</code>
+          <small class="form-hint" style="margin-top: 4px;" set:html={t("settings.caldav_url_hint", locale)}>
           </small>
         </div>
 
         <div class="form-group" style="margin-top: 10px;">
-          <label class="form-label" for="caldav-username">Username</label>
-          <input type="text" class="form-input" id="caldav-username" autocomplete="username" placeholder="Required for private calendars" />
+          <label class="form-label" for="caldav-username">{t("settings.caldav_username", locale)}</label>
+          <input type="text" class="form-input" id="caldav-username" autocomplete="username" placeholder={t("settings.caldav_username_placeholder", locale)} />
         </div>
 
         <div class="form-group" style="margin-top: 10px;">
-          <label class="form-label" for="caldav-password">Password or App Password</label>
-          <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder="Saved securely (AES-256-GCM encrypted)" />
+          <label class="form-label" for="caldav-password">{t("settings.caldav_password", locale)}</label>
+          <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder={t("settings.caldav_password_placeholder", locale)} />
         </div>
 
         <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
           <button type="button" class="btn btn-secondary" id="caldav-test-btn" style="min-width: 120px;">
-            Test Connection
+            {t("settings.caldav_test_btn", locale)}
           </button>
           <span id="caldav-test-result" style="font-size: 13px;"></span>
         </div>
 
         <div id="caldav-active-indicator" class="integration-callout integration-callout--success" style="display: none; margin-top: 12px;">
-          <strong>✓ CalDAV Configured</strong>
+          <strong>{t("settings.caldav_configured", locale)}</strong>
           <div class="integration-callout__detail">
-            Ready to sync alongside Home Assistant calendars.
+            {t("settings.caldav_configured_desc", locale)}
           </div>
         </div>
       </details>
 
       <!-- Sync Direction (global default) -->
       <div class="form-group" style="margin-top: 10px;">
-        <label class="form-label" for="cal-sync-direction">Default Sync Direction</label>
+        <label class="form-label" for="cal-sync-direction">{t("settings.cal_sync_direction_label", locale)}</label>
         <select id="cal-sync-direction" class="form-select">
-          <option value="bidirectional" selected>↔ Bidirectional — sync both ways</option>
-          <option value="import">↓ Import only — HA → Meitheal</option>
-          <option value="export">↑ Export only — Meitheal → HA</option>
+          <option value="bidirectional" selected>{t("settings.cal_sync_bidirectional", locale)}</option>
+          <option value="import">{t("settings.cal_sync_import", locale)}</option>
+          <option value="export">{t("settings.cal_sync_export", locale)}</option>
         </select>
-        <small class="form-hint">Default for new calendars. Override per calendar using the direction selector on each card.</small>
+        <small class="form-hint">{t("settings.cal_sync_direction_hint", locale)}</small>
       </div>
 
       <!-- Write-back toggle -->
       <div class="form-group" style="margin-top: 10px;">
         <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
           <input type="checkbox" id="cal-write-back" />
-          <span>Write back — sync completed tasks to calendar</span>
+          <span>{t("settings.cal_write_back_label", locale)}</span>
         </label>
-        <small class="form-hint">When enabled, task completions update the corresponding calendar event. Only applies to Export and Bidirectional modes.</small>
+        <small class="form-hint">{t("settings.cal_write_back_hint", locale)}</small>
       </div>
 
       <!-- Sync interval selector -->
       <div class="form-group" style="margin-top: 10px;">
-        <label class="form-label" for="cal-sync-interval">Sync Interval</label>
+        <label class="form-label" for="cal-sync-interval">{t("settings.cal_sync_interval_label", locale)}</label>
         <select id="cal-sync-interval" class="form-select">
-          <option value="60000">Every 1 minute</option>
-          <option value="300000" selected>Every 5 minutes (default)</option>
-          <option value="900000">Every 15 minutes</option>
-          <option value="1800000">Every 30 minutes</option>
-          <option value="3600000">Every 1 hour</option>
-          <option value="0">Manual only</option>
+          <option value="60000">{t("settings.cal_sync_1m", locale)}</option>
+          <option value="300000" selected>{t("settings.cal_sync_5m", locale)}</option>
+          <option value="900000">{t("settings.cal_sync_15m", locale)}</option>
+          <option value="1800000">{t("settings.cal_sync_30m", locale)}</option>
+          <option value="3600000">{t("settings.cal_sync_1h", locale)}</option>
+          <option value="0">{t("settings.cal_sync_manual", locale)}</option>
         </select>
-        <small class="form-hint">How often Meitheal auto-syncs events from enabled calendars. "Manual only" syncs only when you click Sync Now.</small>
+        <small class="form-hint">{t("settings.cal_sync_interval_hint", locale)}</small>
       </div>
 
       <div class="integration-card__actions">
-        <button type="button" class="btn btn-primary" id="save-cal">Save Calendar Settings</button>
-        <button type="button" class="btn btn-ghost" id="test-cal">Sync Now</button>
-        <span id="cal-sync-result" class="integration-card__result"></span>
+        <button type="button" class="btn btn-primary" id="save-cal">{t("settings.save_calendar_settings", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-cal">{t("settings.sync_now_btn", locale)}</button>
+        <span id="cal-sync-result" class="integration-card__result" data-text-success={t("settings.sync_success", locale || "en")} data-text-failed={t("settings.sync_failed", locale || "en")}></span>
         <span id="cal-last-synced" class="integration-card__last-synced" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
       </div>
     </div>

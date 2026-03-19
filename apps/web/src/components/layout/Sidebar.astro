@@ -242,7 +242,7 @@ const navItems = order
         <circle cx="50" cy="30" r="7" fill="#F59E0B"></circle>
         <circle cx="25" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
         <circle cx="75" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
-      </svg> Meitheal
+      </svg> <span class="sidebar-brand-text">Meitheal</span>
     </a>
     <span
       class="sidebar-ipa"
@@ -264,7 +264,7 @@ const navItems = order
   </div>
 
   {gamificationEnabled && (
-    <div style="padding: 0.5rem 0.75rem; border-top: 1px solid var(--border, #334155);">
+    <div style="padding: 0.5rem 0.75rem; border-top: 1px solid var(--border, #334155);" class="sidebar-gamification-wrapper">
       <StreakBadge streak={currentStreak} compact />
     </div>
   )}
@@ -374,7 +374,7 @@ const navItems = order
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
-  .sidebar-header:hover .sidebar-tooltip {
+  :global(body:not(.sidebar-collapsed)) .sidebar-header:hover .sidebar-tooltip {
     display: block !important;
     animation: tooltip-fade-in 200ms ease forwards;
   }

@@ -40,13 +40,13 @@ test("can create a goal under an area", async () => {
   const now = Date.now()
   await client.execute({
     sql: "INSERT INTO goals (id, area_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-    args: ["lose-weight", "uncategorized", "Lose 10kg", "active", now, now],
+    args: ["lose-weight", "default", "Lose 10kg", "active", now, now],
   })
 
   const result = await client.execute("SELECT * FROM goals WHERE id = 'lose-weight'")
   expect(result.rows.length).toBe(1)
   expect(result.rows[0]?.title).toBe("Lose 10kg")
-  expect(result.rows[0]?.area_id).toBe("uncategorized")
+  expect(result.rows[0]?.area_id).toBe("default")
   expect(result.rows[0]?.status).toBe("active")
 })
 

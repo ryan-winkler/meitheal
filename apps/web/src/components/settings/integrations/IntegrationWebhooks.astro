@@ -4,6 +4,13 @@
  * @domain integrations/webhooks
  */
 import HelpTooltip from "../../ui/HelpTooltip.astro";
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-webhooks">
@@ -16,13 +23,13 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div class="integration-card__title-row">
       <span class="integration-card__icon">🔔</span>
       <div class="integration-card__title-info">
-        <strong>Webhooks</strong>
-        <span class="integration-card__desc">Generic outgoing event webhooks</span>
+        <strong>{t("settings.webhooks_title", locale)}</strong>
+        <span class="integration-card__desc">{t("settings.webhooks_desc", locale)}</span>
       </div>
     </div>
     <div class="integration-card__header-right">
-      <button type="button" class="info-btn" data-explainer="webhooks" aria-label="What are Webhooks?" onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-disabled" id="webhook-status">Not configured</span>
+      <button type="button" class="info-btn" data-explainer="webhooks" aria-label={t("settings.webhooks_explainer", locale)} onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="webhook-status">{t("settings.status_not_configured", locale)}</span>
       <span class="integration-card__chevron">▸</span>
     </div>
   </button>
@@ -30,19 +37,17 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
   <div class="integration-card__body" id="integration-webhooks-body" aria-hidden="true">
     <!-- Differentiation callout -->
     <div class="integration-callout integration-callout--info" style="margin-bottom: 12px;">
-      <strong>📌 Webhooks vs Agents & AI</strong>
+      <strong>{t("settings.webhooks_vs_ai", locale)}</strong>
       <div class="integration-callout__detail">
-        Webhooks send task events to external services and automations
-        (e.g., Zapier, IFTTT, custom APIs). For AI agent protocols like A2A,
-        MCP, and WebMCP, see the <a href="#automation-ai-settings" class="callout-link" data-settings-section-link>Agents &amp; AI</a> tab.
+        <span set:html={t("settings.webhooks_vs_ai_desc", locale)} />
       </div>
     </div>
     <div class="integration-card__config">
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="webhook-endpoint">Endpoint URL</label>
+          <label class="form-label" for="webhook-endpoint">{t("settings.webhooks_endpoint", locale)}</label>
           <HelpTooltip
-            text="The URL where Meitheal will POST task event payloads as JSON. Events are sent for task creation, updates, completion, and deletion. Ensure the endpoint accepts POST requests with Content-Type: application/json."
+            text={t("settings.webhooks_endpoint_help", locale)}
             id="help-webhook-endpoint"
           />
         </div>
@@ -50,24 +55,24 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       </div>
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="webhook-secret">Signing Secret (optional)</label>
+          <label class="form-label" for="webhook-secret">{t("settings.n8n_secret", locale)}</label>
           <HelpTooltip
-            text="An HMAC-SHA256 secret used to sign webhook payloads. When set, Meitheal adds an X-Meitheal-Signature header to each request. Verify this header on your receiving end to ensure payloads are authentic and untampered."
+            text={t("settings.webhooks_secret_help", locale)}
             id="help-webhook-secret"
           />
         </div>
         <input type="password" class="form-input" id="webhook-secret" placeholder="••••••••" />
       </div>
       <div class="form-group">
-        <label class="form-label" for="webhook-format">Payload Format</label>
+        <label class="form-label" for="webhook-format">{t("settings.webhooks_format", locale)}</label>
         <select class="form-select" id="webhook-format">
-          <option value="json" selected>JSON</option>
-          <option value="form">Form-encoded</option>
+          <option value="json" selected>{t("settings.webhooks_format_json", locale)}</option>
+          <option value="form">{t("settings.webhooks_format_form", locale)}</option>
         </select>
       </div>
       <div class="integration-card__actions">
-        <button type="button" class="btn btn-primary" id="save-webhook">Save Webhook</button>
-        <button type="button" class="btn btn-ghost" id="test-webhook">Send Test</button>
+        <button type="button" class="btn btn-primary" id="save-webhook">{t("settings.save_webhook", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook">{t("settings.send_webhook_test", locale)}</button>
       </div>
     </div>
   </div>

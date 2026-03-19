@@ -209,7 +209,15 @@ import { getPriorityColor } from "../lib/priority-config";
           </div>
         </div>
         <div class="task-list">
-          {favorites.map((fav) => (
+          {favorites.map((fav) => {
+            const p = Number(fav.priority ?? 3);
+            const priColor = getPriorityColor(p);
+            const ticketNum = fav.ticket_number
+              ? `MTH-${String(fav.ticket_number).padStart(3, "0")}`
+              : null;
+            const statusLabel =
+              statusLabels[String(fav.status)] ?? String(fav.status);
+            return (
             <div
               class="task-item"
               data-id={String(fav.id)}
@@ -218,24 +226,35 @@ import { getPriorityColor } from "../lib/priority-config";
               <div class="task-title">
                 <span
                   class="priority-dot"
-                  style={`background: ${getPriorityColor(Number(fav.priority ?? 3))}`}
+                  style={`background: ${priColor}`}
                 ></span>
+                {ticketNum && (
+                  <span style="font-size: 11px; color: var(--text-muted); margin-right: 6px;">
+                    {ticketNum}
+                  </span>
+                )}
                 {String(fav.title)}
               </div>
-              {fav.due_date && (
-                <span class="text-xs text-text-muted">
-                  {relativeTime(String(fav.due_date))}
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <span class={`task-badge badge-${String(fav.status)}`}>
+                  {statusLabel}
                 </span>
-              )}
+                {fav.due_date && (
+                  <span class="text-xs text-text-muted">
+                    {relativeTime(String(fav.due_date))}
+                  </span>
+                )}
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     )
   }
 
-  <div class="card" style="margin-bottom: 20px;">
-    <div class="card-header">
+  <div class="card" style="margin-bottom: 20px; padding: 16px;">
+    <div class="card-header" style="margin-bottom: 12px;">
       <div>
         <div class="card-title">{t("dashboard.quick_add", locale)}</div>
         <div class="card-subtitle">

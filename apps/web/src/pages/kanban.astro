@@ -173,11 +173,13 @@ const typeConfig: Record<
     <CardCustomizer />
     <button
       type="button"
-      class="btn btn-ghost"
+      class="btn btn-ghost flex items-center gap-2"
       id="manage-lanes-btn"
       title={t("kanban.manage_swimlanes", locale)}
-      >{t("kanban.manage_lanes", locale)}</button
     >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings-2"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="7" r="3"/><circle cx="8" cy="17" r="3"/></svg>
+      <span class="hide-mobile">{t("kanban.manage_lanes", locale)}</span>
+    </button>
     <button type="button" class="btn btn-primary" id="kanban-new-task-btn"
       >{t("kanban.new_task", locale)}</button
     >
@@ -293,7 +295,7 @@ const typeConfig: Record<
                     data-swimlane-type={type}
                   >
                     <div class="swimlane-header" data-type={type}>
-                      <span class="swimlane-toggle">▼</span>
+                      <span class={`swimlane-toggle ${count === 0 ? 'opacity-30 pointer-events-none' : ''}`}>▼</span>
                       <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">
                         {tc.label}

@@ -4,6 +4,13 @@
  * @domain integrations/grocy
  */
 import HelpTooltip from "../../ui/HelpTooltip.astro";
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-grocy">
@@ -16,13 +23,13 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div class="integration-card__title-row">
       <span class="integration-card__icon">🛒</span>
       <div class="integration-card__title-info">
-        <strong>Grocy</strong>
-        <span class="integration-card__desc">Chores, tasks &amp; shopping list sync</span>
+        <strong>{t("settings.grocy_title", locale)}</strong>
+        <span class="integration-card__desc">{t("settings.grocy_desc", locale)}</span>
       </div>
     </div>
     <div class="integration-card__header-right">
-      <button type="button" class="info-btn" data-explainer="grocy" aria-label="What is Grocy integration?" onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-disabled" id="grocy-status">Not configured</span>
+      <button type="button" class="info-btn" data-explainer="grocy" aria-label={t("settings.grocy_explainer", locale)} onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="grocy-status">{t("settings.status_not_configured", locale)}</span>
       <span class="integration-card__chevron">▸</span>
     </div>
   </button>
@@ -30,9 +37,9 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
   <div class="integration-card__body" id="integration-grocy-body" aria-hidden="true">
     <!-- Grocy auto-detect callout -->
     <div id="grocy-auto-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
-      <strong>✓ Grocy detected via HA</strong>
+      <strong>{t("settings.grocy_detected", locale)}</strong>
       <div class="integration-callout__detail">
-        Grocy addon found — URL auto-populated from HA ingress. No additional setup needed.
+        {t("settings.grocy_detected_desc", locale)}
       </div>
     </div>
 
@@ -42,9 +49,9 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div class="integration-card__config">
       <div class="form-group" id="grocy-url-group">
         <div class="form-label-row">
-          <label class="form-label" for="grocy-url">Grocy URL</label>
+          <label class="form-label" for="grocy-url">{t("settings.grocy_url_label", locale)}</label>
           <HelpTooltip
-            text="The URL of your Grocy instance. If running Grocy as a Home Assistant add-on, it's typically available at http://homeassistant.local:9192 or via the HA ingress proxy."
+            text={t("settings.grocy_url_help", locale)}
             id="help-grocy-url"
           />
         </div>
@@ -52,66 +59,66 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       </div>
       <div class="form-group" id="grocy-key-group">
         <div class="form-label-row">
-          <label class="form-label" for="grocy-key">API Key</label>
+          <label class="form-label" for="grocy-key">{t("settings.grocy_key_label", locale)}</label>
           <HelpTooltip
-            text="Generate a Grocy API key in Grocy → Settings → API Keys → Add. This key allows Meitheal to read and write chores and tasks."
+            text={t("settings.grocy_key_help", locale)}
             id="help-grocy-key"
           />
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <input type="password" class="form-input" id="grocy-key" placeholder="••••••••" style="flex: 1;" />
-          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title="Attempt to auto-generate a Grocy API key">⚡ Auto</button>
+          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title={t("settings.grocy_auto_key_title", locale)}>{t("settings.grocy_auto_key", locale)}</button>
         </div>
       </div>
       <!-- Custom config toggle for auto-detected installs -->
       <button type="button" class="btn btn-ghost" id="grocy-custom-toggle" style="display: none; font-size: 12px; padding: 4px 8px; align-self: flex-start;">
-        ⚙ Custom configuration
+        {t("settings.grocy_custom_config", locale)}
       </button>
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="grocy-sync-mode">Sync Mode</label>
+          <label class="form-label" for="grocy-sync-mode">{t("settings.grocy_sync_mode_label", locale)}</label>
           <HelpTooltip
-            text="Controls how data flows between Grocy and Meitheal. Import pulls chores/tasks into Meitheal, Export pushes completions to Grocy, Bidirectional keeps both in sync."
+            text={t("settings.grocy_sync_help", locale)}
             id="help-grocy-sync"
           />
         </div>
         <select class="form-select" id="grocy-sync-mode">
-          <option value="import">Import Grocy → Meitheal</option>
-          <option value="export">Export Meitheal → Grocy</option>
-          <option value="bidirectional" selected>Bidirectional sync</option>
+          <option value="import">{t("settings.grocy_sync_import", locale)}</option>
+          <option value="export">{t("settings.grocy_sync_export", locale)}</option>
+          <option value="bidirectional" selected>{t("settings.grocy_sync_bidir", locale)}</option>
         </select>
       </div>
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="grocy-sync-interval">Sync Interval</label>
+          <label class="form-label" for="grocy-sync-interval">{t("settings.grocy_sync_interval_label", locale)}</label>
           <HelpTooltip
-            text="How often Meitheal polls Grocy for changes. More frequent = faster sync but more API calls."
+            text={t("settings.grocy_interval_help", locale)}
             id="help-grocy-interval"
           />
         </div>
         <select class="form-select" id="grocy-sync-interval">
-          <option value="60000">Every 1 minute</option>
-          <option value="300000">Every 5 minutes</option>
-          <option value="900000" selected>Every 15 minutes</option>
-          <option value="1800000">Every 30 minutes</option>
-          <option value="3600000">Every hour</option>
-          <option value="0">Manual only</option>
+          <option value="60000">{t("settings.grocy_int_1m", locale)}</option>
+          <option value="300000">{t("settings.grocy_int_5m", locale)}</option>
+          <option value="900000" selected>{t("settings.grocy_int_15m", locale)}</option>
+          <option value="1800000">{t("settings.grocy_int_30m", locale)}</option>
+          <option value="3600000">{t("settings.grocy_int_1h", locale)}</option>
+          <option value="0">{t("settings.grocy_int_manual", locale)}</option>
         </select>
       </div>
 
       <!-- Last synced info -->
       <div class="form-group" id="grocy-sync-info" style="display: none;">
         <div class="integration-callout integration-callout--info" style="margin: 0;">
-          <span id="grocy-last-synced">Never synced</span>
+          <span id="grocy-last-synced">{t("settings.grocy_never_synced", locale)}</span>
           <span id="grocy-item-count" style="margin-left: auto; font-size: 12px; opacity: 0.7;"></span>
         </div>
       </div>
 
       <div class="integration-card__actions">
-        <button type="button" class="btn btn-outline" id="test-grocy">Test Connection</button>
-        <button type="button" class="btn btn-outline" id="sync-grocy-now" style="display: none;">Sync Now</button>
-        <a href="#" class="btn btn-ghost" id="open-grocy-link" target="_blank" rel="noopener" style="display: none; font-size: 12px;" title="Open Grocy in a new tab">↗ Open Grocy</a>
-        <button type="button" class="btn btn-primary" id="save-grocy">Save Grocy Settings</button>
+        <button type="button" class="btn btn-outline" id="test-grocy">{t("settings.test_connection", locale)}</button>
+        <button type="button" class="btn btn-outline" id="sync-grocy-now" style="display: none;">{t("settings.sync_now_btn", locale)}</button>
+        <a href="#" class="btn btn-ghost" id="open-grocy-link" target="_blank" rel="noopener" style="display: none; font-size: 12px;" title={t("settings.grocy_open_title", locale)}>{t("settings.grocy_open_link", locale)}</a>
+        <button type="button" class="btn btn-primary" id="save-grocy">{t("settings.save_grocy_settings", locale)}</button>
       </div>
     </div>
   </div>

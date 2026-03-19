@@ -324,7 +324,7 @@ export async function ensureSchema(): Promise<void> {
   await client.execute(`
     CREATE TABLE IF NOT EXISTS areas (
       id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
+      name TEXT NOT NULL,
       icon TEXT NOT NULL DEFAULT '📋',
       color TEXT NOT NULL DEFAULT '#6366F1',
       position INTEGER NOT NULL DEFAULT 0,
@@ -333,12 +333,16 @@ export async function ensureSchema(): Promise<void> {
     )
   `);
 
+  if (!(await hasColumn(client, "areas", "name")) && (await hasColumn(client, "areas", "title"))) {
+    await client.execute("ALTER TABLE areas RENAME COLUMN title TO name");
+  }
+
   // Auto-create default area if none exist
   const areaCount = await client.execute("SELECT COUNT(*) as cnt FROM areas");
   if (Number(areaCount.rows[0]?.cnt ?? 0) === 0) {
     const now = Date.now();
     await client.execute({
-      sql: "INSERT INTO areas (id, title, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: ["default", "Default", "📋", "#6366F1", 0, now, now],
     });
   }
@@ -846,10 +850,7 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE task_templates ADD COLUMN completion_history TEXT NOT NULL DEFAULT '[]'")
   }
 
-  // Schema migration: rename 'name' to 'title' in areas table if it exists (Board -> Area migration gap)
-  if (await hasColumn(client, "areas", "name")) {
-    await client.execute("ALTER TABLE areas RENAME COLUMN name TO title");
-  }
+
 
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")

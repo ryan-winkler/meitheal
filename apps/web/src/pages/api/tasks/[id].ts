@@ -237,7 +237,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 
   // PRA-08: blocked_by enforcement — prevent activating tasks that have open blockers
-  const ACTIVE_STATUSES = [STATUS.ACTIVE, "in_progress", "in-progress"]
+  const ACTIVE_STATUSES: string[] = [STATUS.ACTIVE]
   if (sanitized.status !== undefined && ACTIVE_STATUSES.includes(String(sanitized.status))) {
     try {
       const client = getPersistenceClient()

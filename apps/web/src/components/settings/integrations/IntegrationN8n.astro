@@ -4,6 +4,13 @@
  * @domain integrations/n8n
  */
 import HelpTooltip from "../../ui/HelpTooltip.astro";
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-n8n">
@@ -16,13 +23,13 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div class="integration-card__title-row">
       <span class="integration-card__icon">⚙</span>
       <div class="integration-card__title-info">
-        <strong>n8n / Node-RED</strong>
-        <span class="integration-card__desc">Automation workflow triggers</span>
+        <strong>{t("settings.n8n_title", locale)}</strong>
+        <span class="integration-card__desc">{t("settings.n8n_desc", locale)}</span>
       </div>
     </div>
     <div class="integration-card__header-right">
-      <button type="button" class="info-btn" data-explainer="n8n" aria-label="What is n8n / Node-RED integration?" onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-disabled" id="n8n-status">Not configured</span>
+      <button type="button" class="info-btn" data-explainer="n8n" aria-label={t("settings.n8n_explainer", locale)} onclick="event.stopPropagation()">ℹ️</button>
+      <span class="badge badge-disabled" id="n8n-status">{t("settings.status_not_configured", locale)}</span>
       <span class="integration-card__chevron">▸</span>
     </div>
   </button>
@@ -30,24 +37,24 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
   <div class="integration-card__body" id="integration-n8n-body" aria-hidden="true">
     <!-- HA addon auto-detect callout -->
     <div id="n8n-auto-info" class="integration-callout integration-callout--success" style="display: none;">
-      <strong>✓ Automation addon detected</strong>
+      <strong>{t("settings.n8n_auto_detected", locale)}</strong>
       <div class="integration-callout__detail" id="n8n-auto-detail">
-        Events are sent/received automatically via WebSocket — no additional webhook configuration needed.
+        {t("settings.n8n_auto_desc", locale)}
       </div>
     </div>
 
     <!-- Mode toggle: HA Addon vs Standalone -->
     <div class="n8n-mode-toggle" style="margin-bottom: 12px;">
-      <label class="form-label" style="margin-bottom: 2px;">Integration Mode</label>
+      <label class="form-label" style="margin-bottom: 2px;">{t("settings.n8n_mode_label", locale)}</label>
       <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
-        Choose how Meitheal communicates with your automation engine.
+        {t("settings.n8n_mode_desc", locale)}
       </div>
       <div class="mode-tabs">
         <button type="button" class="mode-tab mode-tab--active" id="n8n-mode-auto" data-mode="auto">
-          🏠 HA Addon (auto)
+          {t("settings.n8n_mode_addon", locale)}
         </button>
         <button type="button" class="mode-tab" id="n8n-mode-standalone" data-mode="standalone">
-          🌐 Standalone
+          {t("settings.n8n_mode_standalone", locale)}
         </button>
       </div>
     </div>
@@ -55,50 +62,50 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <!-- HA Addon mode content -->
     <div id="n8n-auto-content" class="integration-card__config" aria-live="polite">
       <div class="integration-callout integration-callout--info">
-        <strong>🔗 Automatic via WebSocket</strong>
+        <strong>{t("settings.n8n_ws_title", locale)}</strong>
         <div class="integration-callout__detail">
-          Node-RED and n8n addons communicate with Meitheal automatically through the HA WebSocket. Select which events to broadcast below.
+          {t("settings.n8n_ws_desc", locale)}
         </div>
       </div>
       <div id="n8n-auto-detect-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
-        <strong>✓ Node-RED detected via HA</strong>
+        <strong>{t("settings.n8n_nr_detected", locale)}</strong>
         <div class="integration-callout__detail">
-          Node-RED addon found and connected automatically.
+          {t("settings.n8n_nr_detected_desc", locale)}
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Trigger Events</label>
+        <label class="form-label">{t("settings.n8n_trigger_events", locale)}</label>
         <div class="event-checkbox-grid">
-          <label class="event-checkbox" title="Fires when a new task is created">
+          <label class="event-checkbox" title={t("settings.n8n_ev_created_title", locale)}>
             <input type="checkbox" class="n8n-event" value="task.created" checked />
-            <span>Created <small class="text-muted">— new task added</small></span>
+            <span set:html={t("settings.n8n_ev_created", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when task fields are modified">
+          <label class="event-checkbox" title={t("settings.n8n_ev_updated_title", locale)}>
             <input type="checkbox" class="n8n-event" value="task.updated" checked />
-            <span>Updated <small class="text-muted">— fields changed</small></span>
+            <span set:html={t("settings.n8n_ev_updated", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task is marked done">
+          <label class="event-checkbox" title={t("settings.n8n_ev_completed_title", locale)}>
             <input type="checkbox" class="n8n-event" value="task.completed" checked />
-            <span>Completed <small class="text-muted">— marked done</small></span>
+            <span set:html={t("settings.n8n_ev_completed", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task is permanently removed">
+          <label class="event-checkbox" title={t("settings.n8n_ev_deleted_title", locale)}>
             <input type="checkbox" class="n8n-event" value="task.deleted" />
-            <span>Deleted <small class="text-muted">— permanently removed</small></span>
+            <span set:html={t("settings.n8n_ev_deleted", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task passes its due date">
+          <label class="event-checkbox" title={t("settings.n8n_ev_overdue_title", locale)}>
             <input type="checkbox" class="n8n-event" value="task.overdue" checked />
-            <span>Overdue <small class="text-muted">— past due date</small></span>
+            <span set:html={t("settings.n8n_ev_overdue", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when area configuration changes">
+          <label class="event-checkbox" title={t("settings.n8n_ev_area_title", locale)}>
             <input type="checkbox" class="n8n-event" value="area.updated" />
-            <span>Area Updated <small class="text-muted">— columns/config changed</small></span>
+            <span set:html={t("settings.n8n_ev_area", locale)} />
           </label>
         </div>
-        <div class="event-count-summary" id="n8n-event-count-auto">4 of 6 events enabled</div>
+        <div class="event-count-summary" id="n8n-event-count-auto" data-text-summary={t("settings.n8n_event_summary", locale)}>4 of 6 events enabled</div>
       </div>
       <div class="integration-card__actions" style="gap: 8px;">
-        <button type="button" class="btn btn-primary" id="save-n8n">Save Event Settings</button>
-        <button type="button" class="btn btn-ghost" id="test-event-bus">🧪 Test Event Bus</button>
+        <button type="button" class="btn btn-primary" id="save-n8n">{t("settings.save_n8n_events", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-event-bus">{t("settings.n8n_test_bus", locale)}</button>
       </div>
       <div id="test-event-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
         <span id="test-event-message"></span>
@@ -108,11 +115,11 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       <div class="integration-callout integration-callout--info" style="margin-top: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
-            <strong>HA Event Bus</strong>
-            <div class="integration-callout__detail" id="n8n-ha-bus-status" style="margin-top: 4px;">Checking...</div>
+            <strong>{t("settings.n8n_ha_bus", locale)}</strong>
+            <div class="integration-callout__detail" id="n8n-ha-bus-status" style="margin-top: 4px;">{t("settings.status_checking", locale)}</div>
           </div>
           <div style="text-align: right;">
-            <strong>HA Version</strong>
+            <strong>{t("settings.n8n_ha_version", locale)}</strong>
             <div class="integration-callout__detail" id="n8n-ha-version" style="margin-top: 4px;">—</div>
           </div>
         </div>
@@ -121,15 +128,15 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       <!-- ═══ Node-RED Flow Deployment ═══ -->
       <hr style="border: none; border-top: 1px solid rgba(107, 114, 128, 0.2); margin: 20px 0 16px;" />
       <div class="integration-callout integration-callout--info" style="margin-top: 0;">
-        <strong>📦 Node-RED Flows</strong>
+        <strong>{t("settings.n8n_flows_title", locale)}</strong>
         <div class="integration-callout__detail">
-          Deploy pre-built automation flows for all Meitheal events directly to Node-RED.
+          {t("settings.n8n_flows_desc", locale)}
         </div>
 
         <!-- Deployment status -->
         <div id="nodered-deploy-status" style="margin: 8px 0; display: none;">
-          <span id="nodered-deploy-badge" class="badge badge-disabled">Checking...</span>
-          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="display: none; margin-left: 8px; font-size: 12px;">🔗 Open in Node-RED</a>
+          <span id="nodered-deploy-badge" class="badge badge-disabled">{t("settings.status_checking", locale)}</span>
+          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="display: none; margin-left: 8px; font-size: 12px;">{t("settings.n8n_open_nr", locale)}</a>
         </div>
 
         <!-- Deploy result message -->
@@ -138,8 +145,8 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-primary" id="deploy-nodered-flows">🚀 Deploy to Node-RED</button>
-          <button type="button" class="btn btn-ghost" id="copy-nodered-flows">📋 Copy Flow JSON</button>
+          <button type="button" class="btn btn-primary" id="deploy-nodered-flows">{t("settings.n8n_deploy_nr", locale)}</button>
+          <button type="button" class="btn btn-ghost" id="copy-nodered-flows">{t("settings.n8n_copy_flow", locale)}</button>
         </div>
       </div>
     </div>
@@ -148,9 +155,9 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
     <div id="n8n-standalone-content" class="integration-card__config" style="display: none;">
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="n8n-webhook-url">Webhook URL</label>
+          <label class="form-label" for="n8n-webhook-url">{t("settings.n8n_webhook_url", locale)}</label>
           <HelpTooltip
-            text="The webhook URL from your n8n or Node-RED flow. Meitheal will POST a JSON payload to this URL whenever selected task events occur."
+            text={t("settings.n8n_webhook_help", locale)}
             id="help-n8n-url"
           />
         </div>
@@ -158,9 +165,9 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       </div>
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="n8n-api-key">API Key (optional)</label>
+          <label class="form-label" for="n8n-api-key">{t("settings.n8n_api_key", locale)}</label>
           <HelpTooltip
-            text="If your n8n/Node-RED instance requires authentication, enter the API key here. This is used in the Authorization header for webhook requests."
+            text={t("settings.n8n_api_key_help", locale)}
             id="help-n8n-apikey"
           />
         </div>
@@ -168,48 +175,48 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       </div>
       <div class="form-group">
         <div class="form-label-row">
-          <label class="form-label" for="n8n-secret">Signing Secret (optional)</label>
+          <label class="form-label" for="n8n-secret">{t("settings.n8n_secret", locale)}</label>
           <HelpTooltip
-            text="HMAC-SHA256 secret for signing webhook payloads. Verify the X-Meitheal-Signature header on your receiving end."
+            text={t("settings.n8n_secret_help", locale)}
             id="help-n8n-secret"
           />
         </div>
         <input type="password" class="form-input" id="n8n-secret" placeholder="••••••••" />
       </div>
       <div class="form-group">
-        <label class="form-label">Trigger Events</label>
+        <label class="form-label">{t("settings.n8n_trigger_events", locale)}</label>
         <div class="event-checkbox-grid">
-          <label class="event-checkbox" title="Fires when a new task is created">
+          <label class="event-checkbox" title={t("settings.n8n_ev_created_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="task.created" checked />
-            <span>Created <small class="text-muted">— new task added</small></span>
+            <span set:html={t("settings.n8n_ev_created", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when task fields are modified">
+          <label class="event-checkbox" title={t("settings.n8n_ev_updated_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="task.updated" checked />
-            <span>Updated <small class="text-muted">— fields changed</small></span>
+            <span set:html={t("settings.n8n_ev_updated", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task is marked done">
+          <label class="event-checkbox" title={t("settings.n8n_ev_completed_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="task.completed" checked />
-            <span>Completed <small class="text-muted">— marked done</small></span>
+            <span set:html={t("settings.n8n_ev_completed", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task is permanently removed">
+          <label class="event-checkbox" title={t("settings.n8n_ev_deleted_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="task.deleted" />
-            <span>Deleted <small class="text-muted">— permanently removed</small></span>
+            <span set:html={t("settings.n8n_ev_deleted", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when a task passes its due date">
+          <label class="event-checkbox" title={t("settings.n8n_ev_overdue_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="task.overdue" checked />
-            <span>Overdue <small class="text-muted">— past due date</small></span>
+            <span set:html={t("settings.n8n_ev_overdue", locale)} />
           </label>
-          <label class="event-checkbox" title="Fires when area configuration changes">
+          <label class="event-checkbox" title={t("settings.n8n_ev_area_title", locale)}>
             <input type="checkbox" class="n8n-event-standalone" value="area.updated" />
-            <span>Area Updated <small class="text-muted">— columns/config changed</small></span>
+            <span set:html={t("settings.n8n_ev_area", locale)} />
           </label>
         </div>
-        <div class="event-count-summary" id="n8n-event-count-standalone">4 of 6 events enabled</div>
+        <div class="event-count-summary" id="n8n-event-count-standalone" data-text-summary={t("settings.n8n_event_summary", locale)}>4 of 6 events enabled</div>
       </div>
       <div class="integration-card__actions">
-        <button type="button" class="btn btn-primary" id="save-n8n-standalone">Save Standalone Settings</button>
-        <button type="button" class="btn btn-ghost" id="test-webhook-standalone">🔌 Test Webhook</button>
-        <button type="button" class="btn btn-ghost" id="refresh-n8n-standalone">↻ Refresh</button>
+        <button type="button" class="btn btn-primary" id="save-n8n-standalone">{t("settings.save_n8n_standalone", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook-standalone">{t("settings.n8n_test_webhook", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="refresh-n8n-standalone">{t("settings.n8n_refresh", locale)}</button>
       </div>
       <div id="test-webhook-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
         <span id="test-webhook-message"></span>
@@ -219,23 +226,23 @@ import HelpTooltip from "../../ui/HelpTooltip.astro";
       <div class="integration-callout integration-callout--info" style="margin-top: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
-            <strong>Status</strong>
-            <div class="integration-callout__detail" id="n8n-health-detail" style="margin-top: 4px;">Waiting for configuration...</div>
+            <strong>{t("settings.n8n_status_label", locale)}</strong>
+            <div class="integration-callout__detail" id="n8n-health-detail" style="margin-top: 4px;">{t("settings.n8n_waiting_config", locale)}</div>
           </div>
           <div style="text-align: right;">
-            <strong>Last Delivery</strong>
-            <div class="integration-callout__detail" id="n8n-last-delivery" style="margin-top: 4px;">Never sent</div>
+            <strong>{t("settings.n8n_last_delivery", locale)}</strong>
+            <div class="integration-callout__detail" id="n8n-last-delivery" style="margin-top: 4px;">{t("settings.n8n_never_sent", locale)}</div>
           </div>
         </div>
       </div>
 
       <!-- Workflow Discovery -->
       <div style="margin-top: 16px;">
-        <label class="form-label" style="margin-bottom: 8px;">Workflow Discovery</label>
+        <label class="form-label" style="margin-bottom: 8px;">{t("settings.n8n_workflow_discovery", locale)}</label>
         <div id="n8n-workflows-list" class="cal-toggle-list" style="max-height: 240px; overflow-y: auto;">
           <div class="cal-empty-state">
             <span class="cal-empty-icon">📭</span>
-            <span>Configure and save URL/API Key to discover workflows.</span>
+            <span>{t("settings.n8n_workflow_empty", locale)}</span>
           </div>
         </div>
       </div>
