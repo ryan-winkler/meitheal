@@ -980,18 +980,10 @@
                 body: JSON.stringify({ [field]: value }),
               },
             );
-            if (res.ok) {
-              const notif = document.getElementById("save-notification");
-              if (notif) {
-                notif.style.transform = "translateY(0)";
-                notif.style.opacity = "1";
-                setTimeout(() => {
-                  notif.style.transform = "translateY(100%)";
-                  notif.style.opacity = "0";
-                }, 2000);
-              }
-            } else {
+            if (!res.ok) {
               log.warn(`Failed to save ${field}:`, res.status);
+              const { showToast } = await import("@lib/toast");
+              showToast("common.failed_update", "error");
             }
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err);
