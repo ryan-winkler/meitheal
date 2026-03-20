@@ -110,3 +110,35 @@ jobs:
             -f "committer[name]=github-actions[bot]" \
             -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
 
+      # sync-addon-repo.yml skips bot commits (github.actor != 'github-actions[bot]'),
+      # so we must push the bumped config.yaml to the public repo directly here.
+      - name: Sync canary config to public add-on repo
+        env:
+          GH_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
+        run: |
+          sha_short="$(git rev-parse --short HEAD)"
+          node scripts/update-canary-version.mjs "$sha_short"
+
+          file_path="meitheal-hub-canary/config.yaml"
+          content_b64="$(base64 -w0 < "${file_path}")"
+
+          # Get current SHA of the file in the public repo
+          public_sha="$(gh api "/repos/Coolock-Village/meitheal-ha-addon/contents/${file_path}" --jq '.sha')" || true
+
+          if [ -n "$public_sha" ]; then
+            gh api --method PUT "/repos/Coolock-Village/meitheal-ha-addon/contents/${file_path}" \
+              -f message="🐤 canary: bump version to ${sha_short}" \
+              -f content="${content_b64}" \
+              -f sha="${public_sha}" \
+              -f branch="main" \
+              -f "committer[name]=github-actions[bot]" \
+              -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
+          else
+            gh api --method PUT "/repos/Coolock-Village/meitheal-ha-addon/contents/${file_path}" \
+              -f message="🐤 canary: bump version to ${sha_short}" \
+              -f content="${content_b64}" \
+              -f branch="main" \
+              -f "committer[name]=github-actions[bot]" \
+              -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
+          fi
+
