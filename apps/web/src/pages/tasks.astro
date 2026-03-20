@@ -10,7 +10,6 @@
  */
 
 const { ingressPath } = Astro.locals
-const prefix = ingressPath || ""
-return Astro.redirect(`${prefix}/kanban`, 302)
+return Astro.redirect(`${ingressPath || ""}/kanban`, 302)
 ---
 
