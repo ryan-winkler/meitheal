@@ -1,0 +1,114 @@
+---
+/**
+ * ParentPageShell — Reusable shell for parent pages (Tasks, Progress & Growth, Planning)
+ *
+ * Wraps UnifiedBar + hash-based section routing in a single component.
+ * Each sub-view is a named slot that gets shown/hidden based on the URL hash.
+ *
+ * Usage:
+ *   <ParentPageShell pageId="tasks">
+ *     <div slot="kanban">...kanban content...</div>
+ *     <div slot="calendar">...calendar content...</div>
+ *   </ParentPageShell>
+ *
+ * @domain navigation
+ * @phase 15 — Hierarchy Architecture Overhaul
+ */
+
+import UnifiedBar from "@components/layout/UnifiedBar.astro"
+import { PARENT_PAGES, type ParentPageId } from "@lib/parent-page-registry"
+
+interface Props {
+  pageId: ParentPageId
+}
+
+const { pageId } = Astro.props
+
+const page = PARENT_PAGES.find((p) => p.id === pageId)
+if (!page) throw new Error(`Unknown parent page: ${pageId}`)
+
+const shellId = `${pageId}-shell`
+const barId = `${pageId}-bar`
+
+const tabs = page.subViews.map((sv) => ({
+  id: sv.hash,
+  label: sv.label,
+  icon: sv.icon,
+}))
+
+const hash = Astro.url.hash?.replace("#", "") || page.defaultHash
+const activeSectionId = page.subViews.some((sv) => sv.hash === hash) ? hash : page.defaultHash
+---
+
+<div class="parent-page-shell" id={shellId} data-page-id={pageId}>
+  <UnifiedBar
+    title={page.label}
+    tabs={tabs}
+    barId={barId}
+    searchPlaceholder={`Search ${page.label.toLowerCase()}…`}
+    searchScope={pageId}
+  />
+
+  <main class="parent-page-shell__content">
+    {page.subViews.map((sv) => (
+      <section
+        class="parent-page-shell__section"
+        data-parent-section={sv.hash}
+        id={`${pageId}-section-${sv.hash}`}
+        aria-labelledby={`${barId}-tab-${sv.hash}`}
+        aria-hidden={sv.hash !== activeSectionId ? "true" : "false"}
+        hidden={sv.hash !== activeSectionId}
+      >
+        <slot name={sv.hash} />
+      </section>
+    ))}
+  </main>
+</div>
+
+<script define:vars={{ shellId, barId, sectionIds: page.subViews.map((sv) => sv.hash), defaultSectionId: page.defaultHash }}>
+  // Inline boot — imports the shared controller
+  import("@lib/parent-page-controller").then(({ initParentPageController }) => {
+    initParentPageController({
+      shellId,
+      barId,
+      sectionIds,
+      defaultSectionId,
+    })
+  })
+</script>
+
+<style>
+  .parent-page-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  .parent-page-shell__content {
+    flex: 1 1 auto;
+    position: relative;
+  }
+
+  .parent-page-shell__section {
+    width: 100%;
+  }
+
+  .parent-page-shell__section[hidden] {
+    display: none !important;
+  }
+
+  .parent-page-shell__section.is-active {
+    animation: parent-section-fade-in 200ms ease-out;
+  }
+
+  @keyframes parent-section-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .parent-page-shell__section.is-active {
+      animation: none;
+    }
+  }
+</style>
