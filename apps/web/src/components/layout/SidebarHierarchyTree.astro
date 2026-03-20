@@ -1,22 +1,23 @@
 ---
 /**
- * SidebarHierarchyTree — flat project list grouped by area
+ * SidebarHierarchyTree — Area → Project sidebar navigation
  *
- * Redesigned in Phase 15.1 from the confusing 3-level deep tree
- * (Area → Goal → Project) to a clean, flat, scannable project list
- * with area names as section dividers.
+ * Phase 15.2: Direct area_id on projects replaces the indirect
+ * goal→area grouping. Sidebar shows Areas as top-level groups
+ * with nested Projects underneath. Each area has its own
+ * "+ New Project" inline action.
  *
  * Features:
- * - Flat project list grouped by area dividers
- * - Area dividers link to /areas/[id] detail pages
+ * - Two-level hierarchy: Area → Project
+ * - Direct area_id grouping (no goal indirection)
+ * - Per-area inline "New Project" quick-add
  * - Pinned projects section at the top
  * - Collapse state per area (localStorage)
- * - Quick-add new project
  * - Active page highlighting
  * - WAI-ARIA listbox keyboard navigation
  *
  * @domain navigation
- * @phase 15.1 — Planning-First Navigation Redesign
+ * @phase 15.2 — Area→Project Sidebar Restructuring
  */
 import {
   ensureSchema,
@@ -33,38 +34,29 @@ export interface Props {
 const { locale } = Astro.props
 
 interface AreaRow { id: string; name: string; icon: string; color: string; position: number }
-interface GoalRow { id: string; title: string; area_id: string | null; status: string }
-interface ProjectRow { id: string; title: string; goal_id: string | null; icon: string; color: string; status: string }
+interface ProjectRow { id: string; title: string; area_id: string | null; icon: string; color: string; status: string }
 
 let areas: AreaRow[] = []
-let goals: GoalRow[] = []
 let projects: ProjectRow[] = []
 
 try {
   await ensureSchema()
   const repo = new HierarchyRepository(getPersistenceClient())
   areas = (await repo.findAllAreas()) as unknown as AreaRow[]
-  goals = (await repo.findAllGoals({})) as unknown as GoalRow[]
   projects = (await repo.findAllProjects({})) as unknown as ProjectRow[]
 } catch {
   // Schema may not exist yet — render empty
 }
 
-// Build area → projects mapping via goals
-const goalToArea = new Map<string, string>()
-for (const g of goals) {
-  if (g.area_id) goalToArea.set(String(g.id), String(g.area_id))
-}
-
+// Build area → projects mapping directly via area_id
 const projectsByArea = new Map<string, ProjectRow[]>()
 const ungroupedProjects: ProjectRow[] = []
 
 for (const p of projects) {
-  const areaId = p.goal_id ? goalToArea.get(String(p.goal_id)) : null
-  if (areaId) {
-    const list = projectsByArea.get(areaId) ?? []
+  if (p.area_id) {
+    const list = projectsByArea.get(String(p.area_id)) ?? []
     list.push(p)
-    projectsByArea.set(areaId, list)
+    projectsByArea.set(String(p.area_id), list)
   } else {
     ungroupedProjects.push(p)
   }
@@ -76,19 +68,21 @@ const currentPath = rawPath.replace(/\/$/, "") || "/"
 
 const hasContent = projects.length > 0 || areas.length > 0
 
-// Only show areas that have projects or non-empty
+// Show all areas (even empty ones get a quick-add button)
 const visibleAreas = areas.filter((a) => {
   if (a.name === "Uncategorized" && !(projectsByArea.get(String(a.id))?.length)) return false
   return true
 })
+
+const areasLabel = t("sidebar.areas_header", locale) || "Areas"
 ---
 
 {hasContent && (
-  <div class="project-nav" id="project-nav" role="navigation" aria-label="Project navigation">
+  <div class="project-nav" id="project-nav" role="navigation" aria-label="Area navigation">
     <div class="project-nav__header">
-      <span class="project-nav__label">Projects</span>
+      <span class="project-nav__label">{areasLabel}</span>
       <a
-        href="/planning#spaces"
+        href="/areas"
         class="project-nav__manage-link"
         title="Manage areas & projects"
         aria-label="Manage areas & projects"
@@ -107,8 +101,6 @@ const visibleAreas = areas.filter((a) => {
     <div class="project-nav__list" id="project-nav-list">
       {visibleAreas.map((area) => {
         const areaProjects = projectsByArea.get(String(area.id)) ?? []
-        // Skip areas with no projects — they show in Planning, not sidebar
-        if (areaProjects.length === 0) return null
         return (
           <div class="project-nav__area-group" data-area-group={area.id}>
             <div class="project-nav__divider">
@@ -144,6 +136,17 @@ const visibleAreas = areas.filter((a) => {
                   <span class="project-nav__item-name">{proj.title}</span>
                 </a>
               ))}
+              {/* Per-area inline quick-add */}
+              <button
+                type="button"
+                class="project-nav__area-add-btn"
+                data-area-add={area.id}
+                title={`New project in ${area.name}`}
+                aria-label={`New project in ${area.name}`}
+              >
+                <Icon name="plus" size={11} />
+                <span>New Project</span>
+              </button>
             </div>
           </div>
         )
@@ -172,18 +175,6 @@ const visibleAreas = areas.filter((a) => {
         </div>
       )}
     </div>
-
-    {/* ── Quick-add project ── */}
-    <button
-      class="project-nav__add-btn"
-      id="project-nav-add-btn"
-      type="button"
-      title="New Project"
-      aria-label="New Project"
-    >
-      <Icon name="plus" size={13} />
-      <span>New Project</span>
-    </button>
   </div>
 )}
 
@@ -350,33 +341,37 @@ const visibleAreas = areas.filter((a) => {
     padding-left: 8px;
   }
 
-  /* ── Add button ── */
-  .project-nav__add-btn {
+  /* ── Per-area add button ── */
+  .project-nav__area-add-btn {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
-    padding: 5px 8px;
-    margin-top: 4px;
-    border: 1px dashed var(--border);
+    padding: 3px 4px 3px 22px;
+    margin-top: 1px;
+    border: none;
     background: none;
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
     font-size: 11px;
     color: var(--text-muted);
-    transition: background 150ms, color 150ms, border-color 150ms;
+    opacity: 0;
+    transition: opacity 150ms, background 150ms, color 150ms;
   }
-  .project-nav__add-btn:hover {
+  .project-nav__area-group:hover .project-nav__area-add-btn,
+  .project-nav__area-add-btn:focus-visible {
+    opacity: 0.7;
+  }
+  .project-nav__area-add-btn:hover {
+    opacity: 1;
     background: var(--bg-hover);
     color: var(--text-primary);
-    border-color: var(--accent);
   }
 
   @media (prefers-reduced-motion: reduce) {
     .project-nav__divider-toggle,
     .project-nav__item,
-    .project-nav__add-btn,
+    .project-nav__area-add-btn,
     .project-nav__manage-link,
     .project-nav__divider-link {
       transition: none;
@@ -385,7 +380,7 @@ const visibleAreas = areas.filter((a) => {
 </style>
 
 <script>
-  // ── Project navigation: collapse/expand + pinning + quick-add ──
+  // ── Project navigation: collapse/expand + pinning + per-area quick-add ──
   (function initProjectNav() {
     const nav = document.getElementById("project-nav")
     if (!nav) return
@@ -500,21 +495,24 @@ const visibleAreas = areas.filter((a) => {
       renderPinned()
     })
 
-    // ── 3. Quick add project ──
-    const addBtn = document.getElementById("project-nav-add-btn")
-    addBtn?.addEventListener("click", async () => {
-      const title = prompt("New project title:")
-      if (!title?.trim()) return
-      try {
-        const res = await fetch((window.__ingress_path || "") + "/api/projects", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: title.trim(), icon: "📋", color: "#6366F1" }),
-        })
-        if (res.ok) {
-          window.location.reload()
-        }
-      } catch { /* ignore */ }
+    // ── 3. Per-area quick-add project ──
+    document.querySelectorAll<HTMLButtonElement>("[data-area-add]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const areaId = btn.dataset.areaAdd
+        if (!areaId) return
+        const title = prompt("New project title:")
+        if (!title?.trim()) return
+        try {
+          const res = await fetch("/api/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: title.trim(), area_id: areaId, icon: "📋", color: "#6366F1" }),
+          })
+          if (res.ok) {
+            window.location.reload()
+          }
+        } catch { /* ignore */ }
+      })
     })
 
     // ── 4. Keyboard navigation ──

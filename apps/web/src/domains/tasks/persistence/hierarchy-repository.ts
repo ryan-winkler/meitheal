@@ -41,6 +41,8 @@ export interface GoalRow {
 export interface ProjectRow {
   id: string
   goal_id: string | null
+  /** Direct area ownership — sidebar groups projects by this field */
+  area_id: string | null
   title: string
   description: string | null
   status: string
@@ -231,12 +233,13 @@ export class HierarchyRepository {
 
   // ── Projects ─────────────────────────────────────────────────────
 
-  async findAllProjects(filters?: { goal_id?: string; status?: string }): Promise<ProjectRow[]> {
+  async findAllProjects(filters?: { goal_id?: string; area_id?: string; status?: string }): Promise<ProjectRow[]> {
     let sql = "SELECT * FROM projects"
     const conditions: string[] = []
     const args: string[] = []
 
     if (filters?.goal_id) { conditions.push("goal_id = ?"); args.push(filters.goal_id) }
+    if (filters?.area_id) { conditions.push("area_id = ?"); args.push(filters.area_id) }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
 
     if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`
@@ -244,6 +247,11 @@ export class HierarchyRepository {
 
     const result = await this.client.execute({ sql, args })
     return result.rows.map(r => this.mapProject(r as Record<string, unknown>))
+  }
+
+  /** Convenience: find all projects belonging to a specific area */
+  async findProjectsByArea(areaId: string): Promise<ProjectRow[]> {
+    return this.findAllProjects({ area_id: areaId })
   }
 
   async findProjectById(id: string): Promise<ProjectRow | null> {
@@ -255,15 +263,16 @@ export class HierarchyRepository {
   }
 
   async createProject(data: {
-    id: string; title: string; goal_id?: string | null | undefined; description?: string; status?: string; icon?: string; color?: string; position?: number
+    id: string; title: string; goal_id?: string | null | undefined; area_id?: string | null | undefined; description?: string; status?: string; icon?: string; color?: string; position?: number
   }): Promise<void> {
     const now = Date.now()
     await this.client.execute({
-      sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO projects (id, goal_id, area_id, title, description, status, icon, color, position, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id,
         data.goal_id ?? null,
+        data.area_id ?? null,
         data.title,
         data.description ?? null,
         data.status ?? "active",
@@ -277,13 +286,14 @@ export class HierarchyRepository {
   }
 
   async updateProject(id: string, data: {
-    title?: string; goal_id?: string | null; description?: string | null; status?: string; icon?: string; color?: string; position?: number
+    title?: string; goal_id?: string | null; area_id?: string | null; description?: string | null; status?: string; icon?: string; color?: string; position?: number
   }): Promise<boolean> {
     const sets: string[] = []
     const args: (string | number | null)[] = []
 
     if (data.title !== undefined) { sets.push("title = ?"); args.push(data.title) }
     if (data.goal_id !== undefined) { sets.push("goal_id = ?"); args.push(data.goal_id) }
+    if (data.area_id !== undefined) { sets.push("area_id = ?"); args.push(data.area_id) }
     if (data.description !== undefined) { sets.push("description = ?"); args.push(data.description) }
     if (data.status !== undefined) { sets.push("status = ?"); args.push(data.status) }
     if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
@@ -361,6 +371,7 @@ export class HierarchyRepository {
     return {
       id: String(row.id),
       goal_id: row.goal_id ? String(row.goal_id) : null,
+      area_id: row.area_id ? String(row.area_id) : null,
       title: String(row.title),
       description: row.description ? String(row.description) : null,
       status: String(row.status ?? "active"),

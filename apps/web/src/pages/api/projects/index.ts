@@ -8,10 +8,10 @@ import { logApiError } from "../../../lib/api-logger"
 /**
  * Projects API — Hierarchy Aggregate Roots
  *
- * Projects are time-bounded containers for tasks, linked to goals.
+ * Projects are time-bounded containers for tasks, linked to areas and goals.
  * They are aggregate roots — the primary work container.
  *
- * GET  /api/projects — List projects (optional ?goal_id=&status= filters)
+ * GET  /api/projects — List projects (optional ?goal_id=&area_id=&status= filters)
  * POST /api/projects — Create a new project
  *
  * @domain domain-tasks (hierarchy context)
@@ -22,10 +22,12 @@ export const GET: APIRoute = async ({ url }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
-    const filters: { goal_id?: string; status?: string } = {}
+    const filters: { goal_id?: string; area_id?: string; status?: string } = {}
     const goal_id = url.searchParams.get("goal_id")
+    const area_id = url.searchParams.get("area_id")
     const status = url.searchParams.get("status")
     if (goal_id) filters.goal_id = goal_id
+    if (area_id) filters.area_id = area_id
     if (status) filters.status = status
     const projects = await repo.findAllProjects(filters)
     return apiJson({ projects })
@@ -52,6 +54,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const id = crypto.randomUUID()
     const goal_id = typeof body.goal_id === "string" ? body.goal_id : null
+    const area_id = typeof body.area_id === "string" ? body.area_id : null
     const description = typeof body.description === "string" ? body.description.slice(0, 2000) : null
     const status = typeof body.status === "string" && ["active", "completed", "paused", "archived"].includes(body.status) ? body.status : "active"
     const icon = typeof body.icon === "string" ? body.icon.slice(0, 10) : "📋"
@@ -61,11 +64,12 @@ export const POST: APIRoute = async ({ request }) => {
     await repo.createProject({
       id, title, status, icon, color, position,
       ...(goal_id != null ? { goal_id } : {}),
+      ...(area_id != null ? { area_id } : {}),
       ...(description != null ? { description } : {}),
     })
 
     return apiJson({
-      id, title, goal_id, description, status, icon, color, position,
+      id, title, goal_id, area_id, description, status, icon, color, position,
       created_at: Date.now(), updated_at: Date.now(),
     }, 201)
   } catch (error) {

@@ -918,6 +918,17 @@ export async function ensureSchema(): Promise<void> {
     })
   }
 
+  // Phase 15.2: Direct area_id on projects — sidebar groups projects by area directly
+  if (!(await hasColumn(client, "projects", "area_id"))) {
+    await client.execute("ALTER TABLE projects ADD COLUMN area_id TEXT REFERENCES areas(id) ON DELETE SET NULL")
+    // Backfill: derive area_id from goal→area relationship
+    await client.execute(`UPDATE projects SET area_id = (
+      SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id
+    ) WHERE goal_id IS NOT NULL AND area_id IS NULL`)
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS projects_area_id_idx ON projects(area_id)")
+  await client.execute("CREATE INDEX IF NOT EXISTS projects_area_status_idx ON projects(area_id, status)")
+
   // Tasks: goal_id — direct goal→task linking (optional, can also inherit from project)
   if (!(await hasColumn(client, "tasks", "goal_id"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN goal_id TEXT")
@@ -961,7 +972,7 @@ export async function ensureSchema(): Promise<void> {
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 8
+  const targetVersion = 9
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

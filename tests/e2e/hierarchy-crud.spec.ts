@@ -219,6 +219,50 @@ test("findAllProjects filters by status", async () => {
   expect(paused[0]!.title).toBe("Paused")
 })
 
+test("can create a project with area_id", async () => {
+  createTestDb()
+  await setupDb()
+  const repo = await getRepo()
+
+  await repo.createArea({ id: "area-proj", name: "Work" })
+  await repo.createProject({ id: "proj-area", title: "Work Project", area_id: "area-proj" })
+
+  const project = await repo.findProjectById("proj-area")
+  expect(project).not.toBeNull()
+  expect(project!.area_id).toBe("area-proj")
+})
+
+test("findAllProjects filters by area_id", async () => {
+  createTestDb()
+  await setupDb()
+  const repo = await getRepo()
+
+  await repo.createArea({ id: "area-f1", name: "Home" })
+  await repo.createArea({ id: "area-f2", name: "Work" })
+  await repo.createProject({ id: "proj-a1", title: "Home Project", area_id: "area-f1" })
+  await repo.createProject({ id: "proj-a2", title: "Work Project", area_id: "area-f2" })
+  await repo.createProject({ id: "proj-a3", title: "No Area", area_id: null })
+
+  const homeProjects = await repo.findAllProjects({ area_id: "area-f1" })
+  expect(homeProjects).toHaveLength(1)
+  expect(homeProjects[0]!.title).toBe("Home Project")
+})
+
+test("findProjectsByArea convenience method", async () => {
+  createTestDb()
+  await setupDb()
+  const repo = await getRepo()
+
+  await repo.createArea({ id: "area-conv", name: "Side" })
+  await repo.createProject({ id: "proj-c1", title: "Side A", area_id: "area-conv" })
+  await repo.createProject({ id: "proj-c2", title: "Side B", area_id: "area-conv" })
+  await repo.createProject({ id: "proj-c3", title: "Other" })
+
+  const sideProjects = await repo.findProjectsByArea("area-conv")
+  expect(sideProjects).toHaveLength(2)
+  expect(sideProjects.map((p: { title: string }) => p.title).sort()).toEqual(["Side A", "Side B"])
+})
+
 test("can update a project", async () => {
   createTestDb()
   await setupDb()

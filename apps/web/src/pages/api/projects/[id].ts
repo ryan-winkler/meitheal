@@ -40,6 +40,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
       updates.title = title
     }
     if ("goal_id" in body) updates.goal_id = typeof body.goal_id === "string" ? body.goal_id : null
+    if ("area_id" in body) updates.area_id = typeof body.area_id === "string" ? body.area_id : null
     if (typeof body.description === "string" || body.description === null) updates.description = body.description ? String(body.description).slice(0, 2000) : null
     if (typeof body.status === "string" && VALID_STATUSES.includes(body.status)) updates.status = body.status
     if (typeof body.icon === "string") updates.icon = body.icon.slice(0, 10)

@@ -23,7 +23,9 @@
     "area": "Réimse",
     "new_area": "Réimse Nua",
     "all_areas": "Gach Réimse",
-    "prompt_area_name": "Ainm an réimse:"
+    "prompt_area_name": "Ainm an réimse:",
+    "areas_header": "Réimsí",
+    "new_project_in": "Tionscadal Nua i {area}"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",
