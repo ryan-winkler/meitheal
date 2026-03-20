@@ -2,9 +2,9 @@ name: "Meitheal Canary"
 version: "f78fee6"
 slug: "meitheal_canary"
 description: "⚠️ Bleeding-edge development build of Meitheal — may be unstable, break, or lose data. For testing and development only."
-url: "https://github.com/Coolock-Village/meitheal"
-github: "Coolock-Village/meitheal"
-docs_url: "https://github.com/Coolock-Village/meitheal/tree/main/meitheal-hub-canary/DOCS.md"
+url: "https://github.com/Coolock-Village/meitheal-ha-addon"
+github: "Coolock-Village/meitheal-ha-addon"
+docs_url: "https://github.com/Coolock-Village/meitheal-ha-addon/tree/main/meitheal-hub-canary/DOCS.md"
 image: "ghcr.io/coolock-village/meitheal-canary-{arch}"
 arch:
   - aarch64

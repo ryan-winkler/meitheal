@@ -1,0 +1,81 @@
+name: Sync Add-on Repository
+
+# Syncs add-on manifests, docs, icons, and translations to the public
+# meitheal-ha-addon repo so HA can discover add-ons without exposing source.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "repository.yaml"
+      - "meitheal-hub/config.yaml"
+      - "meitheal-hub/DOCS.md"
+      - "meitheal-hub/CHANGELOG.md"
+      - "meitheal-hub/icon.png"
+      - "meitheal-hub/logo.png"
+      - "meitheal-hub/translations/**"
+      - "meitheal-hub-canary/config.yaml"
+      - "meitheal-hub-canary/DOCS.md"
+      - "meitheal-hub-canary/CHANGELOG.md"
+      - "meitheal-hub-canary/icon.png"
+      - "meitheal-hub-canary/logo.png"
+      - "meitheal-hub-canary/translations/**"
+
+  workflow_dispatch:
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source (private)
+        uses: actions/checkout@v6
+        with:
+          path: source
+
+      - name: Checkout target (public)
+        uses: actions/checkout@v6
+        with:
+          repository: Coolock-Village/meitheal-ha-addon
+          token: ${{ secrets.ADDON_REPO_TOKEN }}
+          path: target
+
+      - name: Sync files
+        run: |
+          set -euo pipefail
+
+          # Stable add-on
+          cp source/meitheal-hub/config.yaml     target/meitheal-hub/config.yaml
+          cp source/meitheal-hub/DOCS.md          target/meitheal-hub/DOCS.md
+          cp source/meitheal-hub/CHANGELOG.md     target/meitheal-hub/CHANGELOG.md
+          cp source/meitheal-hub/icon.png         target/meitheal-hub/icon.png
+          cp source/meitheal-hub/logo.png         target/meitheal-hub/logo.png
+          cp -r source/meitheal-hub/translations/ target/meitheal-hub/translations/
+
+          # Canary add-on
+          cp source/meitheal-hub-canary/config.yaml     target/meitheal-hub-canary/config.yaml
+          cp source/meitheal-hub-canary/DOCS.md          target/meitheal-hub-canary/DOCS.md
+          cp source/meitheal-hub-canary/CHANGELOG.md     target/meitheal-hub-canary/CHANGELOG.md
+          cp source/meitheal-hub-canary/icon.png         target/meitheal-hub-canary/icon.png
+          cp source/meitheal-hub-canary/logo.png         target/meitheal-hub-canary/logo.png
+          cp -r source/meitheal-hub-canary/translations/ target/meitheal-hub-canary/translations/
+
+          # Repository manifest
+          cp source/repository.yaml target/repository.yaml
+
+      - name: Commit and push
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to sync"
+            exit 0
+          fi
+
+          sha_short="$(cd ../source && git rev-parse --short HEAD)"
+          git commit -m "🔄 sync from meitheal@${sha_short}"
+          git push

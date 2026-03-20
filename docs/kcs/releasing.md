@@ -110,3 +110,35 @@ HA Supervisor caches addon info. Try:
 | `scripts/check-version-sync.mjs` | Version consistency guard | CI |
 | `.github/workflows/publish-addon-images.yml` | Stable image publish | vtag trigger |
 | `.github/workflows/publish-canary-images.yml` | Canary image publish | main push trigger |
+| `.github/workflows/sync-addon-repo.yml` | Sync manifests → public repo | main push / vtag |
+
+## Dual-Repo Architecture
+
+The source code lives in `Coolock-Village/meitheal` (private). A separate public repository, `Coolock-Village/meitheal-ha-addon`, serves as the HA add-on store entry point.
+
+```
+meitheal (private)              meitheal-ha-addon (public)
+├── apps/                       ├── repository.yaml
+├── packages/                   ├── meitheal-hub/
+├── meitheal-hub/        ──CI──→│   ├── config.yaml
+│   ├── config.yaml             │   ├── DOCS.md, CHANGELOG.md
+│   ├── Dockerfile              │   ├── icon.png, logo.png
+│   └── ...                     │   └── translations/
+├── meitheal-hub-canary/ ──CI──→├── meitheal-hub-canary/
+│   └── ...                     │   └── ...
+└── .github/workflows/          └── README.md
+    └── sync-addon-repo.yml
+```
+
+- `sync-addon-repo.yml` copies manifests, docs, icons, and translations on every relevant push to `main`
+- Docker images are published to GHCR from the private repo (images must be set to public visibility)
+- HA users add `https://github.com/Coolock-Village/meitheal-ha-addon` as their repository URL
+- Issues and discussions use the org-level space: `https://github.com/orgs/Coolock-Village/discussions`
+
+### Post-migration: GHCR package visibility
+
+After making the main repo private, GHCR packages default to private. You must manually set each package to public:
+
+1. Go to `https://github.com/orgs/Coolock-Village/packages`
+2. For each `meitheal-*` package → Settings → Change visibility → Public
+

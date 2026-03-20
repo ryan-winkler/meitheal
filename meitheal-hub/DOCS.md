@@ -15,7 +15,7 @@ Meitheal is the Home Assistant-native execution hub for the practical work of ru
 
 1. Open **Settings** → **Add-ons** → **Add-on Store**
 2. Open **⋮** → **Repositories**
-3. Add `https://github.com/Coolock-Village/meitheal`
+3. Add `https://github.com/Coolock-Village/meitheal-ha-addon`
 4. Install **Meitheal**
 5. Start the add-on
 6. Open the Web UI

@@ -9,7 +9,7 @@ Meitheal Canary is the development channel for Meitheal. Every commit merged to 
 ## Installation
 
 1. Go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add: `https://github.com/Coolock-Village/meitheal`
+2. Add: `https://github.com/Coolock-Village/meitheal-ha-addon`
 3. Find **Meitheal Canary** (look for the flask icon 🧪) → Install → Start
 
 ## Differences from Stable
@@ -27,7 +27,7 @@ Meitheal Canary is the development channel for Meitheal. Every commit merged to 
 If you find a bug on Canary, check if it also exists on Stable:
 
 - **Canary-only bug**: May already be fixed in the next commit. Wait a day, then report.
-- **Both channels**: Report at [GitHub Issues](https://github.com/Coolock-Village/meitheal/issues) with the SHA version from Settings.
+- **Both channels**: Report at [GitHub Issues](https://github.com/Coolock-Village/meitheal-ha-addon/issues) with the SHA version from Settings.
 
 ## Switching Channels
 

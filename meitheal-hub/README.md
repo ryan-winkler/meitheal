@@ -25,7 +25,7 @@ Centralize your tasks, automate the coordination, and let technology get out of 
 ## Quick Install
 
 1. **Settings** → **Add-ons** → **Add-on Store** → **⋮** → **Repositories**
-2. Add: `https://github.com/Coolock-Village/meitheal`
+2. Add: `https://github.com/Coolock-Village/meitheal-ha-addon`
 3. Find **Meitheal** → **Install** → **Start** → **Open Web UI**
 
 > **Updating:** After pushing new images, go to the add-on → **⋮** → **Check for updates**. Then **Update** + **Restart**.

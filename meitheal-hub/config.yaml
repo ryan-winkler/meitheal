@@ -2,9 +2,9 @@ name: "Meitheal"
 version: "0.0.1"
 slug: "meitheal"
 description: "Your homelab's execution layer — centralize tasks, automate coordination, get out of the way of life"
-url: "https://github.com/Coolock-Village/meitheal"
-github: "Coolock-Village/meitheal"
-docs_url: "https://github.com/Coolock-Village/meitheal/tree/main/meitheal-hub/DOCS.md"
+url: "https://github.com/Coolock-Village/meitheal-ha-addon"
+github: "Coolock-Village/meitheal-ha-addon"
+docs_url: "https://github.com/Coolock-Village/meitheal-ha-addon/tree/main/meitheal-hub/DOCS.md"
 image: "ghcr.io/coolock-village/meitheal-{arch}"
 arch:
   - aarch64
