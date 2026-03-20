@@ -41,7 +41,17 @@ const tabs = page.subViews.map((sv) => ({
 }))
 ---
 
-<div class="parent-page-shell" id={shellId} data-page-id={pageId}>
+<div
+  class="parent-page-shell"
+  id={shellId}
+  data-page-id={pageId}
+  data-parent-config={JSON.stringify({
+    shellId,
+    barId,
+    sectionIds: page.subViews.map((sv) => sv.hash),
+    defaultSectionId: page.defaultHash,
+  })}
+>
   <UnifiedBar
     title={page.label}
     titleIcon={page.icon}
@@ -56,14 +66,21 @@ const tabs = page.subViews.map((sv) => ({
   </main>
 </div>
 
-<script define:vars={{ shellId, barId, sectionIds: page.subViews.map((sv) => sv.hash), defaultSectionId: page.defaultHash }}>
-  // Inline boot — imports the shared controller
-  import("@lib/parent-page-controller").then(({ initParentPageController }) => {
-    initParentPageController({
-      shellId,
-      barId,
-      sectionIds,
-      defaultSectionId,
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { initParentPageController } from "@lib/parent-page-controller"
+
+  pageLifecycle.onPageLoad(() => {
+    document.querySelectorAll<HTMLElement>("[data-parent-config]").forEach((shell) => {
+      if (shell.dataset.parentPageBooted === "true") return
+      const raw = shell.dataset.parentConfig
+      if (!raw) return
+      try {
+        const config = JSON.parse(raw)
+        initParentPageController(config)
+      } catch {
+        // malformed config — skip
+      }
     })
   })
 </script>
