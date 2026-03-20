@@ -93,7 +93,7 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
 
     {/* ── Pinned projects (populated by client JS) ── */}
     <div class="project-nav__pinned" id="project-nav-pinned" hidden>
-      <span class="project-nav__divider-label">📌 Pinned</span>
+      <span class="project-nav__divider-label">📌 {t("sidebar.pinned", locale)}</span>
       <div class="project-nav__pinned-list" id="project-nav-pinned-list"></div>
     </div>
 
@@ -156,7 +156,7 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
       {ungroupedProjects.length > 0 && (
         <div class="project-nav__area-group" data-area-group="ungrouped">
           <div class="project-nav__divider">
-            <span class="project-nav__divider-label project-nav__divider-label--muted">Ungrouped</span>
+            <span class="project-nav__divider-label project-nav__divider-label--muted">{t("sidebar.ungrouped", locale)}</span>
           </div>
           <div class="project-nav__area-projects" data-area-projects="ungrouped">
             {ungroupedProjects.map((proj) => (

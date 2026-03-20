@@ -26,7 +26,9 @@
     "all_areas": "All Areas",
     "prompt_area_name": "Area name:",
     "areas_header": "Areas",
-    "new_project_in": "New Project in {area}"
+    "new_project_in": "New Project in {area}",
+    "pinned": "Pinned",
+    "ungrouped": "Ungrouped"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",
