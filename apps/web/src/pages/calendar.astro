@@ -160,7 +160,7 @@ const calendarSignal =
       const qs = new URL(Astro.request.url).searchParams.toString()
       const q = qs ? `?${qs}` : ''
       return [
-        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/tasks${q}`, label: 'Kanban', icon: '▦' },
         { href: `/table${q}`, label: 'Table', icon: '⊞' },
         { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️', active: true },
         { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },

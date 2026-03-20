@@ -104,7 +104,7 @@ const tableSignal =
       const qs = new URL(Astro.request.url).searchParams.toString()
       const q = qs ? `?${qs}` : ''
       return [
-        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/tasks${q}`, label: 'Kanban', icon: '▦' },
         { href: `/table${q}`, label: 'Table', icon: '⊞', active: true },
         { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
         { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },

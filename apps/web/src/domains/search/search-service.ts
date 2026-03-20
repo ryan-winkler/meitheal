@@ -233,7 +233,7 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
         kind: "area" as const,
         title: String(area.name ?? "Untitled area"),
         subtitle: "Open in Kanban",
-        href: `/kanban?area=${encodeURIComponent(String(area.id))}`,
+        href: `/tasks?area=${encodeURIComponent(String(area.id))}`,
         icon: typeof area.icon === "string" ? area.icon : "📋",
         color: typeof area.color === "string" ? area.color : null,
       })),

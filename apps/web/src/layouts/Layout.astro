@@ -477,9 +477,9 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         <span class="mobile-tab-bar__icon">☀️</span>
         <span class="mobile-tab-bar__label">Today</span>
       </a>
-      <a href="/kanban" class="mobile-tab-bar__item" data-page="kanban">
+      <a href="/tasks" class="mobile-tab-bar__item" data-page="tasks">
         <span class="mobile-tab-bar__icon">📋</span>
-        <span class="mobile-tab-bar__label">Kanban</span>
+        <span class="mobile-tab-bar__label">Tasks</span>
       </a>
       <a href="/table" class="mobile-tab-bar__item" data-page="table">
         <span class="mobile-tab-bar__icon">📊</span>
@@ -508,6 +508,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         var page = path.replace(/^\//, "").split("/")[0] || "today";
         // Dashboard (root) maps to "today"
         if (page === "" || page === "index") page = "today";
+        if (page === "kanban") page = "tasks";
         var items = bar.querySelectorAll(".mobile-tab-bar__item");
         for (var i = 0; i < items.length; i++) {
           if (items[i].getAttribute("data-page") === page) {

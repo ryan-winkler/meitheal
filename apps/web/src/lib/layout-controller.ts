@@ -183,7 +183,7 @@
               }
               if (e.key === "k") {
                 window.location.href =
-                  (window.__ingress_path || "") + "/kanban";
+                  (window.__ingress_path || "") + "/tasks";
               }
               if (e.key === "t") {
                 window.location.href = (window.__ingress_path || "") + "/table";

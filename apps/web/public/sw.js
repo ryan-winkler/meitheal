@@ -68,7 +68,7 @@ const PRECACHE_PATHS = [
   "/offline",
   "/today",
   "/upcoming",
-  "/kanban",
+  "/tasks",
   "/table",
   "/calendar",
   "/settings",

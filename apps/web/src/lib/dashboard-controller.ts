@@ -314,8 +314,8 @@ function initOpenTaskFilter(): void {
       const ingressPath = window.__ingress_path || ""
       kanbanLink.href =
         value === "all"
-          ? `${ingressPath}/kanban`
-          : `${ingressPath}/kanban?user=${encodeURIComponent(value)}`
+          ? `${ingressPath}/tasks`
+          : `${ingressPath}/tasks?user=${encodeURIComponent(value)}`
     }
   }
 

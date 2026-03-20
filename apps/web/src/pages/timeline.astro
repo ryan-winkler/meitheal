@@ -101,7 +101,7 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
       const qs = new URL(Astro.request.url).searchParams.toString()
       const q = qs ? `?${qs}` : ''
       return [
-        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/tasks${q}`, label: 'Kanban', icon: '▦' },
         { href: `/table${q}`, label: 'Table', icon: '⊞' },
         { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
         { href: `/timeline${q}`, label: 'Timeline', icon: '📊', active: true },
