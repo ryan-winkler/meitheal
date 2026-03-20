@@ -58,6 +58,9 @@ importers:
       '@libsql/client':
         specifier: ^0.17.0
         version: 0.17.0
+      '@meitheal/domain-auth':
+        specifier: workspace:*
+        version: link:../../packages/domain-auth
       '@meitheal/domain-observability':
         specifier: workspace:*
         version: link:../../packages/domain-observability

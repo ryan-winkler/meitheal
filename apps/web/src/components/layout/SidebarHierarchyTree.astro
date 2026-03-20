@@ -943,6 +943,88 @@ const taskKinds = [
       setTimeout(() => btn.remove(), 3000)
     }
 
+    // ── DOM insertion: add new project row without reload ──
+    function insertProjectNode(
+      container: HTMLElement,
+      projectId: string,
+      title: string,
+      icon: string,
+      color: string,
+      areaId: string,
+    ): void {
+      const div = document.createElement("div")
+      div.className = "stree__project"
+      div.innerHTML = `
+        <div class="stree__connector">
+          <span class="stree__line-v"></span>
+          <span class="stree__line-h"></span>
+        </div>
+        <a href="/projects/${projectId}" class="stree__project-link"
+           data-project-id="${projectId}" data-project-name="${title}" title="${title}">
+          <span class="stree__project-icon" style="color: ${color}">${icon}</span>
+          <span class="stree__project-name">${title}</span>
+        </a>
+        <span class="stree__count" data-project-task-count="${projectId}">0</span>
+        <div class="stree__actions">
+          <button type="button" class="stree__action-btn" data-project-menu="${projectId}"
+            data-project-title="${title}" data-project-color="${color}" data-project-icon-value="${icon}">⋯</button>
+          <button type="button" class="stree__action-btn stree__action-btn--add"
+            data-task-add-project="${projectId}" data-task-add-name="${title}">+</button>
+        </div>
+      `
+      // Mark previous last project as no longer last
+      const existingLast = container.querySelector(".stree__project--last")
+      if (existingLast) existingLast.classList.remove("stree__project--last")
+      div.classList.add("stree__project--last")
+      // Insert before inline inputs or at end
+      const inlineInput = container.querySelector(".stree__inline-input")
+      if (inlineInput) container.insertBefore(div, inlineInput)
+      else container.appendChild(div)
+      // Animate in
+      div.style.opacity = "0"
+      div.style.transition = "opacity 200ms ease"
+      requestAnimationFrame(() => { div.style.opacity = "1" })
+    }
+
+    // ── DOM insertion: add new area block without reload ──
+    function insertAreaNode(
+      navEl: HTMLElement,
+      areaId: string,
+      name: string,
+      icon: string,
+      color: string,
+    ): void {
+      const list = navEl.querySelector("#project-nav-list")
+      if (!list) return
+      const div = document.createElement("div")
+      div.className = "stree__area"
+      div.dataset.areaGroup = areaId
+      div.innerHTML = `
+        <div class="stree__area-row" data-area-toggle="${areaId}" role="button" tabindex="0" aria-expanded="true">
+          <span class="stree__toggle" aria-hidden="true">▸</span>
+          <span class="stree__area-icon" style="color: ${color}">${icon}</span>
+          <span class="stree__area-name">${name}</span>
+          <div class="stree__actions">
+            <button type="button" class="stree__action-btn" data-area-menu="${areaId}"
+              data-area-name="${name}" data-area-color="${color}" data-area-icon="${icon}">⋯</button>
+            <button type="button" class="stree__action-btn stree__action-btn--add"
+              data-area-add="${areaId}">+</button>
+          </div>
+        </div>
+        <div class="stree__children" data-area-projects="${areaId}">
+          <span class="stree__empty-hint">${i18n("sidebar.no_projects", "No projects")}</span>
+        </div>
+      `
+      // Insert before the "New Area" button
+      const newAreaBtn = list.querySelector("#new-area-btn")
+      if (newAreaBtn) list.insertBefore(div, newAreaBtn)
+      else list.appendChild(div)
+      // Animate in
+      div.style.opacity = "0"
+      div.style.transition = "opacity 200ms ease"
+      requestAnimationFrame(() => { div.style.opacity = "1" })
+    }
+
     // ── Materialize templates to body ──
     function materialize(tmplId: string): HTMLElement | null {
       const tmpl = document.getElementById(tmplId) as HTMLTemplateElement | null
@@ -1069,7 +1151,14 @@ const taskKinds = [
                 method: "POST", headers: { "content-type": "application/json" },
                 body: JSON.stringify({ title, area_id: areaId, icon: "\ud83d\udccb", color: "#6366F1" }),
               })
-              if (res.ok) window.location.reload()
+              if (res.ok) {
+                const data = await res.json()
+                const projId = data.id || data.project?.id || ""
+                insertProjectNode(children, projId, title, "\ud83d\udccb", "#6366F1", areaId)
+                // Remove empty hint if present
+                children.querySelector(".stree__empty-hint")?.remove()
+                showToast(i18n("sidebar.task_created", "Project created"), "success")
+              }
               else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
             } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
           },
@@ -1148,7 +1237,15 @@ const taskKinds = [
           async () => {
             try {
               const res = await fetch(`/api/areas/${entityId}`, { method: "DELETE" })
-              if (res.ok) window.location.reload()
+              if (res.ok) {
+                const areaGroup = document.querySelector(`[data-area-group="${entityId}"]`) as HTMLElement | null
+                if (areaGroup) {
+                  areaGroup.style.opacity = "0"
+                  areaGroup.style.transition = "opacity 200ms ease"
+                  setTimeout(() => areaGroup.remove(), 200)
+                }
+                showToast(i18n("sidebar.area_deleted", "Area deleted"), "success")
+              }
               else showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error")
             } catch { showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error") }
           },
@@ -1227,7 +1324,21 @@ const taskKinds = [
           async () => {
             try {
               const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE" })
-              if (res.ok) window.location.reload()
+              if (res.ok) {
+                const projRow = document.querySelector(`[data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+                if (projRow) {
+                  projRow.style.opacity = "0"
+                  projRow.style.transition = "opacity 200ms ease"
+                  setTimeout(() => {
+                    projRow.remove()
+                    // Remove from pinned if present
+                    pinnedIds.delete(entityId)
+                    savePinned()
+                    renderPinned()
+                  }, 200)
+                }
+                showToast(i18n("sidebar.project_deleted", "Project deleted"), "success")
+              }
               else showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error")
             } catch { showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error") }
           },
@@ -1278,7 +1389,21 @@ const taskKinds = [
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ icon, color }),
         })
-        if (res.ok) window.location.reload()
+        if (res.ok) {
+          // Update icon and color in sidebar DOM directly
+          if (activeEntityType === "area") {
+            const iconEl = document.querySelector(`[data-area-toggle="${entityId}"] .stree__area-icon`) as HTMLElement | null
+            const menuBtn = document.querySelector(`[data-area-menu="${entityId}"]`) as HTMLElement | null
+            if (iconEl) { iconEl.textContent = icon; iconEl.style.color = color }
+            if (menuBtn) { menuBtn.dataset.areaIcon = icon; menuBtn.dataset.areaColor = color }
+          } else {
+            const iconEl = document.querySelector(`[data-project-id="${entityId}"] .stree__project-icon`) as HTMLElement | null
+            const menuBtn = document.querySelector(`[data-project-menu="${entityId}"]`) as HTMLElement | null
+            if (iconEl) { iconEl.textContent = icon; iconEl.style.color = color }
+            if (menuBtn) { menuBtn.dataset.projectIconValue = icon; menuBtn.dataset.projectColor = color }
+          }
+          showToast(i18n("sidebar.updated", "Updated"), "success")
+        }
         else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
       } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
     })
@@ -1351,7 +1476,12 @@ const taskKinds = [
               method: "POST", headers: { "content-type": "application/json" },
               body: JSON.stringify({ name, icon: "\ud83d\udccb", color: "#6366F1" }),
             })
-            if (res.ok) window.location.reload()
+            if (res.ok) {
+              const data = await res.json()
+              const areaId = data.id || data.area?.id || ""
+              insertAreaNode(nav!, areaId, name, "\ud83d\udccb", "#6366F1")
+              showToast(i18n("sidebar.area_created", "Area created"), "success")
+            }
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
         },
@@ -1408,6 +1538,27 @@ const taskKinds = [
     countBadges.forEach((badge, i) => {
       const projectId = badge.dataset.projectTaskCount
       if (projectId) setTimeout(() => updateProjectTaskCount(projectId), i * 50)
+    })
+
+    // ── 11. Quick-capture shortcut (N key) ──
+    document.addEventListener("keydown", (e: KeyboardEvent) => {
+      // Skip if typing in an input/textarea, or if modifier keys are held
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key !== "n" && e.key !== "N") return
+
+      e.preventDefault()
+      // Find the active project or first visible project
+      const activeLink = nav.querySelector<HTMLElement>(".stree__project-link[data-active]")
+        || nav.querySelector<HTMLElement>(".stree__project-link")
+      if (!activeLink) return
+      const projId = activeLink.dataset.projectId
+      if (!projId || !taskKindDropdown) return
+
+      // Open the task kind picker on that project's + button
+      const addBtn = document.querySelector<HTMLButtonElement>(`[data-task-add-project="${projId}"]`)
+      if (addBtn) addBtn.click()
     })
   })()
 </script>

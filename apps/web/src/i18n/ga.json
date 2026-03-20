@@ -58,7 +58,12 @@
     "error_create_failed": "Theip ar chruthú — bain triail eile as",
     "error_update_failed": "Theip ar nuashonrú — bain triail eile as",
     "error_delete_failed": "Theip ar scriosadh — bain triail eile as",
-    "task_created": "Tasc cruthaithe"
+    "task_created": "Tasc cruthaithe",
+    "area_deleted": "Limistéar scriosta",
+    "project_deleted": "Tionscadal scriosta",
+    "area_created": "Limistéar cruthaithe",
+    "updated": "Nuashonraithe",
+    "no_projects": "Níl aon tionscadal"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",

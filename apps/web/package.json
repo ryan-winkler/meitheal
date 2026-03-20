@@ -32,6 +32,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/outfit": "^5.2.8",
     "@libsql/client": "^0.17.0",
+    "@meitheal/domain-auth": "workspace:*",
     "@meitheal/domain-observability": "workspace:*",
     "@meitheal/domain-strategy": "workspace:*",
     "@meitheal/domain-tasks": "workspace:*",

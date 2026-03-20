@@ -59,7 +59,12 @@
     "error_create_failed": "Failed to create — please try again",
     "error_update_failed": "Failed to update — please try again",
     "error_delete_failed": "Failed to delete — please try again",
-    "task_created": "Task created"
+    "task_created": "Task created",
+    "area_deleted": "Area deleted",
+    "project_deleted": "Project deleted",
+    "area_created": "Area created",
+    "updated": "Updated",
+    "no_projects": "No projects"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",

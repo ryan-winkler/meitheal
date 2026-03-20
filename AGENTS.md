@@ -42,7 +42,7 @@ Think of Meitheal as the coordination layer that sits between daily work, Home A
 
 | Context | Path | Responsibility |
 |---------|------|---------------|
-| `domain-auth` | `packages/domain-auth/` | Ingress detection, CSRF, session policy |
+| `domain-auth` | `packages/domain-auth/` | Ingress detection, CSRF, session policy, **license key verification** |
 | `domain-tasks` | `packages/domain-tasks/` | Task CRUD, persistence, sync, domain events |
 | `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
@@ -52,6 +52,39 @@ Think of Meitheal as the coordination layer that sits between daily work, Home A
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 
 Cross-context imports must occur through public package APIs, not deep path imports.
+
+## Dual-Repo Architecture
+
+Source code is private. A public repo hosts HA add-on discovery manifests.
+
+| Repo | Visibility | Purpose |
+|------|-----------|---------|
+| `Coolock-Village/meitheal` | **Private** | Source code, CI, tests, domain packages |
+| `Coolock-Village/meitheal-ha-addon` | **Public** | Add-on manifests, docs, icons, LICENSE, COMMERCIAL.md |
+
+- `sync-addon-repo.yml` copies manifests/docs/icons/translations from private → public on relevant pushes
+- Requires `ADDON_REPO_TOKEN` secret (fine-grained PAT scoped to `meitheal-ha-addon`)
+- HA users add `https://github.com/Coolock-Village/meitheal-ha-addon` as their repository URL
+- Community: [org-level Discussions](https://github.com/orgs/Coolock-Village/discussions)
+- Bug reports: [meitheal-ha-addon Issues](https://github.com/Coolock-Village/meitheal-ha-addon/issues)
+
+## License Key System
+
+Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly.
+
+| Component | Location |
+|-----------|----------|
+| Key generation | `scripts/generate-license.mjs` |
+| Verification | `packages/domain-auth/src/index.ts` → `verifyLicenseKey()` |
+| Public key | Embedded in `domain-auth` as `LICENSE_PUBLIC_KEY_PEM` |
+| Private key | `.keys/meitheal-license.pem` (**gitignored**, back up to gopass) |
+| Config | `license_key: str?` in both `config.yaml` files |
+| API | `GET /api/license/status` |
+| Tests | `tests/e2e/license-key.spec.ts` (11 tests) |
+
+- **Grace mode**: app runs fully without a key. No features gated until enforcement is added.
+- Plans: `personal`, `household`, `commercial` — type `LicensePlan` in domain-auth
+- **⚠️ CRITICAL**: losing `.keys/meitheal-license.pem` means ALL existing keys become unverifiable
 
 ## Ingress Patterns (Critical)
 
@@ -167,11 +200,12 @@ Changes **must** be verified in the correct environment tier before completion.
 
 ## Licensing Boundaries
 
-Meitheal uses a dual-licensing strategy. Agents must respect these boundaries:
+Meitheal uses a **dual-licensing + proprietary distribution** strategy:
 
 | Scope | License | Notes |
 |-------|---------|-------|
-| Root (`apps/`, `packages/`, `meitheal-hub/`) | AGPL-3.0 + Commercial | Dual-licensed; see `COMMERCIAL.md` |
+| Source code (`apps/`, `packages/`, `meitheal-hub/`) | AGPL-3.0 + Commercial | Dual-licensed; see `COMMERCIAL.md` |
+| Distributed binaries (Docker images) | Proprietary | Free for personal/homelab; see public repo LICENSE |
 | `integrations/home-assistant/` | Apache 2.0 | API client boundary — no AGPL contamination |
 | `integrations/nodered/` | Apache 2.0 | API client boundary — no AGPL contamination |
 | `apps/web/src/domains/integrations/vikunja-compat/` | AGPL-3.0 only | Third-party copyright — cannot be commercially relicensed |
@@ -182,6 +216,8 @@ Meitheal uses a dual-licensing strategy. Agents must respect these boundaries:
 - Do not move AGPL-only code (e.g. vikunja-compat) into directories covered by the commercial license
 - Integration code in `integrations/` must only communicate with the core via network APIs (REST/WebSocket/MCP)
 - When creating new integration directories, include an explicit `LICENSE` file
+- Docker image OCI labels must use `LicenseRef-Proprietary` (not MIT or AGPL)
+- The `.keys/` directory is gitignored — never commit private signing keys
 
 ## Required Files (CI Enforced)
 
