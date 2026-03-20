@@ -312,12 +312,12 @@ const calendarSignal =
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
     border-radius: var(--radius-md);
     margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
+    font-size: 12px;
+    color: var(--text-muted);
   }
   .calendar-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
 
