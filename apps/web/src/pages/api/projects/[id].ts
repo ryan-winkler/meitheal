@@ -45,6 +45,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
     if (typeof body.icon === "string") updates.icon = body.icon.slice(0, 10)
     if (typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color)) updates.color = body.color
     if (typeof body.position === "number") updates.position = body.position
+    // Phase 15: is_default is server-managed — silently ignore client attempts to set it
 
     const updated = await repo.updateProject(params.id!, updates)
     if (!updated) return apiError("Project not found or no changes", 404)
@@ -61,6 +62,12 @@ export const DELETE: APIRoute = async ({ params }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
+
+    // Phase 15: prevent deleting the default "Every Day" project
+    const project = await repo.findProjectById(params.id!)
+    if (!project) return apiError("Project not found", 404)
+    if (project.is_default) return apiError("Cannot delete the default project", 403)
+
     const deleted = await repo.deleteProject(params.id!)
     if (!deleted) return apiError("Project not found", 404)
     return apiJson({ ok: true })

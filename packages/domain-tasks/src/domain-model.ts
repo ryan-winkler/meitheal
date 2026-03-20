@@ -21,6 +21,7 @@ export type TaskKind =
   | "checklist"
   | "routine_instance"
   | "quick_capture"
+  | "calendar_event"
 
 export const VALID_TASK_KINDS: readonly TaskKind[] = [
   "standard_action",
@@ -28,6 +29,7 @@ export const VALID_TASK_KINDS: readonly TaskKind[] = [
   "checklist",
   "routine_instance",
   "quick_capture",
+  "calendar_event",
 ] as const
 
 export function isValidTaskKind(value: string): value is TaskKind {
@@ -155,6 +157,8 @@ export interface Project {
   icon: string
   color: string
   position: number
+  /** Whether this is the protected default project ("Every Day") */
+  isDefault: boolean
   createdAt: number
   updatedAt: number
 }
@@ -269,6 +273,51 @@ export function formatEffort(totalMinutes: number): string {
   if (hours === 0) return `~${mins}m`
   if (mins === 0) return `~${hours}h`
   return `~${hours}h ${mins}m`
+}
+
+// --- Routine Template (Phase 15: hierarchy overhaul) ---
+
+/** Cadence for routine templates — how often the routine repeats */
+export type RoutineCadence = "daily" | "weekdays" | "weekends" | "weekly" | "monthly" | "custom"
+
+export const VALID_ROUTINE_CADENCES: readonly RoutineCadence[] = [
+  "daily", "weekdays", "weekends", "weekly", "monthly", "custom",
+] as const
+
+export function isValidRoutineCadence(value: string): value is RoutineCadence {
+  return (VALID_ROUTINE_CADENCES as readonly string[]).includes(value)
+}
+
+/**
+ * RoutineTemplate — defines a repeating pattern that auto-spawns task instances.
+ * Separate from task_templates (which are blueprints for any task).
+ * Routine templates own the streak and scheduling logic.
+ */
+export interface RoutineTemplate {
+  id: string
+  title: string
+  description: string | null
+  cadence: RoutineCadence
+  /** JSON config for custom schedules (e.g. specific days, RRULE) */
+  scheduleConfig: string
+  /** When instances were last auto-spawned */
+  lastSpawnedAt: number | null
+  /** Current consecutive streak count */
+  streakCurrent: number
+  /** Best-ever streak count */
+  streakBest: number
+  /** Streak freezes used (forgivable misses) */
+  streakFreezesUsed: number
+  /** Max allowed streak freezes */
+  streakFreezeLimit: number
+  /** Whether this template is active (spawns instances) */
+  isActive: boolean
+  /** Project this routine belongs to (default: "Every Day") */
+  projectId: string | null
+  /** Goal this routine contributes to (optional) */
+  goalId: string | null
+  createdAt: number
+  updatedAt: number
 }
 
 // --- Owner (human vs bot attribution) ---

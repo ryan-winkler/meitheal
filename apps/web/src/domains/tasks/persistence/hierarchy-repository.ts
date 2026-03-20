@@ -47,6 +47,8 @@ export interface ProjectRow {
   icon: string
   color: string
   position: number
+  /** Whether this is the protected default project ("Every Day") */
+  is_default: boolean
   created_at: number
   updated_at: number
 }
@@ -302,8 +304,12 @@ export class HierarchyRepository {
   }
 
   async deleteProject(id: string): Promise<boolean> {
+    // Guard: prevent deleting the default "Every Day" project
+    const project = await this.findProjectById(id)
+    if (project?.is_default) return false
+
     const result = await this.client.execute({
-      sql: "DELETE FROM projects WHERE id = ?",
+      sql: "DELETE FROM projects WHERE id = ? AND is_default = 0",
       args: [id],
     })
     return (result.rowsAffected ?? 0) > 0
@@ -361,8 +367,35 @@ export class HierarchyRepository {
       icon: String(row.icon ?? "📋"),
       color: String(row.color ?? "#6366F1"),
       position: Number(row.position ?? 0),
+      is_default: Boolean(Number(row.is_default ?? 0)),
       created_at: Number(row.created_at),
       updated_at: Number(row.updated_at),
     }
+  }
+
+  // ── Default Project Helpers ──────────────────────────────────────
+
+  /** Find the default "Every Day" project */
+  async findDefaultProject(): Promise<ProjectRow | null> {
+    const result = await this.client.execute(
+      "SELECT * FROM projects WHERE is_default = 1 LIMIT 1"
+    )
+    return result.rows[0] ? this.mapProject(result.rows[0] as Record<string, unknown>) : null
+  }
+
+  /** Ensure a default project exists — idempotent, called on startup */
+  async ensureDefaultProject(): Promise<ProjectRow> {
+    const existing = await this.findDefaultProject()
+    if (existing) return existing
+
+    const now = Date.now()
+    const id = "every-day"
+    await this.client.execute({
+      sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, is_default, created_at, updated_at)
+            VALUES (?, NULL, 'Every Day', 'Your daily tasks and quick captures', 'active', '☀️', '#F59E0B', -1, 1, ?, ?)
+            ON CONFLICT(id) DO NOTHING`,
+      args: [id, now, now],
+    })
+    return (await this.findDefaultProject())!
   }
 }

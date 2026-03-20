@@ -898,10 +898,70 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE tasks ADD COLUMN blocked_by TEXT DEFAULT NULL")
   }
 
+  // ─── Phase 15: Hierarchy Architecture Overhaul ───
+
+  // Projects: is_default flag — protects the "Every Day" project from deletion/rename
+  if (!(await hasColumn(client, "projects", "is_default"))) {
+    await client.execute("ALTER TABLE projects ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0")
+  }
+
+  // Ensure "Every Day" default project exists (auto-created, undeletable)
+  const defaultProjectExists = await client.execute(
+    "SELECT id FROM projects WHERE is_default = 1 LIMIT 1"
+  )
+  if (defaultProjectExists.rows.length === 0) {
+    const now = Date.now()
+    await client.execute({
+      sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, is_default, created_at, updated_at)
+            VALUES (?, NULL, 'Every Day', 'Your daily tasks and quick captures', 'active', '☀️', '#F59E0B', -1, 1, ?, ?)`,
+      args: ["every-day", now, now],
+    })
+  }
+
+  // Tasks: goal_id — direct goal→task linking (optional, can also inherit from project)
+  if (!(await hasColumn(client, "tasks", "goal_id"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN goal_id TEXT")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_goal_id_idx ON tasks(goal_id)")
+
+  // Routine Templates: separate from task_templates — owns scheduling + streak logic
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS routine_templates (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      cadence TEXT NOT NULL DEFAULT 'daily',
+      schedule_config TEXT NOT NULL DEFAULT '{}',
+      last_spawned_at INTEGER,
+      streak_current INTEGER NOT NULL DEFAULT 0,
+      streak_best INTEGER NOT NULL DEFAULT 0,
+      streak_freezes_used INTEGER NOT NULL DEFAULT 0,
+      streak_freeze_limit INTEGER NOT NULL DEFAULT 3,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      project_id TEXT,
+      goal_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS routine_templates_active_idx ON routine_templates(is_active)")
+  await client.execute("CREATE INDEX IF NOT EXISTS routine_templates_cadence_idx ON routine_templates(cadence)")
+
+  // Routine Instances: link tasks to their source routine template with idempotent spawn
+  if (!(await hasColumn(client, "tasks", "routine_template_id"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN routine_template_id TEXT")
+  }
+  if (!(await hasColumn(client, "tasks", "spawned_for_date"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN spawned_for_date TEXT")
+  }
+  await client.execute("CREATE INDEX IF NOT EXISTS tasks_routine_template_id_idx ON tasks(routine_template_id)")
+  // Unique constraint prevents double-spawn: one instance per template per day
+  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
+
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 7
+  const targetVersion = 8
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
