@@ -9,7 +9,7 @@
   "labels": {
     "org.opencontainers.image.title": "Meitheal",
     "org.opencontainers.image.description": "Cooperative task and life engine with HA calendar sync",
-    "org.opencontainers.image.source": "https://github.com/Coolock-Village/meitheal",
-    "org.opencontainers.image.licenses": "MIT"
+    "org.opencontainers.image.source": "https://github.com/Coolock-Village/meitheal-ha-addon",
+    "org.opencontainers.image.licenses": "LicenseRef-Proprietary"
   }
 }

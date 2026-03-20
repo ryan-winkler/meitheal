@@ -10,7 +10,7 @@
   "labels": {
     "org.opencontainers.image.title": "Meitheal Canary",
     "org.opencontainers.image.description": "Bleeding-edge development build of Meitheal",
-    "org.opencontainers.image.source": "https://github.com/Coolock-Village/meitheal",
-    "org.opencontainers.image.licenses": "MIT"
+    "org.opencontainers.image.source": "https://github.com/Coolock-Village/meitheal-ha-addon",
+    "org.opencontainers.image.licenses": "LicenseRef-Proprietary"
   }
 }
