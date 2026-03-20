@@ -13,7 +13,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Gate: only run if CI passes and the push wasn't from the bot
   canary:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
@@ -79,5 +78,31 @@ jobs:
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:${{ steps.meta.outputs.sha_short }}
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:canary
 
+  # After all arch builds succeed, update config.yaml so HA sees the new version
+  update-version:
+    needs: canary
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Update canary config.yaml version
+        run: |
+          sha_short="$(git rev-parse --short HEAD)"
+          node scripts/update-canary-version.mjs "$sha_short"
 
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add meitheal-hub-canary/config.yaml
+          if git diff --cached --quiet; then
+            echo "No version change — skipping commit"
+          else
+            git commit -m "🐤 canary: bump version to $(git rev-parse --short HEAD)"
+            git push
+          fi
