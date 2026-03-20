@@ -365,10 +365,10 @@ export class TaskRepository {
     return counts;
   }
 
-  // ── Gantt (gantt.astro) ─────────────────────────────────────────────
+  // ── Timeline (timeline.astro) ─────────────────────────────────────────
 
-  /** All tasks with date fields for Gantt chart rendering */
-  async getGanttTasks(): Promise<TaskRow[]> {
+  /** All tasks with date fields for Timeline chart rendering */
+  async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
       `SELECT id, title, status, priority, due_date, start_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,

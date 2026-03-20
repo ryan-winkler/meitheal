@@ -2,7 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
-import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
+import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import {
   ensureSchema,
   getPersistenceClient,
@@ -156,6 +156,16 @@ const calendarSignal =
     searchScope="all"
     barId="calendar-bar"
     slot="custom-header"
+    viewTabs={(() => {
+      const qs = new URL(Astro.request.url).searchParams.toString()
+      const q = qs ? `?${qs}` : ''
+      return [
+        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/table${q}`, label: 'Table', icon: '⊞' },
+        { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️', active: true },
+        { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },
+      ] as UnifiedBarViewTab[]
+    })()}
   >
     <button
       slot="actions"
@@ -168,8 +178,6 @@ const calendarSignal =
       <span class="unified-bar__new-task-label">Sync</span>
     </button>
   </UnifiedBar>
-
-  <TaskViewTabs activeView="calendar" />
 
   <div id="calendar-shell" class="page-shell">
     <section

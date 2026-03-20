@@ -2,7 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
-import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
+import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import FrameworkBadge from "../components/ui/FrameworkBadge.astro";
@@ -100,9 +100,17 @@ const tableSignal =
     searchScope="all"
     barId="table-bar"
     slot="custom-header"
+    viewTabs={(() => {
+      const qs = new URL(Astro.request.url).searchParams.toString()
+      const q = qs ? `?${qs}` : ''
+      return [
+        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/table${q}`, label: 'Table', icon: '⊞', active: true },
+        { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
+        { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },
+      ] as UnifiedBarViewTab[]
+    })()}
   />
-
-  <TaskViewTabs activeView="table" />
 
   <div id="table-shell" class="page-shell">
     <section

@@ -1,103 +1,16 @@
 ---
 /**
- * /tasks — Parent page for task views (Kanban, Calendar, Table, Gantt)
+ * /tasks — Redirects to the Kanban board (default task view).
  *
- * Uses ParentPageShell for hash-based routing between sub-views.
- * Each sub-view loads live task counts and provides deep links to the
- * full-featured legacy views.
+ * Phase 16: Task Views Overhaul — eliminated hub card intermediary.
+ * Users land directly on the Kanban board when navigating to /tasks.
  *
  * @domain navigation
- * @phase 15 — Hierarchy Architecture Overhaul
+ * @phase 16 — Task Views Overhaul
  */
-import Layout from "../layouts/Layout.astro"
-import ParentPageShell from "../components/layout/ParentPageShell.astro"
-import InlineHelper from "../components/ui/InlineHelper.astro"
-import { t } from "../i18n/translations"
-import type { Locale } from "../lib/locale"
-import { getTasksForView } from "../lib/task-queries"
 
-const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
-const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
-
-const { counts } = await getTasksForView()
+const { ingressPath } = Astro.locals
+const prefix = ingressPath || ""
+return Astro.redirect(`${prefix}/kanban`, 302)
 ---
-
-<Layout title={`Meitheal — ${t("nav.tasks", locale)}`}>
-  <ParentPageShell pageId="tasks">
-    <section data-parent-section="kanban" id="tasks-section-kanban">
-      <InlineHelper helperId="tasks-kanban-explainer" title="Task Views Hub" icon="📋" variant="info">
-        <p>This is your <strong>Tasks Hub</strong> — a central launchpad for all task views. Each view (Kanban, Calendar, Table, Gantt) shows the same tasks through a different lens. Press <kbd>?</kbd> to restore this helper.</p>
-      </InlineHelper>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">▦</span>
-          <div>
-            <h2 class="parent-section-hub__title">Kanban Board</h2>
-            <p class="parent-section-hub__desc">Drag-and-drop board view — move tasks between status lanes</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Total Tasks</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.active}</span><span class="stat-label">Active</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.overdue}</span><span class="stat-label">Overdue</span></div>
-        </div>
-        <a href="/kanban" class="parent-section-hub__action">Open Full Kanban Board →</a>
-      </div>
-    </section>
-
-    <section data-parent-section="calendar" id="tasks-section-calendar" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">🗓️</span>
-          <div>
-            <h2 class="parent-section-hub__title">Calendar</h2>
-            <p class="parent-section-hub__desc">Month grid with day-level task details and Home Assistant calendar events</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Items</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.overdue}</span><span class="stat-label">Overdue</span></div>
-        </div>
-        <a href="/calendar" class="parent-section-hub__action">Open Full Calendar →</a>
-      </div>
-    </section>
-
-    <section data-parent-section="table" id="tasks-section-table" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">⊞</span>
-          <div>
-            <h2 class="parent-section-hub__title">{t("table.title", locale)}</h2>
-            <p class="parent-section-hub__desc">Spreadsheet-style view with inline editing, sorting, and bulk actions</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Tasks</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.active}</span><span class="stat-label">Active</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.complete}</span><span class="stat-label">Complete</span></div>
-        </div>
-        <a href="/table" class="parent-section-hub__action">Open Full Table →</a>
-      </div>
-    </section>
-
-    <section data-parent-section="gantt" id="tasks-section-gantt" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">📊</span>
-          <div>
-            <h2 class="parent-section-hub__title">Gantt Timeline</h2>
-            <p class="parent-section-hub__desc">Timeline chart showing task dependencies, durations, and critical paths</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Tasks</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.open}</span><span class="stat-label">Open</span></div>
-        </div>
-        <a href="/gantt" class="parent-section-hub__action">Open Full Gantt →</a>
-      </div>
-    </section>
-  </ParentPageShell>
-</Layout>
-
 

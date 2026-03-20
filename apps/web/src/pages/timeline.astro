@@ -1,7 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
-
-import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
+import UnifiedBar from "../components/layout/UnifiedBar.astro";
+import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
 import {
@@ -33,12 +33,12 @@ let tasks: TaskRecord[] = [];
 try {
   await ensureSchema();
   const repo = new TaskRepository(getPersistenceClient());
-  tasks = (await repo.getGanttTasks()) as unknown as TaskRecord[];
+  tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
 } catch (e) {
   /* DB not available */
 }
 
-// Gantt Timeframe Logic: Let's show a rolling window (e.g. 1 week ago -> 4 weeks ahead)
+// Timeline Timeframe Logic: rolling window (1 week ago -> 4 weeks ahead)
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
@@ -53,8 +53,8 @@ for (let d = new Date(startDate); d < endDate; d.setDate(d.getDate() + 1)) {
   days.push(new Date(d));
 }
 
-// Format tasks for the Gantt Chart
-const ganttTasks = tasks.map(task => {
+// Format tasks for the Timeline chart
+const timelineTasks = tasks.map(task => {
   const start = task.start_date ? new Date(String(task.start_date)) : (task.due_date ? new Date(String(task.due_date)) : today);
   const end = task.due_date ? new Date(String(task.due_date)) : new Date(start);
 
@@ -84,30 +84,42 @@ const ganttTasks = tasks.map(task => {
 }).filter(t => t.isVisible);
 
 // Grouping logic based on Meitheal's DDD (Phase 20 typed epics)
-const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
+const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
 
 ---
-<Layout title={`Meitheal — Gantt`}>
+<Layout title={`Meitheal — Timeline`}>
 
-  <span slot="page-title">📊 Timeline</span>
-  <div slot="actions">
-    <button type="button" class="btn btn-primary" id="create-task-btn"
-      >{t("tasks.new_task", locale)}</button
-    >
-  </div>
+  <UnifiedBar
+    title="Timeline"
+    titleIcon="📊"
+    tabs={[]}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="timeline-bar"
+    slot="custom-header"
+    showNewTask={true}
+    viewTabs={(() => {
+      const qs = new URL(Astro.request.url).searchParams.toString()
+      const q = qs ? `?${qs}` : ''
+      return [
+        { href: `/kanban${q}`, label: 'Kanban', icon: '▦' },
+        { href: `/table${q}`, label: 'Table', icon: '⊞' },
+        { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
+        { href: `/timeline${q}`, label: 'Timeline', icon: '📊', active: true },
+      ] as UnifiedBarViewTab[]
+    })()}
+  />
 
-  <TaskViewTabs activeView="gantt" />
-
-  <div class="gantt-container">
-    <div class="gantt-grid" style={`grid-template-columns: 250px repeat(${days.length}, 1fr);`}>
+  <div class="timeline-container">
+    <div class="timeline-grid" style={`grid-template-columns: 250px repeat(${days.length}, 1fr);`}>
 
       <!-- HEADER ROW -->
-      <div class="gantt-header-cell task-list-header">Task</div>
+      <div class="timeline-header-cell task-list-header">Task</div>
       {days.map(d => {
         const isToday = d.getTime() === today.getTime();
         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
         return (
-          <div class={`gantt-header-cell day-header ${isToday ? 'is-today' : ''} ${isWeekend ? 'is-weekend' : ''}`}>
+          <div class={`timeline-header-cell day-header ${isToday ? 'is-today' : ''} ${isWeekend ? 'is-weekend' : ''}`}>
              <div class="day-name">{d.toLocaleDateString(locale, { weekday: 'short' }).substring(0, 1)}</div>
              <div class="day-num">{d.getDate()}</div>
           </div>
@@ -115,13 +127,13 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
       })}
 
       <!-- BACKGROUND GRID LINES -->
-      <div class="gantt-bg-row" style={`grid-column: 1 / span ${days.length + 1}`}></div>
+      <div class="timeline-bg-row" style={`grid-column: 1 / span ${days.length + 1}`}></div>
       {days.map((d, index) => {
         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
         const isToday = d.getTime() === today.getTime();
         return (
           <div
-            class={`gantt-bg-line ${isWeekend ? 'bg-weekend' : ''} ${isToday ? 'bg-today' : ''}`}
+            class={`timeline-bg-line ${isWeekend ? 'bg-weekend' : ''} ${isToday ? 'bg-today' : ''}`}
             style={`grid-column: ${index + 2}; grid-row: 2 / 1000;`}
           />
         )
@@ -132,13 +144,13 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
         let currentRow = 2; // +2 offset for the header row
 
         // Helper to render a task row
-        const renderTaskRow = (task: typeof ganttTasks[0], indent = 0) => {
+        const renderTaskRow = (task: typeof timelineTasks[0], indent = 0) => {
           const isDone = String(task.status) === STATUS.COMPLETE;
           const r = currentRow++;
           return (
             <>
               <!-- Task Label -->
-              <div class={`gantt-row-label ${isDone ? 'is-done' : ''}`} style={`grid-row: ${r}; grid-column: 1; padding-left: ${12 + indent * 16}px;`}>
+              <div class={`timeline-row-label ${isDone ? 'is-done' : ''}`} style={`grid-row: ${r}; grid-column: 1; padding-left: ${12 + indent * 16}px;`}>
                  <span class="type-icon">
                    {String(task.task_type) === 'epic' ? '🎯' : String(task.task_type) === 'story' ? '📖' : '✅'}
                  </span>
@@ -149,12 +161,12 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
               <!-- Task Bar -->
               {task.colStart < task.colEnd && (
                   <div
-                    class={`gantt-bar ${isDone ? 'is-done' : ''} type-${String(task.task_type)}`}
+                    class={`timeline-bar ${isDone ? 'is-done' : ''} type-${String(task.task_type)}`}
                     style={`grid-row: ${r}; grid-column: ${task.colStart} / ${task.colEnd}; background-color: ${task.color || 'var(--accent)'};`}
                     title={`${task.title} (${task.start_date || '?'} to ${task.due_date || '?'})`}
                     data-id={String(task.id)}
                   >
-                     <span class="gantt-bar-label">{String(task.title)}</span>
+                     <span class="timeline-bar-label">{String(task.title)}</span>
                   </div>
               )}
             </>
@@ -168,11 +180,11 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
           rows.push(renderTaskRow(epic, 0));
 
           // Find children of this epic
-          const children = ganttTasks.filter(t => t.parent_id === epic.id && t.id !== epic.id);
+          const children = timelineTasks.filter(t => t.parent_id === epic.id && t.id !== epic.id);
           children.forEach(child => {
             rows.push(renderTaskRow(child, 1));
             // Grandchildren (tasks under stories under epics)
-            const grandchildren = ganttTasks.filter(t => t.parent_id === child.id && t.id !== child.id);
+            const grandchildren = timelineTasks.filter(t => t.parent_id === child.id && t.id !== child.id);
             grandchildren.forEach(gc => {
               rows.push(renderTaskRow(gc, 2));
             });
@@ -181,22 +193,22 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
 
         // 2. Render orphaned stories/tasks (no parent, or parent not in this timeframe)
         const renderedIds = new Set(epics.map(e => e.id));
-        ganttTasks.forEach(t => {
+        timelineTasks.forEach(t => {
           if (t.parent_id && epics.find(e => e.id === t.parent_id)) renderedIds.add(t.id); // Child of epic
           if (t.parent_id) {
-            const parent = ganttTasks.find(pt => pt.id === t.parent_id);
+            const parent = timelineTasks.find(pt => pt.id === t.parent_id);
             if (parent && parent.parent_id && epics.find(e => e.id === parent.parent_id)) {
                renderedIds.add(t.id); // Grandchild
             }
           }
         });
 
-        const orphaned = ganttTasks.filter(t => !renderedIds.has(t.id));
+        const orphaned = timelineTasks.filter(t => !renderedIds.has(t.id));
         if (epics.length > 0 && orphaned.length > 0) {
            // Add a separator for Unassigned
            const r = currentRow++;
            rows.push(
-             <div class="gantt-row-label unassigned-header" style={`grid-row: ${r}; grid-column: 1; background: var(--bg-secondary); font-weight: 600; color: var(--text-muted);`}>
+             <div class="timeline-row-label unassigned-header" style={`grid-row: ${r}; grid-column: 1; background: var(--bg-secondary); font-weight: 600; color: var(--text-muted);`}>
                Other Tasks
              </div>
            );
@@ -209,8 +221,8 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
         return rows;
       })()}
 
-      {ganttTasks.length === 0 && (
-         <div class="gantt-empty" style={`grid-row: 2; grid-column: 1 / span ${days.length + 1};`}>
+      {timelineTasks.length === 0 && (
+         <div class="timeline-empty" style={`grid-row: 2; grid-column: 1 / span ${days.length + 1};`}>
             No tasks scheduled in this timeframe. Set Start Dates and Due Dates.
          </div>
       )}
@@ -220,7 +232,7 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
 </Layout>
 
 <style>
-  .gantt-container {
+  .timeline-container {
     overflow-x: auto;
     overflow-y: auto;
     background: var(--bg-card);
@@ -230,13 +242,13 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     max-height: calc(100vh - 200px);
   }
 
-  .gantt-grid {
+  .timeline-grid {
     display: grid;
     min-width: 1200px; /* Ensure minimum width to prevent super squished days */
     border-bottom: 1px solid var(--border);
   }
 
-  .gantt-header-cell {
+  .timeline-header-cell {
     position: sticky;
     top: 0;
     background: var(--bg-secondary);
@@ -278,21 +290,21 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     margin-top: 2px;
   }
 
-  .gantt-bg-line {
+  .timeline-bg-line {
     border-right: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
     z-index: 1;
   }
 
-  .gantt-bg-line.bg-weekend {
+  .timeline-bg-line.bg-weekend {
     background-color: rgba(0,0,0,0.1);
   }
 
-  .gantt-bg-line.bg-today {
+  .timeline-bg-line.bg-today {
     border-right: 1px solid var(--accent);
     background-color: rgba(99, 102, 241, 0.05);
   }
 
-  .gantt-row-label {
+  .timeline-row-label {
     position: sticky;
     left: 0;
     background: var(--bg-card);
@@ -310,7 +322,7 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     text-overflow: ellipsis;
   }
 
-  .gantt-row-label.is-done {
+  .timeline-row-label.is-done {
     opacity: 0.5;
   }
 
@@ -328,7 +340,7 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     border-radius: 10px;
   }
 
-  .gantt-bar {
+  .timeline-bar {
     position: relative;
     margin: 8px 0; /* Padding top/bottom within the row */
     border-radius: 6px;
@@ -348,12 +360,12 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     height: 32px;
   }
 
-  .gantt-bar:hover {
+  .timeline-bar:hover {
     transform: translateY(-1px);
     filter: brightness(1.1);
   }
 
-  .gantt-bar.is-done {
+  .timeline-bar.is-done {
     opacity: 0.6;
     background-image: repeating-linear-gradient(
       45deg,
@@ -364,12 +376,12 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
     );
   }
 
-  .gantt-bar-label {
+  .timeline-bar-label {
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .gantt-empty {
+  .timeline-empty {
     padding: 32px;
     text-align: center;
     color: var(--text-muted);
@@ -380,7 +392,7 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
 
 <script>
   // Handlers to open task details on click
-  document.querySelectorAll(".gantt-bar").forEach(bar => {
+  document.querySelectorAll(".timeline-bar").forEach(bar => {
     bar.addEventListener("click", () => {
       const id = (bar as HTMLElement).dataset.id;
       if (id && typeof window.openTaskDetail === "function") {

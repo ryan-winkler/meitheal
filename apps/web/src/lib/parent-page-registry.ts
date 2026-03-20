@@ -45,7 +45,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
     route: "/tasks",
     description: "All your task views in one place",
     defaultHash: "kanban",
-    keywords: ["tasks", "kanban", "calendar", "table", "gantt", "timeline"],
+    keywords: ["tasks", "kanban", "calendar", "table", "timeline"],
     subViews: [
       {
         id: "kanban",
@@ -75,13 +75,13 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
         keywords: ["table", "list", "spreadsheet", "sort", "filter"],
       },
       {
-        id: "gantt",
-        label: "Gantt",
+        id: "timeline",
+        label: "Timeline",
         icon: "📊",
-        hash: "gantt",
+        hash: "timeline",
         description: "Timeline and dependency chart",
-        legacyRoute: "/gantt",
-        keywords: ["gantt", "timeline", "chart", "dependencies"],
+        legacyRoute: "/timeline",
+        keywords: ["timeline", "chart", "dependencies"],
       },
     ],
   },

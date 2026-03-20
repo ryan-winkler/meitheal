@@ -26,6 +26,14 @@ export interface UnifiedBarTab {
   icon?: string
 }
 
+/** Route-level view tab (rendered as pill buttons, distinct from section tabs) */
+export interface UnifiedBarViewTab {
+  href: string
+  label: string
+  icon?: string
+  active?: boolean
+}
+
 interface Props {
   /** Page title — also the dropdown trigger */
   title: string
@@ -47,6 +55,8 @@ interface Props {
   showNewTask?: boolean
   /** Label for the new task button (shown on wide viewports) */
   newTaskLabel?: string
+  /** Route-level view tabs (pill buttons for switching between views like Kanban/Table/Calendar) */
+  viewTabs?: UnifiedBarViewTab[]
   /** Element ID prefix for the bar (used by controller). All child IDs are derived from this. */
   barId?: string
 }
@@ -62,6 +72,7 @@ const {
   searchScope = "",
   showNewTask = true,
   newTaskLabel = "New Task",
+  viewTabs = [],
   barId = "settings-bar",
 } = Astro.props
 ---
@@ -109,6 +120,25 @@ const {
         ))}
       </div>
     </div>
+
+    <!-- View pills (route-level view switching — visually distinct from section tabs) -->
+    {viewTabs.length > 0 && (
+      <nav class="unified-bar__view-pills" aria-label="View switcher">
+        {viewTabs.map((vt) => (
+          <a
+            class={`unified-bar__view-pill ${vt.active ? 'is-active' : ''}`}
+            href={vt.href}
+          >
+            {vt.icon && <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>}
+            <span class="unified-bar__view-pill-label">{vt.label}</span>
+          </a>
+        ))}
+      </nav>
+    )}
+
+    {viewTabs.length > 0 && tabs.length > 0 && (
+      <span class="unified-bar__divider" aria-hidden="true"></span>
+    )}
 
     <!-- Center: tab pills (fill available space, quick switching) -->
     <nav class="unified-bar__tabs" id={`${barId}-tabs`} role="navigation" aria-label={`${title} quick navigation`}>
@@ -499,6 +529,62 @@ const {
   /* Hidden by tab overflow controller */
   .unified-bar__tab[data-overflow-hidden] {
     display: none;
+  }
+
+  /* ─── View pill buttons (route-level switching) ─── */
+  .unified-bar__view-pills {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    align-items: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .unified-bar__view-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+    cursor: pointer;
+  }
+  .unified-bar__view-pill:hover {
+    background: var(--accent-6-bg);
+    color: var(--text-primary);
+  }
+  .unified-bar__view-pill.is-active {
+    background: var(--bg-card);
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  .unified-bar__view-pill-icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+  .unified-bar__view-pill-label {
+    line-height: 1;
+  }
+  .unified-bar__divider {
+    display: block;
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    flex-shrink: 0;
+    margin: 0 4px;
+  }
+  @media (max-width: 768px) {
+    .unified-bar__view-pills { display: none; }
+    .unified-bar__divider { display: none; }
   }
 
   @media (prefers-reduced-motion: reduce) {

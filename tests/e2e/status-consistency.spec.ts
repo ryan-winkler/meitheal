@@ -43,7 +43,7 @@ const ALLOWED_FILES = [
   "StatusBadge.astro",              // Legacy fallback display
   "SettingsIntegrations.astro",     // HA "todo" domain explainer
   "IntegrationTodo.astro",          // HA "todo" domain explainer (sub-component)
-  "gantt.astro",                     // Legacy backward compat display
+  "timeline.astro",                  // Legacy backward compat display
   "calendar.astro",                  // Legacy backward compat SQL fallback
   "index.astro",                     // CSS class names for styling
   "todo-bridge.ts",                  // Logger category name "todo"

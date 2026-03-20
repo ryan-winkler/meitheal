@@ -2,7 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
-import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
+import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
@@ -190,6 +190,16 @@ const kanbanSignal =
     searchScope="all"
     barId="kanban-bar"
     slot="custom-header"
+    viewTabs={(() => {
+      const qs = new URL(Astro.request.url).searchParams.toString()
+      const q = qs ? `?${qs}` : ''
+      return [
+        { href: `/kanban${q}`, label: 'Kanban', icon: '▦', active: true },
+        { href: `/table${q}`, label: 'Table', icon: '⊞' },
+        { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
+        { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },
+      ] as UnifiedBarViewTab[]
+    })()}
   >
     <button
       slot="actions"
@@ -202,8 +212,6 @@ const kanbanSignal =
       <span class="unified-bar__new-task-label">{t("kanban.manage_lanes", locale)}</span>
     </button>
   </UnifiedBar>
-
-  <TaskViewTabs activeView="kanban" />
 
   <div id="kanban-shell" class="page-shell">
     <section

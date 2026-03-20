@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-Phase 15 restructured Meitheal's navigation from flat standalone pages (Kanban, Calendar, Table, Gantt, Eisenhower, Habits, Goals, Gamification) into a hierarchy-aware parent page model. The previous architecture suffered from:
+Phase 15 restructured Meitheal's navigation from flat standalone pages (Kanban, Calendar, Table, Timeline, Eisenhower, Habits, Goals, Gamification) into a hierarchy-aware parent page model. The previous architecture suffered from:
 
 1. **Information fragmentation** — 8+ standalone pages with no contextual awareness of how they relate
 2. **No hierarchy navigation** — users couldn't see where tasks sit in the Area → Goal → Project → Task chain
@@ -26,7 +26,7 @@ Consolidate standalone pages into three parent hubs, each using `ParentPageShell
 
 | Parent Page | Route | Sub-Views |
 |-------------|-------|-----------|
-| Tasks | `/tasks` | `#kanban`, `#calendar`, `#table`, `#gantt` |
+| Tasks | `/tasks` | `#kanban`, `#calendar`, `#table`, `#timeline` |
 | Planning | `/planning` | `#eisenhower`, `#triage` (coming), `#rice` (coming) |
 | Progress & Growth | `/progress` | `#routines`, `#goals`, `#achievements` |
 

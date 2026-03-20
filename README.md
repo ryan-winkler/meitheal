@@ -31,7 +31,7 @@ If Grocy helps answer "what do I have?" and "what needs tracking?", Meitheal hel
 
 ### Work the way your brain works
 
-- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Gamification, Review, Gantt, and Settings.
+- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Gamification, Review, Timeline, and Settings.
 - Use the shared SearchHub to jump between tasks, views, settings, saved filters, and high-value actions.
 - Keep daily work simple when you want it simple, or go deep with strategy lenses, custom fields, rules, and review flows when you want more structure.
 

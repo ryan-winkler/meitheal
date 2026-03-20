@@ -11,7 +11,7 @@ The Calendar shell sections are:
 - `#calendar-agenda`
 - `#calendar-flow`
 
-The route-level `TaskViewTabs` remain in place for Calendar, Kanban, Table, and Gantt, and they continue to preserve the current query string when switching views.
+The route-level `TaskViewTabs` remain in place for Calendar, Kanban, Table, and Timeline, and they continue to preserve the current query string when switching views.
 
 ## Common Jobs
 

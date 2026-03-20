@@ -25,7 +25,7 @@
 
 | Parent Page | Sub-Views | Route |
 |------------|-----------|-------|
-| **Tasks** | Kanban, Calendar, Table, Gantt | `/tasks#kanban` |
+| **Tasks** | Kanban, Calendar, Table, Timeline | `/tasks#kanban` |
 | **Planning** | Eisenhower, Triage (coming), RICE (coming) | `/planning#eisenhower` |
 | **Progress & Growth** | Routines, Goals, Achievements | `/progress#routines` |
 
