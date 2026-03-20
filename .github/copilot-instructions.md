@@ -42,8 +42,29 @@ Refer to `AGENTS.md` and the inline docs for full conventions. Key points:
 - Use `./scripts/devcontainer-up.sh` for status, recovery, and logs around that devcontainer environment
 - Do not claim HA integration verification from Tier 1 alone
 
-## Versioning Guardrail
+## Release & Publishing
 
-- Preserve the current release line unless the user explicitly asks to move to a new one
-- When asked to "bump version" without more detail, stay on the existing line and prefer the next patch release
-- Example: if the repo is on `0.2.x`, bump within `0.2.x`; do not jump to `0.3.x` without explicit user direction
+Meitheal uses a **two-channel release strategy**:
+
+| Channel | Dir | Trigger | Version | Stage |
+|---------|-----|---------|---------|-------|
+| Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
+| Canary | `meitheal-hub-canary/` | Push to `main` | Commit SHA | `experimental` |
+
+### Stable Release (Step-by-Step)
+
+1. `node scripts/bump-version.mjs patch` — updates config.yaml, run.sh, package.json, sw.js
+2. Update `CHANGELOG.md`
+3. `git add -A && git commit -m "🔖 release v{VERSION}"`
+4. `git tag v{VERSION} && git push origin main --tags`
+5. CI publishes via `publish-addon-images.yml`
+
+### Canary (Automatic)
+
+Every push to `main` triggers `publish-canary-images.yml`. Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed.
+
+### Version Rules
+
+- Stay in the current release line unless user explicitly asks to move (`0.0.x` stays `0.0.x`)
+- Use `bump-version.mjs` — never manually edit version fields
+- See `docs/kcs/releasing.md` for the full runbook

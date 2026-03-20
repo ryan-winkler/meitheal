@@ -73,7 +73,8 @@ meitheal/
 ├── apps/web/              # Astro SSR app (pages, API routes, middleware)
 ├── packages/domain-*/     # Pure domain logic (5 bounded contexts)
 ├── packages/integration-core/  # Adapter interfaces + implementations
-├── meitheal-hub/          # HA OS add-on (Dockerfile, AppArmor, config)
+├── meitheal-hub/          # HA add-on — Stable channel (Dockerfile, AppArmor, config)
+├── meitheal-hub-canary/   # HA add-on — Canary channel (auto-built from main)
 ├── tests/                 # Playwright test suite
 │   ├── e2e/               # Integration + E2E tests
 │   └── governance/        # Repo standards enforcement
@@ -121,7 +122,7 @@ pnpm --filter @meitheal/tests test   # Run full test suite
 ### Naming
 
 | Thing | Convention | Example |
-|-------|-----------|---------|
+|-------|-----------|---------| 
 | Files | kebab-case | `task-sync-service.ts` |
 | Functions | camelCase | `createTask()` |
 | Types | PascalCase | `TaskAggregate` |
@@ -231,10 +232,16 @@ Conventional commits with emoji prefixes:
 
 ## HA Add-on Development
 
-The add-on lives in `meitheal-hub/`:
+The add-on ships in **two channels** from this repo:
+
+| Channel | Dir | Version | Trigger |
+|---------|-----|---------|---------|
+| **Stable** | `meitheal-hub/` | Semver (`0.0.1`) | vtag push (`v*`) |
+| **Canary** | `meitheal-hub-canary/` | Commit SHA | Push to `main` |
+
+### Building Locally
 
 ```bash
-# Build locally
 docker build -t meitheal-hub \
   --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest \
   meitheal-hub
@@ -243,11 +250,27 @@ docker build -t meitheal-hub \
 docker run -p 3000:3000 -v $(pwd)/data:/data meitheal-hub /run-local.sh
 ```
 
-Key files:
+### Publishing a Stable Release
+
+```bash
+node scripts/bump-version.mjs patch    # Bumps 4 files atomically
+# Update CHANGELOG.md
+git add -A && git commit -m "🔖 release v{VERSION}"
+git tag v{VERSION} && git push origin main --tags
+```
+
+CI publishes via `publish-addon-images.yml`. See `docs/kcs/releasing.md` for the full runbook.
+
+### Canary (Automatic)
+
+Every push to `main` auto-triggers `publish-canary-images.yml`. Do NOT manually edit `meitheal-hub-canary/config.yaml`.
+
+### Key Files
 
 | File | Purpose |
 |------|---------|
-| `config.yaml` | Add-on manifest (ingress, auth, AppArmor, options) |
+| `meitheal-hub/config.yaml` | Stable add-on manifest |
+| `meitheal-hub-canary/config.yaml` | Canary add-on manifest (CI-managed version) |
 | `apparmor.txt` | Security profile (enforced by Supervisor) |
 | `translations/en.yaml` | English option descriptions for HA UI |
 | `run.sh` | Supervisor entrypoint |
