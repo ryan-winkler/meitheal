@@ -47,7 +47,18 @@
     "color_label": "Dath",
     "toggle_area": "Scoránaigh {name}",
     "area_options": "Roghanna réimse",
-    "project_options": "Roghanna tionscadail"
+    "project_options": "Roghanna tionscadail",
+    "new_project_placeholder": "Ainm tionscadail…",
+    "new_area_placeholder": "Ainm réimse…",
+    "new_task_placeholder": "Teideal taisc…",
+    "delete_project": "Scrios Tionscadal",
+    "delete_project_confirm": "Scrios \"{name}\"? Beidh tascanna gan nasc.",
+    "delete_confirm_btn": "Dearbhaigh Scriosadh",
+    "pin_help": "Deaschláraigh tionscadal leis an gcnaipe deas chun é a phionnáil anseo",
+    "error_create_failed": "Theip ar chruthú — bain triail eile as",
+    "error_update_failed": "Theip ar nuashonrú — bain triail eile as",
+    "error_delete_failed": "Theip ar scriosadh — bain triail eile as",
+    "task_created": "Tasc cruthaithe"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",

@@ -110,7 +110,10 @@ const taskKinds = [
 
     {/* ── Pinned ── */}
     <div class="stree__pinned" id="project-nav-pinned" hidden>
-      <span class="stree__section-label">📌 {t("sidebar.pinned", locale)}</span>
+      <div class="stree__pinned-header">
+        <span class="stree__section-label">📌 {t("sidebar.pinned", locale)}</span>
+        <span class="stree__pin-help" title={t("sidebar.pin_help", locale)}>?</span>
+      </div>
       <div class="stree__pinned-list" id="project-nav-pinned-list"></div>
     </div>
 
@@ -235,6 +238,10 @@ const taskKinds = [
     </button>
     <button type="button" data-action="color-icon" class="stree__dropdown-item">
       <span class="stree__dropdown-icon">🎨</span><span>{t("sidebar.color_icon", locale)}</span>
+    </button>
+    <hr class="stree__dropdown-divider" />
+    <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
+      <span class="stree__dropdown-icon">🗑️</span><span>{t("sidebar.delete_project", locale)}</span>
     </button>
   </div>
 </template>
@@ -603,6 +610,57 @@ const taskKinds = [
     display: block;
   }
 
+  /* ── T5: Pin help badge ── */
+  .stree__pinned-header { display: flex; align-items: center; gap: 4px; }
+  .stree__pin-help {
+    font-size: 9px;
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(var(--border-rgb), 0.15);
+    color: var(--text-muted);
+    opacity: 0.4;
+    cursor: help;
+    transition: opacity 150ms;
+    flex-shrink: 0;
+  }
+  .stree__pin-help:hover { opacity: 0.8; }
+
+  /* ── T1: Inline editable input ── */
+  .stree__inline-input {
+    background: rgba(var(--border-rgb), 0.12);
+    border: 1px solid rgba(var(--accent-rgb), 0.4);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    padding: 4px 6px;
+    outline: none;
+    width: 100%;
+    min-width: 80px;
+    max-width: 160px;
+    transition: border-color 150ms;
+  }
+  .stree__inline-input:focus { border-color: var(--accent); }
+
+  /* ── T2: Inline confirm button ── */
+  .stree__confirm-delete {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+    cursor: pointer;
+    transition: background 120ms;
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+  .stree__confirm-delete:hover { background: rgba(239, 68, 68, 0.3); }
+
   /* ── New Area button — P2-14: dashed border upgrade ── */
   .stree__new-area {
     display: flex;
@@ -816,6 +874,7 @@ const taskKinds = [
 
 <script>
   import { DropdownController } from "../../lib/dropdown-controller"
+  import { showToast } from "../../lib/toast"
 
   // ── Sidebar Hierarchy Tree — interactions ──
   ;(function initSidebarTree() {
@@ -823,6 +882,66 @@ const taskKinds = [
     if (!nav) return
 
     const ctrl = new DropdownController()
+
+    // ── i18n helper: read from window.mI18n or fallback ──
+    function i18n(key: string, fallback: string): string {
+      if (typeof window !== "undefined" && window.mI18n) {
+        const v = window.mI18n.get(key)
+        if (v && v !== key) return v
+      }
+      return fallback
+    }
+
+    // ── Inline input helper (replaces prompt()) ──
+    function showInlineInput(
+      container: HTMLElement,
+      placeholder: string,
+      currentValue: string,
+      onSubmit: (value: string) => void,
+    ): void {
+      // Remove any existing inline input in the same container
+      container.querySelectorAll(".stree__inline-input").forEach((el) => el.remove())
+      const input = document.createElement("input")
+      input.type = "text"
+      input.className = "stree__inline-input"
+      input.placeholder = placeholder
+      input.value = currentValue
+      container.appendChild(input)
+      input.focus()
+      input.select()
+
+      let submitted = false
+      function submit() {
+        if (submitted) return
+        submitted = true
+        const val = input.value.trim()
+        input.remove()
+        if (val && val !== currentValue) onSubmit(val)
+      }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); submit() }
+        if (e.key === "Escape") { e.preventDefault(); submitted = true; input.remove() }
+      })
+      input.addEventListener("blur", () => setTimeout(submit, 100))
+    }
+
+    // ── Inline confirm helper (replaces confirm()) ──
+    function showInlineConfirm(
+      container: HTMLElement,
+      label: string,
+      onConfirm: () => void,
+    ): void {
+      container.querySelectorAll(".stree__confirm-delete").forEach((el) => el.remove())
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "stree__confirm-delete"
+      btn.textContent = label
+      container.appendChild(btn)
+      btn.focus()
+      btn.addEventListener("click", (e) => { e.stopPropagation(); btn.remove(); onConfirm() })
+      // Auto-dismiss after 3s
+      setTimeout(() => btn.remove(), 3000)
+    }
 
     // ── Materialize templates to body ──
     function materialize(tmplId: string): HTMLElement | null {
@@ -924,21 +1043,37 @@ const taskKinds = [
       }
     })
 
-    // ── 3. Area + (new project) ──
+    // ── 3. Area + (new project) — inline input replaces prompt() ──
     document.querySelectorAll<HTMLButtonElement>("[data-area-add]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
+      btn.addEventListener("click", (e) => {
         e.stopPropagation()
         const areaId = btn.dataset.areaAdd
         if (!areaId) return
-        const title = prompt("New project title:")
-        if (!title?.trim()) return
-        try {
-          const res = await fetch("/api/projects", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: title.trim(), area_id: areaId, icon: "📋", color: "#6366F1" }),
-          })
-          if (res.ok) window.location.reload()
-        } catch {}
+        const children = document.querySelector(`[data-area-projects="${areaId}"]`) as HTMLElement | null
+        if (!children) return
+        // Ensure area is expanded
+        if (children.dataset.collapsed === "true") {
+          children.dataset.collapsed = "false"
+          const row = document.querySelector(`[data-area-toggle="${areaId}"]`)
+          row?.setAttribute("aria-expanded", "true")
+          collapsed.delete(areaId)
+          saveCollapsed()
+        }
+        showInlineInput(
+          children,
+          i18n("sidebar.new_project_placeholder", "Project name\u2026"),
+          "",
+          async (title) => {
+            try {
+              const res = await fetch("/api/projects", {
+                method: "POST", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ title, area_id: areaId, icon: "\ud83d\udccb", color: "#6366F1" }),
+              })
+              if (res.ok) window.location.reload()
+              else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
+            } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
+          },
+        )
       })
     })
 
@@ -963,19 +1098,33 @@ const taskKinds = [
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
       if (!target || !activeEntityId || activeEntityType !== "area") return
       const action = target.dataset.action
+      const entityId = activeEntityId
+      const entityName = activeEntityName || ""
 
       if (action === "manage") return // navigates via <a> href
       if (action === "rename") {
         ctrl.hideAll()
-        const newName = prompt("New area name:", activeEntityName || "")
-        if (!newName?.trim() || newName.trim() === activeEntityName) return
-        try { await fetch(`/api/areas/${activeEntityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName.trim() }) }); window.location.reload() } catch {}
+        const nameEl = document.querySelector(`[data-area-toggle="${entityId}"] .stree__area-name`) as HTMLElement | null
+        if (!nameEl) return
+        const container = nameEl.parentElement!
+        showInlineInput(
+          container,
+          i18n("sidebar.new_area_placeholder", "Area name\u2026"),
+          entityName,
+          async (newName) => {
+            try {
+              const res = await fetch(`/api/areas/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName }) })
+              if (res.ok) { nameEl.textContent = newName }
+              else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
+            } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
+          },
+        )
       }
       if (action === "color-icon") {
         ctrl.hide()
         if (!colorIconPopover) return
-        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeEntityId}"]`)
-        const currentIcon = triggerBtn?.dataset.areaIcon || "📋"
+        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${entityId}"]`)
+        const currentIcon = triggerBtn?.dataset.areaIcon || "\ud83d\udccb"
         const currentColor = triggerBtn?.dataset.areaColor || "#6366F1"
         // Sync icon preview + hidden input
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
@@ -991,8 +1140,19 @@ const taskKinds = [
       }
       if (action === "delete") {
         ctrl.hideAll()
-        if (!confirm(`Delete "${activeEntityName}"? Projects inside will become ungrouped.`)) return
-        try { await fetch(`/api/areas/${activeEntityId}`, { method: "DELETE" }); window.location.reload() } catch {}
+        const areaRow = document.querySelector(`[data-area-toggle="${entityId}"]`) as HTMLElement | null
+        if (!areaRow) return
+        showInlineConfirm(
+          areaRow,
+          i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
+          async () => {
+            try {
+              const res = await fetch(`/api/areas/${entityId}`, { method: "DELETE" })
+              if (res.ok) window.location.reload()
+              else showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error")
+            } catch { showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error") }
+          },
+        )
       }
     })
 
@@ -1017,19 +1177,33 @@ const taskKinds = [
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
       if (!target || !activeEntityId || activeEntityType !== "project") return
       const action = target.dataset.action
+      const entityId = activeEntityId
+      const entityName = activeEntityName || ""
 
       if (action === "manage") return
       if (action === "rename") {
         ctrl.hideAll()
-        const newTitle = prompt("New project name:", activeEntityName || "")
-        if (!newTitle?.trim() || newTitle.trim() === activeEntityName) return
-        try { await fetch(`/api/projects/${activeEntityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle.trim() }) }); window.location.reload() } catch {}
+        const linkEl = document.querySelector(`[data-project-id="${entityId}"] .stree__project-name`) as HTMLElement | null
+        if (!linkEl) return
+        const container = linkEl.parentElement!
+        showInlineInput(
+          container,
+          i18n("sidebar.new_project_placeholder", "Project name\u2026"),
+          entityName,
+          async (newTitle) => {
+            try {
+              const res = await fetch(`/api/projects/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle }) })
+              if (res.ok) { linkEl.textContent = newTitle }
+              else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
+            } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
+          },
+        )
       }
       if (action === "color-icon") {
         ctrl.hide()
         if (!colorIconPopover) return
-        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-project-menu="${activeEntityId}"]`)
-        const currentIcon = triggerBtn?.dataset.projectIconValue || "📋"
+        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-project-menu="${entityId}"]`)
+        const currentIcon = triggerBtn?.dataset.projectIconValue || "\ud83d\udccb"
         const currentColor = triggerBtn?.dataset.projectColor || "#6366F1"
         // Sync icon preview + hidden input
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
@@ -1042,6 +1216,22 @@ const taskKinds = [
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t, i) => t.classList.toggle("active", i === 0))
         colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
         if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
+      }
+      if (action === "delete") {
+        ctrl.hideAll()
+        const projRow = document.querySelector(`[data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+        if (!projRow) return
+        showInlineConfirm(
+          projRow,
+          i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
+          async () => {
+            try {
+              const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE" })
+              if (res.ok) window.location.reload()
+              else showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error")
+            } catch { showToast(i18n("sidebar.error_delete_failed", "Failed to delete"), "error") }
+          },
+        )
       }
     })
 
@@ -1076,22 +1266,24 @@ const taskKinds = [
 
     colorIconPopover?.querySelector<HTMLButtonElement>("#color-icon-save")?.addEventListener("click", async () => {
       if (!activeEntityId) return
+      const entityId = activeEntityId
       const iconInput = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
       const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
-      const icon = iconInput?.value?.trim() || "📋"
+      const icon = iconInput?.value?.trim() || "\ud83d\udccb"
       const color = selectedSwatch?.dataset.swatchColor || "#6366F1"
       ctrl.hideAll()
-      const endpoint = activeEntityType === "area" ? `/api/areas/${activeEntityId}` : `/api/projects/${activeEntityId}`
+      const endpoint = activeEntityType === "area" ? `/api/areas/${entityId}` : `/api/projects/${entityId}`
       try {
-        await fetch(endpoint, {
+        const res = await fetch(endpoint, {
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ icon, color }),
         })
-        window.location.reload()
-      } catch {}
+        if (res.ok) window.location.reload()
+        else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
+      } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
     })
 
-    // ── 7. Per-project task add (+) with kind picker ──
+    // ── 7. Per-project task add (+) with kind picker — inline input ──
     document.querySelectorAll<HTMLButtonElement>("[data-task-add-project]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation()
@@ -1109,42 +1301,61 @@ const taskKinds = [
       const target = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-task-kind]")
       if (!target || !activeProjectIdForTask) return
       const kind = target.dataset.taskKind!
+      const projId = activeProjectIdForTask
       ctrl.hideAll()
-      const title = prompt("Task title:")
-      if (!title?.trim()) return
+      // Use inline input instead of prompt()
+      const projEl = document.querySelector(`[data-project-id="${projId}"]`)
+      const projRow = projEl?.closest(".stree__project") as HTMLElement | null
+      if (!projRow) return
       // Resolve area_id from DOM hierarchy
-      const projEl = document.querySelector(`[data-project-id="${activeProjectIdForTask}"]`)
-      const areaGroup = projEl?.closest<HTMLElement>("[data-area-group]")
+      const areaGroup = projRow.closest<HTMLElement>("[data-area-group]")
       const areaId = areaGroup?.dataset.areaGroup || null
-      try {
-        const res = await fetch("/api/tasks", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: title.trim(),
-            project_id: activeProjectIdForTask,
-            area_id: areaId,
-            task_kind: kind,
-          }),
-        })
-        if (res.ok) {
-          // Update the project task count in the sidebar
-          updateProjectTaskCount(activeProjectIdForTask)
-          window.location.reload()
-        }
-      } catch {}
+
+      showInlineInput(
+        projRow,
+        i18n("sidebar.new_task_placeholder", "Task title\u2026"),
+        "",
+        async (title) => {
+          try {
+            const res = await fetch("/api/tasks", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                title,
+                project_id: projId,
+                area_id: areaId,
+                task_kind: kind,
+              }),
+            })
+            if (res.ok) {
+              updateProjectTaskCount(projId)
+              showToast(i18n("sidebar.task_created", `Task created in project`), "success")
+            } else {
+              showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
+            }
+          } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
+        },
+      )
     })
 
-    // ── 8. New Area button ──
-    document.getElementById("new-area-btn")?.addEventListener("click", async () => {
-      const name = prompt("New area name:")
-      if (!name?.trim()) return
-      try {
-        const res = await fetch("/api/areas", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), icon: "📋", color: "#6366F1" }),
-        })
-        if (res.ok) window.location.reload()
-      } catch {}
+    // ── 8. New Area button — inline input ──
+    document.getElementById("new-area-btn")?.addEventListener("click", () => {
+      const newAreaBtn = document.getElementById("new-area-btn")
+      if (!newAreaBtn) return
+      showInlineInput(
+        newAreaBtn.parentElement || newAreaBtn,
+        i18n("sidebar.new_area_placeholder", "Area name\u2026"),
+        "",
+        async (name) => {
+          try {
+            const res = await fetch("/api/areas", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ name, icon: "\ud83d\udccb", color: "#6366F1" }),
+            })
+            if (res.ok) window.location.reload()
+            else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
+          } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
+        },
+      )
     })
 
     // ── 9. Keyboard navigation (enhanced with Escape close) ──

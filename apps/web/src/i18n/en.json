@@ -48,7 +48,18 @@
     "color_label": "Color",
     "toggle_area": "Toggle {name}",
     "area_options": "Area options",
-    "project_options": "Project options"
+    "project_options": "Project options",
+    "new_project_placeholder": "Project name…",
+    "new_area_placeholder": "Area name…",
+    "new_task_placeholder": "Task title…",
+    "delete_project": "Delete Project",
+    "delete_project_confirm": "Delete \"{name}\"? Tasks will become unlinked.",
+    "delete_confirm_btn": "Confirm Delete",
+    "pin_help": "Right-click a project to pin it here",
+    "error_create_failed": "Failed to create — please try again",
+    "error_update_failed": "Failed to update — please try again",
+    "error_delete_failed": "Failed to delete — please try again",
+    "task_created": "Task created"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",
