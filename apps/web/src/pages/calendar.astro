@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import DeprecationBanner from "../components/ui/DeprecationBanner.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import {
@@ -142,6 +143,7 @@ const calendarSignal =
 ---
 
 <Layout title={`Meitheal — ${monthName}`}>
+  <DeprecationBanner oldLabel="Calendar" newRoute="/tasks#calendar" newParentLabel="Tasks" />
   <UnifiedBar
     title="Calendar"
     titleIcon="🗓️"

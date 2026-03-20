@@ -19,6 +19,7 @@
  * @kcs Phase 06: replaces old heuristic derivation (priority + due date)
  */
 import Layout from "../layouts/Layout.astro"
+import DeprecationBanner from "../components/ui/DeprecationBanner.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
@@ -108,6 +109,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 ---
 
 <Layout title="Eisenhower Matrix">
+  <DeprecationBanner oldLabel="Eisenhower" newRoute="/planning#eisenhower" newParentLabel="Planning" />
   <UnifiedBar
     title="Eisenhower"
     titleIcon="🎯"

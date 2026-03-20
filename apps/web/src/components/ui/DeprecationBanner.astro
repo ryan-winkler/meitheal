@@ -1,0 +1,152 @@
+---
+/**
+ * DeprecationBanner — callout banner for pages that have moved to a parent page
+ *
+ * Shows at the top of legacy pages (e.g. /kanban → /tasks#kanban)
+ * with a link to the new location. Optionally auto-redirects after a delay.
+ *
+ * @domain navigation
+ * @phase 15 — Hierarchy Architecture Overhaul
+ */
+interface Props {
+  /** Human-readable label of the old page, e.g. "Kanban" */
+  oldLabel: string
+  /** New parent page route with hash, e.g. "/tasks#kanban" */
+  newRoute: string
+  /** Human-readable label of the new parent, e.g. "Tasks" */
+  newParentLabel: string
+}
+
+const { oldLabel, newRoute, newParentLabel } = Astro.props
+---
+
+<div class="deprecation-banner" role="status" aria-live="polite" data-new-route={newRoute}>
+  <div class="deprecation-banner__content">
+    <span class="deprecation-banner__icon" aria-hidden="true">📦</span>
+    <div class="deprecation-banner__text">
+      <strong>{oldLabel}</strong> has moved to <a href={newRoute} class="deprecation-banner__link">{newParentLabel}</a>.
+      <span class="deprecation-banner__hint">This page still works, but the new location is the recommended experience.</span>
+    </div>
+    <a href={newRoute} class="deprecation-banner__cta">Go to {newParentLabel} →</a>
+    <button type="button" class="deprecation-banner__dismiss" aria-label="Dismiss banner" title="Dismiss">✕</button>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("astro:page-load", () => {
+    const banners = document.querySelectorAll<HTMLElement>(".deprecation-banner")
+    banners.forEach((banner) => {
+      const dismissBtn = banner.querySelector(".deprecation-banner__dismiss")
+      dismissBtn?.addEventListener("click", () => {
+        banner.style.maxHeight = "0"
+        banner.style.padding = "0"
+        banner.style.opacity = "0"
+        banner.style.overflow = "hidden"
+        setTimeout(() => banner.remove(), 300)
+      })
+    })
+  })
+</script>
+
+<style>
+  .deprecation-banner {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.12) 100%);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: var(--radius-sm, 6px);
+    margin: 0.75rem 1rem 0;
+    transition: max-height 300ms ease, padding 300ms ease, opacity 300ms ease;
+  }
+
+  .deprecation-banner__content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .deprecation-banner__icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .deprecation-banner__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+  }
+
+  .deprecation-banner__hint {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.125rem;
+  }
+
+  .deprecation-banner__link {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .deprecation-banner__link:hover {
+    text-decoration: underline;
+  }
+
+  .deprecation-banner__cta {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    border-radius: 9999px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 150ms ease;
+  }
+
+  .deprecation-banner__cta:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+  }
+
+  .deprecation-banner__dismiss {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 150ms ease;
+  }
+
+  .deprecation-banner__dismiss:hover {
+    color: var(--text-primary);
+  }
+
+  @media (max-width: 640px) {
+    .deprecation-banner__content {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .deprecation-banner__dismiss {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+    }
+
+    .deprecation-banner {
+      position: relative;
+    }
+  }
+</style>

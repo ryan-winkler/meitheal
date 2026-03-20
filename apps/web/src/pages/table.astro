@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import DeprecationBanner from "../components/ui/DeprecationBanner.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
@@ -86,6 +87,7 @@ const tableSignal =
 ---
 
 <Layout title={`Meitheal — ${t("table.title", locale)}`}>
+  <DeprecationBanner oldLabel="Table" newRoute="/tasks#table" newParentLabel="Tasks" />
   <UnifiedBar
     title={t("table.title", locale)}
     titleIcon="⊞"
