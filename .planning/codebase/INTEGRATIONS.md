@@ -1,112 +1,103 @@
-# Codebase Integrations — Meitheal
+# External Integrations
 
-> Last refreshed: 2026-03-19
+**Analysis Date:** 2026-03-20
 
-## Home Assistant (Primary Integration)
+## AI Integration Surfaces (3 Protocols)
 
-| Layer | Protocol | File |
-|-------|----------|------|
-| WebSocket API | `home-assistant-js-websocket` | `domains/ha/ha-connection.ts` |
-| Entity discovery | WebSocket subscribe | `domains/ha/ha-entities.ts` |
-| Event bus | WebSocket events | `domains/ha/ha-events.ts` |
-| Service calls | WebSocket | `domains/ha/ha-services.ts` |
-| User resolution | HA Supervisor API | `domains/ha/ha-users.ts` |
-| Startup | Singleton init | `domains/ha/ha-startup.ts` |
-| Calendar adapter | Collection API | `integration-core/src/home-assistant-calendar.ts` |
-| Todo sync | HA todo entities | `domains/todo/todo-bridge.ts` |
-| Assist/LLM | Conversation API | `domains/ai/ha-assist-service.ts` |
-| Backup platform | Supervisor API | API: `/api/backup/*` |
+### MCP — Model Context Protocol
 
-**Ingress:** All traffic proxied through HA ingress iframe
-- `domains/auth/ingress-policy.ts` — detects ingress context from `X-Ingress-Path`
-- `middleware.ts` — rewrites HTML attributes with ingress prefix
-- `Layout.astro` — monkey-patches `fetch()` for API calls
-- `scripts/serve.mjs` — normalizes `//` paths
+**Astro TS Server** (`apps/web/src/pages/api/mcp.ts`):
+- 17 tools via JSON-RPC 2.0 over HTTP POST
+- Protocol version: `2024-11-05`
+- Discovery: `/.well-known/mcp.json`
+- Tools: createTask, searchTasks, completeTask, updateTask, deleteTask, getTask, getCalendarEvents, getUpcoming, syncCalendar, getOverdueTasks, getTodaysTasks, getTaskSummary, batchComplete, assignTask, listUsers, linkTask, unlinkTask, getTaskLinks
+- Delegates to internal REST API (thin adapter pattern)
 
-## CalDAV Calendar Sync
+**HA Python MCP Server** (`integrations/home-assistant/custom_components/meitheal/mcp_server.py`):
+- 524 lines, runs inside HA custom component
+- Additional tools not in TS: `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress`
+- Uses coordinator data directly (no HTTP intermediary)
 
-| Component | File |
-|-----------|------|
-| CalDAV client | `domains/calendar/caldav-client.ts` |
-| Calendar bridge | `domains/calendar/calendar-bridge.ts` |
-| Entity resolver | `domains/calendar/resolve-calendar-entities.ts` |
-| API routes | `/api/integrations/calendar/sync`, `/status`, `/caldav-credentials`, `/confirmation` |
+### A2A — Agent-to-Agent Protocol
 
-## Grocy (Grocery Management)
+**Handler** (`packages/integration-core/src/a2a-handler.ts`):
+- HTTP+JSON binding, protocol version 1.0
+- 11 skills: task-management, task-search, framework-scoring, data-export, areas, labels, today-summary, habits, review-weekly, ha-calendar-sync, ha-entity-state
+- Agent card: `/api/a2a/agent-card`
+- Message endpoint: `/api/a2a/message`
+- Skill routing via keyword extraction (no LLM-based intent)
+- ⚠️ Skill handlers not fully wired — discovery works, execution is partial
 
-| Component | File |
-|-----------|------|
-| Grocy bridge | `domains/grocy/grocy-bridge.ts` |
-| Grocy mapper | `domains/grocy/grocy-mapper.ts` |
-| Adapter | `integration-core/src/grocy-adapter.ts` (539 lines) |
-| API routes | `/api/grocy/stock`, `/sync`, `/settings`, `/test`, `/auto-key` |
+### HA LLM API
 
-## N8N Workflow Automation
+**LLM Tools** (`integrations/home-assistant/custom_components/meitheal/llm_api.py`):
+- 21 tools registered as HA LLM API provider
+- Rich descriptions with voice-optimized trigger phrases
+- Unique tools: `meitheal_daily_briefing` (weather + people + tasks), `meitheal_remove_from_todo_list`, `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress`
+- Uses coordinator data directly (in-process, no HTTP)
 
-| Component | File |
-|-----------|------|
-| API routes | `/api/integrations/n8n/health`, `/workflows` |
-| Settings UI | `settings-integrations-n8n-controller.ts` (402 lines) |
+## Tool Coverage Matrix
 
-## Node-RED
+| Tool | MCP TS | MCP Python | LLM API | A2A |
+|------|--------|------------|---------|-----|
+| Search Tasks | ✅ | ✅ | ✅ | ✅ |
+| Create Task | ✅ | ✅ | ✅ | ✅ |
+| Complete Task | ✅ | ✅ | ✅ | ✅ |
+| Update Task | ✅ | ✅ | ✅ | ✅ |
+| Delete Task | ✅ | ✅ | ✅ | ❌ |
+| Get Task | ✅ | ✅ | ✅ | ❌ |
+| Get Overdue | ✅ | ✅ | ✅ | ❌ |
+| Get Today | ✅ | ✅ | ✅ | ✅ |
+| Task Summary | ✅ | ✅ | ✅ | ❌ |
+| Calendar Events | ✅ | ✅ | ✅ | ✅ |
+| Upcoming | ✅ | ✅ | ✅ | ❌ |
+| Sync Calendar | ✅ | ✅ | ❌ | ✅ |
+| Batch Complete | ✅ | ✅ | ✅ | ❌ |
+| Assign Task | ✅ | ❌ | ❌ | ❌ |
+| List Users | ✅ | ❌ | ❌ | ❌ |
+| Link/Unlink Tasks | ✅ | ✅ | ✅ | ❌ |
+| List Areas | ❌ | ✅ | ✅ | ✅ |
+| List Goals | ❌ | ✅ | ✅ | ❌ |
+| Move Task | ❌ | ✅ | ✅ | ❌ |
+| Set Goal Progress | ❌ | ✅ | ✅ | ❌ |
+| Daily Briefing | ❌ | ❌ | ✅ | ❌ |
+| Framework Scoring | ❌ | ❌ | ❌ | ✅ |
+| Data Export | ❌ | ❌ | ❌ | ✅ |
+| Habits | ❌ | ❌ | ❌ | ✅ |
+| Weekly Review | ❌ | ❌ | ❌ | ✅ |
 
-| Component | File |
-|-----------|------|
-| API routes | `/api/integrations/nodered/flows`, `/deploy`, `/status` |
-| License | Apache-2.0 (API boundary) |
+## Home Assistant Integration
 
-## A2A (Agent-to-Agent Protocol)
+**Custom Component** (`integrations/home-assistant/custom_components/meitheal/`):
+- Config flow: `config_flow.py`
+- Coordinator: `coordinator.py` (data update, HTTP client to Astro)
+- Entities: `todo.py` (TodoListEntity), `sensor.py`
+- Services: `services.yaml` (create_task, complete_task)
+- Device Triggers: `device_trigger.py`
+- Intents: `intents.py` + `custom_sentences/`
+- Diagnostics: `diagnostics.py`
+- Backup: `backup.py`
+- Repairs: `repairs.py`
+- Manifest: `integration_type: "hub"`, `quality_scale: "platinum"`
 
-| Component | File |
-|-----------|------|
-| Agent card | `/api/a2a/agent-card.ts` |
-| Message handler | `/api/a2a/message.ts` |
-| Task handler | `/api/a2a/tasks/[id].ts` |
-| Core handler | `integration-core/src/a2a-handler.ts` (379 lines) |
+**HA WebSocket**: 9 references — connection status, entity state reads
+**Ingress**: 336 references — deep embedding, fetch monkey-patch, CSP headers
+**Supervisor API**: 57 references — add-on lifecycle, info, discovery
 
-## Webhooks & Events
+## External Services
 
-| Component | File |
-|-----------|------|
-| Webhook emitter | `integration-core/src/webhook-emitter.ts` (181 lines) |
-| Webhook config | `integration-core/src/webhook-config.ts` (116 lines) |
-| SSE endpoint | `/api/sse.ts` |
-| Test endpoints | `/api/integrations/test-event.ts`, `/test-webhook.ts` |
+**Grocy** (`apps/web/src/domains/grocy/`):
+- Stock management, meal planning
+- API proxy through Meitheal
 
-## Vikunja Compatibility
+**CalDAV** (`apps/web/src/domains/calendar/`):
+- External calendar sync
+- Tested in settings controller
 
-| Component | File |
-|-----------|------|
-| Auth compat | `domains/integrations/vikunja-compat/auth.ts` |
-| HTTP compat | `domains/integrations/vikunja-compat/http.ts` |
-| Store | `domains/integrations/vikunja-compat/store.ts` |
-| V1 API routes | `/api/v1/tasks.ts`, `/projects/`, `/labels/`, `/users/` |
-| License | AGPL-3.0 only (cannot be commercially relicensed) |
+**n8n** (webhook integration):
+- Outbound webhooks for automation
+- Configured in settings
 
-## MCP & WebMCP
+---
 
-| Component | File |
-|-----------|------|
-| MCP endpoint | `/api/mcp.ts` |
-| Well-known | `public/.well-known/mcp.json`, `jsondoc.json` |
-
-## Export/Import
-
-| Format | Route |
-|--------|-------|
-| CSV | `/api/export/tasks.csv.ts` |
-| JSON | `/api/export/tasks.json.ts` |
-| iCalendar | `/api/export/tasks.ics.ts` |
-| SQLite backup | `/api/export/database.sqlite.ts` |
-| Settings JSON | `/api/export/settings.json.ts`, `/api/import/settings.ts` |
-
-## Offline/PWA
-
-| Component | File |
-|-----------|------|
-| Service worker | `public/sw.js` |
-| SW registration | `domains/offline/sw-register.ts` |
-| Offline store | `domains/offline/offline-store.ts` |
-| Sync engine | `domains/offline/sync-engine.ts` |
-| Connectivity | `domains/offline/connectivity.ts` |
-| Tab sync | `domains/offline/tab-sync.ts` |
+*Integration audit: 2026-03-20*

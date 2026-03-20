@@ -1,111 +1,161 @@
-# Codebase Concerns — Meitheal
+# Codebase Concerns
 
-> Last refreshed: 2026-03-20 (Phase 16 — Task Views Overhaul)
+**Analysis Date:** 2026-03-20
 
-## 🔴 Critical Concerns
+## DDD Compliance Audit
 
-### 1. Eisenhower Page Isolation
-**Files:** `pages/eisenhower.astro` (1425 lines), `lib/eisenhower-controller.ts` (654 lines)
-**Issue:** Eisenhower is the only task page that does NOT use UnifiedBar, page-shell-controller, or pageLifecycle. It has its own header, mobile tabs, triage overlay, review wizard, and drag-and-drop system — all standalone.
-**Impact:** Consistency violation across all UX heuristics. Breaking changes to shared infrastructure don't affect Eisenhower (hidden drift). No shared test coverage.
-**Remediation:** Adopt UnifiedBar + create eisenhower-registry + refactor controller to use `initPageShellNavigation`.
+### ✅ Strengths
 
-### 2. Zero Client-Side Controller Tests
-**Files:** All `*-controller.ts` files
-**Issue:** Vanilla JS controllers handle scroll spy, tab overflow, drag-and-drop, keyboard navigation, and more — all untested. Shell spec files test server-rendered output but not runtime behavior.
-**Impact:** Regressions in client-side logic go undetected until user reports.
-**Remediation:** Add controller unit tests or adopt a lightweight browser test framework.
+**Zero cross-context violations detected.** No packages import directly from `@domains/` (the in-app layer). No deep imports bypass public APIs. The 5 domain packages (`domain-auth`, `domain-tasks`, `domain-strategy`, `domain-observability`, `integration-core`) and 16 in-app domains have clean boundaries.
 
-### 3. Orphaned API Routes (20+)
-**Files:** See INTEGRATION-CHECK.md
-**Issue:** 20+ API route files have zero discovered frontend consumers. Many are feature stubs that were implemented server-side but never wired to UI.
-**Impact:** Dead code, maintenance burden, potential security surface.
-**Remediation:** Audit each route — wire to UI, remove, or document as external-only.
+### ⚠️ Concerns
 
-### ~~4. Orphaned `TaskViewTabs.astro`~~ ✅ Resolved
-**File:** `components/tasks/TaskViewTabs.astro`
-**Issue:** No pages import this component after Phase 16 moved view switching to UnifiedBar pills.
-**Resolution:** File was already deleted in Phase 16. Verified zero results from `find` command.
+**Controller Layer Lacks DDD Alignment:**
+- Issue: View controllers (`kanban-controller.ts`, `today-controller.ts`, etc.) live in `@lib/` flat namespace, not in a UI domain context
+- Files: `apps/web/src/lib/kanban-controller.ts`, `apps/web/src/lib/today-controller.ts`, etc.
+- Impact: New controller code doesn't get DDD-guided placement — "where does this go?" is answered by "somewhere in lib"
+- Fix approach: Create `apps/web/src/domains/ui/` or group controllers under `@lib/controllers/` with clear README boundaries
 
-## ⚠️ High Concerns
+**In-App Domain Inconsistency:**
+- Issue: Some domains have proper service/repository layers (`tasks/`, `search/`, `ha/`), others are single-file modules (`gamification/`, `pomodoro/`, `offline/`)
+- Files: `apps/web/src/domains/gamification/gamification-service.ts` (single file), `apps/web/src/domains/search/` (proper domain with catalog, registry, service)
+- Impact: DDD "domain" label applied inconsistently — some are true bounded contexts, others are just utility modules
+- Fix approach: Graduate mature single-file domains to proper structure, or reorganize thin ones as `@lib/` utilities
 
-### 5. Large Controller Files
-**Files:**
+**Missing Domain Events:**
+- Issue: Domain packages define events conceptually but there's no event bus implementation. Cross-domain coordination uses direct imports or REST calls
+- Files: `packages/domain-tasks/`, `packages/integration-core/`
+- Impact: No event-driven decoupling between task lifecycle and integrations (calendar sync, gamification, search index)
+- Fix approach: Introduce a lightweight event emitter in `integration-core` or use Astro's built-in module communication
 
-| Controller | Lines |
-|-----------|-------|
-| `task-modal-controller.ts` | 2522 |
-| `kanban-controller.ts` | 1657 |
-| `table-controller.ts` | 1012 |
-| `today-controller.ts` | 934 |
-| `habits-controller.ts` | 907 |
+---
 
-**Issue:** Single-file controllers handling multiple concerns (initialization, event handlers, UI updates, API calls, state management). Kanban was partially decomposed (3 sub-controllers extracted), but the main file is still large.
-**Impact:** Difficult to maintain, test, or modify individual features.
-**Remediation:** Continue decomposition pattern from kanban-controller to other large controllers.
+## Astro-First Architecture Audit
 
-### ~~6. Inline Styles in Upcoming~~ ✅ Resolved
-**File:** `pages/upcoming.astro`
-**Issue:** >200 lines of inline `style=` attributes on task items instead of CSS classes.
-**Resolution:** Replaced 30 inline styles with 20+ semantic CSS classes (`.task-item`, `.task-content`, `.day-card--*`, etc.). Only 4 dynamic inline styles remain (priority color, task color swatch). Added `prefers-reduced-motion` coverage.
+### ✅ Strengths
 
-### ~~7. Global CSS Leaks from Eisenhower~~ ✅ Resolved
-**File:** `pages/eisenhower.astro`
-**Issue:** Uses `<style is:global>` for `.tli--dragging`, `.quadrant__wip-warning`, triage/review overlays.
-**Resolution:** Verified these classes are appropriately global — they are JS-added classes and fixed-position overlays that require global scope. No `:global()` selector abuse found.
+- **Pure SSR mode** (`output: "server"`) — no client islands (`client:*` directives = 0)
+- **23 Astro pages**, 99 API routes — proper Astro routing
+- **No framework dependencies** — `integrations: []` in astro config, clean Astro
+- **`serve.mjs` ingress wrapper** — Astro-native HTTP handling
 
-### ~~8. Hardcoded scroll-margin-top~~ ✅ Partially Resolved
-**Files:** All pages with sections
-**Issue:** `scroll-margin-top: 88px` hardcoded everywhere. If unified bar height changes, all pages break.
-**Impact:** Fragile coupling between bar height and page layout.
-**Resolution:** `habits.astro`, `index.astro` migrated to `--unified-bar-height` CSS var. `eisenhower.astro` already used it. Remaining pages are low-priority.
+### ⚠️ Concerns
 
-### ~~9. Missing `prefers-reduced-motion`~~ ✅ Resolved
-**Files:** All pages with animations
-**Issue:** Section flash, collapse/expand, drag feedback animations have no reduced-motion alternative.
-**Resolution:** Added `@media (prefers-reduced-motion: reduce)` to `SignalBar.astro`, `tasks.astro` (popover, drag), `eisenhower.astro` (wip-pulse, triage, review overlays), `UnifiedBar.astro` (chevron, dropdown). `today.astro` already had comprehensive coverage.
+**Heavy Client-Side Controllers:**
+- Issue: 6 view controllers (5,176 lines total after decomposition) run as `<script>` blocks, not Astro components. All UI logic is client-side JavaScript, effectively an SPA inside Astro SSR
+- Files: `apps/web/src/lib/kanban-controller.ts` (592 lines), `apps/web/src/lib/today-controller.ts` (934 lines)
+- Impact: Astro's SSR strength (HTML-first, progressive enhancement) is underutilized. The entire UI is client-rendered
+- Fix approach: Gradually migrate read-only views to server-rendered Astro components with hydration. Keep interactive elements as scripts
 
-### ~~10. Title Switcher Discoverability~~ ✅ Resolved
-**File:** `unified-bar-controller.ts`
-**Issue:** Title text is clickable to show a page navigation dropdown, but there's no visual affordance.
-**Resolution:** Already has chevron icon, `cursor: pointer`, `aria-haspopup="true"`, hover bg change, and active border highlight. No further action needed.
+**No Astro Islands:**
+- Issue: Zero `client:load`, `client:visible`, `client:idle`, or `client:only` directives found. All interactivity is via global `<script>` tags
+- Files: All `.astro` pages
+- Impact: Missing Astro's partial hydration advantage — everything loads and hydrates at once
+- Fix approach: Identify read-only sections (stats panels, task lists) that can server-render, then use `client:visible` for interactive widgets
 
-## ⚠️ Medium Concerns
+**No Astro Content Collections:**
+- Issue: Static content (help docs, onboarding, KCS articles) is hardcoded in components
+- Impact: Missing chance to use Astro's content collection pipeline for docs, changelogs, help articles
+- Fix approach: Move help text and KCS content to `src/content/` collections
 
-### ~~11. Section Registries Not Abstracted~~ ✅ Resolved
-**Files:** 9 separate `*-registry.ts` files
-**Issue:** All followed same `{ id, label, icon, description }` pattern with no shared type.
-**Resolution:** Created `lib/section-registry.ts` with `SectionDescriptor<TId>` interface and `defineSections()` factory. Migrated 7 of 9 registries (calendar, habits, eisenhower, today, dashboard, table, upcoming). Settings registry intentionally keeps extra fields (structural typing still satisfies the base interface). `parent-page-registry` is a different pattern.
+---
 
-### 12. Triage Data Not Surfaced
-**File:** `eisenhower-controller.ts`
-**Issue:** Triage mode collects interest/engagement data (🤩 engaging, 😬 dreaded) but this data is never shown in any UI after triage completes.
-**Impact:** User effort wasted — they classify tasks but the classification disappears.
-**Remediation:** Surface engagement scores in task detail modal or strategic views.
+## HA Native Integration Audit
 
-### 13. No Active Task Indicator
-**Issue:** No unified bar element shows "what am I working on right now." The bar shows navigation and capture, but not current focus.
-**Impact:** Context loss when returning to the app after interruption.
-**Remediation:** Consider adding a persistent "currently working on" indicator.
+### ✅ Strengths
 
-### ~~14. `tasks.astro` Growing Large~~ ✅ Partially Resolved
-**File:** `pages/tasks.astro` (1737 lines)
-**Issue:** After absorbing kanban content, `tasks.astro` is the largest page.
-**Resolution:** `SignalBar.astro` extracted and shared across 4 pages. `FilterToolbar.astro` extraction remains as future optimization.
+- **Full custom component** with config flow, coordinator, sensors, todo entity, device triggers, intents, LLM API, MCP server, services, diagnostics, repairs, backup, icons
+- **21 LLM tools** in `llm_api.py` — rich voice/conversation surface including daily briefing, goals, areas, hierarchy
+- **HA Supervisor API** access with `hassio_role: manager`
+- **Ingress-first architecture** — 336 ingress references, deep HA embedding
+- **`ha-theme-bridge.ts`** syncs HA CSS vars
 
-## ✅ Resolved Concerns (Phase 16)
+### ⚠️ Concerns
 
-| # | Former Concern | Resolution |
-|---|---------------|------------|
-| 2 | Shell CSS Duplication (~600 lines) | Hero sections removed, replaced with signal bars. Duplication reduced significantly. |
-| 11 | Dual Navigation Bar on 3 Pages | `TaskViewTabs` removed from all pages; view switching merged into UnifiedBar as pill buttons. |
+**MCP Server Divergence:**
+- Issue: HA Python MCP server (`mcp_server.py`, 524 lines) and Astro TS MCP server (`api/mcp.ts`, 589 lines) define overlapping but different tool sets. Python has `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress` that TS lacks
+- Files: `integrations/home-assistant/custom_components/meitheal/mcp_server.py`, `apps/web/src/pages/api/mcp.ts`
+- Impact: External MCP clients (Antigravity, Claude) get different capabilities depending on connection path
+- Fix approach: Generate both from a shared tool registry, or make TS MCP the canonical source and have Python delegate
 
-## Technical Debt Summary
+**HA Entity Coverage Gap:**
+- Issue: Only 1 entity platform (`todo.py`). No sensors for task counts, habit streaks, or overdue counts. The `sensor.py` file exists but may be limited
+- Files: `integrations/home-assistant/custom_components/meitheal/sensor.py`, `integrations/home-assistant/custom_components/meitheal/todo.py`
+- Impact: HA dashboard cards, automations, and voice can't easily reference "how many tasks are overdue?" as entity states
+- Fix approach: Add sensor entities for `active_tasks`, `overdue_tasks`, `habit_streak`, `weekly_velocity`
 
-| Category | Items | Total Lines Affected |
-|----------|-------|---------------------|
-| Consistency gaps | 1 (Eisenhower) | ~2,100 |
-| Test gaps | 2 (controllers, eisenhower) | ~14,000 |
-| Code quality | 4 (large files, inline styles, globals, orphaned component) | ~5,500 |
-| Accessibility | 2 (reduced-motion, title affordance) | ~500 |
-| DX/Maintenance | 4 (orphaned routes, hardcoded values, no abstraction, no active indicator) | ~1,200 |
+**Intent Coverage Minimal:**
+- Issue: `intents.py` and `custom_sentences/` exist but likely cover only basic intents
+- Files: `integrations/home-assistant/custom_components/meitheal/intents.py`
+- Impact: Native HA voice ("Hey Google, what's on my task list?") may not work without rich intent handlers
+- Fix approach: Expand sentence triggers to cover the full LLM tool surface
+
+---
+
+## MCP / A2A / LLM Integration Audit
+
+### ✅ Strengths
+
+- **Three parallel AI integration surfaces:**
+  - HA LLM API (21 tools) — voice assistants, HA Conversation agents
+  - Astro MCP server (17 tools) — external AI clients via JSON-RPC
+  - A2A protocol handler (11 skills) — agent-to-agent communication
+- **`.well-known/mcp.json` discovery** — standards-compliant
+- **A2A Agent Card** with dynamic skill inclusion based on HA configuration
+- **`ai-context-service.ts`** + `ha-assist-service.ts` in `domains/ai/`
+
+### ⚠️ Concerns / Opportunities
+
+**A2A Skill Handlers Are Stubs:**
+- Issue: `a2a-handler.ts` defines skill types and routing but actual execution handlers aren't implemented. `extractSkillFromMessage()` routes by keyword matching but there's no handler registry executing the skills
+- Files: `packages/integration-core/src/a2a-handler.ts`
+- Impact: A2A clients can discover Meitheal's agent card but can't actually execute skills
+- Fix approach: Wire A2A skill handlers to the same internal API that MCP uses. Create a shared `ToolRegistry` that both MCP and A2A consume
+
+**MCP Protocol Version Behind:**
+- Issue: MCP server reports `protocolVersion: "2024-11-05"` — check if newer spec versions exist
+- Files: `apps/web/src/pages/api/mcp.ts:246`
+- Impact: Newer MCP clients may expect features from later protocol versions
+- Fix approach: Review MCP spec changelog and update if needed
+
+**No MCP Resources or Prompts:**
+- Issue: MCP server only exposes `tools`. No `resources` (task collections, habit templates) or `prompts` (task creation templates, daily briefing prompts) exposed
+- Files: `apps/web/src/pages/api/mcp.ts`
+- Impact: Missing MCP capability that would let AI clients browse task data natively without tool calls
+- Fix approach: Add `resources/list` handler exposing task lists, habit templates, and area trees as MCP resources
+
+**No Streaming / SSE for MCP or A2A:**
+- Issue: Both MCP and A2A use synchronous request/response. No SSE streaming for long operations (bulk imports, calendar sync)
+- Files: `apps/web/src/pages/api/mcp.ts`, `packages/integration-core/src/a2a-handler.ts`
+- Impact: Long-running operations block the response. Modern MCP clients expect streaming support
+- Fix approach: Add SSE transport option for MCP; implement A2A `tasks/sendSubscribe` for streaming updates
+
+**No Agent Orchestration Layer:**
+- Issue: Each AI surface (MCP, A2A, LLM) implements its own tool->API routing independently. No shared orchestration layer
+- Files: `apps/web/src/pages/api/mcp.ts` (inline switch), `integrations/home-assistant/custom_components/meitheal/llm_api.py` (class per tool)
+- Impact: Tool additions require changes in 3 places. Business logic duplicated across surfaces
+- Fix approach: Create `packages/integration-core/src/tool-registry.ts` as single source of truth. MCP, A2A, and LLM all consume from registry
+
+**Hierarchy Tools Missing from MCP TS:**
+- Issue: HA LLM has `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress` that the Astro MCP TS endpoint lacks entirely
+- Files: Compare `integrations/home-assistant/custom_components/meitheal/llm_api.py` vs `apps/web/src/pages/api/mcp.ts`
+- Impact: External AI clients can't manage areas/goals via MCP
+- Fix approach: Add missing tools to MCP TS, ideally via shared registry
+
+---
+
+## Test Coverage Gaps
+
+**No integration tests for MCP/A2A:**
+- Files: `apps/web/src/pages/api/mcp.ts`, `packages/integration-core/src/a2a-handler.ts`
+- Risk: Breaking changes to AI integration surfaces go undetected
+- Priority: Medium — critical integration surface with no test coverage
+
+**No E2E tests for ingress flow:**
+- Files: `apps/web/scripts/serve.mjs`, `apps/web/src/middleware.ts`
+- Risk: Ingress regressions only caught in Tier 2 devcontainer
+- Priority: Medium
+
+---
+
+*Concerns audit: 2026-03-20*
