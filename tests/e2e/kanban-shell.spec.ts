@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-test.describe("Kanban Shell", () => {
+test.describe("Tasks Shell (Kanban)", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
   test.beforeEach(async ({ page }) => {
-    await page.goto("/kanban")
+    await page.goto("/tasks")
     await page.waitForLoadState("networkidle")
   })
 
@@ -40,13 +40,20 @@ test.describe("Kanban Shell", () => {
     await expect(panel).toHaveClass(/hidden/)
   })
 
-  test("secondary view tabs preserve query string when switching routes", async ({ page }) => {
-    await page.goto("/kanban?status=active&priority=1")
+  test("view pills preserve query string when switching routes", async ({ page }) => {
+    await page.goto("/tasks?status=active&priority=1")
     await page.waitForLoadState("networkidle")
 
-    await page.locator('.task-view-tabs a[href="/calendar?status=active&priority=1"]').click()
+    await page.locator('.unified-bar__view-pill[href="/calendar?status=active&priority=1"]').click()
     await page.waitForLoadState("networkidle")
 
     await expect(page).toHaveURL(/\/calendar\?status=active&priority=1$/)
+  })
+
+  test("/kanban redirects to /tasks", async ({ page }) => {
+    const response = await page.goto("/kanban")
+    await page.waitForLoadState("networkidle")
+
+    await expect(page).toHaveURL(/\/tasks/)
   })
 })

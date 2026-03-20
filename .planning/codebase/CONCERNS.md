@@ -1,48 +1,49 @@
 # Codebase Concerns — Meitheal
 
-> Last refreshed: 2026-03-19
+> Last refreshed: 2026-03-20 (Phase 16 — Task Views Overhaul)
 
 ## 🔴 Critical Concerns
 
 ### 1. Eisenhower Page Isolation
-**Files:** `pages/eisenhower.astro` (1337 lines), `lib/eisenhower-controller.ts` (999 lines)
+**Files:** `pages/eisenhower.astro` (1425 lines), `lib/eisenhower-controller.ts` (654 lines)
 **Issue:** Eisenhower is the only task page that does NOT use UnifiedBar, page-shell-controller, or pageLifecycle. It has its own header, mobile tabs, triage overlay, review wizard, and drag-and-drop system — all standalone.
 **Impact:** Consistency violation across all UX heuristics. Breaking changes to shared infrastructure don't affect Eisenhower (hidden drift). No shared test coverage.
 **Remediation:** Adopt UnifiedBar + create eisenhower-registry + refactor controller to use `initPageShellNavigation`.
 
-### 2. Shell CSS Duplication (~600 lines)
-**Files:** `calendar.astro`, `upcoming.astro`, `table.astro`, `kanban.astro`
-**Issue:** Hero sections, shell grids, section intros, flow cards, animation keyframes are copy-pasted across 4+ pages. Each page has ~150 lines of identical structure CSS with only naming changes (`.calendar-hero__title` vs `.upcoming-hero__title`).
-**Impact:** Any shell style change requires editing 4+ files. Easy to introduce inconsistency.
-**Remediation:** Extract `PageShell.astro` or `shell.css` with shared hero/section/flow patterns.
-
-### 3. Zero Client-Side Controller Tests
+### 2. Zero Client-Side Controller Tests
 **Files:** All `*-controller.ts` files
 **Issue:** Vanilla JS controllers handle scroll spy, tab overflow, drag-and-drop, keyboard navigation, and more — all untested. Shell spec files test server-rendered output but not runtime behavior.
 **Impact:** Regressions in client-side logic go undetected until user reports.
 **Remediation:** Add controller unit tests or adopt a lightweight browser test framework.
 
-### 4. Orphaned API Routes (20+)
+### 3. Orphaned API Routes (20+)
 **Files:** See INTEGRATION-CHECK.md
 **Issue:** 20+ API route files have zero discovered frontend consumers. Many are feature stubs that were implemented server-side but never wired to UI.
 **Impact:** Dead code, maintenance burden, potential security surface.
 **Remediation:** Audit each route — wire to UI, remove, or document as external-only.
 
+### 4. Orphaned `TaskViewTabs.astro`
+**File:** `components/tasks/TaskViewTabs.astro`
+**Issue:** No pages import this component after Phase 16 moved view switching to UnifiedBar pills. The file still exists in the codebase.
+**Impact:** Dead code, confusion for future contributors.
+**Remediation:** Delete `TaskViewTabs.astro` (verify zero imports first).
+
 ## ⚠️ High Concerns
 
 ### 5. Large Controller Files
 **Files:**
+
 | Controller | Lines |
 |-----------|-------|
 | `task-modal-controller.ts` | 2522 |
-| `kanban-controller.ts` | 2063 |
-| `today-controller.ts` | 1548 |
-| `table-controller.ts` | 1352 |
-| `eisenhower-controller.ts` | 999 |
+| `kanban-controller.ts` | 1657 |
+| `table-controller.ts` | 1012 |
+| `today-controller.ts` | 934 |
+| `habits-controller.ts` | 907 |
 
-**Issue:** Single-file controllers handling multiple concerns (initialization, event handlers, UI updates, API calls, state management).
+**Issue:** Single-file controllers handling multiple concerns (initialization, event handlers, UI updates, API calls, state management). Kanban was partially decomposed (3 sub-controllers extracted), but the main file is still large.
 **Impact:** Difficult to maintain, test, or modify individual features.
-**Remediation:** Decompose into sub-controllers per concern.
+**Remediation:** Continue decomposition pattern from kanban-controller to other large controllers.
 
 ### 6. Inline Styles in Upcoming
 **File:** `pages/upcoming.astro`
@@ -76,35 +77,42 @@
 
 ## ⚠️ Medium Concerns
 
-### 11. Dual Navigation Bar on 3 Pages
-**Files:** `calendar.astro`, `kanban.astro`, `table.astro`
-**Issue:** These pages render both UnifiedBar (section tabs) AND TaskViewTabs (page switching). Two horizontal bars with similar appearance but different functions.
-**Impact:** Cognitive load, especially on mobile where both consume screen space.
-**Remediation:** Consider merging TaskViewTabs into UnifiedBar as a secondary row or dropdown.
-
-### 12. Section Registries Not Abstracted
-**Files:** 7 separate `*-registry.ts` files
+### 11. Section Registries Not Abstracted
+**Files:** 9 separate `*-registry.ts` files
 **Issue:** All follow the same `{ id, label }[]` pattern but each is independently maintained with no shared type or factory.
 **Impact:** Low, but a missed opportunity for type safety and pattern enforcement.
 **Remediation:** Create `lib/section-registry.ts` shared type + factory.
 
-### 13. Triage Data Not Surfaced
+### 12. Triage Data Not Surfaced
 **File:** `eisenhower-controller.ts`
 **Issue:** Triage mode collects interest/engagement data (🤩 engaging, 😬 dreaded) but this data is never shown in any UI after triage completes.
 **Impact:** User effort wasted — they classify tasks but the classification disappears.
 **Remediation:** Surface engagement scores in task detail modal or strategic views.
 
-### 14. No Active Task Indicator
+### 13. No Active Task Indicator
 **Issue:** No unified bar element shows "what am I working on right now." The bar shows navigation and capture, but not current focus.
 **Impact:** Context loss when returning to the app after interruption.
 **Remediation:** Consider adding a persistent "currently working on" indicator.
+
+### 14. `tasks.astro` Growing Large (1767 lines)
+**File:** `pages/tasks.astro`
+**Issue:** After absorbing kanban content, `tasks.astro` is now the largest page. Combines SSR data fetching, view pill generation, signal bar, filter toolbar, kanban board HTML, and 400+ lines of CSS.
+**Impact:** Harder to navigate and modify. Signal bar and filter toolbar patterns are duplicated across pages.
+**Remediation:** Extract `SignalBar.astro` and `FilterToolbar.astro` as shared components.
+
+## ✅ Resolved Concerns (Phase 16)
+
+| # | Former Concern | Resolution |
+|---|---------------|------------|
+| 2 | Shell CSS Duplication (~600 lines) | Hero sections removed, replaced with signal bars. Duplication reduced significantly. |
+| 11 | Dual Navigation Bar on 3 Pages | `TaskViewTabs` removed from all pages; view switching merged into UnifiedBar as pill buttons. |
 
 ## Technical Debt Summary
 
 | Category | Items | Total Lines Affected |
 |----------|-------|---------------------|
-| Consistency gaps | 2 (Eisenhower, CSS) | ~2,900 |
-| Test gaps | 3 (controllers, eisenhower, registries) | ~16,500 |
-| Code quality | 4 (large files, inline styles, globals) | ~6,000 |
+| Consistency gaps | 1 (Eisenhower) | ~2,100 |
+| Test gaps | 2 (controllers, eisenhower) | ~14,000 |
+| Code quality | 4 (large files, inline styles, globals, orphaned component) | ~5,500 |
 | Accessibility | 2 (reduced-motion, title affordance) | ~500 |
-| DX/Maintenance | 3 (orphaned routes, hardcoded values, no abstraction) | ~1,000 |
+| DX/Maintenance | 4 (orphaned routes, hardcoded values, no abstraction, no active indicator) | ~1,200 |

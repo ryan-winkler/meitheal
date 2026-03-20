@@ -1,6 +1,6 @@
 # Codebase Structure — Meitheal
 
-> Last refreshed: 2026-03-19
+> Last refreshed: 2026-03-20 (Phase 16 — Task Views Overhaul)
 
 ## Top-Level Layout
 
@@ -40,41 +40,51 @@ meitheal/
 
 ## apps/web/src/ — Primary Application
 
-### Pages (15 files, 11,406 lines total)
+### Pages (18 files, ~10,800 lines total)
 
 | File | Lines | Description |
 |------|-------|-------------|
-| `kanban.astro` | 1877 | Kanban board with lanes, drag-and-drop, grouping |
-| `today.astro` | 1410 | Daily task view with habits, stats, flow |
-| `eisenhower.astro` | 1337 | 2×2 urgency/importance matrix |
-| `habits.astro` | 1162 | Habit tracker with streaks |
-| `table.astro` | 1030 | Data grid with sort, filter, columns |
-| `calendar.astro` | 917 | Monthly calendar with HA events |
+| `tasks.astro` | 1767 | **Kanban board** — lanes, drag-and-drop, grouping (canonical `/tasks` route) |
+| `eisenhower.astro` | 1425 | 2×2 urgency/importance matrix (standalone shell) |
+| `today.astro` | 1297 | Daily task view with habits, stats, flow |
+| `habits.astro` | 1164 | Habit tracker with streaks |
 | `index.astro` | 883 | Dashboard overview |
-| `upcoming.astro` | 715 | Next 7 days task view |
+| `table.astro` | 787 | Data grid with sort, filter, columns |
+| `calendar.astro` | 678 | Monthly calendar with HA events |
 | `settings.astro` | 577 | Settings shell |
-| `gamification.astro` | 542 | XP, streaks, achievements |
+| `upcoming.astro` | 540 | Next 7 days task view |
+| `gamification.astro` | 544 | XP, streaks, achievements |
+| `planning.astro` | 444 | Strategic planning view |
+| `timeline.astro` | 426 | Timeline/Gantt view (renamed from gantt in Phase 16) |
 | `review.astro` | 393 | Weekly review |
-| `gantt.astro` | 391 | Timeline/Gantt view |
+| `progress.astro` | 122 | Progress dashboard |
+| `kanban.astro` | 17 | **301 redirect → /tasks** (Phase 16 route consolidation) |
 
-### Controllers (28 files, 16,528 lines total)
+### Controllers (~28 files)
 
 | File | Lines | Description |
 |------|-------|-------------|
 | `task-modal-controller.ts` | 2522 | Task detail/edit modal |
-| `kanban-controller.ts` | 2063 | Kanban board logic |
-| `today-controller.ts` | 1548 | Today page logic |
-| `table-controller.ts` | 1352 | Table view logic |
-| `eisenhower-controller.ts` | 999 | Eisenhower matrix logic (standalone) |
+| `kanban-controller.ts` | 1657 | Kanban board logic (decomposed in Phase 16) |
+| `table-controller.ts` | 1012 | Table view logic |
+| `today-controller.ts` | 934 | Today page logic |
 | `habits-controller.ts` | 907 | Habit tracking |
-| `page-shell-controller.ts` | 258 | Shared shell: tabs, scroll spy, overflow |
-| `unified-bar-controller.ts` | 186 | Bar: title, search, new task, tabs |
+| `settings-rules-controller.ts` | 757 | Settings rules |
+| `framework-wizard-controller.ts` | 659 | Framework wizard |
+| `eisenhower-controller.ts` | 654 | Eisenhower matrix logic (standalone) |
+| `page-shell-controller.ts` | ~258 | Shared shell: tabs, scroll spy, overflow |
+| `unified-bar-controller.ts` | ~186 | Bar: title, search, new task, view pills |
 
-### Components (65 files, 16,105 lines total)
+**Kanban sub-controllers (Phase 16 decomposition):**
+- `controllers/kanban-touch-drag.ts` — mobile drag-and-drop
+- `controllers/kanban-lane-panel.ts` — lane management panel
+- `controllers/kanban-quick-actions.ts` — quick actions popover
+
+### Components (68 files)
 
 Key directories:
-- `layout/` — UnifiedBar, Sidebar, SearchHub, TopNavigation
-- `tasks/` — TaskListItem, TaskDetailModal, NewTaskModal, TaskViewTabs, StrategicEvaluator
+- `layout/` — UnifiedBar, Sidebar, SearchHub, TopNavigation, ParentPageShell, SidebarHierarchyTree
+- `tasks/` — TaskListItem, TaskDetailModal, NewTaskModal, StrategicEvaluator, TaskViewTabs (orphaned)
 - `settings/` — 15 settings panel components
 - `ui/` — FilterToolbar, CardCustomizer, ColumnCustomizer, BotBadge
 - `ha/` — AskAssistModal, TypingIndicator
@@ -82,10 +92,26 @@ Key directories:
 - `pomodoro/` — PomodoroTimer
 - `pwa/` — PwaInstallBanner
 
+### Registries (9 files)
+
+| File | Description |
+|------|-------------|
+| `calendar-registry.ts` | Calendar section definitions |
+| `dashboard-registry.ts` | Dashboard section definitions |
+| `eisenhower-registry.ts` | Eisenhower section definitions |
+| `habits-registry.ts` | Habits section definitions |
+| `parent-page-registry.ts` | Cross-page navigation + subViews |
+| `settings-registry.ts` | Settings sections + search metadata |
+| `table-registry.ts` | Table section definitions |
+| `today-registry.ts` | Today section definitions |
+| `upcoming-registry.ts` | Upcoming section definitions |
+
+> **Note:** `kanban-registry.ts` was deleted in Phase 16 — kanban sections now live directly in `tasks.astro`.
+
 ### Domains (16 directories)
 
 | Domain | Key files | Purpose |
-|--------|-----------|---------|
+|--------|-----------|---------
 | `auth/` | `ingress-policy.ts`, `ingress.ts` | HA ingress auth |
 | `ha/` | `ha-connection.ts`, `ha-events.ts`, `ha-services.ts` | HA WebSocket bridge |
 | `tasks/` | `task-repository.ts`, `task-sync-service.ts` | Task persistence |
