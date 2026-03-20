@@ -40,36 +40,33 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     icon: "dashboard",
     matchExact: true,
   },
-  kanban: {
-    href: "/kanban",
-    i18nKey: "nav.kanban",
-    icon: "kanban",
-    matchExact: true,
-  },
-  table: { href: "/table", i18nKey: "nav.table", icon: "table" },
   today: { href: "/today", i18nKey: "nav.today", icon: "today" },
   upcoming: { href: "/upcoming", i18nKey: "nav.upcoming", icon: "upcoming" },
-  calendar: { href: "/calendar", i18nKey: "nav.calendar", icon: "calendar" },
-  gamification: { href: "/gamification", i18nKey: "nav.gamification", icon: "trophy" },
-  habits: { href: "/habits", i18nKey: "nav.habits", icon: "habit" },
-  projects: { href: "/projects", i18nKey: "nav.projects", icon: "folder" },
-  goals: { href: "/goals", i18nKey: "nav.goals", icon: "target" },
-  eisenhower: { href: "/eisenhower", i18nKey: "nav.eisenhower", icon: "eisenhower" },
+  tasks: {
+    href: "/tasks",
+    i18nKey: "nav.tasks",
+    icon: "kanban",
+  },
+  progress: {
+    href: "/progress",
+    i18nKey: "nav.progress",
+    icon: "trophy",
+  },
+  planning: {
+    href: "/planning",
+    i18nKey: "nav.planning",
+    icon: "eisenhower",
+  },
 };
 
 type NavKey = string;
 const DEFAULT_ORDER: NavKey[] = [
   "dashboard",
-  "kanban",
-  "table",
   "today",
   "upcoming",
-  "calendar",
-  "gamification",
-  "habits",
-  "projects",
-  "goals",
-  "eisenhower",
+  "tasks",
+  "progress",
+  "planning",
 ];
 
 interface CustomNavItem {
@@ -93,13 +90,11 @@ interface SidebarConfig {
 
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
-  kanban: true,
-  table: true,
   today: true,
   upcoming: true,
-  calendar: true,
-  gamification: true,
-  habits: true,
+  tasks: true,
+  progress: true,
+  planning: true,
 };
 
 /** Feature flags — hide gamification/habits if disabled */
@@ -183,10 +178,9 @@ const navItems = order
   .filter((key) => {
     if (sidebarConfig[key] === false) return false
     if (!(key in NAV_ITEMS)) return false
-    // Feature flag: hide gamification nav when disabled
-    if (key === "gamification" && !gamificationEnabled) return false
-    if (key === "habits" && !habitsEnabled) return false
-    if (key === "projects" && !hierarchyEnabled) return false
+    // Feature flag: hide progress parent page when all sub-features disabled
+    if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
+    if (key === "tasks" && !hierarchyEnabled) return false
     return true
   })
   .map((key) => {

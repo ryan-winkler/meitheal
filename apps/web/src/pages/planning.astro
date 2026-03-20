@@ -1,0 +1,102 @@
+---
+/**
+ * /planning — Parent page for Planning views (Eisenhower, Triage, RICE)
+ *
+ * Uses ParentPageShell for hash-based routing between sub-views.
+ * Each sub-view section uses data-parent-section for controller toggling.
+ *
+ * @domain navigation
+ * @phase 15 — Hierarchy Architecture Overhaul
+ */
+import Layout from "../layouts/Layout.astro"
+import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+---
+
+<Layout title={`Meitheal — ${t("nav.planning", locale)}`}>
+  <ParentPageShell pageId="planning">
+    <section data-parent-section="eisenhower" id="planning-section-eisenhower">
+      <div class="parent-page-placeholder">
+        <h2>Eisenhower Matrix</h2>
+        <p>Prioritise by urgency and importance — triage, classify, and commit</p>
+        <a href="/eisenhower" class="placeholder-link">Open legacy Eisenhower →</a>
+      </div>
+    </section>
+
+    <section data-parent-section="triage" id="planning-section-triage" hidden>
+      <div class="parent-page-placeholder">
+        <h2>Triage</h2>
+        <p>Classify incoming tasks quickly — effort, urgency, impact at a glance</p>
+        <span class="placeholder-badge">Coming Soon</span>
+      </div>
+    </section>
+
+    <section data-parent-section="rice" id="planning-section-rice" hidden>
+      <div class="parent-page-placeholder">
+        <h2>RICE Scoring</h2>
+        <p>Reach × Impact × Confidence ÷ Effort — data-driven prioritisation</p>
+        <span class="placeholder-badge">Coming Soon</span>
+      </div>
+    </section>
+  </ParentPageShell>
+</Layout>
+
+<style>
+  .parent-page-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 4rem 2rem;
+    text-align: center;
+    color: var(--text-muted);
+  }
+
+  .parent-page-placeholder h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .parent-page-placeholder p {
+    max-width: 36ch;
+    line-height: 1.5;
+  }
+
+  .placeholder-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    border-radius: var(--radius-sm, 6px);
+    text-decoration: none;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+
+  .placeholder-link:hover {
+    background: rgba(var(--accent-rgb), 0.15);
+    border-color: rgba(var(--accent-rgb), 0.35);
+  }
+
+  .placeholder-badge {
+    display: inline-flex;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    border-radius: 9999px;
+  }
+</style>
