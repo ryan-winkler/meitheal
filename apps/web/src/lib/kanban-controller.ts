@@ -316,7 +316,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       const cards = [
         ...container.querySelectorAll(".kanban-card:not(.dragging)"),
       ];
-      return cards.reduce(
+      return cards.reduce<{ offset: number; element: Element | null }>(
         (closest, child) => {
           const box = child.getBoundingClientRect();
           const offset = y - box.top - box.height / 2;
@@ -340,7 +340,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         let attempts = 0;
         function tryOpen() {
           if (typeof window.openTaskDetail === "function") {
-            window.openTaskDetail(id);
+            window.openTaskDetail(id!);
           } else if (attempts < 10) {
             attempts++;
             setTimeout(tryOpen, 50);
@@ -371,7 +371,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         let attempts = 0
         function tryOpen() {
           if (typeof window.openTaskDetail === "function") {
-            window.openTaskDetail(id)
+            window.openTaskDetail(id!)
           } else if (attempts < 10) {
             attempts++
             setTimeout(tryOpen, 50)
@@ -425,7 +425,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           }
 
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), {
+            const res = await fetch(buildTaskApiUrl(taskId!), {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ title: newTitle }),
@@ -576,7 +576,6 @@ export function initKanbanArea(__signal: AbortSignal): void {
                   const card = document.querySelector(`.kanban-card[data-id="${id}"]`) as HTMLElement | null;
                   if (card) {
                     card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
-                    card.style.opacity = "0";
                     card.style.transform = "scale(0.95)";
                     setTimeout(() => { card.remove(); if (typeof window.updateAllCounts === "function") window.updateAllCounts(); }, 200);
                   }
@@ -807,14 +806,15 @@ export function initKanbanArea(__signal: AbortSignal): void {
         if (!cards.length) return;
 
         if (!focusedCard || !document.contains(focusedCard)) {
-          focusedCard = cards[0];
+          focusedCard = cards[0] as HTMLElement ?? null;
         }
 
-        const currentCol = focusedCard.closest(".kanban-column");
+        const currentCol = focusedCard?.closest(".kanban-column");
+        if (!currentCol) return;
         const colCards = Array.from(
           currentCol.querySelectorAll(".kanban-card"),
-        );
-        const colIdx = colCards.indexOf(focusedCard);
+        ) as HTMLElement[];
+        const colIdx = colCards.indexOf(focusedCard!);
         const columns = Array.from(board.querySelectorAll(".kanban-column"));
         const colPos = columns.indexOf(currentCol);
 
@@ -833,17 +833,17 @@ export function initKanbanArea(__signal: AbortSignal): void {
             e.preventDefault();
             const nextCol = columns[colPos + 1] || columns[0];
             const nextColCards = nextCol?.querySelectorAll(".kanban-card");
-            nextCard = nextColCards[0] || null;
+            nextCard = nextColCards?.[0] as HTMLElement || null;
             break;
           case "ArrowLeft":
             e.preventDefault();
             const prevCol = columns[colPos - 1] || columns[columns.length - 1];
             const prevColCards = prevCol?.querySelectorAll(".kanban-card");
-            nextCard = prevColCards[0] || null;
+            nextCard = prevColCards?.[0] as HTMLElement || null;
             break;
           case "Enter":
             e.preventDefault();
-            const id = focusedCard.dataset.id;
+            const id = focusedCard?.dataset.id;
             if (id && typeof window.openTaskDetail === "function") {
               window.openTaskDetail(id);
             }
@@ -851,8 +851,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
         }
 
         if (nextCard) {
-          focusedCard.classList.remove("kb-focused");
-          focusedCard = nextCard;
+          focusedCard?.classList.remove("kb-focused");
+          focusedCard = nextCard as HTMLElement;
           focusedCard.classList.add("kb-focused");
           focusedCard.scrollIntoView({ block: "nearest" });
         }
@@ -866,13 +866,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
       board.addEventListener("focus", () => {
         const firstCard = board.querySelector(".kanban-card");
         if (firstCard) {
-          focusedCard = firstCard;
+          focusedCard = firstCard as HTMLElement;
           focusedCard.classList.add("kb-focused");
         }
       });
 
       board.addEventListener("blur", () => {
-        if (focusedCard) focusedCard.classList.remove("kb-focused");
+        if (focusedCard) focusedCard?.classList.remove("kb-focused");
       });
     })();
 
@@ -897,7 +897,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Let's implement a lighter standalone visibility check, OR import it.
         // Given we are in a module-like block:
         if (typeof window.__isTaskVisible === "function") {
-          return window.__isTaskVisible!(card, currentFilterState);
+          return (window.__isTaskVisible as any)?.(card, currentFilterState) ?? true;
         }
         return true;
       }
@@ -918,7 +918,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Apply visibility to all cards
         if (typeof window.__isTaskVisible === "function") {
           document.querySelectorAll(".kanban-card").forEach(card => {
-            if (window.__isTaskVisible!(card as HTMLElement, currentFilterState)) {
+            if ((window.__isTaskVisible as any)?.(card as HTMLElement, currentFilterState)) {
                (card as HTMLElement).style.display = "";
             } else {
                (card as HTMLElement).style.display = "none";
