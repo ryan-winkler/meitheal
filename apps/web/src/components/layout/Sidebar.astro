@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarNavList from "./SidebarNavList.astro";
+import SidebarAreaSwitcher from "./SidebarAreaSwitcher.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
@@ -261,6 +262,7 @@ const navItems = order
   <div class="sidebar-scroll">
     <SidebarNavList navItems={navItems} taskCounts={taskCounts} />
     {hierarchyEnabled && <SidebarHierarchyTree />}
+    <SidebarAreaSwitcher locale={locale} />
   </div>
 
   {gamificationEnabled && (
