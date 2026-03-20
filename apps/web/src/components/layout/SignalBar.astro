@@ -1,0 +1,85 @@
+---
+/**
+ * SignalBar — Compact status strip for page-level summary stats.
+ *
+ * Provides a consistent, reusable signal bar pattern with:
+ * - Semi-transparent background blending with the dark theme
+ * - Accepts any slot content (stats, badges, overdue counts)
+ * - Optional dismiss support via `.hidden` class (controlled by page JS)
+ *
+ * Usage:
+ *   <SignalBar>
+ *     <strong>31</strong> tasks across <strong>4</strong> lanes
+ *   </SignalBar>
+ *
+ *   <SignalBar id="kanban-signal-bar">
+ *     <strong>{count}</strong> tasks across <strong>{lanes}</strong> lanes
+ *   </SignalBar>
+ */
+
+interface Props {
+  /** Optional CSS id for JS targeting (e.g. toggle visibility) */
+  id?: string
+  /** Extra CSS classes (e.g. 'hidden' for initial hidden state) */
+  class?: string
+}
+
+const { id, class: extraClass } = Astro.props
+---
+
+<div class:list={["signal-bar", extraClass]} id={id}>
+  <div class="signal-bar__content">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .signal-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    max-height: 80px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .signal-bar {
+      transition: opacity 200ms ease, max-height 200ms ease, margin-bottom 200ms ease, padding-block 200ms ease, border-width 200ms ease;
+    }
+  }
+
+  .signal-bar.hidden {
+    opacity: 0;
+    max-height: 0;
+    margin-bottom: 0;
+    padding-block: 0;
+    border-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .signal-bar__content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .signal-bar :global(strong) {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .signal-bar :global(.summary-overdue) {
+    color: var(--danger);
+    font-weight: 600;
+  }
+</style>

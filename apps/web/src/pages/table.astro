@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
+import SignalBar from "../components/layout/SignalBar.astro";
 import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
@@ -113,9 +114,9 @@ const tableSignal =
   />
 
   <div id="table-shell" class="page-shell">
-    <!-- Signal bar (matches Kanban pattern) -->
-    <div class="table-signal-bar">
-      <span class="table-signal-bar__stat" id="task-summary">
+    <!-- Signal bar -->
+    <SignalBar>
+      <span id="task-summary">
         <strong>{counts.total}</strong> tasks · <strong>{counts.active}</strong> active
         {counts.overdue > 0 && (
           <Fragment>
@@ -123,7 +124,7 @@ const tableSignal =
           </Fragment>
         )}
       </span>
-    </div>
+    </SignalBar>
 
     {
       tasks.length === 0 && (
@@ -501,20 +502,7 @@ const tableSignal =
 </Layout>
 
 <style>
-  /* ── Signal bar (matches Kanban pattern) ── */
-  .table-signal-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .table-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+  /* Signal bar CSS now in SignalBar.astro */
   .table-filter-bar {
     display: flex;
     align-items: center;

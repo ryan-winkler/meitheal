@@ -563,7 +563,7 @@ const habitsBootstrap = serializeForScript({ habits })
     display: flex;
     flex-direction: column;
     gap: 16px;
-    scroll-margin-top: calc(56px + 20px);
+    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 20px);
   }
 
   .habits-shell__section--flash {

@@ -35,8 +35,8 @@ export function initUnifiedBarTitleSwitcher({
 
   function toggleDropdown(open?: boolean): void {
     isOpen = open ?? !isOpen
-    dropdown.classList.toggle("is-open", isOpen)
-    btn.setAttribute("aria-expanded", isOpen ? "true" : "false")
+    dropdown!.classList.toggle("is-open", isOpen)
+    btn!.setAttribute("aria-expanded", isOpen ? "true" : "false")
   }
 
   function closeDropdown(): void {
@@ -135,7 +135,7 @@ export function initUnifiedBarNewTaskButton({
         return
       }
 
-      showToast(fallbackMessage, "warning")
+      showToast(fallbackMessage, "error")
     })
   })
 }
@@ -155,7 +155,7 @@ export function initUnifiedBarTabOverflow(barId: string): void {
       tab.removeAttribute("tabindex")
     })
 
-    const containerWidth = tabsContainer.clientWidth
+    const containerWidth = tabsContainer!.clientWidth
     let usedWidth = 0
     let overflow = false
 

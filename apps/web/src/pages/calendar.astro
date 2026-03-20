@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
+import SignalBar from "../components/layout/SignalBar.astro";
 import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import {
   ensureSchema,
@@ -180,12 +181,12 @@ const calendarSignal =
   </UnifiedBar>
 
   <div id="calendar-shell" class="page-shell">
-    <!-- Signal bar (matches Kanban/Table pattern) -->
-    <div class="calendar-signal-bar">
-      <span class="calendar-signal-bar__stat" id="calendar-signal-summary">
+    <!-- Signal bar -->
+    <SignalBar>
+      <span id="calendar-signal-summary">
         <strong>{monthTotal}</strong> items across <strong>{scheduledDayCount}</strong> days · <strong>{monthHAEvents}</strong> HA events
       </span>
-    </div>
+    </SignalBar>
 
       <div class="calendar-controls">
         <a
@@ -306,20 +307,7 @@ const calendarSignal =
 </Layout>
 
 <style>
-  /* ── Signal bar (matches Kanban/Table pattern) ── */
-  .calendar-signal-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .calendar-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+  /* Signal bar CSS now in SignalBar.astro */
 
   /* Calendar-specific styles */
 

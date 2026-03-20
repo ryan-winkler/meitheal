@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
+import SignalBar from "../components/layout/SignalBar.astro";
 import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
@@ -200,13 +201,9 @@ const kanbanSignal =
 
   <div id="kanban-shell" class="page-shell">
     <!-- Stats signal bar (non-dismissable) -->
-    <div class="kanban-signal-bar" id="kanban-signal-bar">
-      <div class="kanban-signal-bar__content">
-        <span class="kanban-signal-bar__stat">
-          <strong>{kanbanTaskCount}</strong> tasks across <strong>{columns.length}</strong> lanes
-        </span>
-      </div>
-    </div>
+    <SignalBar id="kanban-signal-bar">
+      <strong>{kanbanTaskCount}</strong> tasks across <strong>{columns.length}</strong> lanes
+    </SignalBar>
 
     <!-- Filter toolbar — always visible -->
     <div class="kanban-filter-panel" id="kanban-filter-panel">
@@ -790,42 +787,7 @@ const kanbanSignal =
     padding: 16px 18px;
   }
 
-  /* ── Signal bar: compact dismissable status strip ── */
-  .kanban-signal-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-    max-height: 80px;
-    transition: opacity 200ms ease, max-height 200ms ease, margin-bottom 200ms ease, padding-block 200ms ease, border-width 200ms ease;
-  }
-  .kanban-signal-bar.hidden {
-    opacity: 0;
-    max-height: 0;
-    margin-bottom: 0;
-    padding-block: 0;
-    border-width: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .kanban-signal-bar__content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-    min-width: 0;
-  }
-  .kanban-signal-bar__stat strong {
-    color: var(--text-primary);
-    font-weight: 600;
-  }
+  /* Signal bar CSS now in SignalBar.astro */
   /* ── Toolbar right: Fields / Lanes toggles aligned right ── */
   .kanban-toolbar-right {
     display: flex;

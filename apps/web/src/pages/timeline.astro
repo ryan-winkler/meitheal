@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
+import SignalBar from "../components/layout/SignalBar.astro";
 import type { UnifiedBarViewTab } from "../components/layout/UnifiedBar.astro";
 import type { Locale } from "../lib/locale";
 import {
@@ -109,12 +110,10 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
     })()}
   />
 
-  <!-- Signal bar (matches Kanban/Table/Calendar pattern) -->
-  <div class="timeline-signal-bar">
-    <span class="timeline-signal-bar__stat">
-      <strong>{timelineTasks.length}</strong> tasks in timeline
-    </span>
-  </div>
+  <!-- Signal bar -->
+  <SignalBar>
+    <strong>{timelineTasks.length}</strong> tasks in timeline
+  </SignalBar>
 
   <div class="timeline-container">
     <div class="timeline-grid" style={`grid-template-columns: 250px repeat(${days.length}, 1fr);`}>
@@ -238,20 +237,7 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
 </Layout>
 
 <style>
-  /* ── Signal bar (matches Kanban/Table/Calendar pattern) ── */
-  .timeline-signal-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .timeline-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+  /* Signal bar CSS now in SignalBar.astro */
 
   .timeline-container {
     overflow-x: auto;
