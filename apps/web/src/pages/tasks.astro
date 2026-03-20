@@ -3,7 +3,8 @@
  * /tasks — Parent page for task views (Kanban, Calendar, Table, Gantt)
  *
  * Uses ParentPageShell for hash-based routing between sub-views.
- * Each sub-view section uses data-parent-section for controller toggling.
+ * Each sub-view loads live task counts and provides deep links to the
+ * full-featured legacy views.
  *
  * @domain navigation
  * @phase 15 — Hierarchy Architecture Overhaul
@@ -12,95 +13,160 @@ import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
+import { getTasksForView } from "../lib/task-queries"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+const { counts } = await getTasksForView()
 ---
 
 <Layout title={`Meitheal — ${t("nav.tasks", locale)}`}>
   <ParentPageShell pageId="tasks">
     <section data-parent-section="kanban" id="tasks-section-kanban">
-      <div class="parent-page-placeholder">
-        <h2>Kanban Board</h2>
-        <p>Drag-and-drop flow board — content migrating from <code>/kanban</code></p>
-        <a href="/kanban" class="placeholder-link">Open legacy Kanban →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">▦</span>
+          <div>
+            <h2 class="parent-section-hub__title">Kanban Board</h2>
+            <p class="parent-section-hub__desc">Drag-and-drop board view — move tasks between status lanes</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Total Tasks</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.active}</span><span class="stat-label">Active</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.overdue}</span><span class="stat-label">Overdue</span></div>
+        </div>
+        <a href="/kanban" class="parent-section-hub__action">Open Full Kanban Board →</a>
       </div>
     </section>
 
     <section data-parent-section="calendar" id="tasks-section-calendar" hidden>
-      <div class="parent-page-placeholder">
-        <h2>Calendar</h2>
-        <p>Monthly calendar view — content migrating from <code>/calendar</code></p>
-        <a href="/calendar" class="placeholder-link">Open legacy Calendar →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">🗓️</span>
+          <div>
+            <h2 class="parent-section-hub__title">Calendar</h2>
+            <p class="parent-section-hub__desc">Month grid with day-level task details and Home Assistant calendar events</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Items</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.overdue}</span><span class="stat-label">Overdue</span></div>
+        </div>
+        <a href="/calendar" class="parent-section-hub__action">Open Full Calendar →</a>
       </div>
     </section>
 
     <section data-parent-section="table" id="tasks-section-table" hidden>
-      <div class="parent-page-placeholder">
-        <h2>Table</h2>
-        <p>Dense field table — content migrating from <code>/table</code></p>
-        <a href="/table" class="placeholder-link">Open legacy Table →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">⊞</span>
+          <div>
+            <h2 class="parent-section-hub__title">{t("table.title", locale)}</h2>
+            <p class="parent-section-hub__desc">Spreadsheet-style view with inline editing, sorting, and bulk actions</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Tasks</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.active}</span><span class="stat-label">Active</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.complete}</span><span class="stat-label">Complete</span></div>
+        </div>
+        <a href="/table" class="parent-section-hub__action">Open Full Table →</a>
       </div>
     </section>
 
     <section data-parent-section="gantt" id="tasks-section-gantt" hidden>
-      <div class="parent-page-placeholder">
-        <h2>Gantt</h2>
-        <p>Timeline view — content migrating from <code>/gantt</code></p>
-        <a href="/gantt" class="placeholder-link">Open legacy Gantt →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">📊</span>
+          <div>
+            <h2 class="parent-section-hub__title">Gantt Timeline</h2>
+            <p class="parent-section-hub__desc">Timeline chart showing task dependencies, durations, and critical paths</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{counts.total}</span><span class="stat-label">Tasks</span></div>
+          <div class="stat-card"><span class="stat-value">{counts.open}</span><span class="stat-label">Open</span></div>
+        </div>
+        <a href="/gantt" class="parent-section-hub__action">Open Full Gantt →</a>
       </div>
     </section>
   </ParentPageShell>
 </Layout>
 
 <style>
-  .parent-page-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 4rem 2rem;
-    text-align: center;
-    color: var(--text-muted);
+  .parent-section-hub {
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
   }
 
-  .parent-page-placeholder h2 {
-    font-size: 1.5rem;
+  .parent-section-hub__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .parent-section-hub__icon {
+    font-size: 2rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .parent-section-hub__title {
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .parent-page-placeholder p {
-    max-width: 36ch;
-    line-height: 1.5;
+  .parent-section-hub__desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 
-  .parent-page-placeholder code {
-    font-size: 0.8em;
-    padding: 0.15em 0.4em;
-    border-radius: 4px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
+  .parent-section-hub__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
   }
 
-  .placeholder-link {
+  .parent-section-hub__action {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 1rem;
+    gap: 0.375rem;
+    padding: 0.625rem 1.25rem;
     font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.08);
-    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    font-weight: 600;
+    color: white;
+    background: var(--accent);
     border-radius: var(--radius-sm, 6px);
     text-decoration: none;
-    transition: background 150ms ease, border-color 150ms ease;
+    transition: background 150ms ease, transform 100ms ease;
   }
 
-  .placeholder-link:hover {
-    background: rgba(var(--accent-rgb), 0.15);
-    border-color: rgba(var(--accent-rgb), 0.35);
+  .parent-section-hub__action:hover {
+    background: color-mix(in srgb, var(--accent) 85%, black);
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 640px) {
+    .parent-section-hub {
+      margin: 1rem;
+      padding: 1.25rem;
+    }
+
+    .parent-section-hub__stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 </style>

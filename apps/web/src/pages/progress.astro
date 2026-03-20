@@ -3,7 +3,8 @@
  * /progress — Parent page for Progress & Growth (Routines, Goals, Achievements)
  *
  * Uses ParentPageShell for hash-based routing between sub-views.
- * Each sub-view section uses data-parent-section for controller toggling.
+ * Each sub-view loads live data from repositories and provides
+ * deep links to the full-featured legacy views.
  *
  * @domain navigation
  * @phase 15 — Hierarchy Architecture Overhaul
@@ -12,79 +13,172 @@ import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store"
+import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
+import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+let routineCount = 0
+let activeStreaks = 0
+let goalCount = 0
+let completedGoals = 0
+let totalPoints = 0
+
+try {
+  await ensureSchema()
+  const client = getPersistenceClient()
+  const templateRepo = new TemplateRepository(client)
+  const hierarchyRepo = new HierarchyRepository(client)
+
+  // Routines
+  const routines = await templateRepo.getRoutinesWithStats()
+  routineCount = routines.length
+  activeStreaks = routines.filter(r => r.currentStreak > 0).length
+
+  // Goals
+  const goals = await hierarchyRepo.findAllGoals()
+  goalCount = (goals as GoalRow[]).length
+  completedGoals = (goals as GoalRow[]).filter(g => g.status === "complete").length
+
+  // Gamification
+  try {
+    const { getStats } = await import("@domains/gamification")
+    const stats = await getStats()
+    totalPoints = stats.totalPoints ?? 0
+  } catch { /* gamification may not be available */ }
+} catch { /* DB not available */ }
 ---
 
 <Layout title={`Meitheal — ${t("nav.progress", locale)}`}>
   <ParentPageShell pageId="progress">
     <section data-parent-section="routines" id="progress-section-routines">
-      <div class="parent-page-placeholder">
-        <h2>Routines</h2>
-        <p>Daily and weekly routine templates with streak tracking and habit formation</p>
-        <a href="/habits" class="placeholder-link">Open legacy Habits →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">🔁</span>
+          <div>
+            <h2 class="parent-section-hub__title">Routines</h2>
+            <p class="parent-section-hub__desc">Daily and weekly routine templates with streak tracking and habit formation. Routines create real tasks that feed into your daily workflow.</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{routineCount}</span><span class="stat-label">Active Routines</span></div>
+          <div class="stat-card"><span class="stat-value">{activeStreaks}</span><span class="stat-label">Active Streaks</span></div>
+        </div>
+        <a href="/habits" class="parent-section-hub__action">Open Full Routines →</a>
       </div>
     </section>
 
     <section data-parent-section="goals" id="progress-section-goals" hidden>
-      <div class="parent-page-placeholder">
-        <h2>Goals</h2>
-        <p>Long-term pillars and objectives — no deadlines, all direction</p>
-        <a href="/goals" class="placeholder-link">Open legacy Goals →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">🎯</span>
+          <div>
+            <h2 class="parent-section-hub__title">Goals</h2>
+            <p class="parent-section-hub__desc">Long-term pillars and objectives — no deadlines, all direction. Link goals to projects and track progress toward outcomes.</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{goalCount}</span><span class="stat-label">Goals</span></div>
+          <div class="stat-card"><span class="stat-value">{completedGoals}</span><span class="stat-label">Completed</span></div>
+        </div>
+        <a href="/goals" class="parent-section-hub__action">Open Full Goals →</a>
       </div>
     </section>
 
     <section data-parent-section="achievements" id="progress-section-achievements" hidden>
-      <div class="parent-page-placeholder">
-        <h2>Achievements</h2>
-        <p>Streaks, XP, levels, and unlocked milestones — your progress dashboard</p>
-        <a href="/gamification" class="placeholder-link">Open legacy Gamification →</a>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">🏆</span>
+          <div>
+            <h2 class="parent-section-hub__title">Achievements</h2>
+            <p class="parent-section-hub__desc">Streaks, XP, levels, and unlocked milestones — your progress dashboard showing real accomplishments.</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{totalPoints}</span><span class="stat-label">Total XP</span></div>
+        </div>
+        <a href="/gamification" class="parent-section-hub__action">Open Full Achievements →</a>
       </div>
     </section>
   </ParentPageShell>
 </Layout>
 
 <style>
-  .parent-page-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 4rem 2rem;
-    text-align: center;
-    color: var(--text-muted);
+  .parent-section-hub {
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 12px);
   }
 
-  .parent-page-placeholder h2 {
-    font-size: 1.5rem;
+  .parent-section-hub__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .parent-section-hub__icon {
+    font-size: 2rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .parent-section-hub__title {
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .parent-page-placeholder p {
-    max-width: 36ch;
-    line-height: 1.5;
+  .parent-section-hub__desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 
-  .placeholder-link {
+  .parent-section-hub__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .parent-section-hub__action {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 1rem;
+    gap: 0.375rem;
+    padding: 0.625rem 1.25rem;
     font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.08);
-    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    font-weight: 600;
+    color: white;
+    background: var(--accent);
     border-radius: var(--radius-sm, 6px);
     text-decoration: none;
-    transition: background 150ms ease, border-color 150ms ease;
+    transition: background 150ms ease, transform 100ms ease;
   }
 
-  .placeholder-link:hover {
-    background: rgba(var(--accent-rgb), 0.15);
-    border-color: rgba(var(--accent-rgb), 0.35);
+  .parent-section-hub__action:hover {
+    background: color-mix(in srgb, var(--accent) 85%, black);
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 640px) {
+    .parent-section-hub {
+      margin: 1rem;
+      padding: 1.25rem;
+    }
+
+    .parent-section-hub__stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 </style>
