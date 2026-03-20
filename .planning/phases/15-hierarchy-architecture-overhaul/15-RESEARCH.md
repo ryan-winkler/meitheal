@@ -42,7 +42,7 @@ This phase refactors Meitheal's navigation from flat sidebar items into a three-
 |---------|---------|---------|--------------|
 | Astro SSR | 5.x (current) | Page framework | Already in use, hash routing proven via Settings |
 | UnifiedBar.astro | current | Tab bar component | Proven in Settings + 8 shell rollout phases |
-| Frappe Gantt | latest | Gantt chart visualization | Vanilla JS, SVG, MIT, lightweight, rich API, no framework deps |
+| Custom Gantt (`gantt.astro`) | current | Gantt chart visualization | **Already built** — pure Astro SSR + CSS Grid, zero external deps, uses design tokens |
 | pageLifecycle | current | Controller lifecycle | Already standard across all shell rollout pages |
 
 ### Supporting
@@ -52,17 +52,31 @@ This phase refactors Meitheal's navigation from flat sidebar items into a three-
 | RiceBadge.astro | current | RICE score display | Task cards and detail views |
 | settings-registry.ts | current | Section metadata pattern | Extend for parent page registries |
 
+### Existing Gantt Analysis
+The Gantt view at `apps/web/src/pages/gantt.astro` (392 lines) is already a custom implementation:
+- **Rendering:** Pure CSS Grid with server-calculated column positions
+- **Data source:** `TaskRepository.getGanttTasks()` queries
+- **Features:** Epic grouping, parent/child hierarchy (3 levels), progress bars, today highlight, weekend shading
+- **Gaps:** No drag-and-drop, no dependency arrows, no zoom/view-mode switching, no client-side interactivity beyond click-to-open
+- **Theming:** Already uses Meitheal design tokens (`--accent`, `--bg-card`, `--border`)
+
+**Phase 15 Gantt work:** Evolve the existing custom implementation with modular, extensible enhancements — NOT replace it with a third-party library. This keeps us license-clean (AGPL-3.0 + Commercial dual-license) and Astro-native.
+
+### Gantt Enhancement Roadmap (Modular)
+1. Extract `gantt.astro` inline logic into `lib/gantt-controller.ts` (controller pattern)
+2. Add client-side drag-and-drop for date adjustment (vanilla JS, no deps)
+3. Add view mode switching (Day/Week/Month) via controller
+4. Add dependency arrows (SVG overlay, since CSS Grid can't draw lines)
+5. Each enhancement is a standalone module importable by the Gantt component
+
 ### Alternatives Considered
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| Frappe Gantt | DHTMLX Gantt | More features but commercial license, much heavier |
-| Frappe Gantt | jsGanttImproved | Lighter but less maintained, fewer events |
-| Custom Gantt | Any library | Never — Gantt charts are deceptively complex (date math, SVG, zoom, drag) |
+| Custom Gantt (evolve) | Frappe Gantt (MIT) | Has open issues/PRs, adds external dep, license needs careful review against commercial dual-license |
+| Custom Gantt (evolve) | DHTMLX Gantt | Commercial license incompatible with AGPL + Commercial dual-license |
+| Custom Gantt (evolve) | jsGanttImproved | Unmaintained, poor a11y, not Astro-native |
 
-**Installation:**
-```bash
-cd apps/web && pnpm add frappe-gantt
-```
+**Decision:** Keep and evolve custom Gantt. No new dependencies.
 
 ## Architecture Patterns
 
