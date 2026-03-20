@@ -1,9 +1,10 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
-import { escapeHtml, sanitizeCssColor } from "@lib/safe-html";
+import { escapeHtml } from "@lib/safe-html";
 import { initLaneManagementPanel } from "@lib/controllers/kanban-lanes";
 import { initTouchDrag } from "@lib/controllers/kanban-touch-drag";
+import { initQuickActions } from "@lib/controllers/kanban-quick-actions";
 
 const log = createClientLogger("kanban");
 /**
@@ -519,364 +520,10 @@ export function initKanbanArea(__signal: AbortSignal): void {
       });
     });
 
-    // =============================================
-    // Quick Actions: Shared Popover Utility (P4-1)
-    // =============================================
-    const _qa = (() => {
-      let activePopover: HTMLElement | null = null;
-      let _scrollCleanup: (() => void) | null = null;
+    // Quick actions: popover, child task, assign user, set color
+    // Extracted to @lib/controllers/kanban-quick-actions.ts
+    const _qa = initQuickActions(buildTaskApiUrl, __signal);
 
-      /** Close any open quick-action popover with exit animation (P3-5) */
-      function close() {
-        if (!activePopover) return;
-        const el = activePopover;
-        activePopover = null;
-        el.classList.add("popover-exiting");
-        setTimeout(() => el.remove(), 150);
-        if (_scrollCleanup) { _scrollCleanup(); _scrollCleanup = null; }
-      }
-
-      /** Reusable toast with fallback (P2-6) */
-      function toast(msg: string, type = "success") {
-        if (window.showToast) window.showToast(msg, type);
-        else log.info(`${type}: ${msg}`);
-      }
-
-      /**
-       * Open a popover near a trigger button (P1-4 scroll-aware, P3-5 animation)
-       * @param {HTMLElement} btn - trigger button
-       * @param {HTMLElement} content - popover content element
-       * @param {string} title - popover header text
-       * @returns {HTMLElement} the popover element
-       */
-      function open(btn: HTMLElement, content: HTMLElement, title: string) {
-        close();
-        const popover = document.createElement("div");
-        popover.className = "quick-action-popover";
-        popover.setAttribute("role", "dialog");
-        popover.setAttribute("aria-label", title);
-
-        const header = document.createElement("div");
-        header.className = "popover-title";
-        header.id = "qa-popover-title-" + Date.now();
-        header.textContent = title;
-        popover.setAttribute("aria-labelledby", header.id);
-        popover.appendChild(header);
-        popover.appendChild(content);
-
-        // Position near button
-        const rect = btn.getBoundingClientRect();
-        popover.style.position = "fixed";
-        popover.style.top = `${rect.bottom + 4}px`;
-        
-        // P6-1: Use CSS logical properties for popover positioning
-        const INLINE_START_PROP = "insetInlineStart" in popover.style ? "insetInlineStart" : "left";
-        popover.style[INLINE_START_PROP] = `${rect.left}px`;
-        popover.style.zIndex = "9999";
-        document.body.appendChild(popover);
-        activePopover = popover;
-
-        // Keep in viewport (P1-4)
-        requestAnimationFrame(() => {
-          const popRect = popover.getBoundingClientRect();
-          if (popRect.right > window.innerWidth) {
-            popover.style[INLINE_START_PROP] = `${window.innerWidth - popRect.width - 8}px`;
-          }
-          if (popRect.bottom > window.innerHeight) {
-            popover.style.top = `${rect.top - popRect.height - 4}px`;
-          }
-        });
-
-        // Close on scroll (P1-4)
-        const board = document.querySelector(".kanban-scroll-area, .kanban-board");
-        const onScroll = () => close();
-        board?.addEventListener("scroll", onScroll, { once: true, signal: __signal });
-        window.addEventListener("scroll", onScroll, { once: true, signal: __signal });
-        _scrollCleanup = () => {
-          board?.removeEventListener("scroll", onScroll);
-          window.removeEventListener("scroll", onScroll);
-        };
-
-        // Focus first interactive element (P1-1)
-        requestAnimationFrame(() => {
-          const first = popover.querySelector("button, [tabindex]");
-          if (first) (first as HTMLElement).focus();
-        });
-
-        return popover;
-      }
-
-      // P0-3: Single consolidated document listener for all popovers
-      document.addEventListener("click", (e) => {
-        if (activePopover && !activePopover.contains(e.target as Node) &&
-            !(e.target as HTMLElement)?.closest(".card-assign-btn, .card-color-btn")) {
-          close();
-        }
-      }, { signal: __signal });
-      document.addEventListener("keydown", (e) => {
-        if (!activePopover) return;
-        if (e.key === "Escape") { close(); return; }
-        // Arrow key navigation within popover items (P1-1)
-        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          e.preventDefault();
-          const items = [...activePopover.querySelectorAll("button.popover-item, button.color-swatch")];
-          if (!items.length) return;
-          const idx = items.indexOf(document.activeElement);
-          const next = e.key === "ArrowDown"
-            ? items[(idx + 1) % items.length]
-            : items[(idx - 1 + items.length) % items.length];
-          next?.focus();
-        }
-      }, { signal: __signal });
-
-      // P2-4: Cleanup listeners on Astro navigation
-      document.addEventListener("astro:before-swap", () => close(), { once: true, signal: __signal });
-
-      return { close, toast, open };
-    })();
-
-    // =============================================
-    // Quick Action: Add Child Task (P1-3, P1-6, P3-6)
-    // =============================================
-    document.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const parentId = btn.dataset.id;
-        const parentTitle = btn.dataset.title || "Task";
-        const parentPriority = btn.dataset.priority || "3";
-        if (!parentId) return;
-
-        const card = btn.closest(".kanban-card") as HTMLElement | null;
-        const areaId = card?.dataset.area || "";
-
-        btn.disabled = true;
-        btn.classList.add("btn-loading");
-        try {
-          const res = await fetch("/api/tasks", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: `${parentTitle.slice(0, 80)} — Subtask`,
-              parent_id: parentId,
-              status: "pending",
-              priority: Number(parentPriority),
-              area_id: areaId || undefined,
-              task_type: "task",
-            }),
-          });
-          if (res.ok) {
-            _qa.toast("Child task created", "success");
-            // P1-6: Refresh to show new card (DOM insertion would require full card template)
-            const scrollLeft = document.querySelector(".kanban-scroll-area")?.scrollLeft || 0;
-            sessionStorage.setItem("meitheal-kanban-scroll", String(scrollLeft));
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-child-created" } }));
-          } else {
-            _qa.toast("Failed to create child task", "error");
-          }
-        } catch (err) {
-          log.warn("Add child failed", err);
-          _qa.toast("Failed to create child task", "error");
-        } finally {
-          btn.disabled = false;
-          btn.classList.remove("btn-loading");
-        }
-      });
-    });
-
-    // Restore scroll position after child task reload (P1-6)
-    const savedScroll = sessionStorage.getItem("meitheal-kanban-scroll");
-    if (savedScroll) {
-      sessionStorage.removeItem("meitheal-kanban-scroll");
-      requestAnimationFrame(() => {
-        const scrollArea = document.querySelector(".kanban-scroll-area");
-        if (scrollArea) scrollArea.scrollLeft = Number(savedScroll);
-      });
-    }
-
-    // =============================================
-    // Quick Action: Assign User (P1-5 skeleton, P2-7 colors, P3-4 optimistic)
-    // =============================================
-    document.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-
-        const taskId = btn.dataset.id;
-        const currentAssigned = btn.dataset.assigned || "";
-        if (!taskId) return;
-
-        // P1-5: Show popover immediately with loading skeleton
-        const content = document.createElement("div");
-        content.innerHTML = `
-          <div class="popover-item skeleton" style="height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite"></div>
-          <div class="popover-item skeleton" style="height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite;animation-delay:0.3s"></div>
-        `;
-        const popover = _qa.open(btn, content, "Assign User");
-
-        // Fetch users
-        let users = [];
-        try {
-          const res = await fetch("/api/users");
-          if (res.ok) {
-            const data = await res.json();
-            users = data.users || [];
-          }
-        } catch { /* fallback to empty */ }
-
-        // Replace skeleton with real content
-        if (!popover.parentNode) return; // popover was closed during fetch
-        content.innerHTML = "";
-
-        // Unassign option
-        const unassignItem = document.createElement("button");
-        unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "");
-        unassignItem.setAttribute("role", "menuitem");
-        unassignItem.textContent = "∅ Unassigned";
-        unassignItem.addEventListener("click", async () => {
-          // P3-4: Optimistic update
-          btn.dataset.assigned = "";
-          const card = btn.closest(".kanban-card");
-          if (card) card.dataset.assigned = "";
-          _qa.close();
-          try {
-            const res = await fetch(buildTaskApiUrl(taskId), {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ assigned_to: null }),
-            });
-            if (res.ok) _qa.toast("Unassigned", "success");
-            else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error"); }
-          } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error"); }
-        });
-        content.appendChild(unassignItem);
-
-        // User list with colored dots (P2-7)
-        users.forEach((user: any) => {
-          const userId = user.id || user.name;
-          const item = document.createElement("button");
-          item.className = "popover-item" + (currentAssigned === userId ? " active" : "");
-          item.setAttribute("role", "menuitem");
-          // P2-7: Colored dot for user recognition
-          const dot = user.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle"></span>` : "👤 ";
-          item.innerHTML = `${dot}${escapeHtml(user.name || user.id)}`;
-          item.addEventListener("click", async () => {
-            // P3-4: Optimistic update
-            btn.dataset.assigned = userId;
-            const card = btn.closest(".kanban-card");
-            if (card) card.dataset.assigned = userId;
-            _qa.close();
-            try {
-              const res = await fetch(buildTaskApiUrl(taskId), {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ assigned_to: userId }),
-              });
-              if (res.ok) _qa.toast(`Assigned to ${(user.name || userId).replace(/^(ha_|custom_)/, "")}`, "success");
-              else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error"); }
-            } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error"); }
-          });
-          content.appendChild(item);
-        });
-
-        if (!users.length) {
-          const empty = document.createElement("div");
-          empty.className = "popover-item";
-          empty.style.color = "var(--text-muted)";
-          empty.style.fontStyle = "italic";
-          empty.textContent = "No users configured";
-          content.appendChild(empty);
-        }
-      });
-    });
-
-    // =============================================
-    // Quick Action: Set Color (P1-2 active indicator, P3-4 optimistic)
-    // =============================================
-    (() => {
-      const COLOR_SWATCHES = [
-        { color: "#ef4444", label: "Red" },
-        { color: "#f97316", label: "Orange" },
-        { color: "#eab308", label: "Yellow" },
-        { color: "#22c55e", label: "Green" },
-        { color: "#3b82f6", label: "Blue" },
-        { color: "#8b5cf6", label: "Purple" },
-        { color: "#ec4899", label: "Pink" },
-        { color: "#6b7280", label: "Gray" },
-      ];
-
-      document.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-
-          const taskId = btn.dataset.id;
-          if (!taskId) return;
-
-          const card = btn.closest(".kanban-card");
-          const currentColor = btn.dataset.color || "";
-
-          const content = document.createElement("div");
-
-          const grid = document.createElement("div");
-          grid.className = "color-swatch-grid";
-          grid.setAttribute("role", "radiogroup");
-          grid.setAttribute("aria-label", "Color options");
-
-          COLOR_SWATCHES.forEach(({ color, label }) => {
-            const swatch = document.createElement("button");
-            swatch.className = "color-swatch";
-            // P1-2: Active color indicator
-            if (currentColor && currentColor.toLowerCase() === color.toLowerCase()) {
-              swatch.classList.add("swatch-active");
-            }
-            swatch.style.background = color;
-            swatch.title = label;
-            swatch.setAttribute("role", "radio");
-            swatch.setAttribute("aria-checked", currentColor === color ? "true" : "false");
-            swatch.setAttribute("aria-label", `Set color: ${label}`);
-            swatch.addEventListener("click", async () => {
-              // P3-4: Optimistic UI
-              if (card) card.style.borderLeft = `5px solid ${color}`;
-              btn.dataset.color = color;
-              _qa.close();
-              try {
-                const res = await fetch(buildTaskApiUrl(taskId), {
-                  method: "PUT",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ color }),
-                });
-                if (res.ok) _qa.toast("Color updated", "success");
-                else { if (card) card.style.borderLeft = currentColor ? `5px solid ${currentColor}` : ""; _qa.toast("Failed to set color", "error"); }
-              } catch { if (card) card.style.borderLeft = currentColor ? `5px solid ${currentColor}` : ""; _qa.toast("Failed to set color", "error"); }
-            });
-            grid.appendChild(swatch);
-          });
-
-          content.appendChild(grid);
-
-          // Clear color button
-          const clearBtn = document.createElement("button");
-          clearBtn.className = "popover-item clear-color-btn";
-          clearBtn.setAttribute("role", "menuitem");
-          clearBtn.textContent = "✕ Clear color";
-          clearBtn.addEventListener("click", async () => {
-            if (card) card.style.borderLeft = "";
-            btn.dataset.color = "";
-            _qa.close();
-            try {
-              const res = await fetch(buildTaskApiUrl(taskId), {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ color: null }),
-              });
-              if (res.ok) _qa.toast("Color cleared", "success");
-              else _qa.toast("Failed to clear color", "error");
-            } catch { _qa.toast("Failed to clear color", "error"); }
-          });
-          content.appendChild(clearBtn);
-
-          _qa.open(btn, content, "Card Color");
-        });
-      });
-    })();
 
     // T-1903: Click anywhere on kanban card is natively handled by Layout.astro delegated click listener.
 
@@ -1313,16 +960,16 @@ export function initKanbanArea(__signal: AbortSignal): void {
       }
 
       // Group-by implementation
-      async function applyGroupBy(mode) {
+      async function applyGroupBy(mode: string) {
         localStorage.setItem("meitheal-kanban-group-by", mode);
 
-        let areaTitleMap = {};
+        let areaTitleMap: Record<string, string> = {};
         if (mode === "area") {
           try {
             const res = await fetch("/api/areas");
             if (res.ok) {
               const data = await res.json();
-              (data.areas || []).forEach(b => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.name}`; });
+              (data.areas || []).forEach((b: any) => { areaTitleMap[b.id] = `${b.icon || '📋'} ${b.name}`; });
             }
           } catch { /* use raw IDs as fallback */ }
           areaTitleMap["default"] = "📋 Default";
@@ -1357,12 +1004,12 @@ export function initKanbanArea(__signal: AbortSignal): void {
           cardsContainer
             .querySelectorAll(".swimlane-group:not(.dynamic-group)")
             .forEach((g) => {
-              g.style.display = "none";
+              (g as HTMLElement).style.display = "none";
             });
         });
 
         if (mode === "none") {
-          window.updateAllCounts();
+          window.updateAllCounts?.();
           return;
         }
 
@@ -1371,7 +1018,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           document.querySelectorAll(".kanban-column").forEach((col) => {
             const cardsContainer = col.querySelector(".kanban-cards");
             if (!cardsContainer) return;
-            cardsContainer.querySelectorAll(".flat-card").forEach((card) => {
+             cardsContainer.querySelectorAll<HTMLElement>(".flat-card").forEach((card) => {
               const type = card.dataset.taskType || "task";
               const swimlane = cardsContainer.querySelector(
                 `.swimlane-group[data-swimlane-type="${type}"] .swimlane-cards`,
@@ -1385,11 +1032,11 @@ export function initKanbanArea(__signal: AbortSignal): void {
             cardsContainer
               .querySelectorAll(".swimlane-group:not(.dynamic-group)")
               .forEach((group) => {
-                const groupType = group.dataset.swimlaneType;
-                group.style.display = ""; // Show all type swimlanes — visibility filtering handled by isTaskVisible
+                const groupType = (group as HTMLElement).dataset.swimlaneType;
+                (group as HTMLElement).style.display = ""; // Show all type swimlanes — visibility filtering handled by isTaskVisible
                 const countEl = group.querySelector(".swimlane-count");
                 const cards = group.querySelectorAll(".kanban-card");
-                if (countEl) countEl.textContent = Array.from(cards).filter(window.isCardVisible).length;
+                if (countEl) countEl.textContent = String(Array.from(cards).filter(c => window.isCardVisible?.(c as HTMLElement) ?? true).length);
               });
           });
         } else if (mode === "area" || mode === "priority") {
@@ -1430,9 +1077,9 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
             // Collect unique values
             const groups = new Map();
-            flatCards.forEach((card) => {
+             flatCards.forEach((card) => {
               const val =
-                card.dataset[dataAttr] ||
+                (card as HTMLElement).dataset[dataAttr] ||
                 (mode === "priority" ? "3" : "default");
               if (!groups.has(val)) groups.set(val, []);
               groups.get(val).push(card);
@@ -1450,13 +1097,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
               group.className = "swimlane-group dynamic-group";
               group.dataset.swimlaneType = key;
 
-              const accentColor = colorMap[key] || defaultAccent;
+              const accentColor = (colorMap as any)[key] || defaultAccent;
               group.style.borderTop = `3px solid ${accentColor}`;
 
               const header = document.createElement("div");
               header.className = "swimlane-header";
               const label =
-                icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel);
+                (icons as any)[key] || (mode === "area" ? ((areaTitleMap as any)[key] || `📋 ${key}`) : defaultLabel);
               const toggleSpan = document.createElement("span");
               toggleSpan.className = "swimlane-toggle";
               toggleSpan.textContent = "▼";
@@ -1471,7 +1118,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
               labelSpan.textContent = label;
               const countSpan = document.createElement("span");
               countSpan.className = "swimlane-count";
-              countSpan.textContent = String(cards.filter(window.isCardVisible).length);
+              countSpan.textContent = String(cards.filter((card: any) => window.isCardVisible?.(card) ?? true).length);
               header.append(toggleSpan, dotSpan, labelSpan, countSpan);
 
               // Collapse toggle — matches static swimlane CSS class pattern
@@ -1480,7 +1127,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
               const swimlaneCards = document.createElement("div");
               swimlaneCards.className = "swimlane-cards";
-              cards.forEach((card) => {
+              cards.forEach((card: any) => {
                 card.classList.remove("flat-card");
                 card.classList.add("grouped-card");
                 swimlaneCards.appendChild(card);
@@ -1509,7 +1156,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         if (!group) return;
         const cards = group.querySelector(".swimlane-cards");
         const toggle = header.querySelector(".swimlane-toggle");
-        const type = header.dataset.type || "unknown";
+        const type = (header as HTMLElement).dataset.type || "unknown";
         const storageKey = `meitheal-swimlane-${type}`;
 
         // Restore saved collapse state
@@ -1576,7 +1223,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         const users = data.users || [];
 
         // Render user pills dynamically
-        users.forEach((u) => {
+        users.forEach((u: any) => {
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "user-filter-btn";
@@ -1614,14 +1261,14 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
       // Apply filter
       function applyUserFilter() {
-        const activeBtn = container.querySelector(".filter-toolbar__user-btn.active");
+        const activeBtn = container!.querySelector(".filter-toolbar__user-btn.active") as HTMLElement | null;
         const userId = activeBtn?.dataset.user || "all";
         localStorage.setItem("meitheal-kanban-user-filter", userId);
 
         document
           .querySelectorAll(".kanban-card[data-assigned]")
           .forEach((el) => {
-            const card = el;
+            const card = el as HTMLElement;
             const assigned = card.dataset.assigned || "";
 
             if (userId === "all") {
@@ -1633,7 +1280,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
             }
           });
 
-        window.updateAllCounts()
+        window.updateAllCounts?.()
       }
 
       // Click handlers

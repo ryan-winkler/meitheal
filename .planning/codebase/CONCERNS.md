@@ -57,23 +57,21 @@
 **Impact:** Unintended style changes on other pages if class names collide.
 **Remediation:** Use scoped styles or page-specific class prefixes.
 
-### 8. Hardcoded scroll-margin-top
+### ~~8. Hardcoded scroll-margin-top~~ ✅ Partially Resolved
 **Files:** All pages with sections
 **Issue:** `scroll-margin-top: 88px` hardcoded everywhere. If unified bar height changes, all pages break.
 **Impact:** Fragile coupling between bar height and page layout.
-**Remediation:** Use CSS custom property `--bar-height` set by the bar itself.
+**Resolution:** `habits.astro`, `index.astro` migrated to `--unified-bar-height` CSS var. `eisenhower.astro` already used it. Remaining pages are low-priority.
 
-### 9. Missing `prefers-reduced-motion`
+### ~~9. Missing `prefers-reduced-motion`~~ ✅ Resolved
 **Files:** All pages with animations
 **Issue:** Section flash, collapse/expand, drag feedback animations have no reduced-motion alternative.
-**Impact:** Accessibility violation for users with motion sensitivity.
-**Remediation:** Add `@media (prefers-reduced-motion: reduce)` queries.
+**Resolution:** Added `@media (prefers-reduced-motion: reduce)` to `SignalBar.astro`, `tasks.astro` (popover, drag), `eisenhower.astro` (wip-pulse, triage, review overlays), `UnifiedBar.astro` (chevron, dropdown). `today.astro` already had comprehensive coverage.
 
-### 10. Title Switcher Discoverability
+### ~~10. Title Switcher Discoverability~~ ✅ Resolved
 **File:** `unified-bar-controller.ts`
-**Issue:** Title text is clickable to show a page navigation dropdown, but there's no visual affordance (no chevron, no cursor change, no underline).
-**Impact:** Power-user feature that most users will never discover.
-**Remediation:** Add dropdown chevron icon + `aria-haspopup="true"`.
+**Issue:** Title text is clickable to show a page navigation dropdown, but there's no visual affordance.
+**Resolution:** Already has chevron icon, `cursor: pointer`, `aria-haspopup="true"`, hover bg change, and active border highlight. No further action needed.
 
 ## ⚠️ Medium Concerns
 
