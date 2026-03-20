@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-This phase resolves the duplicative Area/Project sidebar navigation, unifies accomplishment-related features under one parent page, introduces calendar events as a task kind, adds direct goal→task linking, creates a default "Every Day" project, and builds the routine template system with streak tracking. It also fixes the API 400 empty-update bug and establishes the ubiquitous language glossary.
+This phase resolves the duplicative Area/Project sidebar navigation, introduces a **three-parent-page consolidation model** (Tasks, Progress & Growth, Planning), creates a **pinnable sub-menu system**, introduces calendar events as a task kind, adds direct goal→task linking, creates a default "Every Day" project, and builds the routine template system with streak tracking. It also fixes the API 400 empty-update bug and establishes the ubiquitous language glossary.
 
 This phase does NOT introduce new HA integrations, offline/PWA changes, or bot orchestration updates.
 
@@ -19,13 +19,46 @@ This phase does NOT introduce new HA integrations, offline/PWA changes, or bot o
 - Merge PROJECTS tree and AREA dropdown into single "AREAS" sidebar section
 - Areas are the top-level, enriched with descriptions, labels, and links
 - Projects nest under their Area in the sidebar tree
-- Goals are associated with Areas/Projects but managed from the Progress page, not the sidebar tree
+- Goals are associated with Areas/Projects but managed from the Progress & Growth page
 
 ### Default Project
 - Name: **"Every Day"** (user-locked)
 - Auto-created on first startup, undeletable
 - Primary capture target for quick tasks without a project context
-- Shows in sidebar tree under a special "ungrouped" position (not under any Area)
+- **Positioned at top of AREAS tree** — always visible, pinned above all areas
+
+### Three Parent Pages
+The sidebar consolidates into three parent pages with sub-menu tab bars:
+
+#### 1. Tasks (parent page)
+- Sub-pages: **Kanban** | **Calendar** | **Table** | **Gantt** (new)
+- Route: `/tasks` with hash routing `#kanban`, `#calendar`, `#table`, `#gantt`
+- Replaces individual `/kanban`, `/calendar`, `/table` sidebar items
+
+#### 2. Progress & Growth (parent page, user-locked name)
+- Sub-pages: **Routines** | **Goals** | **Achievements**
+- Route: `/progress` with hash routing `#routines`, `#goals`, `#achievements`
+- Replaces individual `/habits`, `/gamification`, `/goals` sidebar items
+- Gamification → renamed to "Achievements"
+
+#### 3. Planning (parent page)
+- Sub-pages: **Eisenhower** | **Triage** (new) | **RICE** (new)
+- Route: `/planning` with hash routing `#eisenhower`, `#triage`, `#rice`
+- Replaces individual `/eisenhower` sidebar item
+- Plans to expand with additional strategic tools
+
+### Pinnable Sub-Menus
+- Sub-menu items from parent pages can be **pinned to the sidebar** as individual nav items
+- **Hidden in sidebar by default** — sub-menus only visible inside the parent page
+- **Visible/Hidden toggle accessible in Settings** (per sub-menu item)
+- Retain the existing sidebar **rename** and **reorder** functionality
+- Pinned sub-menu items appear in the sidebar nav order like regular items
+
+### Sidebar Order (After Consolidation)
+```
+Dashboard → Today → Upcoming → Tasks → Progress & Growth → Planning
+```
+(Plus "Every Day" pinned at top of AREAS tree below the nav list)
 
 ### Calendar Events
 - Add `calendar_event` to `TaskKind` union
@@ -44,15 +77,9 @@ This phase does NOT introduce new HA integrations, offline/PWA changes, or bot o
 - Build routine_template entity with full CRUD
 - Routine templates spawn `routine_instance` tasks on schedule
 - Include streak tracking, freeze days
-- Recurring tasks that are NOT routines should appear on the Routines page with "Convert to Routine" affordance
+- Recurring tasks NOT linked to routines: **separate section** on Routines page with **callout banner at top** of the section
+- "Convert to Routine" affordance on each recurring task
 - **Full build P0-P6, no deferrals** (user-locked)
-
-### Accomplishment Parent Page
-- Goals, Routines/Habits, and Achievements (née Gamification) consolidated under one parent page
-- Sub-menu tab bar (same pattern as Calendar's Month Grid | Agenda | Flow)
-- Hash-based routing: `#routines`, `#goals`, `#achievements`
-- Gamification renamed to "Achievements"
-- Old routes (`/gamification`, `/habits`, `/goals`) redirect to parent page sub-sections
 
 ### Helper/Explainer System
 - Three-tier system: inline callout (first encounter), tooltip (subsequent), `?` key panel (recall)
@@ -66,12 +93,13 @@ This phase does NOT introduce new HA integrations, offline/PWA changes, or bot o
 - Client-side validation prevents empty PUTs
 
 ### Claude's Discretion
-- Parent page name (recommendation: "Progress & Growth" — user asked for IA analysis first)
-- Exact sub-menu tab labels within the parent page
+- Exact sub-menu tab labels within each parent page
 - Helper text content and which concepts get helpers
 - Routine template UI design (form layout, schedule picker)
 - "Every Day" project icon and visual treatment
 - Whether routine streaks show in sidebar or only on Progress page
+- Gantt chart implementation approach
+- Triage and RICE page initial feature scope
 
 </decisions>
 
@@ -79,10 +107,11 @@ This phase does NOT introduce new HA integrations, offline/PWA changes, or bot o
 ## Specific Ideas
 
 - User screenshot shows sidebar PROJECTS tree with "Default" project and an "AREA" section with dropdown + "New Area" button directly below — this is the exact duplication to resolve
-- User wants each page's sidebar item to move DOWN into the sub-menu bar on the parent page (see screenshot annotation)
+- User wants each page's sidebar item to move DOWN into the sub-menu bar on the parent page
 - Gamification already has streak badges, XP, levels — these become "Achievements"
 - Habits page already has routine template CRUD in progress — integrate, don't rebuild
 - The sidebar is configurable (order, visibility, custom items) via settings — preserve this
+- Pinning sub-menus to sidebar should work like the existing custom link feature but for internal pages
 
 </specifics>
 
