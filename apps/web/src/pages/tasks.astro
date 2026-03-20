@@ -1626,6 +1626,10 @@ const kanbanSignal =
     flex-direction: column;
     margin-bottom: 0px;
   }
+  /* SSR renders swimlane groups with .hidden; override display:flex so they stay hidden until JS activates grouping */
+  .swimlane-group.hidden {
+    display: none !important;
+  }
   .swimlane-header {
     display: flex;
     align-items: center;
