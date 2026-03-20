@@ -21,7 +21,7 @@ type HandleDropFn = (e: any) => void
 
 // ── Public API ────────────────────────────────────────────────────────────
 
-export function initTouchDrag(handleDrop: HandleDropFn): void {
+export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): void {
   let dragCard: HTMLElement | null = null
   let ghost: HTMLElement | null = null
   let holdTimer: ReturnType<typeof setTimeout> | null = null
@@ -87,6 +87,7 @@ export function initTouchDrag(handleDrop: HandleDropFn): void {
   // Use event delegation on the board container
   const board = document.querySelector(".kanban-board")
   if (!board) return
+  const sigOpt = signal ? { signal } : {}
 
   board.addEventListener(
     "touchstart",
@@ -109,7 +110,7 @@ export function initTouchDrag(handleDrop: HandleDropFn): void {
         activateDrag(card, startX, startY)
       }, 300)
     },
-    { passive: true },
+    { passive: true, ...sigOpt },
   )
 
   board.addEventListener(
@@ -149,7 +150,7 @@ export function initTouchDrag(handleDrop: HandleDropFn): void {
       const col = el ? el.closest(".kanban-column") : null
       if (col) col.classList.add("drag-over")
     },
-    { passive: false },
+    { passive: false, ...sigOpt },
   )
 
   board.addEventListener(
@@ -192,7 +193,7 @@ export function initTouchDrag(handleDrop: HandleDropFn): void {
         handleDrop(fakeEvent)
       }
     },
-    { passive: true },
+    { passive: true, ...sigOpt },
   )
 
   // Cancel drag on context menu / multi-touch
@@ -201,6 +202,6 @@ export function initTouchDrag(handleDrop: HandleDropFn): void {
     function () {
       cleanup()
     },
-    { passive: true },
+    { passive: true, ...sigOpt },
   )
 }

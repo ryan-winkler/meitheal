@@ -1,8 +1,6 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
-import { KANBAN_SECTIONS } from "@lib/kanban-registry";
-import { initPageShellNavigation } from "@lib/page-shell-controller";
 import { pageLifecycle } from "@lib/page-lifecycle";
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html";
 import { initLaneManagementPanel } from "@lib/controllers/kanban-lanes";
@@ -28,13 +26,7 @@ const __signal = pageLifecycle.signal;
 // Window globals (typed in types/window.d.ts):
 //   showToast, __featureFlags, triggerConfetti, openTaskDetail
 
-interface LanePanelLane {
-  id: string
-  label: string
-  builtIn: boolean
-  position: number
-  wip_limit: number
-}
+// LanePanelLane interface lives in @lib/controllers/kanban-lanes.ts
 
 
 /**
@@ -50,15 +42,7 @@ export function initKanbanArea(): void {
       shell.dataset.kanbanBooted = "true"
     }
 
-    initPageShellNavigation({
-      barId: "kanban-bar",
-      shellId: "kanban-shell",
-      sectionSelector: "[data-kanban-section]",
-      sectionIds: KANBAN_SECTIONS.map((section) => section.id),
-      defaultSectionId: "kanban-overview",
-      flashClass: "page-shell__section--flash",
-      sectionLinkSelectors: ["[data-kanban-section-link]"],
-    });
+    // Section navigation removed — IA flattened in Phase 16.1
 
     initLaneManagementPanel();
 
@@ -72,10 +56,12 @@ export function initKanbanArea(): void {
 
     async function handleDrop(e: DragEvent) {
       e.preventDefault();
-      const col = e.currentTarget;
+      const col = e.currentTarget as HTMLElement | null;
+      if (!col) return;
       col.classList.remove("drag-over");
+      if (!e.dataTransfer) return;
       const taskId = e.dataTransfer.getData("text/plain");
-      const newStatus = col.dataset.status;
+      const newStatus = (col as HTMLElement).dataset?.status;
       if (!taskId || !newStatus) return;
 
       // WIP Limit enforcement
@@ -102,7 +88,8 @@ export function initKanbanArea(): void {
 
       // T-1902: Optimistic DOM update — no page reload
       // Phase 20: Detect drop into specific swimlane
-      const targetSwimlane = e.target.closest(".swimlane-group");
+      const dropTarget = e.target as HTMLElement | null;
+      const targetSwimlane = dropTarget?.closest(".swimlane-group") ?? null;
       const targetCards = targetSwimlane
         ? targetSwimlane.querySelector(".swimlane-cards")
         : col.querySelector(".kanban-cards");
@@ -179,10 +166,10 @@ export function initKanbanArea(): void {
 
         // Gamification: priority-aware celebrations + record completion when dropped to complete
         if (newStatus === "complete") {
-          var ff = window.__featureFlags || {};
+          const ff = window.__featureFlags || {};
           if (ff.confetti !== false) {
-            var cardPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
-            var cardTitle = card.querySelector(".kanban-title-text")?.textContent?.trim() || "Task";
+            const cardPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
+            const cardTitle = card.querySelector(".kanban-title-text")?.textContent?.trim() || "Task";
             // Use celebrations module for priority-aware confetti
             import("@lib/celebrations").then(({ celebrateHighPriorityComplete, fireConfetti }) => {
               if (cardPriority <= 1) {
@@ -196,7 +183,7 @@ export function initKanbanArea(): void {
             })
           }
           if (ff.gamification !== false) {
-            var gamPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
+            const gamPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
             fetch("/api/gamification", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -899,10 +886,10 @@ export function initKanbanArea(): void {
 
       document.addEventListener("click", (e) => {
         if (activeMenu && !activeMenu.contains(e.target)) closeMenu();
-      });
+      }, { signal: __signal });
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") closeMenu();
-      });
+      }, { signal: __signal });
 
       document.querySelectorAll(".card-more-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
@@ -940,7 +927,7 @@ export function initKanbanArea(): void {
                     card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
                     card.style.opacity = "0";
                     card.style.transform = "scale(0.95)";
-                    setTimeout(() => { card.remove(); window.updateAllCounts(); }, 200);
+                    setTimeout(() => { card.remove(); if (typeof window.updateAllCounts === "function") window.updateAllCounts(); }, 200);
                   }
                   if (window.showToast) window.showToast("Task deleted", "info");
                 } else {
@@ -995,7 +982,7 @@ export function initKanbanArea(): void {
           if (!shouldCollapse && group?.classList.contains("collapsed")) btn.click();
         });
       }
-    });
+    }, { signal: __signal });
 
     // WIP limit visual indicator on column badge counts
     document.querySelectorAll(".kanban-column").forEach((col) => {
@@ -1413,8 +1400,21 @@ export function initKanbanArea(): void {
                   "5": "⚪ P5 — Minimal",
                 }
               : {};
-          const defaultLabel =
+           const defaultLabel =
             mode === "priority" ? "🟡 P3 — Medium" : "📋 Default";
+
+          // O1: Hoist getComputedStyle outside column loop
+          const cs = getComputedStyle(document.documentElement);
+          const colorMap = mode === "priority"
+            ? {
+                "1": cs.getPropertyValue("--prio-critical").trim() || "#ef4444",
+                "2": cs.getPropertyValue("--prio-high").trim() || "#f97316",
+                "3": cs.getPropertyValue("--prio-medium").trim() || "#eab308",
+                "4": cs.getPropertyValue("--prio-low").trim() || "#22c55e",
+                "5": cs.getPropertyValue("--prio-none").trim() || "#64748b",
+              }
+            : {};
+          const defaultAccent = cs.getPropertyValue("--accent").trim() || "#6366F1";
 
           document.querySelectorAll(".kanban-column").forEach((col) => {
             const cardsContainer = col.querySelector(".kanban-cards");
@@ -1445,18 +1445,7 @@ export function initKanbanArea(): void {
               group.className = "swimlane-group dynamic-group";
               group.dataset.swimlaneType = key;
 
-              // Color accent for dynamic swimlanes — use CSS custom properties
-              const cs = getComputedStyle(document.documentElement);
-              const colorMap = mode === "priority"
-                ? {
-                    "1": cs.getPropertyValue("--prio-critical").trim() || "#ef4444",
-                    "2": cs.getPropertyValue("--prio-high").trim() || "#f97316",
-                    "3": cs.getPropertyValue("--prio-medium").trim() || "#eab308",
-                    "4": cs.getPropertyValue("--prio-low").trim() || "#22c55e",
-                    "5": cs.getPropertyValue("--prio-none").trim() || "#64748b",
-                  }
-                : {}; // board mode — use a neutral accent
-              const accentColor = colorMap[key] || cs.getPropertyValue("--accent").trim() || "#6366F1";
+              const accentColor = colorMap[key] || defaultAccent;
               group.style.borderTop = `3px solid ${accentColor}`;
 
               const header = document.createElement("div");
@@ -1509,6 +1498,7 @@ export function initKanbanArea(): void {
         } // end else if
       } // end applyGroupBy
       // Swimlane header collapse toggle — CSS animation + localStorage persistence
+      // Note: cursor:pointer set via CSS (.swimlane-header rule)
       document.querySelectorAll(".swimlane-header").forEach((header) => {
         const group = header.closest(".swimlane-group");
         if (!group) return;
@@ -1527,8 +1517,6 @@ export function initKanbanArea(): void {
           }
           group.classList.add("swimlane-collapsed");
         }
-
-        header.style.cursor = "pointer";
       });
     })();
 
@@ -1539,18 +1527,18 @@ export function initKanbanArea(): void {
     (async function renderThumbnails() {
       if (!window.indexedDB) return;
       // Only attempt module load if there are attachment slots in the DOM
-      var slots = document.querySelectorAll("img.kanban-attachment");
+      const slots = document.querySelectorAll("img.kanban-attachment");
       if (!slots.length) return;
       try {
         // Dynamic import — Vite resolves this at build time into the
         // bundled chunk. No @vite-ignore needed since path is static.
-        var mod = await import("@domains/offline/offline-store").catch(
+        const mod = await import("@domains/offline/offline-store").catch(
           function () {
             return null; // Silently skip if module not available
           },
         );
         if (!mod || !mod.getAttachmentsByTaskId) return;
-        var getAttachmentsByTaskId = mod.getAttachmentsByTaskId;
+        const getAttachmentsByTaskId = mod.getAttachmentsByTaskId;
         slots.forEach(async (img) => {
           const taskId = img.getAttribute("data-task-id");
           if (!taskId) return;
@@ -1660,5 +1648,5 @@ export function initKanbanArea(): void {
 
     // ─── Touch Drag Polyfill (Long-Press Paradigm) ─────────────
     // Extracted to @lib/controllers/kanban-touch-drag.ts
-    initTouchDrag(handleDrop);
+    initTouchDrag(handleDrop, __signal);
 }
