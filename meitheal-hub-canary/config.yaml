@@ -1,0 +1,55 @@
+name: "Meitheal Canary"
+version: "canary"
+slug: "meitheal_canary"
+description: "⚠️ Bleeding-edge development build of Meitheal — may be unstable, break, or lose data. For testing and development only."
+url: "https://github.com/Coolock-Village/meitheal"
+github: "Coolock-Village/meitheal"
+docs_url: "https://github.com/Coolock-Village/meitheal/tree/main/meitheal-hub-canary/DOCS.md"
+image: "ghcr.io/coolock-village/meitheal-canary-{arch}"
+arch:
+  - aarch64
+  - amd64
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 3000
+ingress_entry: /
+homeassistant_api: true
+hassio_api: true
+hassio_role: manager
+auth_api: true
+discovery:
+  - meitheal
+panel_icon: mdi:flask-outline
+panel_title: "Meitheal Canary"
+panel_admin: false
+apparmor: true
+map:
+  - homeassistant_config:rw
+tmpfs: true
+watchdog: http://[HOST]:[PORT:3000]/api/health
+backup: hot
+backup_pre: /etc/services.d/meitheal/backup-pre.sh
+backup_post: /etc/services.d/meitheal/backup-post.sh
+backup_exclude:
+  - "*.log"
+  - "*.tmp"
+stage: experimental
+options:
+  log_level: info
+  log_categories:
+    - auth
+    - tasks
+    - integrations
+    - observability
+  log_redaction: true
+  audit_enabled: true
+  loki_url: "http://a0d7b954-loki:3100/loki/api/v1/push"
+schema:
+  log_level: list(debug|info|warn|error)
+  log_categories:
+    - str
+  log_redaction: bool
+  audit_enabled: bool
+  loki_url: str

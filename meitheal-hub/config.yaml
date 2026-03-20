@@ -1,5 +1,5 @@
 name: "Meitheal"
-version: "0.3.2"
+version: "0.0.1"
 slug: "meitheal"
 description: "Your homelab's execution layer — centralize tasks, automate coordination, get out of the way of life"
 url: "https://github.com/Coolock-Village/meitheal"
@@ -35,7 +35,7 @@ backup_post: /etc/services.d/meitheal/backup-post.sh
 backup_exclude:
   - "*.log"
   - "*.tmp"
-stage: experimental
+stage: stable
 options:
   log_level: info
   log_categories:

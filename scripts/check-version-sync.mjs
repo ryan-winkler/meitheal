@@ -63,6 +63,8 @@ for (const s of sources) {
 }
 
 console.log("─".repeat(50))
+console.log("  ℹ️  meitheal-hub-canary/config.yaml is CI-managed (excluded from sync check)")
+console.log("─".repeat(50))
 
 const versions = sources.map(s => s.version).filter(Boolean)
 const unique = [...new Set(versions)]

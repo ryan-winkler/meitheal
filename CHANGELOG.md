@@ -4,6 +4,23 @@
 
 All notable changes to Meitheal are documented in this file.
 
+## [0.0.1] — 2026-03-20
+
+### Changed
+
+- **Version reset** — Stable release line resets to `0.0.1` as the first proper public release. Previous `0.3.x` was dev-era versioning.
+- **Two-channel release strategy** — Introduced stable + canary channels:
+  - **Meitheal** (`meitheal-hub/`) — Stable, semver-versioned, vtag-triggered releases
+  - **Meitheal Canary** (`meitheal-hub-canary/`) — Bleeding-edge, SHA-versioned, auto-built on every `main` push
+- **stage: stable** — Graduated `meitheal-hub/config.yaml` from `experimental` to `stable`
+
+### Added
+
+- `meitheal-hub-canary/` — Canary addon directory with separate config, image, and docs
+- `.github/workflows/publish-canary-images.yml` — CI workflow for auto-publishing canary builds
+- `scripts/update-canary-version.mjs` — CI helper for canary version management
+- `docs/kcs/releasing.md` — KCS runbook for the two-channel release strategy
+
 ## [0.3.1] — 2026-03-19
 
 ### Changed

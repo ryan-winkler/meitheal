@@ -1,7 +1,7 @@
 {
   "name": "@meitheal/web",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.0.1",
   "description": "Astro SSR runtime for Meitheal, a Home Assistant-native household and homelab execution hub.",
   "homepage": "https://github.com/Coolock-Village/meitheal",
   "repository": {

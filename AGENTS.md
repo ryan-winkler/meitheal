@@ -130,11 +130,17 @@ Cross-context imports must occur through public package APIs, not deep path impo
 
 ## Deploy Rules
 
-- Pushing to `main` does NOT deploy. Push a version tag (`v*`) to trigger CI Docker build
-- Version in `config.yaml` must match the tag (e.g., `version: "0.2.6"` ↔ `v0.2.6`)
-- Also bump `MEITHEAL_VERSION` in `run.sh` to match
+Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
+
+| Channel | Dir | Trigger | Version | Stage |
+|---------|-----|---------|---------|-------|
+| Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
+| Canary | `meitheal-hub-canary/` | Push to `main` | Commit SHA | `experimental` |
+
+- **Stable**: Push a version tag (`v*`) to trigger CI Docker build. Version in `config.yaml` must match the tag (e.g. `version: "0.0.1"` ↔ `v0.0.1`). Also bump `MEITHEAL_VERSION` in `run.sh` to match. Use `node scripts/bump-version.mjs patch` for atomic bumps.
+- **Canary**: Auto-publishes on every push to `main`. Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed by `scripts/update-canary-version.mjs`.
 - Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
-- Do not move to a new version line such as `0.2.x` → `0.3.x` without explicit user direction
+- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 
 ## Verification Tiers (Mandatory)
 

@@ -1,0 +1,109 @@
+name: Publish Canary Images
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "meitheal-hub-canary/config.yaml"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
+
+  workflow_dispatch:
+
+jobs:
+  # Gate: only run if CI passes and the push wasn't from the bot
+  canary:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve canary metadata
+        id: meta
+        run: |
+          owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          sha_short="$(git rev-parse --short HEAD)"
+          build_from="$(jq -r ".build_from[\"${{ matrix.arch }}\"]" meitheal-hub-canary/build.json)"
+
+          echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
+          echo "sha_short=${sha_short}" >> "$GITHUB_OUTPUT"
+          echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish canary image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: meitheal-hub/Dockerfile
+          build-args: |
+            BUILD_FROM=${{ steps.meta.outputs.build_from }}
+          push: true
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=canary-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=canary-${{ matrix.arch }},ignore-error=true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:${{ steps.meta.outputs.sha_short }}
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:canary
+
+  # After all arch builds complete, update the canary config.yaml version
+  update-config:
+    needs: canary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Update canary version
+        run: |
+          SHA_SHORT="$(git rev-parse --short HEAD)"
+          node scripts/update-canary-version.mjs "${SHA_SHORT}"
+
+      - name: Commit updated canary config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add meitheal-hub-canary/config.yaml
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "🐤 canary: update version to $(git rev-parse --short HEAD) [skip ci]"
+          git push
