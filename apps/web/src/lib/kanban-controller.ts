@@ -590,8 +590,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Close on scroll (P1-4)
         const board = document.querySelector(".kanban-scroll-area, .kanban-board");
         const onScroll = () => close();
-        board?.addEventListener("scroll", onScroll, { once: true });
-        window.addEventListener("scroll", onScroll, { once: true });
+        board?.addEventListener("scroll", onScroll, { once: true, signal: __signal });
+        window.addEventListener("scroll", onScroll, { once: true, signal: __signal });
         _scrollCleanup = () => {
           board?.removeEventListener("scroll", onScroll);
           window.removeEventListener("scroll", onScroll);
@@ -1006,7 +1006,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     document.querySelectorAll(".kanban-add-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         // If inline form already exists, focus it
-        const existing = btn.parentElement.querySelector(".kanban-inline-add");
+        const existing = btn.parentElement?.querySelector(".kanban-inline-add");
         if (existing) {
           existing.querySelector("input")?.focus();
           return;
@@ -1020,12 +1020,12 @@ export function initKanbanArea(__signal: AbortSignal): void {
           <input type="text" class="form-input quick-add-input" placeholder="Task title..." aria-label="New task title" autofocus />
           <button type="button" class="btn btn-primary quick-add-btn">Add</button>
         `;
-        btn.parentElement.insertBefore(form, btn);
+        btn.parentElement?.insertBefore(form, btn);
         btn.classList.add("hidden");
 
-        const input = form.querySelector("input");
-        const addBtn = form.querySelector("button");
-        input.focus();
+        const input = form.querySelector<HTMLInputElement>("input");
+        const addBtn = form.querySelector<HTMLButtonElement>("button");
+        input?.focus();
 
         async function submitTask() {
           const title = input.value.trim();
@@ -1134,8 +1134,9 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
       // Swimlane collapse event delegation
       board.addEventListener("click", (e) => {
-        const header = e.target.closest(".swimlane-header");
-        if (header && !e.target.closest("button")) {
+        const target = e.target as HTMLElement;
+        const header = target.closest(".swimlane-header");
+        if (header && !target.closest("button")) {
           const group = header.closest(".swimlane-group");
           if (!group) return;
           const cardsEl = group.querySelector(".swimlane-cards");
@@ -1637,7 +1638,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
       // Click handlers
       container.addEventListener("click", (e) => {
-        const btn = e.target.closest(".filter-toolbar__user-btn");
+        const btn = (e.target as HTMLElement).closest(".filter-toolbar__user-btn");
         if (!btn) return;
         container
           .querySelectorAll(".filter-toolbar__user-btn")
