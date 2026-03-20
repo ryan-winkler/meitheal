@@ -120,12 +120,14 @@ const visibleAreas = areas.filter((a) => a.name !== "Uncategorized" || goalsByAr
                   type="button"
                 >
                   <span class="tree-chevron">▸</span>
+                </button>
+                <a href={`/areas/${area.id}`} class={`tree-area-link ${currentPath === `/areas/${area.id}` ? "active" : ""}`} title={`View ${area.name}`}>
                   <span class="tree-area-icon" style={`color: ${area.color}`}>{area.icon}</span>
                   <span class="tree-area-name">{area.name}</span>
                   {areaGoals.length > 0 && (
                     <span class="tree-count">{areaGoals.length}</span>
                   )}
-                </button>
+                </a>
                 <label class="tree-visibility-cb" data-filter-target={`area-${area.id}`} title={`Show/hide ${area.name}`}>
                   <input type="checkbox" checked data-hierarchy-filter="area" data-hierarchy-id={area.id} />
                 </label>

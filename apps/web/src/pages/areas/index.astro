@@ -1,0 +1,422 @@
+---
+/**
+ * Areas Index — grid view of all areas with goal/project counts.
+ * @page /areas
+ * @phase 15 — Wave 4.5
+ */
+import Layout from "../../layouts/Layout.astro";
+import Icon from "../../components/ui/Icon.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+interface AreaView {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  color: string;
+  goalCount: number;
+  projectCount: number;
+}
+
+let areas: AreaView[] = [];
+
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new HierarchyRepository(client);
+
+  const rawAreas = await repo.findAllAreas();
+  const goals = await repo.findAllGoals({});
+  const projects = await repo.findAllProjects({});
+
+  const goalsByArea = new Map<string, number>();
+  const projectsByArea = new Map<string, number>();
+
+  for (const goal of goals) {
+    if (goal.area_id) {
+      goalsByArea.set(String(goal.area_id), (goalsByArea.get(String(goal.area_id)) ?? 0) + 1);
+    }
+  }
+
+  // Build goal→area map so we can count projects per area
+  const goalAreaMap = new Map<string, string>();
+  for (const goal of goals) {
+    if (goal.area_id) goalAreaMap.set(String(goal.id), String(goal.area_id));
+  }
+
+  for (const proj of projects) {
+    if (proj.goal_id) {
+      const areaId = goalAreaMap.get(String(proj.goal_id));
+      if (areaId) {
+        projectsByArea.set(areaId, (projectsByArea.get(areaId) ?? 0) + 1);
+      }
+    }
+  }
+
+  for (const area of rawAreas) {
+    const id = String(area.id);
+    areas.push({
+      id,
+      name: String(area.name),
+      description: area.description ? String(area.description) : null,
+      icon: area.icon ? String(area.icon) : "🏠",
+      color: area.color ? String(area.color) : "#6366F1",
+      goalCount: goalsByArea.get(id) ?? 0,
+      projectCount: projectsByArea.get(id) ?? 0,
+    });
+  }
+} catch {
+  // Schema may not exist yet
+}
+---
+
+<Layout title="Meitheal — Areas">
+  <span slot="page-title">Areas</span>
+  <div slot="actions" class="flex gap-2">
+    <button type="button" class="btn btn-primary" id="new-area-btn">
+      <Icon name="plus" size={16} /> New Area
+    </button>
+  </div>
+
+  {areas.length === 0 ? (
+    <div class="empty-state">
+      <div class="empty-state-icon">🏠</div>
+      <h2 class="empty-state-title">No areas yet</h2>
+      <p class="empty-state-desc">Create your first area to organise goals and projects by life domain.</p>
+      <button type="button" class="btn btn-primary" id="empty-new-area-btn">
+        Create Area
+      </button>
+    </div>
+  ) : (
+    <div class="area-grid">
+      {areas.map((area) => {
+        const totalItems = area.goalCount + area.projectCount;
+        return (
+          <a href={`/areas/${area.id}`} class="area-card" style={`--area-accent: ${area.color};`}>
+            <div class="area-card-header">
+              <span class="area-card-icon">{area.icon}</span>
+              <h3 class="area-card-name">{area.name}</h3>
+            </div>
+            {area.description && (
+              <p class="area-card-desc">{area.description}</p>
+            )}
+            <div class="area-card-stats">
+              <div class="area-stat">
+                <span class="area-stat-value">{area.goalCount}</span>
+                <span class="area-stat-label">Goals</span>
+              </div>
+              <div class="area-stat">
+                <span class="area-stat-value">{area.projectCount}</span>
+                <span class="area-stat-label">Projects</span>
+              </div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  )}
+
+  {/* New Area Dialog */}
+  <dialog id="new-area-dialog" class="area-dialog">
+    <form method="dialog" class="area-dialog-form">
+      <h2 class="area-dialog-title">Create Area</h2>
+      <div class="form-group">
+        <label for="area-name-input">Name</label>
+        <input type="text" id="area-name-input" placeholder="e.g. Home, Work, Health…" maxlength="100" autocomplete="off" required />
+      </div>
+      <div class="form-group">
+        <label for="area-desc-input">Description <span class="optional">(optional)</span></label>
+        <textarea id="area-desc-input" placeholder="What does this area cover?" rows="2" maxlength="500"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group form-group-sm">
+          <label for="area-icon-input">Icon</label>
+          <input type="text" id="area-icon-input" value="🏠" maxlength="4" class="icon-input" />
+        </div>
+        <div class="form-group form-group-sm">
+          <label for="area-color-input">Color</label>
+          <input type="color" id="area-color-input" value="#6366F1" class="color-input" />
+        </div>
+      </div>
+      <div class="area-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="cancel-area-btn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="submit-area-btn">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  ></div>
+</Layout>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+  }
+  .empty-state-icon { font-size: 3rem; margin-bottom: 1rem; }
+  .empty-state-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.5rem;
+  }
+  .empty-state-desc {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0 0 1.5rem;
+    max-width: 360px;
+  }
+
+  .area-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .area-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 200ms, box-shadow 200ms, transform 150ms;
+    position: relative;
+    overflow: hidden;
+  }
+  .area-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--area-accent);
+    opacity: 0.8;
+    transition: opacity 200ms;
+  }
+  .area-card:hover {
+    border-color: var(--area-accent);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
+  }
+  .area-card:hover::before { opacity: 1; }
+
+  .area-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 0.5rem;
+  }
+  .area-card-icon { font-size: 1.5rem; }
+  .area-card-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .area-card-desc {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0 0 0.75rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .area-card-stats {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(var(--border-rgb), 0.3);
+  }
+  .area-stat { display: flex; flex-direction: column; }
+  .area-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .area-stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Dialog */
+  .area-dialog {
+    border: none;
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0;
+    max-width: 420px;
+    width: 90vw;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+  }
+  .area-dialog::backdrop {
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+  }
+  .area-dialog-form { padding: 1.5rem; }
+  .area-dialog-title {
+    margin: 0 0 1.25rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .form-group .optional {
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .form-group input[type="text"],
+  .form-group textarea {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 150ms;
+    font-family: inherit;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .form-row {
+    display: flex;
+    gap: 1rem;
+  }
+  .form-group-sm { flex: 0 0 80px; }
+  .icon-input {
+    text-align: center;
+    font-size: 1.25rem !important;
+    padding: 0.25rem !important;
+  }
+  .color-input {
+    width: 100%;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    padding: 2px;
+    background: var(--bg-primary);
+  }
+  .area-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+  }
+
+  @media (max-width: 640px) {
+    .area-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const dialog = document.getElementById("new-area-dialog") as HTMLDialogElement;
+  const newBtn = document.getElementById("new-area-btn");
+  const emptyBtn = document.getElementById("empty-new-area-btn");
+  const cancelBtn = document.getElementById("cancel-area-btn");
+  const submitBtn = document.getElementById("submit-area-btn");
+  const nameInput = document.getElementById("area-name-input") as HTMLInputElement;
+  const descInput = document.getElementById("area-desc-input") as HTMLTextAreaElement;
+  const iconInput = document.getElementById("area-icon-input") as HTMLInputElement;
+  const colorInput = document.getElementById("area-color-input") as HTMLInputElement;
+
+  function openDialog() {
+    nameInput.value = "";
+    descInput.value = "";
+    iconInput.value = "🏠";
+    colorInput.value = "#6366F1";
+    dialog.showModal();
+    requestAnimationFrame(() => nameInput.focus());
+  }
+
+  newBtn?.addEventListener("click", openDialog);
+  emptyBtn?.addEventListener("click", openDialog);
+  cancelBtn?.addEventListener("click", () => dialog.close());
+
+  submitBtn?.addEventListener("click", async () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+
+    submitBtn.textContent = "Creating…";
+    (submitBtn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch("/api/areas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          description: descInput.value.trim() || null,
+          icon: iconInput.value.trim() || "🏠",
+          color: colorInput.value || "#6366F1",
+        }),
+      });
+
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to create area");
+        submitBtn.textContent = "Create";
+        (submitBtn as HTMLButtonElement).disabled = false;
+      }
+    } catch {
+      submitBtn.textContent = "Create";
+      (submitBtn as HTMLButtonElement).disabled = false;
+    }
+  });
+
+  nameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitBtn?.click();
+    }
+  });
+</script>
