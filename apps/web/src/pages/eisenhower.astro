@@ -503,7 +503,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   <script>
     import { initEisenhowerPage } from "@lib/eisenhower-controller"
-    document.addEventListener("astro:page-load", () => initEisenhowerPage())
+    import { pageLifecycle } from "@lib/page-lifecycle"
+
+    pageLifecycle.onPageLoad(() => initEisenhowerPage())
   </script>
 </Layout>
 

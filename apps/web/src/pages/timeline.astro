@@ -398,15 +398,19 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
 </style>
 
 <script>
-  // Handlers to open task details on click
-  document.querySelectorAll(".timeline-bar").forEach(bar => {
-    bar.addEventListener("click", () => {
-      const id = (bar as HTMLElement).dataset.id;
-      if (id && typeof window.openTaskDetail === "function") {
-         window.openTaskDetail(id);
-      } else if (id) {
-         window.location.href = (window.__ingress_path || "") + `/tasks#edit-${id}`;
-      }
+  import { pageLifecycle } from "../lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad((signal) => {
+    // Handlers to open task details on click
+    document.querySelectorAll<HTMLElement>(".timeline-bar").forEach(bar => {
+      bar.addEventListener("click", () => {
+        const id = bar.dataset.id;
+        if (id && typeof window.openTaskDetail === "function") {
+           window.openTaskDetail(id);
+        } else if (id) {
+           window.location.href = (window.__ingress_path || "") + `/tasks#edit-${id}`;
+        }
+      }, { signal });
     });
-  });
+  })
 </script>
