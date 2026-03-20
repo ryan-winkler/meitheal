@@ -41,6 +41,8 @@ export const GET: APIRoute = async ({ url }) => {
   }
   const areaId = url.searchParams.get("area_id")
   if (areaId) findOpts.areaId = areaId
+  const projectId = url.searchParams.get("project_id")
+  if (projectId) findOpts.projectId = projectId
   if (taskType && VALID_TASK_TYPES.includes(taskType as TaskType)) findOpts.taskType = taskType
   const parentId = url.searchParams.get("parent_id")
   if (parentId) findOpts.parentId = parentId

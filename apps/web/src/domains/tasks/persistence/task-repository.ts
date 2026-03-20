@@ -531,6 +531,7 @@ export class TaskRepository {
     status?: string;
     priority?: number;
     areaId?: string;
+    projectId?: string;
     taskType?: string;
     parentId?: string;
     search?: string;
@@ -554,6 +555,7 @@ export class TaskRepository {
     if (opts.status) { conditions.push("status = ?"); args.push(normalizeStatus(opts.status)); }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
     if (opts.areaId) { conditions.push("area_id = ?"); args.push(opts.areaId); }
+    if (opts.projectId) { conditions.push("project_id = ?"); args.push(opts.projectId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
     if (opts.search) { conditions.push("(title LIKE ? OR description LIKE ?)"); args.push(`%${opts.search}%`, `%${opts.search}%`); }

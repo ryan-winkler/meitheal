@@ -2,23 +2,21 @@
 /**
  * SidebarHierarchyTree — Area → Project sidebar navigation
  *
- * Phase 15.2: Direct area_id on projects replaces the indirect
- * goal→area grouping. Sidebar shows Areas as top-level groups
- * with nested Projects underneath.
+ * ClickUp-inspired hierarchy with tree connector lines, per-entity
+ * ⋯ + action pairs, and body-level dropdowns that escape sidebar overflow.
  *
  * Features:
- * - Two-level hierarchy: Area → Project
- * - Default Area always visible (ungrouped projects merge in)
- * - "All Tasks" link at top of area section
- * - Per-area ⋯ quick-menu (Rename, Color & Icon, Delete)
- * - Per-project "+" button for task creation with kind picker
- * - Pinned projects section
+ * - Two-level hierarchy: Area → Project with CSS tree connector lines
+ * - "Home" area always visible (ungrouped projects merge in)
+ * - Area row: ⋯ (Manage Space, Rename, Color & Icon, Delete) + (New Project)
+ * - Project row: ⋯ (Manage Project, Rename, Icon & Color) + (Task kind picker)
+ * - Pinned projects section (context menu)
  * - Collapse state per area (localStorage)
- * - Active page highlighting
- * - WAI-ARIA listbox keyboard navigation
+ * - Dropdowns rendered at body level via DropdownController
+ * - WAI-ARIA keyboard navigation
  *
  * @domain navigation
- * @phase 15.2 — Area→Project Sidebar UX
+ * @phase 15.2 — Sidebar UX Refinements
  */
 import {
   ensureSchema,
@@ -28,6 +26,7 @@ import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-reposi
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
+import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
 
 export interface Props {
   locale: Locale
@@ -49,7 +48,7 @@ try {
   // Schema may not exist yet — render empty
 }
 
-// Build area → projects mapping directly via area_id
+// Build area → projects mapping
 const projectsByArea = new Map<string, ProjectRow[]>()
 const ungroupedProjects: ProjectRow[] = []
 
@@ -63,31 +62,28 @@ for (const p of projects) {
   }
 }
 
-// Find or synthesize a "Default" area so ungrouped projects always have a home
+// Synthesize "Home" area if no default exists
 let defaultArea = areas.find((a) => a.id === "default")
 if (!defaultArea && ungroupedProjects.length > 0) {
-  // Schema didn't create default area (DB had existing areas) — synthesize one
-  defaultArea = { id: "default", name: "Default", icon: "📋", color: "#6366F1", position: -1 }
+  defaultArea = { id: "default", name: "Home", icon: "🏠", color: "#6366F1", position: -1 }
   areas = [defaultArea, ...areas]
 }
-if (defaultArea && ungroupedProjects.length > 0) {
-  // Merge ungrouped into default area's project list
-  const existing = projectsByArea.get("default") ?? []
-  projectsByArea.set("default", [...existing, ...ungroupedProjects])
+if (defaultArea) {
+  defaultArea.name = "Home"
+  defaultArea.icon = "🏠"
+  if (ungroupedProjects.length > 0) {
+    const existing = projectsByArea.get("default") ?? []
+    projectsByArea.set("default", [...existing, ...ungroupedProjects])
+  }
 }
 
-// Current path for active state
 const rawPath = Astro.url.pathname
 const currentPath = rawPath.replace(/\/$/, "") || "/"
-
 const hasContent = projects.length > 0 || areas.length > 0
-
-// Show all areas — the Default area is always visible
 const visibleAreas = areas
-
 const areasLabel = t("sidebar.areas_header", locale) || "Areas"
 
-// Task kinds for the per-project add dropdown (exclude routine_instance — auto-spawned)
+// Task kinds for per-project add
 const taskKinds = [
   { kind: "standard_action", icon: "✅", labelKey: "sidebar.task_kind_standard_action" },
   { kind: "shopping_item", icon: "🛒", labelKey: "sidebar.task_kind_shopping_item" },
@@ -98,12 +94,12 @@ const taskKinds = [
 ---
 
 {hasContent && (
-  <div class="project-nav" id="project-nav" role="navigation" aria-label="Area navigation">
-    <div class="project-nav__header">
-      <span class="project-nav__label">{areasLabel}</span>
+  <div class="stree" id="project-nav" role="navigation" aria-label="Area navigation">
+    <div class="stree__header">
+      <span class="stree__label">{areasLabel}</span>
       <a
         href="/areas"
-        class="project-nav__manage-link"
+        class="stree__manage-link"
         title="Manage areas & projects"
         aria-label="Manage areas & projects"
       >
@@ -111,52 +107,27 @@ const taskKinds = [
       </a>
     </div>
 
-    {/* ── Pinned projects (populated by client JS) ── */}
-    <div class="project-nav__pinned" id="project-nav-pinned" hidden>
-      <span class="project-nav__divider-label">📌 {t("sidebar.pinned", locale)}</span>
-      <div class="project-nav__pinned-list" id="project-nav-pinned-list"></div>
+    {/* ── Pinned ── */}
+    <div class="stree__pinned" id="project-nav-pinned" hidden>
+      <span class="stree__section-label">📌 {t("sidebar.pinned", locale)}</span>
+      <div class="stree__pinned-list" id="project-nav-pinned-list"></div>
     </div>
 
-    {/* ── All Tasks link ── */}
-    <a
-      href="/tasks"
-      class={`project-nav__all-tasks ${currentPath === "/tasks" ? "active" : ""}`}
-      title={t("sidebar.all_tasks", locale)}
-    >
-      <span class="project-nav__all-tasks-icon">📊</span>
-      <span>{t("sidebar.all_tasks", locale) || "All Tasks"}</span>
-    </a>
-
-    {/* ── Area-grouped sections ── */}
-    <div class="project-nav__list" id="project-nav-list">
+    {/* ── Area-grouped hierarchy ── */}
+    <div class="stree__list" id="project-nav-list">
       {visibleAreas.map((area) => {
         const areaProjects = projectsByArea.get(String(area.id)) ?? []
-        const isDefault = area.id === "default"
         return (
-          <div class="project-nav__area-group" data-area-group={area.id}>
-            <div class="project-nav__divider">
-              <button
-                type="button"
-                class="project-nav__divider-toggle"
-                data-area-toggle={area.id}
-                aria-expanded="true"
-                aria-label={`Toggle ${area.name}`}
-              >
-                <span class="project-nav__divider-chevron">▾</span>
-              </button>
-              <a
-                href={`/areas/${area.id}`}
-                class={`project-nav__divider-link ${currentPath === `/areas/${area.id}` ? "active" : ""}`}
-                title={`View ${area.name}`}
-              >
-                <span class="project-nav__divider-icon" style={`color: ${area.color}`}>{area.icon}</span>
-                <span class="project-nav__divider-label">{area.name}</span>
-              </a>
-              {/* ── Area quick-menu trigger ── */}
-              {!isDefault && (
+          <div class="stree__area" data-area-group={area.id}>
+            {/* ── Area row — whole row toggles collapse ── */}
+            <div class="stree__area-row" data-area-toggle={area.id} role="button" tabindex="0" aria-expanded="true" aria-label={`Toggle ${area.name}`}>
+              <span class="stree__area-icon" style={`color: ${area.color}`}>{area.icon}</span>
+              <span class="stree__area-name">{area.name}</span>
+              {/* ── Area ⋯ + actions ── */}
+              <div class="stree__actions">
                 <button
                   type="button"
-                  class="project-nav__area-menu-btn"
+                  class="stree__action-btn"
                   data-area-menu={area.id}
                   data-area-name={area.name}
                   data-area-color={area.color}
@@ -164,368 +135,195 @@ const taskKinds = [
                   title="Area options"
                   aria-label={`Options for ${area.name}`}
                 >⋯</button>
-              )}
-              <span class="project-nav__divider-count">{areaProjects.length}</span>
+                <button
+                  type="button"
+                  class="stree__action-btn stree__action-btn--add"
+                  data-area-add={area.id}
+                  title={`New project in ${area.name}`}
+                  aria-label={`New project in ${area.name}`}
+                >+</button>
+              </div>
             </div>
-            <div class="project-nav__area-projects" data-area-projects={area.id}>
-              {areaProjects.map((proj) => (
-                <div class="project-nav__item-row">
+
+            {/* ── Projects under area ── */}
+            <div class="stree__children" data-area-projects={area.id}>
+              {areaProjects.map((proj, i) => (
+                <div class={`stree__project ${i === areaProjects.length - 1 ? "stree__project--last" : ""}`}>
+                  <div class="stree__connector">
+                    <span class="stree__line-v"></span>
+                    <span class="stree__line-h"></span>
+                  </div>
                   <a
                     href={`/projects/${proj.id}`}
-                    class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                    class={`stree__project-link ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
                     data-project-id={proj.id}
                     data-project-name={proj.title}
                     title={proj.title}
                   >
-                    <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                    <span class="project-nav__item-name">{proj.title}</span>
+                    <span class="stree__project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                    <span class="stree__project-name">{proj.title}</span>
                   </a>
-                  {/* ── Per-project task add trigger ── */}
-                  <button
-                    type="button"
-                    class="project-nav__task-add-btn"
-                    data-task-add-project={proj.id}
-                    data-task-add-name={proj.title}
-                    title={t("sidebar.add_task", locale)}
-                    aria-label={`Add task to ${proj.title}`}
-                  >
-                    <Icon name="plus" size={10} />
-                  </button>
+                  <span class="stree__count" data-project-task-count={proj.id}>—</span>
+                  {/* ── Project ⋯ + actions ── */}
+                  <div class="stree__actions">
+                    <button
+                      type="button"
+                      class="stree__action-btn"
+                      data-project-menu={proj.id}
+                      data-project-title={proj.title}
+                      data-project-color={proj.color}
+                      data-project-icon-value={proj.icon}
+                      title="Project options"
+                      aria-label={`Options for ${proj.title}`}
+                    >⋯</button>
+                    <button
+                      type="button"
+                      class="stree__action-btn stree__action-btn--add"
+                      data-task-add-project={proj.id}
+                      data-task-add-name={proj.title}
+                      title={t("sidebar.add_task", locale)}
+                      aria-label={`Add task to ${proj.title}`}
+                    >+</button>
+                  </div>
                 </div>
               ))}
-              {/* Per-area inline quick-add project */}
-              <button
-                type="button"
-                class="project-nav__area-add-btn"
-                data-area-add={area.id}
-                title={`New project in ${area.name}`}
-                aria-label={`New project in ${area.name}`}
-              >
-                <Icon name="plus" size={11} />
-                <span>New Project</span>
-              </button>
             </div>
           </div>
         )
       })}
 
-      {/* ── Ungrouped projects (only shown if no Default area exists) ── */}
-      {!defaultArea && ungroupedProjects.length > 0 && (
-        <div class="project-nav__area-group" data-area-group="ungrouped">
-          <div class="project-nav__divider">
-            <span class="project-nav__divider-label project-nav__divider-label--muted">{t("sidebar.ungrouped", locale)}</span>
-          </div>
-          <div class="project-nav__area-projects" data-area-projects="ungrouped">
-            {ungroupedProjects.map((proj) => (
-              <div class="project-nav__item-row">
-                <a
-                  href={`/projects/${proj.id}`}
-                  class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-                  data-project-id={proj.id}
-                  data-project-name={proj.title}
-                  title={proj.title}
-                >
-                  <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                  <span class="project-nav__item-name">{proj.title}</span>
-                </a>
-                <button
-                  type="button"
-                  class="project-nav__task-add-btn"
-                  data-task-add-project={proj.id}
-                  data-task-add-name={proj.title}
-                  title={t("sidebar.add_task", locale)}
-                  aria-label={`Add task to ${proj.title}`}
-                >
-                  <Icon name="plus" size={10} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ── New Area ── */}
+      <button type="button" class="stree__new-area" id="new-area-btn">
+        <span class="stree__new-area-icon">+</span>
+        <span>New Area</span>
+      </button>
     </div>
   </div>
 )}
 
-{/* ── Area quick-menu dropdown (shared, positioned by JS) ── */}
-<div class="project-nav__dropdown" id="area-menu-dropdown" hidden>
-  <button type="button" data-action="rename" class="project-nav__dropdown-item">
-    <span class="project-nav__dropdown-icon">✏️</span>
-    <span>{t("sidebar.rename", locale)}</span>
-  </button>
-  <button type="button" data-action="color-icon" class="project-nav__dropdown-item">
-    <span class="project-nav__dropdown-icon">🎨</span>
-    <span>{t("sidebar.color_icon", locale)}</span>
-  </button>
-  <hr class="project-nav__dropdown-divider" />
-  <button type="button" data-action="delete" class="project-nav__dropdown-item project-nav__dropdown-item--danger">
-    <span class="project-nav__dropdown-icon">🗑️</span>
-    <span>{t("sidebar.delete_area", locale)}</span>
-  </button>
-</div>
-
-{/* ── Task kind picker dropdown (shared, positioned by JS) ── */}
-<div class="project-nav__dropdown" id="task-kind-dropdown" hidden>
-  {taskKinds.map((tk) => (
-    <button type="button" data-task-kind={tk.kind} class="project-nav__dropdown-item">
-      <span class="project-nav__dropdown-icon">{tk.icon}</span>
-      <span>{t(tk.labelKey, locale)}</span>
+{/* ── Dropdown templates (moved to body via JS to escape overflow) ── */}
+<template id="tmpl-area-menu">
+  <div class="stree__dropdown" id="area-menu-dropdown">
+    <a data-action="manage" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">⚙️</span><span>Manage Space</span>
+    </a>
+    <button type="button" data-action="rename" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
     </button>
-  ))}
-</div>
-
-{/* ── Color picker popover (for Color & Icon action) ── */}
-<div class="project-nav__color-picker" id="color-icon-popover" hidden>
-  <div class="project-nav__color-picker-section">
-    <label class="project-nav__color-picker-label">Icon</label>
-    <input type="text" id="area-icon-input" class="project-nav__color-picker-input" maxlength="4" placeholder="📋" />
+    <button type="button" data-action="color-icon" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">🎨</span><span>{t("sidebar.color_icon", locale)}</span>
+    </button>
+    <hr class="stree__dropdown-divider" />
+    <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
+      <span class="stree__dropdown-icon">🗑️</span><span>{t("sidebar.delete_area", locale)}</span>
+    </button>
   </div>
-  <div class="project-nav__color-picker-section">
-    <label class="project-nav__color-picker-label">Color</label>
-    <div class="project-nav__color-swatches" id="color-swatches">
-      {["#6366F1", "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#64748B"].map((c) => (
-        <button type="button" class="project-nav__color-swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
-      ))}
+</template>
+
+<template id="tmpl-project-menu">
+  <div class="stree__dropdown" id="project-menu-dropdown">
+    <a data-action="manage" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">⚙️</span><span>Manage Project</span>
+    </a>
+    <button type="button" data-action="rename" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
+    </button>
+    <button type="button" data-action="color-icon" class="stree__dropdown-item">
+      <span class="stree__dropdown-icon">🎨</span><span>{t("sidebar.color_icon", locale)}</span>
+    </button>
+  </div>
+</template>
+
+<template id="tmpl-task-kind">
+  <div class="stree__dropdown" id="task-kind-dropdown">
+    {taskKinds.map((tk) => (
+      <button type="button" data-task-kind={tk.kind} class="stree__dropdown-item">
+        <span class="stree__dropdown-icon">{tk.icon}</span>
+        <span>{t(tk.labelKey, locale)}</span>
+      </button>
+    ))}
+  </div>
+</template>
+
+<template id="tmpl-color-icon">
+  <div class="stree__popover" id="color-icon-popover">
+    <div class="stree__popover-section">
+      <label class="stree__popover-label">Icon</label>
+      <div class="stree__emoji-preview">
+        <span id="entity-icon-preview" class="stree__emoji-selected">📋</span>
+        <input type="hidden" id="entity-icon-input" value="📋" />
+      </div>
+      <div class="stree__emoji-tabs">
+        {EMOJI_CATEGORIES.map((cat, i) => (
+          <button type="button" class={`stree__emoji-tab ${i === 0 ? 'active' : ''}`} data-emoji-tab={i} title={cat.label}>{cat.emoji[0]}</button>
+        ))}
+      </div>
+      <div class="stree__emoji-grid" id="emoji-grid">
+        {EMOJI_CATEGORIES.map((cat, catIdx) => (
+          <div class={`stree__emoji-panel ${catIdx === 0 ? '' : 'hidden'}`} data-emoji-panel={catIdx}>
+            {cat.emoji.map((e) => (
+              <button type="button" class="stree__emoji-btn" data-emoji-value={e} title={e}>{e}</button>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
+    <div class="stree__popover-section">
+      <label class="stree__popover-label">Color</label>
+      <div class="stree__swatches" id="color-swatches">
+        {["#6366F1", "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#64748B"].map((c) => (
+          <button type="button" class="stree__swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
+        ))}
+      </div>
+    </div>
+    <button type="button" id="color-icon-save" class="stree__popover-save">Save</button>
   </div>
-  <button type="button" id="color-icon-save" class="project-nav__color-picker-save">Save</button>
-</div>
+</template>
 
-<style>
-  .project-nav {
+<style is:global>
+  /* ══════════════════════════════════════════════
+     Sidebar Hierarchy Tree — ClickUp-inspired
+     Styles are global because dropdowns are rendered at body level
+     ══════════════════════════════════════════════ */
+
+  .stree {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 0.75rem;
-    background: rgba(var(--bg-primary-rgb), 0.5);
+    gap: 1px;
+    padding: 0.625rem 0.5rem;
+    background: rgba(var(--bg-primary-rgb), 0.4);
     border-radius: var(--radius-md, 10px);
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgba(var(--border-rgb), 0.35);
     margin-bottom: 0.5rem;
+    font-size: 13px;
   }
 
   /* ── Header ── */
-  .project-nav__header {
+  .stree__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 4px;
+    padding: 0 2px 4px;
   }
-  .project-nav__label {
-    font-size: 0.7rem;
+  .stree__label {
+    font-size: 0.65rem;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-weight: 700;
     color: var(--text-muted);
   }
-  .project-nav__manage-link {
+  .stree__manage-link {
     color: var(--text-muted);
-    opacity: 0.6;
+    opacity: 0.5;
     transition: opacity 150ms, color 150ms;
     display: flex;
     align-items: center;
     text-decoration: none;
   }
-  .project-nav__manage-link:hover {
-    opacity: 1;
-    color: var(--accent);
-  }
+  .stree__manage-link:hover { opacity: 1; color: var(--accent); }
 
-  /* ── All Tasks link ── */
-  .project-nav__all-tasks {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    border-radius: var(--radius-sm, 4px);
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 500;
-    transition: background 150ms, color 150ms;
-    margin-bottom: 2px;
-  }
-  .project-nav__all-tasks:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-  .project-nav__all-tasks.active {
-    background: rgba(var(--accent-rgb), 0.1);
-    color: var(--accent);
-  }
-  .project-nav__all-tasks-icon {
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-
-  /* ── Area dividers ── */
-  .project-nav__divider {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 2px;
-    margin-top: 4px;
-  }
-  .project-nav__area-group:first-child .project-nav__divider {
-    margin-top: 0;
-  }
-  .project-nav__divider-toggle {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0 2px;
-    color: var(--text-muted);
-    font-size: 10px;
-    transition: transform 150ms, color 150ms;
-    display: flex;
-    align-items: center;
-  }
-  .project-nav__divider-toggle:hover { color: var(--text-primary); }
-  .project-nav__divider-toggle[aria-expanded="false"] .project-nav__divider-chevron {
-    transform: rotate(-90deg);
-  }
-  .project-nav__divider-link {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
-    flex: 1;
-    min-width: 0;
-    transition: color 150ms;
-  }
-  .project-nav__divider-link:hover { color: var(--text-primary); }
-  .project-nav__divider-link.active { color: var(--accent); }
-  .project-nav__divider-icon {
-    font-size: 11px;
-    flex-shrink: 0;
-  }
-  .project-nav__divider-label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .project-nav__divider-label--muted {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-muted);
-    opacity: 0.7;
-    padding-left: 18px;
-  }
-  .project-nav__divider-count {
-    font-size: 10px;
-    color: var(--text-muted);
-    background: rgba(var(--bg-primary-rgb), 0.8);
-    padding: 0 5px;
-    border-radius: 9999px;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  /* ── Area ⋯ menu button ── */
-  .project-nav__area-menu-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0 4px;
-    font-size: 12px;
-    color: var(--text-muted);
-    opacity: 0;
-    transition: opacity 150ms, color 150ms;
-    letter-spacing: 1px;
-    line-height: 1;
-    border-radius: var(--radius-sm, 4px);
-  }
-  .project-nav__area-group:hover .project-nav__area-menu-btn,
-  .project-nav__area-menu-btn:focus-visible {
-    opacity: 0.6;
-  }
-  .project-nav__area-menu-btn:hover {
-    opacity: 1;
-    color: var(--text-primary);
-    background: var(--bg-hover);
-  }
-
-  /* ── Project item row (wraps link + add button) ── */
-  .project-nav__item-row {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    position: relative;
-  }
-
-  /* ── Project items ── */
-  .project-nav__area-projects {
-    display: flex;
-    flex-direction: column;
-  }
-  .project-nav__area-projects[data-collapsed="true"] {
-    display: none;
-  }
-  .project-nav__item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 4px 4px 22px;
-    border-radius: var(--radius-sm, 4px);
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-size: 14px;
-    transition: background 150ms, color 150ms;
-    min-width: 0;
-    flex: 1;
-    box-sizing: border-box;
-  }
-  .project-nav__item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-  .project-nav__item.active {
-    background: rgba(var(--accent-rgb), 0.1);
-    color: var(--accent);
-  }
-  .project-nav__item-icon {
-    font-size: 13px;
-    flex-shrink: 0;
-  }
-  .project-nav__item-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* ── Per-project task add button ── */
-  .project-nav__task-add-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 4px;
-    color: var(--text-muted);
-    opacity: 0;
-    transition: opacity 150ms, color 150ms;
-    display: flex;
-    align-items: center;
-    border-radius: var(--radius-sm, 4px);
-    flex-shrink: 0;
-  }
-  .project-nav__item-row:hover .project-nav__task-add-btn,
-  .project-nav__task-add-btn:focus-visible {
-    opacity: 0.6;
-  }
-  .project-nav__task-add-btn:hover {
-    opacity: 1;
-    color: var(--accent);
-    background: var(--bg-hover);
-  }
-
-  /* ── Pinned section ── */
-  .project-nav__pinned {
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
-    padding-bottom: 6px;
-    margin-bottom: 2px;
-  }
-  .project-nav__pinned .project-nav__divider-label {
+  /* ── Section labels ── */
+  .stree__section-label {
     font-size: 10px;
     color: var(--text-muted);
     font-weight: 600;
@@ -533,52 +331,194 @@ const taskKinds = [
     letter-spacing: 0.05em;
     padding: 2px 4px;
   }
-  .project-nav__pinned-list .project-nav__item {
-    padding-left: 8px;
-  }
 
-  /* ── Per-area add button ── */
-  .project-nav__area-add-btn {
+  /* ── Area block ── */
+  .stree__area { position: relative; }
+
+  /* ── Area row — clickable for collapse/expand ── */
+  .stree__area-row {
     display: flex;
     align-items: center;
-    gap: 4px;
-    width: 100%;
-    padding: 3px 4px 3px 22px;
-    margin-top: 1px;
+    gap: 5px;
+    padding: 4px 4px;
+    border-radius: var(--radius-sm, 4px);
+    margin-top: 2px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 120ms, color 120ms;
+    user-select: none;
+  }
+  .stree__area:first-child .stree__area-row { margin-top: 0; }
+  .stree__area-row:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+  .stree__area-icon { font-size: 14px; flex-shrink: 0; }
+  .stree__area-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stree__count {
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0.6;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 12px;
+    text-align: center;
+  }
+
+  /* ── ⋯ + action pair (shared by area + project) ── */
+  .stree__actions {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .stree__area-row:hover .stree__actions,
+  .stree__project:hover > .stree__actions,
+  .stree__actions:focus-within {
+    opacity: 1;
+  }
+  .stree__area-row:hover .stree__count { opacity: 0; }
+
+  .stree__action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 1px 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: color 120ms, background 120ms;
+    border-radius: 3px;
+    line-height: 1;
+    letter-spacing: 1px;
+  }
+  .stree__action-btn:hover {
+    color: var(--text-primary);
+    background: rgba(var(--border-rgb), 0.3);
+  }
+  .stree__action-btn--add {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  /* ── Children container (projects under area) ── */
+  .stree__children {
+    display: flex;
+    flex-direction: column;
+    padding-left: 10px;
+  }
+  .stree__children[data-collapsed="true"] { display: none; }
+
+  /* ── Project row with tree connectors ── */
+  .stree__project {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+    min-height: 28px;
+  }
+
+  /* ── Tree connector lines ── */
+  .stree__connector {
+    position: relative;
+    width: 16px;
+    height: 100%;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .stree__line-v {
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(var(--border-rgb), 0.4);
+  }
+  .stree__project--last .stree__line-v { bottom: 50%; }
+  .stree__line-h {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    width: 9px;
+    height: 1px;
+    background: rgba(var(--border-rgb), 0.4);
+  }
+
+  .stree__project-link {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 4px;
+    border-radius: var(--radius-sm, 4px);
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    transition: background 120ms, color 120ms;
+    min-width: 0;
+    flex: 1;
+  }
+  .stree__project-link:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .stree__project-link.active {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+  .stree__project-icon { font-size: 12px; flex-shrink: 0; }
+  .stree__project-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Pinned section ── */
+  .stree__pinned {
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.2);
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+  }
+  .stree__pinned-list .stree__project-link { padding-left: 6px; }
+
+  /* ── New Area button ── */
+  .stree__new-area {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    margin-top: 2px;
     border: none;
     background: none;
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-muted);
-    opacity: 0;
-    transition: opacity 150ms, background 150ms, color 150ms;
+    opacity: 0.5;
+    transition: opacity 120ms, background 120ms, color 120ms;
   }
-  .project-nav__area-group:hover .project-nav__area-add-btn,
-  .project-nav__area-add-btn:focus-visible {
-    opacity: 0.7;
-  }
-  .project-nav__area-add-btn:hover {
-    opacity: 1;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
+  .stree__new-area:hover { opacity: 1; background: var(--bg-hover); color: var(--text-primary); }
+  .stree__new-area-icon { font-size: 13px; }
 
-  /* ── Shared dropdown menu ── */
-  .project-nav__dropdown {
+  /* ── Shared dropdown (body-level) ── */
+  .stree__dropdown {
     position: fixed;
-    z-index: 9999;
-    min-width: 160px;
+    z-index: 10000;
+    min-width: 180px;
     background: var(--bg-surface, #1e1e2e);
-    border: 1px solid rgba(var(--border-rgb), 0.6);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border-radius: var(--radius-md, 8px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
     padding: 4px;
     display: flex;
     flex-direction: column;
   }
-  .project-nav__dropdown[hidden] { display: none; }
-  .project-nav__dropdown-item {
+  .stree__dropdown[hidden] { display: none; }
+  .stree__dropdown-item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -589,191 +529,179 @@ const taskKinds = [
     cursor: pointer;
     font-size: 13px;
     color: var(--text-secondary);
-    transition: background 150ms, color 150ms;
+    transition: background 120ms, color 120ms;
     text-align: left;
+    text-decoration: none;
     width: 100%;
   }
-  .project-nav__dropdown-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-  .project-nav__dropdown-item--danger:hover {
-    background: rgba(239, 68, 68, 0.15);
-    color: #EF4444;
-  }
-  .project-nav__dropdown-icon {
-    font-size: 14px;
-    flex-shrink: 0;
-    width: 18px;
-    text-align: center;
-  }
-  .project-nav__dropdown-divider {
-    border: none;
-    border-top: 1px solid rgba(var(--border-rgb), 0.3);
-    margin: 2px 6px;
-  }
+  .stree__dropdown-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .stree__dropdown-item--danger:hover { background: rgba(239,68,68,0.12); color: #EF4444; }
+  .stree__dropdown-icon { font-size: 13px; flex-shrink: 0; width: 18px; text-align: center; }
+  .stree__dropdown-divider { border: none; border-top: 1px solid rgba(var(--border-rgb), 0.25); margin: 2px 6px; }
 
-  /* ── Color & Icon popover ── */
-  .project-nav__color-picker {
+  /* ── Color & Icon popover (body-level) ── */
+  .stree__popover {
     position: fixed;
-    z-index: 10000;
+    z-index: 10001;
     min-width: 200px;
     background: var(--bg-surface, #1e1e2e);
-    border: 1px solid rgba(var(--border-rgb), 0.6);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
     border-radius: var(--radius-md, 8px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
     padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
-  .project-nav__color-picker[hidden] { display: none; }
-  .project-nav__color-picker-section {
+  .stree__popover[hidden] { display: none; }
+  .stree__popover-section { display: flex; flex-direction: column; gap: 4px; }
+  .stree__popover-label {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  /* ── Emoji picker ── */
+  .stree__emoji-preview {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
   }
-  .project-nav__color-picker-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .project-nav__color-picker-input {
-    padding: 6px 8px;
-    font-size: 20px;
-    text-align: center;
-    border: 1px solid rgba(var(--border-rgb), 0.5);
-    border-radius: var(--radius-sm, 4px);
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    width: 60px;
-  }
-  .project-nav__color-swatches {
+  .stree__emoji-selected {
+    font-size: 28px;
+    width: 42px;
+    height: 42px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--border-rgb), 0.15);
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid rgba(var(--border-rgb), 0.3);
   }
-  .project-nav__color-swatch {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: border-color 150ms, transform 150ms;
+  .stree__emoji-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.25);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
   }
-  .project-nav__color-swatch:hover,
-  .project-nav__color-swatch.selected {
-    border-color: var(--text-primary);
-    transform: scale(1.15);
-  }
-  .project-nav__color-picker-save {
-    padding: 6px 12px;
-    font-size: 12px;
-    font-weight: 600;
+  .stree__emoji-tab {
+    background: none;
     border: none;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--accent);
-    color: white;
     cursor: pointer;
-    transition: background 150ms;
+    font-size: 14px;
+    padding: 3px 5px;
+    border-radius: 4px;
+    opacity: 0.5;
+    transition: opacity 120ms, background 120ms;
   }
-  .project-nav__color-picker-save:hover {
-    filter: brightness(1.1);
+  .stree__emoji-tab:hover { opacity: 0.8; background: rgba(var(--border-rgb), 0.15); }
+  .stree__emoji-tab.active { opacity: 1; background: rgba(var(--accent-rgb), 0.12); }
+  .stree__emoji-grid {
+    max-height: 160px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
+  .stree__emoji-panel {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+  }
+  .stree__emoji-panel.hidden { display: none; }
+  .stree__emoji-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 3px;
+    border-radius: 4px;
+    transition: background 100ms, transform 100ms;
+  }
+  .stree__emoji-btn:hover { background: rgba(var(--border-rgb), 0.25); transform: scale(1.15); }
+  .stree__emoji-btn.selected { background: rgba(var(--accent-rgb), 0.2); }
+  .stree__swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+  .stree__swatch {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer;
+    transition: border-color 120ms, transform 120ms;
+  }
+  .stree__swatch:hover, .stree__swatch.selected {
+    border-color: var(--text-primary); transform: scale(1.15);
+  }
+  .stree__popover-save {
+    padding: 5px 12px; font-size: 12px; font-weight: 600;
+    border: none; border-radius: var(--radius-sm, 4px);
+    background: var(--accent); color: white; cursor: pointer;
+  }
+  .stree__popover-save:hover { filter: brightness(1.1); }
 
   @media (prefers-reduced-motion: reduce) {
-    .project-nav__divider-toggle,
-    .project-nav__item,
-    .project-nav__area-add-btn,
-    .project-nav__manage-link,
-    .project-nav__divider-link,
-    .project-nav__area-menu-btn,
-    .project-nav__task-add-btn,
-    .project-nav__all-tasks {
-      transition: none;
-    }
+    .stree__toggle, .stree__area-link, .stree__project-link,
+    .stree__action-btn, .stree__manage-link,
+    .stree__new-area, .stree__actions { transition: none; }
   }
 </style>
 
 <script>
-  // ── Project navigation: collapse/expand + pinning + menus ──
-  (function initProjectNav() {
+  import { DropdownController } from "../../lib/dropdown-controller"
+
+  // ── Sidebar Hierarchy Tree — interactions ──
+  ;(function initSidebarTree() {
     const nav = document.getElementById("project-nav")
     if (!nav) return
 
-    // ── Helpers ──
-    function hideAllDropdowns() {
-      document.querySelectorAll<HTMLElement>(".project-nav__dropdown, .project-nav__color-picker").forEach((d) => {
-        d.hidden = true
-      })
+    const ctrl = new DropdownController()
+
+    // ── Materialize templates to body ──
+    function materialize(tmplId: string): HTMLElement | null {
+      const tmpl = document.getElementById(tmplId) as HTMLTemplateElement | null
+      if (!tmpl) return null
+      const clone = tmpl.content.firstElementChild?.cloneNode(true) as HTMLElement
+      if (!clone) return null
+      clone.hidden = true
+      document.body.appendChild(clone)
+      return clone
     }
 
-    function positionDropdown(dropdown: HTMLElement, anchor: HTMLElement) {
-      const rect = anchor.getBoundingClientRect()
-      dropdown.style.top = `${rect.bottom + 4}px`
-      dropdown.style.left = `${rect.left}px`
-      // Ensure it doesn't go off-screen right
-      requestAnimationFrame(() => {
-        const dr = dropdown.getBoundingClientRect()
-        if (dr.right > window.innerWidth - 8) {
-          dropdown.style.left = `${window.innerWidth - dr.width - 8}px`
-        }
-        if (dr.bottom > window.innerHeight - 8) {
-          dropdown.style.top = `${rect.top - dr.height - 4}px`
-        }
-      })
-    }
+    const areaMenuDropdown = materialize("tmpl-area-menu")
+    const projectMenuDropdown = materialize("tmpl-project-menu")
+    const taskKindDropdown = materialize("tmpl-task-kind")
+    const colorIconPopover = materialize("tmpl-color-icon")
 
-    // Close dropdowns on outside click
-    document.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement
-      if (!target.closest(".project-nav__dropdown, .project-nav__color-picker, [data-area-menu], [data-task-add-project]")) {
-        hideAllDropdowns()
-      }
-    })
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideAllDropdowns()
-    })
+    // ── State ──
+    let activeEntityType: "area" | "project" = "area"
+    let activeEntityId: string | null = null
+    let activeEntityName: string | null = null
+    let activeProjectIdForTask: string | null = null
 
-    // ── 1. Collapse/Expand per area ──
+    // ── 1. Collapse/Expand ──
     const COLLAPSE_KEY = "meitheal_project_nav_collapsed"
     let collapsed: Set<string>
-    try {
-      const stored = localStorage.getItem(COLLAPSE_KEY)
-      collapsed = new Set(stored ? JSON.parse(stored) : [])
-    } catch {
-      collapsed = new Set()
-    }
+    try { const s = localStorage.getItem(COLLAPSE_KEY); collapsed = new Set(s ? JSON.parse(s) : []) } catch { collapsed = new Set() }
+    function saveCollapsed() { try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])) } catch {} }
 
-    function saveCollapsed() {
-      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])) } catch { /* quota */ }
-    }
-
-    document.querySelectorAll<HTMLButtonElement>("[data-area-toggle]").forEach((btn) => {
-      const areaId = btn.dataset.areaToggle
+    document.querySelectorAll<HTMLElement>("[data-area-toggle]").forEach((row) => {
+      const areaId = row.dataset.areaToggle
       if (!areaId) return
-      const projects = document.querySelector(`[data-area-projects="${areaId}"]`) as HTMLElement | null
-      if (!projects) return
-
-      // Restore
+      const children = document.querySelector(`[data-area-projects="${areaId}"]`) as HTMLElement | null
+      if (!children) return
       if (collapsed.has(areaId)) {
-        projects.dataset.collapsed = "true"
-        btn.setAttribute("aria-expanded", "false")
+        children.dataset.collapsed = "true"
+        children.style.display = "none"
+        row.setAttribute("aria-expanded", "false")
       }
-
-      btn.addEventListener("click", () => {
-        const isCollapsed = projects.dataset.collapsed === "true"
-        if (isCollapsed) {
-          projects.dataset.collapsed = "false"
-          projects.style.display = ""
-          btn.setAttribute("aria-expanded", "true")
+      row.addEventListener("click", (e) => {
+        // Don't toggle when clicking ⋯ or + action buttons
+        if ((e.target as HTMLElement).closest(".stree__actions")) return
+        const isC = children.dataset.collapsed === "true"
+        if (isC) {
+          children.dataset.collapsed = "false"
+          children.style.display = ""
+          row.setAttribute("aria-expanded", "true")
           collapsed.delete(areaId)
         } else {
-          projects.dataset.collapsed = "true"
-          projects.style.display = "none"
-          btn.setAttribute("aria-expanded", "false")
+          children.dataset.collapsed = "true"
+          children.style.display = "none"
+          row.setAttribute("aria-expanded", "false")
           collapsed.add(areaId)
         }
         saveCollapsed()
@@ -783,70 +711,44 @@ const taskKinds = [
     // ── 2. Pinned projects ──
     const PIN_KEY = "meitheal-pinned-projects"
     let pinnedIds: Set<string>
-    try {
-      const stored = localStorage.getItem(PIN_KEY)
-      pinnedIds = new Set(stored ? JSON.parse(stored) : [])
-    } catch {
-      pinnedIds = new Set()
-    }
-
-    function savePinned() {
-      try { localStorage.setItem(PIN_KEY, JSON.stringify([...pinnedIds])) } catch { /* quota */ }
-    }
+    try { const s = localStorage.getItem(PIN_KEY); pinnedIds = new Set(s ? JSON.parse(s) : []) } catch { pinnedIds = new Set() }
+    function savePinned() { try { localStorage.setItem(PIN_KEY, JSON.stringify([...pinnedIds])) } catch {} }
 
     function renderPinned() {
       const container = document.getElementById("project-nav-pinned")
       const list = document.getElementById("project-nav-pinned-list")
       if (!container || !list) return
-
-      if (pinnedIds.size === 0) {
-        container.hidden = true
-        return
-      }
-
+      if (pinnedIds.size === 0) { container.hidden = true; return }
       container.hidden = false
       list.innerHTML = ""
-
       pinnedIds.forEach((id) => {
-        const sourceItem = nav!.querySelector<HTMLAnchorElement>(`[data-project-id="${id}"]`)
-        if (!sourceItem) return
-        const clone = sourceItem.cloneNode(true) as HTMLAnchorElement
+        const src = nav!.querySelector<HTMLAnchorElement>(`[data-project-id="${id}"]`)
+        if (!src) return
+        const clone = src.cloneNode(true) as HTMLAnchorElement
         clone.classList.add("pinned-item")
         const unpinBtn = document.createElement("button")
         unpinBtn.type = "button"
-        unpinBtn.className = "project-nav__unpin-btn"
+        unpinBtn.className = "stree__unpin-btn"
         unpinBtn.title = "Unpin"
         unpinBtn.textContent = "📌"
-        unpinBtn.addEventListener("click", (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          pinnedIds.delete(id)
-          savePinned()
-          renderPinned()
-        })
+        unpinBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); pinnedIds.delete(id); savePinned(); renderPinned() })
         clone.appendChild(unpinBtn)
         list.appendChild(clone)
       })
     }
-
     renderPinned()
 
-    // Context menu for pinning
     nav.addEventListener("contextmenu", (e) => {
       const item = (e.target as HTMLElement).closest<HTMLAnchorElement>("[data-project-id]")
       if (!item) return
       e.preventDefault()
       const id = item.dataset.projectId!
-      if (pinnedIds.has(id)) {
-        pinnedIds.delete(id)
-      } else {
-        pinnedIds.add(id)
-      }
+      if (pinnedIds.has(id)) pinnedIds.delete(id); else pinnedIds.add(id)
       savePinned()
       renderPinned()
     })
 
-    // ── 3. Per-area quick-add project ──
+    // ── 3. Area + (new project) ──
     document.querySelectorAll<HTMLButtonElement>("[data-area-add]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const areaId = btn.dataset.areaAdd
@@ -855,197 +757,244 @@ const taskKinds = [
         if (!title?.trim()) return
         try {
           const res = await fetch("/api/projects", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
+            method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ title: title.trim(), area_id: areaId, icon: "📋", color: "#6366F1" }),
           })
-          if (res.ok) {
-            window.location.reload()
-          }
-        } catch { /* ignore */ }
+          if (res.ok) window.location.reload()
+        } catch {}
       })
     })
 
-    // ── 4. Area quick-menu (⋯) ──
-    const areaMenuDropdown = document.getElementById("area-menu-dropdown")
-    const colorIconPopover = document.getElementById("color-icon-popover")
-    let activeAreaId: string | null = null
-    let activeAreaName: string | null = null
-
+    // ── 4. Area ⋯ menu ──
     document.querySelectorAll<HTMLButtonElement>("[data-area-menu]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation()
         if (!areaMenuDropdown) return
-        const isVisible = !areaMenuDropdown.hidden && activeAreaId === btn.dataset.areaMenu
-        hideAllDropdowns()
+        const isVisible = ctrl.isShowing(areaMenuDropdown) && activeEntityId === btn.dataset.areaMenu && activeEntityType === "area"
+        ctrl.hideAll()
         if (isVisible) return
-
-        activeAreaId = btn.dataset.areaMenu!
-        activeAreaName = btn.dataset.areaName || ""
-        areaMenuDropdown.hidden = false
-        positionDropdown(areaMenuDropdown, btn)
+        activeEntityType = "area"
+        activeEntityId = btn.dataset.areaMenu!
+        activeEntityName = btn.dataset.areaName || ""
+        const manageLink = areaMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+        if (manageLink) manageLink.href = `/areas/${activeEntityId}`
+        ctrl.show(areaMenuDropdown, btn)
       })
     })
 
-    // Area menu actions
     areaMenuDropdown?.addEventListener("click", async (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]")
-      if (!btn || !activeAreaId) return
-      const action = btn.dataset.action
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+      if (!target || !activeEntityId || activeEntityType !== "area") return
+      const action = target.dataset.action
 
+      if (action === "manage") return // navigates via <a> href
       if (action === "rename") {
-        hideAllDropdowns()
-        const newName = prompt("New area name:", activeAreaName || "")
-        if (!newName?.trim() || newName.trim() === activeAreaName) return
-        try {
-          await fetch(`/api/areas/${activeAreaId}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: newName.trim() }),
-          })
-          window.location.reload()
-        } catch { /* ignore */ }
+        ctrl.hideAll()
+        const newName = prompt("New area name:", activeEntityName || "")
+        if (!newName?.trim() || newName.trim() === activeEntityName) return
+        try { await fetch(`/api/areas/${activeEntityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName.trim() }) }); window.location.reload() } catch {}
       }
-
       if (action === "color-icon") {
+        ctrl.hide()
         if (!colorIconPopover) return
-        areaMenuDropdown!.hidden = true
-        // Pre-fill color & icon
-        const iconInput = document.getElementById("area-icon-input") as HTMLInputElement | null
-        if (iconInput) {
-          const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)
-          iconInput.value = triggerBtn?.dataset.areaIcon || "📋"
-        }
-        // Pre-select color swatch
-        const currentColor = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)?.dataset.areaColor || "#6366F1"
-        document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => {
-          s.classList.toggle("selected", s.dataset.swatchColor === currentColor)
-        })
-        colorIconPopover.hidden = false
-        const anchor = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)
-        if (anchor) positionDropdown(colorIconPopover, anchor)
+        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeEntityId}"]`)
+        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
+        if (iconInput) iconInput.value = triggerBtn?.dataset.areaIcon || "📋"
+        const currentColor = triggerBtn?.dataset.areaColor || "#6366F1"
+        colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
+        if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
       }
-
       if (action === "delete") {
-        hideAllDropdowns()
-        const confirmed = confirm(`Delete "${activeAreaName}"? Projects inside will become ungrouped.`)
-        if (!confirmed) return
-        try {
-          await fetch(`/api/areas/${activeAreaId}`, { method: "DELETE" })
-          window.location.reload()
-        } catch { /* ignore */ }
+        ctrl.hideAll()
+        if (!confirm(`Delete "${activeEntityName}"? Projects inside will become ungrouped.`)) return
+        try { await fetch(`/api/areas/${activeEntityId}`, { method: "DELETE" }); window.location.reload() } catch {}
       }
     })
 
-    // Color swatch selection
-    document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((swatch) => {
+    // ── 5. Project ⋯ menu ──
+    document.querySelectorAll<HTMLButtonElement>("[data-project-menu]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        if (!projectMenuDropdown) return
+        const isVisible = ctrl.isShowing(projectMenuDropdown) && activeEntityId === btn.dataset.projectMenu && activeEntityType === "project"
+        ctrl.hideAll()
+        if (isVisible) return
+        activeEntityType = "project"
+        activeEntityId = btn.dataset.projectMenu!
+        activeEntityName = btn.dataset.projectTitle || ""
+        const manageLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+        if (manageLink) manageLink.href = `/projects/${activeEntityId}`
+        ctrl.show(projectMenuDropdown, btn)
+      })
+    })
+
+    projectMenuDropdown?.addEventListener("click", async (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+      if (!target || !activeEntityId || activeEntityType !== "project") return
+      const action = target.dataset.action
+
+      if (action === "manage") return
+      if (action === "rename") {
+        ctrl.hideAll()
+        const newTitle = prompt("New project name:", activeEntityName || "")
+        if (!newTitle?.trim() || newTitle.trim() === activeEntityName) return
+        try { await fetch(`/api/projects/${activeEntityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle.trim() }) }); window.location.reload() } catch {}
+      }
+      if (action === "color-icon") {
+        ctrl.hide()
+        if (!colorIconPopover) return
+        const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-project-menu="${activeEntityId}"]`)
+        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
+        if (iconInput) iconInput.value = triggerBtn?.dataset.projectIconValue || "📋"
+        const currentColor = triggerBtn?.dataset.projectColor || "#6366F1"
+        colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
+        if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
+      }
+    })
+
+    // ── 6. Color swatch + save (shared) ──
+    colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((swatch) => {
       swatch.addEventListener("click", () => {
-        document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.remove("selected"))
+        colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.remove("selected"))
         swatch.classList.add("selected")
       })
     })
 
-    // Save color & icon
-    document.getElementById("color-icon-save")?.addEventListener("click", async () => {
-      if (!activeAreaId) return
-      const iconInput = document.getElementById("area-icon-input") as HTMLInputElement | null
-      const selectedSwatch = document.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
+    // ── 6b. Emoji picker tab switching + selection ──
+    colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t) => t.classList.remove("active"))
+        colorIconPopover!.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p) => p.classList.add("hidden"))
+        tab.classList.add("active")
+        const panel = colorIconPopover!.querySelector(`[data-emoji-panel="${tab.dataset.emojiTab}"]`)
+        panel?.classList.remove("hidden")
+      })
+    })
+    colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const preview = colorIconPopover!.querySelector<HTMLSpanElement>("#entity-icon-preview")
+        const input = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
+        if (preview) preview.textContent = btn.dataset.emojiValue!
+        if (input) input.value = btn.dataset.emojiValue!
+        colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((b) => b.classList.remove("selected"))
+        btn.classList.add("selected")
+      })
+    })
+
+    colorIconPopover?.querySelector<HTMLButtonElement>("#color-icon-save")?.addEventListener("click", async () => {
+      if (!activeEntityId) return
+      const iconInput = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
+      const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "📋"
       const color = selectedSwatch?.dataset.swatchColor || "#6366F1"
-      hideAllDropdowns()
+      ctrl.hideAll()
+      const endpoint = activeEntityType === "area" ? `/api/areas/${activeEntityId}` : `/api/projects/${activeEntityId}`
       try {
-        await fetch(`/api/areas/${activeAreaId}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
+        await fetch(endpoint, {
+          method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ icon, color }),
         })
         window.location.reload()
-      } catch { /* ignore */ }
+      } catch {}
     })
 
-    // ── 5. Per-project task add (+) with kind picker ──
-    const taskKindDropdown = document.getElementById("task-kind-dropdown")
-    let activeProjectId: string | null = null
-
+    // ── 7. Per-project task add (+) with kind picker ──
     document.querySelectorAll<HTMLButtonElement>("[data-task-add-project]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation()
         e.preventDefault()
         if (!taskKindDropdown) return
-        const isVisible = !taskKindDropdown.hidden && activeProjectId === btn.dataset.taskAddProject
-        hideAllDropdowns()
+        const isVisible = ctrl.isShowing(taskKindDropdown) && activeProjectIdForTask === btn.dataset.taskAddProject
+        ctrl.hideAll()
         if (isVisible) return
-
-        activeProjectId = btn.dataset.taskAddProject!
-        taskKindDropdown.hidden = false
-        positionDropdown(taskKindDropdown, btn)
+        activeProjectIdForTask = btn.dataset.taskAddProject!
+        ctrl.show(taskKindDropdown, btn)
       })
     })
 
     taskKindDropdown?.addEventListener("click", async (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-task-kind]")
-      if (!btn || !activeProjectId) return
-      const kind = btn.dataset.taskKind!
-      hideAllDropdowns()
-
+      const target = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-task-kind]")
+      if (!target || !activeProjectIdForTask) return
+      const kind = target.dataset.taskKind!
+      ctrl.hideAll()
       const title = prompt("Task title:")
       if (!title?.trim()) return
-
+      // Resolve area_id from DOM hierarchy
+      const projEl = document.querySelector(`[data-project-id="${activeProjectIdForTask}"]`)
+      const areaGroup = projEl?.closest<HTMLElement>("[data-area-group]")
+      const areaId = areaGroup?.dataset.areaGroup || null
       try {
         const res = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
+          method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({
             title: title.trim(),
-            project_id: activeProjectId,
+            project_id: activeProjectIdForTask,
+            area_id: areaId,
             task_kind: kind,
           }),
         })
         if (res.ok) {
+          // Update the project task count in the sidebar
+          updateProjectTaskCount(activeProjectIdForTask)
           window.location.reload()
         }
-      } catch { /* ignore */ }
+      } catch {}
     })
 
-    // ── 6. Keyboard navigation ──
+    // ── 8. New Area button ──
+    document.getElementById("new-area-btn")?.addEventListener("click", async () => {
+      const name = prompt("New area name:")
+      if (!name?.trim()) return
+      try {
+        const res = await fetch("/api/areas", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), icon: "📋", color: "#6366F1" }),
+        })
+        if (res.ok) window.location.reload()
+      } catch {}
+    })
+
+    // ── 9. Keyboard navigation ──
     const focusables = () =>
       Array.from(nav.querySelectorAll<HTMLElement>(
-        ".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle, .project-nav__all-tasks"
+        ".stree__project-link, .stree__area-row"
       )).filter((el) => el.offsetParent !== null)
 
     nav.addEventListener("keydown", (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (!target.matches(".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle, .project-nav__all-tasks")) return
-
+      if (!target.matches(".stree__project-link, .stree__area-row")) return
       const items = focusables()
       const idx = items.indexOf(target)
       if (idx === -1) return
-
       switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault()
-          if (idx < items.length - 1) items[idx + 1]!.focus()
+        case "ArrowDown": e.preventDefault(); if (idx < items.length - 1) items[idx + 1]!.focus(); break
+        case "ArrowUp": e.preventDefault(); if (idx > 0) items[idx - 1]!.focus(); break
+        case "Enter": case " ":
+          if (target.matches(".stree__project-link")) { e.preventDefault(); (target as HTMLAnchorElement).click() }
           break
-        case "ArrowUp":
-          e.preventDefault()
-          if (idx > 0) items[idx - 1]!.focus()
-          break
-        case "Enter":
-        case " ":
-          if (target.matches(".project-nav__item, .project-nav__divider-link, .project-nav__all-tasks")) {
-            e.preventDefault()
-            ;(target as HTMLAnchorElement).click()
-          }
-          break
-        case "Home":
-          e.preventDefault()
-          if (items.length > 0) items[0]!.focus()
-          break
-        case "End":
-          e.preventDefault()
-          if (items.length > 0) items[items.length - 1]!.focus()
-          break
+        case "Home": e.preventDefault(); if (items.length > 0) items[0]!.focus(); break
+        case "End": e.preventDefault(); if (items.length > 0) items[items.length - 1]!.focus(); break
       }
+    })
+
+    // ── 10. Project task counts (async, non-blocking) ──
+    async function updateProjectTaskCount(projectId: string) {
+      try {
+        const res = await fetch(`/api/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`)
+        if (!res.ok) return
+        const data = await res.json()
+        // API returns { tasks: [...], total }, count non-complete
+        const tasks = Array.isArray(data.tasks) ? data.tasks : []
+        const openCount = tasks.filter((t: { status?: string }) => t.status !== "complete").length
+        const badge = document.querySelector<HTMLSpanElement>(`[data-project-task-count="${projectId}"]`)
+        if (badge) badge.textContent = String(openCount)
+      } catch {}
+    }
+
+    // Fetch counts for all visible projects
+    document.querySelectorAll<HTMLElement>("[data-project-task-count]").forEach((badge) => {
+      const projectId = badge.dataset.projectTaskCount
+      if (projectId) updateProjectTaskCount(projectId)
     })
   })()
 </script>
