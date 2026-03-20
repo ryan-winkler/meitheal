@@ -39,7 +39,16 @@
     "task_kind_shopping_item": "Shopping Item",
     "task_kind_checklist": "Checklist",
     "task_kind_calendar_event": "Event",
-    "task_kind_quick_capture": "Quick Capture"
+    "task_kind_quick_capture": "Quick Capture",
+    "no_projects": "No projects",
+    "manage_space": "Manage Space",
+    "manage_project": "Manage Project",
+    "save": "Save",
+    "icon_label": "Icon",
+    "color_label": "Color",
+    "toggle_area": "Toggle {name}",
+    "area_options": "Area options",
+    "project_options": "Project options"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",

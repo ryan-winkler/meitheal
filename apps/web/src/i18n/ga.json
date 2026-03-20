@@ -38,7 +38,16 @@
     "task_kind_shopping_item": "Mír Siopadóireachta",
     "task_kind_checklist": "Seicliosta",
     "task_kind_calendar_event": "Imeacht",
-    "task_kind_quick_capture": "Gabháil Thapa"
+    "task_kind_quick_capture": "Gabháil Thapa",
+    "no_projects": "Gan tionscadail",
+    "manage_space": "Bainistigh Spás",
+    "manage_project": "Bainistigh Tionscadal",
+    "save": "Sábháil",
+    "icon_label": "Deilbhín",
+    "color_label": "Dath",
+    "toggle_area": "Scoránaigh {name}",
+    "area_options": "Roghanna réimse",
+    "project_options": "Roghanna tionscadail"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",

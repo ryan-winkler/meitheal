@@ -120,7 +120,8 @@ const taskKinds = [
         return (
           <div class="stree__area" data-area-group={area.id}>
             {/* ── Area row — whole row toggles collapse ── */}
-            <div class="stree__area-row" data-area-toggle={area.id} role="button" tabindex="0" aria-expanded="true" aria-label={`Toggle ${area.name}`}>
+            <div class="stree__area-row" data-area-toggle={area.id} role="button" tabindex="0" aria-expanded="true" aria-label={t("sidebar.toggle_area", locale).replace("{name}", area.name)}>
+              <span class="stree__toggle" aria-hidden="true">▸</span>
               <span class="stree__area-icon" style={`color: ${area.color}`}>{area.icon}</span>
               <span class="stree__area-name">{area.name}</span>
               {/* ── Area ⋯ + actions ── */}
@@ -132,8 +133,8 @@ const taskKinds = [
                   data-area-name={area.name}
                   data-area-color={area.color}
                   data-area-icon={area.icon}
-                  title="Area options"
-                  aria-label={`Options for ${area.name}`}
+                  title={t("sidebar.area_options", locale)}
+                  aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
                 >⋯</button>
                 <button
                   type="button"
@@ -173,8 +174,8 @@ const taskKinds = [
                       data-project-title={proj.title}
                       data-project-color={proj.color}
                       data-project-icon-value={proj.icon}
-                      title="Project options"
-                      aria-label={`Options for ${proj.title}`}
+                      title={t("sidebar.project_options", locale)}
+                      aria-label={`${t("sidebar.project_options", locale)} - ${proj.title}`}
                     >⋯</button>
                     <button
                       type="button"
@@ -188,7 +189,7 @@ const taskKinds = [
                 </div>
               ))}
               {areaProjects.length === 0 && (
-                <span class="stree__empty-hint">No projects</span>
+                <span class="stree__empty-hint">{t("sidebar.no_projects", locale)}</span>
               )}
             </div>
           </div>
@@ -198,7 +199,7 @@ const taskKinds = [
       {/* ── New Area ── */}
       <button type="button" class="stree__new-area" id="new-area-btn">
         <span class="stree__new-area-icon">＋</span>
-        <span>New Area</span>
+        <span>{t("sidebar.new_area", locale)}</span>
       </button>
     </div>
   </div>
@@ -208,7 +209,7 @@ const taskKinds = [
 <template id="tmpl-area-menu">
   <div class="stree__dropdown" id="area-menu-dropdown">
     <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">⚙️</span><span>Manage Space</span>
+      <span class="stree__dropdown-icon">⚙️</span><span>{t("sidebar.manage_space", locale)}</span>
     </a>
     <button type="button" data-action="rename" class="stree__dropdown-item">
       <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
@@ -226,7 +227,7 @@ const taskKinds = [
 <template id="tmpl-project-menu">
   <div class="stree__dropdown" id="project-menu-dropdown">
     <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">⚙️</span><span>Manage Project</span>
+      <span class="stree__dropdown-icon">⚙️</span><span>{t("sidebar.manage_project", locale)}</span>
     </a>
     <button type="button" data-action="rename" class="stree__dropdown-item">
       <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
@@ -251,7 +252,7 @@ const taskKinds = [
 <template id="tmpl-color-icon">
   <div class="stree__popover" id="color-icon-popover">
     <div class="stree__popover-section">
-      <label class="stree__popover-label">Icon</label>
+      <label class="stree__popover-label">{t("sidebar.icon_label", locale)}</label>
       <div class="stree__emoji-preview">
         <span id="entity-icon-preview" class="stree__emoji-selected">📋</span>
         <input type="hidden" id="entity-icon-input" value="📋" />
@@ -272,14 +273,14 @@ const taskKinds = [
       </div>
     </div>
     <div class="stree__popover-section">
-      <label class="stree__popover-label">Color</label>
+      <label class="stree__popover-label">{t("sidebar.color_label", locale)}</label>
       <div class="stree__swatches" id="color-swatches">
         {["#6366F1", "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#64748B"].map((c) => (
           <button type="button" class="stree__swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
         ))}
       </div>
     </div>
-    <button type="button" id="color-icon-save" class="stree__popover-save">Save</button>
+    <button type="button" id="color-icon-save" class="stree__popover-save">{t("sidebar.save", locale)}</button>
   </div>
 </template>
 
@@ -373,6 +374,19 @@ const taskKinds = [
     background: rgba(255, 255, 255, 0.04);
     color: var(--text-primary);
   }
+
+  .stree__toggle {
+    font-size: 10px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    opacity: 0.5;
+    transition: transform 200ms ease, opacity 150ms;
+    display: inline-flex;
+    width: 12px;
+    text-align: center;
+  }
+  .stree__area-row[aria-expanded="true"] .stree__toggle { transform: rotate(90deg); opacity: 0.7; }
+  .stree__area-row:hover .stree__toggle { opacity: 1; }
 
   .stree__area-icon { font-size: 15px; flex-shrink: 0; line-height: 1; }
   .stree__area-name {
