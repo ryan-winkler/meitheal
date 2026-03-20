@@ -1726,4 +1726,12 @@ const kanbanSignal =
   }
 
   /* T-1915: Column collapse CSS removed — feature was removed per UX feedback */
+
+  /* ── Accessibility: reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .quick-action-popover { animation: none; transition: none; }
+    .quick-action-popover.popover-exiting { transition: none; }
+    .kanban-card { transition: none; }
+    .kanban-card.dragging { animation: none; }
+  }
 </style>

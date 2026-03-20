@@ -456,7 +456,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     })
 
     // AI: open ChatGPT with task context prompt
-    document.querySelectorAll(".card-ai-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLElement>(".card-ai-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const el = btn;
@@ -473,7 +473,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     });
 
     // Duplicate: clone task via API
-    document.querySelectorAll(".card-dup-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLButtonElement>(".card-dup-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
@@ -523,8 +523,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
     // Quick Actions: Shared Popover Utility (P4-1)
     // =============================================
     const _qa = (() => {
-      let activePopover = null;
-      let _scrollCleanup = null;
+      let activePopover: HTMLElement | null = null;
+      let _scrollCleanup: (() => void) | null = null;
 
       /** Close any open quick-action popover with exit animation (P3-5) */
       function close() {
@@ -537,7 +537,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       }
 
       /** Reusable toast with fallback (P2-6) */
-      function toast(msg, type = "success") {
+      function toast(msg: string, type = "success") {
         if (window.showToast) window.showToast(msg, type);
         else log.info(`${type}: ${msg}`);
       }
@@ -549,7 +549,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
        * @param {string} title - popover header text
        * @returns {HTMLElement} the popover element
        */
-      function open(btn, content, title) {
+      function open(btn: HTMLElement, content: HTMLElement, title: string) {
         close();
         const popover = document.createElement("div");
         popover.className = "quick-action-popover";
@@ -600,7 +600,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Focus first interactive element (P1-1)
         requestAnimationFrame(() => {
           const first = popover.querySelector("button, [tabindex]");
-          if (first) first.focus();
+          if (first) (first as HTMLElement).focus();
         });
 
         return popover;
@@ -608,8 +608,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
       // P0-3: Single consolidated document listener for all popovers
       document.addEventListener("click", (e) => {
-        if (activePopover && !activePopover.contains(e.target) &&
-            !e.target.closest(".card-assign-btn, .card-color-btn")) {
+        if (activePopover && !activePopover.contains(e.target as Node) &&
+            !(e.target as HTMLElement)?.closest(".card-assign-btn, .card-color-btn")) {
           close();
         }
       }, { signal: __signal });
@@ -638,7 +638,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     // =============================================
     // Quick Action: Add Child Task (P1-3, P1-6, P3-6)
     // =============================================
-    document.querySelectorAll(".card-child-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLButtonElement>(".card-child-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const parentId = btn.dataset.id;
@@ -646,7 +646,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         const parentPriority = btn.dataset.priority || "3";
         if (!parentId) return;
 
-        const card = btn.closest(".kanban-card");
+        const card = btn.closest(".kanban-card") as HTMLElement | null;
         const areaId = card?.dataset.area || "";
 
         btn.disabled = true;
@@ -696,7 +696,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     // =============================================
     // Quick Action: Assign User (P1-5 skeleton, P2-7 colors, P3-4 optimistic)
     // =============================================
-    document.querySelectorAll(".card-assign-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLButtonElement>(".card-assign-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
 
@@ -750,7 +750,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         content.appendChild(unassignItem);
 
         // User list with colored dots (P2-7)
-        users.forEach((user) => {
+        users.forEach((user: any) => {
           const userId = user.id || user.name;
           const item = document.createElement("button");
           item.className = "popover-item" + (currentAssigned === userId ? " active" : "");
@@ -803,7 +803,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         { color: "#6b7280", label: "Gray" },
       ];
 
-      document.querySelectorAll(".card-color-btn").forEach((btn) => {
+      document.querySelectorAll<HTMLButtonElement>(".card-color-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
 
@@ -882,20 +882,20 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // Context menu for the "More" (⋯) button
     (() => {
-      let activeMenu = null;
+      let activeMenu: HTMLElement | null = null;
 
       function closeMenu() {
         if (activeMenu) { activeMenu.remove(); activeMenu = null; }
       }
 
       document.addEventListener("click", (e) => {
-        if (activeMenu && !activeMenu.contains(e.target)) closeMenu();
+        if (activeMenu && !activeMenu.contains(e.target as Node)) closeMenu();
       }, { signal: __signal });
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") closeMenu();
       }, { signal: __signal });
 
-      document.querySelectorAll(".card-more-btn").forEach((btn) => {
+      document.querySelectorAll<HTMLElement>(".card-more-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           closeMenu();
@@ -917,7 +917,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           activeMenu = menu;
 
           menu.addEventListener("click", async (ev) => {
-            const action = ev.target.closest("[data-action]")?.dataset.action;
+            const action = (ev.target as HTMLElement)?.closest("[data-action]")?.getAttribute("data-action");
             if (!action) return;
             closeMenu();
 
@@ -926,7 +926,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
               try {
                 const res = await fetch(buildTaskApiUrl(id), { method: "DELETE" });
                 if (res.ok) {
-                  const card = document.querySelector(`.kanban-card[data-id="${id}"]`);
+                  const card = document.querySelector(`.kanban-card[data-id="${id}"]`) as HTMLElement | null;
                   if (card) {
                     card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
                     card.style.opacity = "0";
@@ -969,7 +969,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         const firstBtn = document.querySelector(".kanban-add-btn");
-        if (firstBtn) firstBtn.click();
+        if (firstBtn) (firstBtn as HTMLElement).click();
       }
 
       // C = toggle collapse all swimlane groups
@@ -982,14 +982,14 @@ export function initKanbanArea(__signal: AbortSignal): void {
         const shouldCollapse = openCount > toggles.length / 2;
         toggles.forEach((btn) => {
           const group = btn.closest(".swimlane-group");
-          if (shouldCollapse && !group?.classList.contains("collapsed")) btn.click();
-          if (!shouldCollapse && group?.classList.contains("collapsed")) btn.click();
+          if (shouldCollapse && !group?.classList.contains("collapsed")) (btn as HTMLElement).click();
+          if (!shouldCollapse && group?.classList.contains("collapsed")) (btn as HTMLElement).click();
         });
       }
     }, { signal: __signal });
 
     // WIP limit visual indicator on column badge counts
-    document.querySelectorAll(".kanban-column").forEach((col) => {
+    document.querySelectorAll<HTMLElement>(".kanban-column").forEach((col) => {
       const wipLimit = parseInt(col.dataset.wipLimit || "0", 10);
       if (wipLimit <= 0) return;
       const countBadge = col.querySelector(".kanban-count");
@@ -1003,7 +1003,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     });
 
     // Quick add from kanban column — uses inline form, not prompt()
-    document.querySelectorAll(".kanban-add-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLElement>(".kanban-add-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         // If inline form already exists, focus it
         const existing = btn.parentElement?.querySelector(".kanban-inline-add");
@@ -1028,16 +1028,16 @@ export function initKanbanArea(__signal: AbortSignal): void {
         input?.focus();
 
         async function submitTask() {
-          const title = input.value.trim();
+          const title = input!.value.trim();
           if (!title) {
             cleanup();
             return;
           }
           try {
             // P1-2: Double-submit prevention
-            addBtn.disabled = true;
-            addBtn.classList.add("btn-loading");
-            const payload = { title, status };
+            addBtn!.disabled = true;
+            addBtn!.classList.add("btn-loading");
+            const payload: Record<string, string | undefined> = { title, status };
             if (taskType) payload.task_type = taskType;
             const res = await fetch(
               "/api/tasks",
@@ -1049,13 +1049,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
             );
             if (res.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-lane-add" } }));
             else {
-              addBtn.disabled = false;
-              addBtn.classList.remove("btn-loading");
+              addBtn!.disabled = false;
+              addBtn!.classList.remove("btn-loading");
             }
           } catch (err) {
             log.warn("Quick-add task failed", err);
-            addBtn.disabled = false;
-            addBtn.classList.remove("btn-loading");
+            addBtn!.disabled = false;
+            addBtn!.classList.remove("btn-loading");
           }
         }
 
@@ -1064,8 +1064,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
           btn.classList.remove("hidden");
         }
 
-        addBtn.addEventListener("click", submitTask);
-        input.addEventListener("keydown", (e) => {
+        addBtn?.addEventListener("click", submitTask);
+        input?.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
             submitTask();
@@ -1074,7 +1074,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
             cleanup();
           }
         });
-        input.addEventListener("blur", () => {
+        input?.addEventListener("blur", () => {
           // Delay to allow button click
           setTimeout(() => {
             if (!form.contains(document.activeElement)) cleanup();
@@ -1098,19 +1098,19 @@ export function initKanbanArea(__signal: AbortSignal): void {
       if (!searchInput) return;
 
       searchInput.addEventListener("input", () => {
-        const query = searchInput.value.toLowerCase().trim();
+        const query = (searchInput as HTMLInputElement).value.toLowerCase().trim();
         const cards = document.querySelectorAll(".kanban-card");
 
         cards.forEach((card) => {
-          const title = (card.dataset.title || "").toLowerCase();
-          const desc = (card.dataset.desc || "").toLowerCase();
+          const title = ((card as HTMLElement).dataset.title || "").toLowerCase();
+          const desc = ((card as HTMLElement).dataset.desc || "").toLowerCase();
           const match = !query || title.includes(query) || desc.includes(query);
-          card.style.display = match ? "" : "none";
+          (card as HTMLElement).style.display = match ? "" : "none";
 
           // Highlight matching text in title
           const titleEl = card.querySelector(".kanban-card-title .kanban-title-text");
           if (titleEl && !titleEl.hasAttribute("contenteditable")) {
-            const originalTitle = card.dataset.title || "";
+            const originalTitle = (card as HTMLElement).dataset.title || "";
             if (query && match && title.includes(query)) {
               const idx = title.indexOf(query);
               const before = originalTitle.substring(0, idx);
@@ -1123,7 +1123,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           }
         });
 
-        window.updateAllCounts();
+        window.updateAllCounts?.();
       });
     })();
 
@@ -1148,12 +1148,12 @@ export function initKanbanArea(__signal: AbortSignal): void {
             toggle.textContent = isCollapsed ? "▶" : "▼";
           }
           group.classList.toggle("swimlane-collapsed", isCollapsed);
-          const type = group.dataset.swimlaneType || group.dataset.swimlaneValue || "dynamic";
+          const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic";
           localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded");
         }
       });
 
-      let focusedCard = null;
+      let focusedCard: HTMLElement | null = null;
 
       board.addEventListener("keydown", (e) => {
         const cards = Array.from(board.querySelectorAll(".kanban-card"));
@@ -1173,7 +1173,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
         let nextCard = null;
 
-        switch (e.key) {
+        switch ((e as KeyboardEvent).key) {
           case "ArrowDown":
             e.preventDefault();
             nextCard = colCards[colIdx + 1] || colCards[0];
@@ -1185,13 +1185,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
           case "ArrowRight":
             e.preventDefault();
             const nextCol = columns[colPos + 1] || columns[0];
-            const nextColCards = nextCol.querySelectorAll(".kanban-card");
+            const nextColCards = nextCol?.querySelectorAll(".kanban-card");
             nextCard = nextColCards[0] || null;
             break;
           case "ArrowLeft":
             e.preventDefault();
             const prevCol = columns[colPos - 1] || columns[columns.length - 1];
-            const prevColCards = prevCol.querySelectorAll(".kanban-card");
+            const prevColCards = prevCol?.querySelectorAll(".kanban-card");
             nextCard = prevColCards[0] || null;
             break;
           case "Enter":
@@ -1235,14 +1235,14 @@ export function initKanbanArea(__signal: AbortSignal): void {
       const groupBySelect = document.getElementById("kanban-group-by");
       const savedGroupBy = localStorage.getItem("meitheal-kanban-group-by") || "none";
       if (groupBySelect && savedGroupBy !== "none") {
-        groupBySelect.value = savedGroupBy;
+        (groupBySelect as HTMLInputElement).value = savedGroupBy;
         // Don't auto-dispatch here; FilterToolbar handles initialization and emits meitheal:filter-change
       }
 
       // We share isCardVisible with the global scope for updateAllCounts
       let currentFilterState = {};
 
-      window.isCardVisible = function (card) {
+      window.isCardVisible = function (card: HTMLElement) {
         if (!window.__filterStateLoaded) return true; // Show all before first filter event
         // We need to dynamically import the filter logic or assume it is bundled
         // Since isTaskVisible is in @lib/filter-state, we can import it dynamically
@@ -1250,36 +1250,36 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Let's implement a lighter standalone visibility check, OR import it.
         // Given we are in a module-like block:
         if (typeof window.__isTaskVisible === "function") {
-          return window.__isTaskVisible(card, currentFilterState);
+          return window.__isTaskVisible!(card, currentFilterState);
         }
         return true;
       }
 
       // Listen for unified filter events from FilterToolbar
       document.addEventListener("meitheal:filter-change", (e) => {
-        if (e.detail?.view !== "kanban") return;
-        currentFilterState = e.detail;
+        if ((e as CustomEvent).detail?.view !== "kanban") return;
+        currentFilterState = (e as CustomEvent).detail;
 
         // Apply groupBy
-        const mode = currentFilterState.groupBy || "none";
-        if (mode !== (localStorage.getItem("meitheal-kanban-group-by") || "none")) {
-          // Sync select element if needed
-          if (groupBySelect && groupBySelect.value !== mode) groupBySelect.value = mode;
+          const mode = (currentFilterState as any).groupBy || "none";
+          if (mode !== (localStorage.getItem("meitheal-kanban-group-by") || "none")) {
+            // Sync select element if needed
+            if (groupBySelect && (groupBySelect as HTMLInputElement).value !== mode) (groupBySelect as HTMLInputElement).value = mode;
           applyGroupBy(mode);
         }
 
         // Apply visibility to all cards
         if (typeof window.__isTaskVisible === "function") {
           document.querySelectorAll(".kanban-card").forEach(card => {
-            if (window.__isTaskVisible(card, currentFilterState)) {
-               card.style.display = "";
+            if (window.__isTaskVisible!(card as HTMLElement, currentFilterState)) {
+               (card as HTMLElement).style.display = "";
             } else {
-               card.style.display = "none";
+               (card as HTMLElement).style.display = "none";
             }
           });
         }
         
-        window.updateAllCounts();
+        window.updateAllCounts?.();
       });
 
       // Unified count updater — column headers + swimlane badges
@@ -1289,8 +1289,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
           const count = col.querySelector(".kanban-count")
           const visible = Array.from(
             col.querySelectorAll(".kanban-card"),
-          ).filter(c => c.style.display !== "none")
-          if (count) count.textContent = visible.length
+          ).filter(c => (c as HTMLElement).style.display !== "none")
+          if (count) count.textContent = String(visible.length)
         })
 
         // 2. Swimlane group counts (both static + dynamic)
@@ -1299,8 +1299,8 @@ export function initKanbanArea(__signal: AbortSignal): void {
           if (!countEl) return
           const visible = Array.from(
             group.querySelectorAll(".kanban-card"),
-          ).filter(c => c.style.display !== "none")
-          countEl.textContent = visible.length
+          ).filter(c => (c as HTMLElement).style.display !== "none")
+          countEl.textContent = String(visible.length)
         })
 
         // Hide clear button (handled internally by FilterToolbar UI, but we can sync)

@@ -1009,6 +1009,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     .eisenhower__flow-card {
       transition: none;
     }
+    .quadrant__wip-warning {
+      animation: none;
+    }
   }
 </style>
 
@@ -1422,4 +1425,13 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     color: var(--text-muted);
   }
   .review-action--skip:hover { background: rgba(255, 255, 255, 0.08); }
+
+  /* ── Accessibility: reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .triage-overlay { animation: none; }
+    .triage-card { animation: none; }
+    .review-overlay { animation: none; }
+    .review-action:hover { transform: none; }
+    .triage-control__slider::-webkit-slider-thumb { transition: none; }
+  }
 </style>
