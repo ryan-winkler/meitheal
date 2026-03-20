@@ -79,7 +79,7 @@
     "git.autofetch": true,
     "typescript.disableAutomaticTypeAcquisition": false,
     "files.autoSave": "onFocusChange",
-    "liveServer.settings.multiRootWorkspaceName": "meitheal",
+    "liveServer.settings.multiRootWorkspaceName": "📦 Meitheal Root",
   },
   "extensions": {
     "recommendations": [

@@ -1,13 +1,14 @@
 ---
 /**
- * /planning — Parent page for Planning views (Eisenhower, Triage, RICE)
+ * /planning — Parent page for Planning views
+ *
+ * Default view: Spaces (Areas & Projects — the work structure overview)
+ * Also includes: Eisenhower, Triage, and RICE sub-views.
  *
  * Uses ParentPageShell for hash-based routing between sub-views.
- * Eisenhower links to the full legacy page. Triage and RICE show
- * live data previews with future expansion points.
  *
  * @domain navigation
- * @phase 15 — Hierarchy Architecture Overhaul
+ * @phase 15.1 — Planning-First Navigation Redesign
  */
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
@@ -15,6 +16,12 @@ import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store"
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
@@ -41,14 +48,151 @@ const riceScoredCount = tasks.filter(t => !t.is_done && t.rice !== null).length
 const avgRice = riceScoredCount > 0
   ? Math.round(tasks.filter(t => !t.is_done && t.rice !== null).reduce((sum, t) => sum + (t.rice ?? 0), 0) / riceScoredCount)
   : 0
+
+// ─── Spaces data: Areas & Projects ─────────────────────────────────
+let areas: any[] = []
+let projects: any[] = []
+let goalCountByArea = new Map<string, number>()
+let projectCountByArea = new Map<string, number>()
+let taskCountByProject = new Map<string, { total: number; completed: number }>()
+
+try {
+  await ensureSchema()
+  const client = getPersistenceClient()
+  const repo = new HierarchyRepository(client)
+  const taskRepo = new TaskRepository(client)
+
+  areas = await repo.findAllAreas()
+  const goals = await repo.findAllGoals({})
+  projects = await repo.findAllProjects({})
+
+  // Goal counts per area
+  for (const g of goals) {
+    if (g.area_id) {
+      goalCountByArea.set(String(g.area_id), (goalCountByArea.get(String(g.area_id)) ?? 0) + 1)
+    }
+  }
+
+  // Project counts per area (via goals)
+  const goalToArea = new Map<string, string>()
+  for (const g of goals) {
+    if (g.area_id) goalToArea.set(String(g.id), String(g.area_id))
+  }
+  for (const p of projects) {
+    const areaId = p.goal_id ? goalToArea.get(String(p.goal_id)) : null
+    if (areaId) {
+      projectCountByArea.set(areaId, (projectCountByArea.get(areaId) ?? 0) + 1)
+    }
+  }
+
+  // Task counts per project
+  for (const proj of projects) {
+    const projTasks = await taskRepo.findByProjectId(String(proj.id))
+    const completed = projTasks.filter((t: any) => String(t.status) === "complete").length
+    taskCountByProject.set(String(proj.id), { total: projTasks.length, completed })
+  }
+} catch {
+  // Schema may not exist yet — render empty
+}
+
+// Filter out Uncategorized if empty
+const visibleAreas = areas.filter((a: any) =>
+  String(a.name) !== "Uncategorized" || (goalCountByArea.get(String(a.id)) ?? 0) > 0
+)
 ---
 
 <Layout title={`Meitheal — ${t("nav.planning", locale)}`}>
   <ParentPageShell pageId="planning">
-    <section data-parent-section="eisenhower" id="planning-section-eisenhower">
-      <InlineHelper helperId="planning-hub-explainer" title="Planning & Prioritisation" icon="🧭" variant="info">
-        <p><strong>Planning</strong> helps you decide <em>what to work on</em> and <em>in what order</em>. Use the Eisenhower Matrix for urgency × importance, Triage for quick classification, and RICE Scoring for data-driven prioritisation.</p>
+
+    {/* ─── Spaces: Areas & Projects ─── */}
+    <section data-parent-section="spaces" id="planning-section-spaces">
+      <InlineHelper helperId="spaces-explainer" title="Areas & Projects" icon="🗂️" variant="info">
+        <p><strong>Areas</strong> are your areas of responsibility (Home, Work, Health). <strong>Projects</strong> are the bodies of work within them. This is where you set up and manage what you're working on.</p>
       </InlineHelper>
+
+      {/* Areas grid */}
+      <div class="spaces-section">
+        <div class="spaces-section__header">
+          <h2 class="spaces-section__title">Areas</h2>
+          <button type="button" class="spaces-add-btn" id="create-area-btn">+ New Area</button>
+        </div>
+        {visibleAreas.length === 0 ? (
+          <div class="spaces-empty">
+            <p>No areas yet. Create one to organise your goals and projects.</p>
+          </div>
+        ) : (
+          <div class="spaces-grid">
+            {visibleAreas.map((area: any) => {
+              const goalCount = goalCountByArea.get(String(area.id)) ?? 0
+              const projCount = projectCountByArea.get(String(area.id)) ?? 0
+              const areaColor = String(area.color ?? "#6366F1")
+              const areaIcon = String(area.icon ?? "🏠")
+              return (
+                <a href={`/areas/${area.id}`} class="spaces-card" style={`--card-accent: ${areaColor};`}>
+                  <div class="spaces-card__icon">{areaIcon}</div>
+                  <div class="spaces-card__info">
+                    <h3 class="spaces-card__name">{String(area.name)}</h3>
+                    <div class="spaces-card__meta">
+                      <span>{goalCount} goal{goalCount !== 1 ? "s" : ""}</span>
+                      <span class="meta-dot">·</span>
+                      <span>{projCount} project{projCount !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                </a>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Projects grid */}
+      <div class="spaces-section spaces-section--projects">
+        <div class="spaces-section__header">
+          <h2 class="spaces-section__title">Projects</h2>
+          <button type="button" class="spaces-add-btn" id="create-project-btn">+ New Project</button>
+        </div>
+        {projects.length === 0 ? (
+          <div class="spaces-empty">
+            <p>No projects yet. Create one to group related tasks together.</p>
+          </div>
+        ) : (
+          <div class="spaces-grid spaces-grid--projects">
+            {projects.map((proj: any) => {
+              const projCounts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 }
+              const progress = projCounts.total > 0 ? Math.round((projCounts.completed / projCounts.total) * 100) : 0
+              const projColor = String(proj.color ?? "#6366F1")
+              const projIcon = String(proj.icon ?? "📋")
+              const projStatus = String(proj.status ?? "active")
+              return (
+                <a href={`/projects/${proj.id}`} class="spaces-card spaces-card--project" style={`--card-accent: ${projColor};`}>
+                  <div class="spaces-card__icon">{projIcon}</div>
+                  <div class="spaces-card__info">
+                    <h3 class="spaces-card__name">{String(proj.title)}</h3>
+                    <div class="spaces-card__progress">
+                      <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style={`width: ${progress}%;`} />
+                      </div>
+                      <span class="progress-text">{progress}%</span>
+                    </div>
+                    <div class="spaces-card__meta">
+                      <span>{projCounts.total} task{projCounts.total !== 1 ? "s" : ""}</span>
+                      <span class="meta-dot">·</span>
+                      <span>{projCounts.completed} done</span>
+                      {projStatus !== "active" && (
+                        <span class={`spaces-status-badge status-${projStatus}`}>{projStatus}</span>
+                      )}
+                    </div>
+                  </div>
+                </a>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+
+    {/* ─── Eisenhower ─── */}
+    <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
       <div class="parent-section-hub">
         <div class="parent-section-hub__header">
           <span class="parent-section-hub__icon">🎯</span>
@@ -67,6 +211,7 @@ const avgRice = riceScoredCount > 0
       </div>
     </section>
 
+    {/* ─── Triage ─── */}
     <section data-parent-section="triage" id="planning-section-triage" hidden>
       <div class="parent-section-hub">
         <div class="parent-section-hub__header">
@@ -84,6 +229,7 @@ const avgRice = riceScoredCount > 0
       </div>
     </section>
 
+    {/* ─── RICE ─── */}
     <section data-parent-section="rice" id="planning-section-rice" hidden>
       <div class="parent-section-hub">
         <div class="parent-section-hub__header">
@@ -100,7 +246,196 @@ const avgRice = riceScoredCount > 0
         <span class="parent-section-hub__badge">Coming Soon</span>
       </div>
     </section>
+
   </ParentPageShell>
 </Layout>
 
+<style>
+  @reference "../styles/global.css";
 
+  /* ─── Spaces section ─── */
+  .spaces-section { margin-bottom: 2rem; }
+  .spaces-section--projects { margin-bottom: 0; }
+
+  .spaces-section__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .spaces-section__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.75rem;
+  }
+  .spaces-add-btn {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 150ms, color 150ms;
+  }
+  .spaces-add-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .spaces-empty {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    background: var(--bg-card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .spaces-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+  .spaces-grid--projects {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+
+  /* ─── Card shared ─── */
+  .spaces-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1rem;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .spaces-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--card-accent);
+  }
+  .spaces-card:hover {
+    border-color: var(--card-accent);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  }
+  .spaces-card__icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .spaces-card__info {
+    flex: 1;
+    min-width: 0;
+  }
+  .spaces-card__name {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .spaces-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .meta-dot { opacity: 0.4; }
+
+  /* ─── Project card extras ─── */
+  .spaces-card__progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .progress-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: var(--bg-hover);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--card-accent, var(--accent));
+    border-radius: 2px;
+    transition: width 300ms ease;
+  }
+  .progress-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  .spaces-status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+    margin-left: 4px;
+  }
+  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+  .status-archived { background: rgba(var(--text-muted-rgb, 128,128,128), 0.1); color: var(--text-muted); }
+  .status-on_hold { background: rgba(255, 200, 0, 0.1); color: #e6a800; }
+
+  @media (max-width: 640px) {
+    .spaces-grid { grid-template-columns: 1fr; }
+    .spaces-grid--projects { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  // ─── Create Area dialog ───
+  const createAreaBtn = document.getElementById("create-area-btn")
+  createAreaBtn?.addEventListener("click", async () => {
+    const name = prompt("New area name:")
+    if (!name?.trim()) return
+    try {
+      const res = await fetch("/api/areas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), icon: "🏠", color: "#6366F1" }),
+      })
+      if (res.ok) window.location.reload()
+      else alert("Failed to create area")
+    } catch { alert("Failed to create area") }
+  })
+
+  // ─── Create Project dialog ───
+  const createProjectBtn = document.getElementById("create-project-btn")
+  createProjectBtn?.addEventListener("click", async () => {
+    const title = prompt("New project title:")
+    if (!title?.trim()) return
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), icon: "📋", color: "#6366F1" }),
+      })
+      if (res.ok) window.location.reload()
+      else alert("Failed to create project")
+    } catch { alert("Failed to create project") }
+  })
+</script>
