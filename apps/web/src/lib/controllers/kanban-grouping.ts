@@ -130,11 +130,11 @@ export function initGroupingAndFilters(): void {
       cardsContainer
         .querySelectorAll(".swimlane-group.dynamic-group")
         .forEach((g) => g.remove())
-      // Hide static type swimlane groups
+      // Hide static type swimlane groups (use hidden attribute to match SSR)
       cardsContainer
         .querySelectorAll(".swimlane-group:not(.dynamic-group)")
         .forEach((g) => {
-          ;(g as HTMLElement).style.display = "none"
+          g.setAttribute("hidden", "")
         })
     })
 
@@ -162,7 +162,7 @@ export function initGroupingAndFilters(): void {
         cardsContainer
           .querySelectorAll(".swimlane-group:not(.dynamic-group)")
           .forEach((group) => {
-            ;(group as HTMLElement).style.display = "" // Show all type swimlanes
+            group.removeAttribute("hidden") // Show all type swimlanes
             const countEl = group.querySelector(".swimlane-count")
             const cards = group.querySelectorAll(".kanban-card")
             if (countEl) countEl.textContent = String(Array.from(cards).filter(c => window.isCardVisible?.(c as HTMLElement) ?? true).length)

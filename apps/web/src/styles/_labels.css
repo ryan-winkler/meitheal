@@ -126,11 +126,13 @@
 /* Compact mode for kanban cards */
 .label-badges--compact {
   gap: 0.125rem;
+  max-height: 2.5rem;
 }
 
 .label-badges--compact .label-badge {
   padding: 0.0625rem 0.375rem;
   font-size: 0.625rem;
+  max-width: 6rem;
 }
 
 /* --- Label Picker --- */

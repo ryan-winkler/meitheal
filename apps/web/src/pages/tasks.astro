@@ -371,8 +371,9 @@ const kanbanSignal =
                 ).length;
                 return (
                   <div
-                    class={`swimlane-group swimlane-${type} hidden`}
+                    class={`swimlane-group swimlane-${type}`}
                     data-swimlane-type={type}
+                    hidden
                   >
                     <div class="swimlane-header" data-type={type}>
                       <span
@@ -612,7 +613,7 @@ const kanbanSignal =
                     <LabelBadges
                       labels={task.labels as string}
                       compact
-                      max={4}
+                      max={3}
                     />
                     {/* Custom fields */}
                     {(() => {
@@ -1625,10 +1626,6 @@ const kanbanSignal =
     display: flex;
     flex-direction: column;
     margin-bottom: 0px;
-  }
-  /* SSR renders swimlane groups with .hidden; override display:flex so they stay hidden until JS activates grouping */
-  .swimlane-group.hidden {
-    display: none !important;
   }
   .swimlane-header {
     display: flex;
