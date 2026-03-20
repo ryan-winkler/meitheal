@@ -107,9 +107,8 @@ const visibleAreas = areas.filter((a) => {
     <div class="project-nav__list" id="project-nav-list">
       {visibleAreas.map((area) => {
         const areaProjects = projectsByArea.get(String(area.id)) ?? []
-        if (areaProjects.length === 0 && area.name !== "Uncategorized") {
-          // Show area divider even without projects if it has content potential
-        }
+        // Skip areas with no projects — they show in Planning, not sidebar
+        if (areaProjects.length === 0) return null
         return (
           <div class="project-nav__area-group" data-area-group={area.id}>
             <div class="project-nav__divider">
@@ -130,9 +129,7 @@ const visibleAreas = areas.filter((a) => {
                 <span class="project-nav__divider-icon" style={`color: ${area.color}`}>{area.icon}</span>
                 <span class="project-nav__divider-label">{area.name}</span>
               </a>
-              {areaProjects.length > 0 && (
-                <span class="project-nav__divider-count">{areaProjects.length}</span>
-              )}
+              <span class="project-nav__divider-count">{areaProjects.length}</span>
             </div>
             <div class="project-nav__area-projects" data-area-projects={area.id}>
               {areaProjects.map((proj) => (
@@ -314,6 +311,8 @@ const visibleAreas = areas.filter((a) => {
     font-size: 12px;
     transition: background 150ms, color 150ms;
     min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
   }
   .project-nav__item:hover {
     background: var(--bg-hover);
