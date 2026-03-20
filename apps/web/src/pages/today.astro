@@ -21,6 +21,7 @@
 import Layout from "../layouts/Layout.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
 import {
   ensureSchema,
@@ -614,6 +615,10 @@ const todayCompletionPercent = Math.round(
         </div>
       </div>
 
+      <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="🧭" variant="tip">
+        <p>These links connect your daily cockpit to the wider system. <strong>Tasks Hub</strong> shows all views (Kanban, Calendar, Table, Gantt). <strong>Planning</strong> helps prioritise. <strong>Progress</strong> tracks routines and goals.</p>
+      </InlineHelper>
+
       <div class="page-flow-grid">
         <a class="card page-flow-card" href="/upcoming">
           <strong>📅 Upcoming</strong>
@@ -630,6 +635,10 @@ const todayCompletionPercent = Math.round(
         <a class="card page-flow-card" href="/tasks#kanban">
           <strong>📊 Kanban</strong>
           <p>Track status across lanes when work moves in stages.</p>
+        </a>
+        <a class="card page-flow-card" href="/progress#routines">
+          <strong>🏆 Progress</strong>
+          <p>Track routines, goals, and achievements in one place.</p>
         </a>
       </div>
     </section>
