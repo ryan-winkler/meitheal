@@ -128,6 +128,40 @@ Consolidate Meitheal's 11-item flat sidebar navigation into a 6-item focused str
 
 ---
 
+### Wave 4.5: Area & Project Detail Pages with Sub-Menus
+**Goal:** Create area pages and add sub-menu tabs to project detail pages, giving hierarchy items proper navigation shells.
+
+#### Task 4.5.1: Create `/areas/index.astro` — Area listing page
+- **File:** `apps/web/src/pages/areas/index.astro` — [NEW] Grid view of all areas with goal count, project count, and description
+- **Pattern:** Similar to `/projects/index.astro` grid layout
+- **Success:** `/areas` shows all areas in a browsable grid
+
+#### Task 4.5.2: Create `/areas/[id].astro` — Area detail with sub-menus
+- **File:** `apps/web/src/pages/areas/[id].astro` — [NEW] Area detail page with hash-based sub-menu tabs
+- **Sections:**
+  - **Overview** (`#overview`) — Area description, stats (goal count, project count, task count)
+  - **Goals** (`#goals`) — Goals within this area with progress indicators
+  - **Projects** (`#projects`) — Projects within this area with progress bars
+  - **Settings** (`#settings`) — Edit area name, icon, color, description; delete area
+- **Pattern:** Page-local hash routing using same CSS toggle pattern as Settings
+- **Success:** Area detail renders 4 sections behind tab bar, hash deep-links work
+
+#### Task 4.5.3: Add sub-menus to `/projects/[id].astro`
+- **File:** `apps/web/src/pages/projects/[id].astro` — [MODIFY] Add hash-based sub-menu tabs to existing project detail
+- **Sections:**
+  - **Overview** (`#overview`) — Project header card, stats, progress bar (current content)
+  - **Tasks** (`#tasks`) — Task list with inline creation (current content, moved to tab)
+  - **Fields** (`#fields`) — [NEW] Custom field configuration for this project
+  - **Settings** (`#settings`) — [NEW] Edit project name, icon, color, status, goal assignment; delete project
+- **Pattern:** Page-local hash routing, section show/hide via CSS class toggle
+- **Success:** Project detail has 4 tabs, hash navigation works, back/forward works
+
+#### Task 4.5.4: Sidebar hierarchy tree links to Area/Project detail pages
+- **File:** `apps/web/src/components/layout/SidebarHierarchyTree.astro` — ensure area names link to `/areas/[id]` and project names link to `/projects/[id]`
+- **Success:** Clicking an area or project in the sidebar tree navigates to its detail page
+
+---
+
 ### Wave 5: Redirect Routes & Backward Compatibility
 **Goal:** Old URLs keep working.
 

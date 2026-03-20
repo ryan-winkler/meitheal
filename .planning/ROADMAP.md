@@ -490,6 +490,10 @@
 8. Three-tier helper/explainer system with `?` key recall panel
 9. API tolerant reader pattern — empty update body returns 200, not 400
 10. Ubiquitous language glossary in `docs/kcs/hierarchy-glossary.md`
+11. `/areas` index page with grid view of all areas (goal/project counts)
+12. `/areas/[id]` detail page with sub-menu tabs: Overview | Goals | Projects | Settings
+13. `/projects/[id]` detail page with sub-menu tabs: Overview | Tasks | Fields | Settings
+14. Sidebar hierarchy tree items link to their respective Area/Project detail pages
 
 **Depends on:** Phase 04.1 (DDD Core — complete), Phase 04.2 (Hierarchy API — complete)
 

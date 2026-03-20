@@ -28,6 +28,15 @@ Dashboard → Today → Upcoming → Tasks → Progress & Growth → Planning
 | **Progress & Growth** | Routines · Goals · Achievements | `/progress#routines` |
 | **Planning** | Eisenhower · Triage · RICE | `/planning#eisenhower` |
 
+### Area & Project Detail Pages (Per-Instance Sub-Menus)
+
+| Detail Page | Sub-Views | Route Pattern |
+|-------------|-----------|---------------|
+| **Area Detail** | Overview · Goals · Projects · Settings | `/areas/[id]#overview` |
+| **Project Detail** | Overview · Tasks · Fields · Settings | `/projects/[id]#overview` |
+
+These are per-instance pages (each area/project has its own). Sub-menus use the same hash-based section pattern as parent pages but are page-local rather than registered in `parent-page-registry.ts`.
+
 ---
 
 ## Architecture Decisions (Validated)
@@ -78,6 +87,7 @@ Dashboard → Today → Upcoming → Tasks → Progress & Growth → Planning
 - **HA ingress Tier 2 verification** — no ship without devcontainer testing (HA-native)
 - **6-item sidebar** — working memory sweet spot for ADHD (Focus)
 - **Astro SSR-first rendering** — all tabs in DOM, CSS toggles visibility (Astro-native)
+- **Area & Project detail sub-menus** — Areas need index + detail pages; Projects need sub-menu tabs (Overview, Tasks, Fields, Settings). No orphan pages without navigation context.
 
 ### Should-Haves (P1)
 - **Routine auto-spawn on page load** — no manual intervention (ADHD/Automation)
