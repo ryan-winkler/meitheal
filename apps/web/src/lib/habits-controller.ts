@@ -1,39 +1,19 @@
-import { HABITS_SECTIONS, type HabitsSectionId } from "@lib/habits-registry"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
-import {
-  initUnifiedBarSearchLauncher,
-  initUnifiedBarTabOverflow,
-  initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
-} from "@lib/unified-bar-controller"
 import { createClientLogger } from "@lib/client-logger"
+import { initHabitsShellNav } from "@lib/controllers/habits-shell-nav"
+import {
+  renderHabits,
+  updateStats,
+  createChecklistBuilderItem,
+  type HabitData,
+  type HabitChecklistItem,
+} from "@lib/controllers/habits-card-renderer"
 
-interface HabitChecklistItem {
-  text: string
-  done: boolean
-}
-
-interface HabitData {
-  id: string
-  name: string
-  icon: string
-  cadence: "daily" | "weekly"
-  todayCompleted: boolean
-  todayTaskId: string | null
-  lastCompletedDate: string | null
-  currentStreak: number
-  longestStreak: number
-  totalCompletions: number
-  description: string
-  priority: number
-  checklists: HabitChecklistItem[]
-}
-
-const HABITS_BAR_ID = "habits-bar"
-const HABITS_SECTION_IDS = new Set(HABITS_SECTIONS.map((section) => section.id))
 const log = createClientLogger("habits-shell")
 let habits: HabitData[] = []
+
+// ───── Data Parsing ─────
 
 function normalizeChecklistItems(items: unknown): HabitChecklistItem[] {
   if (!Array.isArray(items)) return []
@@ -134,395 +114,7 @@ function parseBootstrapHabits(): HabitData[] {
   }
 }
 
-function resolveHabitsSectionId(anchorId: string): HabitsSectionId | null {
-  const target = document.getElementById(anchorId)
-  if (!target) return null
-
-  const maybeSectionId =
-    target.closest<HTMLElement>("[data-habits-section]")?.id ||
-    target.id ||
-    null
-
-  if (!maybeSectionId || !HABITS_SECTION_IDS.has(maybeSectionId as HabitsSectionId)) {
-    return null
-  }
-
-  return maybeSectionId as HabitsSectionId
-}
-
-function updateActiveSectionState(sectionId: HabitsSectionId): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-    .forEach((link) => {
-      const active = link.dataset.unifiedBarSection === sectionId
-      link.classList.toggle("is-active", active)
-      link.setAttribute("aria-current", active ? "location" : "false")
-      link.setAttribute("aria-selected", active ? "true" : "false")
-      link.setAttribute("tabindex", active ? "0" : "-1")
-    })
-
-  setUnifiedBarSwitcherActiveState(HABITS_BAR_ID, sectionId)
-}
-
-function scrollToHabitsAnchor(
-  anchorId: string,
-  behavior: ScrollBehavior = "smooth",
-): void {
-  const target = document.getElementById(anchorId)
-  if (!target) return
-
-  target.scrollIntoView({ behavior, block: "start" })
-  history.replaceState(null, "", `#${anchorId}`)
-
-  const sectionId = resolveHabitsSectionId(anchorId)
-  if (sectionId) {
-    updateActiveSectionState(sectionId)
-  }
-
-  target.classList.add("habits-shell__section--flash")
-  setTimeout(() => target.classList.remove("habits-shell__section--flash"), 1000)
-}
-
-function syncHabitsSectionFromHash(): void {
-  const hash = window.location.hash.replace("#", "")
-  const sectionId = hash ? resolveHabitsSectionId(hash) : null
-  updateActiveSectionState(sectionId ?? "habits-overview")
-}
-
-function initSectionLinks(): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-unified-bar-section-link], [data-habits-section-link]")
-    .forEach((link) => {
-      pageLifecycle.on(link, "click", (event) => {
-        event.preventDefault()
-        const targetId = link.getAttribute("href")?.replace("#", "")
-        if (!targetId) return
-
-        scrollToHabitsAnchor(targetId)
-      })
-    })
-}
-
-function initIntersectionTracking(): void {
-  const sections = document.querySelectorAll<HTMLElement>("[data-habits-section]")
-  if (!sections.length) return
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const active = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-
-      if (!active?.target.id) return
-
-      const sectionId = resolveHabitsSectionId(active.target.id)
-      if (sectionId) {
-        updateActiveSectionState(sectionId)
-      }
-    },
-    {
-      rootMargin: "-25% 0px -45% 0px",
-      threshold: [0.2, 0.45, 0.7],
-    },
-  )
-
-  sections.forEach((section) => observer.observe(section))
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-    once: true,
-  })
-}
-
-function initGoToTop(): void {
-  const button = document.getElementById("habits-go-top")
-  const shell = document.getElementById("habits-shell")
-  if (!button || !shell) return
-
-  shell.style.position = "relative"
-
-  const sentinel = document.createElement("div")
-  sentinel.setAttribute("aria-hidden", "true")
-  sentinel.style.cssText =
-    "position:absolute;top:420px;width:1px;height:1px;pointer-events:none;"
-  shell.appendChild(sentinel)
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const isAboveFold = entries[0]?.isIntersecting ?? true
-      button.classList.toggle("is-visible", !isAboveFold)
-      button.toggleAttribute("hidden", isAboveFold)
-    },
-    { threshold: 0 },
-  )
-
-  observer.observe(sentinel)
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-    once: true,
-  })
-
-  pageLifecycle.on(button, "click", () => {
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-    updateActiveSectionState("habits-overview")
-  })
-}
-
-function initTabsKeyboard(): void {
-  const tabContainer = document.getElementById(`${HABITS_BAR_ID}-tabs`)
-  if (!tabContainer) return
-
-  pageLifecycle.on(tabContainer, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-      return
-    }
-
-    const visibleTabs = Array.from(
-      tabContainer.querySelectorAll<HTMLElement>(
-        "[data-unified-bar-tab]:not([data-overflow-hidden])",
-      ),
-    )
-    const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-    if (currentIndex === -1) return
-
-    keyboardEvent.preventDefault()
-    const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-    const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-    const nextTab = visibleTabs[nextIndex]
-    if (!nextTab) return
-
-    nextTab.focus()
-    nextTab.click()
-  })
-}
-
-function formatCadence(cadence: HabitData["cadence"]): string {
-  return cadence === "weekly" ? "Weekly" : "Daily"
-}
-
-function formatLastCompletedDate(value: string | null): string {
-  if (!value) return "Never completed"
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return `Last done ${value}`
-
-  return `Last done ${new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date)}`
-}
-
-function priorityLabel(priority: number): string {
-  switch (priority) {
-    case 1:
-      return "P1"
-    case 2:
-      return "P2"
-    case 4:
-      return "P4"
-    case 5:
-      return "P5"
-    default:
-      return "P3"
-  }
-}
-
-function updateStats(): void {
-  const activeCount = habits.length
-  const completedToday = habits.filter((habit) => habit.todayCompleted).length
-  const bestStreak = Math.max(0, ...habits.map((habit) => habit.longestStreak))
-  const totalCompletions = habits.reduce(
-    (sum, habit) => sum + habit.totalCompletions,
-    0,
-  )
-  const dailyCount = habits.filter((habit) => habit.cadence === "daily").length
-  const weeklyCount = habits.filter((habit) => habit.cadence === "weekly").length
-
-  const statActive = document.getElementById("stat-active")
-  const statCompletedToday = document.getElementById("stat-completed-today")
-  const statLongestStreak = document.getElementById("stat-longest-streak")
-  const statTotal = document.getElementById("stat-total")
-  const signalSummary = document.getElementById("habits-signal-summary")
-  const cadenceSummary = document.getElementById("habits-cadence-summary")
-  const libraryCount = document.getElementById("habits-library-count")
-
-  if (statActive) statActive.textContent = String(activeCount)
-  if (statCompletedToday) statCompletedToday.textContent = String(completedToday)
-  if (statLongestStreak) statLongestStreak.textContent = String(bestStreak)
-  if (statTotal) statTotal.textContent = String(totalCompletions)
-
-  if (signalSummary) {
-    signalSummary.textContent =
-      activeCount === 0
-        ? "No active habits yet"
-        : `${completedToday} completed today across ${activeCount} active habit${activeCount === 1 ? "" : "s"}`
-  }
-
-  if (cadenceSummary) {
-    cadenceSummary.textContent =
-      activeCount === 0
-        ? "Create your first habit to start a routine cadence."
-        : `${dailyCount} daily · ${weeklyCount} weekly routines`
-  }
-
-  if (libraryCount) {
-    libraryCount.textContent =
-      activeCount === 0 ? "No active habits yet" : `${activeCount} active habit${activeCount === 1 ? "" : "s"}`
-  }
-}
-
-function createMetaItem(text: string, className?: string): HTMLSpanElement {
-  const item = document.createElement("span")
-  item.className = className ? `habit-card__meta-item ${className}` : "habit-card__meta-item"
-  item.textContent = text
-  return item
-}
-
-function createIconButton(
-  action: "edit" | "delete",
-  habitId: string,
-  label: string,
-  icon: string,
-): HTMLButtonElement {
-  const button = document.createElement("button")
-  button.type = "button"
-  button.className = "btn-icon"
-  button.dataset.action = action
-  button.dataset.id = habitId
-  button.setAttribute("aria-label", label)
-  button.title = label
-  button.textContent = icon
-  return button
-}
-
-function createChecklistList(habit: HabitData): HTMLUListElement {
-  const list = document.createElement("ul")
-  list.className = "habit-card__checklist"
-  list.setAttribute("aria-label", `${habit.name} template checklist`)
-
-  habit.checklists.forEach((item) => {
-    const entry = document.createElement("li")
-    entry.className = "habit-card__checklist-item"
-
-    const marker = document.createElement("span")
-    marker.className = "habit-card__checklist-marker"
-    marker.setAttribute("aria-hidden", "true")
-    marker.textContent = item.done ? "✓" : "•"
-
-    const text = document.createElement("span")
-    text.textContent = item.text
-
-    entry.append(marker, text)
-    list.append(entry)
-  })
-
-  return list
-}
-
-function createHabitCard(habit: HabitData): HTMLArticleElement {
-  const card = document.createElement("article")
-  card.className = `habit-card${habit.todayCompleted ? " completed" : ""}`
-  card.dataset.habitId = habit.id
-
-  const top = document.createElement("div")
-  top.className = "habit-card__top"
-
-  const completeButton = document.createElement("button")
-  completeButton.type = "button"
-  completeButton.className = "habit-card__check"
-  completeButton.dataset.action = "complete"
-  completeButton.dataset.id = habit.id
-  completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
-  completeButton.textContent = habit.todayCompleted ? "✓" : ""
-
-  const icon = document.createElement("span")
-  icon.className = "habit-card__icon"
-  icon.setAttribute("aria-hidden", "true")
-  icon.textContent = habit.icon
-
-  const info = document.createElement("div")
-  info.className = "habit-card__info"
-
-  const name = document.createElement("div")
-  name.className = "habit-card__name"
-  name.textContent = habit.name
-
-  const meta = document.createElement("div")
-  meta.className = "habit-card__meta"
-  meta.append(
-    createMetaItem(formatCadence(habit.cadence)),
-    createMetaItem(priorityLabel(habit.priority)),
-    createMetaItem(`${habit.totalCompletions} total`),
-    createMetaItem(formatLastCompletedDate(habit.lastCompletedDate)),
-  )
-
-  if (habit.currentStreak > 0) {
-    meta.prepend(createMetaItem(`🔥 ${habit.currentStreak} day streak`, "habit-card__streak"))
-  }
-
-  if (habit.checklists.length > 0) {
-    meta.append(createMetaItem(`${habit.checklists.length} checklist items`))
-  }
-
-  info.append(name, meta)
-
-  const actions = document.createElement("div")
-  actions.className = "habit-card__actions"
-  actions.append(
-    createIconButton("edit", habit.id, `Edit ${habit.name}`, "✏️"),
-    createIconButton("delete", habit.id, `Delete ${habit.name}`, "🗑️"),
-  )
-
-  top.append(completeButton, icon, info, actions)
-  card.append(top)
-
-  if (habit.description) {
-    const description = document.createElement("p")
-    description.className = "habit-card__description"
-    description.textContent = habit.description
-    card.append(description)
-  }
-
-  if (habit.checklists.length > 0) {
-    card.append(createChecklistList(habit))
-  }
-
-  return card
-}
-
-function renderHabits(): void {
-  const list = document.getElementById("habits-list")
-  if (!list) return
-
-  list.replaceChildren()
-
-  if (habits.length === 0) {
-    const emptyState = document.createElement("div")
-    emptyState.className = "habits-empty"
-
-    const title = document.createElement("p")
-    title.className = "habits-empty__title"
-    title.textContent = "No habits yet. Create your first daily routine."
-
-    const detail = document.createElement("p")
-    detail.className = "habits-empty__detail"
-    detail.textContent =
-      "Habits create real tasks that surface in Today, Kanban, Table, and Upcoming."
-
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "btn btn-primary"
-    button.dataset.openHabitModal = "true"
-    button.textContent = "Create Habit"
-
-    emptyState.append(title, detail, button)
-    list.append(emptyState)
-    return
-  }
-
-  habits.forEach((habit) => {
-    list.append(createHabitCard(habit))
-  })
-}
+// ───── API Operations ─────
 
 async function readErrorMessage(response: Response): Promise<string> {
   try {
@@ -548,8 +140,8 @@ async function refreshHabits(): Promise<void> {
         .filter((habit): habit is HabitData => Boolean(habit))
     : []
 
-  renderHabits()
-  updateStats()
+  renderHabits(habits)
+  updateStats(habits)
 }
 
 async function completeHabit(habitId: string): Promise<void> {
@@ -610,57 +202,7 @@ async function deleteHabit(habitId: string): Promise<void> {
   }
 }
 
-function createChecklistBuilderItem(text = ""): HTMLDivElement {
-  const row = document.createElement("div")
-  row.className = "checklist-builder__item"
-
-  const input = document.createElement("input")
-  input.type = "text"
-  input.className = "checklist-text"
-  input.placeholder = "Checklist item"
-  input.value = text
-
-  const removeButton = document.createElement("button")
-  removeButton.type = "button"
-  removeButton.className = "btn-remove"
-  removeButton.setAttribute("aria-label", "Remove item")
-  removeButton.textContent = "×"
-
-  pageLifecycle.on(removeButton, "click", () => {
-    row.remove()
-  })
-
-  row.append(input, removeButton)
-  return row
-}
-
-function initHabitsShell(): void {
-  initSectionLinks()
-  initIntersectionTracking()
-  initGoToTop()
-  initTabsKeyboard()
-  initUnifiedBarTitleSwitcher({
-    barId: HABITS_BAR_ID,
-    onSelect: (sectionId) => {
-      scrollToHabitsAnchor(sectionId)
-    },
-  })
-  initUnifiedBarSearchLauncher(HABITS_BAR_ID)
-  initUnifiedBarTabOverflow(HABITS_BAR_ID)
-
-  pageLifecycle.on(window, "hashchange", () => {
-    syncHabitsSectionFromHash()
-  })
-
-  syncHabitsSectionFromHash()
-
-  const hash = window.location.hash.replace("#", "")
-  if (!hash) return
-
-  requestAnimationFrame(() => {
-    scrollToHabitsAnchor(hash, "auto")
-  })
-}
+// ───── CRUD Modal ─────
 
 function initHabitsCrud(): void {
   const overlay = document.getElementById("habit-modal-overlay")
@@ -695,12 +237,12 @@ function initHabitsCrud(): void {
   }
 
   function resetChecklistBuilder(): void {
-    checklistContainer.replaceChildren()
+    checklistContainer!.replaceChildren()
   }
 
   function addChecklistItem(text = ""): void {
     const row = createChecklistBuilderItem(text)
-    checklistContainer.append(row)
+    checklistContainer!.append(row)
 
     if (!text) {
       const input = row.querySelector<HTMLInputElement>(".checklist-text")
@@ -709,39 +251,39 @@ function initHabitsCrud(): void {
   }
 
   function openCreateModal(): void {
-    editIdInput.value = ""
-    modalTitle.textContent = "New Habit"
-    nameInput.value = ""
-    iconInput.value = "✅"
-    cadenceSelect.value = "daily"
-    prioritySelect.value = "3"
-    descInput.value = ""
+    editIdInput!.value = ""
+    modalTitle!.textContent = "New Habit"
+    nameInput!.value = ""
+    iconInput!.value = "✅"
+    cadenceSelect!.value = "daily"
+    prioritySelect!.value = "3"
+    descInput!.value = ""
     resetChecklistBuilder()
-    overlay.classList.remove("hidden")
-    nameInput.focus()
+    overlay!.classList.remove("hidden")
+    nameInput!.focus()
   }
 
   function openEditModal(habitId: string): void {
     const habit = habits.find((candidate) => candidate.id === habitId)
     if (!habit) return
 
-    editIdInput.value = habit.id
-    modalTitle.textContent = "Edit Habit"
-    nameInput.value = habit.name
-    iconInput.value = habit.icon
-    cadenceSelect.value = habit.cadence
-    prioritySelect.value = String(habit.priority)
-    descInput.value = habit.description
+    editIdInput!.value = habit.id
+    modalTitle!.textContent = "Edit Habit"
+    nameInput!.value = habit.name
+    iconInput!.value = habit.icon
+    cadenceSelect!.value = habit.cadence
+    prioritySelect!.value = String(habit.priority)
+    descInput!.value = habit.description
 
     resetChecklistBuilder()
     habit.checklists.forEach((item) => addChecklistItem(item.text))
 
-    overlay.classList.remove("hidden")
-    nameInput.focus()
+    overlay!.classList.remove("hidden")
+    nameInput!.focus()
   }
 
   function closeModal(): void {
-    overlay.classList.add("hidden")
+    overlay!.classList.add("hidden")
   }
 
   pageLifecycle.on(document, "click", (event) => {
@@ -773,7 +315,7 @@ function initHabitsCrud(): void {
 
   pageLifecycle.on(document, "keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key === "Escape" && !overlay.classList.contains("hidden")) {
+    if (keyboardEvent.key === "Escape" && !overlay!.classList.contains("hidden")) {
       keyboardEvent.preventDefault()
       closeModal()
     }
@@ -782,27 +324,27 @@ function initHabitsCrud(): void {
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
 
-    const name = nameInput.value.trim()
+    const name = nameInput!.value.trim()
     if (!name) {
       showToast("Habit name is required", "warning")
       return
     }
 
     const checklists = Array.from(
-      checklistContainer.querySelectorAll<HTMLInputElement>(".checklist-text"),
+      checklistContainer!.querySelectorAll<HTMLInputElement>(".checklist-text"),
     )
       .map((input) => input.value.trim())
       .filter(Boolean)
       .map((text) => ({ text, done: false }))
 
-    const editId = editIdInput.value
+    const editId = editIdInput!.value
 
     try {
       if (editId) {
         const templateJson: Record<string, unknown> = {
           title: name,
-          description: descInput.value.trim(),
-          priority: Number(prioritySelect.value),
+          description: descInput!.value.trim(),
+          priority: Number(prioritySelect!.value),
           labels: ["routine"],
           task_type: "task",
         }
@@ -818,8 +360,8 @@ function initHabitsCrud(): void {
             action: "update",
             templateId: editId,
             name,
-            icon: iconInput.value.trim() || "✅",
-            cadence: cadenceSelect.value,
+            icon: iconInput!.value.trim() || "✅",
+            cadence: cadenceSelect!.value,
             templateJson,
           }),
           signal: pageLifecycle.signal,
@@ -837,10 +379,10 @@ function initHabitsCrud(): void {
           body: JSON.stringify({
             action: "create",
             name,
-            icon: iconInput.value.trim() || "✅",
-            cadence: cadenceSelect.value,
-            priority: Number(prioritySelect.value),
-            description: descInput.value.trim(),
+            icon: iconInput!.value.trim() || "✅",
+            cadence: cadenceSelect!.value,
+            priority: Number(prioritySelect!.value),
+            description: descInput!.value.trim(),
             checklists: checklists.length > 0 ? checklists : undefined,
           }),
           signal: pageLifecycle.signal,
@@ -888,6 +430,8 @@ function initHabitsCrud(): void {
   })
 }
 
+// ───── Boot ─────
+
 function bootHabitsPage(): void {
   const shell = document.getElementById("habits-shell")
   if (!shell || shell.dataset.habitsBooted === "true") return
@@ -895,9 +439,9 @@ function bootHabitsPage(): void {
   shell.dataset.habitsBooted = "true"
   habits = parseBootstrapHabits()
 
-  initHabitsShell()
+  initHabitsShellNav()
   initHabitsCrud()
-  updateStats()
+  updateStats(habits)
 }
 
 bootHabitsPage()
