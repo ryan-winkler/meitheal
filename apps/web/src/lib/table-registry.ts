@@ -1,17 +1,14 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type TableSectionId =
   | "table-overview"
   | "table-filters"
   | "table-fields"
   | "table-flow"
 
-export interface TableSectionDescriptor {
-  id: TableSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type TableSectionDescriptor = SectionDescriptor<TableSectionId>
 
-export const TABLE_SECTIONS: TableSectionDescriptor[] = [
+export const TABLE_SECTIONS = defineSections<TableSectionId>([
   {
     id: "table-overview",
     label: "Overview",
@@ -36,4 +33,4 @@ export const TABLE_SECTIONS: TableSectionDescriptor[] = [
     icon: "↗",
     description: "Cross-view movement into Kanban and Calendar without losing context.",
   },
-]
+])

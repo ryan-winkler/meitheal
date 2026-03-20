@@ -1,17 +1,14 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type CalendarSectionId =
   | "calendar-overview"
   | "calendar-month"
   | "calendar-agenda"
   | "calendar-flow"
 
-export interface CalendarSectionDescriptor {
-  id: CalendarSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type CalendarSectionDescriptor = SectionDescriptor<CalendarSectionId>
 
-export const CALENDAR_SECTIONS: CalendarSectionDescriptor[] = [
+export const CALENDAR_SECTIONS = defineSections<CalendarSectionId>([
   {
     id: "calendar-overview",
     label: "Overview",
@@ -36,4 +33,4 @@ export const CALENDAR_SECTIONS: CalendarSectionDescriptor[] = [
     icon: "↗",
     description: "Operational handoff into Today, Upcoming, and the other task views.",
   },
-]
+])

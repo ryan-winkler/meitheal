@@ -1,16 +1,13 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type EisenhowerSectionId =
   | "eisenhower-overview"
   | "eisenhower-matrix"
   | "eisenhower-flow"
 
-export interface EisenhowerSectionDescriptor {
-  id: EisenhowerSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type EisenhowerSectionDescriptor = SectionDescriptor<EisenhowerSectionId>
 
-export const EISENHOWER_SECTIONS: EisenhowerSectionDescriptor[] = [
+export const EISENHOWER_SECTIONS = defineSections<EisenhowerSectionId>([
   {
     id: "eisenhower-overview",
     label: "Overview",
@@ -29,4 +26,4 @@ export const EISENHOWER_SECTIONS: EisenhowerSectionDescriptor[] = [
     icon: "↗",
     description: "Operational handoff into Today, Upcoming, and the other task views.",
   },
-]
+])

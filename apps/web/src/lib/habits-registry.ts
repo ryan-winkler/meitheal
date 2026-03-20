@@ -1,17 +1,14 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type HabitsSectionId =
   | "habits-overview"
   | "habits-rhythm"
   | "habits-library"
   | "habits-flow"
 
-export interface HabitsSectionDescriptor {
-  id: HabitsSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type HabitsSectionDescriptor = SectionDescriptor<HabitsSectionId>
 
-export const HABITS_SECTIONS: HabitsSectionDescriptor[] = [
+export const HABITS_SECTIONS = defineSections<HabitsSectionId>([
   {
     id: "habits-overview",
     label: "Overview",
@@ -36,4 +33,4 @@ export const HABITS_SECTIONS: HabitsSectionDescriptor[] = [
     icon: "↗",
     description: "Follow how habits move into Today, Kanban, Table, and Upcoming.",
   },
-]
+])

@@ -1,3 +1,5 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type DashboardSectionId =
   | "dashboard-overview"
   | "dashboard-momentum"
@@ -5,14 +7,9 @@ export type DashboardSectionId =
   | "dashboard-open"
   | "dashboard-recent"
 
-export interface DashboardSectionDescriptor {
-  id: DashboardSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type DashboardSectionDescriptor = SectionDescriptor<DashboardSectionId>
 
-export const DASHBOARD_SECTIONS: DashboardSectionDescriptor[] = [
+export const DASHBOARD_SECTIONS = defineSections<DashboardSectionId>([
   {
     id: "dashboard-overview",
     label: "Overview",
@@ -43,4 +40,4 @@ export const DASHBOARD_SECTIONS: DashboardSectionDescriptor[] = [
     icon: "🗂",
     description: "Recently touched work and quick re-entry",
   },
-]
+])

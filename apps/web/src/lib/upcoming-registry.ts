@@ -1,17 +1,14 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type UpcomingSectionId =
   | "upcoming-overview"
   | "upcoming-next"
   | "upcoming-week"
   | "upcoming-flow"
 
-export interface UpcomingSectionDescriptor {
-  id: UpcomingSectionId
-  label: string
-  icon: string
-  description: string
-}
+export type UpcomingSectionDescriptor = SectionDescriptor<UpcomingSectionId>
 
-export const UPCOMING_SECTIONS: UpcomingSectionDescriptor[] = [
+export const UPCOMING_SECTIONS = defineSections<UpcomingSectionId>([
   {
     id: "upcoming-overview",
     label: "Overview",
@@ -36,4 +33,4 @@ export const UPCOMING_SECTIONS: UpcomingSectionDescriptor[] = [
     icon: "↗",
     description: "Handoff back to Today and across to Calendar without losing context.",
   },
-]
+])

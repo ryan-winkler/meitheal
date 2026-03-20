@@ -22,11 +22,10 @@
 **Impact:** Dead code, maintenance burden, potential security surface.
 **Remediation:** Audit each route — wire to UI, remove, or document as external-only.
 
-### 4. Orphaned `TaskViewTabs.astro`
+### ~~4. Orphaned `TaskViewTabs.astro`~~ ✅ Resolved
 **File:** `components/tasks/TaskViewTabs.astro`
-**Issue:** No pages import this component after Phase 16 moved view switching to UnifiedBar pills. The file still exists in the codebase.
-**Impact:** Dead code, confusion for future contributors.
-**Remediation:** Delete `TaskViewTabs.astro` (verify zero imports first).
+**Issue:** No pages import this component after Phase 16 moved view switching to UnifiedBar pills.
+**Resolution:** File was already deleted in Phase 16. Verified zero results from `find` command.
 
 ## ⚠️ High Concerns
 
@@ -51,11 +50,10 @@
 **Impact:** No shared styling with other pages' task rendering. Maintenance nightmare.
 **Remediation:** Use `TaskListItem.astro` or create `UpcomingTaskCard.astro`.
 
-### 7. Global CSS Leaks from Eisenhower
+### ~~7. Global CSS Leaks from Eisenhower~~ ✅ Resolved
 **File:** `pages/eisenhower.astro`
-**Issue:** Uses `:global(.quadrant__wip-warning)` and `:global(.tli--dragging)` — these styles leak across all pages.
-**Impact:** Unintended style changes on other pages if class names collide.
-**Remediation:** Use scoped styles or page-specific class prefixes.
+**Issue:** Uses `<style is:global>` for `.tli--dragging`, `.quadrant__wip-warning`, triage/review overlays.
+**Resolution:** Verified these classes are appropriately global — they are JS-added classes and fixed-position overlays that require global scope. No `:global()` selector abuse found.
 
 ### ~~8. Hardcoded scroll-margin-top~~ ✅ Partially Resolved
 **Files:** All pages with sections
@@ -75,11 +73,10 @@
 
 ## ⚠️ Medium Concerns
 
-### 11. Section Registries Not Abstracted
+### ~~11. Section Registries Not Abstracted~~ ✅ Resolved
 **Files:** 9 separate `*-registry.ts` files
-**Issue:** All follow the same `{ id, label }[]` pattern but each is independently maintained with no shared type or factory.
-**Impact:** Low, but a missed opportunity for type safety and pattern enforcement.
-**Remediation:** Create `lib/section-registry.ts` shared type + factory.
+**Issue:** All followed same `{ id, label, icon, description }` pattern with no shared type.
+**Resolution:** Created `lib/section-registry.ts` with `SectionDescriptor<TId>` interface and `defineSections()` factory. Migrated 7 of 9 registries (calendar, habits, eisenhower, today, dashboard, table, upcoming). Settings registry intentionally keeps extra fields (structural typing still satisfies the base interface). `parent-page-registry` is a different pattern.
 
 ### 12. Triage Data Not Surfaced
 **File:** `eisenhower-controller.ts`
@@ -92,11 +89,10 @@
 **Impact:** Context loss when returning to the app after interruption.
 **Remediation:** Consider adding a persistent "currently working on" indicator.
 
-### 14. `tasks.astro` Growing Large (1767 lines)
-**File:** `pages/tasks.astro`
-**Issue:** After absorbing kanban content, `tasks.astro` is now the largest page. Combines SSR data fetching, view pill generation, signal bar, filter toolbar, kanban board HTML, and 400+ lines of CSS.
-**Impact:** Harder to navigate and modify. Signal bar and filter toolbar patterns are duplicated across pages.
-**Remediation:** Extract `SignalBar.astro` and `FilterToolbar.astro` as shared components.
+### ~~14. `tasks.astro` Growing Large~~ ✅ Partially Resolved
+**File:** `pages/tasks.astro` (1737 lines)
+**Issue:** After absorbing kanban content, `tasks.astro` is the largest page.
+**Resolution:** `SignalBar.astro` extracted and shared across 4 pages. `FilterToolbar.astro` extraction remains as future optimization.
 
 ## ✅ Resolved Concerns (Phase 16)
 

@@ -1,3 +1,5 @@
+import { type SectionDescriptor, defineSections } from "./section-registry"
+
 export type TodaySectionId =
   | "today-overview"
   | "today-focus"
@@ -6,14 +8,9 @@ export type TodaySectionId =
   | "today-habits"
   | "today-flow"
 
-export interface TodaySectionDescriptor {
-  id: TodaySectionId
-  label: string
-  icon: string
-  description: string
-}
+export type TodaySectionDescriptor = SectionDescriptor<TodaySectionId>
 
-export const TODAY_SECTIONS: TodaySectionDescriptor[] = [
+export const TODAY_SECTIONS = defineSections<TodaySectionId>([
   {
     id: "today-overview",
     label: "Overview",
@@ -50,4 +47,4 @@ export const TODAY_SECTIONS: TodaySectionDescriptor[] = [
     icon: "🔀",
     description: "Switch context to the planning or execution view that fits your next move.",
   },
-]
+])
