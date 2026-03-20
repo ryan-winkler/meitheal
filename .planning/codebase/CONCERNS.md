@@ -44,11 +44,10 @@
 **Impact:** Difficult to maintain, test, or modify individual features.
 **Remediation:** Continue decomposition pattern from kanban-controller to other large controllers.
 
-### 6. Inline Styles in Upcoming
+### ~~6. Inline Styles in Upcoming~~ ✅ Resolved
 **File:** `pages/upcoming.astro`
 **Issue:** >200 lines of inline `style=` attributes on task items instead of CSS classes.
-**Impact:** No shared styling with other pages' task rendering. Maintenance nightmare.
-**Remediation:** Use `TaskListItem.astro` or create `UpcomingTaskCard.astro`.
+**Resolution:** Replaced 30 inline styles with 20+ semantic CSS classes (`.task-item`, `.task-content`, `.day-card--*`, etc.). Only 4 dynamic inline styles remain (priority color, task color swatch). Added `prefers-reduced-motion` coverage.
 
 ### ~~7. Global CSS Leaks from Eisenhower~~ ✅ Resolved
 **File:** `pages/eisenhower.astro`
