@@ -12,16 +12,17 @@ import { settingsStore } from "@lib/settings-store"
 
 // ───── Constants ─────
 
-const DEFAULT_SIDEBAR = ["dashboard", "kanban", "tasks", "today", "upcoming", "calendar"]
+const DEFAULT_SIDEBAR = ["dashboard", "today", "upcoming", "tasks", "progress", "planning"]
 
 const SIDEBAR_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  kanban: "Kanban Area",
-  tasks: "Tasks List",
+  tasks: "Tasks",
   table: "Table",
   today: "Today",
   upcoming: "Upcoming",
   calendar: "Calendar",
+  progress: "Progress & Growth",
+  planning: "Planning",
 }
 
 // ───── Init ─────
