@@ -471,4 +471,28 @@
 
 ---
 
-*Roadmap revised: 2026-03-18 — Pre-release audit phases (05.1–05.6) from 50-persona expert audit*
+## Phase 15: Hierarchy Architecture Overhaul
+
+**Goal:** Resolve Area/Project duplication in sidebar, integrate calendar events as task_kind, add direct goal→task relationships, create "Every Day" default project, build routine template system, and consolidate Goals/Routines/Achievements under a unified "Progress & Growth" parent page.
+
+**Status:** 📋 Planning (GSD research/discuss/persona workflows in progress)
+
+**Requirements:** HIR-01→12 (to be defined after research phase)
+
+**Success Criteria:**
+1. Sidebar shows single unified AREAS tree — no separate Area dropdown section
+2. `calendar_event` task_kind accepted, synced tasks backfilled
+3. Tasks can have direct `goal_id` or inherit from parent project
+4. "Every Day" default project auto-created, undeletable, primary capture target
+5. Routine template CRUD with scheduled instance spawning and streak tracking
+6. `/progress` parent page with Routines | Goals | Achievements sub-menu tabs
+7. `/gamification` renamed to Achievements, `/habits` and `/goals` redirect to `/progress` sub-sections
+8. Three-tier helper/explainer system with `?` key recall panel
+9. API tolerant reader pattern — empty update body returns 200, not 400
+10. Ubiquitous language glossary in `docs/kcs/hierarchy-glossary.md`
+
+**Depends on:** Phase 04.1 (DDD Core — complete), Phase 04.2 (Hierarchy API — complete)
+
+---
+
+*Roadmap revised: 2026-03-20 — Phase 15 hierarchy overhaul from 50-persona audit*
