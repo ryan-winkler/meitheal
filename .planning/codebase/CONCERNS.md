@@ -16,6 +16,11 @@
 - Impact: New controller code doesn't get DDD-guided placement — "where does this go?" is answered by "somewhere in lib"
 - Fix approach: Create `apps/web/src/domains/ui/` or group controllers under `@lib/controllers/` with clear README boundaries
 
+### ~~3. Orphaned API Routes~~ ✅ Partially Resolved
+**Files:** See `.planning/codebase/INTEGRATION-CHECK.md`
+**Issue:** 20+ API route files had zero discovered frontend consumers.
+**Resolution:** Audited all 97 routes. Deleted 9 dead stubs (736 lines): backup/*, grocy/stock, ha/status, nfc/complete, parse-task, tasks/proposals, tasks/accept-proposal, today-summary. Remaining orphans documented as external-only (A2A, iCal export, review) or kept for future features.
+
 **In-App Domain Inconsistency:**
 - Issue: Some domains have proper service/repository layers (`tasks/`, `search/`, `ha/`), others are single-file modules (`gamification/`, `pomodoro/`, `offline/`)
 - Files: `apps/web/src/domains/gamification/gamification-service.ts` (single file), `apps/web/src/domains/search/` (proper domain with catalog, registry, service)
