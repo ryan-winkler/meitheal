@@ -180,67 +180,12 @@ const calendarSignal =
   </UnifiedBar>
 
   <div id="calendar-shell" class="page-shell">
-    <section
-      id="calendar-overview"
-      class="page-shell__section page-shell__section--overview"
-      data-calendar-section
-    >
-      <div class="page-hero">
-        <div class="page-hero__eyebrow">Home Assistant Native Calendar Surface</div>
-        <div class="page-hero__title-row">
-          <div class="page-hero__copy">
-            <h1 class="page-hero__title">{monthName}</h1>
-            <p class="page-hero__description">
-              Move between month planning, day detail, and route-level task views
-              without losing the connected event context that Home Assistant brings in.
-            </p>
-          </div>
-
-          <div class="page-hero__chips" aria-label="Calendar quick jumps">
-            <a href="#calendar-month" class="page-hero__chip" data-calendar-section-link>
-              Month Grid
-            </a>
-            <a href="#calendar-agenda" class="page-hero__chip" data-calendar-section-link>
-              Agenda
-            </a>
-            <a href="#calendar-flow" class="page-hero__chip" data-calendar-section-link>
-              Flow
-            </a>
-          </div>
-        </div>
-
-        <div class="page-hero__status">
-          <span class="page-hero__status-label">Current signal</span>
-          <strong id="calendar-signal-summary">{calendarSignal}</strong>
-        </div>
-      </div>
-
-      <div class="page-summary-grid">
-        <div class="stat-card">
-          <span class="stat-value">{monthTotal}</span>
-          <span class="stat-label">Items This Month</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-value">{monthHAEvents}</span>
-          <span class="stat-label">HA Events</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-value">{scheduledDayCount}</span>
-          <span class="stat-label">Active Days</span>
-        </div>
-      </div>
-    </section>
-
-    <section id="calendar-month" class="page-shell__section" data-calendar-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Month</div>
-          <h2 class="page-shell__title">Navigate the month and keep the grid primary</h2>
-          <p class="page-shell__description">
-            Month controls stay close to the grid so date changes still feel direct and predictable.
-          </p>
-        </div>
-      </div>
+    <!-- Signal bar (matches Kanban/Table pattern) -->
+    <div class="calendar-signal-bar">
+      <span class="calendar-signal-bar__stat" id="calendar-signal-summary">
+        <strong>{monthTotal}</strong> items across <strong>{scheduledDayCount}</strong> days · <strong>{monthHAEvents}</strong> HA events
+      </span>
+    </div>
 
       <div class="calendar-controls">
         <a
@@ -324,47 +269,11 @@ const calendarSignal =
           ))
         }
       </div>
-    </section>
 
-    <section id="calendar-agenda" class="page-shell__section" data-calendar-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Agenda</div>
-          <h2 class="page-shell__title">Open any day for tasks and connected events</h2>
-          <p class="page-shell__description">
-            The agenda drawer stays lightweight and is populated when you click a day in the month grid.
-          </p>
-        </div>
-      </div>
-
-      <div class="card calendar-shell__agenda-card">
-        Click any active day in the month grid to inspect calendar events and due tasks, then
-        create follow-up work without leaving the route.
-      </div>
-    </section>
-
-    <section id="calendar-flow" class="page-shell__section" data-calendar-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Flow</div>
-          <h2 class="page-shell__title">Move between plan and execution without losing context</h2>
-          <p class="page-shell__description">
-            Calendar connects the month horizon to Today, Upcoming, and the secondary task-view strip.
-          </p>
-        </div>
-      </div>
-
-      <div class="page-flow-grid">
-        <a class="card page-flow-card" href="/today">
-          <strong>☀️ Back to Today</strong>
-          <p>Return to the daily execution cockpit when a date becomes action.</p>
-        </a>
-        <a class="card page-flow-card" href="/upcoming">
-          <strong>📅 Open Upcoming</strong>
-          <p>Move into the next-week view when month planning narrows into a near-term schedule.</p>
-        </a>
-      </div>
-    </section>
+    <!-- Agenda hint card -->
+    <div class="card calendar-shell__agenda-card">
+      Click any active day in the month grid to inspect calendar events and due tasks.
+    </div>
 
     <div class="day-drawer" id="day-drawer" aria-hidden="true">
       <div class="day-drawer-backdrop" id="day-drawer-backdrop"></div>
@@ -397,7 +306,22 @@ const calendarSignal =
 </Layout>
 
 <style>
-  /* Calendar-specific styles (shared shell/hero/flow in _page-shell.css) */
+  /* ── Signal bar (matches Kanban/Table pattern) ── */
+  .calendar-signal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .calendar-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+
+  /* Calendar-specific styles */
 
   .calendar-shell__agenda-card {
     padding: 18px;

@@ -113,94 +113,34 @@ const tableSignal =
   />
 
   <div id="table-shell" class="page-shell">
-    <section
-      id="table-overview"
-      class="page-shell__section page-shell__section--overview"
-      data-table-section
-    >
-      <div class="page-hero">
-        <div class="page-hero__eyebrow">Home Assistant Native Dense View</div>
-        <div class="page-hero__title-row">
-          <div class="page-hero__copy">
-            <h1 class="page-hero__title">{t("table.title", locale)}</h1>
-            <p class="page-hero__description">
-              Use the table when filters, fields, and side-by-side comparison matter more than board flow.
-            </p>
-          </div>
+    <!-- Signal bar (matches Kanban pattern) -->
+    <div class="table-signal-bar">
+      <span class="table-signal-bar__stat" id="task-summary">
+        <strong>{counts.total}</strong> tasks · <strong>{counts.active}</strong> active
+        {counts.overdue > 0 && (
+          <Fragment>
+            · <span class="summary-overdue">{counts.overdue} overdue</span>
+          </Fragment>
+        )}
+      </span>
+    </div>
 
-          <div class="page-hero__chips" aria-label="Table quick jumps">
-            <a href="#table-filters" class="page-hero__chip" data-table-section-link>
-              Filters
-            </a>
-            <a href="#table-fields" class="page-hero__chip" data-table-section-link>
-              Fields
-            </a>
-            <a href="#table-flow" class="page-hero__chip" data-table-section-link>
-              Flow
-            </a>
-          </div>
-        </div>
-
-        <div class="page-hero__status">
-          <span class="page-hero__status-label">Current signal</span>
-          <strong>{tableSignal}</strong>
-        </div>
-      </div>
-
-      <div class="page-summary-grid">
-        <div class="stat-card">
-          <span class="stat-value">{counts.total}</span>
-          <span class="stat-label">Tasks In View</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-value">{counts.active}</span>
-          <span class="stat-label">Active</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-value">{counts.overdue}</span>
-          <span class="stat-label">Overdue</span>
-        </div>
-      </div>
-
-      {
-        tasks.length === 0 && (
-          <EmptyState
-            title={t("table.no_tasks", locale)}
-            description={t("table.no_tasks", locale)}
-            actionText={t("tasks.new_task", locale)}
-            actionEvent="meitheal:new-task"
-          />
-        )
-      }
-    </section>
+    {
+      tasks.length === 0 && (
+        <EmptyState
+          title={t("table.no_tasks", locale)}
+          description={t("table.no_tasks", locale)}
+          actionText={t("tasks.new_task", locale)}
+          actionEvent="meitheal:new-task"
+        />
+      )
+    }
 
     {
       tasks.length > 0 && (
         <>
-          <section id="table-filters" class="page-shell__section" data-table-section>
-            <div class="page-shell__intro">
-              <div>
-                <div class="page-shell__eyebrow">Filters</div>
-                <h2 class="page-shell__title">Narrow the dataset before you read the rows</h2>
-                <p class="page-shell__description">
-                  Filtering and saved presets stay grouped so the table can stay dense without becoming chaotic.
-                </p>
-              </div>
-            </div>
-
-            <div class="filter-summary-bar" id="task-summary">
-              <span class="summary-count">{counts.total}</span> tasks ·
-              <span class="summary-count">{counts.active}</span> active
-              {counts.overdue > 0 && (
-                <Fragment>
-                  ·{" "}
-                  <span class="summary-overdue">
-                    {counts.overdue} {t("tasks.overdue", locale)}
-                  </span>
-                </Fragment>
-              )}
-            </div>
-
+          <!-- Filter toolbar (always visible, matches Kanban) -->
+          <div class="table-filter-bar">
             <FilterToolbar
               view="table"
               showSearch
@@ -210,26 +150,7 @@ const tableSignal =
               showRICEFilter
               showUserFilter
             />
-            <div class="table-toolbar-row">
-              <SavedFilterPresets />
-            </div>
-          </section>
-
-          <section id="table-fields" class="page-shell__section" data-table-section>
-            <div class="page-shell__intro">
-              <div>
-                <div class="page-shell__eyebrow">Fields</div>
-                <h2 class="page-shell__title">Control the column density without leaving the route</h2>
-                <p class="page-shell__description">
-                  Column visibility lives beside the table itself so the shell stays about orientation, not configuration noise.
-                </p>
-              </div>
-            </div>
-
-            <div class="table-toolbar-row">
-              <ColumnCustomizer />
-            </div>
-            <div class="table-container">
+          </div>
           <table class="data-table" id="task-table">
             <thead>
               <tr>
@@ -531,31 +452,6 @@ const tableSignal =
               </tr>
             </tbody>
           </table>
-            </div>
-          </section>
-
-          <section id="table-flow" class="page-shell__section" data-table-section>
-            <div class="page-shell__intro">
-              <div>
-                <div class="page-shell__eyebrow">Flow</div>
-                <h2 class="page-shell__title">Move into board flow or calendar planning when needed</h2>
-                <p class="page-shell__description">
-                  The route strip handles switching, while this section keeps the cross-view intent obvious.
-                </p>
-              </div>
-            </div>
-
-            <div class="page-flow-grid">
-              <a class="card page-flow-card" href="/kanban">
-                <strong>▦ Open Kanban</strong>
-                <p>Switch into lane-based flow when status movement matters more than raw field comparison.</p>
-              </a>
-              <a class="card page-flow-card" href="/calendar">
-                <strong>🗓️ Open Calendar</strong>
-                <p>Switch into date planning when the same tasks need to be understood over time.</p>
-              </a>
-            </div>
-          </section>
         </>
       )
     }
@@ -605,6 +501,32 @@ const tableSignal =
 </Layout>
 
 <style>
+  /* ── Signal bar (matches Kanban pattern) ── */
+  .table-signal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .table-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+  .table-filter-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+  }
+
   /* Subtask hierarchy styles (Phase 1: SUB-01) */
   .task-title-cell {
     display: flex;

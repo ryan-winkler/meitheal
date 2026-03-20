@@ -1,13 +1,11 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
-import { pageLifecycle } from "@lib/page-lifecycle";
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html";
 import { initLaneManagementPanel } from "@lib/controllers/kanban-lanes";
 import { initTouchDrag } from "@lib/controllers/kanban-touch-drag";
 
 const log = createClientLogger("kanban");
-const __signal = pageLifecycle.signal;
 /**
  * kanban-controller.ts — Kanban board interactive logic
  *
@@ -20,6 +18,11 @@ const __signal = pageLifecycle.signal;
  *   - window.showToast: Toast notification function
  *   - window.__featureFlags: Feature flag object
  *   - window.triggerConfetti: Confetti effect on task completion
+ *
+ * @important The signal parameter MUST come from pageLifecycle.onPageLoad()
+ *            to ensure a fresh AbortSignal on each Astro navigation.
+ *            DO NOT capture pageLifecycle.signal at module level — it freezes
+ *            on first import and becomes stale after navigation.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -31,9 +34,10 @@ const __signal = pageLifecycle.signal;
 
 /**
  * Initialize all Kanban board interactivity.
- * Called from the pageLifecycle boot path in kanban.astro.
+ * Called from the pageLifecycle boot path in tasks.astro.
+ * @param __signal - AbortSignal from pageLifecycle.onPageLoad for listener cleanup
  */
-export function initKanbanArea(): void {
+export function initKanbanArea(__signal: AbortSignal): void {
     const shell = document.getElementById("kanban-shell")
     if (shell?.dataset.kanbanBooted === "true") {
       return

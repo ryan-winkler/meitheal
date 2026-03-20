@@ -199,27 +199,19 @@ const kanbanSignal =
   />
 
   <div id="kanban-shell" class="page-shell">
-    <!-- Compact dismissable signal bar -->
+    <!-- Stats signal bar (non-dismissable) -->
     <div class="kanban-signal-bar" id="kanban-signal-bar">
       <div class="kanban-signal-bar__content">
         <span class="kanban-signal-bar__stat">
           <strong>{kanbanTaskCount}</strong> tasks across <strong>{columns.length}</strong> lanes
         </span>
       </div>
-      <div class="kanban-signal-bar__actions">
-        <button
-          type="button"
-          class="kanban-toolbar-btn"
-          id="toggle-filters-btn"
-          title="Toggle filters"
-          aria-label="Toggle filters"
-          aria-pressed="false"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-          </svg>
-          <span class="kanban-toolbar-btn__label">Filters</span>
-        </button>
+    </div>
+
+    <!-- Filter toolbar — always visible -->
+    <div class="kanban-filter-panel" id="kanban-filter-panel">
+      <FilterToolbar view="kanban" showGroupBy showUserPills />
+      <div class="kanban-toolbar-right">
         <button
           type="button"
           class="kanban-toolbar-btn"
@@ -228,7 +220,7 @@ const kanbanSignal =
           aria-label="Toggle card field customizer"
           aria-pressed="false"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
           </svg>
           <span class="kanban-toolbar-btn__label">Fields</span>
@@ -241,19 +233,10 @@ const kanbanSignal =
           aria-label={t("kanban.manage_swimlanes", locale)}
           aria-pressed="false"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
           </svg>
           <span class="kanban-toolbar-btn__label">Lanes</span>
-        </button>
-        <button
-          type="button"
-          class="kanban-signal-bar__dismiss"
-          id="kanban-signal-dismiss"
-          title="Dismiss"
-          aria-label="Dismiss signal bar"
-        >
-          ✕
         </button>
       </div>
     </div>
@@ -262,11 +245,6 @@ const kanbanSignal =
     <div class="kanban-fields-panel hidden" id="kanban-fields-panel">
       <CardCustomizer />
     </div>
-
-    <!-- Filter toolbar (toggled by Filters toolbar icon) -->
-    <div class="kanban-filter-panel" id="kanban-filter-panel">
-
-      <FilterToolbar view="kanban" showGroupBy showUserPills />
 
       <div class="lane-mgmt hidden" id="lane-mgmt">
         <div class="lane-mgmt-inner">
@@ -785,35 +763,18 @@ const kanbanSignal =
     import { initKanbanArea } from "../lib/kanban-controller"
     import { pageLifecycle } from "../lib/page-lifecycle"
 
-    pageLifecycle.onPageLoad(() => {
-      initKanbanArea()
-
-      // Signal bar dismiss
-      const signalBar = document.getElementById("kanban-signal-bar")
-      const dismissBtn = document.getElementById("kanban-signal-dismiss")
-      if (localStorage.getItem("meitheal-kanban-signal-dismissed") === "1" && signalBar) {
-        signalBar.classList.add("hidden")
-      }
-      dismissBtn?.addEventListener("click", () => {
-        signalBar?.classList.add("hidden")
-        localStorage.setItem("meitheal-kanban-signal-dismissed", "1")
-      })
-
-      // Filter panel toggle
-      const filterBtn = document.getElementById("toggle-filters-btn")
-      const filterPanel = document.getElementById("kanban-filter-panel")
-      filterBtn?.addEventListener("click", () => {
-        const isHidden = filterPanel?.classList.toggle("hidden")
-        filterBtn.setAttribute("aria-pressed", String(!isHidden))
-      })
+    pageLifecycle.onPageLoad((signal) => {
+      initKanbanArea(signal)
 
       // Fields panel toggle
       const fieldsBtn = document.getElementById("toggle-fields-btn")
       const fieldsPanel = document.getElementById("kanban-fields-panel")
       fieldsBtn?.addEventListener("click", () => {
         const isHidden = fieldsPanel?.classList.toggle("hidden")
-        fieldsBtn.setAttribute("aria-pressed", String(!isHidden))
-      })
+        fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
+      }, { signal })
+
+      // Lanes panel toggle handled by kanban-controller
     })
   </script>
 </Layout>
@@ -864,26 +825,13 @@ const kanbanSignal =
     color: var(--text-primary);
     font-weight: 600;
   }
-  .kanban-signal-bar__actions {
+  /* ── Toolbar right: Fields / Lanes toggles aligned right ── */
+  .kanban-toolbar-right {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
+    margin-left: auto;
     flex-shrink: 0;
-  }
-  .kanban-signal-bar__dismiss {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 4px 6px;
-    font-size: 14px;
-    border-radius: var(--radius-sm);
-    transition: color 150ms, background 150ms;
-    line-height: 1;
-  }
-  .kanban-signal-bar__dismiss:hover {
-    color: var(--text-primary);
-    background: var(--bg-hover);
   }
 
   /* ── Toolbar buttons: compact icon + label toggles ── */
@@ -920,7 +868,17 @@ const kanbanSignal =
   }
 
   /* ── Toggle panels: filters and fields ── */
-  .kanban-filter-panel,
+  .kanban-filter-panel {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+  }
   .kanban-fields-panel {
     margin-bottom: 12px;
     background: var(--bg-secondary);
@@ -929,7 +887,6 @@ const kanbanSignal =
     padding: 12px 16px;
     transition: opacity 200ms ease;
   }
-  .kanban-filter-panel.hidden,
   .kanban-fields-panel.hidden {
     display: none;
   }

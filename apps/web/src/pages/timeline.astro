@@ -109,6 +109,13 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
     })()}
   />
 
+  <!-- Signal bar (matches Kanban/Table/Calendar pattern) -->
+  <div class="timeline-signal-bar">
+    <span class="timeline-signal-bar__stat">
+      <strong>{timelineTasks.length}</strong> tasks in timeline
+    </span>
+  </div>
+
   <div class="timeline-container">
     <div class="timeline-grid" style={`grid-template-columns: 250px repeat(${days.length}, 1fr);`}>
 
@@ -231,6 +238,21 @@ const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
 </Layout>
 
 <style>
+  /* ── Signal bar (matches Kanban/Table/Calendar pattern) ── */
+  .timeline-signal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .timeline-signal-bar__stat strong { color: var(--text-primary); font-weight: 600; }
+
   .timeline-container {
     overflow-x: auto;
     overflow-y: auto;
