@@ -3,158 +3,16 @@
   "version": "0.3.0",
   "description": "Meitheal — Cooperative task and life management engine for Home Assistant",
   "protocol": "mcp",
-  "protocolVersion": "2024-11-05",
+  "protocolVersion": "2025-03-26",
   "endpoint": "/api/mcp",
   "capabilities": {
     "tools": {
       "listChanged": false
     }
   },
-  "tools": [
-    {
-      "name": "createTask",
-      "description": "Create a new task with title, description, priority, labels, and due date",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "searchTasks",
-      "description": "Search tasks by keyword, status, or priority",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "completeTask",
-      "description": "Mark a task as done by ID or title",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateTask",
-      "description": "Update task fields (title, status, priority, due_date, description)",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "deleteTask",
-      "description": "Delete a task by ID",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getTask",
-      "description": "Get full details of a specific task by ID",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getCalendarEvents",
-      "description": "Get events from HA calendar synced into Meitheal",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getUpcoming",
-      "description": "Get all upcoming tasks and calendar events combined",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "syncCalendar",
-      "description": "Trigger a manual calendar sync from Home Assistant",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getOverdueTasks",
-      "description": "Get all overdue tasks past their due date",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getTodaysTasks",
-      "description": "Get tasks due today plus any overdue tasks",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getTaskSummary",
-      "description": "Get summary counts: total, active, overdue, done",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "batchComplete",
-      "description": "Complete multiple tasks at once by label or priority filter",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "assignTask",
-      "description": "Assign a task to a HA or custom user",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "listUsers",
-      "description": "List all available users (HA auto-discovered + custom)",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "linkTask",
-      "description": "Create a Jira-style link between two tasks (related_to, blocked_by, blocks, duplicates, duplicated_by)",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "unlinkTask",
-      "description": "Remove a link between two tasks by link ID",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "getTaskLinks",
-      "description": "Get all outbound and inbound links for a task",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    }
+  "toolCount": 30,
+  "toolCategories": [
+    "tasks", "hierarchy", "habits", "calendar", "scoring", "export", "labels", "review", "briefing", "home-assistant"
   ],
   "authentication": {
     "type": "none",

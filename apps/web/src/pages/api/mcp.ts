@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { apiJson, apiError } from "../../lib/api-response";
+import { getMcpTools, getToolByName, getToolCount } from "@meitheal/integration-core";
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
@@ -7,217 +8,19 @@ import { apiJson, apiError } from "../../lib/api-response";
  * Accepts JSON-RPC 2.0 tool calls per the MCP specification.
  * Routes incoming tool requests to the Meitheal task API.
  *
+ * Tool definitions come from the shared tool-registry in integration-core.
+ * This endpoint is a thin JSON-RPC adapter — all business logic delegates
+ * to internal REST API routes.
+ *
  * Supports:
  * - "initialize" — handshake
- * - "tools/list" — enumerate available tools
- * - "tools/call" — execute a tool (createTask, searchTasks, completeTask, getCalendarEvents, etc.)
- *
- * The handler uses the same task database as all other Meitheal endpoints.
- * Any MCP-compatible client (Claude, Antigravity, Codex) can connect here.
+ * - "tools/list" — enumerate available tools (from shared registry)
+ * - "tools/call" — execute a tool
  *
  * @see https://modelcontextprotocol.io/
  * @see /.well-known/mcp.json for static discovery
+ * @domain integration-core (tool definitions)
  */
-
-// MCP tool definitions — same as mcp_server.py but for the Astro runtime
-const MCP_TOOLS = [
-  {
-    name: "createTask",
-    description: "Create a new task with title, description, priority, urgency, importance, labels, and due date",
-    inputSchema: {
-      type: "object" as const,
-      required: ["title"],
-      properties: {
-        title: { type: "string", description: "Task title" },
-        description: { type: "string", description: "Task description" },
-        priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority 1-5 (1=urgent)" },
-        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Urgency 0-5 (Eisenhower x-axis, 0=unclassified)" },
-        importance: { type: "integer", minimum: 0, maximum: 5, description: "Importance 0-5 (Eisenhower y-axis, 0=unclassified)" },
-        due_date: { type: "string", format: "date", description: "Due date YYYY-MM-DD" },
-        assigned_to: { type: "string", description: "User ID to assign the task to" },
-      },
-    },
-  },
-  {
-    name: "searchTasks",
-    description: "Search tasks by keyword, status, priority, urgency, importance, Eisenhower quadrant, assignee, labels, custom fields, comments, or task IDs",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        query: { type: "string", description: "Search keyword" },
-        status: { type: "string", enum: ["backlog", "pending", "active", "complete"] },
-        priority: { type: "integer", minimum: 1, maximum: 5 },
-        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Filter by urgency (Eisenhower)" },
-        importance: { type: "integer", minimum: 0, maximum: 5, description: "Filter by importance (Eisenhower)" },
-        eisenhower_quadrant: { type: "string", enum: ["do-first", "schedule", "delegate", "not-now"], description: "Filter by Eisenhower quadrant" },
-        assigned_to: { type: "string", description: "Filter by assigned user ID" },
-        include_completed: { type: "boolean" },
-      },
-    },
-  },
-  {
-    name: "completeTask",
-    description: "Mark a task as done by ID or title",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        id: { type: "string", description: "Task UUID" },
-        title: { type: "string", description: "Task title (fuzzy match)" },
-      },
-    },
-  },
-  {
-    name: "updateTask",
-    description: "Update task fields including Eisenhower urgency/importance",
-    inputSchema: {
-      type: "object" as const,
-      required: ["id"],
-      properties: {
-        id: { type: "string", description: "Task UUID" },
-        title: { type: "string" },
-        status: { type: "string", enum: ["backlog", "pending", "active", "complete"] },
-        priority: { type: "integer", minimum: 1, maximum: 5 },
-        urgency: { type: "integer", minimum: 0, maximum: 5, description: "Urgency 0-5 (Eisenhower x-axis)" },
-        importance: { type: "integer", minimum: 0, maximum: 5, description: "Importance 0-5 (Eisenhower y-axis)" },
-        eisenhower_override: { type: "boolean", description: "Set true if manually placed in quadrant" },
-        due_date: { type: "string", format: "date" },
-        description: { type: "string" },
-      },
-    },
-  },
-  {
-    name: "deleteTask",
-    description: "Delete a task by ID",
-    inputSchema: {
-      type: "object" as const,
-      required: ["id"],
-      properties: {
-        id: { type: "string", description: "Task UUID" },
-      },
-    },
-  },
-  {
-    name: "getTask",
-    description: "Get full details of a specific task by ID",
-    inputSchema: {
-      type: "object" as const,
-      required: ["id"],
-      properties: {
-        id: { type: "string", description: "Task UUID" },
-      },
-    },
-  },
-  {
-    name: "getCalendarEvents",
-    description: "Get events from the user's HA calendar synced into Meitheal",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        days_ahead: { type: "integer", minimum: 1, maximum: 30, description: "Days ahead to look (default: 7)" },
-      },
-    },
-  },
-  {
-    name: "getUpcoming",
-    description: "Get all upcoming tasks and calendar events combined",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        days_ahead: { type: "integer", minimum: 1, maximum: 30, description: "Days ahead to look (default: 7)" },
-      },
-    },
-  },
-  {
-    name: "syncCalendar",
-    description: "Trigger a manual calendar sync from Home Assistant",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        entity_id: { type: "string", description: "Calendar entity ID (optional, uses configured entity if omitted)" },
-      },
-    },
-  },
-  {
-    name: "getOverdueTasks",
-    description: "Get all overdue tasks — tasks past their due date that aren't done",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "getTodaysTasks",
-    description: "Get tasks due today plus any overdue tasks",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "getTaskSummary",
-    description: "Get summary counts: total, active, overdue, done",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "batchComplete",
-    description: "Complete multiple tasks at once by label or priority filter",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        label: { type: "string", description: "Only affect tasks with this label" },
-        max_priority: { type: "integer", description: "Only affect tasks with priority <= this" },
-        titles: { type: "array", items: { type: "string" }, description: "Specific task titles to complete" },
-      },
-    },
-  },
-  {
-    name: "assignTask",
-    description: "Assign a task to a user (HA user or custom user) by task ID and user ID",
-    inputSchema: {
-      type: "object" as const,
-      required: ["id"],
-      properties: {
-        id: { type: "string", description: "Task UUID" },
-        assigned_to: { type: "string", description: "User ID to assign to (omit or null to unassign)" },
-      },
-    },
-  },
-  {
-    name: "listUsers",
-    description: "List all available users (Home Assistant auto-discovered + custom users)",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "linkTask",
-    description: "Create a Jira-style link between two tasks. Link types: related_to, blocked_by, blocks, duplicates, duplicated_by",
-    inputSchema: {
-      type: "object" as const,
-      required: ["source_task_id", "target_task_id", "link_type"],
-      properties: {
-        source_task_id: { type: "string", description: "Source task UUID" },
-        target_task_id: { type: "string", description: "Target task UUID" },
-        link_type: { type: "string", enum: ["related_to", "blocked_by", "blocks", "duplicates", "duplicated_by"], description: "Relationship type" },
-      },
-    },
-  },
-  {
-    name: "unlinkTask",
-    description: "Remove a link between two tasks by link ID",
-    inputSchema: {
-      type: "object" as const,
-      required: ["task_id", "link_id"],
-      properties: {
-        task_id: { type: "string", description: "Task UUID the link belongs to" },
-        link_id: { type: "string", description: "Link UUID to remove" },
-      },
-    },
-  },
-  {
-    name: "getTaskLinks",
-    description: "Get all links for a task (outbound and inbound relationships)",
-    inputSchema: {
-      type: "object" as const,
-      required: ["task_id"],
-      properties: {
-        task_id: { type: "string", description: "Task UUID" },
-      },
-    },
-  },
-];
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -242,9 +45,9 @@ export const POST: APIRoute = async ({ request }) => {
         jsonrpc: "2.0",
         id: reqId,
         result: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: "2025-03-26",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "meitheal", version: "0.3.0" },
+          serverInfo: { name: "meitheal", version: "0.3.0", toolCount: getToolCount() },
         },
       });
     }
@@ -254,7 +57,7 @@ export const POST: APIRoute = async ({ request }) => {
       return apiJson({
         jsonrpc: "2.0",
         id: reqId,
-        result: { tools: MCP_TOOLS },
+        result: { tools: getMcpTools() },
       });
     }
 
@@ -582,7 +385,147 @@ async function executeTool(
       return await res.json().catch(() => ({ outbound: [], inbound: [] }));
     }
 
-    default:
+    // ─── Hierarchy (Areas, Goals, Projects) ───
+
+    case "listAreas": {
+      const res = await fetch(`${baseUrl}/api/areas`);
+      return await res.json().catch(() => ({ areas: [] }));
+    }
+
+    case "listGoals": {
+      const params = new URLSearchParams();
+      if (args.area_id) params.set("area_id", String(args.area_id));
+      const res = await fetch(`${baseUrl}/api/goals?${params}`);
+      return await res.json().catch(() => ({ goals: [] }));
+    }
+
+    case "moveTask": {
+      const taskId = String(args.task_id ?? "");
+      const payload: Record<string, unknown> = {};
+      if (args.project_id) payload.project_id = args.project_id;
+      if (args.area_id) payload.area_id = args.area_id;
+      const res = await fetch(`${baseUrl}/api/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return { status: "moved", ...(await res.json().catch(() => ({}))) };
+    }
+
+    case "setGoalProgress": {
+      const goalId = String(args.goal_id ?? "");
+      const res = await fetch(`${baseUrl}/api/goals/${goalId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ progress: args.progress }),
+      });
+      return { status: "updated", ...(await res.json().catch(() => ({}))) };
+    }
+
+    // ─── Habits ───
+
+    case "getHabits": {
+      const res = await fetch(`${baseUrl}/api/habits`);
+      return await res.json().catch(() => ({ habits: [] }));
+    }
+
+    case "completeHabit": {
+      const res = await fetch(`${baseUrl}/api/habits`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ templateId: args.templateId, action: "complete" }),
+      });
+      return { status: "completed", ...(await res.json().catch(() => ({}))) };
+    }
+
+    // ─── Reviews ───
+
+    case "getWeeklyReview": {
+      const res = await fetch(`${baseUrl}/api/review/weekly`);
+      return await res.json().catch(() => ({ completed_last_week: [], upcoming: [] }));
+    }
+
+    // ─── Scoring/Frameworks ───
+
+    case "scoreTask": {
+      const taskId = String(args.task_id ?? "");
+      const res = await fetch(`${baseUrl}/api/tasks/${taskId}/score`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          framework: args.framework,
+          reach: args.reach,
+          impact: args.impact,
+          confidence: args.confidence,
+          effort: args.effort,
+        }),
+      });
+      return await res.json().catch(() => ({ error: "Scoring failed" }));
+    }
+
+    // ─── Export ───
+
+    case "exportTasks": {
+      const params = new URLSearchParams();
+      if (args.format) params.set("format", String(args.format));
+      if (args.status) params.set("status", String(args.status));
+      const res = await fetch(`${baseUrl}/api/export/tasks?${params}`);
+      return await res.json().catch(() => ({ error: "Export failed" }));
+    }
+
+    // ─── Labels ───
+
+    case "listLabels": {
+      const res = await fetch(`${baseUrl}/api/labels`);
+      return await res.json().catch(() => ({ labels: [] }));
+    }
+
+    // ─── Daily Briefing ───
+
+    case "dailyBriefing": {
+      // Compose a briefing from today's tasks + overdue + calendar
+      const [tasksRes, calendarRes] = await Promise.all([
+        fetch(`${baseUrl}/api/tasks`),
+        fetch(`${baseUrl}/api/tasks?calendar_synced=true`),
+      ]);
+      const taskData = (await tasksRes.json().catch(() => ({ tasks: [] }))) as {
+        tasks: Array<{ title: string; status: string; due_date: string; priority: number }>
+      };
+      const calData = (await calendarRes.json().catch(() => ({ tasks: [] }))) as {
+        tasks: Array<{ title: string; due_date: string; calendar_sync_state: string }>
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      const todayTasks = (taskData.tasks ?? []).filter(
+        (t) => t.status !== "complete" && t.due_date && t.due_date.slice(0, 10) <= today
+      );
+      const calEvents = (calData.tasks ?? []).filter(
+        (t) => t.calendar_sync_state === "synced" && t.due_date && t.due_date.slice(0, 10) === today
+      );
+      return {
+        date: today,
+        tasks_today: todayTasks.length,
+        overdue: todayTasks.filter((t) => t.due_date.slice(0, 10) < today).length,
+        calendar_events: calEvents.length,
+        tasks: todayTasks.map((t) => ({ title: t.title, due: t.due_date, priority: t.priority })),
+        events: calEvents.map((t) => ({ title: t.title, time: t.due_date })),
+      };
+    }
+
+    // ─── HA Entity State ───
+
+    case "getEntityState": {
+      const entityId = String(args.entity_id ?? "");
+      const res = await fetch(`${baseUrl}/api/ha/entity?entity_id=${encodeURIComponent(entityId)}`);
+      return await res.json().catch(() => ({ error: `Entity ${entityId} not found` }));
+    }
+
+    default: {
+      // Check if tool exists in registry but has no handler yet
+      const registryTool = getToolByName(toolName);
+      if (registryTool) {
+        return { error: `Tool '${toolName}' is registered but handler not yet implemented`, tool: registryTool.name };
+      }
       return { error: `Unknown tool: ${toolName}` };
+    }
   }
 }

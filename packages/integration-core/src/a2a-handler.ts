@@ -7,7 +7,11 @@
  *
  * Domain: integration-core
  * KCS: All A2A interactions are logged and emit domain events.
+ *       Skill definitions are maintained here; tool schemas come from tool-registry.ts.
  */
+
+import { getToolsByTag } from "./tool-registry"
+import type { ToolDefinition } from "./tool-registry"
 
 // --- A2A Protocol Data Types (§4) ---
 
@@ -115,6 +119,40 @@ export const A2A_ERRORS = {
 export interface SkillHandler {
   skill: A2AAgentSkill;
   handle(message: A2AMessage): Promise<A2ATask>;
+}
+
+/**
+ * Maps A2A skill IDs to the tool-registry tags they correspond to.
+ * This enables A2A skill handlers to discover which tools they can call.
+ */
+export const SKILL_TO_TOOL_TAGS: Record<string, string[]> = {
+  "task-management": ["tasks", "crud"],
+  "task-search": ["tasks", "search"],
+  "framework-scoring": ["scoring", "frameworks"],
+  "data-export": ["export"],
+  "areas": ["areas", "hierarchy"],
+  "labels": ["labels"],
+  "today-summary": ["today", "briefing"],
+  "habits": ["habits"],
+  "review-weekly": ["review"],
+  "ha-calendar-sync": ["calendar", "sync"],
+  "ha-entity-state": ["home-assistant", "entities"],
+}
+
+/**
+ * Get the tool definitions available for a given A2A skill.
+ * Returns tools from the shared registry matching any of the skill's mapped tags.
+ */
+export function getToolsForSkill(skillId: string): ToolDefinition[] {
+  const tags = SKILL_TO_TOOL_TAGS[skillId]
+  if (!tags) return []
+  const tools = new Map<string, ToolDefinition>()
+  for (const tag of tags) {
+    for (const tool of getToolsByTag(tag)) {
+      tools.set(tool.name, tool)
+    }
+  }
+  return [...tools.values()]
 }
 
 /**
@@ -327,7 +365,9 @@ export function extractSkillFromMessage(message: A2AMessage): string | null {
         text.includes("new task") ||
         text.includes("add task") ||
         text.includes("update task") ||
-        text.includes("delete task")
+        text.includes("delete task") ||
+        text.includes("complete task") ||
+        text.includes("assign task")
       ) {
         return "task-management";
       }
@@ -342,12 +382,28 @@ export function extractSkillFromMessage(message: A2AMessage): string | null {
       if (
         text.includes("score") ||
         text.includes("rice") ||
-        text.includes("prioriti")
+        text.includes("prioriti") ||
+        text.includes("framework")
       ) {
         return "framework-scoring";
       }
       if (text.includes("export") || text.includes("download")) {
         return "data-export";
+      }
+      if (text.includes("area") || text.includes("goal") || text.includes("project")) {
+        return "areas";
+      }
+      if (text.includes("label") || text.includes("tag") || text.includes("categor")) {
+        return "labels";
+      }
+      if (text.includes("today") || text.includes("briefing") || text.includes("morning") || text.includes("overdue")) {
+        return "today-summary";
+      }
+      if (text.includes("habit") || text.includes("routine") || text.includes("streak")) {
+        return "habits";
+      }
+      if (text.includes("weekly review") || text.includes("plan my week") || text.includes("what did I get done")) {
+        return "review-weekly";
       }
       if (text.includes("calendar") || text.includes("sync")) {
         return "ha-calendar-sync";
