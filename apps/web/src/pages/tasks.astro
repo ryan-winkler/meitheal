@@ -11,6 +11,7 @@
  */
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
@@ -24,6 +25,9 @@ const { counts } = await getTasksForView()
 <Layout title={`Meitheal — ${t("nav.tasks", locale)}`}>
   <ParentPageShell pageId="tasks">
     <section data-parent-section="kanban" id="tasks-section-kanban">
+      <InlineHelper helperId="tasks-kanban-explainer" title="Task Views Hub" icon="📋" variant="info">
+        <p>This is your <strong>Tasks Hub</strong> — a central launchpad for all task views. Each view (Kanban, Calendar, Table, Gantt) shows the same tasks through a different lens. Press <kbd>?</kbd> to restore this helper.</p>
+      </InlineHelper>
       <div class="parent-section-hub">
         <div class="parent-section-hub__header">
           <span class="parent-section-hub__icon">▦</span>

@@ -1,0 +1,236 @@
+---
+/**
+ * InlineHelper — Collapsible/dismissible inline help callout
+ *
+ * Renders an explainer card that teaches users about hierarchy concepts,
+ * page purposes, or workflow patterns. Users can:
+ * - Collapse to reduce visual noise (toggle)
+ * - Dismiss permanently (stored in localStorage)
+ * - Restore all dismissed helpers via ? keyboard shortcut
+ *
+ * @domain navigation (UX support)
+ * @phase 15 — Hierarchy Architecture Overhaul
+ *
+ * Usage:
+ *   <InlineHelper
+ *     helperId="progress-routines-explainer"
+ *     title="What are Routines?"
+ *     icon="💡"
+ *   >
+ *     <p>Routines create daily tasks from templates...</p>
+ *   </InlineHelper>
+ */
+
+interface Props {
+  /** Unique stable identifier for this helper (used for dismissal persistence) */
+  helperId: string
+  /** Short title shown in the header */
+  title: string
+  /** Emoji or icon shown before the title */
+  icon?: string
+  /** Visual variant: info (default), tip, important */
+  variant?: "info" | "tip" | "important"
+}
+
+const { helperId, title, icon = "💡", variant = "info" } = Astro.props
+---
+
+<aside
+  class={`inline-helper inline-helper--${variant}`}
+  data-helper-id={helperId}
+  role="note"
+  aria-label={title}
+>
+  <div class="inline-helper__header">
+    <button
+      type="button"
+      class="inline-helper__toggle"
+      data-helper-toggle
+      aria-label="Toggle helper"
+    >
+      <span class="inline-helper__chevron">▶</span>
+    </button>
+    <span class="inline-helper__icon">{icon}</span>
+    <span class="inline-helper__title">{title}</span>
+    <button
+      type="button"
+      class="inline-helper__dismiss"
+      data-helper-dismiss
+      aria-label="Dismiss helper"
+      title="Dismiss (press ? to restore all)"
+    >
+      ✕
+    </button>
+  </div>
+  <div class="inline-helper__body">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .inline-helper {
+    --helper-accent: var(--info, #60a5fa);
+    border: 1px solid color-mix(in srgb, var(--helper-accent) 30%, var(--border));
+    border-radius: var(--radius-lg, 12px);
+    background: color-mix(in srgb, var(--helper-accent) 5%, var(--bg-card));
+    margin-bottom: 1rem;
+    overflow: hidden;
+    transition: border-color 200ms ease, opacity 200ms ease;
+  }
+
+  .inline-helper--tip {
+    --helper-accent: var(--success, #34d399);
+  }
+
+  .inline-helper--important {
+    --helper-accent: var(--warning, #fbbf24);
+  }
+
+  .inline-helper__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--helper-accent) 15%, transparent);
+  }
+
+  .inline-helper--collapsed .inline-helper__header {
+    border-bottom: none;
+  }
+
+  .inline-helper__toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+  }
+
+  .inline-helper__chevron {
+    font-size: 0.625rem;
+    display: inline-block;
+    transform: rotate(90deg);
+    transition: transform 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .inline-helper--collapsed .inline-helper__chevron {
+    transform: rotate(0deg);
+  }
+
+  .inline-helper__icon {
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .inline-helper__title {
+    flex: 1;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+  }
+
+  .inline-helper__dismiss {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    border-radius: 4px;
+    opacity: 0.4;
+    transition: opacity 150ms ease, background 150ms ease;
+  }
+
+  .inline-helper__dismiss:hover {
+    opacity: 1;
+    background: rgba(var(--accent-rgb, 99, 102, 241), 0.1);
+  }
+
+  .inline-helper__body {
+    padding: 0.5rem 0.875rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--text-muted);
+    transition: max-height 250ms ease, opacity 200ms ease, padding 200ms ease;
+  }
+
+  .inline-helper--collapsed .inline-helper__body {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .inline-helper__body :global(p) {
+    margin: 0 0 0.375rem;
+  }
+
+  .inline-helper__body :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .inline-helper__body :global(strong) {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .inline-helper__body :global(kbd) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    font-family: inherit;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 1px 0 var(--border);
+  }
+</style>
+
+<script>
+  import { initHelperSystem } from "@lib/helper-system"
+  // Self-init on first load; re-init on Astro page transitions
+  initHelperSystem()
+  document.addEventListener("astro:page-load", () => initHelperSystem())
+</script>
+
+<style is:global>
+  .helper-restore-flash {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary, #fff);
+    background: var(--bg-card, #1e1e2e);
+    border: 1px solid var(--accent, #6366f1);
+    border-radius: 9999px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    animation: flash-in 300ms ease, flash-out 300ms ease 2200ms forwards;
+  }
+
+  @keyframes flash-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+
+  @keyframes flash-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+</style>

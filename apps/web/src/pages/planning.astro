@@ -11,6 +11,7 @@
  */
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
@@ -45,6 +46,9 @@ const avgRice = riceScoredCount > 0
 <Layout title={`Meitheal — ${t("nav.planning", locale)}`}>
   <ParentPageShell pageId="planning">
     <section data-parent-section="eisenhower" id="planning-section-eisenhower">
+      <InlineHelper helperId="planning-hub-explainer" title="Planning & Prioritisation" icon="🧭" variant="info">
+        <p><strong>Planning</strong> helps you decide <em>what to work on</em> and <em>in what order</em>. Use the Eisenhower Matrix for urgency × importance, Triage for quick classification, and RICE Scoring for data-driven prioritisation.</p>
+      </InlineHelper>
       <div class="parent-section-hub">
         <div class="parent-section-hub__header">
           <span class="parent-section-hub__icon">🎯</span>
