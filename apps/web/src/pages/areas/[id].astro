@@ -642,17 +642,17 @@ const tabs = [
 
 <script define:vars={{ areaId }}>
   // --- Tab switching ---
-  const tabs = document.querySelectorAll<HTMLElement>(".area-tab");
-  const sections = document.querySelectorAll<HTMLElement>(".area-section");
+  const areaTabEls = Array.from(document.querySelectorAll(".area-tab"));
+  const areaSectionEls = Array.from(document.querySelectorAll(".area-section"));
 
   function switchTab(hash) {
     const tabId = hash.replace("#", "") || "overview";
-    tabs.forEach((t) => {
+    areaTabEls.forEach((t) => {
       const isActive = t.dataset.tab === tabId;
       t.classList.toggle("active", isActive);
       t.setAttribute("aria-selected", isActive ? "true" : "false");
     });
-    sections.forEach((s) => {
+    areaSectionEls.forEach((s) => {
       s.classList.toggle("active", s.dataset.section === tabId);
     });
   }

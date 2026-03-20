@@ -691,7 +691,8 @@ const taskKinds = [
       }
       row.addEventListener("click", (e) => {
         // Don't toggle when clicking ⋯ or + action buttons
-        if ((e.target as HTMLElement).closest(".stree__actions")) return
+        const target = e.target instanceof Element ? e.target : (e.target as Node).parentElement
+        if (target?.closest(".stree__actions")) return
         const isC = children.dataset.collapsed === "true"
         if (isC) {
           children.dataset.collapsed = "false"
@@ -750,7 +751,8 @@ const taskKinds = [
 
     // ── 3. Area + (new project) ──
     document.querySelectorAll<HTMLButtonElement>("[data-area-add]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation()
         const areaId = btn.dataset.areaAdd
         if (!areaId) return
         const title = prompt("New project title:")
@@ -798,10 +800,18 @@ const taskKinds = [
         ctrl.hide()
         if (!colorIconPopover) return
         const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeEntityId}"]`)
-        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
-        if (iconInput) iconInput.value = triggerBtn?.dataset.areaIcon || "📋"
+        const currentIcon = triggerBtn?.dataset.areaIcon || "📋"
         const currentColor = triggerBtn?.dataset.areaColor || "#6366F1"
+        // Sync icon preview + hidden input
+        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
+        const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
+        if (iconInput) iconInput.value = currentIcon
+        if (iconPreview) iconPreview.textContent = currentIcon
+        // Sync swatch selection
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
+        // Reset emoji tab to first
+        colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t, i) => t.classList.toggle("active", i === 0))
+        colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
         if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
       }
       if (action === "delete") {
@@ -844,10 +854,18 @@ const taskKinds = [
         ctrl.hide()
         if (!colorIconPopover) return
         const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-project-menu="${activeEntityId}"]`)
-        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
-        if (iconInput) iconInput.value = triggerBtn?.dataset.projectIconValue || "📋"
+        const currentIcon = triggerBtn?.dataset.projectIconValue || "📋"
         const currentColor = triggerBtn?.dataset.projectColor || "#6366F1"
+        // Sync icon preview + hidden input
+        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
+        const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
+        if (iconInput) iconInput.value = currentIcon
+        if (iconPreview) iconPreview.textContent = currentIcon
+        // Sync swatch selection
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
+        // Reset emoji tab to first
+        colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t, i) => t.classList.toggle("active", i === 0))
+        colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
         if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
       }
     })

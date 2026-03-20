@@ -639,17 +639,17 @@ const tabs = [
 
 <script define:vars={{ projectId }}>
   // --- Tab switching ---
-  const tabs = document.querySelectorAll(".project-tab");
-  const sections = document.querySelectorAll(".project-section");
+  const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
+  const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
 
   function switchTab(hash) {
     const tabId = hash.replace("#", "") || "overview";
-    tabs.forEach((t) => {
+    projTabEls.forEach((t) => {
       const isActive = t.dataset.tab === tabId;
       t.classList.toggle("active", isActive);
       t.setAttribute("aria-selected", isActive ? "true" : "false");
     });
-    sections.forEach((s) => {
+    projSectionEls.forEach((s) => {
       s.classList.toggle("active", s.dataset.section === tabId);
     });
   }
