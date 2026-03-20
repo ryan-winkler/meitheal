@@ -27,6 +27,7 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
 import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
+import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../lib/design-tokens"
 
 export interface Props {
   locale: Locale
@@ -65,12 +66,12 @@ for (const p of projects) {
 // Synthesize "Home" area if no default exists
 let defaultArea = areas.find((a) => a.id === "default")
 if (!defaultArea && ungroupedProjects.length > 0) {
-  defaultArea = { id: "default", name: "Home", icon: "🏠", color: "#6366F1", position: -1 }
+  defaultArea = { id: "default", name: "Home", icon: HOME_ICON, color: DEFAULT_ACCENT, position: -1 }
   areas = [defaultArea, ...areas]
 }
 if (defaultArea) {
   defaultArea.name = "Home"
-  defaultArea.icon = "🏠"
+  defaultArea.icon = HOME_ICON
   if (ungroupedProjects.length > 0) {
     const existing = projectsByArea.get("default") ?? []
     projectsByArea.set("default", [...existing, ...ungroupedProjects])
@@ -275,7 +276,7 @@ const taskKinds = [
     <div class="stree__popover-section">
       <label class="stree__popover-label">{t("sidebar.color_label", locale)}</label>
       <div class="stree__swatches" id="color-swatches">
-        {["#6366F1", "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#64748B"].map((c) => (
+        {COLOR_SWATCHES.map((c) => (
           <button type="button" class="stree__swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
         ))}
       </div>
