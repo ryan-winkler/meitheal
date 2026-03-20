@@ -5,7 +5,7 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "meitheal"
-PLATFORMS = [Platform.TODO, Platform.SENSOR]
+PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.BINARY_SENSOR]
 
 # Addon network defaults (internal Docker DNS)
 # Supervisor names containers as {REPO}_{SLUG}, but for DNS resolution

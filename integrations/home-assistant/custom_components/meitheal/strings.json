@@ -54,6 +54,20 @@
       },
       "total_tasks": {
         "name": "Total Tasks"
+      },
+      "due_today": {
+        "name": "Due Today"
+      },
+      "completed_today": {
+        "name": "Completed Today"
+      },
+      "streak": {
+        "name": "Streak"
+      }
+    },
+    "binary_sensor": {
+      "all_clear": {
+        "name": "All Clear"
       }
     }
   },
