@@ -1,101 +1,139 @@
 ---
 /**
- * SidebarHierarchyTree — collapsible Area > Goal > Project navigation tree.
- * Renders in the sidebar between nav list and board switcher.
- * Collapse state persisted in localStorage.
+ * SidebarHierarchyTree — unified Area > Goal > Project navigation tree
+ * with filter/visibility toggles.
+ *
+ * Merges the former SidebarAreaSwitcher (area filter + create dialog)
+ * and SidebarHierarchyTree (collapsible navigation tree) into one
+ * unified component.
+ *
+ * Features:
+ * - Collapsible Area > Goal > Project tree navigation
+ * - Filter mode: toggle visibility of individual Areas/Projects
+ * - Create new Area inline
+ * - Visibility state persisted in localStorage
+ * - Collapse state persisted in localStorage
+ * - Area filter synced globally via window.__activeArea
+ *
+ * @kcs Phase 06: Hierarchy sidebar consolidation
  */
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+} from "@domains/tasks/persistence/store"
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+
+export interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
 
 interface AreaRow { id: string; name: string; icon: string; color: string; position: number }
 interface GoalRow { id: string; title: string; area_id: string | null; status: string }
 interface ProjectRow { id: string; title: string; goal_id: string | null; icon: string; color: string; status: string }
 
-let areas: AreaRow[] = [];
-let goals: GoalRow[] = [];
-let projects: ProjectRow[] = [];
+let areas: AreaRow[] = []
+let goals: GoalRow[] = []
+let projects: ProjectRow[] = []
 
 try {
-  await ensureSchema();
-  const repo = new HierarchyRepository(getPersistenceClient());
-  areas = (await repo.findAllAreas()) as unknown as AreaRow[];
-  goals = (await repo.findAllGoals({})) as unknown as GoalRow[];
-  projects = (await repo.findAllProjects({})) as unknown as ProjectRow[];
+  await ensureSchema()
+  const repo = new HierarchyRepository(getPersistenceClient())
+  areas = (await repo.findAllAreas()) as unknown as AreaRow[]
+  goals = (await repo.findAllGoals({})) as unknown as GoalRow[]
+  projects = (await repo.findAllProjects({})) as unknown as ProjectRow[]
 } catch {
   // Schema may not exist yet — render empty
 }
 
 // Group goals by area_id, projects by goal_id
-const goalsByArea = new Map<string, GoalRow[]>();
-const projectsByGoal = new Map<string, ProjectRow[]>();
-const ungroupedGoals: GoalRow[] = [];
-const ungroupedProjects: ProjectRow[] = [];
+const goalsByArea = new Map<string, GoalRow[]>()
+const projectsByGoal = new Map<string, ProjectRow[]>()
+const ungroupedGoals: GoalRow[] = []
+const ungroupedProjects: ProjectRow[] = []
 
 goals.forEach((g) => {
   if (g.area_id) {
-    const list = goalsByArea.get(g.area_id) ?? [];
-    list.push(g);
-    goalsByArea.set(g.area_id, list);
+    const list = goalsByArea.get(g.area_id) ?? []
+    list.push(g)
+    goalsByArea.set(g.area_id, list)
   } else {
-    ungroupedGoals.push(g);
+    ungroupedGoals.push(g)
   }
-});
+})
 
 projects.forEach((p) => {
   if (p.goal_id) {
-    const list = projectsByGoal.get(p.goal_id) ?? [];
-    list.push(p);
-    projectsByGoal.set(p.goal_id, list);
+    const list = projectsByGoal.get(p.goal_id) ?? []
+    list.push(p)
+    projectsByGoal.set(p.goal_id, list)
   } else {
-    ungroupedProjects.push(p);
+    ungroupedProjects.push(p)
   }
-});
+})
 
-const currentPath = Astro.url.pathname;
-const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
+const currentPath = Astro.url.pathname
+const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0
+const visibleAreas = areas.filter((a) => a.name !== "Uncategorized" || goalsByArea.has(a.id))
 ---
 
 {hasContent && (
   <div class="hierarchy-tree" id="hierarchy-tree" role="tree" aria-label="Project hierarchy">
     <div class="hierarchy-tree-header">
-      <span class="hierarchy-tree-label">Projects</span>
-      <a
-        href="/projects"
-        class="hierarchy-tree-action"
-        title="View all projects"
-        aria-label="View all projects"
-      >
-        →
-      </a>
+      <span class="hierarchy-tree-label">Hierarchy</span>
+      <div class="hierarchy-tree-actions">
+        <button
+          type="button"
+          class="hierarchy-tree-action-btn"
+          id="hierarchy-filter-toggle"
+          title="Toggle visibility filter"
+          aria-label="Toggle visibility filter"
+          aria-pressed="false"
+        >
+          <span class="hierarchy-filter-icon">👁</span>
+        </button>
+        <a
+          href="/projects"
+          class="hierarchy-tree-action-link"
+          title="View all projects"
+          aria-label="View all projects"
+        >
+          →
+        </a>
+      </div>
     </div>
 
     <div class="hierarchy-tree-content" id="hierarchy-tree-content">
-      {areas
-        .filter((a) => a.name !== "Uncategorized" || goalsByArea.has(a.id))
-        .map((area) => {
-          const areaGoals = goalsByArea.get(area.id) ?? [];
+      {/* ── Area-grouped section ── */}
+      {visibleAreas.map((area) => {
+          const areaGoals = goalsByArea.get(area.id) ?? []
           return (
             <div class="tree-area" data-area-id={area.id} role="treeitem" aria-expanded="true">
-              <button
-                class="tree-toggle tree-area-toggle"
-                data-tree-id={`area-${area.id}`}
-                aria-label={`Toggle ${area.name}`}
-                type="button"
-              >
-                <span class="tree-chevron">▸</span>
-                <span class="tree-area-icon" style={`color: ${area.color}`}>{area.icon}</span>
-                <span class="tree-area-name">{area.name}</span>
-                {areaGoals.length > 0 && (
-                  <span class="tree-count">{areaGoals.length}</span>
-                )}
-              </button>
+              <div class="tree-row">
+                <button
+                  class="tree-toggle tree-area-toggle"
+                  data-tree-id={`area-${area.id}`}
+                  aria-label={`Toggle ${area.name}`}
+                  type="button"
+                >
+                  <span class="tree-chevron">▸</span>
+                  <span class="tree-area-icon" style={`color: ${area.color}`}>{area.icon}</span>
+                  <span class="tree-area-name">{area.name}</span>
+                  {areaGoals.length > 0 && (
+                    <span class="tree-count">{areaGoals.length}</span>
+                  )}
+                </button>
+                <label class="tree-visibility-cb" data-filter-target={`area-${area.id}`} title={`Show/hide ${area.name}`}>
+                  <input type="checkbox" checked data-hierarchy-filter="area" data-hierarchy-id={area.id} />
+                </label>
+              </div>
               <div class="tree-children" data-tree-children={`area-${area.id}`}>
                 {areaGoals.map((goal) => {
-                  const goalProjects = projectsByGoal.get(goal.id) ?? [];
-                  const goalIcon = goal.status === "completed" ? "✅" : goal.status === "archived" ? "📦" : "🎯";
+                  const goalProjects = projectsByGoal.get(goal.id) ?? []
+                  const goalIcon = goal.status === "completed" ? "✅" : goal.status === "archived" ? "📦" : "🎯"
                   return (
                     <div class="tree-goal" data-goal-id={goal.id} role="treeitem" aria-expanded="true">
                       <button
@@ -114,32 +152,37 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
                       {goalProjects.length > 0 && (
                         <div class="tree-children" data-tree-children={`goal-${goal.id}`}>
                           {goalProjects.map((proj) => (
-                            <a
-                              class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-                              href={`/projects/${proj.id}`}
-                              role="treeitem"
-                              data-project-id={proj.id}
-                              title={proj.title}
-                            >
-                              <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                              <span class="tree-project-name">{proj.title}</span>
-                            </a>
+                            <div class="tree-row">
+                              <a
+                                class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                                href={`/projects/${proj.id}`}
+                                role="treeitem"
+                                data-project-id={proj.id}
+                                title={proj.title}
+                              >
+                                <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                                <span class="tree-project-name">{proj.title}</span>
+                              </a>
+                              <label class="tree-visibility-cb" data-filter-target={`project-${proj.id}`} title={`Show/hide ${proj.title}`}>
+                                <input type="checkbox" checked data-hierarchy-filter="project" data-hierarchy-id={proj.id} />
+                              </label>
+                            </div>
                           ))}
                         </div>
                       )}
                     </div>
-                  );
+                  )
                 })}
               </div>
             </div>
-          );
+          )
         })
       }
 
-      {/* Ungrouped goals (no area) */}
+      {/* ── Ungrouped goals (no area) ── */}
       {ungroupedGoals.map((goal) => {
-        const goalProjects = projectsByGoal.get(goal.id) ?? [];
-        const goalIcon = goal.status === "completed" ? "✅" : "🎯";
+        const goalProjects = projectsByGoal.get(goal.id) ?? []
+        const goalIcon = goal.status === "completed" ? "✅" : "🎯"
         return (
           <div class="tree-goal tree-goal-root" data-goal-id={goal.id} role="treeitem">
             <button
@@ -154,37 +197,97 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
             {goalProjects.length > 0 && (
               <div class="tree-children" data-tree-children={`goal-${goal.id}`}>
                 {goalProjects.map((proj) => (
-                  <a
-                    class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-                    href={`/projects/${proj.id}`}
-                    role="treeitem"
-                    data-project-id={proj.id}
-                    title={proj.title}
-                  >
-                    <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                    <span class="tree-project-name">{proj.title}</span>
-                  </a>
+                  <div class="tree-row">
+                    <a
+                      class={`tree-project ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                      href={`/projects/${proj.id}`}
+                      role="treeitem"
+                      data-project-id={proj.id}
+                      title={proj.title}
+                    >
+                      <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                      <span class="tree-project-name">{proj.title}</span>
+                    </a>
+                    <label class="tree-visibility-cb" data-filter-target={`project-${proj.id}`} title={`Show/hide ${proj.title}`}>
+                      <input type="checkbox" checked data-hierarchy-filter="project" data-hierarchy-id={proj.id} />
+                    </label>
+                  </div>
                 ))}
               </div>
             )}
           </div>
-        );
+        )
       })}
 
-      {/* Ungrouped projects (no goal) */}
+      {/* ── Ungrouped projects (no goal) ── */}
       {ungroupedProjects.map((proj) => (
-        <a
-          class={`tree-project tree-project-root ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-          href={`/projects/${proj.id}`}
-          role="treeitem"
-          data-project-id={proj.id}
-          title={proj.title}
-        >
-          <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-          <span class="tree-project-name">{proj.title}</span>
-        </a>
+        <div class="tree-row">
+          <a
+            class={`tree-project tree-project-root ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+            href={`/projects/${proj.id}`}
+            role="treeitem"
+            data-project-id={proj.id}
+            title={proj.title}
+          >
+            <span class="tree-project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+            <span class="tree-project-name">{proj.title}</span>
+          </a>
+          <label class="tree-visibility-cb" data-filter-target={`project-${proj.id}`} title={`Show/hide ${proj.title}`}>
+            <input type="checkbox" checked data-hierarchy-filter="project" data-hierarchy-id={proj.id} />
+          </label>
+        </div>
       ))}
     </div>
+
+    {/* ── New Area button ── */}
+    <button
+      class="hierarchy-add-area-btn"
+      id="hierarchy-add-area-btn"
+      type="button"
+      title={t("sidebar.new_area", locale)}
+      aria-label={t("sidebar.new_area", locale)}
+    >
+      <Icon name="plus" size={13} />
+      <span>{t("sidebar.new_area", locale)}</span>
+    </button>
+
+    {/* ── New Area Dialog ── */}
+    <dialog
+      id="hierarchy-new-area-dialog"
+      class="hierarchy-dialog"
+      aria-labelledby="hierarchy-new-area-title"
+    >
+      <form id="hierarchy-new-area-form" class="hierarchy-dialog-form">
+        <div class="hierarchy-dialog-header">
+          <h3 id="hierarchy-new-area-title">{t("sidebar.new_area", locale)}</h3>
+        </div>
+        <div class="hierarchy-dialog-body">
+          <label for="hierarchy-new-area-input" class="hierarchy-dialog-label">
+            {t("sidebar.prompt_area_name", locale)}
+          </label>
+          <input
+            type="text"
+            id="hierarchy-new-area-input"
+            name="area_name"
+            class="hierarchy-dialog-input"
+            autocomplete="off"
+            required
+          />
+        </div>
+        <div class="hierarchy-dialog-footer">
+          <button
+            type="button"
+            id="hierarchy-new-area-cancel"
+            class="hierarchy-dialog-btn-cancel"
+          >
+            {t("common.cancel", locale)}
+          </button>
+          <button type="submit" class="hierarchy-dialog-btn-submit">
+            {t("common.save", locale)}
+          </button>
+        </div>
+      </form>
+    </dialog>
   </div>
 )}
 
@@ -215,14 +318,45 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
     color: var(--text-muted);
   }
 
-  .hierarchy-tree-action {
+  .hierarchy-tree-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hierarchy-tree-action-btn {
+    background: none;
+    border: 1px solid transparent;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    color: var(--text-muted);
+    opacity: 0.7;
+    transition: opacity 150ms, color 150ms, background 150ms, border-color 150ms;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+  }
+  .hierarchy-tree-action-btn:hover {
+    opacity: 1;
+    color: var(--accent);
+    background: var(--bg-hover);
+  }
+  .hierarchy-tree-action-btn[aria-pressed="true"] {
+    opacity: 1;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: rgba(var(--accent-rgb), 0.3);
+  }
+
+  .hierarchy-tree-action-link {
     font-size: 12px;
     color: var(--text-muted);
     text-decoration: none;
     opacity: 0.7;
-    transition: opacity 150ms;
+    transition: opacity 150ms, color 150ms;
   }
-  .hierarchy-tree-action:hover {
+  .hierarchy-tree-action-link:hover {
     opacity: 1;
     color: var(--accent);
   }
@@ -230,6 +364,37 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
   .hierarchy-tree-content {
     display: flex;
     flex-direction: column;
+  }
+
+  /* ── Row wrapper for toggle + checkbox ── */
+  .tree-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .tree-row > .tree-toggle,
+  .tree-row > .tree-project {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── Visibility checkboxes (hidden by default, shown in filter mode) ── */
+  .tree-visibility-cb {
+    display: none;
+    flex-shrink: 0;
+    cursor: pointer;
+    padding: 2px;
+  }
+  .hierarchy-tree.filter-mode .tree-visibility-cb {
+    display: flex;
+    align-items: center;
+  }
+  .tree-visibility-cb input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
   }
 
   .tree-toggle {
@@ -326,122 +491,377 @@ const hasContent = areas.length > 1 || goals.length > 0 || projects.length > 0;
   .tree-goal-root { padding-left: 0; }
   .tree-project-root { padding-left: 4px; }
 
+  /* ── Hidden items (filter applied) ── */
+  .tree-area[data-hidden="true"],
+  .tree-row[data-hidden="true"] {
+    display: none;
+  }
+
+  /* ── Add Area button ── */
+  .hierarchy-add-area-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 8px;
+    margin-top: 4px;
+    border: 1px dashed var(--border);
+    background: none;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: background 150ms, color 150ms, border-color 150ms;
+  }
+  .hierarchy-add-area-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--accent);
+  }
+
+  /* ── Dialog ── */
+  .hierarchy-dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    padding: 0;
+    width: 90%;
+    max-width: 360px;
+    margin: auto;
+  }
+  .hierarchy-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+  }
+  .hierarchy-dialog-form {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+  }
+  .hierarchy-dialog-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.5);
+  }
+  .hierarchy-dialog-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .hierarchy-dialog-body {
+    padding: 16px 20px;
+  }
+  .hierarchy-dialog-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  .hierarchy-dialog-input {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    box-sizing: border-box;
+  }
+  .hierarchy-dialog-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+  }
+  .hierarchy-dialog-footer {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(var(--border-rgb), 0.5);
+    background: rgba(var(--bg-secondary-rgb), 0.3);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-radius: 0 0 12px 12px;
+  }
+  .hierarchy-dialog-btn-cancel {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: color 150ms;
+  }
+  .hierarchy-dialog-btn-cancel:hover {
+    color: var(--text-primary);
+  }
+  .hierarchy-dialog-btn-submit {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: white;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 150ms;
+  }
+  .hierarchy-dialog-btn-submit:hover {
+    opacity: 0.9;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .tree-chevron,
     .tree-toggle,
     .tree-project,
-    .hierarchy-tree-action {
+    .hierarchy-tree-action-btn,
+    .hierarchy-tree-action-link,
+    .hierarchy-add-area-btn {
       transition: none;
     }
   }
 </style>
 
 <script>
-  // Hierarchy tree collapse/expand with localStorage persistence
+  // ── Hierarchy tree: collapse/expand + filter/visibility + new area ──
   (function initHierarchyTree() {
-    const STORAGE_KEY = "meitheal_hierarchy_collapsed";
-    let collapsed: Set<string>;
+    const tree = document.getElementById("hierarchy-tree")
+    if (!tree) return
+
+    // ── 1. Collapse/Expand persistence ──
+    const COLLAPSE_KEY = "meitheal_hierarchy_collapsed"
+    let collapsed: Set<string>
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      collapsed = new Set(stored ? JSON.parse(stored) : []);
+      const stored = localStorage.getItem(COLLAPSE_KEY)
+      collapsed = new Set(stored ? JSON.parse(stored) : [])
     } catch {
-      collapsed = new Set();
+      collapsed = new Set()
     }
 
-    function save() {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsed])); } catch { /* quota */ }
+    function saveCollapsed() {
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])) } catch { /* quota */ }
     }
 
     document.querySelectorAll<HTMLButtonElement>(".tree-toggle").forEach((btn) => {
-      const id = btn.dataset.treeId;
-      if (!id) return;
-      const children = document.querySelector(`[data-tree-children="${id}"]`) as HTMLElement | null;
-      if (!children) return;
+      const id = btn.dataset.treeId
+      if (!id) return
+      const children = document.querySelector(`[data-tree-children="${id}"]`) as HTMLElement | null
+      if (!children) return
 
       // Restore state
       if (collapsed.has(id)) {
-        children.dataset.collapsed = "true";
-        btn.setAttribute("aria-expanded", "false");
+        children.dataset.collapsed = "true"
+        btn.setAttribute("aria-expanded", "false")
       } else {
-        btn.setAttribute("aria-expanded", "true");
+        btn.setAttribute("aria-expanded", "true")
       }
 
       btn.addEventListener("click", () => {
-        const isCollapsed = children.dataset.collapsed === "true";
+        const isCollapsed = children.dataset.collapsed === "true"
         if (isCollapsed) {
-          children.dataset.collapsed = "false";
-          children.style.display = "";
-          btn.setAttribute("aria-expanded", "true");
-          collapsed.delete(id);
+          children.dataset.collapsed = "false"
+          children.style.display = ""
+          btn.setAttribute("aria-expanded", "true")
+          collapsed.delete(id)
         } else {
-          children.dataset.collapsed = "true";
-          children.style.display = "none";
-          btn.setAttribute("aria-expanded", "false");
-          collapsed.add(id);
+          children.dataset.collapsed = "true"
+          children.style.display = "none"
+          btn.setAttribute("aria-expanded", "false")
+          collapsed.add(id)
         }
-        save();
-      });
-    });
+        saveCollapsed()
+      })
+    })
 
-    // Keyboard navigation for tree (Arrow keys, Enter, Space per WAI-ARIA TreeView)
-    const tree = document.getElementById("hierarchy-tree");
-    if (tree) {
-      const focusables = () =>
-        Array.from(tree.querySelectorAll<HTMLElement>(
-          '.tree-toggle, .tree-project'
-        )).filter((el) => {
-          // Only include visible elements
-          return el.offsetParent !== null;
-        });
-
-      tree.addEventListener("keydown", (e: KeyboardEvent) => {
-        const target = e.target as HTMLElement;
-        if (!target.matches('.tree-toggle, .tree-project')) return;
-
-        const items = focusables();
-        const idx = items.indexOf(target);
-        if (idx === -1) return;
-
-        switch (e.key) {
-          case "ArrowDown":
-            e.preventDefault();
-            if (idx < items.length - 1) items[idx + 1]!.focus();
-            break;
-          case "ArrowUp":
-            e.preventDefault();
-            if (idx > 0) items[idx - 1]!.focus();
-            break;
-          case "ArrowRight":
-            // If collapsible and collapsed, expand it
-            if (target.matches('.tree-toggle') && target.getAttribute('aria-expanded') === 'false') {
-              e.preventDefault();
-              target.click();
-            }
-            break;
-          case "ArrowLeft":
-            // If collapsible and expanded, collapse it
-            if (target.matches('.tree-toggle') && target.getAttribute('aria-expanded') === 'true') {
-              e.preventDefault();
-              target.click();
-            }
-            break;
-          case "Enter":
-          case " ":
-            if (target.matches('.tree-project')) {
-              e.preventDefault();
-              (target as HTMLAnchorElement).click();
-            }
-            break;
-          case "Home":
-            e.preventDefault();
-            if (items.length > 0) items[0]!.focus();
-            break;
-          case "End":
-            e.preventDefault();
-            if (items.length > 0) items[items.length - 1]!.focus();
-            break;
-        }
-      });
+    // ── 2. Filter/Visibility mode ──
+    const VISIBILITY_KEY = "meitheal_hierarchy_hidden"
+    const filterToggle = document.getElementById("hierarchy-filter-toggle")
+    let hiddenItems: Set<string>
+    try {
+      const stored = localStorage.getItem(VISIBILITY_KEY)
+      hiddenItems = new Set(stored ? JSON.parse(stored) : [])
+    } catch {
+      hiddenItems = new Set()
     }
-  })();
+
+    function saveVisibility() {
+      try { localStorage.setItem(VISIBILITY_KEY, JSON.stringify([...hiddenItems])) } catch { /* quota */ }
+    }
+
+    function applyVisibility() {
+      // Areas
+      tree!.querySelectorAll<HTMLElement>("[data-area-id]").forEach((el) => {
+        const id = `area-${el.dataset.areaId}`
+        el.dataset.hidden = hiddenItems.has(id) ? "true" : "false"
+      })
+      // Projects (in tree-row wrappers)
+      tree!.querySelectorAll<HTMLElement>("[data-project-id]").forEach((el) => {
+        const id = `project-${el.dataset.projectId}`
+        const row = el.closest(".tree-row") as HTMLElement | null
+        if (row) {
+          row.dataset.hidden = hiddenItems.has(id) ? "true" : "false"
+        }
+      })
+
+      // Sync checkboxes
+      tree!.querySelectorAll<HTMLInputElement>("[data-hierarchy-filter]").forEach((cb) => {
+        const type = cb.dataset.hierarchyFilter
+        const id = cb.dataset.hierarchyId
+        if (type && id) {
+          cb.checked = !hiddenItems.has(`${type}-${id}`)
+        }
+      })
+
+      // Update global area filter — collect visible area IDs
+      const visibleAreaIds: string[] = []
+      tree!.querySelectorAll<HTMLElement>("[data-area-id]").forEach((el) => {
+        if (el.dataset.hidden !== "true") {
+          visibleAreaIds.push(el.dataset.areaId ?? "")
+        }
+      })
+      window.__activeArea = visibleAreaIds.length === 0 ? "all" : (visibleAreaIds.length === 1 ? visibleAreaIds[0]! : "all")
+
+      // Apply area filter to task views
+      applyAreaFilter()
+    }
+
+    function applyAreaFilter() {
+      const area = window.__activeArea ?? "all"
+      // Filter task items
+      document.querySelectorAll<HTMLElement>(".task-item[data-area]").forEach((item) => {
+        item.style.display = area === "all" || item.dataset.area === area ? "" : "none"
+      })
+      // Filter kanban cards
+      document.querySelectorAll<HTMLElement>(".kanban-card[data-area]").forEach((card) => {
+        card.style.display = area === "all" || card.dataset.area === area ? "" : "none"
+      })
+      // Filter table rows
+      document.querySelectorAll<HTMLElement>("#task-table tbody tr[data-area]").forEach((row) => {
+        row.style.display = area === "all" || row.dataset.area === area ? "" : "none"
+      })
+    }
+
+    // Apply visibility on load
+    applyVisibility()
+
+    // Filter toggle button
+    filterToggle?.addEventListener("click", () => {
+      const isActive = tree.classList.toggle("filter-mode")
+      filterToggle.setAttribute("aria-pressed", isActive ? "true" : "false")
+    })
+
+    // Checkbox change handlers
+    tree.querySelectorAll<HTMLInputElement>("[data-hierarchy-filter]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const type = cb.dataset.hierarchyFilter
+        const id = cb.dataset.hierarchyId
+        if (!type || !id) return
+        const key = `${type}-${id}`
+        if (cb.checked) {
+          hiddenItems.delete(key)
+        } else {
+          hiddenItems.add(key)
+        }
+        saveVisibility()
+        applyVisibility()
+      })
+    })
+
+    // ── 3. New Area dialog ──
+    const addBtn = document.getElementById("hierarchy-add-area-btn")
+    const dialog = document.getElementById("hierarchy-new-area-dialog") as HTMLDialogElement | null
+    const form = document.getElementById("hierarchy-new-area-form") as HTMLFormElement | null
+    const input = document.getElementById("hierarchy-new-area-input") as HTMLInputElement | null
+    const cancelBtn = document.getElementById("hierarchy-new-area-cancel")
+
+    addBtn?.addEventListener("click", () => {
+      if (dialog && input) {
+        input.value = ""
+        dialog.showModal()
+        setTimeout(() => input.focus(), 10)
+      }
+    })
+
+    cancelBtn?.addEventListener("click", () => {
+      dialog?.close()
+    })
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault()
+      if (!input || !dialog) return
+      const title = input.value.trim()
+      if (!title) return
+      try {
+        const res = await fetch((window.__ingress_path || "") + "/api/areas", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: title }),
+        })
+        if (res.ok) {
+          dialog.close()
+          document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "area-created" } }))
+          // Reload to show new area in tree
+          window.location.reload()
+        }
+      } catch {
+        /* ignore */
+      }
+    })
+
+    // ── 4. Keyboard navigation (WAI-ARIA TreeView) ──
+    const focusables = () =>
+      Array.from(tree.querySelectorAll<HTMLElement>(
+        ".tree-toggle, .tree-project"
+      )).filter((el) => el.offsetParent !== null)
+
+    tree.addEventListener("keydown", (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.matches(".tree-toggle, .tree-project")) return
+
+      const items = focusables()
+      const idx = items.indexOf(target)
+      if (idx === -1) return
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault()
+          if (idx < items.length - 1) items[idx + 1]!.focus()
+          break
+        case "ArrowUp":
+          e.preventDefault()
+          if (idx > 0) items[idx - 1]!.focus()
+          break
+        case "ArrowRight":
+          if (target.matches(".tree-toggle") && target.getAttribute("aria-expanded") === "false") {
+            e.preventDefault()
+            target.click()
+          }
+          break
+        case "ArrowLeft":
+          if (target.matches(".tree-toggle") && target.getAttribute("aria-expanded") === "true") {
+            e.preventDefault()
+            target.click()
+          }
+          break
+        case "Enter":
+        case " ":
+          if (target.matches(".tree-project")) {
+            e.preventDefault()
+            ;(target as HTMLAnchorElement).click()
+          }
+          break
+        case "Home":
+          e.preventDefault()
+          if (items.length > 0) items[0]!.focus()
+          break
+        case "End":
+          e.preventDefault()
+          if (items.length > 0) items[items.length - 1]!.focus()
+          break
+      }
+    })
+  })()
 </script>
