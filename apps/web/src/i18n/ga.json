@@ -1210,5 +1210,24 @@
   "settings.webhooks_format_form": "Form-encoded",
   "settings.save_webhook": "Save Webhook",
   "settings.status_not_configured": "Not configured",
-  "settings.send_webhook_test": "Send Test"
+  "settings.send_webhook_test": "Seol Tástáil",
+
+  "hierarchy.area": "Réimse",
+  "hierarchy.goal": "Sprioc",
+  "hierarchy.project": "Tionscadal",
+  "hierarchy.task": "Tasc",
+  "hierarchy.routine": "Gnáthamh",
+  "hierarchy.every_day": "Gach Lá",
+  "hierarchy.breadcrumb_home": "Baile",
+
+  "helper.dismiss": "Cuir as feidhm",
+  "helper.restore_all": "Athchóirigh na cabhróirí go léir",
+  "helper.restored_count": "{count} cabhróir(í) athchóirithe",
+  "helper.keyboard_hint": "Brúigh ? chun cabhróirí a athchóiriú",
+
+  "parent_page.open_full": "Oscail an Radharc Iomlán",
+  "parent_page.coming_soon": "Ag Teacht go Luath",
+  "parent_page.tasks_hub": "Mol na dTascanna",
+  "parent_page.planning_hub": "Pleanáil",
+  "parent_page.progress_hub": "Dul Chun Cinn & Fás"
 }

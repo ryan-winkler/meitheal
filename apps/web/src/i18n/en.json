@@ -1225,5 +1225,24 @@
   "settings.webhooks_format_form": "Form-encoded",
   "settings.save_webhook": "Save Webhook",
   "settings.status_not_configured": "Not configured",
-  "settings.send_webhook_test": "Send Test"
+  "settings.send_webhook_test": "Send Test",
+
+  "hierarchy.area": "Area",
+  "hierarchy.goal": "Goal",
+  "hierarchy.project": "Project",
+  "hierarchy.task": "Task",
+  "hierarchy.routine": "Routine",
+  "hierarchy.every_day": "Every Day",
+  "hierarchy.breadcrumb_home": "Home",
+
+  "helper.dismiss": "Dismiss",
+  "helper.restore_all": "Restore all helpers",
+  "helper.restored_count": "{count} helper(s) restored",
+  "helper.keyboard_hint": "Press ? to restore dismissed helpers",
+
+  "parent_page.open_full": "Open Full View",
+  "parent_page.coming_soon": "Coming Soon",
+  "parent_page.tasks_hub": "Tasks Hub",
+  "parent_page.planning_hub": "Planning",
+  "parent_page.progress_hub": "Progress & Growth"
 }
