@@ -108,10 +108,10 @@ export function initKanbanArea(__signal: AbortSignal): void {
         if (ghost) ghost.remove();
 
         targetCards.appendChild(card);
-        card.dataset.status = newStatus;
+        (card as HTMLElement).dataset.status = newStatus;
         if (targetSwimlane) {
           // Update the card's native dataset so filtering still works on reload
-          card.dataset.taskType = targetSwimlane.dataset.swimlaneType;
+          (card as HTMLElement).dataset.taskType = (targetSwimlane as HTMLElement).dataset.swimlaneType;
           // Find the badge inside the card and update visually if possible - this requires a reload for full icon update, but we keep the structure
         }
       }
@@ -121,7 +121,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         if (!c) return;
         const count = c.querySelector(".kanban-count");
         const cards = c.querySelectorAll(".kanban-card");
-        if (count) count.textContent = cards.length;
+        if (count) count.textContent = String(cards.length);
         // Show empty state if column is now empty
         if (cards.length === 0) {
           const cardsContainer = c.querySelector(".kanban-cards");
@@ -141,7 +141,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       const toast = document.createElement("div");
       toast.className = "toast success kanban-contextual-toast";
       toast.textContent = `Moved to ${newStatus}`;
-      const cardRect = card.getBoundingClientRect();
+      const cardRect = (card as HTMLElement).getBoundingClientRect();
       toast.style.cssText = `position:fixed;top:${Math.max(cardRect.top - 40, 8)}px;left:${cardRect.left}px;z-index:100;pointer-events:none;`;
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 2000);
@@ -150,7 +150,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       try {
         const payload: Record<string, string | undefined> = { status: newStatus };
         if (targetSwimlane) {
-          payload.task_type = targetSwimlane.dataset.swimlaneType;
+          payload.task_type = (targetSwimlane as HTMLElement).dataset.swimlaneType;
         }
         await fetch(buildTaskApiUrl(taskId), {
           method: "PUT",
@@ -172,7 +172,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         if (newStatus === "complete") {
           const ff = window.__featureFlags || {};
           if (ff.confetti !== false) {
-            const cardPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
+            const cardPriority = parseInt((card as HTMLElement).dataset.priority ?? "3", 10) || 3;
             const cardTitle = card.querySelector(".kanban-title-text")?.textContent?.trim() || "Task";
             // Use celebrations module for priority-aware confetti
             import("@lib/celebrations").then(({ celebrateHighPriorityComplete, fireConfetti }) => {
@@ -187,7 +187,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
             })
           }
           if (ff.gamification !== false) {
-            const gamPriority = parseInt(card.dataset.priority ?? "3", 10) || 3;
+            const gamPriority = parseInt((card as HTMLElement).dataset.priority ?? "3", 10) || 3;
             fetch("/api/gamification", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -206,11 +206,11 @@ export function initKanbanArea(__signal: AbortSignal): void {
     // ── Drag-and-drop event listeners (migrated from inline handlers for CSP) ──
     document.querySelectorAll(".kanban-column").forEach((col) => {
       // Column-level: drop, dragover, dragleave
-      col.addEventListener("drop", handleDrop);
-      col.addEventListener("dragover", (e: DragEvent) => {
+      col.addEventListener("drop", handleDrop as unknown as EventListener);
+      col.addEventListener("dragover", ((e: Event) => {
         e.preventDefault();
         (col as HTMLElement).classList.add("drag-over");
-      });
+      }) as EventListener);
       col.addEventListener("dragleave", () => {
         col.classList.remove("drag-over");
       });
@@ -221,7 +221,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
       // Card-level: dragstart, dragend (replaces inline handlers for CSP)
       cardsContainer.querySelectorAll<HTMLElement>(".kanban-card").forEach((card) => {
         card.addEventListener("dragstart", (e: DragEvent) => {
-          e.dataTransfer.setData("text/plain", card.dataset.id);
+          e.dataTransfer?.setData("text/plain", card.dataset.id ?? "");
           card.classList.add("dragging");
         });
         card.addEventListener("dragend", () => {
@@ -231,7 +231,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         });
       });
 
-      cardsContainer.addEventListener("dragover", (e: DragEvent) => {
+      cardsContainer.addEventListener("dragover", ((e: Event) => {
         e.preventDefault();
         const dragging = document.querySelector(".kanban-card.dragging");
         if (!dragging) return;
@@ -245,7 +245,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           .querySelectorAll(".reorder-indicator")
           .forEach((i) => i.remove());
 
-        const afterEl = getDragAfterElement(cardsContainer, e.clientY);
+        const afterEl = getDragAfterElement(cardsContainer as HTMLElement, (e as DragEvent).clientY);
         const indicator = document.createElement("div");
         indicator.className = "reorder-indicator";
 
@@ -254,7 +254,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         } else {
           cardsContainer.appendChild(indicator);
         }
-      });
+      }) as EventListener);
 
       cardsContainer.addEventListener("dragleave", () => {
         cardsContainer
@@ -262,13 +262,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
           .forEach((i) => i.remove());
       });
 
-      cardsContainer.addEventListener("drop", async (e) => {
+      cardsContainer.addEventListener("drop", (async (e: Event) => {
         e.preventDefault();
         cardsContainer
           .querySelectorAll(".reorder-indicator")
           .forEach((i) => i.remove());
 
-        const taskId = e.dataTransfer.getData("text/plain");
+        const taskId = (e as DragEvent).dataTransfer?.getData("text/plain");
         const card = document.querySelector(
           `.kanban-card[data-id="${taskId}"]`,
         );
@@ -281,7 +281,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         // Stop propagation so the column-level handleDrop doesn't also fire
         e.stopPropagation();
 
-        const afterEl = getDragAfterElement(cardsContainer, e.clientY);
+        const afterEl = getDragAfterElement(cardsContainer as HTMLElement, (e as DragEvent).clientY);
         if (afterEl) {
           cardsContainer.insertBefore(card, afterEl);
         } else {
@@ -292,7 +292,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         const orderedIds = Array.from(
           cardsContainer.querySelectorAll(".kanban-card"),
         )
-          .map((c) => c.dataset.id)
+          .map((c) => (c as HTMLElement).dataset.id)
           .filter(Boolean);
 
         try {
@@ -304,14 +304,14 @@ export function initKanbanArea(__signal: AbortSignal): void {
         } catch {
           // Silent fail — order will revert on next load
         }
-      });
+      }) as EventListener);
     });
 
     /**
      * Get the element after which the dragged card should be inserted,
      * based on the Y position of the mouse during the drag event.
      */
-    function getDragAfterElement(container, y) {
+    function getDragAfterElement(container: HTMLElement, y: number) {
       const cards = [
         ...container.querySelectorAll(".kanban-card:not(.dragging)"),
       ];
@@ -329,7 +329,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     }
     // Kanban card action handlers
     // T-1903: Edit button opens inline task detail panel (not redirect)
-    document.querySelectorAll(".card-edit-btn").forEach((btn) => {
+    document.querySelectorAll<HTMLElement>(".card-edit-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
@@ -351,15 +351,15 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // Card body click → open task detail (Teamhood parity)
     // Excludes: action buttons, inline-editing, checkbox clicks
-    document.querySelectorAll(".kanban-card").forEach((card) => {
+    document.querySelectorAll<HTMLElement>(".kanban-card").forEach((card) => {
       card.addEventListener("click", (e) => {
         // Skip if clicking action buttons, links, or inputs
-        const target = e.target
-        if (target.closest(".kanban-card-actions") ||
-            target.closest("button") ||
-            target.closest("a") ||
-            target.closest("input") ||
-            target.closest("[contenteditable='true']")) return
+        const target = e.target as HTMLElement | null
+        if (target?.closest(".kanban-card-actions") ||
+            target?.closest("button") ||
+            target?.closest("a") ||
+            target?.closest("input") ||
+            target?.closest("[contenteditable='true']")) return
 
         const id = card.dataset.id
         if (!id) return
@@ -381,7 +381,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
     })
 
     // Inline quick-edit: double-click card title to edit in place
-    document.querySelectorAll(".kanban-title-text").forEach((titleSpan) => {
+    document.querySelectorAll<HTMLElement>(".kanban-title-text").forEach((titleSpan) => {
       titleSpan.addEventListener("dblclick", (e) => {
         e.stopPropagation()
         e.preventDefault()
@@ -402,15 +402,15 @@ export function initKanbanArea(__signal: AbortSignal): void {
         const range = document.createRange()
         range.selectNodeContents(titleSpan)
         const sel = window.getSelection()
-        sel.removeAllRanges()
-        sel.addRange(range)
+        sel?.removeAllRanges()
+        sel?.addRange(range)
 
         // Prevent drag while editing
         if (card) card.setAttribute("draggable", "false")
 
         // Save handler
         async function saveEdit() {
-          const newTitle = titleSpan.textContent.trim()
+          const newTitle = titleSpan.textContent?.trim() ?? ""
           titleSpan.contentEditable = "false"
           if (card) card.setAttribute("draggable", "true")
 
@@ -437,7 +437,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         }
 
         // Key handler
-        function handleKeys(ev) {
+        function handleKeys(ev: KeyboardEvent) {
           if (ev.key === "Enter") {
             ev.preventDefault()
             titleSpan.blur()
