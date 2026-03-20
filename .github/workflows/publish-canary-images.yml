@@ -79,31 +79,5 @@ jobs:
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:${{ steps.meta.outputs.sha_short }}
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:canary
 
-  # After all arch builds complete, update the canary config.yaml version
-  update-config:
-    needs: canary
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
 
-      - name: Update canary version
-        run: |
-          SHA_SHORT="$(git rev-parse --short HEAD)"
-          node scripts/update-canary-version.mjs "${SHA_SHORT}"
-
-      - name: Commit updated canary config
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add meitheal-hub-canary/config.yaml
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "🐤 canary: update version to $(git rev-parse --short HEAD) [skip ci]"
-          git push
