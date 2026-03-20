@@ -28,7 +28,18 @@
     "areas_header": "Areas",
     "new_project_in": "New Project in {area}",
     "pinned": "Pinned",
-    "ungrouped": "Ungrouped"
+    "ungrouped": "Ungrouped",
+    "all_tasks": "All Tasks",
+    "rename": "Rename",
+    "color_icon": "Color & Icon",
+    "delete_area": "Delete Area",
+    "delete_area_confirm": "Delete \"{name}\"? Projects inside will become ungrouped.",
+    "add_task": "Add Task",
+    "task_kind_standard_action": "Task",
+    "task_kind_shopping_item": "Shopping Item",
+    "task_kind_checklist": "Checklist",
+    "task_kind_calendar_event": "Event",
+    "task_kind_quick_capture": "Quick Capture"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",

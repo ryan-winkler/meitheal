@@ -4,20 +4,21 @@
  *
  * Phase 15.2: Direct area_id on projects replaces the indirect
  * goal→area grouping. Sidebar shows Areas as top-level groups
- * with nested Projects underneath. Each area has its own
- * "+ New Project" inline action.
+ * with nested Projects underneath.
  *
  * Features:
  * - Two-level hierarchy: Area → Project
- * - Direct area_id grouping (no goal indirection)
- * - Per-area inline "New Project" quick-add
- * - Pinned projects section at the top
+ * - Default Area always visible (ungrouped projects merge in)
+ * - "All Tasks" link at top of area section
+ * - Per-area ⋯ quick-menu (Rename, Color & Icon, Delete)
+ * - Per-project "+" button for task creation with kind picker
+ * - Pinned projects section
  * - Collapse state per area (localStorage)
  * - Active page highlighting
  * - WAI-ARIA listbox keyboard navigation
  *
  * @domain navigation
- * @phase 15.2 — Area→Project Sidebar Restructuring
+ * @phase 15.2 — Area→Project Sidebar UX
  */
 import {
   ensureSchema,
@@ -62,19 +63,33 @@ for (const p of projects) {
   }
 }
 
+// Find or ensure a "Default" area for ungrouped projects
+const defaultArea = areas.find((a) => a.id === "default")
+if (defaultArea && ungroupedProjects.length > 0) {
+  // Merge ungrouped into default area's project list
+  const existing = projectsByArea.get("default") ?? []
+  projectsByArea.set("default", [...existing, ...ungroupedProjects])
+}
+
 // Current path for active state
 const rawPath = Astro.url.pathname
 const currentPath = rawPath.replace(/\/$/, "") || "/"
 
 const hasContent = projects.length > 0 || areas.length > 0
 
-// Show all areas (even empty ones get a quick-add button)
-const visibleAreas = areas.filter((a) => {
-  if (a.name === "Uncategorized" && !(projectsByArea.get(String(a.id))?.length)) return false
-  return true
-})
+// Show all areas — the Default area is always visible
+const visibleAreas = areas
 
 const areasLabel = t("sidebar.areas_header", locale) || "Areas"
+
+// Task kinds for the per-project add dropdown (exclude routine_instance — auto-spawned)
+const taskKinds = [
+  { kind: "standard_action", icon: "✅", labelKey: "sidebar.task_kind_standard_action" },
+  { kind: "shopping_item", icon: "🛒", labelKey: "sidebar.task_kind_shopping_item" },
+  { kind: "checklist", icon: "☑️", labelKey: "sidebar.task_kind_checklist" },
+  { kind: "calendar_event", icon: "📅", labelKey: "sidebar.task_kind_calendar_event" },
+  { kind: "quick_capture", icon: "⚡", labelKey: "sidebar.task_kind_quick_capture" },
+]
 ---
 
 {hasContent && (
@@ -97,10 +112,21 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
       <div class="project-nav__pinned-list" id="project-nav-pinned-list"></div>
     </div>
 
+    {/* ── All Tasks link ── */}
+    <a
+      href="/tasks"
+      class={`project-nav__all-tasks ${currentPath === "/tasks" ? "active" : ""}`}
+      title={t("sidebar.all_tasks", locale)}
+    >
+      <span class="project-nav__all-tasks-icon">📊</span>
+      <span>{t("sidebar.all_tasks", locale) || "All Tasks"}</span>
+    </a>
+
     {/* ── Area-grouped sections ── */}
     <div class="project-nav__list" id="project-nav-list">
       {visibleAreas.map((area) => {
         const areaProjects = projectsByArea.get(String(area.id)) ?? []
+        const isDefault = area.id === "default"
         return (
           <div class="project-nav__area-group" data-area-group={area.id}>
             <div class="project-nav__divider">
@@ -121,22 +147,48 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
                 <span class="project-nav__divider-icon" style={`color: ${area.color}`}>{area.icon}</span>
                 <span class="project-nav__divider-label">{area.name}</span>
               </a>
+              {/* ── Area quick-menu trigger ── */}
+              {!isDefault && (
+                <button
+                  type="button"
+                  class="project-nav__area-menu-btn"
+                  data-area-menu={area.id}
+                  data-area-name={area.name}
+                  data-area-color={area.color}
+                  data-area-icon={area.icon}
+                  title="Area options"
+                  aria-label={`Options for ${area.name}`}
+                >⋯</button>
+              )}
               <span class="project-nav__divider-count">{areaProjects.length}</span>
             </div>
             <div class="project-nav__area-projects" data-area-projects={area.id}>
               {areaProjects.map((proj) => (
-                <a
-                  href={`/projects/${proj.id}`}
-                  class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-                  data-project-id={proj.id}
-                  data-project-name={proj.title}
-                  title={proj.title}
-                >
-                  <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                  <span class="project-nav__item-name">{proj.title}</span>
-                </a>
+                <div class="project-nav__item-row">
+                  <a
+                    href={`/projects/${proj.id}`}
+                    class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                    data-project-id={proj.id}
+                    data-project-name={proj.title}
+                    title={proj.title}
+                  >
+                    <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                    <span class="project-nav__item-name">{proj.title}</span>
+                  </a>
+                  {/* ── Per-project task add trigger ── */}
+                  <button
+                    type="button"
+                    class="project-nav__task-add-btn"
+                    data-task-add-project={proj.id}
+                    data-task-add-name={proj.title}
+                    title={t("sidebar.add_task", locale)}
+                    aria-label={`Add task to ${proj.title}`}
+                  >
+                    <Icon name="plus" size={10} />
+                  </button>
+                </div>
               ))}
-              {/* Per-area inline quick-add */}
+              {/* Per-area inline quick-add project */}
               <button
                 type="button"
                 class="project-nav__area-add-btn"
@@ -152,24 +204,36 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
         )
       })}
 
-      {/* ── Ungrouped projects ── */}
-      {ungroupedProjects.length > 0 && (
+      {/* ── Ungrouped projects (only shown if no Default area exists) ── */}
+      {!defaultArea && ungroupedProjects.length > 0 && (
         <div class="project-nav__area-group" data-area-group="ungrouped">
           <div class="project-nav__divider">
             <span class="project-nav__divider-label project-nav__divider-label--muted">{t("sidebar.ungrouped", locale)}</span>
           </div>
           <div class="project-nav__area-projects" data-area-projects="ungrouped">
             {ungroupedProjects.map((proj) => (
-              <a
-                href={`/projects/${proj.id}`}
-                class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
-                data-project-id={proj.id}
-                data-project-name={proj.title}
-                title={proj.title}
-              >
-                <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
-                <span class="project-nav__item-name">{proj.title}</span>
-              </a>
+              <div class="project-nav__item-row">
+                <a
+                  href={`/projects/${proj.id}`}
+                  class={`project-nav__item ${currentPath === `/projects/${proj.id}` ? "active" : ""}`}
+                  data-project-id={proj.id}
+                  data-project-name={proj.title}
+                  title={proj.title}
+                >
+                  <span class="project-nav__item-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                  <span class="project-nav__item-name">{proj.title}</span>
+                </a>
+                <button
+                  type="button"
+                  class="project-nav__task-add-btn"
+                  data-task-add-project={proj.id}
+                  data-task-add-name={proj.title}
+                  title={t("sidebar.add_task", locale)}
+                  aria-label={`Add task to ${proj.title}`}
+                >
+                  <Icon name="plus" size={10} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -177,6 +241,50 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
     </div>
   </div>
 )}
+
+{/* ── Area quick-menu dropdown (shared, positioned by JS) ── */}
+<div class="project-nav__dropdown" id="area-menu-dropdown" hidden>
+  <button type="button" data-action="rename" class="project-nav__dropdown-item">
+    <span class="project-nav__dropdown-icon">✏️</span>
+    <span>{t("sidebar.rename", locale)}</span>
+  </button>
+  <button type="button" data-action="color-icon" class="project-nav__dropdown-item">
+    <span class="project-nav__dropdown-icon">🎨</span>
+    <span>{t("sidebar.color_icon", locale)}</span>
+  </button>
+  <hr class="project-nav__dropdown-divider" />
+  <button type="button" data-action="delete" class="project-nav__dropdown-item project-nav__dropdown-item--danger">
+    <span class="project-nav__dropdown-icon">🗑️</span>
+    <span>{t("sidebar.delete_area", locale)}</span>
+  </button>
+</div>
+
+{/* ── Task kind picker dropdown (shared, positioned by JS) ── */}
+<div class="project-nav__dropdown" id="task-kind-dropdown" hidden>
+  {taskKinds.map((tk) => (
+    <button type="button" data-task-kind={tk.kind} class="project-nav__dropdown-item">
+      <span class="project-nav__dropdown-icon">{tk.icon}</span>
+      <span>{t(tk.labelKey, locale)}</span>
+    </button>
+  ))}
+</div>
+
+{/* ── Color picker popover (for Color & Icon action) ── */}
+<div class="project-nav__color-picker" id="color-icon-popover" hidden>
+  <div class="project-nav__color-picker-section">
+    <label class="project-nav__color-picker-label">Icon</label>
+    <input type="text" id="area-icon-input" class="project-nav__color-picker-input" maxlength="4" placeholder="📋" />
+  </div>
+  <div class="project-nav__color-picker-section">
+    <label class="project-nav__color-picker-label">Color</label>
+    <div class="project-nav__color-swatches" id="color-swatches">
+      {["#6366F1", "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#64748B"].map((c) => (
+        <button type="button" class="project-nav__color-swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
+      ))}
+    </div>
+  </div>
+  <button type="button" id="color-icon-save" class="project-nav__color-picker-save">Save</button>
+</div>
 
 <style>
   .project-nav {
@@ -215,6 +323,33 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
   .project-nav__manage-link:hover {
     opacity: 1;
     color: var(--accent);
+  }
+
+  /* ── All Tasks link ── */
+  .project-nav__all-tasks {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: var(--radius-sm, 4px);
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 150ms, color 150ms;
+    margin-bottom: 2px;
+  }
+  .project-nav__all-tasks:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .project-nav__all-tasks.active {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+  .project-nav__all-tasks-icon {
+    font-size: 12px;
+    flex-shrink: 0;
   }
 
   /* ── Area dividers ── */
@@ -283,6 +418,38 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
     flex-shrink: 0;
   }
 
+  /* ── Area ⋯ menu button ── */
+  .project-nav__area-menu-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 150ms, color 150ms;
+    letter-spacing: 1px;
+    line-height: 1;
+    border-radius: var(--radius-sm, 4px);
+  }
+  .project-nav__area-group:hover .project-nav__area-menu-btn,
+  .project-nav__area-menu-btn:focus-visible {
+    opacity: 0.6;
+  }
+  .project-nav__area-menu-btn:hover {
+    opacity: 1;
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  /* ── Project item row (wraps link + add button) ── */
+  .project-nav__item-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+
   /* ── Project items ── */
   .project-nav__area-projects {
     display: flex;
@@ -302,7 +469,7 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
     font-size: 14px;
     transition: background 150ms, color 150ms;
     min-width: 0;
-    width: 100%;
+    flex: 1;
     box-sizing: border-box;
   }
   .project-nav__item:hover {
@@ -321,6 +488,30 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* ── Per-project task add button ── */
+  .project-nav__task-add-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 150ms, color 150ms;
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-sm, 4px);
+    flex-shrink: 0;
+  }
+  .project-nav__item-row:hover .project-nav__task-add-btn,
+  .project-nav__task-add-btn:focus-visible {
+    opacity: 0.6;
+  }
+  .project-nav__task-add-btn:hover {
+    opacity: 1;
+    color: var(--accent);
+    background: var(--bg-hover);
   }
 
   /* ── Pinned section ── */
@@ -368,22 +559,178 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
     color: var(--text-primary);
   }
 
+  /* ── Shared dropdown menu ── */
+  .project-nav__dropdown {
+    position: fixed;
+    z-index: 9999;
+    min-width: 160px;
+    background: var(--bg-surface, #1e1e2e);
+    border: 1px solid rgba(var(--border-rgb), 0.6);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+  }
+  .project-nav__dropdown[hidden] { display: none; }
+  .project-nav__dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
+    transition: background 150ms, color 150ms;
+    text-align: left;
+    width: 100%;
+  }
+  .project-nav__dropdown-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .project-nav__dropdown-item--danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+  }
+  .project-nav__dropdown-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+  }
+  .project-nav__dropdown-divider {
+    border: none;
+    border-top: 1px solid rgba(var(--border-rgb), 0.3);
+    margin: 2px 6px;
+  }
+
+  /* ── Color & Icon popover ── */
+  .project-nav__color-picker {
+    position: fixed;
+    z-index: 10000;
+    min-width: 200px;
+    background: var(--bg-surface, #1e1e2e);
+    border: 1px solid rgba(var(--border-rgb), 0.6);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .project-nav__color-picker[hidden] { display: none; }
+  .project-nav__color-picker-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .project-nav__color-picker-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .project-nav__color-picker-input {
+    padding: 6px 8px;
+    font-size: 20px;
+    text-align: center;
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    width: 60px;
+  }
+  .project-nav__color-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .project-nav__color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 150ms, transform 150ms;
+  }
+  .project-nav__color-swatch:hover,
+  .project-nav__color-swatch.selected {
+    border-color: var(--text-primary);
+    transform: scale(1.15);
+  }
+  .project-nav__color-picker-save {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--accent);
+    color: white;
+    cursor: pointer;
+    transition: background 150ms;
+  }
+  .project-nav__color-picker-save:hover {
+    filter: brightness(1.1);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .project-nav__divider-toggle,
     .project-nav__item,
     .project-nav__area-add-btn,
     .project-nav__manage-link,
-    .project-nav__divider-link {
+    .project-nav__divider-link,
+    .project-nav__area-menu-btn,
+    .project-nav__task-add-btn,
+    .project-nav__all-tasks {
       transition: none;
     }
   }
 </style>
 
 <script>
-  // ── Project navigation: collapse/expand + pinning + per-area quick-add ──
+  // ── Project navigation: collapse/expand + pinning + menus ──
   (function initProjectNav() {
     const nav = document.getElementById("project-nav")
     if (!nav) return
+
+    // ── Helpers ──
+    function hideAllDropdowns() {
+      document.querySelectorAll<HTMLElement>(".project-nav__dropdown, .project-nav__color-picker").forEach((d) => {
+        d.hidden = true
+      })
+    }
+
+    function positionDropdown(dropdown: HTMLElement, anchor: HTMLElement) {
+      const rect = anchor.getBoundingClientRect()
+      dropdown.style.top = `${rect.bottom + 4}px`
+      dropdown.style.left = `${rect.left}px`
+      // Ensure it doesn't go off-screen right
+      requestAnimationFrame(() => {
+        const dr = dropdown.getBoundingClientRect()
+        if (dr.right > window.innerWidth - 8) {
+          dropdown.style.left = `${window.innerWidth - dr.width - 8}px`
+        }
+        if (dr.bottom > window.innerHeight - 8) {
+          dropdown.style.top = `${rect.top - dr.height - 4}px`
+        }
+      })
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement
+      if (!target.closest(".project-nav__dropdown, .project-nav__color-picker, [data-area-menu], [data-task-add-project]")) {
+        hideAllDropdowns()
+      }
+    })
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hideAllDropdowns()
+    })
 
     // ── 1. Collapse/Expand per area ──
     const COLLAPSE_KEY = "meitheal_project_nav_collapsed"
@@ -460,7 +807,6 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
         if (!sourceItem) return
         const clone = sourceItem.cloneNode(true) as HTMLAnchorElement
         clone.classList.add("pinned-item")
-        // Add unpin button
         const unpinBtn = document.createElement("button")
         unpinBtn.type = "button"
         unpinBtn.className = "project-nav__unpin-btn"
@@ -515,15 +861,156 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
       })
     })
 
-    // ── 4. Keyboard navigation ──
+    // ── 4. Area quick-menu (⋯) ──
+    const areaMenuDropdown = document.getElementById("area-menu-dropdown")
+    const colorIconPopover = document.getElementById("color-icon-popover")
+    let activeAreaId: string | null = null
+    let activeAreaName: string | null = null
+
+    document.querySelectorAll<HTMLButtonElement>("[data-area-menu]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        if (!areaMenuDropdown) return
+        const isVisible = !areaMenuDropdown.hidden && activeAreaId === btn.dataset.areaMenu
+        hideAllDropdowns()
+        if (isVisible) return
+
+        activeAreaId = btn.dataset.areaMenu!
+        activeAreaName = btn.dataset.areaName || ""
+        areaMenuDropdown.hidden = false
+        positionDropdown(areaMenuDropdown, btn)
+      })
+    })
+
+    // Area menu actions
+    areaMenuDropdown?.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]")
+      if (!btn || !activeAreaId) return
+      const action = btn.dataset.action
+
+      if (action === "rename") {
+        hideAllDropdowns()
+        const newName = prompt("New area name:", activeAreaName || "")
+        if (!newName?.trim() || newName.trim() === activeAreaName) return
+        try {
+          await fetch(`/api/areas/${activeAreaId}`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: newName.trim() }),
+          })
+          window.location.reload()
+        } catch { /* ignore */ }
+      }
+
+      if (action === "color-icon") {
+        if (!colorIconPopover) return
+        areaMenuDropdown!.hidden = true
+        // Pre-fill color & icon
+        const iconInput = document.getElementById("area-icon-input") as HTMLInputElement | null
+        if (iconInput) {
+          const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)
+          iconInput.value = triggerBtn?.dataset.areaIcon || "📋"
+        }
+        // Pre-select color swatch
+        const currentColor = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)?.dataset.areaColor || "#6366F1"
+        document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => {
+          s.classList.toggle("selected", s.dataset.swatchColor === currentColor)
+        })
+        colorIconPopover.hidden = false
+        const anchor = document.querySelector<HTMLButtonElement>(`[data-area-menu="${activeAreaId}"]`)
+        if (anchor) positionDropdown(colorIconPopover, anchor)
+      }
+
+      if (action === "delete") {
+        hideAllDropdowns()
+        const confirmed = confirm(`Delete "${activeAreaName}"? Projects inside will become ungrouped.`)
+        if (!confirmed) return
+        try {
+          await fetch(`/api/areas/${activeAreaId}`, { method: "DELETE" })
+          window.location.reload()
+        } catch { /* ignore */ }
+      }
+    })
+
+    // Color swatch selection
+    document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((swatch) => {
+      swatch.addEventListener("click", () => {
+        document.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.remove("selected"))
+        swatch.classList.add("selected")
+      })
+    })
+
+    // Save color & icon
+    document.getElementById("color-icon-save")?.addEventListener("click", async () => {
+      if (!activeAreaId) return
+      const iconInput = document.getElementById("area-icon-input") as HTMLInputElement | null
+      const selectedSwatch = document.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
+      const icon = iconInput?.value?.trim() || "📋"
+      const color = selectedSwatch?.dataset.swatchColor || "#6366F1"
+      hideAllDropdowns()
+      try {
+        await fetch(`/api/areas/${activeAreaId}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ icon, color }),
+        })
+        window.location.reload()
+      } catch { /* ignore */ }
+    })
+
+    // ── 5. Per-project task add (+) with kind picker ──
+    const taskKindDropdown = document.getElementById("task-kind-dropdown")
+    let activeProjectId: string | null = null
+
+    document.querySelectorAll<HTMLButtonElement>("[data-task-add-project]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        if (!taskKindDropdown) return
+        const isVisible = !taskKindDropdown.hidden && activeProjectId === btn.dataset.taskAddProject
+        hideAllDropdowns()
+        if (isVisible) return
+
+        activeProjectId = btn.dataset.taskAddProject!
+        taskKindDropdown.hidden = false
+        positionDropdown(taskKindDropdown, btn)
+      })
+    })
+
+    taskKindDropdown?.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-task-kind]")
+      if (!btn || !activeProjectId) return
+      const kind = btn.dataset.taskKind!
+      hideAllDropdowns()
+
+      const title = prompt("Task title:")
+      if (!title?.trim()) return
+
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            project_id: activeProjectId,
+            task_kind: kind,
+          }),
+        })
+        if (res.ok) {
+          window.location.reload()
+        }
+      } catch { /* ignore */ }
+    })
+
+    // ── 6. Keyboard navigation ──
     const focusables = () =>
       Array.from(nav.querySelectorAll<HTMLElement>(
-        ".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle"
+        ".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle, .project-nav__all-tasks"
       )).filter((el) => el.offsetParent !== null)
 
     nav.addEventListener("keydown", (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (!target.matches(".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle")) return
+      if (!target.matches(".project-nav__item, .project-nav__divider-link, .project-nav__divider-toggle, .project-nav__all-tasks")) return
 
       const items = focusables()
       const idx = items.indexOf(target)
@@ -540,7 +1027,7 @@ const areasLabel = t("sidebar.areas_header", locale) || "Areas"
           break
         case "Enter":
         case " ":
-          if (target.matches(".project-nav__item, .project-nav__divider-link")) {
+          if (target.matches(".project-nav__item, .project-nav__divider-link, .project-nav__all-tasks")) {
             e.preventDefault()
             ;(target as HTMLAnchorElement).click()
           }

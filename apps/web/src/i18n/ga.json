@@ -27,7 +27,18 @@
     "areas_header": "Réimsí",
     "new_project_in": "Tionscadal Nua i {area}",
     "pinned": "Pionnáilte",
-    "ungrouped": "Gan Ghrúpa"
+    "ungrouped": "Gan Ghrúpa",
+    "all_tasks": "Gach Tasc",
+    "rename": "Athainmnigh",
+    "color_icon": "Dath & Deilbhín",
+    "delete_area": "Scrios Réimse",
+    "delete_area_confirm": "Scrios \"{name}\"? Beidh tionscadail gan ghrúpa.",
+    "add_task": "Cuir Tasc Leis",
+    "task_kind_standard_action": "Tasc",
+    "task_kind_shopping_item": "Mír Siopadóireachta",
+    "task_kind_checklist": "Seicliosta",
+    "task_kind_calendar_event": "Imeacht",
+    "task_kind_quick_capture": "Gabháil Thapa"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",
