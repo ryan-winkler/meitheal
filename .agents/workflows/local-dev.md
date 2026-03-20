@@ -83,14 +83,60 @@ If you need physical hardware (serial ports, USB, Zigbee):
 - Runs the **released Docker image** from GHCR/Docker Hub
 - Real devices, automations, entities, calendars, todo lists, Grocy
 
-### Deploy to Production
+## Release & Publishing
 
-1. Choose the next version in the current release line. Unless explicitly asked otherwise, keep the existing line and prefer the next patch release (for example `0.2.x` stays `0.2.x`)
-2. Bump version in `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, and `apps/web/public/sw.js`
-3. `git commit && git tag v{VERSION}`
-4. `git push origin main --tags`
-5. CI builds Docker images (`publish-addon-images.yml`)
-6. HA → Settings → Add-ons → Meitheal → **Restart**
+Meitheal uses a **two-channel release strategy**. Both addons live in this repo. See `docs/kcs/releasing.md` for the full runbook.
+
+| Channel | Addon Dir | Trigger | Version | Stage |
+|---------|-----------|---------|---------|-------|
+| **Stable** | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
+| **Canary** | `meitheal-hub-canary/` | Push to `main` | Commit SHA | `experimental` |
+
+### Publishing a Stable Release
+
+// turbo-all
+
+1. **Bump version** (updates 4 files atomically):
+   ```bash
+   node scripts/bump-version.mjs patch
+   ```
+   Files updated: `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, `apps/web/public/sw.js`
+
+2. **Verify sync**:
+   ```bash
+   node scripts/check-version-sync.mjs
+   ```
+
+3. **Update `CHANGELOG.md`** with the new version entry
+
+4. **Commit, tag, push**:
+   ```bash
+   git add -A
+   git commit -m "🔖 release v{VERSION}"
+   git tag v{VERSION}
+   git push origin main --tags
+   ```
+
+5. **CI runs** — `publish-addon-images.yml` builds multi-arch Docker images and pushes to GHCR
+
+6. **Verify on HA** — Settings → Add-ons → Meitheal → Check for updates → Restart
+
+### Canary (Auto-Published)
+
+Canary is **fully automated** — every push to `main` triggers `publish-canary-images.yml`:
+
+1. CI builds same `meitheal-hub/Dockerfile`, pushes as `meitheal-canary-{arch}:{sha}` + `:canary`
+2. CI updates `meitheal-hub-canary/config.yaml` version via `scripts/update-canary-version.mjs`
+3. CI commits the config update back to `main` with `[skip ci]`
+4. HA Supervisor sees new version on next repo refresh
+
+> **⚠️ AGENTS:** Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed by `scripts/update-canary-version.mjs`. Do NOT run `bump-version.mjs` for canary.
+
+### Version rules for agents
+
+- Unless explicitly requested, keep version bumps within the current release line (e.g. `0.0.x` stays `0.0.x`)
+- Do not move to a new version line (e.g. `0.0.x` → `0.1.x`) without explicit user direction
+- Stable version must match across all 4 files — use `bump-version.mjs`, never edit manually
 
 ## Decision Matrix
 
@@ -104,3 +150,5 @@ If you need physical hardware (serial ports, USB, Zigbee):
 | Addon startup / config.yaml | 🏠 Devcontainer |
 | Final acceptance on real data | 🌐 Production |
 | Version tag validation | 🌐 Production |
+| **Publish stable release** | 🌐 vtag → CI |
+| **Canary auto-publish** | Automatic on `main` push |

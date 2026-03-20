@@ -85,3 +85,35 @@ Use the devcontainer for any change that touches:
 - Entity exposure or LLM API registration
 
 For CSS, layout, and component-only changes, use `npm run dev` in `apps/web/` instead.
+
+## After devcontainer verification → Publishing
+
+Once Tier 2 verification passes, code reaches users through **two channels**:
+
+### Canary (Automatic)
+
+Pushing to `main` auto-triggers `publish-canary-images.yml` — no manual steps. Canary users get the update on next HA repo refresh.
+
+> **⚠️** Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed.
+
+### Stable (Manual — Step-by-Step)
+
+```bash
+# 1. Bump version (updates 4 files atomically)
+node scripts/bump-version.mjs patch
+
+# 2. Verify all files in sync
+node scripts/check-version-sync.mjs
+
+# 3. Update CHANGELOG.md
+
+# 4. Commit, tag, push
+git add -A
+git commit -m "🔖 release v{VERSION}"
+git tag v{VERSION}
+git push origin main --tags
+```
+
+CI builds images via `publish-addon-images.yml`. Verify on HA: Settings → Add-ons → Meitheal → Check for updates.
+
+See `docs/kcs/releasing.md` for the full runbook.

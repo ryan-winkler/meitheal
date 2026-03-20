@@ -78,10 +78,71 @@
 | `schema:drift` | `node scripts/schema-drift-check.mjs` | Verify schema matches migrations |
 | `perf:budget` | `node scripts/perf-budget-check.mjs` | Bundle size check |
 
-## Deployment
+## Deployment & Release Channels
 
-- **Target:** Home Assistant add-on (HA Supervisor)
-- **Add-on config:** `meitheal-hub/config.yaml`
-- **Runtime wrapper:** `apps/web/scripts/serve.mjs` (70 lines — normalizes `//` paths)
-- **CI:** Push `v*` tags triggers Docker build via `.github/workflows/`
-- **Service worker:** `apps/web/public/sw.js`
+**Target:** Home Assistant add-on (HA Supervisor)
+
+Meitheal uses a **two-channel release strategy** — both channels live in this repo as separate addon directories.
+
+| Channel | Addon Dir | Image | Version | Trigger | Stage |
+|---------|-----------|-------|---------|---------|-------|
+| **Stable** | `meitheal-hub/` | `ghcr.io/coolock-village/meitheal-{arch}` | Semver (`0.0.1`) | vtag push (`v*`) | `stable` |
+| **Canary** | `meitheal-hub-canary/` | `ghcr.io/coolock-village/meitheal-canary-{arch}` | Commit SHA | Push to `main` | `experimental` |
+
+### Publishing a Stable Release (Step-by-Step)
+
+1. **Bump version** — updates 4 files atomically:
+   ```bash
+   node scripts/bump-version.mjs patch   # 0.0.1 → 0.0.2
+   # or: node scripts/bump-version.mjs minor  # 0.0.2 → 0.1.0
+   # or: node scripts/bump-version.mjs 1.0.0  # explicit version
+   ```
+   Files updated: `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, `apps/web/public/sw.js`
+
+2. **Update CHANGELOG.md** with the new version entry
+
+3. **Commit, tag, and push:**
+   ```bash
+   git add -A
+   git commit -m "🔖 release v0.0.2"
+   git tag v0.0.2
+   git push origin main --tags
+   ```
+
+4. **CI publishes** — `publish-addon-images.yml` builds multi-arch images and pushes to GHCR
+
+5. **Verify** — HA → Settings → Add-ons → Meitheal → Check for updates → Restart
+
+### How Canary Auto-Publishes
+
+Canary is **fully automated** — no manual steps required:
+
+1. Code is pushed/merged to `main`
+2. `publish-canary-images.yml` triggers (skips if push was from `github-actions[bot]`)
+3. CI builds same `meitheal-hub/Dockerfile`, pushes as `meitheal-canary-{arch}:{sha}` + `:canary`
+4. CI runs `scripts/update-canary-version.mjs` to update `meitheal-hub-canary/config.yaml` → commits back with `[skip ci]`
+5. HA Supervisor sees new version on next repo refresh
+
+> **⚠️ AGENTS:** Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed.
+
+### Version Management Scripts
+
+| Script | Purpose | Used By |
+|--------|---------|---------|
+| `scripts/bump-version.mjs` | Atomic semver bump across 4 stable files | Developer (manual) |
+| `scripts/update-canary-version.mjs` | Update canary config.yaml version | CI only |
+| `scripts/check-version-sync.mjs` | Verify all 4 stable files match | CI |
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `meitheal-hub/config.yaml` | Stable addon config (`stage: stable`) |
+| `meitheal-hub-canary/config.yaml` | Canary addon config (`stage: experimental`, CI-managed version) |
+| `meitheal-hub/Dockerfile` | Shared Dockerfile for both channels |
+| `meitheal-hub/run.sh` | Addon entrypoint |
+| `apps/web/scripts/serve.mjs` | Runtime wrapper (normalizes `//` paths) |
+| `apps/web/public/sw.js` | Service worker (version-stamped cache) |
+| `.github/workflows/publish-addon-images.yml` | Stable CI (vtag trigger) |
+| `.github/workflows/publish-canary-images.yml` | Canary CI (main push trigger) |
+| `docs/kcs/releasing.md` | Full release runbook |
