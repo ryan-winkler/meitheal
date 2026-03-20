@@ -89,6 +89,25 @@ const upcomingSignal =
   totalTasks === 0
     ? "No tasks scheduled in the next 7 days"
     : `${nextWindowCount} tasks due in the next 48 hours`
+
+/**
+ * Renders a list of day groups with collapsible task lists.
+ * Extracted to avoid duplicating 120 lines of identical markup.
+ */
+function renderDayClass(day: DayGroup): string {
+  const classes = ["card"]
+  if (day.tasks.length === 0) classes.push("day-empty")
+  if (day.tasks.length > 0) classes.push("day-card--populated")
+  if (day.isToday) classes.push("day-card--today")
+  return classes.join(" ")
+}
+
+function dayLabelClass(day: DayGroup): string {
+  const classes = ["day-label"]
+  if (day.isToday || day.isTomorrow) classes.push("day-label--highlight")
+  if (day.isToday) classes.push("day-label--today")
+  return classes.join(" ")
+}
 ---
 
 <Layout title="Meitheal — Upcoming">
@@ -184,34 +203,24 @@ const upcomingSignal =
       <div class="upcoming-grid">
         {
           nextDays.map((day) => (
-            <div
-              class={`card ${day.tasks.length === 0 ? "day-empty" : ""}`}
-              style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
-            >
+            <div class={renderDayClass(day)}>
               <div
-                class="day-header"
-                style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
+                class={`day-header ${day.tasks.length > 0 ? "day-header--populated" : ""}`}
                 role="button"
                 tabindex="0"
                 aria-expanded="true"
               >
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
-                  <span
-                    style={`font-size: 13px; font-weight: ${day.isToday || day.isTomorrow ? "600" : "500"}; color: ${day.isToday ? "var(--accent)" : "var(--text-primary)"};`}
-                  >
+                <div class="day-header__left">
+                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  <span class={dayLabelClass(day)}>
                     {day.label}
                   </span>
                 </div>
                 {day.tasks.length > 0 && (
-                  <span style="font-size: 11px; background: var(--accent); color: white; padding: 1px 6px; border-radius: 8px; font-weight: 600;">
-                    {day.tasks.length}
-                  </span>
+                  <span class="day-count-badge">{day.tasks.length}</span>
                 )}
                 {day.tasks.length === 0 && (
-                  <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">
-                    —
-                  </span>
+                  <span class="day-count-empty">—</span>
                 )}
               </div>
               {day.tasks.length > 0 && (
@@ -223,7 +232,6 @@ const upcomingSignal =
                       <div
                         class="task-item"
                         data-id={String(task.id)}
-                        style="cursor:pointer; padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); transition: background 0.15s;"
                         role="button"
                         tabindex="0"
                         aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
@@ -235,35 +243,32 @@ const upcomingSignal =
                           aria-label={`Complete ${String(task.title)}`}
                         />
                         <span
-                          style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
+                          class="priority-dot"
+                          style={`color: ${priorityColors[p] ?? "#3b82f6"};`}
                           title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
                         >
                           ●
                         </span>
-                        <div style="flex: 1; min-width: 0;">
-                          <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            <span style="margin-right: 3px; font-size: 11px;">
+                        <div class="task-content">
+                          <div class="task-title">
+                            <span class="task-type-icon">
                               {typeIcons[tt] ?? ""}
                             </span>
                             {String(task.title)}
                           </div>
-                          <div class="flex items-center gap-2 mt-2">
+                          <div class="task-labels">
                             <LabelBadges labels={task.labels as string} compact max={3} />
                           </div>
                         </div>
                         <StatusBadge status={String(task.status)} />
                         {task.color && (
                           <span
-                            style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
+                            class="task-color-swatch"
+                            style={`background: ${String(task.color)};`}
                           />
                         )}
                         {task.recurrence_rule && (
-                          <span
-                            style="font-size: 10px; color: var(--text-muted);"
-                            title="Recurring"
-                          >
-                            🔁
-                          </span>
+                          <span class="task-meta-icon" title="Recurring">🔁</span>
                         )}
                         {(() => {
                           try {
@@ -272,7 +277,7 @@ const upcomingSignal =
                               const done = cl.filter((i: {done: boolean}) => i.done).length;
                               return (
                                 <span
-                                  style={`font-size: 10px; color: ${done === cl.length ? 'var(--success)' : 'var(--text-muted)'};`}
+                                  class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
                                   title={`Checklist: ${done}/${cl.length}`}
                                 >
                                   ✓ {done}/{cl.length}
@@ -319,32 +324,24 @@ const upcomingSignal =
       <div class="upcoming-grid">
         {
           weekDays.map((day) => (
-            <div
-              class={`card ${day.tasks.length === 0 ? "day-empty" : ""}`}
-              style={`margin-bottom: ${day.tasks.length > 0 ? "12px" : "4px"}; ${day.isToday ? "border-left: 3px solid var(--accent);" : ""}`}
-            >
+            <div class={renderDayClass(day)}>
               <div
-                class="day-header"
-                style={`padding: ${day.tasks.length > 0 ? "10px 16px" : "8px 16px"}; display: flex; align-items: center; justify-content: space-between; user-select: none;`}
+                class={`day-header ${day.tasks.length > 0 ? "day-header--populated" : ""}`}
                 role="button"
                 tabindex="0"
                 aria-expanded="true"
               >
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
-                  <span style="font-size: 13px; font-weight: 500; color: var(--text-primary);">
+                <div class="day-header__left">
+                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  <span class={dayLabelClass(day)}>
                     {day.label}
                   </span>
                 </div>
                 {day.tasks.length > 0 && (
-                  <span style="font-size: 11px; background: var(--accent); color: white; padding: 1px 6px; border-radius: 8px; font-weight: 600;">
-                    {day.tasks.length}
-                  </span>
+                  <span class="day-count-badge">{day.tasks.length}</span>
                 )}
                 {day.tasks.length === 0 && (
-                  <span style="font-size: 11px; color: var(--text-muted); font-style: italic;">
-                    —
-                  </span>
+                  <span class="day-count-empty">—</span>
                 )}
               </div>
               {day.tasks.length > 0 && (
@@ -356,7 +353,6 @@ const upcomingSignal =
                       <div
                         class="task-item"
                         data-id={String(task.id)}
-                        style="cursor:pointer; padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); transition: background 0.15s;"
                         role="button"
                         tabindex="0"
                         aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
@@ -368,35 +364,32 @@ const upcomingSignal =
                           aria-label={`Complete ${String(task.title)}`}
                         />
                         <span
-                          style={`color: ${priorityColors[p] ?? "#3b82f6"}; font-size: 10px; flex-shrink: 0;`}
+                          class="priority-dot"
+                          style={`color: ${priorityColors[p] ?? "#3b82f6"};`}
                           title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
                         >
                           ●
                         </span>
-                        <div style="flex: 1; min-width: 0;">
-                          <div style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            <span style="margin-right: 3px; font-size: 11px;">
+                        <div class="task-content">
+                          <div class="task-title">
+                            <span class="task-type-icon">
                               {typeIcons[tt] ?? ""}
                             </span>
                             {String(task.title)}
                           </div>
-                          <div class="flex items-center gap-2 mt-2">
+                          <div class="task-labels">
                             <LabelBadges labels={task.labels as string} compact max={3} />
                           </div>
                         </div>
                         <StatusBadge status={String(task.status)} />
                         {task.color && (
                           <span
-                            style={`width: 4px; height: 20px; border-radius: 2px; background: ${String(task.color)}; flex-shrink: 0;`}
+                            class="task-color-swatch"
+                            style={`background: ${String(task.color)};`}
                           />
                         )}
                         {task.recurrence_rule && (
-                          <span
-                            style="font-size: 10px; color: var(--text-muted);"
-                            title="Recurring"
-                          >
-                            🔁
-                          </span>
+                          <span class="task-meta-icon" title="Recurring">🔁</span>
                         )}
                         {(() => {
                           try {
@@ -405,7 +398,7 @@ const upcomingSignal =
                               const done = cl.filter((i: {done: boolean}) => i.done).length;
                               return (
                                 <span
-                                  style={`font-size: 10px; color: ${done === cl.length ? 'var(--success)' : 'var(--text-muted)'};`}
+                                  class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
                                   title={`Checklist: ${done}/${cl.length}`}
                                 >
                                   ✓ {done}/{cl.length}
@@ -464,9 +457,26 @@ const upcomingSignal =
 </Layout>
 
 <style>
+  /* ── Day card ── */
+  .day-card--populated {
+    margin-bottom: 12px;
+  }
+  .day-card--today {
+    border-left: 3px solid var(--accent);
+  }
+
+  /* ── Day header ── */
   .day-header {
-    transition: background 0.15s;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
     cursor: pointer;
+    transition: background 0.15s;
+  }
+  .day-header--populated {
+    padding: 10px 16px;
   }
   .day-header:hover {
     background: var(--bg-hover);
@@ -474,6 +484,46 @@ const upcomingSignal =
   .day-header[aria-expanded="false"] .chevron-icon {
     transform: rotate(-90deg);
   }
+  .day-header__left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Chevron ── */
+  .chevron-icon {
+    transition: transform 0.2s;
+  }
+
+  /* ── Day label ── */
+  .day-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .day-label--highlight {
+    font-weight: 600;
+  }
+  .day-label--today {
+    color: var(--accent);
+  }
+
+  /* ── Count badges ── */
+  .day-count-badge {
+    font-size: 11px;
+    background: var(--accent);
+    color: white;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  .day-count-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* ── Task list collapse ── */
   .task-list {
     transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     max-height: 2000px;
@@ -486,11 +536,24 @@ const upcomingSignal =
     pointer-events: none;
   }
 
+  /* ── Day empty state ── */
   .day-empty {
     opacity: 0.6;
+    margin-bottom: 4px;
   }
   .day-empty:hover {
     opacity: 0.8;
+  }
+
+  /* ── Task item ── */
+  .task-item {
+    cursor: pointer;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    transition: background 0.15s;
   }
   .task-item:hover {
     background: var(--bg-hover);
@@ -499,6 +562,60 @@ const upcomingSignal =
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
+
+  /* ── Priority dot ── */
+  .priority-dot {
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  /* ── Task content ── */
+  .task-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .task-title {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-type-icon {
+    margin-right: 3px;
+    font-size: 11px;
+  }
+  .task-labels {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  /* ── Task color swatch ── */
+  .task-color-swatch {
+    width: 4px;
+    height: 20px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* ── Task meta icons ── */
+  .task-meta-icon {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  /* ── Checklist count ── */
+  .task-checklist-count {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+  .task-checklist-count--complete {
+    color: var(--success);
+  }
+
+  /* ── Status badge (also used by StatusBadge component fallback) ── */
   .status-badge {
     display: inline-block;
     font-size: 10px;
@@ -525,6 +642,14 @@ const upcomingSignal =
   .status-badge--complete {
     background: rgba(var(--success-rgb), 0.15);
     color: var(--success);
+  }
+
+  /* ── Accessibility: reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .task-list { transition: none; }
+    .task-item { transition: none; }
+    .day-header { transition: none; }
+    .chevron-icon { transition: none; }
   }
 
   /* Responsive overrides for shell/hero classes are in _page-shell.css */
