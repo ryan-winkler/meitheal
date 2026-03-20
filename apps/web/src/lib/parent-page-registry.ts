@@ -41,7 +41,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
   {
     id: "tasks",
     label: "Tasks",
-    icon: "kanban",
+    icon: "📋",
     route: "/tasks",
     description: "All your task views in one place",
     defaultHash: "kanban",
@@ -50,7 +50,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "kanban",
         label: "Kanban",
-        icon: "kanban",
+        icon: "▦",
         hash: "kanban",
         description: "Drag-and-drop board view",
         legacyRoute: "/kanban",
@@ -59,7 +59,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "calendar",
         label: "Calendar",
-        icon: "calendar",
+        icon: "🗓️",
         hash: "calendar",
         description: "Calendar timeline view",
         legacyRoute: "/calendar",
@@ -68,7 +68,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "table",
         label: "Table",
-        icon: "table",
+        icon: "⊞",
         hash: "table",
         description: "Spreadsheet-style task list",
         legacyRoute: "/table",
@@ -77,7 +77,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "gantt",
         label: "Gantt",
-        icon: "gantt",
+        icon: "📊",
         hash: "gantt",
         description: "Timeline and dependency chart",
         legacyRoute: "/gantt",
@@ -88,7 +88,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
   {
     id: "progress",
     label: "Progress & Growth",
-    icon: "trophy",
+    icon: "🏆",
     route: "/progress",
     description: "Track routines, goals, and achievements",
     defaultHash: "routines",
@@ -97,7 +97,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "routines",
         label: "Routines",
-        icon: "habit",
+        icon: "🔄",
         hash: "routines",
         description: "Daily routines and habit tracking",
         legacyRoute: "/habits",
@@ -106,7 +106,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "goals",
         label: "Goals",
-        icon: "target",
+        icon: "🎯",
         hash: "goals",
         description: "Long-term outcome tracking",
         legacyRoute: "/goals",
@@ -115,7 +115,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "achievements",
         label: "Achievements",
-        icon: "trophy",
+        icon: "🏆",
         hash: "achievements",
         description: "Completed goals, streaks, and milestones",
         legacyRoute: "/gamification",
@@ -126,7 +126,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
   {
     id: "planning",
     label: "Planning",
-    icon: "eisenhower",
+    icon: "⚖️",
     route: "/planning",
     description: "Prioritize and plan with strategic frameworks",
     defaultHash: "eisenhower",
@@ -135,7 +135,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "eisenhower",
         label: "Eisenhower",
-        icon: "eisenhower",
+        icon: "⚖️",
         hash: "eisenhower",
         description: "Urgency × importance matrix",
         legacyRoute: "/eisenhower",
@@ -144,7 +144,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "triage",
         label: "Triage",
-        icon: "inbox",
+        icon: "📥",
         hash: "triage",
         description: "Uncategorized tasks needing attention",
         legacyRoute: null,
@@ -153,7 +153,7 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
       {
         id: "rice",
         label: "RICE",
-        icon: "chart",
+        icon: "📈",
         hash: "rice",
         description: "Reach, Impact, Confidence, Effort scoring",
         legacyRoute: null,

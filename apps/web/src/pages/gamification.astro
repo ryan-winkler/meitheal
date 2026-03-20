@@ -17,7 +17,7 @@
  */
 
 import Layout from "../layouts/Layout.astro";
-import DeprecationBanner from "../components/ui/DeprecationBanner.astro";
+
 import GamificationWidget from "../components/gamification/GamificationWidget.astro";
 import {
   getStats,
@@ -99,7 +99,7 @@ const categories = [
 ---
 
 <Layout title="Gamification — Meitheal" description="Track your progress, earn achievements, and level up">
-  <DeprecationBanner oldLabel="Gamification" newRoute="/progress#achievements" newParentLabel="Progress & Growth" />
+
   <Fragment slot="page-title">🏆 Gamification</Fragment>
 
   <div class="gam-page">

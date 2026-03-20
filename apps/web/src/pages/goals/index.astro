@@ -1,6 +1,6 @@
 ---
 import Layout from "../../layouts/Layout.astro"
-import DeprecationBanner from "../../components/ui/DeprecationBanner.astro"
+
 import ProgressRing from "../../components/ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -59,7 +59,7 @@ const statusLabels: Record<string, string> = {
 ---
 
 <Layout title="Goals">
-  <DeprecationBanner oldLabel="Goals" newRoute="/progress#goals" newParentLabel="Progress & Growth" />
+
   <div class="goals-page">
     <header class="goals-header">
       <div class="goals-header-left">

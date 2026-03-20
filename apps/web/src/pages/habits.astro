@@ -15,7 +15,7 @@
  */
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import Layout from "../layouts/Layout.astro"
-import DeprecationBanner from "../components/ui/DeprecationBanner.astro"
+
 import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
 import {
   ensureSchema,
@@ -124,7 +124,7 @@ const habitsBootstrap = serializeForScript({ habits })
 ---
 
 <Layout title={`${t("nav.habits", locale)} — Meitheal`}>
-  <DeprecationBanner oldLabel="Habits" newRoute="/progress#routines" newParentLabel="Progress & Growth" />
+
   <UnifiedBar
     title={t("nav.habits", locale)}
     titleIcon="🔁"

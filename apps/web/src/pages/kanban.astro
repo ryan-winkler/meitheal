@@ -1,6 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import DeprecationBanner from "../components/ui/DeprecationBanner.astro";
+
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
@@ -177,7 +177,7 @@ const kanbanSignal =
 ---
 
 <Layout title={`Meitheal — ${t("kanban.title", locale)}`}>
-  <DeprecationBanner oldLabel="Kanban" newRoute="/tasks#kanban" newParentLabel="Tasks" />
+
   <UnifiedBar
     title={t("kanban.title", locale)}
     titleIcon="▦"

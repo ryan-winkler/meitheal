@@ -44,6 +44,7 @@ const tabs = page.subViews.map((sv) => ({
 <div class="parent-page-shell" id={shellId} data-page-id={pageId}>
   <UnifiedBar
     title={page.label}
+    titleIcon={page.icon}
     tabs={tabs}
     barId={barId}
     searchPlaceholder={`Search ${page.label.toLowerCase()}…`}

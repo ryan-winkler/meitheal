@@ -1,6 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import DeprecationBanner from "../components/ui/DeprecationBanner.astro";
+
 import TaskViewTabs from "../components/tasks/TaskViewTabs.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
@@ -88,7 +88,7 @@ const epics = ganttTasks.filter(t => String(t.task_type) === 'epic');
 
 ---
 <Layout title={`Meitheal — Gantt`}>
-  <DeprecationBanner oldLabel="Gantt" newRoute="/tasks#gantt" newParentLabel="Tasks" />
+
   <span slot="page-title">📊 Timeline</span>
   <div slot="actions">
     <button type="button" class="btn btn-primary" id="create-task-btn"
