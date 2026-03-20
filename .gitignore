@@ -16,5 +16,8 @@ apps/web/.data
 !.devcontainer/.env
 .devcontainer/.env.local
 
+# License signing keys (private key — NEVER commit)
+.keys/
+
 # Local Archive
 meitheal-archive/

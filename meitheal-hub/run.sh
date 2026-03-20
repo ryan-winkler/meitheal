@@ -10,6 +10,7 @@ export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
 export LOKI_URL="$(bashio::config 'loki_url')"
+export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key' '')"
 
 # Ensure /data is writable by meitheal user.
 # HA Supervisor mounts a fresh volume here which may have root-only permissions.

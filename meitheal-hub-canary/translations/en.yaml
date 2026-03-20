@@ -24,3 +24,8 @@ configuration:
     description: >-
       Full URL of a Grafana Loki push endpoint for the observability pipeline.
       Leave default if using the Grafana stack add-on.
+  license_key:
+    name: License Key
+    description: >-
+      Optional license key for Meitheal. Paste a valid license JWT here,
+      or leave empty for personal/homelab use.
