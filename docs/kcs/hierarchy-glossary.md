@@ -21,6 +21,10 @@
 | **Every Day** | The default Project that catches tasks without an explicit Project assignment. Cannot be renamed or deleted. |
 | **Routine** | A recurring template that auto-creates daily/weekly Tasks. Tracks streaks and contributes to gamification XP. Formerly called "Habit" (deprecated term). |
 | **Routine Instance** | A Task created by a Routine template for a specific date. Carries `task_kind = 'routine_instance'` and `source_template_id`. |
+| **Principle** | A behavioral boundary within a Pillar. "No screens after 9 PM." Can be marked Non-Negotiable for AI enforcement. |
+| **Non-Negotiable** | A Principle with `isNonNegotiable = true`. Injected into LLM system prompts via `fetchPillarContext()`. Capped at 15 in prompts. |
+| **Manifesto** | A Pillar's WHY statement using identity framing: "I am someone who builds lasting health." Displayed as the hero element on PillarCard. |
+| **Weight** | A Pillar's relative importance (1-10). Used for algorithmic priority boosting in the strategic evaluator. |
 | **Achievement** | Gamification milestones — XP totals, streak records, goal completions. Formerly the "Gamification" page. |
 
 ## Navigation Structure
@@ -43,18 +47,28 @@
 
 ```
 Pillar (pillars table) ←—M2M—→ Goal, Routine (pillar_associations)
+  └── Principle (principles table, pillar_id FK)
+
+Pillar ←—direct FK—→ Goal (goals.pillar_id), Task (tasks.pillar_id), Routine (task_templates.pillar_id)
 
 Area (areas table)
- └── Goal (goals table, area_id FK)
+ └── Goal (goals table, area_id FK, pillar_id FK)
       └── Project (projects table, goal_id FK)
-           └── Task (tasks table, project_id FK)
+           └── Task (tasks table, project_id FK, pillar_id FK — inherits from Goal if not set)
                 └── Routine Instance (task_kind = 'routine_instance')
 ```
 
 ### Database Columns
 
 - `pillars.id` → Pillar
+- `pillars.manifesto` → WHY statement (identity framing)
+- `pillars.weight` → Relative importance (1-10) for priority boosting
+- `principles.pillar_id` → Principle → Pillar link
+- `principles.is_non_negotiable` → AI-enforced behavioral boundary
 - `pillar_associations.pillar_id` + `entity_type` + `entity_id` → Pillar ↔ Goal/Routine M2M link
+- `goals.pillar_id` → Direct Goal → Pillar FK (primary association)
+- `tasks.pillar_id` → Direct Task → Pillar FK (or inherited from Goal)
+- `task_templates.pillar_id` → Direct Routine → Pillar FK
 - `areas.id` → Area
 - `goals.area_id` → Goal → Area link
 - `projects.goal_id` → Project → Goal link

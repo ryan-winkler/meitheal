@@ -31,7 +31,7 @@ If Grocy helps answer "what do I have?" and "what needs tracking?", Meitheal hel
 
 ### Work the way your brain works
 
-- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Gamification, Review, Timeline, and Settings.
+- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Pillars, Gamification, Review, Timeline, and Settings.
 - Use the shared SearchHub to jump between tasks, views, settings, saved filters, and high-value actions.
 - Keep daily work simple when you want it simple, or go deep with strategy lenses, custom fields, rules, and review flows when you want more structure.
 
@@ -63,6 +63,8 @@ The canonical model is:
 
 | Term | Meaning |
 |------|---------|
+| Pillar | A permanent, identity-based motivational anchor — the WHY behind Goals and Routines (e.g. Physical Longevity, Financial Independence) |
+| Principle | A behavioral boundary within a Pillar — the Non-Negotiable rules (e.g. "No screens after 9 PM") |
 | Area | A life or operating domain such as Home, Work, Family, or Homelab |
 | Goal | An outcome you are trying to move toward |
 | Project | A bounded body of work in service of a goal |
