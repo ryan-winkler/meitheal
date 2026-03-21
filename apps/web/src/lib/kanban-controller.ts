@@ -211,14 +211,14 @@ export function initKanbanArea(__signal: AbortSignal): void {
     // ── Drag-and-drop event listeners (migrated from inline handlers for CSP) ──
     document.querySelectorAll(".kanban-column").forEach((col) => {
       // Column-level: drop, dragover, dragleave
-      col.addEventListener("drop", handleDrop as unknown as EventListener);
+      col.addEventListener("drop", handleDrop as unknown as EventListener, { signal: __signal });
       col.addEventListener("dragover", ((e: Event) => {
         e.preventDefault();
         (col as HTMLElement).classList.add("drag-over");
-      }) as EventListener);
+      }) as EventListener, { signal: __signal });
       col.addEventListener("dragleave", () => {
         col.classList.remove("drag-over");
-      });
+      }, { signal: __signal });
 
       const cardsContainer = col.querySelector(".kanban-cards");
       if (!cardsContainer) return;
@@ -228,12 +228,12 @@ export function initKanbanArea(__signal: AbortSignal): void {
         card.addEventListener("dragstart", (e: DragEvent) => {
           e.dataTransfer?.setData("text/plain", card.dataset.id ?? "");
           card.classList.add("dragging");
-        });
+        }, { signal: __signal });
         card.addEventListener("dragend", () => {
           card.classList.remove("dragging");
           document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
           document.querySelectorAll(".drag-over").forEach(c => c.classList.remove("drag-over"));
-        });
+        }, { signal: __signal });
       });
 
       cardsContainer.addEventListener("dragover", ((e: Event) => {
@@ -259,13 +259,13 @@ export function initKanbanArea(__signal: AbortSignal): void {
         } else {
           cardsContainer.appendChild(indicator);
         }
-      }) as EventListener);
+      }) as EventListener, { signal: __signal });
 
       cardsContainer.addEventListener("dragleave", () => {
         cardsContainer
           .querySelectorAll(".reorder-indicator")
           .forEach((i) => i.remove());
-      });
+      }, { signal: __signal });
 
       cardsContainer.addEventListener("drop", (async (e: Event) => {
         e.preventDefault();
@@ -309,7 +309,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
         } catch {
           // Silent fail — order will revert on next load
         }
-      }) as EventListener);
+      }) as EventListener, { signal: __signal });
     });
 
     /**
@@ -351,7 +351,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           }
         }
         tryOpen();
-      });
+      }, { signal: __signal });
     });
 
     // Card body click → open task detail (Teamhood parity)
@@ -382,7 +382,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           }
         }
         tryOpen()
-      })
+      }, { signal: __signal })
     })
 
     // Inline quick-edit: double-click card title to edit in place
@@ -457,7 +457,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
         titleSpan.addEventListener("blur", saveEdit)
         titleSpan.addEventListener("keydown", handleKeys)
-      })
+      }, { signal: __signal })
     })
 
     // AI: open ChatGPT with task context prompt
@@ -474,7 +474,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`,
           "_blank",
         );
-      });
+      }, { signal: __signal });
     });
 
     // Duplicate: clone task via API
@@ -521,7 +521,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
           btn.disabled = false;
           btn.classList.remove("btn-loading");
         }
-      });
+      }, { signal: __signal });
     });
 
     // Quick actions: popover, child task, assign user, set color

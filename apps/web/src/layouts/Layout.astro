@@ -44,12 +44,14 @@ export interface Props {
   title?: string;
   description?: string;
   hideSearchHub?: boolean;
+  hideGlobalSearch?: boolean;
 }
 
 const {
   title = "Meitheal",
   description = "The cooperative task and life engine for your home.",
   hideSearchHub = false,
+  hideGlobalSearch = false,
 } = Astro.props;
 
 // OA-607: Sidebar task count badges (SSR)
@@ -458,7 +460,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       {Astro.slots.has('custom-header') ? (
         <slot name="custom-header" />
       ) : (
-        <TopNavigation locale={locale}>
+        <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch}>
           <Fragment slot="page-title"><slot name="page-title" /></Fragment>
           <Fragment slot="actions"><slot name="actions" /></Fragment>
         </TopNavigation>
