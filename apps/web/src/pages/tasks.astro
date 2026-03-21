@@ -818,6 +818,18 @@ try {
 
 </Layout>
 
+<style is:global>
+  /* View-specific toolbar actions — hidden by default, shown by view controller.
+     Must be is:global because Astro tree-shakes scoped :global() rules when no
+     static element matches the inner selector during SSR compilation. */
+  .tasks-filter-row [data-view-only] {
+    display: none !important;
+  }
+  .tasks-filter-row [data-view-only].is-active {
+    display: flex !important;
+  }
+</style>
+
 <style>
   @reference "../../src/styles/global.css";
   .kanban-shell__manage-btn {
@@ -888,13 +900,7 @@ try {
     z-index: 90;
   }
 
-  /* View-specific toolbar actions — hidden by default, shown by view controller */
-  .tasks-filter-row :global([data-view-only]) {
-    display: none;
-  }
-  .tasks-filter-row :global([data-view-only].is-active) {
-    display: flex;
-  }
+  /* View-specific toolbar actions: see <style is:global> block above */
   .kanban-fields-panel {
     margin-bottom: 12px;
     max-width: 280px;
