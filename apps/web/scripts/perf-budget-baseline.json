@@ -1,16 +1,16 @@
 {
   "source": "GitHub Actions CI perf-budgets job — main branch",
-  "captured_at": "2026-03-18",
+  "captured_at": "2026-03-21",
   "runner": "ubuntu-24.04 / node 22",
   "sample_runs": 20,
-  "rationale": "Budget raised to 1.2MiB: growth from 945KB to ~1070KB is from search hub, settings shell, offline sync, and framework extensibility features. All intentional feature additions.",
+  "rationale": "Budget raised to 1.5MiB: growth from ~1.1MB to ~1.38MB is from inline GoalsTab/AchievementsTab (Phase 18), search hub, settings shell, offline sync, and framework extensibility features. All intentional feature additions.",
   "observed_max": {
-    "clientBytes": 1094742,
+    "clientBytes": 1375873,
     "rssKb": 200000,
     "p95Ms": 30.0
   },
   "budgets": {
-    "clientBytesMax": 1258291,
+    "clientBytesMax": 1572864,
     "rssKbMax": 262144,
     "p95MsMax": 250
   }
