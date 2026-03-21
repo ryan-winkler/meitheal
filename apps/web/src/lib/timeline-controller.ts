@@ -132,14 +132,6 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 
 // ── Utility Helpers ────────────────────────────────────────────────────────
 
-function sanitize(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-}
-
 function daysBetween(a: Date, b: Date): number {
   const ms = b.getTime() - a.getTime()
   return Math.ceil(ms / (1000 * 60 * 60 * 24))
@@ -359,7 +351,7 @@ function hideTooltip() {
 
 // ── T5: Click Popup ────────────────────────────────────────────────────────
 
-function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
+function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement, renderSignal?: AbortSignal) {
   const existing = document.querySelector(".gantt-popup")
   if (existing) existing.remove()
 
@@ -425,9 +417,13 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
 
   // Ensure popup is within viewport
   requestAnimationFrame(() => {
+    if (!popup.isConnected) return // Guard: popup may have been removed
     const rect = popup.getBoundingClientRect()
     if (rect.right > window.innerWidth) {
       popup.style.left = `${window.innerWidth - rect.width - 16}px`
+    }
+    if (rect.left < 0) {
+      popup.style.left = "16px" // P8: Left-edge clamp
     }
     if (rect.bottom > window.innerHeight) {
       popup.style.top = `${y - rect.height - 8}px`
@@ -435,14 +431,33 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
   })
 
   // M1: Close on click outside — properly cleaned up
+  const cleanupClose = () => {
+    document.removeEventListener("click", close)
+    document.removeEventListener("keydown", escClose)
+  }
   const close = (e: MouseEvent) => {
     if (!popup.contains(e.target as Node)) {
       popup.remove()
       cleanupClose()
     }
   }
-  const cleanupClose = () => document.removeEventListener("click", close)
-  setTimeout(() => document.addEventListener("click", close), 10)
+  // P8: Escape key also closes popup
+  const escClose = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      popup.remove()
+      cleanupClose()
+    }
+  }
+  setTimeout(() => {
+    document.addEventListener("click", close)
+    document.addEventListener("keydown", escClose)
+  }, 10)
+
+  // P8: Auto-close popup on re-render (signal aborted)
+  renderSignal?.addEventListener("abort", () => {
+    popup.remove()
+    cleanupClose()
+  })
 }
 
 // ── M1: Data-Level Bar Filter ──────────────────────────────────────────────
@@ -661,13 +676,13 @@ function renderGantt(
       e.stopPropagation() // Prevent global task-link handler from intercepting
       e.preventDefault()
       const barPos = barPositions.get(bar.id)
-      if (barPos) {
+      if (barPos && !isNaN(barPos.x)) { // P8: Guard NaN on invalid bar position
         scrollWrapper.scrollTo({
           left: barPos.x - scrollWrapper.clientWidth / 3,
           behavior: REDUCED_MOTION ? "instant" : "smooth",
         })
       }
-      showPopup(bar, e.clientX, e.clientY, document.body)
+      showPopup(bar, e.clientX, e.clientY, document.body, signal)
     })
 
     sidebarRows.appendChild(row)
@@ -874,8 +889,6 @@ function renderGantt(
   // ── Task Bars + T3 Resize Handles + T4 Tooltips + T8 Overdue ─────────
 
   const barsGroup = svgEl("g", { class: "gantt-bars" })
-  // Keyboard focus tracking (future enhancement)
-  // let focusedBarIndex = -1
 
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i]!
@@ -906,7 +919,7 @@ function renderGantt(
       milestoneGroup.addEventListener("click", (e) => {
         e.stopPropagation()
         hideTooltip()
-        showPopup(bar, e.clientX, e.clientY, document.body)
+        showPopup(bar, e.clientX, e.clientY, document.body, signal)
       })
       // O8: Keyboard Enter/Space to open popup
       milestoneGroup.addEventListener("keydown", (e) => {
@@ -985,7 +998,7 @@ function renderGantt(
       barGroup.appendChild(
         svgEl("rect", {
           x: pos.x, y: barY, width: barW, height: 3,
-          rx: BAR_RADIUS, fill: "#fff", opacity: 0.4,
+          rx: BAR_RADIUS, fill: "var(--text-on-accent, #fff)", opacity: 0.4, // P8: contrast-safe
         }),
       )
     }
@@ -1015,7 +1028,7 @@ function renderGantt(
     barGroup.addEventListener("click", (e) => {
       e.stopPropagation()
       hideTooltip()
-      showPopup(bar, e.clientX, e.clientY, document.body)
+      showPopup(bar, e.clientX, e.clientY, document.body, signal)
     })
     // O8: Keyboard Enter/Space to open popup
     barGroup.addEventListener("keydown", (e) => {
@@ -1074,10 +1087,15 @@ function renderGantt(
 
   // ── Sync sidebar scroll with chart ───────────────────────────────────
 
+  // P8: Debounce localStorage writes to avoid performance hit during fast scroll
+  let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null
   scrollWrapper.addEventListener("scroll", () => {
     sidebarRows.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
-    // T9: Persist scroll position
-    localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(scrollWrapper.scrollLeft))
+    // T9: Persist scroll position (debounced)
+    if (scrollSaveTimer) clearTimeout(scrollSaveTimer)
+    scrollSaveTimer = setTimeout(() => {
+      localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(scrollWrapper.scrollLeft))
+    }, 150)
   }, { signal, passive: true })
 
   // ── Scroll to today (or restored position) ───────────────────────────
@@ -1138,7 +1156,7 @@ function renderGantt(
 
   // ── T6 + M5 + M6: Keyboard shortcuts ─────────────────────────────────
 
-  let focusedBarIndex = -1
+  let focusedBarIndex = -1 // P8: Reset per render cycle
   const focusableBarEls = Array.from(svg.querySelectorAll<SVGGElement>(".gantt-bar, .gantt-milestone"))
 
   const keyHandler = (e: KeyboardEvent) => {
@@ -1221,10 +1239,9 @@ function renderGantt(
   }
   document.addEventListener("keydown", keyHandler, { signal })
 
-  // Close popup on SVG click
+  // Close popup on SVG click — also cleanup close listeners
   svg.addEventListener("click", () => {
-    const existing = document.querySelector(".gantt-popup")
-    if (existing) existing.remove()
+    document.querySelectorAll(".gantt-popup").forEach(p => p.remove())
   })
 }
 
@@ -1497,9 +1514,10 @@ export function initTimelineController(signal: AbortSignal) {
     container!.style.display = "block"
     renderGantt(container!, bars, zoom, signal)
 
-    // Update signal bar count
+    // Update signal bar count — P8: aria-live for screen readers
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
     if (countEl) {
+      countEl.setAttribute("aria-live", "polite")
       countEl.replaceChildren()
       const strong = document.createElement("strong")
       strong.textContent = String(bars.length)
