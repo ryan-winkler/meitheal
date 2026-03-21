@@ -1,0 +1,455 @@
+---
+/**
+ * GoalsTab — Inline Goals content for the Progress & Growth shell
+ *
+ * Extracted from goals/index.astro for embedding inside progress.astro.
+ * Self-contained: fetches its own data via SSR.
+ *
+ * @domain navigation + hierarchy
+ * @phase 18 — Progress & Growth Unification
+ */
+import ProgressRing from "../ui/ProgressRing.astro"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+
+let goals: Array<{
+  id: string
+  title: string
+  description: string | null
+  status: string
+  target_date: string | null
+  area_id: string | null
+  areaName: string | null
+  areaIcon: string | null
+  projectCount: number
+  completedProjectCount: number
+}> = []
+
+try {
+  await ensureSchema()
+  const db = getPersistenceClient()
+  const repo = new HierarchyRepository(db)
+  const rawGoals = await repo.findAllGoals({})
+  const areas = await repo.findAllAreas()
+  const projects = await repo.findAllProjects({})
+
+  const areaMap = new Map(areas.map((a) => [a.id, a]))
+
+  for (const g of rawGoals) {
+    const area = g.area_id ? areaMap.get(g.area_id as string) : null
+    const goalProjects = projects.filter((p) => String(p.goal_id) === String(g.id))
+    const projectCount = goalProjects.length
+    const completedProjectCount = goalProjects.filter((p) => String(p.status) === "completed").length
+
+    goals.push({
+      id: g.id as string,
+      title: g.title as string,
+      description: (g.description as string | null) ?? null,
+      status: (g.status as string) || "active",
+      target_date: (g.target_date as string | null) ?? null,
+      area_id: (g.area_id as string | null) ?? null,
+      areaName: area ? String(area.name) : null,
+      areaIcon: area ? String(area.icon ?? "📁") : null,
+      projectCount,
+      completedProjectCount,
+    })
+  }
+} catch {
+  // Goals will be empty on error
+}
+
+const statusLabels: Record<string, string> = {
+  active: "Active",
+  completed: "Completed",
+  archived: "Archived",
+}
+---
+
+<div class="goals-tab" id="goals-tab-root">
+  <header class="goals-tab__header">
+    <div class="goals-tab__header-left">
+      <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}</span>
+    </div>
+    <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>
+  </header>
+
+  {goals.length === 0 ? (
+    <div class="goals-tab__empty">
+      <div class="goals-tab__empty-icon">🎯</div>
+      <h2 class="goals-tab__empty-title">No goals yet</h2>
+      <p class="goals-tab__empty-desc">Create your first goal to define strategic outcomes for your work.</p>
+      <button type="button" class="btn btn-primary" id="goals-tab-empty-btn">
+        Create Goal
+      </button>
+    </div>
+  ) : (
+    <div class="goals-tab__list">
+      {goals.map((goal) => (
+        <div class="goals-tab__card" data-goal-id={goal.id} data-goal-status={goal.status}>
+          <div class="goals-tab__card-header">
+            <h3 class="goals-tab__card-title">{goal.title}</h3>
+            <div class="goals-tab__card-actions">
+              <span class={`goals-tab__status-badge status-${goal.status}`}>
+                {statusLabels[goal.status] ?? goal.status}
+              </span>
+              <div class="goals-tab__actions-row">
+                {goal.status === "active" && (
+                  <button type="button" class="goals-tab__action-btn goals-tab__complete-btn" data-goal-id={goal.id} title="Mark completed" aria-label="Mark goal completed">✓</button>
+                )}
+                {goal.status === "completed" && (
+                  <button type="button" class="goals-tab__action-btn goals-tab__reactivate-btn" data-goal-id={goal.id} title="Reactivate" aria-label="Reactivate goal">↩</button>
+                )}
+                <button type="button" class="goals-tab__action-btn goals-tab__delete-btn" data-goal-id={goal.id} title="Delete goal" aria-label="Delete goal">🗑</button>
+              </div>
+            </div>
+          </div>
+          {goal.description && (
+            <p class="goals-tab__card-desc">{goal.description.slice(0, 120)}{goal.description.length > 120 ? "…" : ""}</p>
+          )}
+          <div class="goals-tab__card-meta">
+            {goal.projectCount > 0 && (
+              <ProgressRing
+                percent={goal.projectCount > 0 ? Math.round((goal.completedProjectCount / goal.projectCount) * 100) : 0}
+                size={32}
+                strokeWidth={3}
+                label={`${goal.completedProjectCount}/${goal.projectCount} projects complete`}
+              />
+            )}
+            {goal.areaName && (
+              <span class="goals-tab__meta-area">{goal.areaIcon} {goal.areaName}</span>
+            )}
+            <span class="goals-tab__meta-projects">📋 {goal.projectCount} project{goal.projectCount !== 1 ? "s" : ""}</span>
+            {goal.target_date && (
+              <span class="goals-tab__meta-date">📅 {goal.target_date}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+<style>
+  @reference "../../styles/global.css";
+
+  .goals-tab {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0.5rem 0;
+  }
+  .goals-tab__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+  }
+  .goals-tab__header-left {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+  .goals-tab__count {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .goals-tab__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg, 12px);
+  }
+  .goals-tab__empty-icon { font-size: 48px; margin-bottom: 1rem; }
+  .goals-tab__empty-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .goals-tab__empty-desc {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+    max-width: 360px;
+  }
+
+  .goals-tab__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .goals-tab__card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .goals-tab__card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .goals-tab__card--removing {
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: opacity 200ms, transform 200ms;
+  }
+
+  .goals-tab__card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.375rem;
+  }
+  .goals-tab__card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+  .goals-tab__status-badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .status-active {
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--accent);
+  }
+  .status-completed {
+    background: rgba(var(--success-rgb), 0.12);
+    color: var(--success);
+  }
+  .status-archived {
+    background: rgba(var(--text-muted-rgb, 128, 128, 128), 0.12);
+    color: var(--text-muted);
+  }
+
+  .goals-tab__card-desc {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+  }
+
+  .goals-tab__card-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .goals-tab__card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .goals-tab__actions-row {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  .goals-tab__card:hover .goals-tab__actions-row {
+    opacity: 1;
+  }
+  .goals-tab__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 150ms, border-color 150ms;
+  }
+  .goals-tab__action-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+  .goals-tab__delete-btn:hover {
+    border-color: var(--danger);
+    background: rgba(var(--danger-rgb), 0.08);
+  }
+  .goals-tab__complete-btn:hover {
+    border-color: var(--success);
+    background: rgba(var(--success-rgb), 0.08);
+  }
+</style>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(() => {
+    const root = document.getElementById("goals-tab-root")
+    if (!root) return
+
+    const newBtn = root.querySelector("#goals-tab-new-btn")
+    const emptyBtn = root.querySelector("#goals-tab-empty-btn")
+    let formVisible = false
+
+    function ensureCreateForm(): HTMLElement {
+      let form = document.getElementById("goals-tab-create-inline")
+      if (form) return form
+
+      const container = root!.querySelector(".goals-tab__list") || root!.querySelector(".goals-tab__empty")
+      if (!container?.parentElement) return document.createElement("div")
+
+      form = document.createElement("div")
+      form.id = "goals-tab-create-inline"
+      form.className = "goals-tab__create-form"
+      form.style.display = "none"
+      form.style.marginBottom = "1rem"
+      form.style.animation = "goals-tab-form-in 200ms ease"
+
+      const inner = document.createElement("div")
+      inner.style.cssText = "display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1rem;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);"
+
+      const input = document.createElement("input")
+      input.type = "text"
+      input.id = "goals-tab-create-input"
+      input.placeholder = "Goal title…"
+      input.maxLength = 200
+      input.autocomplete = "off"
+      input.setAttribute("aria-label", "New goal title")
+      input.style.cssText = "flex:1;padding:0.5rem 0.75rem;font-size:0.875rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);outline:none;"
+
+      const submitBtn = document.createElement("button")
+      submitBtn.type = "button"
+      submitBtn.className = "btn btn-primary"
+      submitBtn.style.cssText = "padding:0.375rem 0.75rem;font-size:0.8125rem;"
+      submitBtn.textContent = "Create"
+
+      const cancelBtn = document.createElement("button")
+      cancelBtn.type = "button"
+      cancelBtn.className = "btn btn-ghost"
+      cancelBtn.style.cssText = "padding:0.375rem 0.75rem;font-size:0.8125rem;"
+      cancelBtn.textContent = "Cancel"
+
+      inner.append(input, submitBtn, cancelBtn)
+      form.appendChild(inner)
+      container.parentElement.insertBefore(form, container)
+
+      submitBtn.addEventListener("click", submitCreate)
+      cancelBtn.addEventListener("click", hideCreate)
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitCreate()
+        if (e.key === "Escape") hideCreate()
+      })
+
+      return form
+    }
+
+    function showCreate() {
+      const form = ensureCreateForm()
+      form.style.display = "block"
+      formVisible = true
+      requestAnimationFrame(() => {
+        (form.querySelector("#goals-tab-create-input") as HTMLInputElement)?.focus()
+      })
+    }
+
+    function hideCreate() {
+      const form = document.getElementById("goals-tab-create-inline")
+      if (form) {
+        form.style.display = "none";
+        (form.querySelector("#goals-tab-create-input") as HTMLInputElement).value = ""
+      }
+      formVisible = false
+    }
+
+    function submitCreate() {
+      const input = document.getElementById("goals-tab-create-input") as HTMLInputElement | null
+      const title = input?.value?.trim()
+      if (!title) { input?.focus(); return }
+
+      const submitBtn = document.getElementById("goals-tab-create-inline")?.querySelector(".btn-primary") as HTMLButtonElement
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Creating…" }
+
+      fetch("/api/goals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      })
+        .then((r) => { if (r.ok) window.location.reload(); else throw new Error("Failed") })
+        .catch(() => {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Create" }
+          input?.focus()
+        })
+    }
+
+    newBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate())
+    emptyBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate())
+
+    // Delegated card actions
+    root.querySelector(".goals-tab__list")?.addEventListener("click", async (e: Event) => {
+      const target = e.target as HTMLElement
+      const btn = target.closest<HTMLButtonElement>(".goals-tab__action-btn")
+      if (!btn) return
+
+      const goalId = btn.dataset.goalId
+      if (!goalId) return
+      const base = `/api/goals/${goalId}`
+
+      if (btn.classList.contains("goals-tab__delete-btn")) {
+        if (!confirm("Delete this goal? This cannot be undone.")) return
+        btn.disabled = true
+        try {
+          const r = await fetch(base, { method: "DELETE" })
+          if (r.ok) {
+            const card = btn.closest(".goals-tab__card")
+            if (card) {
+              card.classList.add("goals-tab__card--removing")
+              setTimeout(() => card.remove(), 200)
+            }
+          }
+        } catch { btn.disabled = false }
+        return
+      }
+
+      if (btn.classList.contains("goals-tab__complete-btn")) {
+        btn.disabled = true
+        try {
+          const r = await fetch(base, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: "completed" }),
+          })
+          if (r.ok) window.location.reload()
+        } catch { btn.disabled = false }
+        return
+      }
+
+      if (btn.classList.contains("goals-tab__reactivate-btn")) {
+        btn.disabled = true
+        try {
+          const r = await fetch(base, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: "active" }),
+          })
+          if (r.ok) window.location.reload()
+        } catch { btn.disabled = false }
+      }
+    })
+  })
+</script>

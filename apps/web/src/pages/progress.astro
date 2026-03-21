@@ -12,6 +12,8 @@
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
 import SectionHubCard from "../components/layout/SectionHubCard.astro"
+import GoalsTab from "../components/progress/GoalsTab.astro"
+import AchievementsTab from "../components/progress/AchievementsTab.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
 import PillarCard from "../components/pillars/PillarCard.astro"
 import PillarFormModal from "../components/pillars/PillarFormModal.astro"
@@ -22,7 +24,6 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
 import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
-import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { getPillars } from "@domains/pillars/pillar-service"
 import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
@@ -63,35 +64,17 @@ try {
 // ─── Routine data ───────────────────────────────────────────────
 let habits: RoutineWithStats[] = []
 
-// ─── Goals & Achievements data ──────────────────────────────────
-let goalCount = 0
-let completedGoals = 0
-let totalPoints = 0
-
 try {
   await ensureSchema()
   const client = getPersistenceClient()
   const templateRepo = new TemplateRepository(client)
-  const hierarchyRepo = new HierarchyRepository(client)
 
   // Routines (stat counts for hub card)
   habits = await templateRepo.getRoutinesWithStats()
-
-  // Goals
-  const goals = await hierarchyRepo.findAllGoals()
-  goalCount = (goals as GoalRow[]).length
-  completedGoals = (goals as GoalRow[]).filter(g => g.status === "complete").length
-
-  // Gamification
-  try {
-    const { getStats } = await import("@domains/gamification")
-    const stats = await getStats()
-    totalPoints = stats.totalPoints ?? 0
-  } catch { /* gamification may not be available */ }
 } catch { /* DB not available */ }
 ---
 
-<Layout title={`Meitheal — ${t("nav.progress", locale)}`}>
+<Layout title={`Meitheal — ${t("nav.progress", locale)}`} hideSearchHub={true}>
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
@@ -171,37 +154,20 @@ try {
       </SectionHubCard>
     </section>
 
-    {/* ─── Goals (hub card — full page not yet built) ─── */}
+    {/* ─── Goals (inline content — Phase 18) ─── */}
     <section data-parent-section="goals" id="progress-section-goals" hidden>
       <InlineHelper helperId="progress-goals-explainer" title="How do Goals work?" icon="🎯" variant="tip">
         <p><strong>Goals</strong> are long-term pillars — they have no deadlines. Link Projects to Goals to track progress toward outcomes. Goals sit at the top of the hierarchy: <strong>Area → Goal → Project → Task</strong>.</p>
       </InlineHelper>
-      <SectionHubCard
-        href="/goals"
-        icon="🎯"
-        title="Goals"
-        description="Long-term pillars and objectives — no deadlines, all direction. Link goals to projects and track progress toward outcomes."
-        id="progress-goals-link"
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{goalCount}</span><span class="stat-label">Goals</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{completedGoals}</span><span class="stat-label">Completed</span></div>
-      </SectionHubCard>
+      <GoalsTab />
     </section>
 
-    {/* ─── Achievements (hub card — full page not yet built) ─── */}
+    {/* ─── Achievements (inline content — Phase 18) ─── */}
     <section data-parent-section="achievements" id="progress-section-achievements" hidden>
       <InlineHelper helperId="progress-achievements-explainer" title="Achievements & Gamification" icon="🏆" variant="tip">
         <p>Complete tasks to earn <strong>XP</strong>, build <strong>streaks</strong>, and unlock achievements. Higher-priority tasks award more points. Routine streaks also contribute to your progress here.</p>
       </InlineHelper>
-      <SectionHubCard
-        href="/gamification"
-        icon="🏆"
-        title="Achievements"
-        description="Streaks, XP, levels, and unlocked milestones — your progress dashboard showing real accomplishments."
-        id="progress-achievements-link"
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{totalPoints}</span><span class="stat-label">Total XP</span></div>
-      </SectionHubCard>
+      <AchievementsTab />
     </section>
   </ParentPageShell>
 </Layout>

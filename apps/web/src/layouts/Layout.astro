@@ -43,11 +43,13 @@ const {
 export interface Props {
   title?: string;
   description?: string;
+  hideSearchHub?: boolean;
 }
 
 const {
   title = "Meitheal",
   description = "The cooperative task and life engine for your home.",
+  hideSearchHub = false,
 } = Astro.props;
 
 // OA-607: Sidebar task count badges (SSR)
@@ -572,7 +574,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <NewTaskModal />
     <TaskDetailModal />
     <AskAssistModal />
-    <SearchHub locale={locale} />
+    {!hideSearchHub && <SearchHub locale={locale} />}
     <!-- Sync status announcer for screen readers (Persona #25) -->
     <div
       id="sync-announcer"
