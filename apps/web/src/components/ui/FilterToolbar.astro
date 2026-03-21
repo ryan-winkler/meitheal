@@ -24,6 +24,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
+import TaskTypeIcon from "./TaskTypeIcon.astro"
 
 interface Props {
   /** View context — controls ID prefixing and default visibility */
@@ -76,6 +77,7 @@ const defaultGroupByOptions = view === "table"
       { value: "type", label: "Group by Type" },
       { value: "priority", label: "Group by Priority" },
       { value: "area", label: "Group by Area" },
+      { value: "project", label: "Group by Project" },
       { value: "assignee", label: "Group by Assignee" },
       { value: "status", label: "Group by Status" },
       { value: "rice", label: "Group by RICE" },
@@ -84,10 +86,11 @@ const defaultGroupByOptions = view === "table"
       { value: "none", label: t("kanban.group_none", locale) },
       { value: "type", label: t("kanban.group_type", locale) },
       { value: "area", label: t("kanban.group_area", locale) },
+      { value: "project", label: t("kanban.group_project", locale) },
       { value: "priority", label: t("kanban.group_priority", locale) },
-      { value: "assigned", label: t("kanban.group_assignee", locale) || "Group by Assignee" },
-      { value: "status", label: t("kanban.group_status", locale) || "Group by Status" },
-      { value: "rice", label: t("kanban.group_rice", locale) || "Group by RICE" },
+      { value: "assigned", label: t("kanban.group_assignee", locale) },
+      { value: "status", label: t("kanban.group_status", locale) },
+      { value: "rice", label: t("kanban.group_rice", locale) },
     ]
 
 const groupOptions = groupByOptions ?? defaultGroupByOptions
@@ -119,7 +122,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Epics"
     >
-      <span class="filter-toolbar__type-dot filter-toolbar__type-dot--epic"></span>
+      <TaskTypeIcon type="epic" size={14} />
       Epic
     </button>
     <button
@@ -129,7 +132,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Stories"
     >
-      <span class="filter-toolbar__type-dot filter-toolbar__type-dot--story"></span>
+      <TaskTypeIcon type="story" size={14} />
       Story
     </button>
     <button
@@ -139,7 +142,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Tasks"
     >
-      <span class="filter-toolbar__type-dot filter-toolbar__type-dot--task"></span>
+      <TaskTypeIcon type="task" size={14} />
       Task
     </button>
   </div>

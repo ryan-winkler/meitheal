@@ -827,9 +827,8 @@ function renderGantt(
 
   const today = startOfDay(new Date())
   const todayOffset = daysBetween(rangeStart, today)
-  let todayX = 0
+  const todayX = todayOffset * pxPerDay
   if (todayOffset >= 0 && todayOffset <= totalDays) {
-    todayX = todayOffset * pxPerDay
     const todayGroup = svgEl("g", { class: "gantt-today" })
 
     todayGroup.appendChild(

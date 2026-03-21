@@ -93,6 +93,7 @@ function switchView(view: TaskView) {
   // [T8] Update view tab pills with ARIA selected state
   document.querySelectorAll<HTMLElement>("[data-view-tab]").forEach(tab => {
     const isActive = tab.dataset.viewTab === view
+    tab.classList.toggle("is-active", isActive)
     tab.classList.toggle("active", isActive)
     tab.setAttribute("aria-selected", String(isActive))
     tab.setAttribute("tabindex", isActive ? "0" : "-1")
@@ -202,4 +203,12 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
       switchView(view)
     }
   }, signal ? { signal } : undefined)
+
+  // Listen for "View Details" from popup/chart clicks
+  window.addEventListener("meitheal:open-task", ((e: CustomEvent) => {
+    const taskId = e.detail?.taskId
+    if (taskId) {
+      window.location.href = `/tasks/${taskId}`
+    }
+  }) as EventListener, signal ? { signal } : undefined)
 }
