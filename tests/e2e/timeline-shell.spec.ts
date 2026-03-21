@@ -25,7 +25,6 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
   })
 
   test("GANTT chart or empty state renders", async ({ page }) => {
-    // One of these should be visible: the GANTT chart or the empty state
     const ganttChart = page.locator("#gantt-chart")
     const emptyState = page.locator("#timeline-empty")
     const skeleton = page.locator("#timeline-skeleton")
@@ -39,30 +38,69 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     expect(ganttVisible || emptyVisible).toBe(true)
   })
 
-  test("GANTT chart renders SVG when tasks have dates", async ({ page }) => {
+  test("native GANTT chart renders SVG when tasks have dates", async ({ page }) => {
     const ganttChart = page.locator("#gantt-chart")
     const isEmpty = await page.locator("#timeline-empty").isVisible()
 
     if (!isEmpty) {
-      // If not empty, Frappe Gantt should have rendered SVG content
-      const svg = ganttChart.locator("svg")
+      // Native SVG renderer should produce a .gantt-native SVG
+      const svg = ganttChart.locator("svg.gantt-native")
       await expect(svg).toBeAttached({ timeout: 5000 })
 
-      // Should have at least one bar element
-      const bars = ganttChart.locator(".bar-wrapper")
+      // Should have bars and/or milestones
+      const bars = ganttChart.locator(".gantt-bar")
+      const milestones = ganttChart.locator(".gantt-milestone")
       const barCount = await bars.count()
-      expect(barCount).toBeGreaterThan(0)
+      const msCount = await milestones.count()
+      expect(barCount + msCount).toBeGreaterThan(0)
     }
   })
 
-  test("view mode selector is present when chart is active", async ({ page }) => {
-    const ganttChart = page.locator("#gantt-chart")
+  test("native GANTT sidebar renders task labels", async ({ page }) => {
     const isEmpty = await page.locator("#timeline-empty").isVisible()
 
     if (!isEmpty) {
-      // Frappe Gantt's view mode selector should render
-      const viewSelect = ganttChart.locator(".gantt-container")
-      await expect(viewSelect).toBeVisible({ timeout: 5000 })
+      // Sidebar should have task rows
+      const sidebar = page.locator(".gantt-sidebar")
+      await expect(sidebar).toBeVisible({ timeout: 5000 })
+
+      const rows = page.locator(".gantt-sidebar-row")
+      const rowCount = await rows.count()
+      expect(rowCount).toBeGreaterThan(0)
+    }
+  })
+
+  test("zoom selector is present and functional", async ({ page }) => {
+    const zoomSelect = page.locator("#timeline-zoom")
+    await expect(zoomSelect).toBeVisible()
+
+    // Should have Day/Week/Month options
+    const options = zoomSelect.locator("option")
+    expect(await options.count()).toBe(3)
+    await expect(options.nth(0)).toHaveValue("Day")
+    await expect(options.nth(1)).toHaveValue("Week")
+    await expect(options.nth(2)).toHaveValue("Month")
+  })
+
+  test("legend disclosure chip is present", async ({ page }) => {
+    const legend = page.locator(".timeline-legend")
+    await expect(legend).toBeVisible()
+
+    // Click to expand
+    await legend.locator("summary").click()
+    const panel = legend.locator(".timeline-legend-panel")
+    await expect(panel).toBeVisible()
+  })
+
+  test("scroll-to-today FAB is present when chart renders", async ({ page }) => {
+    const isEmpty = await page.locator("#timeline-empty").isVisible()
+
+    if (!isEmpty) {
+      const fab = page.locator(".gantt-today-fab")
+      await expect(fab).toBeVisible({ timeout: 5000 })
+
+      // Should have correct title/tooltip
+      await expect(fab).toHaveAttribute("title", "Scroll to today (T)")
     }
   })
 
