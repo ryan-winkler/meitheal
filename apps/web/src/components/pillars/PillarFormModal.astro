@@ -316,7 +316,7 @@
           weight: parseInt((document.getElementById("pillar-weight") as HTMLInputElement).value, 10),
         }
 
-        const res = await fetch((window.__ingress_path || "") + "/api/pillars", {
+        const res = await fetch("/api/pillars", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),

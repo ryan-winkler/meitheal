@@ -26,6 +26,7 @@ const linkedGoals = associations.filter(a => a.entityType === "goal")
 
 const accentColor = pillar.colorHex || "var(--accent)"
 const weightDots = Math.min(pillar.weight, 10)
+const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto: pillar.manifesto, icon: pillar.icon, colorHex: pillar.colorHex, weight: pillar.weight })
 ---
 
 <Layout title={`Meitheal — ${pillar.name}`}>
@@ -37,7 +38,7 @@ const weightDots = Math.min(pillar.weight, 10)
       </a>
     </div>
 
-    <header class="pillar-detail__header">
+    <header class="pillar-detail__header" data-pillar={pillarJson}>
       <div class="pillar-detail__accent-bar"></div>
       <div class="pillar-detail__hero">
         <span class="pillar-detail__icon" aria-hidden="true">{pillar.icon || "🏛️"}</span>
@@ -52,6 +53,14 @@ const weightDots = Math.min(pillar.weight, 10)
             ))}
             <span class="pillar-detail__weight-label">{pillar.weight}/10</span>
           </div>
+        </div>
+        <div class="pillar-detail__actions">
+          <button type="button" class="pillar-detail__action-btn" id="edit-pillar-btn" aria-label="Edit Pillar" title="Edit Pillar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          </button>
+          <button type="button" class="pillar-detail__action-btn pillar-detail__action-btn--danger" id="delete-pillar-btn" aria-label="Delete Pillar" title="Delete Pillar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
         </div>
       </div>
 
@@ -85,7 +94,7 @@ const weightDots = Math.min(pillar.weight, 10)
           <ul class="pillar-detail__goals">
             {linkedGoals.map((g) => (
               <li class="pillar-detail__goal-item">
-                <a href={`/goals/${g.entityId}`}>{g.entityId}</a>
+                <a href={`/goals/${g.entityId}`}>Goal: {g.entityId.substring(0, 8)}…</a>
               </li>
             ))}
           </ul>
@@ -94,6 +103,122 @@ const weightDots = Math.min(pillar.weight, 10)
     </div>
   </main>
 </Layout>
+
+<script>
+  import { showToast } from "@lib/toast"
+  import { createClientLogger } from "@lib/client-logger"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  const log = createClientLogger("pillars", "pillar-detail")
+
+  pageLifecycle.onPageLoad(() => {
+    const header = document.querySelector(".pillar-detail__header") as HTMLElement | null
+    const editBtn = document.getElementById("edit-pillar-btn")
+    const deleteBtn = document.getElementById("delete-pillar-btn")
+    const addPrincipleBtn = document.querySelector("[data-action='add-principle']")
+
+    if (!header) return
+
+    let pillarData: Record<string, unknown> = {}
+    try {
+      pillarData = JSON.parse(header.dataset.pillar || "{}")
+    } catch { /* ignore */ }
+
+    // --- Edit: Navigate to pillars page (reuse PillarFormModal in future, for now navigate back) ---
+    editBtn?.addEventListener("click", () => {
+      // For now, show toast — edit-in-place is a P2 follow-up
+      showToast("Edit Pillar: use the Pillars page (edit-in-place coming soon)", "success")
+    })
+
+    // --- Delete: Confirm + soft-delete ---
+    deleteBtn?.addEventListener("click", async () => {
+      const name = pillarData.name || "this Pillar"
+      if (!confirm(`Delete "${name}"? This will deactivate the Pillar. You can restore it later.`)) return
+
+      try {
+        const res = await fetch(`/api/pillars/${pillarData.id}`, { method: "DELETE" })
+        if (res.ok) {
+          showToast(`"${name}" deleted`, "success")
+          window.location.href = "/pillars"
+        } else {
+          const err = await res.json().catch(() => ({ error: "Unknown error" }))
+          showToast(err.error || "Failed to delete", "error")
+        }
+      } catch (err) {
+        log.error("Delete pillar error", err)
+        showToast("Network error", "error")
+      }
+    })
+
+    // --- Add Principle: Inline form ---
+    addPrincipleBtn?.addEventListener("click", () => {
+      const list = document.querySelector(".principle-list")
+      if (!list || list.querySelector(".principle-inline-form")) return
+
+      const pillarId = list.getAttribute("data-pillar-id") || pillarData.id
+      const form = document.createElement("div")
+      form.className = "principle-inline-form"
+      form.innerHTML = `
+        <input type="text" class="form-input bg-bg-input principle-inline-form__input" placeholder="e.g. No screens after 9 PM" maxlength="500" autofocus />
+        <label class="principle-inline-form__nn-label">
+          <input type="checkbox" class="principle-inline-form__nn-check" /> Non-Negotiable
+        </label>
+        <div class="principle-inline-form__actions">
+          <button type="button" class="btn btn-primary btn-sm principle-inline-form__save">Add</button>
+          <button type="button" class="btn btn-ghost btn-sm principle-inline-form__cancel">Cancel</button>
+        </div>
+      `
+      list.appendChild(form)
+
+      const input = form.querySelector("input[type='text']") as HTMLInputElement
+      const nnCheck = form.querySelector(".principle-inline-form__nn-check") as HTMLInputElement
+      const saveBtn = form.querySelector(".principle-inline-form__save") as HTMLButtonElement
+      const cancelBtn = form.querySelector(".principle-inline-form__cancel") as HTMLButtonElement
+
+      input?.focus()
+
+      cancelBtn.addEventListener("click", () => form.remove())
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") form.remove()
+        if (e.key === "Enter") saveBtn.click()
+      })
+
+      saveBtn.addEventListener("click", async () => {
+        const statement = input.value.trim()
+        if (!statement) { input.focus(); return }
+
+        saveBtn.disabled = true
+        saveBtn.textContent = "Saving…"
+
+        try {
+          const res = await fetch(`/api/pillars/${pillarId}/principles`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              action: "create",
+              statement,
+              isNonNegotiable: nnCheck?.checked || false,
+            }),
+          })
+
+          if (res.ok) {
+            showToast("Principle added", "success")
+            window.location.reload()
+          } else {
+            const err = await res.json().catch(() => ({ error: "Failed" }))
+            showToast(err.error || "Failed to add principle", "error")
+          }
+        } catch (err) {
+          log.error("Add principle error", err)
+          showToast("Network error", "error")
+        } finally {
+          saveBtn.disabled = false
+          saveBtn.textContent = "Add"
+        }
+      })
+    })
+  })
+</script>
 
 <style>
 .pillar-detail {
@@ -257,5 +382,75 @@ const weightDots = Math.min(pillar.weight, 10)
 
 .text-sm {
   font-size: 0.8125rem;
+}
+
+/* --- Action Buttons (edit/delete) --- */
+.pillar-detail__actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.pillar-detail__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.pillar-detail__action-btn:hover {
+  color: var(--text);
+  border-color: var(--pillar-accent);
+  background: color-mix(in srgb, var(--pillar-accent) 10%, transparent);
+}
+
+.pillar-detail__action-btn--danger:hover {
+  color: var(--danger, #ef4444);
+  border-color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+}
+
+/* --- Inline Principle Form --- */
+.principle-inline-form {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--pillar-accent);
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--pillar-accent) 4%, var(--surface));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.principle-inline-form__input {
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.principle-inline-form__nn-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.principle-inline-form__nn-check {
+  accent-color: var(--pillar-accent);
+}
+
+.principle-inline-form__actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 </style>
