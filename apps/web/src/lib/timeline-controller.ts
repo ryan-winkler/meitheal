@@ -549,7 +549,7 @@ function renderGantt(
   const totalHeight = HEADER_HEIGHT + bars.length * ROW_HEIGHT + 20
 
   // Clear previous render
-  outerContainer.innerHTML = ""
+  outerContainer.replaceChildren()
 
   // ── T2: Create layout with fixed sidebar + scrollable chart ──────────
 
@@ -619,7 +619,7 @@ function renderGantt(
     // M2: Row cross-highlighting — sidebar → chart
     row.addEventListener("mouseenter", () => {
       const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "1")
+      if (chartRow) chartRow.setAttribute("opacity", "0.06")
       row.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
     })
     row.addEventListener("mouseleave", () => {
@@ -630,6 +630,8 @@ function renderGantt(
 
     // M4: Sidebar click → scroll chart to bar + open popup
     row.addEventListener("click", (e) => {
+      e.stopPropagation() // Prevent global task-link handler from intercepting
+      e.preventDefault()
       const barPos = barPositions.get(bar.id)
       if (barPos) {
         scrollWrapper.scrollTo({
@@ -968,7 +970,7 @@ function renderGantt(
       if (sidebarRow) sidebarRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
       // M2: Highlight chart row
       const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "0.08")
+      if (chartRow) chartRow.setAttribute("opacity", "0.06")
     })
     barGroup.addEventListener("mouseleave", () => {
       hideTooltip()
@@ -1065,7 +1067,20 @@ function renderGantt(
   const fab = document.createElement("button")
   fab.className = "gantt-today-fab"
   fab.title = "Scroll to today (T)"
-  fab.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.5" fill="currentColor"/></svg>`
+  // DOM-based SVG construction (avoid innerHTML)
+  const fabSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  fabSvg.setAttribute("width", "16")
+  fabSvg.setAttribute("height", "16")
+  fabSvg.setAttribute("viewBox", "0 0 16 16")
+  fabSvg.setAttribute("fill", "none")
+  const c1 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
+  c1.setAttribute("cx", "8"); c1.setAttribute("cy", "8"); c1.setAttribute("r", "7")
+  c1.setAttribute("stroke", "currentColor"); c1.setAttribute("stroke-width", "1.5")
+  const c2 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
+  c2.setAttribute("cx", "8"); c2.setAttribute("cy", "8"); c2.setAttribute("r", "2.5")
+  c2.setAttribute("fill", "currentColor")
+  fabSvg.appendChild(c1); fabSvg.appendChild(c2)
+  fab.appendChild(fabSvg)
   fab.style.cssText = `
     position:absolute;bottom:16px;right:16px;z-index:20;
     width:36px;height:36px;border-radius:50%;border:1px solid var(--border);
@@ -1423,10 +1438,15 @@ export function initTimelineController(signal: AbortSignal) {
         const desc = emptyState.querySelector(".empty-desc")
         if (hasFilters) {
           if (title) title.textContent = "No tasks match current filters"
-          if (desc) desc.innerHTML = "Adjust your filters to see tasks on the timeline."
+          if (desc) desc.textContent = "Adjust your filters to see tasks on the timeline."
         } else {
           if (title) title.textContent = "No tasks on the timeline yet"
-          if (desc) desc.innerHTML = 'Add <strong>start dates</strong> and <strong>due dates</strong> to your tasks to see them here as interactive GANTT bars.'
+          if (desc) {
+            desc.replaceChildren()
+            desc.append("Add "); const s1 = document.createElement("strong"); s1.textContent = "start dates"; desc.append(s1)
+            desc.append(" and "); const s2 = document.createElement("strong"); s2.textContent = "due dates"; desc.append(s2)
+            desc.append(" to your tasks to see them here as interactive GANTT bars.")
+          }
         }
       }
       container!.style.display = "none"
@@ -1440,7 +1460,10 @@ export function initTimelineController(signal: AbortSignal) {
     // Update signal bar count
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
     if (countEl) {
-      countEl.innerHTML = `<strong>${bars.length}</strong> of ${allBars.length} tasks on timeline`
+      countEl.replaceChildren()
+      const strong = document.createElement("strong")
+      strong.textContent = String(bars.length)
+      countEl.append(strong, ` of ${allBars.length} tasks on timeline`)
     }
   }
 
@@ -1517,7 +1540,7 @@ export function initTimelineController(signal: AbortSignal) {
 
   // Cleanup on abort
   signal.addEventListener("abort", () => {
-    container.innerHTML = ""
+    container.replaceChildren()
     hideTooltip()
   })
 }
