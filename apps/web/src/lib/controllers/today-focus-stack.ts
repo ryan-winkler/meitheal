@@ -65,13 +65,20 @@ export function setupFocusStack(
               celebrateFocusStackClear()
             })
             // Replace stack content with cleared message
-            stack.innerHTML = `
-              <div class="focus-stack--cleared">
-                <div style="font-size: 32px;">🎉</div>
-                <div class="focus-stack__cleared-msg">Focus Stack cleared!</div>
-                <div class="focus-stack__cleared-sub">Great focus session — take a breath</div>
-              </div>
-            `
+            const cleared = document.createElement("div")
+            cleared.className = "focus-stack--cleared"
+            const emoji = document.createElement("div")
+            emoji.style.fontSize = "32px"
+            emoji.textContent = "🎉"
+            const msg = document.createElement("div")
+            msg.className = "focus-stack__cleared-msg"
+            msg.textContent = "Focus Stack cleared!"
+            const sub = document.createElement("div")
+            sub.className = "focus-stack__cleared-sub"
+            sub.textContent = "Great focus session — take a breath"
+            cleared.append(emoji, msg, sub)
+            stack.textContent = ""
+            stack.appendChild(cleared)
           }
         }, 350)
       } catch {
