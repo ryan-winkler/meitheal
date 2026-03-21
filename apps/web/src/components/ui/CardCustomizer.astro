@@ -59,14 +59,9 @@ const { class: className } = Astro.props
 <style>
 /* Reusing column-customizer styles but scoped */
 .card-customizer {
-  position: relative;
-  display: inline-block;
+  display: block;
 }
-.card-customizer__toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+
 .card-customizer__panel {
   background: var(--surface);
   border: 1px solid var(--border);
