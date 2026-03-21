@@ -200,6 +200,21 @@
   100% { opacity: 0.4; }
 }
 
+/* O3: Respect prefers-reduced-motion for toast and skeleton animations */
+@media (prefers-reduced-motion: reduce) {
+  .gantt-toast {
+    transition: none;
+    transform: translateX(-50%);
+  }
+  .gantt-toast--visible {
+    transform: translateX(-50%);
+  }
+  .skel-label,
+  .skel-bar {
+    animation: none;
+  }
+}
+
 /* ── Empty State ────────────────────────────────────────────────────────── */
 
 .timeline-empty-state {
