@@ -1,12 +1,26 @@
 ---
-import type { Locale } from "../../lib/locale";
+/**
+ * TasksTimelineView — Interactive GANTT chart view.
+ *
+ * Replaces the previous static CSS grid timeline with Frappe Gantt.
+ * Tasks are rendered as interactive SVG bars with drag-and-drop editing,
+ * zoom control (Day/Week/Month/Year), dependency arrows, and a custom popup.
+ *
+ * @domain Task Visualization
+ * @phase 16.1 — GANTT timeline overhaul
+ *
+ * Architecture:
+ * - SSR: Fetch task data, serialize as JSON blob
+ * - Client: Frappe Gantt initializes lazily on first view display
+ * - Events: on_date_change/on_progress_change → PATCH /api/tasks/{id}
+ * - Cleanup: AbortSignal-based lifecycle via pageLifecycle
+ */
 import SignalBar from "../layout/SignalBar.astro";
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { STATUS } from "../../lib/status-config";
 
 interface TaskRecord {
   id: string;
@@ -15,378 +29,120 @@ interface TaskRecord {
   priority: number;
   due_date: string | null;
   start_date: string | null;
+  end_date: string | null;
   color: string | null;
   task_type: string | null;
+  task_kind: string | null;
   progress: number | null;
   ticket_number: number | null;
   parent_id: string | null;
+  blocked_by: string | null;
+  effort_minutes: number | null;
+  labels: string | null;
+  area_id: string | null;
   [key: string]: any;
 }
 
-const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
-const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
-
 let tasks: TaskRecord[] = [];
+let fetchError = false;
 try {
   await ensureSchema();
   const repo = new TaskRepository(getPersistenceClient());
   tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
 } catch (e) {
-  /* DB not available */
+  fetchError = true;
 }
 
-// Timeline Timeframe Logic: rolling window (1 week ago -> 4 weeks ahead)
-const today = new Date();
-today.setHours(0, 0, 0, 0);
-
-const startDate = new Date(today);
-startDate.setDate(today.getDate() - 7); // Start 7 days ago
-
-const endDate = new Date(startDate);
-endDate.setDate(startDate.getDate() + 35); // Show 35 days total (5 weeks)
-
-const days: Date[] = [];
-for (let d = new Date(startDate); d < endDate; d.setDate(d.getDate() + 1)) {
-  days.push(new Date(d));
-}
-
-// Format tasks for the Timeline chart
-const timelineTasks = tasks.map(task => {
-  const start = task.start_date ? new Date(String(task.start_date)) : (task.due_date ? new Date(String(task.due_date)) : today);
-  const end = task.due_date ? new Date(String(task.due_date)) : new Date(start);
-
-  // Normalize times for grid placement
-  start.setHours(0,0,0,0);
-  end.setHours(0,0,0,0);
-
-  // Avoid negative widths by ensuring end >= start
-  if (end < start) end.setTime(start.getTime());
-
-  // Calculate grid columns
-  const diffStart = Math.round((start.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  const diffEnd = Math.round((end.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-
-  // Grid column index is 1-based, plus we have a label column (so add 2 to the difference)
-  // Assuming grid-template-columns: 250px repeat(35, 1fr)
-  // Day 0 (startDate) is column 2
-  const colStart = Math.max(2, diffStart + 2);
-  const colEnd = Math.min(days.length + 2, diffEnd + 3); // +3 because CSS grid columns are exclusive ending
-
-  return {
-    ...task,
-    colStart,
-    colEnd,
-    isVisible: colEnd > 2 && colStart <= days.length + 1
-  };
-}).filter(t => t.isVisible);
-
-// Grouping logic based on Meitheal's DDD (Phase 20 typed epics)
-const epics = timelineTasks.filter(t => String(t.task_type) === 'epic');
-
+// Count tasks with at least one date (renderable on GANTT)
+const datedTasks = tasks.filter(t => t.start_date || t.due_date);
+const taskCount = datedTasks.length;
+const totalTasks = tasks.length;
 ---
 
 <div id="tasks-view-timeline" class="tasks-view-container" style="display:none" aria-hidden="true">
   <!-- Signal bar -->
   <SignalBar>
-    <strong>{timelineTasks.length}</strong> tasks in timeline
+    {taskCount > 0 ? (
+      <span><strong>{taskCount}</strong> of {totalTasks} tasks on timeline</span>
+    ) : (
+      <span>Timeline view — add dates to tasks to see them here</span>
+    )}
   </SignalBar>
 
-  <div class="timeline-container">
-    <div class="timeline-grid" style={`grid-template-columns: 250px repeat(${days.length}, 1fr);`}>
+  <!-- SSR data blob for client-side GANTT initialization -->
+  <script type="application/json" id="timeline-data" set:html={JSON.stringify(tasks)} />
 
-      <!-- HEADER ROW -->
-      <div class="timeline-header-cell task-list-header">Task</div>
-      {days.map(d => {
-        const isToday = d.getTime() === today.getTime();
-        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-        return (
-          <div class={`timeline-header-cell day-header ${isToday ? 'is-today' : ''} ${isWeekend ? 'is-weekend' : ''}`}>
-             <div class="day-name">{d.toLocaleDateString(locale, { weekday: 'short' }).substring(0, 1)}</div>
-             <div class="day-num">{d.getDate()}</div>
-          </div>
-        )
-      })}
+  <!-- Loading skeleton (shown until GANTT initializes) -->
+  <div id="timeline-skeleton" class="timeline-skeleton">
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:60%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:80%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:45%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:70%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:55%"></div></div>
+  </div>
 
-      <!-- BACKGROUND GRID LINES -->
-      <div class="timeline-bg-row" style={`grid-column: 1 / span ${days.length + 1}`}></div>
-      {days.map((d, index) => {
-        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-        const isToday = d.getTime() === today.getTime();
-        return (
-          <div
-            class={`timeline-bg-line ${isWeekend ? 'bg-weekend' : ''} ${isToday ? 'bg-today' : ''}`}
-            style={`grid-column: ${index + 2}; grid-row: 2 / 1000;`}
-          />
-        )
-      })}
-
-      <!-- TASKS (Grouped by Epic mapping) -->
-      {(() => {
-        let currentRow = 2; // +2 offset for the header row
-
-        // Helper to render a task row
-        const renderTaskRow = (task: typeof timelineTasks[0], indent = 0) => {
-          const isDone = String(task.status) === STATUS.COMPLETE;
-          const r = currentRow++;
-          return (
-            <>
-              <!-- Task Label -->
-              <div class={`timeline-row-label ${isDone ? 'is-done' : ''}`} style={`grid-row: ${r}; grid-column: 1; padding-left: ${12 + indent * 16}px;`}>
-                 <span class="type-icon">
-                   {String(task.task_type) === 'epic' ? '🎯' : String(task.task_type) === 'story' ? '📖' : '✅'}
-                 </span>
-                 <span class="task-title-text" style={String(task.task_type) === 'epic' ? 'font-weight: 600;' : ''}>{String(task.title)}</span>
-                 {Number(task.progress ?? 0) > 0 && <span class="task-progress">{task.progress}%</span>}
-              </div>
-
-              <!-- Task Bar -->
-              {task.colStart < task.colEnd && (
-                  <div
-                    class={`timeline-bar ${isDone ? 'is-done' : ''} type-${String(task.task_type)}`}
-                    style={`grid-row: ${r}; grid-column: ${task.colStart} / ${task.colEnd}; background-color: ${task.color || 'var(--accent)'};`}
-                    title={`${task.title} (${task.start_date || '?'} to ${task.due_date || '?'})`}
-                    data-id={String(task.id)}
-                  >
-                     <span class="timeline-bar-label">{String(task.title)}</span>
-                  </div>
-              )}
-            </>
-          );
-        };
-
-        const rows = [];
-
-        // 1. Render Epics and their children
-        epics.forEach(epic => {
-          rows.push(renderTaskRow(epic, 0));
-
-          // Find children of this epic
-          const children = timelineTasks.filter(t => t.parent_id === epic.id && t.id !== epic.id);
-          children.forEach(child => {
-            rows.push(renderTaskRow(child, 1));
-            // Grandchildren (tasks under stories under epics)
-            const grandchildren = timelineTasks.filter(t => t.parent_id === child.id && t.id !== child.id);
-            grandchildren.forEach(gc => {
-              rows.push(renderTaskRow(gc, 2));
-            });
-          });
-        });
-
-        // 2. Render orphaned stories/tasks (no parent, or parent not in this timeframe)
-        const renderedIds = new Set(epics.map(e => e.id));
-        timelineTasks.forEach(t => {
-          if (t.parent_id && epics.find(e => e.id === t.parent_id)) renderedIds.add(t.id); // Child of epic
-          if (t.parent_id) {
-            const parent = timelineTasks.find(pt => pt.id === t.parent_id);
-            if (parent && parent.parent_id && epics.find(e => e.id === parent.parent_id)) {
-               renderedIds.add(t.id); // Grandchild
-            }
-          }
-        });
-
-        const orphaned = timelineTasks.filter(t => !renderedIds.has(t.id));
-        if (epics.length > 0 && orphaned.length > 0) {
-           // Add a separator for Unassigned
-           const r = currentRow++;
-           rows.push(
-             <div class="timeline-row-label unassigned-header" style={`grid-row: ${r}; grid-column: 1; background: var(--bg-secondary); font-weight: 600; color: var(--text-muted);`}>
-               Other Tasks
-             </div>
-           );
-        }
-
-        orphaned.forEach(task => {
-          rows.push(renderTaskRow(task, 0));
-        });
-
-        return rows;
-      })()}
-
-      {timelineTasks.length === 0 && (
-         <div class="timeline-empty" style={`grid-row: 2; grid-column: 1 / span ${days.length + 1};`}>
-            No tasks scheduled in this timeframe. Set Start Dates and Due Dates.
-         </div>
-      )}
-
+  <!-- Empty state (shown when no tasks have dates) -->
+  <div id="timeline-empty" class="timeline-empty-state" style="display:none">
+    <div class="empty-icon">📊</div>
+    <div class="empty-title">No tasks on the timeline yet</div>
+    <div class="empty-desc">
+      Add <strong>start dates</strong> and <strong>due dates</strong> to your tasks
+      to see them here as interactive GANTT bars. You can drag to reschedule and
+      resize to adjust duration.
     </div>
   </div>
+
+  <!-- GANTT chart container (Frappe Gantt renders SVG here) -->
+  <div id="gantt-chart" class="gantt-chart-wrapper" style="display:none"></div>
+
+  <!-- Error state -->
+  {fetchError && (
+    <div class="timeline-empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load tasks</div>
+      <div class="empty-desc">
+        The database may not be available. Try reloading the page.
+      </div>
+    </div>
+  )}
 </div>
 
-<style>
-  /* Signal bar CSS now in SignalBar.astro */
+<style is:global>
+  @import "../../styles/timeline-gantt.css";
+</style>
 
-  .timeline-container {
+<style>
+  .gantt-chart-wrapper {
     overflow-x: auto;
     overflow-y: auto;
+    max-height: calc(100vh - 200px);
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
-    max-height: calc(100vh - 200px);
-  }
-
-  .timeline-grid {
-    display: grid;
-    min-width: 1200px; /* Ensure minimum width to prevent super squished days */
-    border-bottom: 1px solid var(--border);
-  }
-
-  .timeline-header-cell {
-    position: sticky;
-    top: 0;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    padding: 8px 4px;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    color: var(--text-secondary);
-  }
-
-  .task-list-header {
-    left: 0;
-    z-index: 20; /* Keep above columns when scrolling right */
-    align-items: flex-start;
-    padding-left: 16px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .day-header.is-today {
-    color: var(--accent);
-    background: rgba(99, 102, 241, 0.1);
-  }
-
-  .day-header.is-weekend {
-    background: var(--bg-primary);
-    opacity: 0.7;
-  }
-
-  .day-num {
-    font-weight: 600;
-    font-size: 13px;
-    margin-top: 2px;
-  }
-
-  .timeline-bg-line {
-    border-right: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    z-index: 1;
-  }
-
-  .timeline-bg-line.bg-weekend {
-    background-color: rgba(0,0,0,0.1);
-  }
-
-  .timeline-bg-line.bg-today {
-    border-right: 1px solid var(--accent);
-    background-color: rgba(99, 102, 241, 0.05);
-  }
-
-  .timeline-row-label {
-    position: sticky;
-    left: 0;
-    background: var(--bg-card);
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
-    border-right: 1px solid var(--border);
-    padding: 0 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    z-index: 15;
-    font-size: 13px;
-    min-height: 48px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .timeline-row-label.is-done {
-    opacity: 0.5;
-  }
-
-  .task-title-text {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .task-progress {
-    font-size: 10px;
-    color: var(--text-muted);
-    background: var(--bg-hover);
-    padding: 2px 6px;
-    border-radius: 10px;
-  }
-
-  .timeline-bar {
-    position: relative;
-    margin: 8px 0; /* Padding top/bottom within the row */
-    border-radius: 6px;
-    z-index: 5;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-    color: white;
-    font-size: 11px;
-    font-weight: 500;
-    overflow: hidden;
-    white-space: nowrap;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-    cursor: pointer;
-    transition: transform 0.15s, filter 0.15s;
-    height: 32px;
-  }
-
-  .timeline-bar:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.1);
-  }
-
-  .timeline-bar.is-done {
-    opacity: 0.6;
-    background-image: repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 10px,
-      rgba(0,0,0,0.1) 10px,
-      rgba(0,0,0,0.1) 20px
-    );
-  }
-
-  .timeline-bar-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .timeline-empty {
-    padding: 32px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 14px;
-    font-style: italic;
   }
 </style>
 
 <script>
   import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { initTimelineController } from "../../lib/timeline-controller"
 
   pageLifecycle.onPageLoad((signal) => {
-    // Handlers to open task details on click
-    document.querySelectorAll<HTMLElement>(".timeline-bar").forEach(bar => {
-      bar.addEventListener("click", () => {
-        const id = bar.dataset.id;
-        if (id && typeof window.openTaskDetail === "function") {
-           window.openTaskDetail(id);
-        } else if (id) {
-           window.location.href = (window.__ingress_path || "") + `/tasks#edit-${id}`;
-        }
-      }, { signal });
-    });
+    // Lazy init: only initialize GANTT when timeline view is first shown
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.view === "timeline" && detail?.firstInit) {
+        initTimelineController(signal)
+      }
+    }
+
+    window.addEventListener("meitheal:view-changed", handler, { signal })
+
+    // If timeline is already visible (direct hash navigation), init immediately
+    const hash = window.location.hash.replace("#", "")
+    if (hash === "timeline") {
+      initTimelineController(signal)
+    }
   })
 </script>

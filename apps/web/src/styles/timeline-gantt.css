@@ -1,0 +1,332 @@
+/**
+ * Frappe Gantt CSS Overrides — HA Theme Bridge Integration
+ * @domain Task Visualization
+ *
+ * Maps Frappe Gantt CSS customisation to Meitheal's design system
+ * and HA theme bridge variables for dark/light mode support.
+ */
+
+/* ── Container ──────────────────────────────────────────────────────────── */
+
+.gantt-container {
+  background: var(--bg-card, #fff);
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border, #e5e7eb);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
+  overflow: hidden;
+}
+
+.gantt-container .gantt {
+  background: var(--bg-card, #fff);
+}
+
+/* ── Grid Lines ─────────────────────────────────────────────────────────── */
+
+.gantt .grid-background {
+  fill: var(--bg-card, #fff);
+}
+
+.gantt .grid-row {
+  fill: var(--bg-card, #fff);
+}
+
+.gantt .grid-row:nth-child(even) {
+  fill: var(--bg-secondary, #f9fafb);
+}
+
+.gantt .row-line {
+  stroke: var(--border, #e5e7eb);
+  stroke-width: 0.5;
+}
+
+.gantt .tick {
+  stroke: var(--border, #e5e7eb);
+  stroke-width: 0.5;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.gantt .upper-text,
+.gantt .lower-text {
+  fill: var(--text-primary, #1f2937);
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.gantt .lower-text {
+  font-size: 11px;
+  fill: var(--text-muted, #6b7280);
+  font-weight: 400;
+}
+
+/* ── Today Marker ───────────────────────────────────────────────────────── */
+
+.gantt .today-highlight {
+  fill: var(--accent-muted, rgba(99, 102, 241, 0.08));
+}
+
+.gantt .today-date {
+  fill: var(--accent, #6366f1);
+  font-weight: 600;
+}
+
+/* ── Weekend Dimming ────────────────────────────────────────────────────── */
+
+.gantt .weekend-highlight {
+  fill: var(--bg-secondary, #f3f4f6);
+  opacity: 0.5;
+}
+
+/* ── Task Bars ──────────────────────────────────────────────────────────── */
+
+.gantt .bar {
+  rx: 4;
+  ry: 4;
+  transition: opacity 0.15s ease;
+}
+
+.gantt .bar-progress {
+  rx: 4;
+  ry: 4;
+  opacity: 0.85;
+}
+
+.gantt .bar-wrapper:hover .bar {
+  opacity: 0.88;
+  filter: brightness(1.08);
+}
+
+.gantt .bar-label {
+  fill: #fff;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* ── Type-specific Bars ─────────────────────────────────────────────────── */
+
+.gantt .bar-wrapper.type-epic .bar {
+  rx: 6;
+  ry: 6;
+  stroke: rgba(0,0,0,0.15);
+  stroke-width: 1;
+}
+
+.gantt .bar-wrapper.type-epic .bar-label {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.gantt .bar-wrapper.type-story .bar {
+  opacity: 0.9;
+}
+
+/* ── Completed Tasks ────────────────────────────────────────────────────── */
+
+.gantt .bar-wrapper.is-complete .bar {
+  opacity: 0.4;
+}
+
+.gantt .bar-wrapper.is-complete .bar-label {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.gantt .bar-wrapper.is-complete .bar-progress {
+  opacity: 0.3;
+}
+
+/* ── Overdue Indicator ──────────────────────────────────────────────────── */
+
+.gantt .bar-wrapper.is-overdue .bar {
+  stroke: #EF4444;
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+/* ── Dependency Arrows ──────────────────────────────────────────────────── */
+
+.gantt .arrow {
+  fill: none;
+  stroke: var(--text-muted, #9ca3af);
+  stroke-width: 1.5;
+}
+
+.gantt .arrow:hover {
+  stroke: var(--accent, #6366f1);
+  stroke-width: 2;
+}
+
+/* ── Popup ───────────────────────────────────────────────────────────────── */
+
+.gantt-container .popup-wrapper {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 10px 25px rgba(0,0,0,0.15));
+  padding: 12px 16px;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.gantt-container .popup-wrapper .title {
+  color: var(--text-primary, #1f2937);
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.gantt-container .popup-wrapper .subtitle {
+  color: var(--text-muted, #6b7280);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.gantt-container .popup-wrapper .pointer {
+  border-top-color: var(--bg-card, #fff);
+}
+
+/* ── View Mode Selector ─────────────────────────────────────────────────── */
+
+.gantt-container .view-mode-select {
+  background: var(--bg-secondary, #f3f4f6);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-primary, #1f2937);
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* ── Today Button ───────────────────────────────────────────────────────── */
+
+.gantt-container .today-button {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.gantt-container .today-button:hover {
+  background: var(--accent-hover, #4f46e5);
+}
+
+/* ── Toast Notifications ────────────────────────────────────────────────── */
+
+.gantt-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 18px;
+  border-radius: var(--radius-md, 8px);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  z-index: 10000;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+
+.gantt-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gantt-toast--success {
+  background: #059669;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.gantt-toast--error {
+  background: #EF4444;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+/* ── Reduced Motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .gantt .bar,
+  .gantt .bar-progress,
+  .gantt-toast {
+    transition: none;
+  }
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.timeline-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--text-muted, #6b7280);
+  gap: 12px;
+}
+
+.timeline-empty-state .empty-icon {
+  font-size: 3rem;
+  opacity: 0.5;
+}
+
+.timeline-empty-state .empty-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.timeline-empty-state .empty-desc {
+  font-size: 0.9rem;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+/* ── Loading Skeleton ───────────────────────────────────────────────────── */
+
+.timeline-skeleton {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.timeline-skeleton .skel-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.timeline-skeleton .skel-label {
+  width: 200px;
+  height: 20px;
+  background: var(--bg-secondary, #f3f4f6);
+  border-radius: 4px;
+  animation: skel-pulse 1.5s ease-in-out infinite;
+}
+
+.timeline-skeleton .skel-bar {
+  flex: 1;
+  height: 28px;
+  background: var(--bg-secondary, #f3f4f6);
+  border-radius: 4px;
+  animation: skel-pulse 1.5s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
+@keyframes skel-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+}

@@ -367,10 +367,10 @@ export class TaskRepository {
 
   // ── Timeline (timeline.astro) ─────────────────────────────────────────
 
-  /** All tasks with date fields for Timeline chart rendering */
+  /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, status, priority, due_date, start_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id
+      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
     return result.rows as unknown as TaskRow[];
