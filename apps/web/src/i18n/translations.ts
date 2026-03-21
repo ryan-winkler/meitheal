@@ -51,6 +51,12 @@ export function getClientLocale(): Locale {
  * Get a nested value from an object using dot notation.
  */
 function getNestedValue(obj: unknown, key: string): string {
+    // Try flat key first (e.g. "parent_page.tasks_hub" as a literal key)
+    if (obj && typeof obj === "object" && key in (obj as Record<string, unknown>)) {
+        const direct = (obj as Record<string, unknown>)[key]
+        if (typeof direct === "string") return direct
+    }
+    // Fall back to nested traversal (e.g. "pillars.new_pillar" → obj.pillars.new_pillar)
     const result = key.split(".").reduce<unknown>(
         (o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined),
         obj,
