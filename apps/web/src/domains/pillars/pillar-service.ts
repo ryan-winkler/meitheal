@@ -54,7 +54,6 @@ export async function ensurePillarSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_position_idx ON pillars(position)")
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_active_idx ON pillars(is_active)")
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_user_idx ON pillars(user_id)")
-  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS pillars_slug_idx ON pillars(slug)")
 
   // Migration: add slug column for existing databases (Phase 19)
   try {
@@ -70,6 +69,9 @@ export async function ensurePillarSchema(): Promise<void> {
     const slug = await generateUniqueSlug(client, String(r.name), String(r.id))
     await client.execute({ sql: "UPDATE pillars SET slug = ? WHERE id = ?", args: [slug, String(r.id)] })
   }
+
+  // Create unique index AFTER migration + backfill so it works on pre-Phase-19 databases
+  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS pillars_slug_idx ON pillars(slug)")
 
   schemaEnsured = true
 }

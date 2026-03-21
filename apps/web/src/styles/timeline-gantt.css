@@ -57,22 +57,127 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  background: none;
+  border: none;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  padding: 4px 8px;
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s, color 0.15s;
-  list-style: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.timeline-ctrl-btn:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+  color: var(--text-primary);
 }
 
-.timeline-ctrl-btn:hover {
-  border-color: var(--accent, #7c3aed);
+/* ── Column Toggle Dropdown ───────────────────────────────── */
+
+.timeline-col-toggle {
+  position: relative;
+}
+.timeline-col-toggle-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
+  padding: 8px 0;
+  min-width: 160px;
+  z-index: 50;
+}
+.timeline-col-toggle-title {
+  padding: 4px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.timeline-col-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
   color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.timeline-col-toggle-item:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+}
+.timeline-col-toggle-item input[type="checkbox"] {
+  accent-color: var(--accent, #7c3aed);
+}
+
+/* ── Zoom Dropdown (ClickUp-style with "Time period" title) ─ */
+
+.timeline-zoom-dropdown {
+  position: relative;
+}
+.timeline-zoom-dropdown summary {
+  list-style: none;
+}
+.timeline-zoom-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+.timeline-zoom-trigger {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.timeline-zoom-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
+  padding: 6px 0;
+  min-width: 150px;
+  z-index: 50;
+}
+.timeline-zoom-panel-title {
+  padding: 4px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.timeline-zoom-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 0.1s;
+}
+.timeline-zoom-option:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+}
+.timeline-zoom-option--active {
+  font-weight: 600;
+  color: var(--accent, #7c3aed);
+}
+.timeline-zoom-option svg {
+  opacity: 0;
+}
+.timeline-zoom-option--active svg {
+  opacity: 1;
+  color: var(--accent, #7c3aed);
 }
 
 .timeline-ctrl-btn::-webkit-details-marker {
@@ -385,4 +490,35 @@
 .timeline-export-btn:focus-visible {
   outline: 2px solid var(--accent, #7c3aed);
   outline-offset: 2px;
+}
+
+/* ── §5: Unscheduled / Click-to-Schedule ───────────────────────────────── */
+
+.gantt-sidebar-row--unscheduled {
+  opacity: 0.7;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.gantt-sidebar-row--unscheduled:hover {
+  opacity: 1 !important;
+}
+
+.gantt-unscheduled-divider {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* SVG hint text for click-to-schedule */
+.gantt-schedule-hint {
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gantt-schedule-hint {
+    transition: none;
+  }
+  .gantt-sidebar-row--unscheduled {
+    transition: none;
+  }
 }

@@ -67,8 +67,16 @@ const totalTasks = tasks.length;
     )}
   </SignalBar>
 
-  <!-- B7: ClickUp-style toolbar row above the sidebar/chart area -->
+  <!-- ClickUp-style toolbar row above the sidebar/chart area -->
   <div class="timeline-controls-bar" id="timeline-controls-bar">
+    <!-- Sidebar show/hide toggle -->
+    <button id="timeline-sidebar-toggle" class="timeline-ctrl-btn" title="Show/hide sidebar" aria-label="Toggle sidebar">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.2"/>
+        <rect x="8" y="1" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+      </svg>
+    </button>
+
     <button id="timeline-scroll-today" class="timeline-ctrl-btn" title="Scroll to today" aria-label="Scroll to today">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <rect x="1" y="2" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/>
@@ -78,11 +86,24 @@ const totalTasks = tasks.length;
       Today
     </button>
 
-    <select id="timeline-zoom" class="timeline-zoom-select" aria-label="Zoom level">
-      <option value="Day">Day</option>
-      <option value="Week" selected>Week</option>
-      <option value="Month">Month</option>
-    </select>
+    <!-- Zoom dropdown with "Time period" title -->
+    <details class="timeline-zoom-dropdown" id="timeline-zoom-dropdown">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id="timeline-zoom-label">
+        Week
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+          <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </summary>
+      <div class="timeline-zoom-panel">
+        <div class="timeline-zoom-panel-title">Time period</div>
+        <button type="button" class="timeline-zoom-option" data-zoom="Day">Day</button>
+        <button type="button" class="timeline-zoom-option timeline-zoom-option--active" data-zoom="Week">
+          Week
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="timeline-zoom-option" data-zoom="Month">Month</button>
+      </div>
+    </details>
 
     <!-- Export as PNG -->
     <button id="timeline-export-btn" class="timeline-ctrl-btn" title="Export as PNG" aria-label="Export timeline as PNG">

@@ -1,3 +1,4 @@
+import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -86,10 +87,23 @@ const HEADER_HEIGHT = 56
 const BAR_RADIUS = 6
 const SIDEBAR_WIDTH = 320
 const ZOOM_KEY = "meitheal-timeline-zoom"
+const DUEDATE_VIS_KEY = "meitheal-gantt-show-duedate"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
 const HANDLE_WIDTH = 8
 const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
 const ZOOM_ORDER: ZoomLevel[] = ["Day", "Week", "Month"]
+
+let showDueDateCol = true
+try {
+  const stored = typeof window !== "undefined" ? localStorage.getItem(DUEDATE_VIS_KEY) : null
+  if (stored === "false") showDueDateCol = false
+} catch { /* ignore */ }
+
+let showSidebar = true
+try {
+  const sidebarStored = typeof window !== "undefined" ? localStorage.getItem("meitheal-gantt-show-sidebar") : null
+  if (sidebarStored === "false") showSidebar = false
+} catch { /* ignore */ }
 
 const PRIORITY_COLOURS: Record<number, string> = {
   1: "#EF4444", // P1 — urgent red
@@ -145,6 +159,20 @@ function addDays(d: Date, n: number): Date {
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+/** Snap a date backward to the nearest zoom-unit boundary */
+function alignToUnit(d: Date, zoom: ZoomLevel): Date {
+  const s = startOfDay(d)
+  if (zoom === "Week") {
+    // Align to Monday (getDay: 0=Sun)
+    const day = s.getDay()
+    const diff = day === 0 ? 6 : day - 1 // days since Monday
+    s.setDate(s.getDate() - diff)
+  } else if (zoom === "Month") {
+    s.setDate(1)
+  }
+  return s
 }
 
 function isWeekend(d: Date): boolean {
@@ -255,57 +283,71 @@ async function patchTask(
 
 // ── Data Mapping ───────────────────────────────────────────────────────────
 
-function mapTasks(tasks: TimelineTask[]): GanttBar[] {
+interface MapTasksResult {
+  dated: GanttBar[]
+  undated: TimelineTask[]
+}
+
+function mapTasks(tasks: TimelineTask[]): MapTasksResult {
   const today = startOfDay(new Date())
   const todayStr = toISODate(today)
 
-  return tasks
-    .filter((t) => t.start_date || t.due_date)
-    .map((t) => {
-      const startStr = t.start_date || t.due_date || todayStr
-      const endStr = t.end_date || t.due_date || startStr
-      const start = parseDate(startStr)
-      const end = parseDate(endStr)
-      const complete = isComplete(t.status)
-      const overdue = !complete && end < today
+  const dated: GanttBar[] = []
+  const undated: TimelineTask[] = []
 
-      // Parse dependencies
-      const deps: string[] = []
-      if (t.blocked_by) {
-        try {
-          const parsed = JSON.parse(t.blocked_by)
-          if (Array.isArray(parsed)) {
-            deps.push(...parsed.filter((d: unknown) => typeof d === "string" && d.length > 0))
-          }
-        } catch {
-          deps.push(
-            ...t.blocked_by.split(",").map((s) => s.trim()).filter((s) => s.length > 0),
-          )
+  for (const t of tasks) {
+    if (!t.start_date && !t.due_date) {
+      // Only include non-complete undated tasks
+      if (!isComplete(t.status)) undated.push(t)
+      continue
+    }
+
+    const startStr = t.start_date || t.due_date || todayStr
+    const endStr = t.end_date || t.due_date || startStr
+    const start = parseDate(startStr)
+    const end = parseDate(endStr)
+    const complete = isComplete(t.status)
+    const overdue = !complete && end < today
+
+    // Parse dependencies
+    const deps: string[] = []
+    if (t.blocked_by) {
+      try {
+        const parsed = JSON.parse(t.blocked_by)
+        if (Array.isArray(parsed)) {
+          deps.push(...parsed.filter((d: unknown) => typeof d === "string" && d.length > 0))
         }
+      } catch {
+        deps.push(
+          ...t.blocked_by.split(",").map((s) => s.trim()).filter((s) => s.length > 0),
+        )
       }
+    }
 
-      const ticketPrefix = t.ticket_number ? `MTH-${t.ticket_number} ` : ""
-      const name = `${ticketPrefix}${t.title}`
-      const isMilestone = startStr === endStr
+    const ticketPrefix = t.ticket_number ? `MTH-${t.ticket_number} ` : ""
+    const name = `${ticketPrefix}${t.title}`
+    const isMilestone = startStr === endStr
 
-      return {
-        id: t.id,
-        name,
-        start,
-        end,
-        progress: Number(t.progress ?? 0),
-        colour: overdue
-          ? "#EF4444"
-          : (t.color || PRIORITY_COLOURS[t.priority] || "#6366F1"),
-        taskType: String(t.task_type || "task"),
-        isComplete: complete,
-        isOverdue: overdue,
-        isMilestone,
-        priority: t.priority,
-        original: t,
-        deps,
-      }
+    dated.push({
+      id: t.id,
+      name,
+      start,
+      end,
+      progress: Number(t.progress ?? 0),
+      colour: overdue
+        ? "#EF4444"
+        : (t.color || PRIORITY_COLOURS[t.priority] || "#6366F1"),
+      taskType: String(t.task_type || "task"),
+      isComplete: complete,
+      isOverdue: overdue,
+      isMilestone,
+      priority: t.priority,
+      original: t,
+      deps,
     })
+  }
+
+  return { dated, undated }
 }
 
 // ── T4: Hover Tooltip ──────────────────────────────────────────────────────
@@ -648,6 +690,7 @@ function renderGantt(
   bars: GanttBar[],
   zoom: ZoomLevel,
   _parentSignal: AbortSignal,
+  undatedTasks: TimelineTask[] = [],
 ) {
   // M4: Abort previous render's listeners before creating new ones
   renderAbort?.abort()
@@ -667,12 +710,13 @@ function renderGantt(
 
   const padBefore = config.unitDays * 2
   const padAfter = config.unitDays * 4
-  const rangeStart = startOfDay(addDays(minDate, -padBefore))
+  const rangeStart = alignToUnit(addDays(minDate, -padBefore), zoom)
   const rangeEnd = startOfDay(addDays(maxDate, padAfter))
   const totalDays = daysBetween(rangeStart, rangeEnd)
   const pxPerDay = config.columnWidth / config.unitDays
   const totalWidth = totalDays * pxPerDay
-  const totalHeight = HEADER_HEIGHT + bars.length * ROW_HEIGHT + 20
+  const totalRowCount = bars.length + (undatedTasks.length > 0 ? 1 + undatedTasks.length : 0) // +1 for divider
+  const totalHeight = HEADER_HEIGHT + totalRowCount * ROW_HEIGHT + 20
 
   // Clear previous render
   outerContainer.replaceChildren()
@@ -683,21 +727,17 @@ function renderGantt(
   layout.className = "gantt-layout"
   layout.style.cssText = `display:flex;height:100%;position:relative;`
 
-  // Due Date column visibility state
-  const DUEDATE_VIS_KEY = "meitheal-gantt-show-duedate"
-  let showDueDateCol = true
-  try {
-    const stored = localStorage.getItem(DUEDATE_VIS_KEY)
-    if (stored === "false") showDueDateCol = false
-  } catch { /* ignore */ }
+  // Read column visibility from module-level state
+  // (showDueDateCol, showSidebar are at module scope)
 
-  // Sidebar (fixed left)
+  // Sidebar (fixed left) — hidden via display:none when toggle is off
   const sidebar = document.createElement("div")
   sidebar.className = "gantt-sidebar"
   sidebar.style.cssText = `
     flex:0 0 auto;width:${showDueDateCol ? 320 : 200}px;
     background:var(--bg-card);border-right:1px solid var(--border);
     overflow:hidden;z-index:10;position:relative;
+    ${showSidebar ? "" : "display:none;"}
   `
 
   // Sidebar header — multi-column (Name + Due Date + add-column)
@@ -715,32 +755,76 @@ function renderGantt(
   nameCol.textContent = "Task"
   sidebarHeader.appendChild(nameCol)
 
-  const dueDateCol = document.createElement("span")
-  dueDateCol.style.cssText = `flex:0 0 80px;text-align:right;padding-right:4px;cursor:pointer;display:${showDueDateCol ? "" : "none"};`
-  dueDateCol.textContent = "Due Date"
-  dueDateCol.title = "Click to toggle column"
-  dueDateCol.addEventListener("click", (e) => {
-    e.stopPropagation()
-    showDueDateCol = !showDueDateCol
-    try { localStorage.setItem(DUEDATE_VIS_KEY, String(showDueDateCol)) } catch { /* ignore */ }
-    renderGantt(outerContainer, bars, zoom, _parentSignal)
-  })
-  sidebarHeader.appendChild(dueDateCol)
+  // Due Date column header with hide-column dropdown
+  if (showDueDateCol) {
+    const dueDateWrap = document.createElement("span")
+    dueDateWrap.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;display:flex;align-items:center;justify-content:flex-end;gap:2px;position:relative;"
 
-  // Show/hide toggle button when column is hidden
-  if (!showDueDateCol) {
-    const showBtn = document.createElement("button")
-    showBtn.textContent = "⊕"
-    showBtn.title = "Show Due Date column"
-    showBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
-    showBtn.addEventListener("click", (e) => {
+    const dueDateLabel = document.createElement("span")
+    dueDateLabel.textContent = "Due Date"
+    dueDateLabel.style.cssText = "font-size:11px;"
+    dueDateWrap.appendChild(dueDateLabel)
+
+    // Dropdown arrow for column actions
+    const colMenuBtn = document.createElement("button")
+    colMenuBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0 2px;font-size:8px;opacity:0;transition:opacity 0.15s;"
+    colMenuBtn.textContent = "▼"
+    colMenuBtn.title = "Column options"
+    dueDateWrap.appendChild(colMenuBtn)
+
+    // Show arrow on hover
+    dueDateWrap.addEventListener("mouseenter", () => { colMenuBtn.style.opacity = "1" })
+    dueDateWrap.addEventListener("mouseleave", () => { colMenuBtn.style.opacity = "0" })
+
+    colMenuBtn.addEventListener("click", (e) => {
       e.stopPropagation()
+      // Create tiny dropdown
+      const existing = document.querySelector(".gantt-col-menu")
+      if (existing) { existing.remove(); return }
+
+      const menu = document.createElement("div")
+      menu.className = "gantt-col-menu"
+      menu.style.cssText = `
+        position:absolute;top:100%;right:0;background:var(--bg-card);
+        border:1px solid var(--border);border-radius:6px;padding:4px 0;
+        box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;min-width:120px;
+      `
+      const hideItem = document.createElement("button")
+      hideItem.style.cssText = "display:block;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:var(--text-primary);cursor:pointer;font-size:12px;font-family:inherit;"
+      hideItem.textContent = "Hide column"
+      hideItem.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        showDueDateCol = false
+        try { localStorage.setItem(DUEDATE_VIS_KEY, "false") } catch { /* ignore */ }
+        menu.remove()
+        renderGantt(outerContainer, bars, zoom, _parentSignal)
+      })
+      menu.appendChild(hideItem)
+      dueDateWrap.appendChild(menu)
+
+      // Close on outside click
+      const closeMenu = (ev: MouseEvent) => {
+        if (!menu.contains(ev.target as Node)) { menu.remove(); document.removeEventListener("click", closeMenu) }
+      }
+      setTimeout(() => document.addEventListener("click", closeMenu), 0)
+    })
+    sidebarHeader.appendChild(dueDateWrap)
+  }
+
+  // "+" button to add/show columns
+  const addColBtn = document.createElement("button")
+  addColBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
+  addColBtn.textContent = "+"
+  addColBtn.title = showDueDateCol ? "Add column" : "Show Due Date column"
+  addColBtn.addEventListener("click", (e) => {
+    e.stopPropagation()
+    if (!showDueDateCol) {
       showDueDateCol = true
       try { localStorage.setItem(DUEDATE_VIS_KEY, "true") } catch { /* ignore */ }
       renderGantt(outerContainer, bars, zoom, _parentSignal)
-    })
-    sidebarHeader.appendChild(showBtn)
-  }
+    }
+  })
+  sidebarHeader.appendChild(addColBtn)
   sidebar.appendChild(sidebarHeader)
 
   // Sidebar rows
@@ -828,32 +912,36 @@ function renderGantt(
     name.title = bar.name
     row.appendChild(name)
 
-    // Due date column (hidden when column toggled off)
+    // Due date column — InlineDatePicker for inline editing
     if (showDueDateCol) {
       const dueCell = document.createElement("span")
       dueCell.style.cssText = `
         flex:0 0 80px;text-align:right;padding-right:4px;
         font-size:11px;white-space:nowrap;
       `
+
       const dueStr = bar.original.due_date
-      if (dueStr) {
-        const d = new Date(dueStr)
-        const mon = d.toLocaleString("en-US", { month: "short" })
-        const day = d.getDate()
-        dueCell.textContent = `${mon} ${day}`
-        dueCell.style.color = bar.isOverdue ? "var(--accent-danger, #ef4444)" : "var(--text-muted)"
-      } else {
-        dueCell.textContent = "Schedule"
-        dueCell.style.color = "var(--text-muted)"
-        dueCell.style.opacity = "0.5"
-        dueCell.style.fontStyle = "italic"
-        dueCell.style.cursor = "pointer"
-        dueCell.title = "Click to schedule this task"
-        dueCell.addEventListener("click", (e) => {
-          e.stopPropagation()
-          import("./task-detail-handoff.js").then((m) => m.openTaskDetailHandoff(bar.id)).catch(() => {})
-        })
-      }
+      const dueDate = dueStr ? parseDate(dueStr) : null
+
+      new InlineDatePicker(dueCell, {
+        value: dueDate,
+        onChange: async (date) => {
+          const iso = toISODate(date)
+          const ok = await patchTask(bar.id, { due_date: iso })
+          if (ok) {
+            bar.original.due_date = iso
+            renderGantt(outerContainer, bars, zoom, _parentSignal)
+          }
+        },
+        onClear: async () => {
+          const ok = await patchTask(bar.id, { due_date: null })
+          if (ok) {
+            bar.original.due_date = undefined!
+            renderGantt(outerContainer, bars, zoom, _parentSignal)
+          }
+        },
+        signal,
+      })
       row.appendChild(dueCell)
     }
 
@@ -892,6 +980,104 @@ function renderGantt(
     })
 
     sidebarRows.appendChild(row)
+  }
+
+  // ── §5: Unscheduled tasks section ──────────────────────────────────
+  if (undatedTasks.length > 0) {
+    // Divider
+    const divider = document.createElement("div")
+    divider.className = "gantt-unscheduled-divider"
+    divider.style.cssText = `
+      height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px;
+      border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
+      font-size:10px;font-weight:600;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:0.06em;
+      background:var(--bg-secondary, rgba(255,255,255,0.03));
+    `
+    divider.textContent = `Unscheduled (${undatedTasks.length})`
+    sidebarRows.appendChild(divider)
+
+    for (let ui = 0; ui < undatedTasks.length; ui++) {
+      const ut = undatedTasks[ui]!
+      const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
+      const utName = `${ticketPrefix}${ut.title}`
+      const utRow = document.createElement("div")
+      utRow.className = "gantt-sidebar-row gantt-sidebar-row--unscheduled"
+      utRow.setAttribute("role", "button")
+      utRow.setAttribute("tabindex", "0")
+      utRow.setAttribute("aria-label", `Unscheduled: ${utName}`)
+      utRow.dataset.taskId = ut.id
+      utRow.style.cssText = `
+        height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px;
+        border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
+        font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        background:${ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
+        transition:background 0.15s;opacity:0.7;
+      `
+
+      // Priority dot
+      const dot = document.createElement("span")
+      dot.style.cssText = `
+        width:8px;height:8px;border-radius:50%;
+        background:${PRIORITY_COLOURS[ut.priority] || "#6366F1"};margin-right:8px;flex-shrink:0;
+      `
+      utRow.appendChild(dot)
+
+      // Task name
+      const name = document.createElement("span")
+      name.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);"
+      name.textContent = utName
+      name.title = utName
+      utRow.appendChild(name)
+
+      // Due date column — InlineDatePicker for setting date on unscheduled task
+      if (showDueDateCol) {
+        const dueCell = document.createElement("span")
+        dueCell.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;font-size:11px;white-space:nowrap;"
+
+        new InlineDatePicker(dueCell, {
+          value: null,
+          onChange: async (date) => {
+            const iso = toISODate(date)
+            const ok = await patchTask(ut.id, { due_date: iso, start_date: iso })
+            if (ok) {
+              ut.due_date = iso
+              ut.start_date = iso
+              showToast("Date set — task scheduled")
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+            }
+          },
+          onClear: () => {},
+          signal,
+        })
+        utRow.appendChild(dueCell)
+      }
+
+      // Click → open task detail
+      utRow.addEventListener("click", (e) => {
+        e.stopPropagation()
+        window.dispatchEvent(new CustomEvent("meitheal:open-task", { detail: { taskId: ut.id } }))
+      })
+      utRow.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); utRow.click() }
+      })
+
+      utRow.addEventListener("mouseenter", () => {
+        utRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+        utRow.style.opacity = "1"
+        // Highlight corresponding chart row
+        const chartRow = svg.querySelector<SVGElement>(`[data-row-id="unscheduled-${ut.id}"]`)
+        if (chartRow) chartRow.setAttribute("opacity", "0.06")
+      })
+      utRow.addEventListener("mouseleave", () => {
+        utRow.style.background = ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
+        utRow.style.opacity = "0.7"
+        const chartRow = svg.querySelector<SVGElement>(`[data-row-id="unscheduled-${ut.id}"]`)
+        if (chartRow) chartRow.setAttribute("opacity", "0")
+      })
+
+      sidebarRows.appendChild(utRow)
+    }
   }
 
   sidebar.appendChild(sidebarRows)
@@ -1020,8 +1206,8 @@ function renderGantt(
 
   const today = startOfDay(new Date())
   const todayOffset = daysBetween(rangeStart, today)
-  // B3: Center the Today line within its day column (half-day offset)
-  const todayX = todayOffset * pxPerDay + pxPerDay / 2
+  // Today line at start-of-day boundary (rangeStart is unit-aligned)
+  const todayX = todayOffset * pxPerDay
   if (todayOffset >= 0 && todayOffset <= totalDays) {
     const todayGroup = svgEl("g", { class: "gantt-today" })
 
@@ -1285,6 +1471,130 @@ function renderGantt(
   }
 
   svg.appendChild(barsGroup)
+
+  // ── §5: Click-to-Schedule rows for undated tasks ─────────────────────
+  if (undatedTasks.length > 0) {
+    const undatedGroup = svgEl("g", { class: "gantt-undated-rows" })
+    const dividerRowY = HEADER_HEIGHT + bars.length * ROW_HEIGHT
+
+    // Divider row background (matches sidebar divider)
+    undatedGroup.appendChild(
+      svgEl("rect", {
+        x: 0, y: dividerRowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "var(--bg-secondary, rgba(255,255,255,0.03))",
+      }),
+    )
+    undatedGroup.appendChild(
+      svgEl("line", {
+        x1: 0, y1: dividerRowY + ROW_HEIGHT, x2: totalWidth, y2: dividerRowY + ROW_HEIGHT,
+        stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+      }),
+    )
+
+    for (let ui = 0; ui < undatedTasks.length; ui++) {
+      const ut = undatedTasks[ui]!
+      const rowY = dividerRowY + (1 + ui) * ROW_HEIGHT // +1 for divider row
+
+      // Alternating row background
+      undatedGroup.appendChild(
+        svgEl("rect", {
+          x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
+          fill: ui % 2 === 0 ? "var(--bg-card)" : "var(--bg-secondary, rgba(255,255,255,0.02))",
+        }),
+      )
+
+      // Highlight rect (for cross-highlighting)
+      const hlRect = svgEl("rect", {
+        x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "var(--accent, #7c3aed)", opacity: 0,
+        "data-row-id": `unscheduled-${ut.id}`,
+        class: "gantt-row-highlight",
+      })
+      hlRect.style.pointerEvents = "none"
+      undatedGroup.appendChild(hlRect)
+
+      // Row divider line
+      undatedGroup.appendChild(
+        svgEl("line", {
+          x1: 0, y1: rowY + ROW_HEIGHT, x2: totalWidth, y2: rowY + ROW_HEIGHT,
+          stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+        }),
+      )
+
+      // "Click to schedule" hint text (visible on hover)
+      const hintText = svgEl("text", {
+        x: totalWidth / 2, y: rowY + ROW_HEIGHT / 2 + 1,
+        "text-anchor": "middle", fill: "var(--text-muted)",
+        "font-size": 11, "font-style": "italic", "font-family": "inherit",
+        "dominant-baseline": "central", opacity: 0,
+        class: "gantt-schedule-hint",
+      })
+      hintText.textContent = "Click to schedule"
+      undatedGroup.appendChild(hintText)
+
+      // Dotted placeholder line
+      const placeholderLine = svgEl("line", {
+        x1: 40, y1: rowY + ROW_HEIGHT / 2,
+        x2: totalWidth - 40, y2: rowY + ROW_HEIGHT / 2,
+        stroke: "var(--text-muted)", "stroke-width": 1,
+        "stroke-dasharray": "4 6", opacity: 0,
+        class: "gantt-schedule-hint",
+      })
+      undatedGroup.appendChild(placeholderLine)
+
+      // Interactive overlay rect for click-to-schedule
+      const clickRect = svgEl("rect", {
+        x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "transparent", cursor: "crosshair",
+      })
+
+      clickRect.addEventListener("mouseenter", () => {
+        hintText.setAttribute("opacity", "0.6")
+        placeholderLine.setAttribute("opacity", "0.15")
+        // Highlight sidebar row
+        const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${ut.id}"]`)
+        if (sidebarRow) {
+          sidebarRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+          sidebarRow.style.opacity = "1"
+        }
+      })
+      clickRect.addEventListener("mouseleave", () => {
+        hintText.setAttribute("opacity", "0")
+        placeholderLine.setAttribute("opacity", "0")
+        const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${ut.id}"]`)
+        if (sidebarRow) {
+          sidebarRow.style.background = ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
+          sidebarRow.style.opacity = "0.7"
+        }
+      })
+
+      clickRect.addEventListener("click", async (e) => {
+        e.stopPropagation()
+        // Calculate date from click position
+        const svgRect = svg.getBoundingClientRect()
+        const clickX = e.clientX - svgRect.left + scrollWrapper.scrollLeft
+        const dayOffset = Math.floor(clickX / pxPerDay)
+        const clickedDate = addDays(rangeStart, dayOffset)
+        const iso = toISODate(clickedDate)
+
+        const ok = await patchTask(ut.id, { start_date: iso, due_date: iso })
+        if (ok) {
+          ut.start_date = iso
+          ut.due_date = iso
+          showToast(`Scheduled for ${fmtDate(clickedDate)}`)
+          // Re-render — task will move from undated to dated
+          renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+        } else {
+          showToast("Failed to schedule", "error")
+        }
+      })
+
+      undatedGroup.appendChild(clickRect)
+    }
+
+    svg.appendChild(undatedGroup)
+  }
+
   scrollWrapper.appendChild(svg)
   layout.appendChild(scrollWrapper)
   outerContainer.appendChild(layout)
@@ -1423,9 +1733,7 @@ function renderGantt(
       case "l":
         e.preventDefault()
         scrollWrapper.scrollBy({ left: 120, behavior: REDUCED_MOTION ? "instant" : "smooth" })
-        break
-
-      // M6: Zoom keyboard shortcuts
+         break
       case "+":
       case "=":
         e.preventDefault()
@@ -1433,8 +1741,6 @@ function renderGantt(
           const idx = ZOOM_ORDER.indexOf(zoom)
           if (idx > 0) {
             const newZoom = ZOOM_ORDER[idx - 1]!
-            const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
-            if (zoomSelect) zoomSelect.value = newZoom
             window.dispatchEvent(new CustomEvent("meitheal:timeline-zoom", { detail: { zoom: newZoom } }))
           }
         }
@@ -1446,8 +1752,6 @@ function renderGantt(
           const idx = ZOOM_ORDER.indexOf(zoom)
           if (idx < ZOOM_ORDER.length - 1) {
             const newZoom = ZOOM_ORDER[idx + 1]!
-            const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
-            if (zoomSelect) zoomSelect.value = newZoom
             window.dispatchEvent(new CustomEvent("meitheal:timeline-zoom", { detail: { zoom: newZoom } }))
           }
         }
@@ -1693,16 +1997,24 @@ export function initTimelineController(signal: AbortSignal) {
     return
   }
 
-  const allBars = mapTasks(tasks)
+  const { dated: allBars, undated: allUndated } = mapTasks(tasks)
   let currentFilter: TimelineFilterState = { search: "", status: "", priority: "", types: [], area: "" }
 
   function getVisibleBars(): GanttBar[] {
     return filterBars(allBars, currentFilter)
   }
 
+  /** Filter undated tasks by search term (if any) */
+  function getVisibleUndated(): TimelineTask[] {
+    if (!currentFilter.search) return allUndated
+    const q = currentFilter.search.toLowerCase()
+    return allUndated.filter(t => t.title.toLowerCase().includes(q))
+  }
+
   function doRender(zoom: ZoomLevel) {
     const bars = getVisibleBars()
-    if (bars.length === 0) {
+    const undated = getVisibleUndated()
+    if (bars.length === 0 && undated.length === 0) {
       if (skeleton) skeleton.style.display = "none"
       if (emptyState) {
         emptyState.style.display = "flex"
@@ -1729,7 +2041,7 @@ export function initTimelineController(signal: AbortSignal) {
 
     if (emptyState) emptyState.style.display = "none"
     container!.style.display = "block"
-    renderGantt(container!, bars, zoom, signal)
+    renderGantt(container!, bars, zoom, signal, undated)
 
     // Update signal bar count — P8: aria-live for screen readers
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
@@ -1742,7 +2054,7 @@ export function initTimelineController(signal: AbortSignal) {
     }
   }
 
-  if (allBars.length === 0) {
+  if (allBars.length === 0 && allUndated.length === 0) {
     if (skeleton) skeleton.style.display = "none"
     if (emptyState) emptyState.style.display = "flex"
     container.style.display = "none"
@@ -1760,13 +2072,48 @@ export function initTimelineController(signal: AbortSignal) {
   // Initial render
   doRender(currentZoom)
 
-  // Wire zoom select
-  const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
-  if (zoomSelect) {
-    zoomSelect.value = currentZoom
-    zoomSelect.addEventListener("change", () => {
-      currentZoom = zoomSelect.value as ZoomLevel
-      localStorage.setItem(ZOOM_KEY, currentZoom)
+  // Wire zoom dropdown (custom <details> dropdown instead of <select>)
+  const zoomLabel = document.getElementById("timeline-zoom-label")
+  const zoomDropdown = document.getElementById("timeline-zoom-dropdown") as HTMLDetailsElement | null
+
+  /** Update the zoom dropdown label and active state */
+  function updateZoomLabel(z: ZoomLevel) {
+    if (zoomLabel) {
+      zoomLabel.innerHTML = `${z} <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
+    }
+    // Update active option styling
+    document.querySelectorAll(".timeline-zoom-option").forEach((btn) => {
+      const isActive = btn.getAttribute("data-zoom") === z
+      btn.classList.toggle("timeline-zoom-option--active", isActive)
+      const check = btn.querySelector("svg")
+      if (check) (check as SVGElement).style.opacity = isActive ? "1" : "0"
+    })
+  }
+
+  // Set initial label from saved zoom
+  updateZoomLabel(currentZoom)
+
+  // Listen for zoom option clicks
+  document.querySelectorAll(".timeline-zoom-option").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      const z = (btn as HTMLElement).getAttribute("data-zoom") as ZoomLevel
+      if (z && ["Day", "Week", "Month"].includes(z)) {
+        currentZoom = z
+        localStorage.setItem(ZOOM_KEY, currentZoom)
+        updateZoomLabel(z)
+        if (zoomDropdown) zoomDropdown.open = false
+        doRender(currentZoom)
+      }
+    }, { signal })
+  })
+
+  // Wire sidebar toggle button (⊞)
+  const sidebarToggle = document.getElementById("timeline-sidebar-toggle")
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", () => {
+      showSidebar = !showSidebar
+      try { localStorage.setItem("meitheal-gantt-show-sidebar", String(showSidebar)) } catch { /* ignore */ }
       doRender(currentZoom)
     }, { signal })
   }
@@ -1777,7 +2124,7 @@ export function initTimelineController(signal: AbortSignal) {
     if (newZoom && validZooms.includes(newZoom)) {
       currentZoom = newZoom
       localStorage.setItem(ZOOM_KEY, currentZoom)
-      if (zoomSelect) zoomSelect.value = currentZoom
+      updateZoomLabel(currentZoom)
       doRender(currentZoom)
     }
   }) as EventListener, { signal })

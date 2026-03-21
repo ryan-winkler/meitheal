@@ -1,0 +1,256 @@
+/**
+ * InlineDatePicker — Shared styles
+ * Uses Meitheal CSS variables for automatic dark/light mode support.
+ * @domain tasks (shared component)
+ */
+
+/* ── Trigger (inline display) ─────────────────────────────────────────── */
+
+.idp-container {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.idp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.idp-has-date {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.idp-has-date:hover {
+  color: var(--accent, #7c3aed);
+}
+
+.idp-placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.idp-placeholder:hover {
+  opacity: 1;
+  color: var(--accent, #7c3aed);
+}
+
+.idp-date-text {
+  white-space: nowrap;
+}
+
+.idp-clear-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.idp-has-date:hover .idp-clear-btn {
+  display: inline;
+}
+
+.idp-clear-btn:hover {
+  opacity: 1;
+  color: var(--accent-danger, #ef4444);
+}
+
+/* ── Panel (floating picker) ─────────────────────────────────────────── */
+
+.idp-panel {
+  display: flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
+  overflow: hidden;
+  font-size: 13px;
+  min-width: 420px;
+}
+
+/* ── Quick Options (left side) ───────────────────────────────────────── */
+
+.idp-quick-options {
+  flex: 0 0 180px;
+  border-right: 1px solid var(--border);
+  padding: 6px 0;
+  overflow-y: auto;
+  max-height: 320px;
+}
+
+.idp-quick-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.idp-quick-option:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+}
+
+.idp-quick-label {
+  font-weight: 500;
+}
+
+.idp-quick-sublabel {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── Calendar (right side) ───────────────────────────────────────────── */
+
+.idp-calendar {
+  flex: 1;
+  padding: 8px 12px;
+  min-width: 240px;
+}
+
+.idp-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.idp-cal-today-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm, 4px);
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.idp-cal-today-btn:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+}
+
+.idp-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.idp-cal-nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm, 4px);
+  line-height: 1;
+  transition: background 0.1s;
+}
+
+.idp-cal-nav-btn:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+}
+
+.idp-cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 120px;
+  text-align: center;
+}
+
+.idp-cal-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  margin-bottom: 2px;
+}
+
+.idp-cal-dow span {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+.idp-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.idp-cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm, 4px);
+  transition: background 0.1s;
+  margin: 0 auto;
+}
+
+.idp-cal-day:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.08));
+}
+
+.idp-cal-day--outside {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.idp-cal-day--today {
+  background: var(--accent-danger, #ef4444);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.idp-cal-day--today:hover {
+  background: var(--accent-danger, #ef4444);
+  opacity: 0.85;
+}
+
+.idp-cal-day--selected {
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  font-weight: 600;
+}
+
+.idp-cal-day--selected:hover {
+  background: var(--accent, #7c3aed);
+  opacity: 0.85;
+}

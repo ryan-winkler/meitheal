@@ -70,16 +70,19 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     }
   })
 
-  test("zoom selector is present and functional", async ({ page }) => {
-    const zoomSelect = page.locator("#timeline-zoom")
-    await expect(zoomSelect).toBeVisible()
+  test("zoom dropdown is present and functional", async ({ page }) => {
+    const zoomDropdown = page.locator(".timeline-zoom-dropdown")
+    await expect(zoomDropdown).toBeVisible()
+
+    // Open the dropdown
+    await zoomDropdown.locator("summary").click()
 
     // Should have Day/Week/Month options
-    const options = zoomSelect.locator("option")
+    const options = zoomDropdown.locator(".timeline-zoom-option")
     expect(await options.count()).toBe(3)
-    await expect(options.nth(0)).toHaveValue("Day")
-    await expect(options.nth(1)).toHaveValue("Week")
-    await expect(options.nth(2)).toHaveValue("Month")
+    await expect(options.nth(0)).toContainText("Day")
+    await expect(options.nth(1)).toContainText("Week")
+    await expect(options.nth(2)).toContainText("Month")
   })
 
   test("legend disclosure chip is present", async ({ page }) => {
