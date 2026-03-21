@@ -22,6 +22,8 @@ import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
+import AreaSelector from "../components/layout/AreaSelector.astro";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 
 
 const {
@@ -38,7 +40,9 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 await ensureSchema();
-const repo = new TaskRepository(getPersistenceClient());
+const db = getPersistenceClient();
+const repo = new TaskRepository(db);
+const hierarchyRepo = new HierarchyRepository(db);
 
 // Completed task auto-hide: read retention setting (default 30 days, 0 = never hide)
 let completedAutoHideDays = 30;
@@ -178,6 +182,20 @@ const kanbanSignal =
   kanbanTaskCount === 0
     ? "No active tasks on the board right now"
     : `${kanbanTaskCount} tasks spread across ${columns.length} lanes`;
+
+// SSR: fetch areas for the AreaSelector
+let areas: { id: string; name: string; icon: string; color: string }[] = [];
+try {
+  const rawAreas = await hierarchyRepo.findAllAreas();
+  areas = rawAreas.map((a) => ({
+    id: String(a.id ?? ""),
+    name: String(a.name ?? ""),
+    icon: String(a.icon ?? "📁"),
+    color: String(a.color ?? "#6366F1"),
+  }));
+} catch {
+  /* areas table may not exist yet */
+}
 ---
 
 <Layout title={`Meitheal — ${t("kanban.title", locale)}`}>
@@ -196,7 +214,9 @@ const kanbanSignal =
       { href: '#calendar', label: 'Calendar', icon: '🗓️' },
       { href: '#timeline', label: 'Timeline', icon: '📊' },
     ] as UnifiedBarViewTab[]}
-  />
+  >
+    <AreaSelector slot="context" areas={areas} />
+  </UnifiedBar>
 
   <div id="tasks-view-kanban" class="tasks-view-container" aria-hidden="false">
   <div id="kanban-shell" class="page-shell">
@@ -759,9 +779,18 @@ const kanbanSignal =
 
   <script>
     import { initKanbanArea } from "../lib/kanban-controller"
-    import { pageLifecycle } from "../lib/page-lifecycle"
+    import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
+    import { initAreaSelector } from "@lib/area-selector-controller"
+    import { pageLifecycle } from "@lib/page-lifecycle"
 
     pageLifecycle.onPageLoad((signal) => {
+      // Phase 16.1: Unified view switcher (kanban/table/calendar/timeline)
+      initTasksViewSwitcher(signal)
+
+      // Phase 16.2: Area/space context selector
+      initAreaSelector(signal)
+
+      // Kanban-specific controllers
       initKanbanArea(signal)
 
       // Fields panel toggle
@@ -782,14 +811,6 @@ const kanbanSignal =
   <TasksCalendarView />
   <TasksTimelineView />
 
-  <script>
-    import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
-    import { pageLifecycle } from "@lib/page-lifecycle"
-
-    pageLifecycle.onPageLoad((signal) => {
-      initTasksViewSwitcher(signal)
-    })
-  </script>
 </Layout>
 
 <style>
