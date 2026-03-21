@@ -90,10 +90,19 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
     label: "Progress & Growth",
     icon: "🏆",
     route: "/progress",
-    description: "Track routines, goals, and achievements",
-    defaultHash: "routines",
-    keywords: ["progress", "growth", "routines", "goals", "achievements", "habits", "streaks"],
+    description: "Track pillars, routines, goals, and achievements",
+    defaultHash: "pillars",
+    keywords: ["progress", "growth", "pillars", "routines", "goals", "achievements", "habits", "streaks"],
     subViews: [
+      {
+        id: "pillars",
+        label: "Pillars",
+        icon: "🏛️",
+        hash: "pillars",
+        description: "Identity anchors — the WHY behind everything",
+        legacyRoute: null,
+        keywords: ["pillars", "identity", "values", "principles", "non-negotiable", "why", "manifesto"],
+      },
       {
         id: "routines",
         label: "Routines",
