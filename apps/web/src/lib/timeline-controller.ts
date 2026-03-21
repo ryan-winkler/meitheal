@@ -152,7 +152,14 @@ function isWeekend(d: Date): boolean {
 }
 
 function parseDate(s: string): Date {
-  const [y, m, d] = s.split("-").map(Number) as [number, number, number]
+  // Handle ISO datetime strings (e.g., "2024-03-21T00:00:00Z") by stripping time component
+  const dateOnly = s.includes("T") ? s.split("T")[0]! : s
+  const parts = dateOnly.split("-")
+  if (parts.length < 3) return new Date(s) // fallback to native parsing
+  const y = Number(parts[0])
+  const m = Number(parts[1])
+  const d = Number(parts[2])
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(s) // fallback
   return new Date(y, m - 1, d)
 }
 
@@ -659,12 +666,16 @@ function renderGantt(
   const barPositions = new Map<string, { x: number; y: number; w: number }>()
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i]!
-    const xStart = daysBetween(rangeStart, bar.start) * pxPerDay
+    let xStart = daysBetween(rangeStart, bar.start) * pxPerDay
     const duration = Math.max(1, daysBetween(bar.start, bar.end) + 1)
+    let w = bar.isMilestone ? 16 : duration * pxPerDay
+    // Guard against NaN from invalid dates
+    if (isNaN(xStart)) xStart = 0
+    if (isNaN(w)) w = 16
     barPositions.set(bar.id, {
       x: xStart,
       y: HEADER_HEIGHT + i * ROW_HEIGHT,
-      w: bar.isMilestone ? 16 : duration * pxPerDay,
+      w,
     })
   }
 

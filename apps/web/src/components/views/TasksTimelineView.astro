@@ -152,13 +152,14 @@ const totalTasks = tasks.length;
 
 <style>
   .gantt-chart-wrapper {
-    max-height: calc(100vh - 160px);
+    min-height: 300px;
+    max-height: calc(100vh - 180px);
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
     position: relative;
-    overflow: hidden;
+    overflow: auto;
   }
 </style>
 
