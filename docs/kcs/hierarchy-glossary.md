@@ -1,14 +1,16 @@
 # Hierarchy Glossary — Meitheal Ubiquitous Language
 
-> **Phase 15** established the four-level hierarchy model. This glossary defines
-> each term as it's used in code, UI, and documentation.
+> **Phase 15** established the four-level hierarchy model. **Phase 17** added
+> Pillars as identity-based motivational anchors. This glossary defines each
+> term as it's used in code, UI, and documentation.
 
 ## Core Hierarchy (top → bottom)
 
 | Term | Definition | Has Deadline? | Tracking |
 |------|-----------|:------------:|----------|
+| **Pillar** | Identity-based motivational anchor — the WHY behind everything. Permanent, never completed. "I am someone who..." | ❌ | Linked Goals, Routines (counts only — no failure states) |
 | **Area** | Broad life/work category (e.g. Home, Work, Health). Permanent, never completed. | ❌ | Labels, descriptions, links |
-| **Goal** | Long-term directional pillar inside an Area. No end date — it's aspirational. | ❌ | Metric progress (%, count) |
+| **Goal** | Long-term directional target inside an Area. No end date — it's aspirational. | ❌ | Metric progress (%, count) |
 | **Project** | Time-bounded collection of related tasks, linked to a Goal. | Optional | Status, description, icon |
 | **Task** | Atomic unit of work. Can belong to a Project (or "Every Day" by default). | Optional | Priority, RICE, status, labels |
 
@@ -40,6 +42,8 @@
 ## Hierarchy in Code
 
 ```
+Pillar (pillars table) ←—M2M—→ Goal, Routine (pillar_associations)
+
 Area (areas table)
  └── Goal (goals table, area_id FK)
       └── Project (projects table, goal_id FK)
@@ -49,6 +53,8 @@ Area (areas table)
 
 ### Database Columns
 
+- `pillars.id` → Pillar
+- `pillar_associations.pillar_id` + `entity_type` + `entity_id` → Pillar ↔ Goal/Routine M2M link
 - `areas.id` → Area
 - `goals.area_id` → Goal → Area link
 - `projects.goal_id` → Project → Goal link

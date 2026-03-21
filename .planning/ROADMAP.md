@@ -532,4 +532,37 @@
 
 ---
 
-*Roadmap revised: 2026-03-21 — Phase 16 tasks layout redesign from 50-persona audit*
+---
+
+## Phase 17: Pillars Domain
+
+**Goal:** Introduce "Pillars" as permanent motivational anchors — the WHY layer — into Meitheal's hierarchy. Pillars answer "WHO am I?" and provide identity-based framing for Goals, Routines, and Tasks. Distinct from Goals (WHAT), Areas (WHERE), Lenses (HOW), and Habits (REPEAT).
+
+**Status:** 🔨 In Progress (GSD persona loop complete, execution wave 1)
+
+**Requirements:** PIL-01→09
+
+**Wave structure:**
+
+| Wave | Tasks | What it builds |
+|------|-------|----------------|
+| 1 | T1–T4, T7, T14 | Domain service, schema, types, ADR, glossary |
+| 2 | T10 | REST API routes |
+| 3 | T5, T6, T9, T11, T12 | UI: registry, components, controller, page section |
+| 4 | T8, T13 | Scope guard verification + E2E tests |
+
+**Success Criteria:**
+1. `pillar-service.ts` passes all CRUD + association E2E tests
+2. Pillars section visible on `/habits` page under UnifiedBar
+3. Create/edit/delete Pillar works with identity-framing placeholder
+4. Soft-limit warning at 6th Pillar, no hard block
+5. PillarSelector in Goal/Routine create modals links entities
+6. No shame language, no red badges, no failure states anywhere
+7. All existing tests pass (`pnpm --filter @meitheal/tests test`)
+8. Typecheck clean (`pnpm check`)
+
+**Depends on:** None (independent bounded context)
+
+---
+
+*Roadmap revised: 2026-03-21 — Phase 17 pillars domain from 50-persona GSD persona loop*
