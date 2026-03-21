@@ -499,4 +499,37 @@
 
 ---
 
-*Roadmap revised: 2026-03-20 — Phase 15 hierarchy overhaul from 50-persona audit*
+---
+
+## Phase 16: Tasks Layout Redesign
+
+**Goal:** Unify Kanban, Table, Calendar, and Timeline views under a single `/tasks` page with client-side hash-based view switching, a first-class Area/Space selector, a composable filter row with progressive disclosure, and a dedicated Customize panel. Inspired by modern task management UX patterns while staying Astro-native and HA ingress-safe.
+
+**Status:** 📋 Planning (GSD research + persona loop in progress)
+
+**Requirements:** TLR-01→16
+
+**Sub-phases:**
+
+| # | Sub-phase | Requirements | Depends On |
+|---|-----------|-------------|------------|
+| 16.1 | Client-Side View Switching | TLR-01→04 | None |
+| 16.2 | Area/Space Selector | TLR-05→07 | 16.1 |
+| 16.3 | Unified Filter Row | TLR-08→12 | 16.1 |
+| 16.4 | Customize Panel | TLR-13→16 | 16.1, 16.3 |
+
+**Success Criteria:**
+1. All 4 task views load under `/tasks` with `#hash` switching and zero page reloads
+2. Legacy routes (`/table`, `/calendar`, `/timeline`, `/kanban`) redirect to `/tasks#view`
+3. Area selector in UnifiedBar scopes all views, persists across sessions
+4. Filter state preserved across view switches
+5. Type pills with progressive disclosure replace monolithic FilterToolbar
+6. Customize panel provides per-view configuration
+7. E2E tests pass for view switching, area filtering, and legacy redirects
+8. HA ingress verification confirms no redirect loops
+
+**Depends on:** Phase 05.3 (Unified Page Shell)
+
+---
+
+*Roadmap revised: 2026-03-21 — Phase 16 tasks layout redesign from 50-persona audit*
