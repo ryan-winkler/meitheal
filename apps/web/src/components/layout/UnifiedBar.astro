@@ -123,16 +123,20 @@ const {
 
     <!-- View pills (route-level view switching — visually distinct from section tabs) -->
     {viewTabs.length > 0 && (
-      <nav class="unified-bar__view-pills" aria-label="View switcher">
-        {viewTabs.map((vt) => (
-          <a
-            class={`unified-bar__view-pill ${vt.active ? 'is-active' : ''}`}
-            href={vt.href}
-          >
-            {vt.icon && <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>}
-            <span class="unified-bar__view-pill-label">{vt.label}</span>
-          </a>
-        ))}
+      <nav class="unified-bar__view-pills" aria-label="View switcher" data-view-tabs>
+        {viewTabs.map((vt) => {
+          const viewId = vt.href?.startsWith('#') ? vt.href.slice(1) : vt.href
+          return (
+            <a
+              class={`unified-bar__view-pill ${vt.active ? 'is-active' : ''}`}
+              href={vt.href}
+              data-view-tab={viewId}
+            >
+              {vt.icon && <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>}
+              <span class="unified-bar__view-pill-label">{vt.label}</span>
+            </a>
+          )
+        })}
       </nav>
     )}
 

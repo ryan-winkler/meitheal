@@ -19,6 +19,9 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
+import TasksTableView from "../components/views/TasksTableView.astro";
+import TasksCalendarView from "../components/views/TasksCalendarView.astro";
+import TasksTimelineView from "../components/views/TasksTimelineView.astro";
 
 
 const {
@@ -187,18 +190,15 @@ const kanbanSignal =
     searchScope="all"
     barId="kanban-bar"
     slot="custom-header"
-    viewTabs={(() => {
-      const qs = new URL(Astro.request.url).searchParams.toString()
-      const q = qs ? `?${qs}` : ''
-      return [
-        { href: `/tasks${q}`, label: 'Kanban', icon: '▦', active: true },
-        { href: `/table${q}`, label: 'Table', icon: '⊞' },
-        { href: `/calendar${q}`, label: 'Calendar', icon: '🗓️' },
-        { href: `/timeline${q}`, label: 'Timeline', icon: '📊' },
-      ] as UnifiedBarViewTab[]
-    })()}
+    viewTabs={[
+      { href: '#kanban', label: 'Kanban', icon: '▦', active: true },
+      { href: '#table', label: 'Table', icon: '⊞' },
+      { href: '#calendar', label: 'Calendar', icon: '🗓️' },
+      { href: '#timeline', label: 'Timeline', icon: '📊' },
+    ] as UnifiedBarViewTab[]}
   />
 
+  <div id="tasks-view-kanban" class="tasks-view-container" aria-hidden="false">
   <div id="kanban-shell" class="page-shell">
     <!-- Stats signal bar (non-dismissable) -->
     <SignalBar id="kanban-signal-bar">
@@ -773,6 +773,21 @@ const kanbanSignal =
       }, { signal })
 
       // Lanes panel toggle handled by kanban-controller
+    })
+  </script>
+  </div><!-- /tasks-view-kanban -->
+
+  <!-- Phase 16.1: Additional task views (SSR'd, hidden by default) -->
+  <TasksTableView />
+  <TasksCalendarView />
+  <TasksTimelineView />
+
+  <script>
+    import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
+    import { pageLifecycle } from "@lib/page-lifecycle"
+
+    pageLifecycle.onPageLoad((signal) => {
+      initTasksViewSwitcher(signal)
     })
   </script>
 </Layout>

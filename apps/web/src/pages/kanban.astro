@@ -12,6 +12,6 @@
 const { ingressPath } = Astro.locals
 const qs = new URL(Astro.request.url).searchParams.toString()
 const q = qs ? `?${qs}` : ''
-return Astro.redirect(`${ingressPath || ""}/tasks${q}`, 301)
+return Astro.redirect(`${ingressPath || ""}/tasks${q}#kanban`, 301)
 ---
 
