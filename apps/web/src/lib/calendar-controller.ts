@@ -156,8 +156,16 @@ function openDrawer(dateStr: string): void {
     day: "numeric",
   })
   drawer.setAttribute("aria-hidden", "false")
-  drawerEvents.innerHTML = '<span class="day-drawer-empty">Loading...</span>'
-  drawerTasks.innerHTML = '<span class="day-drawer-empty">Loading...</span>'
+  const loadingEvents = document.createElement("span")
+  loadingEvents.className = "day-drawer-empty"
+  loadingEvents.textContent = "Loading..."
+  drawerEvents.textContent = ""
+  drawerEvents.appendChild(loadingEvents)
+  const loadingTasks = document.createElement("span")
+  loadingTasks.className = "day-drawer-empty"
+  loadingTasks.textContent = "Loading..."
+  drawerTasks.textContent = ""
+  drawerTasks.appendChild(loadingTasks)
   document.body.style.overflow = "hidden"
 
   void loadDrawerData(dateStr)
@@ -222,7 +230,11 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     }
 
     if (events.length === 0) {
-      drawerEvents.innerHTML = '<span class="day-drawer-empty">No calendar events</span>'
+      const emptyEvents = document.createElement("span")
+      emptyEvents.className = "day-drawer-empty"
+      emptyEvents.textContent = "No calendar events"
+      drawerEvents.textContent = ""
+      drawerEvents.appendChild(emptyEvents)
     } else {
       drawerEvents.innerHTML = events.map((event) => {
         const time = event.start.includes("T")
@@ -242,7 +254,11 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     }
   } catch (error) {
     log.error("Failed to load calendar drawer events", error)
-    drawerEvents.innerHTML = '<span class="day-drawer-empty">Failed to load events</span>'
+    const errEvents = document.createElement("span")
+    errEvents.className = "day-drawer-empty"
+    errEvents.textContent = "Failed to load events"
+    drawerEvents.textContent = ""
+    drawerEvents.appendChild(errEvents)
   }
 
   try {
@@ -252,7 +268,11 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     const data = await response.json()
     const tasks = data?.tasks ?? data ?? []
     if (!Array.isArray(tasks) || tasks.length === 0) {
-      drawerTasks.innerHTML = '<span class="day-drawer-empty">No tasks due</span>'
+      const emptyTasks = document.createElement("span")
+      emptyTasks.className = "day-drawer-empty"
+      emptyTasks.textContent = "No tasks due"
+      drawerTasks.textContent = ""
+      drawerTasks.appendChild(emptyTasks)
       return
     }
 
@@ -274,7 +294,11 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     }).join("")
   } catch (error) {
     log.error("Failed to load calendar drawer tasks", error)
-    drawerTasks.innerHTML = '<span class="day-drawer-empty">Failed to load tasks</span>'
+    const errTasks = document.createElement("span")
+    errTasks.className = "day-drawer-empty"
+    errTasks.textContent = "Failed to load tasks"
+    drawerTasks.textContent = ""
+    drawerTasks.appendChild(errTasks)
   }
 }
 
