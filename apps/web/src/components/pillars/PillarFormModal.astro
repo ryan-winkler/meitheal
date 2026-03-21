@@ -225,6 +225,8 @@
     const closeBtn = document.getElementById("close-pillar-modal")
     const cancelBtn = document.getElementById("cancel-pillar-modal")
     const form = document.getElementById("pillar-form") as HTMLFormElement | null
+    const titleEl = document.getElementById("pillar-form-title")
+    const submitBtn = document.getElementById("submit-pillar-btn") as HTMLButtonElement | null
     const colorInput = document.getElementById("pillar-color") as HTMLInputElement | null
     const colorPreview = document.getElementById("pillar-color-preview") as HTMLElement | null
     const colorHex = document.getElementById("pillar-color-hex") as HTMLElement | null
@@ -232,6 +234,26 @@
     const weightDisplay = document.getElementById("pillar-weight-display") as HTMLElement | null
 
     if (!overlay || !form) return
+
+    // --- State: tracks current editing context ---
+    let editingPillarId: string | null = null
+
+    // --- Focus trap helper ---
+    function trapFocus(e: KeyboardEvent) {
+      if (e.key !== "Tab" || !overlay?.classList.contains("active")) return
+      const focusable = overlay.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusable.length === 0) return
+      const first = focusable.item(0)
+      const last = focusable.item(focusable.length - 1)
+      if (!first || !last) return
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
 
     // --- Color picker proxy ---
     colorPreview?.addEventListener("click", () => colorInput?.click())
@@ -247,12 +269,39 @@
     })
 
     // --- Open/Close ---
-    function openPillarModal() {
+    function openPillarModal(editData?: Record<string, unknown>) {
       form?.reset()
-      if (colorPreview) colorPreview.style.background = "#7c5bf5"
-      if (colorHex) colorHex.textContent = "#7c5bf5"
-      if (weightDisplay) weightDisplay.textContent = "5"
+      editingPillarId = null
+
+      if (editData && editData.id) {
+        // Edit mode: pre-fill fields
+        editingPillarId = String(editData.id)
+        if (titleEl) titleEl.textContent = "Edit Pillar"
+        if (submitBtn) submitBtn.textContent = "Save Changes"
+
+        const nameInput = document.getElementById("pillar-name") as HTMLInputElement
+        const manifestoInput = document.getElementById("pillar-manifesto") as HTMLTextAreaElement
+        const iconInput = document.getElementById("pillar-icon") as HTMLInputElement
+
+        if (nameInput) nameInput.value = String(editData.name || "")
+        if (manifestoInput) manifestoInput.value = String(editData.manifesto || "")
+        if (iconInput) iconInput.value = String(editData.icon || "")
+        if (colorInput) colorInput.value = String(editData.colorHex || "#7c5bf5")
+        if (colorPreview) colorPreview.style.background = String(editData.colorHex || "#7c5bf5")
+        if (colorHex) colorHex.textContent = String(editData.colorHex || "#7c5bf5")
+        if (weightSlider) weightSlider.value = String(editData.weight || 5)
+        if (weightDisplay) weightDisplay.textContent = String(editData.weight || 5)
+      } else {
+        // Create mode: reset to defaults
+        if (titleEl) titleEl.textContent = "New Pillar"
+        if (submitBtn) submitBtn.textContent = "Create Pillar"
+        if (colorPreview) colorPreview.style.background = "#7c5bf5"
+        if (colorHex) colorHex.textContent = "#7c5bf5"
+        if (weightDisplay) weightDisplay.textContent = "5"
+      }
+
       overlay?.classList.add("active")
+      document.addEventListener("keydown", trapFocus)
       setTimeout(() => {
         document.getElementById("pillar-name")?.focus()
       }, 50)
@@ -260,6 +309,8 @@
 
     function closePillarModal() {
       if (!overlay?.classList.contains("active")) return
+      document.removeEventListener("keydown", trapFocus)
+      editingPillarId = null
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
       const finishClose = () => {
         overlay.classList.remove("active", "closing")
@@ -289,11 +340,16 @@
       }
     })
 
-    // --- Wire add buttons ---
+    // --- Wire add buttons (create mode) ---
     const addBtn = document.getElementById("pillar-add-btn")
     const addBtnEmpty = document.getElementById("pillar-add-btn-empty")
-    addBtn?.addEventListener("click", openPillarModal)
-    addBtnEmpty?.addEventListener("click", openPillarModal)
+    addBtn?.addEventListener("click", () => openPillarModal())
+    addBtnEmpty?.addEventListener("click", () => openPillarModal())
+
+    // --- Wire edit event (edit mode) — dispatched from detail page ---
+    document.addEventListener("edit-pillar", ((e: CustomEvent) => {
+      openPillarModal(e.detail)
+    }) as EventListener)
 
     // --- Form submission ---
     form.addEventListener("submit", async (e) => {
@@ -302,10 +358,10 @@
       const name = nameInput.value.trim()
       if (!name) return
 
-      const submitBtn = document.getElementById("submit-pillar-btn") as HTMLButtonElement
+      if (!submitBtn) return
       const originalText = submitBtn.textContent || "Create Pillar"
       submitBtn.disabled = true
-      submitBtn.textContent = "Creating…"
+      submitBtn.textContent = editingPillarId ? "Saving…" : "Creating…"
 
       try {
         const body: Record<string, unknown> = {
@@ -316,8 +372,11 @@
           weight: parseInt((document.getElementById("pillar-weight") as HTMLInputElement).value, 10),
         }
 
-        const res = await fetch("/api/pillars", {
-          method: "POST",
+        const url = editingPillarId ? `/api/pillars/${editingPillarId}` : "/api/pillars"
+        const method = editingPillarId ? "PATCH" : "POST"
+
+        const res = await fetch(url, {
+          method,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         })
@@ -327,17 +386,16 @@
           if (data.warning) {
             showToast(data.warning, "error")
           }
-          showToast(`Pillar "${name}" created`, "success")
+          showToast(editingPillarId ? `"${name}" updated` : `Pillar "${name}" created`, "success")
           closePillarModal()
-          // Reload to show the new pillar card
           window.location.reload()
         } else {
           const err = await res.json().catch(() => ({ error: "Unknown error" }))
-          showToast(err.error || "Failed to create pillar", "error")
+          showToast(err.error || "Failed to save pillar", "error")
         }
       } catch (err) {
-        log.error("Failed to create pillar", err)
-        showToast("Network error creating pillar", "error")
+        log.error("Failed to save pillar", err)
+        showToast("Network error saving pillar", "error")
       } finally {
         submitBtn.disabled = false
         submitBtn.textContent = originalText

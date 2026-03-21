@@ -10,6 +10,7 @@
  */
 import Layout from "../../layouts/Layout.astro"
 import PrincipleList from "../../components/pillars/PrincipleList.astro"
+import PillarFormModal from "../../components/pillars/PillarFormModal.astro"
 import { getPillarById } from "@domains/pillars/pillar-service"
 import { getPrinciplesForPillar } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
@@ -102,6 +103,7 @@ const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto:
       )}
     </div>
   </main>
+  <PillarFormModal />
 </Layout>
 
 <script>
@@ -124,10 +126,9 @@ const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto:
       pillarData = JSON.parse(header.dataset.pillar || "{}")
     } catch { /* ignore */ }
 
-    // --- Edit: Navigate to pillars page (reuse PillarFormModal in future, for now navigate back) ---
+    // --- Edit: Opens PillarFormModal in edit mode via CustomEvent ---
     editBtn?.addEventListener("click", () => {
-      // For now, show toast — edit-in-place is a P2 follow-up
-      showToast("Edit Pillar: use the Pillars page (edit-in-place coming soon)", "success")
+      document.dispatchEvent(new CustomEvent("edit-pillar", { detail: pillarData }))
     })
 
     // --- Delete: Confirm + soft-delete ---
@@ -160,14 +161,17 @@ const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto:
       const pillarId = list.getAttribute("data-pillar-id") || pillarData.id
       const form = document.createElement("div")
       form.className = "principle-inline-form"
+      form.setAttribute("role", "form")
+      form.setAttribute("aria-label", "Add a new Principle")
       form.innerHTML = `
-        <input type="text" class="form-input bg-bg-input principle-inline-form__input" placeholder="e.g. No screens after 9 PM" maxlength="500" autofocus />
+        <label for="principle-stmt-input" class="sr-only">Principle statement</label>
+        <input type="text" id="principle-stmt-input" class="form-input bg-bg-input principle-inline-form__input" placeholder="e.g. No screens after 9 PM" maxlength="500" autofocus aria-required="true" />
         <label class="principle-inline-form__nn-label">
           <input type="checkbox" class="principle-inline-form__nn-check" /> Non-Negotiable
         </label>
         <div class="principle-inline-form__actions">
-          <button type="button" class="btn btn-primary btn-sm principle-inline-form__save">Add</button>
-          <button type="button" class="btn btn-ghost btn-sm principle-inline-form__cancel">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm principle-inline-form__save" aria-label="Save Principle">Add</button>
+          <button type="button" class="btn btn-ghost btn-sm principle-inline-form__cancel" aria-label="Cancel adding">Cancel</button>
         </div>
       `
       list.appendChild(form)
