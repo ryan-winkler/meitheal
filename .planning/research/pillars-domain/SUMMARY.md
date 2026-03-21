@@ -1,80 +1,118 @@
-# Pillars Domain — Research Synthesis
+# Pillars Domain — Research Summary (Expanded Scope)
 
-**Date:** 2026-03-21
-**Synthesized from:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md, 50-Persona Expert Audit
-
----
+**Date:** 2026-03-21 (v2 — synthesized from expanded STACK, FEATURES, ARCHITECTURE, PITFALLS)
+**Synthesizer:** Antigravity
 
 ## Executive Summary
 
-Meitheal's hierarchy (Area → Goal → Project → Task → Routine) answers WHAT, WHERE, and HOW, but not WHY. The 50-persona panel (42% primary vote, 94% domain-distinction consensus) confirmed that a new concept called **"Pillars"** — permanent, identity-based motivational anchors — fills this gap. No major task management app (TickTick, Todoist, Habitica, Things 3, OmniFocus) offers a structured values/pillars layer, making this a genuine market differentiator.
+Meitheal's Pillars domain introduces identity-based motivational anchors — the WHY layer — into the task management hierarchy. Unlike any competitor (TickTick, Todoist, Things 3, Habitica, OmniFocus), Meitheal will combine structured Pillars with behavioral Principles/Non-Negotiables and AI-enforced boundaries. This is a genuine market differentiator.
 
-Pillars are architecturally distinct from Goals (temporary measurable outcomes), Strategic Lenses (prioritization rules), Areas (life domain classification), and Routines (repeating behavioral patterns). They represent *who you want to be*, not what you want to achieve. Implementation follows Meitheal's established patterns: in-app domain (`domains/pillars/`), SQLite schema, REST API, Astro page + controller.
+The expanded scope adds Principles (child entities of Pillars), AI prompt injection (Non-Negotiable Principles guard the LLM), strategic evaluator Pillar-weight boosting, a North Star masonry UI, conflict resolution warnings, top-down inheritance, and an AI onboarding wizard. All integration hooks exist in the current codebase (`ai-context-service.ts`, `rule-resolver.ts`, `today-focus-stack.ts`).
 
-The critical design constraint is **shame-free UX**: no failure states, no streak counters, no "you're neglecting this" notifications. Pillars are always positive anchors — opportunities, not obligations. This is non-negotiable for ADHD users (the primary persona).
+The primary risk is scope size — this is the most ambitious Phase 17 feature set to date. Schema changes include a new `pillars` table, a new `principles` table, and additive ALTER TABLE on goals/tasks/routines with `pillar_id` FK. All patterns follow existing service architecture with no new dependencies.
 
 ## Key Findings
 
-### Stack
-- **SQLite** — existing store, no new dependencies
-- **In-app domain** `domains/pillars/` — matches `domains/habits/` pattern, extract to package later
-- **REST API** at `/api/pillars` — consistent with all other domain APIs
-- **Astro page + controller** — established pattern
+### From STACK.md
+- All tech decisions align with existing patterns — SQLite, `ensureSchema()`, raw SQL
+- AI integration follows `fetchHabitContext()` pattern → add `fetchPillarContext()`
+- Strategic evaluator has extensible pre-computation hook in `rule-resolver.ts`
+- North Star UX uses CSS Grid masonry, no JS layout library needed
+- No new dependencies required
 
-### Features
-- **V1 table stakes:** CRUD, icon/color, max 7 limit, goal linkage, identity framing, shame-free design
-- **V2:** Task linkage, filter chips, contextual badges, attention analytics
-- **Anti-features:** No streak counters, no failure notifications, no mandatory assignment, no sub-pillars
-- **Competitive gap:** Zero competitors have a structured pillars/values layer
+### From FEATURES.md
+- **12 table stakes** features for V1 (Pillar CRUD, Principle CRUD, North Star page, Blueprint view, inheritance, shame-free design)
+- **5 should-have** features (AI prompt injection, conflict UI, strategic boost, alignment audit, AI onboarding)
+- **7 anti-features** explicitly blocked (streak counters, failure states, hard-blocks, sub-pillars)
+- No competitor offers Pillars + Principles + AI enforcement together
 
-### Architecture
-- **Pillar aggregate root** — id, name, description, icon, color, position, isActive
-- **Many-to-many associations** via `pillar_associations` join table (not FK on each entity)
-- **12 files to create/modify** — mostly new files, minimal modification of existing code
-- **Bounded context:** In-app domain, cross-context reads via REST API only
+### From ARCHITECTURE.md
+- **Dual association strategy**: Direct `pillar_id` FK on entities (90% case) + M2M `pillar_associations` (10% power-user)
+- **Principle model**: 1:N child of Pillar with `statement`, `isNonNegotiable`, `position`
+- **Inheritance**: `Task.pillar_id ?? Goal.pillar_id ?? null` (explicit overrides inherited)
+- **Schema fields per user**: `manifesto` (not description), `weight` (1-10), `colorHex`, `userId`
+- **AI data flow**: fetchPillarContext → inject Non-Negotiables into system prompt → AI pushes back on conflicts
+- **Strategy data flow**: pillar_weight × boost_factor → priority boost → today-focus-stack sort
 
-### Pitfalls
-- **P1 CRITICAL:** Shame-inducing metrics — Pillars must NEVER show failure
-- **P2 CRITICAL:** Pillar count overload — soft limit of 7, suggest 3-5
-- **P3 CRITICAL:** Naming collision with existing Habits — strict ubiquitous language enforcement
-- **P4-P8 MODERATE/MINOR:** M2M query complexity, UI surface area scope, migration safety, deletion orphans, position gaps
+### From PITFALLS.md
+- **P1 (5/5)**: Shame-inducing metrics — always allocation, never performance
+- **P2 (5/5)**: AI overstep — warnings only, never hard-blocks
+- **P3 (4/5)**: Blank page paralysis — AI drafts Pillars from behavioral questions
+- **P5 (4/5)**: ALTER TABLE migration — idempotent, application-level FK enforcement
+- **P7 (3/5)**: AI context overflow — cap at 15 Non-Negotiable Principles in prompt
+- **P8 (3/5)**: Strategic evaluator runaway — additive boost, not multiplicative
 
 ## Implications for Roadmap
 
-### Suggested Phase Structure
+### Suggested Sub-Phase Structure
 
-**Phase 17: Pillars Domain Introduction**
+Phase 17 is too large for a single wave structure. Recommend 3 sub-phases:
 
-| Sub-phase | Deliverables | Depends On |
-|-----------|-------------|------------|
-| 17.1 — Schema & Service | `pillars` table, `pillar_associations` table, `pillar-service.ts` CRUD | None |
-| 17.2 — API & Basic UI | `/api/pillars` routes, Pillar list page under `/progress` | 17.1 |
-| 17.3 — Goal Integration | Pillar selector in Goal create/edit, Pillar badge on Goal cards | 17.2 |
-| 17.4 — Routine Integration | Pillar selector in Routine/Habit create/edit | 17.2 |
+**Sub-Phase 17A: Core Domain (Foundation)**
+- Pillar + Principle service, schema, types
+- REST API routes for Pillars + Principles
+- ADR-017, glossary update, AGENTS.md update
+- E2E tests for CRUD + associations
+- **Pitfalls to avoid:** P5 (ALTER TABLE), P10 (deletion orphans)
+
+**Sub-Phase 17B: North Star UX + Linking**
+- North Star masonry page (`pillars.astro`)
+- PillarCard, PillarDetail (Blueprint view), PrincipleList components
+- PillarSelector in Goal/Routine create modals
+- "Unaligned" visual flag on tasks
+- Progress page link/section
+- **Pitfalls to avoid:** P4 (count overload), P9 (UX consistency)
+
+**Sub-Phase 17C: Intelligence Layer**
+- AI prompt injection (`fetchPillarContext()` in `ai-context-service.ts`)
+- Strategic evaluator Pillar-weight boosting (`rule-resolver.ts`)
+- Conflict resolution warnings (Non-Negotiable violations)
+- Alignment audit chart (`progress.astro`)
+- AI onboarding wizard (behavioral questions → drafted Pillars)
+- **Pitfalls to avoid:** P2 (AI overstep), P3 (blank page), P7 (context overflow), P8 (runaway boost)
 
 ### Research Flags
-- **17.1:** Standard patterns — no additional research needed
-- **17.2:** Needs decision on Progress & Growth page structure (tabs vs. sections)
-- **17.3-17.4:** Standard integration — follow existing Goal/Routine UI patterns
+
+| Sub-Phase | Needs Deep Research? | Why |
+|-----------|---------------------|-----|
+| 17A | ❌ No | Standard service patterns — well-documented |
+| 17B | ⚠️ Minor | Masonry layout UX decisions, card design |
+| 17C | ✅ Yes | AI prompt engineering, boost algorithm tuning, conflict detection rules |
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|-----------|-------|
-| Stack | HIGH | All decisions use existing patterns |
-| Features | HIGH | 50-persona validation + competitive gap |
-| Architecture | HIGH | Follows established DDD patterns |
-| Pitfalls | HIGH | Well-understood from habit-service development |
-| **Overall** | **HIGH** | Strong research foundation, clear implementation path |
+| Stack | HIGH | All existing patterns, no new deps |
+| Features | HIGH | User-specified with LOCKED decisions, persona-validated |
+| Architecture | HIGH | Dual FK+M2M validated, integration hooks confirmed in codebase |
+| Pitfalls | HIGH | Well-mapped from prior domain development |
+| AI Integration | MEDIUM | Prompt engineering needs iteration; conflict detection rules TBD |
+| Strategic Boost | MEDIUM | Algorithm tuning (additive vs multiplicative, cap) needs experimentation |
 
-## Gaps to Address During Planning
-1. Progress & Growth page tab structure (currently has Routines/Goals/Achievements — where do Pillars appear?)
-2. Sidebar navigation update (Pillar count badge?)
-3. HA entity naming reservation (namespace planning for future sensors)
+### Gaps to Address
+- Boost factor algorithm — needs prototyping during 17C
+- Conflict detection rules — when exactly does a scheduled task violate a Principle?
+- AI onboarding wizard UX — conversation flow design needed
+- `userId` field — schema-ready but no multi-user enforcement until auth overhaul
 
 ## Sources
-- 50-Persona Expert Audit (ADHD, Fair Play, UX, behavioral psychology, product architecture)
-- TickTick, Todoist, Habitica, Things 3, OmniFocus competitive analysis
-- Existing Meitheal codebase: `habit-service.ts`, `domain-model.ts`, `rule-types.ts`
-- ADR-007 (hierarchy model), ADR-016 (recurrence vs habits separation)
-- Fair Play by Eve Rodsky, Atomic Habits by James Clear, PARA by Tiago Forte
+
+### Research Files
+- `.planning/research/pillars-domain/STACK.md` (v2)
+- `.planning/research/pillars-domain/FEATURES.md` (v2)
+- `.planning/research/pillars-domain/ARCHITECTURE.md` (v2)
+- `.planning/research/pillars-domain/PITFALLS.md` (v2)
+
+### Codebase Integration Points (Audited)
+- `apps/web/src/domains/ai/ai-context-service.ts` (431 lines)
+- `packages/domain-strategy/src/rule-resolver.ts` (framework scoring)
+- `apps/web/src/lib/controllers/today-focus-stack.ts` (100 lines)
+- `apps/web/src/components/tasks/StrategicEvaluator.astro` (521 lines)
+- `apps/web/src/domains/habits/habit-service.ts` (service pattern)
+- `apps/web/src/components/ui/CardCustomizer.astro` (field toggle, NOT card visual)
+
+### Prior Research
+- 50-persona naming audit (Phase 17 Iteration 01)
+- ADR-016 recurrence vs habits separation precedent
+- User schema specification (2026-03-21)

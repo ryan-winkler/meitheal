@@ -1,94 +1,122 @@
-# Pillars Domain — Pitfalls Research
+# Pillars Domain — Pitfalls Research (Expanded Scope)
 
-**Date:** 2026-03-21
-**Researcher:** Antigravity (50-persona audit + prior ADR analysis)
+**Date:** 2026-03-21 (v2 — expanded with Principles, AI, Strategy)
+**Researcher:** Antigravity (codebase analysis + persona audit)
 
 ## Critical Pitfalls
 
 ### P1: Shame-Inducing Metrics (Risk: 5/5)
-**What:** Showing "you haven't served your Health Pillar in 5 days" creates guilt, especially for ADHD users.
-**How it happens:** Treating Pillars like streaks (habits model) or like OKR progress (goals model).
+**What:** Showing "you haven't served your Health Pillar in 5 days" creates guilt for ADHD users.
+**How it happens:** Treating Pillars like streaks or OKR progress.
 **Prevention:**
 - Pillars NEVER have failure states, red badges, or warning indicators
-- Language is always positive: "opportunities" not "neglected"
-- No Pillar streak counter — that's what Routines are for
-- Pillar attention metrics (V2) should show ALLOCATION ("35% this week") not PERFORMANCE ("failed")
-**Tests:** UI review for negative language/red indicators. E2E: no `.pillar-warning`, no `.pillar-fail` classes.
+- Language is always positive — "opportunities" not "neglected"
+- Alignment audit shows ALLOCATION ("35% this week") not PERFORMANCE ("failed")
+- "Unaligned" task flag is neutral, not negative — gamification signal, never shame
+**Tests:** UI audit for negative language. E2E: no `.pillar-warning`, no `.pillar-fail` classes.
 
-### P2: Pillar Count Overload (Risk: 4/5)
-**What:** Users create 20 Pillars, defeating the purpose (cognitive overload paralysis).
-**How it happens:** No guardrail on creation. ADHD hyperfocus on setup vs. execution.
+### P2: AI Overstep — Blocking Users with Principles (Risk: 5/5)
+**What:** AI becomes too aggressive enforcing Non-Negotiables, frustrating users.
+**How it happens:** Hard-blocking schedule changes or auto-rejecting tasks that touch Principles.
 **Prevention:**
-- Soft limit of 7 with "Are you sure?" prompt above 5
+- Conflict resolution is ALWAYS warning, NEVER hard-block
+- AI **suggests** alternatives, never refuses actions
+- "Boundary Conflict" UI is dismissible and logged (not modal-blocking)
+- `isNonNegotiable` only affects AI tone, never user permissions
+**Tests:** Verify conflict warning can always be dismissed. No HTTP 403 on Principle violations.
+
+### P3: Blank Page Paralysis (Risk: 4/5)
+**What:** "What are your core values?" is paralyzing for ADHD users staring at empty state.
+**How it happens:** Onboarding dumps users into an empty masonry grid with a "+" button.
+**Prevention:**
+- AI onboarding wizard asks behavioral questions ("What boundary did someone cross last week?")
+- AI drafts Pillars and Principles from answers — user edits, not creates from scratch
+- Starter templates: "Health", "Wealth", "Relationships" with example Principles
+- Empty state shows coaching prompt, not blank cards
+**Tests:** Empty state UX renders coaching content, not blank grid.
+
+### P4: Pillar Count Overload (Risk: 4/5)
+**What:** Users create 20 Pillars, defeating cognitive load guardrail.
+**How it happens:** No limit on creation. ADHD hyperfocus on setup.
+**Prevention:**
+- Soft limit of 7 with warning at 6th Pillar: "Research shows 3-5 Pillars is optimal"
+- Never hard-block — allow creation but surface the warning
 - Onboarding suggests 3-5 starting Pillars
-- Show a "research shows 3-5 Pillars is optimal" hint during creation
-**Tests:** UI shows warning banner when 6th Pillar created.
+**Tests:** Create 7+ Pillars, verify warning appears at #6.
 
-### P3: Naming Collision with Existing Habits (Risk: 4/5)
-**What:** Users confuse Pillars with Habits/Routines because "Habit" was the working name.
-**How it happens:** Feature is introduced as "Habits" and never renamed. Or UI doesn't clearly distinguish.
+### P5: Schema Migration Risk — ALTER TABLE on Existing Tables (Risk: 4/5)
+**What:** Adding `pillar_id` FK to `goals`, `tasks`, `task_templates` can fail on large DBs.
+**How it happens:** SQLite ALTER TABLE has limitations. Adding FK columns is safe, but FK enforcement depends on PRAGMA.
 **Prevention:**
-- Ubiquitous language: ALWAYS "Pillar" in code, UI, docs, and conversations
-- Clear distinction in UI: Routines have streaks/completions. Pillars have connections/associations.
-- Onboarding tooltip: "Pillars are who you want to be. Routines are what you do every day."
-**Tests:** Grep codebase for any use of "habit" when meaning "pillar." No file named `*habit*` should contain Pillar logic.
+- Use `ALTER TABLE ... ADD COLUMN pillar_id TEXT` (no FK constraint in SQLite ALTER)
+- FK relationship enforced in application code, not DB-level FK PRAGMA
+- Migration in `ensureSchema()` — idempotent with try/catch for "column already exists"
+- New `pillars` and `principles` tables use CREATE IF NOT EXISTS (safe)
+**Tests:** Start fresh DB, verify columns added. Start DB with existing data, verify no errors.
 
 ## Moderate Pitfalls
 
-### P4: Many-to-Many Complexity (Risk: 3/5)
-**What:** `pillar_associations` join table adds query complexity when loading tasks with their Pillars.
-**How it happens:** N+1 queries when rendering task lists. Need to JOIN or batch-fetch associations.
+### P6: Inheritance Complexity (Risk: 3/5)
+**What:** Task → Project → Goal → Pillar inheritance chain breaks when intermediate entities lack Pillars.
+**How it happens:** User creates Goal without Pillar, then expects Task under it to inherit.
 **Prevention:**
-- Fetch Pillar associations in batch: `SELECT * FROM pillar_associations WHERE entity_type = 'task' AND entity_id IN (?)`
-- Cache Pillar list (small, rarely changes) on the client side
-- Task list endpoints include Pillar info via LEFT JOIN, not separate request
-**Tests:** Performance test: loading 100 tasks with Pillars in < 100ms.
+- Inheritance is `Task.pillar_id ?? Goal.pillar_id ?? null`
+- Missing intermediate Pillar = task is "unaligned" (neutral, not broken)
+- No recursive chain — check direct FK, then parent Goal FK, done
+**Tests:** Task under Goal with Pillar inherits. Task under Goal without Pillar shows "unaligned."
 
-### P5: UI Integration Surface Area (Risk: 3/5)
-**What:** Pillars need to appear in many places (task detail, goal detail, settings, sidebar, search).
-**How it happens:** Trying to integrate everywhere at once in V1.
+### P7: AI Context Window Overflow (Risk: 3/5)
+**What:** Injecting all Principles into every AI prompt exceeds context limits.
+**How it happens:** User has 7 Pillars × 5 Principles each = 35 statements in system prompt.
 **Prevention:**
-- V1: Only Pillar CRUD page + optional Pillar selector in Goal create/edit
-- V2: Task detail badge, filter chips, sidebar counts
-- V3: Analytics, HA sensors, calendar tinting
-**Tests:** Each integration point has its own user story and Tier 1 verification.
+- Only inject Non-Negotiable Principles (typically 5-10 total, not all Principles)
+- Format concisely: numbered list, one line per Principle
+- Cap at 15 Principles in prompt, sorted by Pillar weight
+**Tests:** Verify prompt construction with 35 Principles — stays under 500 tokens.
 
-### P6: Migration Backward Compatibility (Risk: 3/5)
-**What:** New `pillars` and `pillar_associations` tables need to be safe to add.
-**How it happens:** Schema migration fails on existing SQLite databases.
+### P8: Strategic Evaluator Runaway Boost (Risk: 3/5)
+**What:** High-weight Pillar tasks always dominate focus stack, crowding out important but un-Pillared tasks.
+**How it happens:** `pillar_weight * boost_factor` overwhelms base priority score.
 **Prevention:**
-- Use `CREATE TABLE IF NOT EXISTS` (same as habit-service.ts pattern)
-- Pillar data is additive — no existing tables modified
-- No `ALTER TABLE` needed on existing tables (using join table, not FK)
-**Tests:** Start fresh DB, verify tables created. Start existing DB with data, verify no errors.
+- Boost is additive, not multiplicative — caps at reasonable bound
+- Boost factor is configurable in settings (default: modest bump)
+- Un-Pillared tasks retain full base priority — Pillar boost is bonus, not penalty for missing
+**Tests:** Task with weight-10 Pillar doesn't crowd out urgent un-Pillared task with high base priority.
+
+### P9: North Star UX Too Different from Rest of App (Risk: 3/5)
+**What:** Masonry-grid manifesto page feels disconnected from Meitheal's task-centric UI.
+**How it happens:** Pillar cards use completely different design language than rest of app.
+**Prevention:**
+- PillarCard uses same CSS variables (--surface, --border, --accent)
+- Same font stack, same border-radius, same shadow tokens
+- Grid layout uses CSS grid (same as existing dashboard responsiveness)
+- Blueprint click-through transitions to familiar list-style detail
+**Tests:** Visual consistency audit — PillarCard shares design tokens with existing components.
 
 ## Minor Pitfalls
 
-### P7: Pillar Deletion Orphans (Risk: 2/5)
-**What:** Deleting a Pillar leaves orphaned associations.
-**How it happens:** Missing CASCADE or cleanup logic.
+### P10: Pillar Deletion Orphans (Risk: 2/5)
+**What:** Deleting a Pillar leaves `pillar_id` FKs on goals/tasks pointing to nothing.
 **Prevention:**
-- Soft-delete Pillars (`isActive = false`) — associations remain but don't render
-- If hard-delete: `DELETE FROM pillar_associations WHERE pillar_id = ?` first
-- FK with `ON DELETE CASCADE` on `pillar_associations.pillar_id`
-**Tests:** Delete Pillar, verify no orphaned associations in DB.
+- Soft-delete Pillars (isActive = false) — FKs remain valid
+- Hard-delete: SET NULL on referencing FKs, CASCADE on principles + pillar_associations
+**Tests:** Delete Pillar, verify referring goals/tasks get `pillar_id = null`.
 
-### P8: Position Column Gaps (Risk: 1/5)
-**What:** Drag-reorder leaves position gaps (1, 3, 7) that accumulate over time.
-**How it happens:** Standard re-ordering approach doesn't normalize positions.
+### P11: Weight Field Misuse (Risk: 2/5)
+**What:** Users set all Pillars to weight 10, negating the differentiation.
 **Prevention:**
-- Same approach as existing task reorder — position is a float, not int
-- Or: normalize positions on each reorder (simple for max 7 items)
-**Tests:** Reorder 5 Pillars, verify positions are sequential.
+- Onboarding explains weight as "relative importance" — not every Pillar is 10
+- UI hint: "Higher weight = higher priority boost for aligned tasks"
+**Tests:** Weight slider shows explanation text.
 
 ## Phase Warnings
 
 | Phase Risk | Warning |
 |-----------|---------|
-| V1 scope creep | Keep V1 to CRUD + goal linkage. Resist adding analytics/filtering. |
-| Pillar ↔ Routine naming | UI must CLEARLY distinguish "Pillar" (identity anchor) from "Routine" (daily behavior). |
-| Gender sensitivity | Pillar descriptions should avoid prescriptive language. "I honor..." not "I must..." |
-| HA entity naming | Reserve `sensor.meitheal_pillar_*` namespace now, even if not implementing in V1 |
+| V1 scope creep | North Star UX + AI integration + strategic evaluator is already ambitious. Guard scope. |
+| ALTER TABLE migration | Test on copy of production DB before release |
+| Principle ↔ Strategic Lens confusion | UI must distinguish "Principle = personal boundary" from "Lens = prioritization framework" |
+| `userId` field | Include in schema now but don't enforce multi-user logic until auth overhaul |
 
 ## Confidence: HIGH
-Pitfalls are well-understood from habit-service development and persona audit feedback.
+Pitfalls well-mapped from habit-service development, AI integration patterns, and user specification.

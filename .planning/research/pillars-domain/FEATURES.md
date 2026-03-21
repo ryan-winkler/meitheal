@@ -1,68 +1,72 @@
-# Pillars Domain — Features Research
+# Pillars Domain — Features Research (Expanded Scope)
 
-**Date:** 2026-03-21
-**Researcher:** Antigravity (50-persona audit + competitive analysis)
+**Date:** 2026-03-21 (v2 — expanded with Principles, AI, Strategy, UX)
+**Researcher:** Antigravity (50-persona audit + integration analysis)
 
 ## Table Stakes (Must-Have for V1)
 
-| Feature | Description | Persona Support |
-|---------|-------------|----------------|
-| Pillar CRUD | Create, edit, delete, reorder Pillars | 50/50 |
-| Name + Icon + Color | Visual identity per Pillar | 48/50 |
-| Max 7 limit | Cognitive load guard (soft or hard) | 42/50 |
-| Goal linkage | Optional `pillar_id` on Goals table | 47/50 |
-| Routine linkage | Optional `pillar_id` on task_templates/habits | 45/50 |
-| Pillar list page | `/progress` sub-section for Pillars | 50/50 |
-| Pillar detail view | Show connected Goals, Routines, Tasks | 44/50 |
-| Identity framing | "I am someone who..." language | 38/50 |
-| Shame-free design | No failure states, only positive anchors | 46/50 |
+| Feature | Description | Source |
+|---------|-------------|--------|
+| **Pillar CRUD** | Create, edit, delete, reorder Pillars | User spec + 50/50 personas |
+| **Principle/Non-Negotiable CRUD** | Create, edit, delete child Principles per Pillar | User spec (LOCKED) |
+| **Name + Icon + Color** | Visual identity per Pillar | 48/50 personas |
+| **Max 7 soft limit** | Cognitive load guard with warning (not block) | 42/50 personas |
+| **Identity framing** | "I am someone who..." placeholders | User spec (LOCKED), 38/50 |
+| **Shame-free design** | No failure states, only positive anchors | User spec (LOCKED), 46/50 |
+| **Goal linkage** | M2M via `pillar_associations` (entity_type=goal) | User spec + 47/50 |
+| **Routine linkage** | M2M via `pillar_associations` (entity_type=routine) | User spec + 45/50 |
+| **North Star page** | Large masonry-grid or manifesto-style Pillar cards | User spec (LOCKED) |
+| **Blueprint view** | Click Pillar → see WHY, Principles, linked Goals/Routines/Tasks | User spec (LOCKED) |
+| **Top-down inheritance** | Tasks inherit Pillar from parent Project → Goal chain | User spec (LOCKED) |
+| **Orphaned task visual** | "Unaligned" flag on tasks without Pillar (gamification, not shame) | User spec (LOCKED) |
 
-## Should-Have (V1 if feasible, otherwise V2)
+## Should-Have (V1 if time allows)
 
-| Feature | Description | Persona Support |
-|---------|-------------|----------------|
-| Task linkage | Optional `pillar_id` on Tasks (beyond goal inheritance) | 30/50 |
-| Pillar filter chip | Filter any view by Pillar | 35/50 |
-| Contextual badge | Show Pillar color dot on task detail panel | 32/50 |
-| Onboarding suggestions | Auto-suggest Pillars from existing Areas | 28/50 |
-| Pillar description | Optional description/identity statement | 40/50 |
+| Feature | Description | Source |
+|---------|-------------|--------|
+| **AI prompt injection** | Principles injected into LLM system prompt via `ai-context-service.ts` | User spec (LOCKED) |
+| **Conflict resolution UI** | Non-blocking "Boundary Conflict" warning when scheduling violates Principle | User spec (LOCKED) |
+| **Strategic evaluator boost** | Pillar-weighted priority pre-computation in `rule-resolver.ts` | User spec (LOCKED) |
+| **Alignment audit chart** | Weekly balance visualization across Pillars in `progress.astro` | User spec |
+| **AI onboarding wizard** | Behavioral questions → AI drafts Pillars and Principles | User spec (LOCKED) |
 
 ## Differentiators (V2+)
 
-| Feature | Description | Persona Support |
-|---------|-------------|----------------|
-| Pillar attention radar | N-sided polygon visualization showing time balance | 25/50 |
-| Weekly review panel | "Time spent per Pillar" analytics | 30/50 |
-| Pillar-aligned RICE modifier | Pillar alignment boosts prioritization score | 20/50 |
-| HA sensors | `sensor.meitheal_pillar_{slug}_attention` | 18/50 |
-| Keystone badge | Tag routines serving 2+ Pillars | 15/50 |
-| Household sharing | Shared vs. personal Pillars | 22/50 |
-| Calendar color-coding | Calendar events tinted by Pillar color | 12/50 |
+| Feature | Description |
+|---------|-------------|
+| **Pillar attention radar** | N-sided polygon visualization showing time balance |
+| **HA sensors** | `sensor.meitheal_pillar_{slug}_attention` |
+| **Pillar filter chips** | Filter any task view by Pillar |
+| **Household Pillar sharing** | Shared vs. personal Pillars |
+| **Calendar color-coding** | Timeline events tinted by Pillar color |
+| **WebMCP Principle access** | External agents query Principles via MCP |
+| **Node-RED/n8n triggers** | Automation on Principle violations |
 
 ## Anti-Features (Explicitly NOT building)
 
 | Feature | Reason |
 |---------|--------|
 | Pillar streak counter | Shame-inducing. Pillars are permanent, not performative. |
-| Pillar failure notifications | "You haven't served your Health Pillar" = harmful for ADHD. |
-| Mandatory Pillar assignment | Tasks without Pillars are fine. Gentle prompt only. |
-| Complex Pillar hierarchy | Pillars are flat. No sub-pillars. Simplicity is key. |
-| Pillar-based task auto-creation | Pillars don't create tasks. Routines do. |
+| Pillar failure notifications | "You haven't served Health" = harmful for ADHD. |
+| Mandatory Pillar assignment | Tasks without Pillars are fine. Gentle "unaligned" flag only. |
+| Sub-pillars / hierarchy | Pillars are flat. Principles are children. No nesting beyond that. |
+| Hard-block on conflicts | Life happens. Warning only, always dismissible. |
+| Complex Principle scheduling | Principles are rules, not calendar events. |
 
 ## Competitive Landscape
 
-| App | Has Values/Pillars? | Implementation |
-|-----|---------------------|----------------|
-| TickTick | ❌ No — tags/lists only | Gap |
-| Todoist | ❌ No — projects as categories | Gap |
-| Habitica | ❌ No — gamification only | Gap |
-| Things 3 | ❌ No — areas only | Gap |
-| OmniFocus | ❌ No — contexts/tags | Gap |
-| Notion | ⚠️ DIY — users build it manually | Unstructured |
-| Serenity Coach | ✅ Yes — "Life Values" | Specialized wellness app |
-| maLife | ✅ Yes — "Life Areas with Vision" | Specialized life planning |
+| App | Values/Pillars? | Principles/Boundaries? | AI Integration? |
+|-----|-----------------|----------------------|-----------------|
+| TickTick | ❌ | ❌ | ❌ |
+| Todoist | ❌ | ❌ | ✅ (basic AI) |
+| Habitica | ❌ | ❌ | ❌ |
+| Things 3 | ❌ | ❌ | ❌ |
+| OmniFocus | ❌ | ❌ | ❌ |
+| Notion | ⚠️ DIY | ⚠️ DIY | ✅ (AI) |
+| Serenity Coach | ✅ Values | ❌ | ❌ |
+| maLife | ✅ Vision | ❌ | ❌ |
 
-**Market opportunity: No major task management app has a structured values/pillars layer.**
+**No competitor combines structured Pillars + behavioral Principles + AI enforcement.** This is a genuine differentiator.
 
 ## Confidence: HIGH
-Features well-validated by 50-persona panel and competitive gap analysis.
+Features validated by 50-persona panel, competitive gap analysis, and detailed user specification with LOCKED decisions.
