@@ -286,10 +286,8 @@ const { class: className } = Astro.props
     customizerAbort = new AbortController()
     const signal = customizerAbort.signal
 
-    const closeBtn = document.getElementById("card-customizer-close")
     const resetBtn = document.getElementById("card-customizer-reset")
     const panel = document.getElementById("card-customizer-panel")
-    const wrapper = document.getElementById("kanban-fields-panel")
 
     if (!panel) return
 
@@ -309,14 +307,7 @@ const { class: className } = Astro.props
       }, { signal })
     })
 
-    // Close button hides the wrapper panel (toggled by toolbar Fields button)
-    if (closeBtn && wrapper) {
-      closeBtn.addEventListener("click", () => {
-        wrapper.classList.add("hidden")
-        const fieldsBtn = document.getElementById("toggle-fields-btn")
-        fieldsBtn?.setAttribute("aria-pressed", "false")
-      }, { signal })
-    }
+    // Close button handler moved to tasks.astro (co-located with toggle/escape/click-outside)
 
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {

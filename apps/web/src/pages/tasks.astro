@@ -801,9 +801,26 @@ try {
       // Fields panel toggle
       const fieldsBtn = document.getElementById("toggle-fields-btn")
       const fieldsPanel = document.getElementById("kanban-fields-panel")
+
+      // Ensure panel starts hidden (guards against HMR/dep-optimization reloads)
+      fieldsPanel?.classList.add("hidden")
+
+      const hideFieldsPanel = () => {
+        fieldsPanel?.classList.add("hidden")
+        fieldsBtn?.setAttribute("aria-pressed", "false")
+      }
+
       fieldsBtn?.addEventListener("click", () => {
         const isHidden = fieldsPanel?.classList.toggle("hidden")
         fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
+      }, { signal })
+
+      // Close button inside the CardCustomizer panel (event delegation — robust against timing)
+      fieldsPanel?.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest("#card-customizer-close")) {
+          e.stopPropagation()
+          hideFieldsPanel()
+        }
       }, { signal })
 
       // Click outside closes Fields panel
@@ -813,16 +830,14 @@ try {
           !fieldsPanel.contains(e.target as Node) &&
           !fieldsBtn?.contains(e.target as Node)
         ) {
-          fieldsPanel.classList.add("hidden")
-          fieldsBtn?.setAttribute("aria-pressed", "false")
+          hideFieldsPanel()
         }
       }, { signal })
 
       // Escape key closes Fields panel
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" && fieldsPanel && !fieldsPanel.classList.contains("hidden")) {
-          fieldsPanel.classList.add("hidden")
-          fieldsBtn?.setAttribute("aria-pressed", "false")
+          hideFieldsPanel()
           fieldsBtn?.focus()
         }
       }, { signal })
@@ -925,17 +940,15 @@ try {
   .kanban-fields-panel {
     margin-bottom: 12px;
     max-width: 280px;
-    animation: fields-panel-reveal 200ms ease both;
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 200ms ease, transform 200ms ease;
   }
   .kanban-fields-panel.hidden {
-    display: none;
-  }
-  @keyframes fields-panel-reveal {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
+    display: none !important;
   }
   @media (prefers-reduced-motion: reduce) {
-    .kanban-fields-panel { animation: none; }
+    .kanban-fields-panel { transition: none; }
   }
   .kanban-board {
     display: flex;

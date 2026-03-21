@@ -68,5 +68,12 @@ export default defineConfig({
       __MEITHEAL_ASTRO_FIRST__: true,
       __MEITHEAL_VERSION__: JSON.stringify(MEITHEAL_VERSION),
     },
+    optimizeDeps: {
+      // Pre-bundle dependencies that Vite discovers at runtime, preventing
+      // "optimized dependencies changed. reloading" mid-session (causes 504 errors).
+      include: [
+        "marked",
+      ],
+    },
   },
 });
