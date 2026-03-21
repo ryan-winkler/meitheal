@@ -41,8 +41,45 @@
   transform: translateX(-50%) translateY(0);
 }
 
-/* ── Timeline Toolbar ───────────────────────────────────────────────────── */
+/* ── B7: ClickUp-style Controls Bar (above sidebar/chart) ────────────── */
 
+.timeline-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 12px;
+}
+
+.timeline-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s, color 0.15s;
+  list-style: none;
+}
+
+.timeline-ctrl-btn:hover {
+  border-color: var(--accent, #7c3aed);
+  color: var(--text-primary);
+}
+
+.timeline-ctrl-btn::-webkit-details-marker {
+  display: none;
+}
+
+/* Legacy .timeline-toolbar — kept for backward compat */
 .timeline-toolbar {
   display: flex;
   align-items: center;

@@ -84,7 +84,7 @@ const BAR_HEIGHT = 28
 const BAR_Y_PAD = (ROW_HEIGHT - BAR_HEIGHT) / 2
 const HEADER_HEIGHT = 56
 const BAR_RADIUS = 6
-const SIDEBAR_WIDTH = 200
+const SIDEBAR_WIDTH = 320
 const ZOOM_KEY = "meitheal-timeline-zoom"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
 const HANDLE_WIDTH = 8
@@ -134,7 +134,7 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 
 function daysBetween(a: Date, b: Date): number {
   const ms = b.getTime() - a.getTime()
-  return Math.ceil(ms / (1000 * 60 * 60 * 24))
+  return Math.round(ms / (1000 * 60 * 60 * 24))
 }
 
 function addDays(d: Date, n: number): Date {
@@ -683,25 +683,64 @@ function renderGantt(
   layout.className = "gantt-layout"
   layout.style.cssText = `display:flex;height:100%;position:relative;`
 
+  // Due Date column visibility state
+  const DUEDATE_VIS_KEY = "meitheal-gantt-show-duedate"
+  let showDueDateCol = true
+  try {
+    const stored = localStorage.getItem(DUEDATE_VIS_KEY)
+    if (stored === "false") showDueDateCol = false
+  } catch { /* ignore */ }
+
   // Sidebar (fixed left)
   const sidebar = document.createElement("div")
   sidebar.className = "gantt-sidebar"
   sidebar.style.cssText = `
-    flex:0 0 ${SIDEBAR_WIDTH}px;width:${SIDEBAR_WIDTH}px;
+    flex:0 0 auto;width:${showDueDateCol ? 320 : 200}px;
     background:var(--bg-card);border-right:1px solid var(--border);
     overflow:hidden;z-index:10;position:relative;
   `
 
-  // Sidebar header
+  // Sidebar header — multi-column (Name + Due Date + add-column)
   const sidebarHeader = document.createElement("div")
   sidebarHeader.className = "gantt-sidebar-header"
   sidebarHeader.style.cssText = `
     height:${HEADER_HEIGHT}px;display:flex;align-items:center;
-    padding:0 12px;border-bottom:1px solid var(--border);
-    font-size:12px;font-weight:600;color:var(--text-muted);
+    padding:0 8px;border-bottom:1px solid var(--border);
+    font-size:11px;font-weight:600;color:var(--text-muted);
     text-transform:uppercase;letter-spacing:0.04em;
   `
-  sidebarHeader.textContent = "Task"
+
+  const nameCol = document.createElement("span")
+  nameCol.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+  nameCol.textContent = "Task"
+  sidebarHeader.appendChild(nameCol)
+
+  const dueDateCol = document.createElement("span")
+  dueDateCol.style.cssText = `flex:0 0 80px;text-align:right;padding-right:4px;cursor:pointer;display:${showDueDateCol ? "" : "none"};`
+  dueDateCol.textContent = "Due Date"
+  dueDateCol.title = "Click to toggle column"
+  dueDateCol.addEventListener("click", (e) => {
+    e.stopPropagation()
+    showDueDateCol = !showDueDateCol
+    try { localStorage.setItem(DUEDATE_VIS_KEY, String(showDueDateCol)) } catch { /* ignore */ }
+    renderGantt(outerContainer, bars, zoom, _parentSignal)
+  })
+  sidebarHeader.appendChild(dueDateCol)
+
+  // Show/hide toggle button when column is hidden
+  if (!showDueDateCol) {
+    const showBtn = document.createElement("button")
+    showBtn.textContent = "⊕"
+    showBtn.title = "Show Due Date column"
+    showBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
+    showBtn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      showDueDateCol = true
+      try { localStorage.setItem(DUEDATE_VIS_KEY, "true") } catch { /* ignore */ }
+      renderGantt(outerContainer, bars, zoom, _parentSignal)
+    })
+    sidebarHeader.appendChild(showBtn)
+  }
   sidebar.appendChild(sidebarHeader)
 
   // Sidebar rows
@@ -777,10 +816,10 @@ function renderGantt(
     `
     row.appendChild(dot)
 
-    // Task name
+    // Task name (flex:1 to push due date to the right)
     const name = document.createElement("span")
     name.style.cssText = `
-      overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);
+      flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);
       ${bar.isComplete ? "text-decoration:line-through;opacity:0.5;" : ""}
       ${bar.isOverdue ? "color:var(--accent-danger, #ef4444);" : ""}
       ${bar.hasChildren ? "font-weight:600;" : ""}
@@ -788,6 +827,35 @@ function renderGantt(
     name.textContent = bar.name
     name.title = bar.name
     row.appendChild(name)
+
+    // Due date column (hidden when column toggled off)
+    if (showDueDateCol) {
+      const dueCell = document.createElement("span")
+      dueCell.style.cssText = `
+        flex:0 0 80px;text-align:right;padding-right:4px;
+        font-size:11px;white-space:nowrap;
+      `
+      const dueStr = bar.original.due_date
+      if (dueStr) {
+        const d = new Date(dueStr)
+        const mon = d.toLocaleString("en-US", { month: "short" })
+        const day = d.getDate()
+        dueCell.textContent = `${mon} ${day}`
+        dueCell.style.color = bar.isOverdue ? "var(--accent-danger, #ef4444)" : "var(--text-muted)"
+      } else {
+        dueCell.textContent = "Schedule"
+        dueCell.style.color = "var(--text-muted)"
+        dueCell.style.opacity = "0.5"
+        dueCell.style.fontStyle = "italic"
+        dueCell.style.cursor = "pointer"
+        dueCell.title = "Click to schedule this task"
+        dueCell.addEventListener("click", (e) => {
+          e.stopPropagation()
+          import("./task-detail-handoff.js").then((m) => m.openTaskDetailHandoff(bar.id)).catch(() => {})
+        })
+      }
+      row.appendChild(dueCell)
+    }
 
     // M2: Row cross-highlighting — sidebar → chart
     row.addEventListener("mouseenter", () => {
@@ -952,7 +1020,8 @@ function renderGantt(
 
   const today = startOfDay(new Date())
   const todayOffset = daysBetween(rangeStart, today)
-  const todayX = todayOffset * pxPerDay
+  // B3: Center the Today line within its day column (half-day offset)
+  const todayX = todayOffset * pxPerDay + pxPerDay / 2
   if (todayOffset >= 0 && todayOffset <= totalDays) {
     const todayGroup = svgEl("g", { class: "gantt-today" })
 
@@ -1285,6 +1354,14 @@ function renderGantt(
   }, { signal })
   outerContainer.style.position = "relative"
   outerContainer.appendChild(fab)
+
+  // B7: Wire up toolbar "Scroll to Today" button
+  const scrollTodayBtn = document.getElementById("timeline-scroll-today")
+  if (scrollTodayBtn) {
+    scrollTodayBtn.addEventListener("click", () => {
+      scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
+    }, { signal })
+  }
 
   // Pulse animation on first load (O3: skip if reduced motion)
   if (!REDUCED_MOTION) {

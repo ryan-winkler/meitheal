@@ -104,6 +104,18 @@ function switchView(view: TaskView) {
     history.replaceState(null, "", `#${view}`)
   }
 
+  // B1: Update browser tab title to reflect active view
+  const viewTitles: Record<TaskView, string> = {
+    kanban: "Kanban Board",
+    table: "Table View",
+    calendar: "Calendar",
+    timeline: "Timeline",
+  }
+  document.title = `Meitheal — ${viewTitles[view]}`
+  // Also update the page heading
+  const heading = document.querySelector(".unified-bar__title-text")
+  if (heading) heading.textContent = viewTitles[view]
+
   // Persist preference
   try {
     localStorage.setItem(STORAGE_KEY, view)

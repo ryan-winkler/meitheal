@@ -113,37 +113,47 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     />
   )}
 
-  {/* Type toggle buttons — shared across views */}
+  {/* Type toggle buttons — TaskKind behavioral classification */}
   <div class="filter-toolbar__type-toggles" id={`${prefix}-type-toggles`}>
     <button
       type="button"
       class="filter-toolbar__type-btn active"
-      data-type="epic"
+      data-type="standard_action"
       aria-pressed="true"
-      title="Toggle Epics"
-    >
-      <TaskTypeIcon type="epic" size={14} />
-      Epic
-    </button>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="story"
-      aria-pressed="true"
-      title="Toggle Stories"
-    >
-      <TaskTypeIcon type="story" size={14} />
-      Story
-    </button>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="task"
-      aria-pressed="true"
-      title="Toggle Tasks"
+      title="Toggle Standard Tasks"
     >
       <TaskTypeIcon type="task" size={14} />
       Task
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="shopping_item"
+      aria-pressed="true"
+      title="Toggle Shopping Items"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Shopping
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="checklist"
+      aria-pressed="true"
+      title="Toggle Checklists"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Checklist
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="routine_instance"
+      aria-pressed="true"
+      title="Toggle Routines"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Routine
     </button>
   </div>
 
