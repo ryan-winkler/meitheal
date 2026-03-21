@@ -1,103 +1,128 @@
-# External Integrations
+# Integrations — Meitheal
 
-**Analysis Date:** 2026-03-20
+**Mapped:** 2026-03-21 | **Confidence:** HIGH
 
-## AI Integration Surfaces (3 Protocols)
+## Home Assistant (Primary)
 
-### MCP — Model Context Protocol
+| Integration | Path | Protocol |
+|-------------|------|----------|
+| **Supervisor API** | `apps/web/src/lib/supervisor-fetch.ts` | REST (`SUPERVISOR_TOKEN`) |
+| **WebSocket** | `apps/web/src/domains/ha/ha-connection.ts` | WS via `home-assistant-js-websocket` |
+| **Events** | `apps/web/src/domains/ha/ha-events.ts` | State change subscriptions |
+| **Services** | `apps/web/src/domains/ha/ha-services.ts` | HA service calls |
+| **Users** | `apps/web/src/domains/ha/ha-users.ts` | HA user resolution |
+| **Entities** | `apps/web/src/domains/ha/ha-entities.ts` | Entity state reading |
+| **Calendar** | `apps/web/src/domains/calendar/calendar-bridge.ts` | HA calendar entity sync |
+| **Todo** | `apps/web/src/domains/todo/todo-bridge.ts` | HA todo list sync |
+| **Assist** | `apps/web/src/domains/ai/ha-assist-service.ts` | Voice assistant AI |
+| **Custom Integration** | `integrations/home-assistant/` | Python — sensors, todo, backup, LLM API, MCP server |
 
-**Astro TS Server** (`apps/web/src/pages/api/mcp.ts`):
-- 17 tools via JSON-RPC 2.0 over HTTP POST
-- Protocol version: `2024-11-05`
-- Discovery: `/.well-known/mcp.json`
-- Tools: createTask, searchTasks, completeTask, updateTask, deleteTask, getTask, getCalendarEvents, getUpcoming, syncCalendar, getOverdueTasks, getTodaysTasks, getTaskSummary, batchComplete, assignTask, listUsers, linkTask, unlinkTask, getTaskLinks
-- Delegates to internal REST API (thin adapter pattern)
+### HA Custom Component Modules
 
-**HA Python MCP Server** (`integrations/home-assistant/custom_components/meitheal/mcp_server.py`):
-- 524 lines, runs inside HA custom component
-- Additional tools not in TS: `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress`
-- Uses coordinator data directly (no HTTP intermediary)
+| Module | Purpose |
+|--------|---------|
+| `__init__.py` | Integration setup + coordinator |
+| `sensor.py` | Task count sensors |
+| `todo.py` | Task ↔ HA todo entity bridge |
+| `backup.py` | HA backup platform |
+| `llm_api.py` | LLM conversation tool |
+| `mcp_server.py` | MCP server for AI agents |
+| `config_flow.py` | HA config flow UI |
+| `intents.py` | Voice assistant intents |
+| `device_trigger.py` | Automation triggers |
+| `diagnostics.py` | HA diagnostics dump |
+| `repairs.py` | HA repair issues |
 
-### A2A — Agent-to-Agent Protocol
+## Calendar / CalDAV
 
-**Handler** (`packages/integration-core/src/a2a-handler.ts`):
-- HTTP+JSON binding, protocol version 1.0
-- 11 skills: task-management, task-search, framework-scoring, data-export, areas, labels, today-summary, habits, review-weekly, ha-calendar-sync, ha-entity-state
-- Agent card: `/api/a2a/agent-card`
-- Message endpoint: `/api/a2a/message`
-- Skill routing via keyword extraction (no LLM-based intent)
-- ⚠️ Skill handlers not fully wired — discovery works, execution is partial
+| API Route | Service |
+|-----------|---------|
+| `/api/integrations/calendar/sync` | Calendar sync execution |
+| `/api/integrations/calendar/status` | Sync status |
+| `/api/integrations/calendar/caldav-credentials` | CalDAV credential management |
+| `/api/integrations/calendar/confirmation` | Sync confirmation |
 
-### HA LLM API
+Implementation: `apps/web/src/domains/calendar/caldav-client.ts`
 
-**LLM Tools** (`integrations/home-assistant/custom_components/meitheal/llm_api.py`):
-- 21 tools registered as HA LLM API provider
-- Rich descriptions with voice-optimized trigger phrases
-- Unique tools: `meitheal_daily_briefing` (weather + people + tasks), `meitheal_remove_from_todo_list`, `meitheal_list_areas`, `meitheal_list_goals`, `meitheal_move_task`, `meitheal_set_goal_progress`
-- Uses coordinator data directly (in-process, no HTTP)
+## Grocy
 
-## Tool Coverage Matrix
+| API Route | Service |
+|-----------|---------|
+| `/api/grocy/sync` | Grocy ↔ Meitheal task sync |
+| `/api/grocy/settings` | Grocy connection settings |
+| `/api/grocy/test` | Connection test |
+| `/api/grocy/auto-key` | Auto-discover API key |
 
-| Tool | MCP TS | MCP Python | LLM API | A2A |
-|------|--------|------------|---------|-----|
-| Search Tasks | ✅ | ✅ | ✅ | ✅ |
-| Create Task | ✅ | ✅ | ✅ | ✅ |
-| Complete Task | ✅ | ✅ | ✅ | ✅ |
-| Update Task | ✅ | ✅ | ✅ | ✅ |
-| Delete Task | ✅ | ✅ | ✅ | ❌ |
-| Get Task | ✅ | ✅ | ✅ | ❌ |
-| Get Overdue | ✅ | ✅ | ✅ | ❌ |
-| Get Today | ✅ | ✅ | ✅ | ✅ |
-| Task Summary | ✅ | ✅ | ✅ | ❌ |
-| Calendar Events | ✅ | ✅ | ✅ | ✅ |
-| Upcoming | ✅ | ✅ | ✅ | ❌ |
-| Sync Calendar | ✅ | ✅ | ❌ | ✅ |
-| Batch Complete | ✅ | ✅ | ✅ | ❌ |
-| Assign Task | ✅ | ❌ | ❌ | ❌ |
-| List Users | ✅ | ❌ | ❌ | ❌ |
-| Link/Unlink Tasks | ✅ | ✅ | ✅ | ❌ |
-| List Areas | ❌ | ✅ | ✅ | ✅ |
-| List Goals | ❌ | ✅ | ✅ | ❌ |
-| Move Task | ❌ | ✅ | ✅ | ❌ |
-| Set Goal Progress | ❌ | ✅ | ✅ | ❌ |
-| Daily Briefing | ❌ | ❌ | ✅ | ❌ |
-| Framework Scoring | ❌ | ❌ | ❌ | ✅ |
-| Data Export | ❌ | ❌ | ❌ | ✅ |
-| Habits | ❌ | ❌ | ❌ | ✅ |
-| Weekly Review | ❌ | ❌ | ❌ | ✅ |
+Implementation: `apps/web/src/domains/grocy/grocy-bridge.ts`, `grocy-mapper.ts`
 
-## Home Assistant Integration
+## n8n Workflows
 
-**Custom Component** (`integrations/home-assistant/custom_components/meitheal/`):
-- Config flow: `config_flow.py`
-- Coordinator: `coordinator.py` (data update, HTTP client to Astro)
-- Entities: `todo.py` (TodoListEntity), `sensor.py`
-- Services: `services.yaml` (create_task, complete_task)
-- Device Triggers: `device_trigger.py`
-- Intents: `intents.py` + `custom_sentences/`
-- Diagnostics: `diagnostics.py`
-- Backup: `backup.py`
-- Repairs: `repairs.py`
-- Manifest: `integration_type: "hub"`, `quality_scale: "platinum"`
+| API Route | Service |
+|-----------|---------|
+| `/api/integrations/n8n/health` | n8n instance health |
+| `/api/integrations/n8n/workflows` | Workflow listing |
 
-**HA WebSocket**: 9 references — connection status, entity state reads
-**Ingress**: 336 references — deep embedding, fetch monkey-patch, CSP headers
-**Supervisor API**: 57 references — add-on lifecycle, info, discovery
+Implementation: `apps/web/src/lib/n8n-fetch.ts`
 
-## External Services
+## Node-RED
 
-**Grocy** (`apps/web/src/domains/grocy/`):
-- Stock management, meal planning
-- API proxy through Meitheal
+| API Route | Service |
+|-----------|---------|
+| `/api/integrations/nodered/status` | Node-RED status |
+| `/api/integrations/nodered/flows` | Flow listing |
+| `/api/integrations/nodered/deploy` | Flow deployment |
 
-**CalDAV** (`apps/web/src/domains/calendar/`):
-- External calendar sync
-- Tested in settings controller
+Implementation: `apps/web/src/lib/nodered-admin.ts`
 
-**n8n** (webhook integration):
-- Outbound webhooks for automation
-- Configured in settings
+## Webhooks
 
----
+| Component | Path |
+|-----------|------|
+| Webhook emitter | `packages/integration-core/src/webhook-emitter.ts` |
+| Webhook config | `packages/integration-core/src/webhook-config.ts` |
+| Test webhook | `/api/integrations/test-webhook` |
+| Test event | `/api/integrations/test-event` |
 
-*Integration audit: 2026-03-20*
+## Agent-to-Agent (A2A) Protocol
+
+| API Route | Purpose |
+|-----------|---------|
+| `/api/a2a/agent-card` | Agent discovery (`.well-known/agent.json` redirects here) |
+| `/api/a2a/message` | Agent message endpoint |
+| `/api/a2a/tasks/[id]` | Task status for agents |
+
+Implementation: `packages/integration-core/src/a2a-handler.ts`
+
+## MCP (Model Context Protocol)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/mcp` | MCP server endpoint |
+| `public/.well-known/mcp.json` | MCP discovery |
+
+## Vikunja v1 Compatibility
+
+| API Route | Purpose |
+|-----------|---------|
+| `/api/v1/projects/` | Project CRUD (Vikunja compat) |
+| `/api/v1/tasks/` | Task CRUD (Vikunja compat) |
+| `/api/v1/labels/` | Label CRUD (Vikunja compat) |
+| `/api/v1/users/` | User info (Vikunja compat) |
+
+## Database
+
+| Aspect | Detail |
+|--------|--------|
+| **Engine** | SQLite via `@libsql/client` |
+| **File** | `data.db` (project root, gitignored) |
+| **Migrations** | Runtime schema-ensure pattern in each service (`ensureSchema()`) |
+| **Drift check** | `apps/web/scripts/schema-drift-check.mjs` |
+
+## Authentication
+
+| Mechanism | Implementation |
+|-----------|---------------|
+| **HA Ingress** | `X-Ingress-Path` header detection via `ingress-policy.ts` |
+| **CSRF** | Token-based, managed by `domain-auth` |
+| **License Key** | Ed25519 JWT — offline verification, no phone-home |
+| **Passkey** | WebAuthn support (spec: `auth-passkey.spec.ts`) |

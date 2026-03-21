@@ -1,151 +1,165 @@
-# Codebase Architecture — Meitheal
+# Architecture — Meitheal
 
-> Last refreshed: 2026-03-20 (Phase 16 — Task Views Overhaul)
+**Mapped:** 2026-03-21 | **Confidence:** HIGH
 
 ## Pattern
 
-**DDD monorepo with Astro SSR + domain packages + event-driven integration**
+**DDD Monorepo** with Astro SSR + domain packages + event-driven integration.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Astro SSR (apps/web)              │
-│                                                     │
-│  ┌─────────┐  ┌──────────┐  ┌──────────────────┐   │
-│  │  Pages   │→ │  Layout  │→ │  Components      │   │
-│  │  (SSR)   │  │ + Shell  │  │  (Astro + CSS)   │   │
-│  └────┬─────┘  └────┬─────┘  └──────────────────┘   │
-│       │              │                               │
-│  ┌────▼─────┐  ┌────▼──────────────────────┐        │
-│  │ API Routes│  │  Controllers (vanilla JS)  │       │
-│  │ /api/*    │  │  *-controller.ts + registries│     │
-│  └────┬─────┘  └──────────────────────────────┘      │
-│       │                                              │
-│  ┌────▼─────────────────────────────────────┐        │
-│  │         In-App Domains                    │       │
-│  │  auth, ha, todo, tasks, search,           │       │
-│  │  calendar, gamification, habits,          │       │
-│  │  grocy, labels, notifications,            │       │
-│  │  offline, pomodoro, strategy, ai          │       │
-│  └──────────────────────────────────────────┘        │
-└──────────────────────┬──────────────────────────────┘
-                       │ workspace:*
-┌──────────────────────▼──────────────────────────────┐
-│              Workspace Packages                      │
-│  domain-auth │ domain-tasks │ domain-strategy        │
-│  domain-observability │ integration-core             │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────┐
+│           Astro SSR             │  apps/web/
+│    (Pages, API routes, UI)      │
+├────────────┬────────────────────┤
+│  Domains   │   Lib/Controllers  │  src/domains/, src/lib/
+├────────────┴────────────────────┤
+│      Workspace Packages         │  packages/domain-*/, integration-core/
+├─────────────────────────────────┤
+│  SQLite (libsql) + HA APIs      │  Persistence + External
+└─────────────────────────────────┘
 ```
 
 ## Layers
 
-### 1. Pages (SSR Entry Points)
-**Path:** `apps/web/src/pages/`
-18 page files. Each page:
-- Fetches data server-side (SSR)
-- Renders Astro components
-- Embeds a `<script>` block calling its controller function
-- Uses `Layout.astro` with `slot="custom-header"` for UnifiedBar
+### 1. Pages (Entry Points)
+`apps/web/src/pages/` — Astro `.astro` pages + API routes (`.ts`)
 
-**Route consolidation (Phase 16):** Kanban content moved to `/tasks` route. `/kanban` is now a 301 redirect. `/gantt` renamed to `/timeline`.
+- **UI Pages:** `index.astro`, `tasks.astro`, `kanban.astro`, `calendar.astro`, `today.astro`, `upcoming.astro`, `eisenhower.astro`, `progress.astro`, `planning.astro`, `settings.astro`, `habits.astro`, `timeline.astro`, `review.astro`, `gamification.astro`, `table.astro`
+- **Entity Pages:** `pillars/[id].astro`, `pillars/index.astro`, `areas/[id].astro`, `projects/[id].astro`, `goals/index.astro`
+- **API Routes:** 95+ endpoints under `/api/` — REST pattern with Astro APIRoute handlers
+- **Error Pages:** `404.astro`, `500.astro`
 
-**Largest pages:** tasks (1767), eisenhower (1425), today (1297), habits (1164), index (883)
+### 2. Components
+`apps/web/src/components/` — Astro components organized by domain:
 
-### 2. Layout Shell
-**Path:** `apps/web/src/layouts/Layout.astro` (~630 lines)
-- Master layout with sidebar, topnav, unified bar slot
-- Client-side fetch monkey-patch for ingress prefix
-- View transitions disabled behind ingress
+| Directory | Content |
+|-----------|---------|
+| `layout/` | Layout shell, TopNavigation, Sidebar, ParentPageShell, UnifiedBar, SearchHub, SectionHubCard |
+| `tasks/` | TaskCard, TaskModal, TaskTable, TaskTimeline, task list views |
+| `pillars/` | PillarCard, PillarFormModal, PillarSelector |
+| `views/` | TasksKanbanView, TasksTableView, TasksTimelineView |
+| `settings/` | All settings panels (theme, AI, integrations, data, danger zone) |
+| `ui/` | Reusable: InlineHelper, InlineDatePicker, ColorPicker, IconPicker, CardCustomizer |
+| `shared/` | SharedColorPicker, SharedIconPicker |
+| `gamification/` | Achievement, streak, XP components |
+| `ha/` | HA connection status, entity widgets |
+| `pomodoro/` | Pomodoro timer widget |
+| `pwa/` | Install prompts, offline indicators |
 
-### 3. Controllers (Client-Side Logic)
-**Path:** `apps/web/src/lib/*-controller.ts`
-~28 controller files.
+### 3. Domains (In-App)
+`apps/web/src/domains/` — Each domain is a bounded context with its own service files:
 
-**Controller hierarchy:**
-```
-layout-controller.ts (global)
-├── layout-body-controller.ts
-├── layout-pwa-controller.ts
-├── layout-shortcuts-controller.ts
-│
-page-shell-controller.ts (shared shell behavior)
-├── today-controller.ts → initPageShellNavigation
-├── upcoming-controller.ts → initPageShellNavigation
-├── calendar-controller.ts → initPageShellNavigation
-├── kanban-controller.ts → initPageShellNavigation (drives /tasks)
-├── table-controller.ts → initPageShellNavigation
-│
-kanban-controller.ts sub-modules:
-├── controllers/kanban-touch-drag.ts
-├── controllers/kanban-lane-panel.ts
-├── controllers/kanban-quick-actions.ts
-│
-unified-bar-controller.ts (bar-specific logic)
-├── consumed by page-shell-controller
-├── consumed by dashboard-controller
-├── consumed by habits-controller
-├── consumed by settings-shell-controller
-│
-eisenhower-controller.ts (STANDALONE — no shared shell)
-```
+| Domain | Files | Responsibility |
+|--------|-------|---------------|
+| `ai/` | 2 | AI context injection, HA Assist service |
+| `auth/` | 2 | Ingress policy, ingress detection |
+| `calendar/` | 4 | CalDAV client, HA calendar bridge |
+| `gamification/` | 3 | Achievement engine, streak tracker |
+| `grocy/` | 3 | Grocy bridge, mapper |
+| `ha/` | 7 | WebSocket, entities, events, services, users, startup |
+| `habits/` | 2 | Habit/routine CRUD service |
+| `labels/` | 3 | Label store, color resolution |
+| `notifications/` | 3 | Due date reminders |
+| `offline/` | 8 | Connectivity, sync engine, tab sync, SW registration |
+| `pillars/` | 3 | Pillar CRUD, principles, associations |
+| `pomodoro/` | 3 | Pomodoro timer service |
+| `search/` | 2 | Search service, types |
+| `strategy/` | 4 | Custom frameworks, rules |
+| `tasks/` | 2 | Recurrence, task sync |
+| `todo/` | 3 | HA todo bridge, status mapping |
+| `integrations/` | N/A | Vikunja v1 compat layer |
 
-### 4. Components
-**Path:** `apps/web/src/components/`
-68 Astro components across: `gamification/`, `ha/`, `layout/`, `pomodoro/`, `pwa/`, `settings/`, `tasks/`, `ui/`
+### 4. Lib (Controllers + Utilities)
+`apps/web/src/lib/` — 90+ files following the controller pattern:
 
-**Key layout components:**
-- `UnifiedBar.astro` (597 lines) — reusable navigation bar with viewTabs pill support
-- `Sidebar.astro` (~473 lines) — main navigation
-- `SearchHub.astro` — command palette search overlay
+- **Page controllers:** `dashboard-controller.ts`, `kanban-controller.ts`, `table-controller.ts`, `timeline-controller.ts`, etc.
+- **Shell controllers:** `page-shell-controller.ts`, `parent-page-controller.ts`, `settings-shell-controller.ts`
+- **Registries:** Enum-like config files (`dashboard-registry.ts`, `calendar-registry.ts`, `settings-registry.ts`, etc.)
+- **Common utilities:** `toast.ts`, `focus-trap.ts`, `managed-listeners.ts`, `page-lifecycle.ts`, `safe-fetch.ts`
+- **API client:** `task-api-client.ts`, `task-queries.ts`
 
-**Deprecated components:**
-- `TaskViewTabs.astro` — orphaned after Phase 16 (view switching moved to UnifiedBar pills)
+### 5. Workspace Packages
+`packages/` — Pure domain logic, no framework dependencies:
 
-### 5. Navigation: View Pills (Phase 16)
-Task view switching is now handled by UnifiedBar's `viewTabs` prop:
-- Pill-shaped buttons rendered between title switcher and section tabs
-- Query-string preservation on view switch
-- Active state with solid background highlight
-- Responsive: horizontal scroll on mobile
-
-Views: Kanban (`/tasks`) → Table (`/table`) → Calendar (`/calendar`) → Timeline (`/timeline`)
-
-### 6. In-App Domains
-**Path:** `apps/web/src/domains/`
-16 domain directories with domain services, bridges, and repositories.
-
-### 7. API Layer
-**Path:** `apps/web/src/pages/api/`
-100+ API route files covering tasks, HA, integrations, settings, labels, search, etc.
-
-### 8. Middleware
-**Path:** `apps/web/src/middleware.ts` (~322 lines)
-- Ingress rewriting (HTML href/src attributes)
-- CSP headers, CSRF protection, rate limiting
-- Request logging
-
-### 9. Ingress Wrapper
-**Path:** `apps/web/scripts/serve.mjs` (~70 lines)
-- HTTP server normalizing `//` → `/` for HA ingress
+| Package | Entry | Key Exports |
+|---------|-------|-------------|
+| `domain-auth` | `src/index.ts` | `verifyLicenseKey()`, CSRF utils, ingress detection |
+| `domain-observability` | `src/index.ts`, `src/logger.ts` | Structured JSON logger with redaction |
+| `domain-strategy` | `src/index.ts` | RICE scoring, rule resolver, framework config |
+| `domain-tasks` | `src/index.ts` | Domain model, handoff state machine, vertical slice |
+| `integration-core` | `src/index.ts` | Calendar adapters, A2A handler, webhook emitter, rate limiter |
 
 ## Data Flow
 
 ```
-Browser → serve.mjs (path normalization)
-       → middleware.ts (ingress rewrite, CSP, CSRF)
-       → Astro page (SSR render, data fetch)
-       → Layout.astro (shell, sidebar, fetch monkey-patch)
-       → Page controller (client-side JS)
-       → API routes (/api/*) → domain services → SQLite/HA
+Browser → Astro Page (SSR) → Domain Service → SQLite (libsql)
+                  ↓
+          API Route (REST) → Domain Service → SQLite
+                  ↓
+         Client Controller → fetch() → API Route
+```
+
+### Ingress Flow (HA)
+```
+HA Frontend → iframe → serve.mjs (// normalization)
+    → middleware.ts (ingress rewrite, CSP, CSRF)
+    → Astro Page → Layout.astro (fetch monkey-patch for API calls)
 ```
 
 ## Key Abstractions
 
-| Abstraction | Location | Consumer |
-|------------|----------|----------|
-| `pageLifecycle` | `lib/page-lifecycle.ts` | All controllers — lifecycle hooks |
-| `initPageShellNavigation` | `lib/page-shell-controller.ts` | 5/6 task page controllers |
-| Section registries | `lib/*-registry.ts` | Page + controller pairs |
-| `UnifiedBarViewTab` | `UnifiedBar.astro` interface | 4 task view pages |
-| `task-api-client.ts` | `lib/task-api-client.ts` | All task CRUD operations |
-| `managed-listeners.ts` | `lib/managed-listeners.ts` | Event listener cleanup |
-| `filter-state.ts` | `lib/filter-state.ts` | Shared filter/sort state |
+| Abstraction | Pattern | Example |
+|-------------|---------|---------|
+| **Page Controller** | `pageLifecycle.onLoad()` → init function | `dashboard-controller.ts` |
+| **Registry** | Static config objects for page-specific settings | `dashboard-registry.ts` |
+| **Domain Service** | `ensure*Schema()` + CRUD functions | `pillar-service.ts` |
+| **Persistence Client** | `getPersistenceClient()` → raw SQL via libsql | All domain services |
+| **API Response** | `{ ok: true, data }` / `{ ok: false, errorCode }` | All API routes |
+| **Managed Listeners** | `createListenerManager()` for cleanup | `managed-listeners.ts` |
+
+## Middleware Pipeline
+
+`apps/web/src/middleware.ts` (322 lines):
+1. Ingress path detection from `X-Ingress-Path` header
+2. CSRF token validation
+3. Rate limiting per IP
+4. CSP header injection
+5. HTML attribute rewriting (href, src with ingress prefix)
+
+## i18n
+
+| File | Purpose |
+|------|---------|
+| `apps/web/src/i18n/en.json` | English translations |
+| `apps/web/src/i18n/ga.json` | Irish translations |
+| `apps/web/src/i18n/translations.ts` | `t()` helper function with locale detection from cookie |
+
+Locale set via `meitheal-locale` cookie. Default: `en`.
+
+## Styles Architecture
+
+`apps/web/src/styles/` — Modular CSS with `@import` in `global.css`:
+
+| Module | Scope |
+|--------|-------|
+| `_tokens.css` | Design tokens (CSS custom properties) |
+| `_base.css` | Reset, body, typography |
+| `_buttons.css` | Button variants |
+| `_cards.css` | Card components |
+| `_forms.css` | Form elements |
+| `_modal.css` | Modal dialog styles |
+| `_layout.css` | Page layout grid |
+| `_responsive.css` | Breakpoints |
+| `_page-shell.css` | PageShell component |
+| `_parent-page.css` | ParentPageShell |
+| `_kanban.css` | Kanban board |
+| `_table.css` | Data table |
+| `_tasks.css` | Task cards |
+| `_search.css` + `_search-hub.css` | Search UI |
+| `_labels.css` | Label tags |
+| `_filter-toolbar.css` | Filter toolbar |
+| `_feedback.css` | Toast, alerts |
+| `_avatar.css` | User avatars |
+| `_utilities.css` | Utility classes |
+| `timeline-gantt.css` | Gantt chart |
+| `inline-date-picker.css` | Date picker |

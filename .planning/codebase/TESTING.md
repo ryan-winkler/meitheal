@@ -1,101 +1,102 @@
-# Codebase Testing — Meitheal
+# Testing — Meitheal
 
-> Last refreshed: 2026-03-19
+**Mapped:** 2026-03-21 | **Confidence:** HIGH
 
-## Test Infrastructure
+## Framework
 
-| Component | Detail |
-|-----------|--------|
-| Framework | Node.js built-in test runner (`node:test`) |
-| Location | `tests/` directory (separate workspace `@meitheal/tests`) |
-| DB isolation | Temp SQLite (`file:${tmpdir}/...`) per test |
-| HA simulation | Local HTTP server harness |
-| Shared state | None — no external mocking framework |
+| Aspect | Detail |
+|--------|--------|
+| **Runner** | Node.js built-in test runner (`node:test`) |
+| **Assertions** | `node:assert` (strict) |
+| **E2E harness** | Custom HTTP server harness simulating HA API |
+| **Browser testing** | Playwright (configured but not primary) |
+| **Location** | `tests/` directory at monorepo root |
 
-## Commands
+## Test Structure
+
+```
+tests/
+├── e2e/                        # 75+ integration/E2E specs
+│   ├── _helpers.ts             # Shared test utilities
+│   ├── pillars.spec.ts         # Pillar CRUD, principles, associations (15 tests)
+│   ├── api.spec.ts             # Core API tests
+│   ├── ingress-*.spec.ts       # HA ingress behavior tests
+│   ├── ha-*.spec.ts            # HA integration tests
+│   └── ...
+├── governance/
+│   ├── iqs-platinum.spec.ts    # Quality standards checks
+│   └── repo-standards.spec.ts  # Required files, naming, structure
+├── unit/
+│   ├── recurrence.spec.ts      # Recurrence calculation
+│   └── todo-status-mapper.spec.ts # Status mapping
+├── types/                      # Test type declarations
+└── playwright.config.ts        # Playwright config
+```
+
+## Running Tests
 
 ```bash
-# Run all tests
+# All tests
 pnpm --filter @meitheal/tests test
 
-# Run specific spec
-pnpm --filter @meitheal/tests test tests/e2e/today-shell.spec.ts
+# Specific spec
+pnpm --filter @meitheal/tests test tests/e2e/pillars.spec.ts
 
-# Typecheck all packages
+# Type check all packages
 pnpm check
 ```
 
-## Test Categories
+## Key Test Files for Phase 19
 
-### E2E Tests (60+ specs)
+| File | Tests | Focus |
+|------|-------|-------|
+| `tests/e2e/pillars.spec.ts` | 15 | Pillar CRUD, principles, associations, validation |
+| `tests/e2e/parent-page-shell.spec.ts` | N/A | ParentPageShell behavior (progress/planning tabs) |
+| `tests/e2e/search-hub.spec.ts` | N/A | Unified search functionality |
+| `tests/e2e/navigation.spec.ts` | N/A | Page navigation, routing |
 
-| Area | Specs | Key files |
-|------|-------|-----------|
-| Shell/UI | 7 | `today-shell.spec.ts`, `upcoming-shell.spec.ts`, `calendar-shell.spec.ts`, `kanban-shell.spec.ts`, `table-shell.spec.ts`, `dashboard-shell.spec.ts`, `habits-shell.spec.ts` |
-| Task CRUD | 5 | `api.spec.ts`, `today-page.spec.ts`, `status-consistency.spec.ts`, `task-type-api.spec.ts`, `task-sync-*.spec.ts` |
-| Hierarchy | 3 | `hierarchy-crud.spec.ts`, `hierarchy-model.spec.ts`, `subtask-hierarchy.spec.ts` |
-| HA Integration | 4 | `ha-calendar-adapter.spec.ts`, `ha-llm-api.spec.ts`, `ha-security-hardening.spec.ts`, `ha-backup-platform.spec.ts` |
-| Auth/Security | 4 | `ingress-header-validation.spec.ts`, `middleware-ingress-behavior.spec.ts`, `phase5-security.spec.ts`, `security-headers.spec.ts` |
-| Integrations | 6 | `caldav-client.spec.ts`, `calendar-bridge.spec.ts`, `grocy-adapter.spec.ts`, `integrations.spec.ts`, `vikunja-compat*.spec.ts` |
-| Offline/PWA | 3 | `pwa-offline.spec.ts`, `offline-sync.spec.ts`, `offline-attachments.spec.ts` |
-| Search | 1 | `search-hub.spec.ts` |
-| Settings | 2 | `settings-shell.spec.ts`, `theme-settings.spec.ts` |
-| Navigation | 2 | `navigation.spec.ts`, `layout-ingress-client-router.spec.ts` |
-| Other | 10+ | `branding.spec.ts`, `seo.spec.ts`, `export-service.spec.ts`, `accessibility.spec.ts`, etc. |
+## Testing Conventions
 
-### Governance Tests (2 specs)
-
-| Spec | Purpose |
-|------|---------|
-| `iqs-platinum.spec.ts` | Internal quality standards enforcement |
-| `repo-standards.spec.ts` | Required files, naming, license compliance |
-
-### Unit Tests (1 spec)
-
-| Spec | Purpose |
-|------|---------|
-| `todo-status-mapper.spec.ts` | Status mapping between HA todo and Meitheal |
-
-## Coverage Gaps
-
-| Area | Gap | Severity |
-|------|-----|----------|
-| `unified-bar-controller.ts` | No direct tests | ⚠️ Medium |
-| `page-shell-controller.ts` | No direct tests | ⚠️ Medium |
-| `eisenhower-controller.ts` | No tests at all | 🔴 High |
-| Client-side controllers | All tested indirectly via shell specs at best | ⚠️ Medium |
-| Section registries | No dedicated tests | Low |
-| Inline styles (Upcoming) | Not validated | Low |
-
-> **Note:** Shell spec files (`*-shell.spec.ts`) test the integration of pages with their shells, but do not directly test the vanilla JS controller logic. The controllers run client-side and current tests are server-side only.
+| Rule | Detail |
+|------|--------|
+| No shared state | Each spec is independent — no cross-test contamination |
+| No external mocks | Tests use real SQLite (temp files) and local HTTP harness |
+| Temp DB pattern | `file:${tmpdir}/test-${Date.now()}.db` |
+| Import pattern | Direct workspace package imports, not HTTP |
+| HA simulation | Local HTTP server returns canned responses |
 
 ## Test Patterns
 
+### Domain Service Tests
 ```typescript
-// Typical test structure
-import { describe, it, before, after } from "node:test"
-import assert from "node:assert/strict"
+import { describe, it } from "node:test"
+import { strict as assert } from "node:assert"
+import { createPillar, getPillars } from "@meitheal/domains/pillars/pillar-service"
 
-describe("Feature", () => {
-  let server: TestServer
-
-  before(async () => {
-    server = await startTestServer({ dbPath: `file:${tmpdir}/test.db` })
-  })
-
-  after(() => server.close())
-
-  it("does something", async () => {
-    const res = await server.fetch("/api/endpoint")
-    assert.equal(res.status, 200)
+describe("pillars", () => {
+  it("creates a pillar", async () => {
+    const p = await createPillar({ name: "Health" })
+    assert.ok(p.id)
+    assert.equal(p.name, "Health")
   })
 })
 ```
 
-## Verification Tiers
+### Governance Tests
+```typescript
+// Verify required files exist
+it("has AGENTS.md", () => {
+  assert.ok(fs.existsSync("AGENTS.md"))
+})
 
-| Tier | Scope | How |
-|------|-------|-----|
-| Tier 1 | CSS, layout, UI, client JS | `npm run dev` in `apps/web/` |
-| Tier 2 | Ingress, middleware, HA API, WebSocket | `./scripts/devcontainer-up.sh` |
-| Tier 3 | Final acceptance on real data | Production HA (`ha.internal`) |
+// Verify naming conventions
+it("all domain files use kebab-case", () => { ... })
+```
+
+## Coverage
+
+No formal coverage tooling configured. Quality is enforced through:
+- 75+ E2E specs covering all major features
+- Governance specs enforcing repo standards
+- `astro check` for type safety
+- CodeRabbitAI for PR review
