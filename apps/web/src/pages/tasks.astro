@@ -890,10 +890,10 @@ try {
   }
 
   /* View-specific toolbar actions — hidden by default, shown by view controller */
-  .tasks-filter-row [data-view-only] {
+  .tasks-filter-row :global([data-view-only]) {
     display: none;
   }
-  .tasks-filter-row [data-view-only].is-active {
+  .tasks-filter-row :global([data-view-only].is-active) {
     display: flex;
   }
   .kanban-fields-panel {
