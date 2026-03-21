@@ -1007,6 +1007,35 @@ try {
     position: relative;
     overflow: hidden;
   }
+
+  /* ── Card density modes (Phase 16.4) ── */
+  .kanban-board.density-compact .kanban-card {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  .kanban-board.density-compact .kanban-card__title {
+    font-size: 0.8rem;
+    line-height: 1.2;
+  }
+  .kanban-board.density-compact .kanban-card__meta,
+  .kanban-board.density-compact .kanban-card__description,
+  .kanban-board.density-compact .kanban-card__labels {
+    display: none;
+  }
+  .kanban-board.density-compact .kanban-cards {
+    gap: 4px;
+  }
+
+  .kanban-board.density-spacious .kanban-card {
+    padding: 16px;
+    gap: 10px;
+  }
+  .kanban-board.density-spacious .kanban-card__title {
+    font-size: 0.95rem;
+  }
+  .kanban-board.density-spacious .kanban-cards {
+    gap: 12px;
+  }
   .kanban-card:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;

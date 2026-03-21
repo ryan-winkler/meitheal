@@ -80,6 +80,7 @@ const SIDEBAR_WIDTH = 200
 const ZOOM_KEY = "meitheal-timeline-zoom"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
 const HANDLE_WIDTH = 8
+const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
 const PRIORITY_COLOURS: Record<number, string> = {
   1: "#EF4444", // P1 — urgent red
@@ -294,11 +295,6 @@ function showTooltip(bar: GanttBar, x: number, y: number, parent: HTMLElement) {
   tooltipTimer = setTimeout(() => {
     const tip = document.createElement("div")
     tip.className = "gantt-tooltip"
-    tip.innerHTML = `
-      <strong>${sanitize(bar.name)}</strong><br/>
-      <span style="opacity:0.7">${fmtDate(bar.start)} → ${fmtDate(bar.end)}</span><br/>
-      <span style="opacity:0.7">${statusLabel(bar.original.status)} · P${bar.priority} · ${bar.progress}%</span>
-    `
     tip.style.cssText = `
       position:fixed;z-index:9999;left:${x + 12}px;top:${y - 8}px;
       background:var(--bg-card);color:var(--text-primary);
@@ -307,6 +303,20 @@ function showTooltip(bar: GanttBar, x: number, y: number, parent: HTMLElement) {
       pointer-events:none;box-shadow:var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2));
       max-width:280px;white-space:nowrap;
     `
+    // DOM-based construction for XSS safety (O2)
+    const title = document.createElement("strong")
+    title.textContent = bar.name
+    tip.appendChild(title)
+    tip.appendChild(document.createElement("br"))
+    const dates = document.createElement("span")
+    dates.style.opacity = "0.7"
+    dates.textContent = `${fmtDate(bar.start)} → ${fmtDate(bar.end)}`
+    tip.appendChild(dates)
+    tip.appendChild(document.createElement("br"))
+    const meta = document.createElement("span")
+    meta.style.opacity = "0.7"
+    meta.textContent = `${statusLabel(bar.original.status)} · P${bar.priority} · ${bar.progress}%`
+    tip.appendChild(meta)
     parent.appendChild(tip)
     activeTooltip = tip
   }, 300)
@@ -717,6 +727,14 @@ function renderGantt(
         hideTooltip()
         showPopup(bar, e.clientX, e.clientY, document.body)
       })
+      // O8: Keyboard Enter/Space to open popup
+      milestoneGroup.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          const rect = (e.target as SVGElement).getBoundingClientRect()
+          showPopup(bar, rect.left, rect.bottom, document.body)
+        }
+      })
 
       barsGroup.appendChild(milestoneGroup)
       continue
@@ -801,6 +819,14 @@ function renderGantt(
       hideTooltip()
       showPopup(bar, e.clientX, e.clientY, document.body)
     })
+    // O8: Keyboard Enter/Space to open popup
+    barGroup.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault()
+        const rect = (e.target as SVGElement).getBoundingClientRect()
+        showPopup(bar, rect.left, rect.bottom, document.body)
+      }
+    })
 
     // T3: Resize handles
     const leftHandle = svgEl("rect", {
@@ -821,12 +847,18 @@ function renderGantt(
       rightHandle.setAttribute("opacity", "0")
     })
 
-    // Drag logic for whole bar
-    setupBarDrag(barGroup, bgRect, bar, pos, pxPerDay, config)
+    // Drag logic for whole bar — O1: pass signal to fix memory leak
+    setupBarDrag(barGroup, bgRect, bar, pos, pxPerDay, config, signal, () => {
+      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after drag
+    })
 
-    // Resize handles drag
-    setupResizeDrag(leftHandle, "start", bar, pos, pxPerDay, config, barGroup, signal)
-    setupResizeDrag(rightHandle, "end", bar, pos, pxPerDay, config, barGroup, signal)
+    // Resize handles drag — O5/O6: visual feedback + re-render
+    setupResizeDrag(leftHandle, "start", bar, pos, pxPerDay, config, barGroup, signal, () => {
+      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
+    })
+    setupResizeDrag(rightHandle, "end", bar, pos, pxPerDay, config, barGroup, signal, () => {
+      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
+    })
 
     barGroup.appendChild(leftHandle)
     barGroup.appendChild(rightHandle)
@@ -870,19 +902,24 @@ function renderGantt(
     box-shadow:var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2));
     transition:transform 0.2s,box-shadow 0.2s;
   `
-  fab.addEventListener("mouseenter", () => { fab.style.transform = "scale(1.1)" })
-  fab.addEventListener("mouseleave", () => { fab.style.transform = "scale(1)" })
+  // O3: Respect prefers-reduced-motion
+  if (!REDUCED_MOTION) {
+    fab.addEventListener("mouseenter", () => { fab.style.transform = "scale(1.1)" })
+    fab.addEventListener("mouseleave", () => { fab.style.transform = "scale(1)" })
+  }
   fab.addEventListener("click", () => {
-    scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: "smooth" })
+    scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
   }, { signal })
   outerContainer.style.position = "relative"
   outerContainer.appendChild(fab)
 
-  // Pulse animation on first load
-  fab.animate([
-    { boxShadow: "0 0 0 0 var(--accent, rgba(124,58,237,0.4))" },
-    { boxShadow: "0 0 0 8px transparent" },
-  ], { duration: 1500, iterations: 2 })
+  // Pulse animation on first load (O3: skip if reduced motion)
+  if (!REDUCED_MOTION) {
+    fab.animate([
+      { boxShadow: "0 0 0 0 var(--accent, rgba(124,58,237,0.4))" },
+      { boxShadow: "0 0 0 8px transparent" },
+    ], { duration: 1500, iterations: 2 })
+  }
 
   // ── T6: Keyboard shortcuts ───────────────────────────────────────────
 
@@ -897,7 +934,7 @@ function renderGantt(
 
     if (e.key === "t" || e.key === "T") {
       e.preventDefault()
-      scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: "smooth" })
+      scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
     }
   }
   document.addEventListener("keydown", keyHandler, { signal })
@@ -913,52 +950,55 @@ function renderGantt(
 
 function setupBarDrag(
   barGroup: SVGGElement,
-  bgRect: SVGRectElement,
+  _bgRect: SVGRectElement,
   bar: GanttBar,
   pos: { x: number; y: number; w: number },
   pxPerDay: number,
   _config: ZoomConfig,
+  signal: AbortSignal, // O1: Accept signal to prevent memory leaks
+  onComplete: () => void, // O6: Re-render callback
 ) {
   let isDragging = false
-  let dragStartX = 0
-  const origX = pos.x
+  let dragOriginX = 0 // O4: origin-relative tracking (not frame-relative)
+
+  // Store original positions for all elements (O4: fixes cumulative drift)
+  const elemOrigPositions = new Map<Element, number>()
 
   barGroup.addEventListener("mousedown", (e) => {
     const target = e.target as SVGElement
-    if (target.style.cursor === "ew-resize") return // Let resize handles handle it
+    if (target.style.cursor === "ew-resize") return
     if (e.button !== 0) return
     isDragging = true
-    dragStartX = e.clientX
+    dragOriginX = e.clientX
+    // Snapshot original positions of all children
+    elemOrigPositions.clear()
+    barGroup.querySelectorAll("rect").forEach((r) => {
+      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
+    })
+    barGroup.querySelectorAll("text").forEach((t) => {
+      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
+    })
     e.preventDefault()
     e.stopPropagation()
   })
 
   const onMove = (e: MouseEvent) => {
     if (!isDragging) return
-    const dx = e.clientX - dragStartX
-    const newX = origX + dx
-    // Move entire bar group
-    const allRects = barGroup.querySelectorAll("rect")
-    const allTexts = barGroup.querySelectorAll("text")
-    allRects.forEach((r) => {
-      const ox = Number(r.getAttribute("x") || 0)
-      r.setAttribute("x", String(ox + dx))
+    const totalDx = e.clientX - dragOriginX // O4: always relative to origin
+    // Apply offset from original positions
+    elemOrigPositions.forEach((origPos, el) => {
+      el.setAttribute("x", String(origPos + totalDx))
     })
-    allTexts.forEach((t) => {
-      const ox = Number(t.getAttribute("x") || 0)
-      t.setAttribute("x", String(ox + dx))
-    })
-    dragStartX = e.clientX
   }
 
-  const onUp = async () => {
+  const onUp = async (e: MouseEvent) => {
     if (!isDragging) return
     isDragging = false
-    const totalDx = Number(bgRect.getAttribute("x")) - origX
+    const totalDx = e.clientX - dragOriginX
     if (Math.abs(totalDx) < 5) return
 
     const daysDelta = Math.round(totalDx / pxPerDay)
-    if (daysDelta === 0) return
+    if (daysDelta === 0) { onComplete(); return }
 
     const newStart = addDays(bar.start, daysDelta)
     const newEnd = addDays(bar.end, daysDelta)
@@ -973,13 +1013,16 @@ function setupBarDrag(
       bar.start = newStart
       bar.end = newEnd
       showToast("Dates updated")
+      onComplete() // O6: re-render to snap to grid
     } else {
       showToast("Failed to update dates", "error")
+      onComplete() // Reset visual position
     }
   }
 
-  document.addEventListener("mousemove", onMove)
-  document.addEventListener("mouseup", onUp)
+  // O1: Use AbortSignal to prevent memory leaks on re-render
+  document.addEventListener("mousemove", onMove, { signal })
+  document.addEventListener("mouseup", onUp, { signal })
 }
 
 function setupResizeDrag(
@@ -989,24 +1032,43 @@ function setupResizeDrag(
   pos: { x: number },
   pxPerDay: number,
   _config: ZoomConfig,
-  _barGroup: SVGGElement,
+  barGroup: SVGGElement,
   signal: AbortSignal,
+  onComplete: () => void, // O6: Re-render callback
 ) {
   let isDragging = false
-  let dragStartX = 0
+  let dragOriginX = 0
+  const bgRect = barGroup.querySelector("rect:nth-of-type(2)") as SVGRectElement | null // main bar rect
+  const origBarX = pos.x
 
   handle.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return
     isDragging = true
-    dragStartX = e.clientX
+    dragOriginX = e.clientX
     e.preventDefault()
     e.stopPropagation()
   })
 
   const onMove = (e: MouseEvent) => {
     if (!isDragging) return
-    // Show cursor globally during drag
     document.body.style.cursor = "ew-resize"
+    // O5: Visual feedback during resize
+    if (bgRect) {
+      const dx = e.clientX - dragOriginX
+      if (edge === "start") {
+        const newX = origBarX + dx
+        const origW = Number(bgRect.getAttribute("width") || 0)
+        const newW = origW - dx
+        if (newW > 20) {
+          bgRect.setAttribute("x", String(newX))
+          bgRect.setAttribute("width", String(newW))
+        }
+      } else {
+        const origW = Number(bgRect.getAttribute("width") || 0)
+        bgRect.setAttribute("width", String(Math.max(20, origW + dx)))
+        dragOriginX = e.clientX // frame-relative for end edge is fine
+      }
+    }
   }
 
   const onUp = async (e: MouseEvent) => {
@@ -1014,14 +1076,15 @@ function setupResizeDrag(
     isDragging = false
     document.body.style.cursor = ""
 
-    const dx = e.clientX - dragStartX
+    const dx = e.clientX - dragOriginX
     const daysDelta = Math.round(dx / pxPerDay)
-    if (daysDelta === 0) return
+    if (daysDelta === 0) { onComplete(); return }
 
     if (edge === "start") {
       const newStart = addDays(bar.start, daysDelta)
       if (newStart > bar.end) {
         showToast("Start can't be after end", "error")
+        onComplete()
         return
       }
       const ok = await patchTask(bar.id, { start_date: toISODate(newStart) })
@@ -1031,12 +1094,14 @@ function setupResizeDrag(
       const newEnd = addDays(bar.end, daysDelta)
       if (newEnd < bar.start) {
         showToast("End can't be before start", "error")
+        onComplete()
         return
       }
       const ok = await patchTask(bar.id, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
       if (ok) { bar.end = newEnd; showToast("End date updated") }
       else showToast("Failed to update end date", "error")
     }
+    onComplete() // O6: re-render to snap to grid
   }
 
   document.addEventListener("mousemove", onMove, { signal })
