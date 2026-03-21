@@ -121,6 +121,9 @@ const {
       </div>
     </div>
 
+    <!-- Context slot: area/space selector or other context-scoping elements -->
+    <slot name="context" />
+
     <!-- View pills (route-level view switching — visually distinct from section tabs) -->
     {viewTabs.length > 0 && (
       <nav class="unified-bar__view-pills" aria-label="View switcher" data-view-tabs>

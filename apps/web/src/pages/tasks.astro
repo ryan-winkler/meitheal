@@ -218,45 +218,51 @@ try {
     <AreaSelector slot="context" areas={areas} />
   </UnifiedBar>
 
+  <!-- Phase 16.3: Unified filter row — shared across all views -->
+  <div class="tasks-filter-row" id="tasks-filter-row">
+    <FilterToolbar
+      view="kanban"
+      showGroupBy
+      showUserPills
+      hideAreaSelect
+    />
+    <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
+    <div class="kanban-toolbar-right" id="kanban-toolbar-actions" data-view-only="kanban">
+      <button
+        type="button"
+        class="kanban-toolbar-btn"
+        id="toggle-fields-btn"
+        title="Card fields"
+        aria-label="Toggle card field customizer"
+        aria-pressed="false"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span class="kanban-toolbar-btn__label">Fields</span>
+      </button>
+      <button
+        type="button"
+        class="kanban-toolbar-btn"
+        id="manage-lanes-btn"
+        title={t("kanban.manage_swimlanes", locale)}
+        aria-label={t("kanban.manage_swimlanes", locale)}
+        aria-pressed="false"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+        <span class="kanban-toolbar-btn__label">Lanes</span>
+      </button>
+    </div>
+  </div>
+
   <div id="tasks-view-kanban" class="tasks-view-container" aria-hidden="false">
   <div id="kanban-shell" class="page-shell">
     <!-- Stats signal bar (non-dismissable) -->
     <SignalBar id="kanban-signal-bar">
       <strong>{kanbanTaskCount}</strong> tasks across <strong>{columns.length}</strong> lanes
     </SignalBar>
-
-    <!-- Filter toolbar — always visible -->
-    <div class="kanban-filter-panel" id="kanban-filter-panel">
-      <FilterToolbar view="kanban" showGroupBy showUserPills />
-      <div class="kanban-toolbar-right">
-        <button
-          type="button"
-          class="kanban-toolbar-btn"
-          id="toggle-fields-btn"
-          title="Card fields"
-          aria-label="Toggle card field customizer"
-          aria-pressed="false"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-          <span class="kanban-toolbar-btn__label">Fields</span>
-        </button>
-        <button
-          type="button"
-          class="kanban-toolbar-btn"
-          id="manage-lanes-btn"
-          title={t("kanban.manage_swimlanes", locale)}
-          aria-label={t("kanban.manage_swimlanes", locale)}
-          aria-pressed="false"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
-          </svg>
-          <span class="kanban-toolbar-btn__label">Lanes</span>
-        </button>
-      </div>
-    </div>
 
     <!-- Card field customizer panel (toggled by Fields toolbar icon) -->
     <div class="kanban-fields-panel hidden" id="kanban-fields-panel">
@@ -867,8 +873,8 @@ try {
     }
   }
 
-  /* ── Toggle panels: filters and fields ── */
-  .kanban-filter-panel {
+  /* ── Phase 16.3: Unified filter row (shared across all views) ── */
+  .tasks-filter-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -878,6 +884,17 @@ try {
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     padding: 8px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 90;
+  }
+
+  /* View-specific toolbar actions — hidden by default, shown by view controller */
+  .tasks-filter-row [data-view-only] {
+    display: none;
+  }
+  .tasks-filter-row [data-view-only].is-active {
+    display: flex;
   }
   .kanban-fields-panel {
     margin-bottom: 12px;

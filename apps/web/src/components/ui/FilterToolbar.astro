@@ -44,6 +44,8 @@ interface Props {
   showUserPills?: boolean
   /** Group-by options override */
   groupByOptions?: { value: string; label: string }[]
+  /** Hide area select (use with AreaSelector component) */
+  hideAreaSelect?: boolean
   /** Additional CSS class */
   class?: string
 }
@@ -58,6 +60,7 @@ const {
   showUserFilter = view === "table",
   showUserPills = view === "kanban",
   groupByOptions,
+  hideAreaSelect = false,
   class: className,
 } = Astro.props
 
@@ -200,10 +203,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </select>
   )}
 
-  {/* Area filter — populated client-side from /api/areas */}
-  <select class="form-select filter-toolbar__select" id={`${prefix}-filter-area`} aria-label="Filter by area">
-    <option value="">All Areas</option>
-  </select>
+  {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
+  {!hideAreaSelect && (
+    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-area`} aria-label="Filter by area">
+      <option value="">All Areas</option>
+    </select>
+  )}
 
   {/* Group-by selector */}
   {showGroupBy && (

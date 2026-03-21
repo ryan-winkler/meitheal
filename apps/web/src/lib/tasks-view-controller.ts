@@ -120,6 +120,12 @@ function switchView(view: TaskView) {
     detail: { view, firstInit },
   }))
 
+  // Phase 16.3: Toggle view-specific toolbar elements (Fields/Lanes for kanban-only)
+  document.querySelectorAll<HTMLElement>("[data-view-only]").forEach(el => {
+    const showForView = el.dataset.viewOnly
+    el.classList.toggle("is-active", showForView === view)
+  })
+
   // [T7] Restore scroll position after switching
   requestAnimationFrame(() => restoreScrollPosition(view))
 }

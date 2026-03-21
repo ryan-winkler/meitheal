@@ -1,18 +1,17 @@
 ---
 /**
- * TasksTimelineView — Interactive GANTT chart view.
+ * TasksTimelineView — Native SVG GANTT chart view.
  *
- * Replaces the previous static CSS grid timeline with Frappe Gantt.
- * Tasks are rendered as interactive SVG bars with drag-and-drop editing,
- * zoom control (Day/Week/Month/Year), dependency arrows, and a custom popup.
+ * Renders an interactive SVG-based GANTT chart with zero external dependencies.
+ * Fully Astro-native and HA-native, using Meitheal CSS variables for theming.
  *
  * @domain Task Visualization
- * @phase 16.1 — GANTT timeline overhaul
+ * @phase 16.2 — Native GANTT rebuild (persona loop iteration 02)
  *
  * Architecture:
  * - SSR: Fetch task data, serialize as JSON blob
- * - Client: Frappe Gantt initializes lazily on first view display
- * - Events: on_date_change/on_progress_change → PATCH /api/tasks/{id}
+ * - Client: Native SVG renderer initializes lazily on first view display
+ * - Events: drag/resize → PATCH /api/tasks/{id}
  * - Cleanup: AbortSignal-based lifecycle via pageLifecycle
  */
 import SignalBar from "../layout/SignalBar.astro";
@@ -53,26 +52,65 @@ try {
   fetchError = true;
 }
 
-// Count tasks with at least one date (renderable on GANTT)
 const datedTasks = tasks.filter(t => t.start_date || t.due_date);
 const taskCount = datedTasks.length;
 const totalTasks = tasks.length;
 ---
 
 <div id="tasks-view-timeline" class="tasks-view-container" style="display:none" aria-hidden="true">
-  <!-- Signal bar -->
+  <!-- Signal bar with zoom controls -->
   <SignalBar>
     {taskCount > 0 ? (
       <span><strong>{taskCount}</strong> of {totalTasks} tasks on timeline</span>
     ) : (
       <span>Timeline view — add dates to tasks to see them here</span>
     )}
+
+    <!-- Zoom controls (T1/T7) -->
+    <div class="timeline-toolbar">
+      <select id="timeline-zoom" class="timeline-zoom-select" aria-label="Zoom level">
+        <option value="Day">Day</option>
+        <option value="Week" selected>Week</option>
+        <option value="Month">Month</option>
+      </select>
+
+      <!-- T7: Priority Legend -->
+      <details class="timeline-legend">
+        <summary class="timeline-legend-trigger" title="Colour legend">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="4" cy="7" r="3" fill="#EF4444"/>
+            <circle cx="10" cy="7" r="3" fill="#3B82F6"/>
+          </svg>
+          Legend
+        </summary>
+        <div class="timeline-legend-panel">
+          <div class="legend-section">
+            <div class="legend-title">Priority</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#EF4444"></span> Critical (P1)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#F97316"></span> High (P2)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#3B82F6"></span> Medium (P3)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#9CA3AF"></span> Low (P4)</div>
+          </div>
+          <div class="legend-section">
+            <div class="legend-title">Type</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#6366F1;border-radius:2px"></span> Epic (bold top)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#6366F1"></span> Story / Task</div>
+            <div class="legend-item"><span class="legend-diamond">◆</span> Milestone</div>
+          </div>
+          <div class="legend-section">
+            <div class="legend-title">State</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#EF4444;box-shadow:0 0 4px rgba(239,68,68,0.6)"></span> Overdue</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#9CA3AF;opacity:0.4"></span> Completed</div>
+          </div>
+        </div>
+      </details>
+    </div>
   </SignalBar>
 
   <!-- SSR data blob for client-side GANTT initialization -->
   <script type="application/json" id="timeline-data" set:html={JSON.stringify(tasks)} />
 
-  <!-- Loading skeleton (shown until GANTT initializes) -->
+  <!-- Loading skeleton -->
   <div id="timeline-skeleton" class="timeline-skeleton">
     <div class="skel-row"><div class="skel-label"></div><div class="skel-bar"></div></div>
     <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:60%"></div></div>
@@ -82,7 +120,7 @@ const totalTasks = tasks.length;
     <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:55%"></div></div>
   </div>
 
-  <!-- Empty state (shown when no tasks have dates) -->
+  <!-- Empty state -->
   <div id="timeline-empty" class="timeline-empty-state" style="display:none">
     <div class="empty-icon">📊</div>
     <div class="empty-title">No tasks on the timeline yet</div>
@@ -93,7 +131,7 @@ const totalTasks = tasks.length;
     </div>
   </div>
 
-  <!-- GANTT chart container (Frappe Gantt renders SVG here) -->
+  <!-- GANTT chart container (native SVG rendered here) -->
   <div id="gantt-chart" class="gantt-chart-wrapper" style="display:none"></div>
 
   <!-- Error state -->
@@ -114,13 +152,13 @@ const totalTasks = tasks.length;
 
 <style>
   .gantt-chart-wrapper {
-    overflow-x: auto;
-    overflow-y: auto;
-    max-height: calc(100vh - 200px);
+    max-height: calc(100vh - 160px);
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
   }
 </style>
 
@@ -129,7 +167,6 @@ const totalTasks = tasks.length;
   import { initTimelineController } from "../../lib/timeline-controller"
 
   pageLifecycle.onPageLoad((signal) => {
-    // Lazy init: only initialize GANTT when timeline view is first shown
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (detail?.view === "timeline" && detail?.firstInit) {
@@ -139,7 +176,6 @@ const totalTasks = tasks.length;
 
     window.addEventListener("meitheal:view-changed", handler, { signal })
 
-    // If timeline is already visible (direct hash navigation), init immediately
     const hash = window.location.hash.replace("#", "")
     if (hash === "timeline") {
       initTimelineController(signal)
