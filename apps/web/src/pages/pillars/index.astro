@@ -12,6 +12,7 @@
 import Layout from "../../layouts/Layout.astro"
 import PillarCard from "../../components/pillars/PillarCard.astro"
 import InlineHelper from "../../components/ui/InlineHelper.astro"
+import PillarFormModal from "../../components/pillars/PillarFormModal.astro"
 import { getPillars } from "@domains/pillars/pillar-service"
 import { getPrinciplesForPillar } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
@@ -96,6 +97,7 @@ const enrichedPillars = await Promise.all(
       </div>
     )}
   </main>
+  <PillarFormModal />
 </Layout>
 
 <style>
@@ -233,8 +235,8 @@ const enrichedPillars = await Promise.all(
    * Pillars page controller
    *
    * Handles:
-   * - PillarCard click → navigate to detail (future: modal or inline expand)
-   * - "New Pillar" button → create modal (future implementation)
+   * - PillarCard click → navigate to detail
+   * - "New Pillar" button → opens PillarFormModal (wired in PillarFormModal.astro)
    */
   document.addEventListener("astro:page-load", () => {
     const page = document.getElementById("pillars-page")
