@@ -817,14 +817,49 @@ function renderGantt(
   const addColBtn = document.createElement("button")
   addColBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
   addColBtn.textContent = "+"
-  addColBtn.title = showDueDateCol ? "Add column" : "Show Due Date column"
+  addColBtn.title = "Manage columns"
   addColBtn.addEventListener("click", (e) => {
     e.stopPropagation()
-    if (!showDueDateCol) {
-      showDueDateCol = true
-      try { localStorage.setItem(DUEDATE_VIS_KEY, "true") } catch { /* ignore */ }
+    
+    // Create tiny dropdown
+    const existing = document.querySelector(".gantt-col-menu")
+    if (existing) { existing.remove(); return }
+
+    const menu = document.createElement("div")
+    menu.className = "gantt-col-menu"
+    menu.style.cssText = `
+      position:absolute;top:100%;right:0;background:var(--bg-card);
+      border:1px solid var(--border);border-radius:6px;padding:4px 0;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;min-width:140px;
+    `
+
+    // Due Date Toggle
+    const dueDateItem = document.createElement("button")
+    dueDateItem.style.cssText = "display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:var(--text-primary);cursor:pointer;font-size:12px;font-family:inherit;"
+    
+    // Checkbox icon
+    const checkIcon = showDueDateCol 
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` 
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="transparent" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>`
+    
+    dueDateItem.innerHTML = `${checkIcon} <span>Due Date</span>`
+    
+    dueDateItem.addEventListener("click", (ev) => {
+      ev.stopPropagation()
+      showDueDateCol = !showDueDateCol
+      try { localStorage.setItem(DUEDATE_VIS_KEY, String(showDueDateCol)) } catch { /* ignore */ }
+      menu.remove()
       renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+    })
+    
+    menu.appendChild(dueDateItem)
+    addColBtn.appendChild(menu)
+
+    // Close on outside click
+    const closeMenu = (ev: MouseEvent) => {
+      if (!menu.contains(ev.target as Node)) { menu.remove(); document.removeEventListener("click", closeMenu) }
     }
+    setTimeout(() => document.addEventListener("click", closeMenu), 0)
   })
   sidebarHeader.appendChild(addColBtn)
   sidebar.appendChild(sidebarHeader)
