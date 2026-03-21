@@ -37,10 +37,15 @@ Three surgical UX improvements to the Pillars domain and search architecture:
 - The old bar should only render when no unified bar is present on the page
 - Long-term: remove old search entirely when all pages have unified bar
 
-### Claude's Discretion
-- Principle display layout (inline list, expandable accordion, chip badges, etc.)
-- Slug collision handling strategy (append counter vs error)
-- Whether to show all principles or truncate with "show more"
+### Principle Display (user decided)
+- Compact inline list below manifesto on PillarCard
+- Expandable by clicking the title header (no chevron icon — make it look pretty)
+- Show up to 5 principles, then "Show all" toggle
+- Principles must be editable and order-changeable from the card view
+
+### Slug Collision (user decided)
+- Show a warning toast when collision detected
+- Append counter suffix automatically (`physical-longevity-2`)
 
 </decisions>
 

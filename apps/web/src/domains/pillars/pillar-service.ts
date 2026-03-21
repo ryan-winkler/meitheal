@@ -45,6 +45,7 @@ export async function ensurePillarSchema(): Promise<void> {
       weight INTEGER NOT NULL DEFAULT 1,
       position INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
+      slug TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -53,6 +54,22 @@ export async function ensurePillarSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_position_idx ON pillars(position)")
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_active_idx ON pillars(is_active)")
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_user_idx ON pillars(user_id)")
+  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS pillars_slug_idx ON pillars(slug)")
+
+  // Migration: add slug column for existing databases (Phase 19)
+  try {
+    await client.execute("ALTER TABLE pillars ADD COLUMN slug TEXT")
+  } catch {
+    // Column already exists — expected for databases created after Phase 19
+  }
+
+  // Backfill any pillars missing slugs
+  const nullSlugs = await client.execute("SELECT id, name FROM pillars WHERE slug IS NULL")
+  for (const row of nullSlugs.rows) {
+    const r = row as Record<string, unknown>
+    const slug = await generateUniqueSlug(client, String(r.name), String(r.id))
+    await client.execute({ sql: "UPDATE pillars SET slug = ? WHERE id = ?", args: [slug, String(r.id)] })
+  }
 
   schemaEnsured = true
 }
@@ -61,6 +78,7 @@ export async function ensurePillarSchema(): Promise<void> {
 
 export interface Pillar {
   id: string
+  slug: string
   userId: string
   name: string
   manifesto: string | null
@@ -79,9 +97,55 @@ function generateId(): string {
   return `pillar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+/**
+ * Generate a URL-friendly slug from a pillar name.
+ * Produces kebab-case: "Physical Longevity" → "physical-longevity"
+ */
+export function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")    // Remove non-word chars (keep letters, digits, spaces, hyphens)
+    .replace(/\s+/g, "-")        // Spaces to hyphens
+    .replace(/-+/g, "-")          // Collapse multiple hyphens
+    .replace(/^-|-$/g, "")        // Trim leading/trailing hyphens
+    || "pillar"                    // Fallback for empty/special-char-only names
+}
+
+/**
+ * Generate a unique slug, appending counter suffix on collision.
+ * Logs a warning when collision is detected.
+ */
+async function generateUniqueSlug(
+  client: ReturnType<typeof getPersistenceClient>,
+  name: string,
+  excludeId?: string
+): Promise<string> {
+  const base = generateSlug(name)
+  let slug = base
+  let counter = 1
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const existing = await client.execute({
+      sql: excludeId
+        ? "SELECT id FROM pillars WHERE slug = ? AND id != ? LIMIT 1"
+        : "SELECT id FROM pillars WHERE slug = ? LIMIT 1",
+      args: excludeId ? [slug, excludeId] : [slug],
+    })
+    if (existing.rows.length === 0) break
+    counter++
+    slug = `${base}-${counter}`
+    console.warn(`[pillars] Slug collision detected for "${name}" — using "${slug}"`)
+  }
+
+  return slug
+}
+
 function toPillar(row: Record<string, unknown>): Pillar {
   return {
     id: String(row.id),
+    slug: row.slug ? String(row.slug) : generateSlug(String(row.name)),
     userId: String(row.user_id),
     name: String(row.name),
     manifesto: row.manifesto ? String(row.manifesto) : null,
@@ -107,6 +171,7 @@ export async function createPillar(data: {
   await ensurePillarSchema()
   const client = getPersistenceClient()
   const id = generateId()
+  const slug = await generateUniqueSlug(client, data.name)
   const now = Date.now()
 
   const weight = Math.max(1, Math.min(10, data.weight ?? 1))
@@ -117,10 +182,11 @@ export async function createPillar(data: {
   const position = Number((posResult.rows[0] as Record<string, unknown>).next_pos)
 
   await client.execute({
-    sql: `INSERT INTO pillars (id, user_id, name, manifesto, icon, color_hex, weight, position, is_active, created_at, updated_at)
-          VALUES (?, 'default', ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    sql: `INSERT INTO pillars (id, slug, user_id, name, manifesto, icon, color_hex, weight, position, is_active, created_at, updated_at)
+          VALUES (?, ?, 'default', ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     args: [
       id,
+      slug,
       data.name,
       data.manifesto ?? null,
       data.icon ?? "🏛️",
@@ -133,6 +199,7 @@ export async function createPillar(data: {
 
   return {
     id,
+    slug,
     userId: "default",
     name: data.name,
     manifesto: data.manifesto ?? null,
@@ -186,7 +253,12 @@ export async function updatePillar(
   const sets: string[] = []
   const args: unknown[] = []
 
-  if (data.name !== undefined) { sets.push("name = ?"); args.push(data.name) }
+  if (data.name !== undefined) {
+    sets.push("name = ?"); args.push(data.name)
+    // Regenerate slug when name changes
+    const newSlug = await generateUniqueSlug(client, data.name, id)
+    sets.push("slug = ?"); args.push(newSlug)
+  }
   if (data.manifesto !== undefined) { sets.push("manifesto = ?"); args.push(data.manifesto) }
   if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
   if (data.colorHex !== undefined) { sets.push("color_hex = ?"); args.push(data.colorHex) }
@@ -206,6 +278,19 @@ export async function updatePillar(
   })
 
   return (result.rowsAffected ?? 0) > 0
+}
+
+export async function getPillarBySlug(slug: string): Promise<Pillar | null> {
+  await ensurePillarSchema()
+  const client = getPersistenceClient()
+
+  const result = await client.execute({
+    sql: "SELECT * FROM pillars WHERE slug = ?",
+    args: [slug],
+  })
+
+  if (result.rows.length === 0) return null
+  return toPillar(result.rows[0] as Record<string, unknown>)
 }
 
 export async function deletePillar(id: string, hard = false): Promise<boolean> {

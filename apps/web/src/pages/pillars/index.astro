@@ -6,7 +6,7 @@
  * Deliberately NOT a task list or Kanban board — this is a values/identity surface.
  *
  * @domain pillars
- * @phase 17 — Sub-Phase 17B (North Star UX)
+ * @phase 17 + 19 — North Star UX + Pillars UX Polish
  * @kcs Manifesto-first design: the WHY is always the hero element
  */
 import Layout from "../../layouts/Layout.astro"
@@ -14,20 +14,20 @@ import PillarCard from "../../components/pillars/PillarCard.astro"
 import InlineHelper from "../../components/ui/InlineHelper.astro"
 import PillarFormModal from "../../components/pillars/PillarFormModal.astro"
 import { getPillars } from "@domains/pillars/pillar-service"
-import { getPrinciplesForPillar } from "@domains/pillars/principle-service"
+import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
 
 const pillarsData = await getPillars({ includeInactive: false })
 
-// Enrich with principle counts and linked goal counts
+// Batch fetch all principles (N+1 fix) + per-pillar associations
+const allPrinciplesMap = await getAllPrinciples()
 const enrichedPillars = await Promise.all(
   pillarsData.map(async (p) => {
-    const principles = await getPrinciplesForPillar(p.id)
     const associations = await getAssociationsForPillar(p.id)
     const linkedGoalCount = associations.filter(a => a.entityType === "goal").length
     return {
       ...p,
-      principleCount: principles.length,
+      principles: allPrinciplesMap.get(p.id) || [],
       linkedGoalCount,
     }
   })
@@ -85,12 +85,13 @@ const enrichedPillars = await Promise.all(
         {enrichedPillars.map((pillar) => (
           <PillarCard
             id={pillar.id}
+            slug={pillar.slug || pillar.id}
             name={pillar.name}
             manifesto={pillar.manifesto}
             icon={pillar.icon}
             colorHex={pillar.colorHex}
             weight={pillar.weight}
-            principleCount={pillar.principleCount}
+            principles={pillar.principles}
             linkedGoalCount={pillar.linkedGoalCount}
           />
         ))}
@@ -231,11 +232,14 @@ const enrichedPillars = await Promise.all(
 </style>
 
 <script>
+  import "@lib/pillar-card-controller"
+
   /**
    * Pillars page controller
    *
    * Navigation is handled natively by <a> tags in PillarCard.
    * PillarFormModal wires its own open/close via pageLifecycle.
+   * pillar-card-controller handles principles expand/collapse.
    * This script is intentionally minimal — no click delegation needed.
    */
 </script>

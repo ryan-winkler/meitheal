@@ -1,28 +1,33 @@
 ---
 /**
- * /pillars/:id — Pillar Detail (Blueprint View)
+ * /pillars/:slug — Pillar Detail (Blueprint View)
  *
  * Full view of a single Pillar: manifesto, principles, linked goals,
  * weight adjustment, and inline editing.
  *
+ * Uses slug-based URLs for human-readable paths.
+ * Falls back to ID lookup for backwards compatibility.
+ *
  * @domain pillars
- * @phase 17 — Sub-Phase 17B
+ * @phase 17 + 19 — Sub-Phase 17B + Pillars UX Polish
  */
 import Layout from "../../layouts/Layout.astro"
 import PrincipleList from "../../components/pillars/PrincipleList.astro"
 import PillarFormModal from "../../components/pillars/PillarFormModal.astro"
-import { getPillarById } from "@domains/pillars/pillar-service"
+import { getPillarById, getPillarBySlug } from "@domains/pillars/pillar-service"
 import { getPrinciplesForPillar } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
 
-const { id } = Astro.params
-if (!id) return Astro.redirect("/pillars")
+const { slug } = Astro.params
+if (!slug) return Astro.redirect("/pillars")
 
-const pillar = await getPillarById(id)
+// Try slug first, fall back to ID for backwards compatibility with old bookmarks
+let pillar = await getPillarBySlug(slug)
+if (!pillar) pillar = await getPillarById(slug)
 if (!pillar) return Astro.redirect("/pillars")
 
-const principles = await getPrinciplesForPillar(id)
-const associations = await getAssociationsForPillar(id)
+const principles = await getPrinciplesForPillar(pillar.id)
+const associations = await getAssociationsForPillar(pillar.id)
 const linkedGoals = associations.filter(a => a.entityType === "goal")
 
 const accentColor = pillar.colorHex || "var(--accent)"
@@ -81,7 +86,7 @@ const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto:
       <section class="pillar-detail__section">
         <PrincipleList
           principles={principles}
-          pillarId={id}
+          pillarId={pillar.id}
           accentColor={accentColor}
         />
       </section>

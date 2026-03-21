@@ -3,47 +3,67 @@
  * PillarCard — Manifesto-first visual card for North Star page
  *
  * Shows Pillar identity: icon, name, manifesto (hero), weight indicator,
- * and principle count badge. Designed for a masonry grid layout.
+ * principle list (expandable), and badges. Designed for a masonry grid layout.
  *
- * Design Rules (ADR-017):
+ * Design Rules (ADR-017 + Phase 19):
  * - Manifesto text is the hero element — large, prominent
  * - NO failure states, NO streak counters, NO percentages
  * - Always identity framing: "I am someone who..."
  * - Card accent uses Pillar's colorHex
+ * - Principles shown inline below manifesto (up to 5, then "Show all")
+ * - Non-Negotiable principles visually distinct (🛡️ + bold)
+ * - Title header click expands/collapses principles
  *
  * @domain pillars
+ * @phase 17 + 19
  * @kcs North Star page uses PillarCard in a masonry layout, not a task list
  */
+
+interface Principle {
+  id: string
+  pillarId: string
+  statement: string
+  isNonNegotiable: boolean
+  position: number
+  createdAt: number
+}
+
 interface Props {
   id: string
+  slug: string
   name: string
   manifesto: string | null
   icon: string | null
   colorHex: string | null
   weight: number
-  principleCount: number
+  principles: Principle[]
   linkedGoalCount: number
 }
 
 const {
   id,
+  slug,
   name,
   manifesto,
   icon,
   colorHex,
   weight,
-  principleCount,
+  principles,
   linkedGoalCount,
 } = Astro.props
 
 const accentColor = colorHex || "var(--accent)"
 const weightDots = Math.min(weight, 10)
+const visibleLimit = 5
+const hasOverflow = principles.length > visibleLimit
+const displayPrinciples = hasOverflow ? principles.slice(0, visibleLimit) : principles
+const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
 ---
 
-<a
-  href={`/pillars/${id}`}
+<div
   class="pillar-card"
   data-pillar-id={id}
+  data-pillar-slug={slug}
   style={`--pillar-accent: ${accentColor}`}
   role="article"
   aria-label={`${name} — ${manifesto || "No manifesto set"}`}
@@ -51,7 +71,7 @@ const weightDots = Math.min(weight, 10)
   <div class="pillar-card__accent-bar"></div>
 
   <div class="pillar-card__content">
-    <div class="pillar-card__header">
+    <a href={`/pillars/${slug}`} class="pillar-card__header" aria-label={`View ${name} details`}>
       <span class="pillar-card__icon" aria-hidden="true">{icon || "🏛️"}</span>
       <div class="pillar-card__meta">
         <h3 class="pillar-card__name">{name}</h3>
@@ -64,23 +84,66 @@ const weightDots = Math.min(weight, 10)
           ))}
         </div>
       </div>
-    </div>
+    </a>
 
     <div class="pillar-card__manifesto">
       {manifesto ? (
         <blockquote>{manifesto}</blockquote>
       ) : (
-        <p class="pillar-card__manifesto-empty">
+        <a href={`/pillars/${slug}`} class="pillar-card__manifesto-empty">
           Tap to add your manifesto — why does this matter to you?
-        </p>
+        </a>
       )}
     </div>
 
+    {principles.length > 0 && (
+      <div class="pillar-card__principles" data-pillar-principles>
+        <button
+          type="button"
+          class="pillar-card__principles-toggle"
+          data-principles-toggle
+          aria-expanded="false"
+          aria-label={`${principles.length} Principle${principles.length !== 1 ? "s" : ""} — click to expand`}
+        >
+          <span class="pillar-card__principles-label">
+            Principles
+            <span class="pillar-card__principles-count">{principles.length}</span>
+          </span>
+        </button>
+
+        <ul class="pillar-card__principles-list" data-principles-list aria-hidden="true">
+          {displayPrinciples.map((p) => (
+            <li class:list={["pillar-card__principle", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]}>
+              {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+              <span class="pillar-card__principle-text">{p.statement}</span>
+            </li>
+          ))}
+          {hiddenPrinciples.map((p) => (
+            <li class:list={["pillar-card__principle pillar-card__principle--overflow", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]} data-overflow-principle aria-hidden="true">
+              {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+              <span class="pillar-card__principle-text">{p.statement}</span>
+            </li>
+          ))}
+        </ul>
+
+        {hasOverflow && (
+          <button
+            type="button"
+            class="pillar-card__show-all"
+            data-show-all-toggle
+            aria-label={`Show all ${principles.length} principles`}
+          >
+            Show all {principles.length}
+          </button>
+        )}
+      </div>
+    )}
+
     <div class="pillar-card__footer">
-      {principleCount > 0 && (
-        <span class="pillar-card__badge" title={`${principleCount} Principle${principleCount !== 1 ? "s" : ""}`}>
+      {principles.length > 0 && (
+        <span class="pillar-card__badge" title={`${principles.length} Principle${principles.length !== 1 ? "s" : ""}`}>
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          {principleCount}
+          {principles.length}
         </span>
       )}
       {linkedGoalCount > 0 && (
@@ -91,7 +154,7 @@ const weightDots = Math.min(weight, 10)
       )}
     </div>
   </div>
-</a>
+</div>
 
 <style>
 .pillar-card {
@@ -104,7 +167,6 @@ const weightDots = Math.min(weight, 10)
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 12px);
   overflow: hidden;
-  cursor: pointer;
   transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
   outline: none;
   break-inside: avoid;
@@ -117,7 +179,7 @@ const weightDots = Math.min(weight, 10)
   border-color: var(--pillar-accent);
 }
 
-.pillar-card:focus-visible {
+.pillar-card:focus-within {
   box-shadow: 0 0 0 2px var(--pillar-accent);
 }
 
@@ -138,6 +200,13 @@ const weightDots = Math.min(weight, 10)
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pillar-card__header:hover .pillar-card__name {
+  color: var(--pillar-accent);
 }
 
 .pillar-card__icon {
@@ -160,6 +229,7 @@ const weightDots = Math.min(weight, 10)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 150ms ease;
 }
 
 .pillar-card__weight {
@@ -197,14 +267,143 @@ const weightDots = Math.min(weight, 10)
 }
 
 .pillar-card__manifesto-empty {
+  display: block;
   margin: 0;
   padding: 0.75rem 1rem;
   border-left: 3px dashed var(--border);
   font-size: 0.875rem;
   color: var(--text-muted);
   font-style: italic;
+  text-decoration: none;
 }
 
+.pillar-card__manifesto-empty:hover {
+  color: var(--text);
+  border-left-color: var(--pillar-accent);
+}
+
+/* ── Principles section ─────────────────────────────────────── */
+.pillar-card__principles {
+  border-top: 1px solid var(--border);
+  padding-top: 0.625rem;
+}
+
+.pillar-card__principles-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.375rem 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: color 150ms ease;
+}
+
+.pillar-card__principles-toggle:hover {
+  color: var(--pillar-accent);
+}
+
+.pillar-card__principles-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pillar-card__principles-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-full, 9999px);
+  background: color-mix(in srgb, var(--pillar-accent) 15%, transparent);
+  color: var(--pillar-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.pillar-card__principles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.375rem;
+}
+
+.pillar-card__principles-list[aria-hidden="false"] {
+  display: flex;
+}
+
+.pillar-card__principle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.pillar-card__principle:hover {
+  background: color-mix(in srgb, var(--pillar-accent) 5%, transparent);
+}
+
+.pillar-card__principle--non-negotiable {
+  font-weight: 600;
+}
+
+.pillar-card__principle--non-negotiable .pillar-card__principle-text {
+  color: var(--text);
+}
+
+.pillar-card__principle-shield {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.pillar-card__principle-text {
+  flex: 1;
+  color: var(--text-secondary, var(--text));
+}
+
+.pillar-card__principle--overflow {
+  display: none;
+}
+
+.pillar-card__principle--overflow[aria-hidden="false"] {
+  display: flex;
+}
+
+.pillar-card__show-all {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  margin-top: 0.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--pillar-accent);
+  text-align: left;
+  transition: opacity 150ms ease;
+}
+
+.pillar-card__show-all:hover {
+  opacity: 0.8;
+}
+
+/* ── Footer badges ──────────────────────────────────────────── */
 .pillar-card__footer {
   display: flex;
   gap: 0.5rem;

@@ -124,6 +124,30 @@ export async function getPrinciplesForPillar(pillarId: string): Promise<Principl
   return result.rows.map(row => toPrinciple(row as Record<string, unknown>))
 }
 
+/**
+ * Batch-fetch all principles, grouped by pillar ID.
+ * Avoids N+1 queries when rendering multiple PillarCards.
+ *
+ * @returns Map<pillarId, Principle[]> sorted by position within each pillar
+ */
+export async function getAllPrinciples(): Promise<Map<string, Principle[]>> {
+  await ensurePrincipleSchema()
+  const client = getPersistenceClient()
+
+  const result = await client.execute(
+    "SELECT * FROM principles ORDER BY pillar_id, position ASC"
+  )
+
+  const map = new Map<string, Principle[]>()
+  for (const row of result.rows) {
+    const p = toPrinciple(row as Record<string, unknown>)
+    const list = map.get(p.pillarId) ?? []
+    list.push(p)
+    map.set(p.pillarId, list)
+  }
+  return map
+}
+
 export async function getNonNegotiablePrinciples(): Promise<Principle[]> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
