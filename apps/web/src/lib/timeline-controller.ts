@@ -325,7 +325,7 @@ function showTooltip(bar: GanttBar, x: number, y: number, parent: HTMLElement) {
       border:1px solid var(--border);border-radius:6px;
       padding:8px 12px;font-size:12px;line-height:1.4;
       pointer-events:none;box-shadow:var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2));
-      max-width:280px;white-space:nowrap;
+      max-width:min(280px, calc(100vw - 32px));white-space:nowrap;
     `
     // DOM-based construction for XSS safety (O2)
     const title = document.createElement("strong")
@@ -632,6 +632,9 @@ function renderGantt(
     const bar = bars[i]!
     const row = document.createElement("div")
     row.className = `gantt-sidebar-row${bar.isOverdue ? " gantt-sidebar-row--overdue" : ""}${bar.isComplete ? " gantt-sidebar-row--complete" : ""}`
+    row.setAttribute("role", "button")
+    row.setAttribute("tabindex", "0")
+    row.setAttribute("aria-label", `Navigate to ${bar.name}`)
     row.dataset.taskId = bar.id
     row.style.cssText = `
       height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 12px;
@@ -687,6 +690,14 @@ function renderGantt(
       showPopup(bar, e.clientX, e.clientY, document.body, signal)
     })
 
+    // P10: Keyboard Enter/Space on sidebar row
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault()
+        row.click()
+      }
+    })
+
     sidebarRows.appendChild(row)
   }
 
@@ -737,7 +748,6 @@ function renderGantt(
       "data-row-id": `row-${bars[i]!.id}`,
       class: "gantt-row-highlight",
     })
-    highlightRect.style.transition = "opacity 0.15s"
     highlightRect.style.pointerEvents = "none"
     gridGroup.appendChild(highlightRect)
     gridGroup.appendChild(

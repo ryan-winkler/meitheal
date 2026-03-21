@@ -271,6 +271,12 @@
   background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
 }
 
+.gantt-sidebar-row:focus-visible {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: -2px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
+}
+
 /* SVG text rendering */
 .gantt-native text {
   user-select: none;
