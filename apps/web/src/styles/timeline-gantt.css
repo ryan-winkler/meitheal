@@ -295,6 +295,11 @@
   filter: brightness(1.2);
 }
 
+.gantt-milestone:focus {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
+
 /* Today FAB */
 .gantt-today-fab:hover {
   border-color: var(--accent, #7c3aed);
@@ -303,17 +308,6 @@
 .gantt-today-fab:focus-visible {
   outline: 2px solid var(--accent, #7c3aed);
   outline-offset: 2px;
-}
-
-/* ── Completed Task Styling ─────────────────────────────────────────────── */
-
-[class*="--complete"] .bar {
-  opacity: 0.35;
-}
-
-[class*="--complete"] .bar-label {
-  text-decoration: line-through;
-  opacity: 0.6;
 }
 
 /* ── M2: Row Cross-Highlighting ────────────────────────────────────────── */

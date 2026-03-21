@@ -245,8 +245,10 @@ async function patchTask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     })
+    if (!res.ok) console.warn(`[gantt] PATCH /api/tasks/${taskId} → ${res.status}`)
     return res.ok
-  } catch {
+  } catch (e) {
+    console.warn("[gantt] PATCH failed:", e)
     return false
   }
 }
@@ -1071,8 +1073,7 @@ function renderGantt(
       renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
     })
 
-    // M7: Touch support — map touch events to bar drag
-    // M7: Touch support — U3: set once (removed duplicate)
+    // M7: Touch support — set touch-action once
     barGroup.style.touchAction = "none"
 
     barGroup.appendChild(leftHandle)
@@ -1097,6 +1098,11 @@ function renderGantt(
       localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(scrollWrapper.scrollLeft))
     }, 150)
   }, { signal, passive: true })
+
+  // P8: Cancel scroll timer on render abort
+  signal.addEventListener("abort", () => {
+    if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null }
+  })
 
   // ── Scroll to today (or restored position) ───────────────────────────
 
