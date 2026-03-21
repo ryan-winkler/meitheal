@@ -1,13 +1,13 @@
 ---
 /**
- * /progress — Parent page for Progress & Growth (Routines, Goals, Achievements)
+ * /progress — Parent page for Progress & Growth (Pillars, Routines, Goals, Achievements)
  *
  * Uses ParentPageShell for hash-based routing between sub-views.
  * Each sub-view loads live data from repositories and provides
- * deep links to the full-featured legacy views.
+ * deep links to the full-featured views.
  *
  * @domain navigation
- * @phase 15 — Hierarchy Architecture Overhaul
+ * @phase 15 + 17 — Hierarchy Architecture + Pillars Domain
  */
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
@@ -20,6 +20,7 @@ import {
 } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { countActivePillars } from "@domains/pillars/pillar-service"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
@@ -29,6 +30,7 @@ let activeStreaks = 0
 let goalCount = 0
 let completedGoals = 0
 let totalPoints = 0
+let pillarCount = 0
 
 try {
   await ensureSchema()
@@ -52,12 +54,36 @@ try {
     const stats = await getStats()
     totalPoints = stats.totalPoints ?? 0
   } catch { /* gamification may not be available */ }
+
+  // Pillars
+  try {
+    pillarCount = await countActivePillars()
+  } catch { /* pillars may not be available */ }
 } catch { /* DB not available */ }
 ---
 
 <Layout title={`Meitheal — ${t("nav.progress", locale)}`}>
   <ParentPageShell pageId="progress">
-    <section data-parent-section="routines" id="progress-section-routines">
+    <section data-parent-section="pillars" id="progress-section-pillars">
+      <InlineHelper helperId="progress-pillars-explainer" title="What are Pillars?" icon="🏛️" variant="tip">
+        <p><strong>Pillars</strong> are the permanent, identity-based motivational anchors of your life — the WHY behind everything you do. Each Pillar can have <strong>Principles</strong> and <strong>Non-Negotiables</strong> that guide your behavior.</p>
+      </InlineHelper>
+      <div class="parent-section-hub">
+        <div class="parent-section-hub__header">
+          <span class="parent-section-hub__icon">🏛️</span>
+          <div>
+            <h2 class="parent-section-hub__title">Pillars</h2>
+            <p class="parent-section-hub__desc">Your identity anchors — the WHY behind your Goals, Routines, and Tasks. Define 3-5 core Pillars and the Non-Negotiable principles that protect them.</p>
+          </div>
+        </div>
+        <div class="parent-section-hub__stats">
+          <div class="stat-card"><span class="stat-value">{pillarCount}</span><span class="stat-label">Active Pillars</span></div>
+        </div>
+        <a href="/pillars" class="parent-section-hub__action">Open North Star →</a>
+      </div>
+    </section>
+
+    <section data-parent-section="routines" id="progress-section-routines" hidden>
       <InlineHelper helperId="progress-routines-explainer" title="What are Routines?" icon="💡">
         <p><strong>Routines</strong> are recurring templates that automatically create daily or weekly tasks. Complete them to build streaks and earn XP. Unlike one-off tasks, routines repeat on a cadence you set.</p>
         <p>Press <kbd>?</kbd> to restore this helper if dismissed.</p>

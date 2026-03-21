@@ -1,0 +1,223 @@
+---
+/**
+ * PillarCard — Manifesto-first visual card for North Star page
+ *
+ * Shows Pillar identity: icon, name, manifesto (hero), weight indicator,
+ * and principle count badge. Designed for a masonry grid layout.
+ *
+ * Design Rules (ADR-017):
+ * - Manifesto text is the hero element — large, prominent
+ * - NO failure states, NO streak counters, NO percentages
+ * - Always identity framing: "I am someone who..."
+ * - Card accent uses Pillar's colorHex
+ *
+ * @domain pillars
+ * @kcs North Star page uses PillarCard in a masonry layout, not a task list
+ */
+interface Props {
+  id: string
+  name: string
+  manifesto: string | null
+  icon: string | null
+  colorHex: string | null
+  weight: number
+  principleCount: number
+  linkedGoalCount: number
+}
+
+const {
+  id,
+  name,
+  manifesto,
+  icon,
+  colorHex,
+  weight,
+  principleCount,
+  linkedGoalCount,
+} = Astro.props
+
+const accentColor = colorHex || "var(--accent)"
+const weightDots = Math.min(weight, 10)
+---
+
+<article
+  class="pillar-card"
+  data-pillar-id={id}
+  style={`--pillar-accent: ${accentColor}`}
+  tabindex="0"
+  role="button"
+  aria-label={`${name} — ${manifesto || "No manifesto set"}`}
+>
+  <div class="pillar-card__accent-bar"></div>
+
+  <div class="pillar-card__content">
+    <div class="pillar-card__header">
+      <span class="pillar-card__icon" aria-hidden="true">{icon || "🏛️"}</span>
+      <div class="pillar-card__meta">
+        <h3 class="pillar-card__name">{name}</h3>
+        <div class="pillar-card__weight" title={`Weight: ${weight}/10`} aria-label={`Weight ${weight} of 10`}>
+          {Array.from({ length: weightDots }).map(() => (
+            <span class="pillar-card__weight-dot pillar-card__weight-dot--filled"></span>
+          ))}
+          {Array.from({ length: 10 - weightDots }).map(() => (
+            <span class="pillar-card__weight-dot"></span>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div class="pillar-card__manifesto">
+      {manifesto ? (
+        <blockquote>{manifesto}</blockquote>
+      ) : (
+        <p class="pillar-card__manifesto-empty">
+          Tap to add your manifesto — why does this matter to you?
+        </p>
+      )}
+    </div>
+
+    <div class="pillar-card__footer">
+      {principleCount > 0 && (
+        <span class="pillar-card__badge" title={`${principleCount} Principle${principleCount !== 1 ? "s" : ""}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          {principleCount}
+        </span>
+      )}
+      {linkedGoalCount > 0 && (
+        <span class="pillar-card__badge" title={`${linkedGoalCount} linked Goal${linkedGoalCount !== 1 ? "s" : ""}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          {linkedGoalCount}
+        </span>
+      )}
+    </div>
+  </div>
+</article>
+
+<style>
+.pillar-card {
+  --pillar-accent: var(--accent);
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  outline: none;
+  break-inside: avoid;
+  margin-bottom: 1rem;
+}
+
+.pillar-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-color: var(--pillar-accent);
+}
+
+.pillar-card:focus-visible {
+  box-shadow: 0 0 0 2px var(--pillar-accent);
+}
+
+.pillar-card__accent-bar {
+  height: 4px;
+  background: var(--pillar-accent);
+  opacity: 0.85;
+}
+
+.pillar-card__content {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pillar-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.pillar-card__icon {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pillar-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.pillar-card__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pillar-card__weight {
+  display: flex;
+  gap: 3px;
+  margin-top: 0.25rem;
+}
+
+.pillar-card__weight-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 150ms ease;
+}
+
+.pillar-card__weight-dot--filled {
+  background: var(--pillar-accent);
+}
+
+.pillar-card__manifesto {
+  min-height: 3rem;
+}
+
+.pillar-card__manifesto blockquote {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--pillar-accent);
+  background: color-mix(in srgb, var(--pillar-accent) 6%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text);
+  font-style: italic;
+}
+
+.pillar-card__manifesto-empty {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px dashed var(--border);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pillar-card__footer {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pillar-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+</style>

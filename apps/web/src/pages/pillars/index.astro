@@ -1,0 +1,269 @@
+---
+/**
+ * /pillars — North Star Page
+ *
+ * Masonry grid of PillarCards showing identity-based motivational anchors.
+ * Deliberately NOT a task list or Kanban board — this is a values/identity surface.
+ *
+ * @domain pillars
+ * @phase 17 — Sub-Phase 17B (North Star UX)
+ * @kcs Manifesto-first design: the WHY is always the hero element
+ */
+import Layout from "../../layouts/Layout.astro"
+import PillarCard from "../../components/pillars/PillarCard.astro"
+import InlineHelper from "../../components/ui/InlineHelper.astro"
+import { getPillars } from "@domains/pillars/pillar-service"
+import { getPrinciplesForPillar } from "@domains/pillars/principle-service"
+import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
+
+const pillarsData = await getPillars({ includeInactive: false })
+
+// Enrich with principle counts and linked goal counts
+const enrichedPillars = await Promise.all(
+  pillarsData.map(async (p) => {
+    const principles = await getPrinciplesForPillar(p.id)
+    const associations = await getAssociationsForPillar(p.id)
+    const linkedGoalCount = associations.filter(a => a.entityType === "goal").length
+    return {
+      ...p,
+      principleCount: principles.length,
+      linkedGoalCount,
+    }
+  })
+)
+---
+
+<Layout title="Meitheal — Pillars">
+  <main class="pillars-page" id="pillars-page">
+    <div class="pillars-page__header">
+      <div class="pillars-page__title-row">
+        <h1 class="pillars-page__title">
+          <span class="pillars-page__title-icon" aria-hidden="true">🏛️</span>
+          Pillars
+        </h1>
+        <button
+          type="button"
+          class="pillars-page__add-btn"
+          id="pillar-add-btn"
+          aria-label="Create new Pillar"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Pillar
+        </button>
+      </div>
+      <p class="pillars-page__subtitle">
+        The load-bearing anchors of your life — the WHY behind everything you do.
+      </p>
+    </div>
+
+    <InlineHelper helperId="pillars-explainer" title="What are Pillars?" icon="🏛️">
+      <p><strong>Pillars</strong> are permanent, identity-based motivational anchors. They answer the question <em>"Who am I, and what do I stand for?"</em></p>
+      <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. Principles marked <strong>Non-Negotiable</strong> are injected into AI system prompts to keep recommendations aligned with your values.</p>
+      <p>Research suggests 3-5 active Pillars is optimal for focus. Press <kbd>?</kbd> to restore this helper if dismissed.</p>
+    </InlineHelper>
+
+    {enrichedPillars.length === 0 ? (
+      <div class="pillars-page__empty">
+        <div class="pillars-page__empty-icon" aria-hidden="true">🏛️</div>
+        <h2 class="pillars-page__empty-title">No Pillars yet</h2>
+        <p class="pillars-page__empty-desc">
+          Start by defining the 3-5 core pillars that anchor your identity.
+          Think big, permanent categories: <em>Physical Longevity</em>, <em>Financial Independence</em>, <em>Unbreakable Family</em>.
+        </p>
+        <button
+          type="button"
+          class="pillars-page__empty-action"
+          id="pillar-add-btn-empty"
+          aria-label="Create your first Pillar"
+        >
+          Create Your First Pillar
+        </button>
+      </div>
+    ) : (
+      <div class="pillars-page__grid">
+        {enrichedPillars.map((pillar) => (
+          <PillarCard
+            id={pillar.id}
+            name={pillar.name}
+            manifesto={pillar.manifesto}
+            icon={pillar.icon}
+            colorHex={pillar.colorHex}
+            weight={pillar.weight}
+            principleCount={pillar.principleCount}
+            linkedGoalCount={pillar.linkedGoalCount}
+          />
+        ))}
+      </div>
+    )}
+  </main>
+</Layout>
+
+<style>
+.pillars-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.pillars-page__header {
+  margin-bottom: 1.5rem;
+}
+
+.pillars-page__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pillars-page__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pillars-page__title-icon {
+  font-size: 1.5rem;
+}
+
+.pillars-page__subtitle {
+  margin: 0.375rem 0 0;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+
+.pillars-page__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+
+.pillars-page__add-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+/* Masonry grid */
+.pillars-page__grid {
+  columns: 1;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .pillars-page__grid {
+    columns: 2;
+  }
+}
+
+@media (min-width: 960px) {
+  .pillars-page__grid {
+    columns: 3;
+  }
+}
+
+/* Empty state */
+.pillars-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg, 12px);
+  margin-top: 1rem;
+}
+
+.pillars-page__empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.6;
+}
+
+.pillars-page__empty-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pillars-page__empty-desc {
+  margin: 0 0 1.5rem;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.pillars-page__empty-action {
+  padding: 0.625rem 1.5rem;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.pillars-page__empty-action:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+</style>
+
+<script>
+  /**
+   * Pillars page controller
+   *
+   * Handles:
+   * - PillarCard click → navigate to detail (future: modal or inline expand)
+   * - "New Pillar" button → create modal (future implementation)
+   */
+  document.addEventListener("astro:page-load", () => {
+    const page = document.getElementById("pillars-page")
+    if (!page) return
+
+    // Card click → navigate to pillar detail
+    page.addEventListener("click", (e) => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-pillar-id]")
+      if (!card) return
+
+      // If the click is on the add-principle button, don't navigate
+      if ((e.target as HTMLElement).closest("[data-action]")) return
+
+      const pillarId = card.dataset.pillarId
+      if (pillarId) {
+        window.location.href = `/pillars/${pillarId}`
+      }
+    })
+
+    // Card keyboard navigation
+    page.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-pillar-id]")
+      if (!card) return
+      e.preventDefault()
+      const pillarId = card.dataset.pillarId
+      if (pillarId) {
+        window.location.href = `/pillars/${pillarId}`
+      }
+    })
+  })
+</script>
