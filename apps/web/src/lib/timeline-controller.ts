@@ -43,6 +43,7 @@ interface TimelineTask {
   effort_minutes: number | null
   labels: string | null
   area_id: string | null
+  is_overdue: boolean
 }
 
 interface GanttBar {
@@ -528,7 +529,8 @@ function filterBars(bars: GanttBar[], filter: TimelineFilterState): GanttBar[] {
     }
     // Types (multi-select)
     if (filter.types.length > 0) {
-      if (!filter.types.includes(bar.taskType)) return false
+      const kind = bar.original.task_kind || "standard_action"
+      if (!filter.types.includes(kind)) return false
     }
     // Area
     if (filter.area) {
@@ -797,7 +799,7 @@ function renderGantt(
         showDueDateCol = false
         try { localStorage.setItem(DUEDATE_VIS_KEY, "false") } catch { /* ignore */ }
         menu.remove()
-        renderGantt(outerContainer, bars, zoom, _parentSignal)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
       })
       menu.appendChild(hideItem)
       dueDateWrap.appendChild(menu)
@@ -821,7 +823,7 @@ function renderGantt(
     if (!showDueDateCol) {
       showDueDateCol = true
       try { localStorage.setItem(DUEDATE_VIS_KEY, "true") } catch { /* ignore */ }
-      renderGantt(outerContainer, bars, zoom, _parentSignal)
+      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
     }
   })
   sidebarHeader.appendChild(addColBtn)
@@ -875,7 +877,7 @@ function renderGantt(
           collapsedParents.add(bar.id)
         }
         // Re-render
-        renderGantt(outerContainer, bars, zoom, _parentSignal)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
       })
       toggle.addEventListener("mouseenter", () => {
         toggle.style.background = "var(--bg-secondary, rgba(255,255,255,0.08))"
@@ -930,14 +932,14 @@ function renderGantt(
           const ok = await patchTask(bar.id, { due_date: iso })
           if (ok) {
             bar.original.due_date = iso
-            renderGantt(outerContainer, bars, zoom, _parentSignal)
+            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
           }
         },
         onClear: async () => {
           const ok = await patchTask(bar.id, { due_date: null })
           if (ok) {
             bar.original.due_date = undefined!
-            renderGantt(outerContainer, bars, zoom, _parentSignal)
+            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
           }
         },
         signal,
@@ -1044,6 +1046,34 @@ function renderGantt(
               ut.due_date = iso
               ut.start_date = iso
               showToast("Date set — task scheduled")
+
+              // Remove from undated list
+              const idx = undatedTasks.findIndex(t => t.id === ut.id)
+              if (idx !== -1) undatedTasks.splice(idx, 1)
+
+              // Add to dated bars list
+              const complete = isComplete(ut.status)
+              const overdue = !complete && date < startOfDay(new Date())
+              bars.push({
+                id: ut.id,
+                name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+                start: date,
+                end: date,
+                progress: Number(ut.progress ?? 0),
+                colour: ut.color || PRIORITY_COLOURS[ut.priority] || "#6366F1",
+                taskType: String(ut.task_type || "task"),
+                isComplete: complete,
+                isOverdue: overdue,
+                isMilestone: true,
+                priority: ut.priority,
+                original: ut,
+                deps: []
+              })
+
+              // Save scroll position to target the new date
+              const targetX = daysBetween(rangeStart, date) * pxPerDay;
+              localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(targetX - outerContainer.clientWidth / 2))
+
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
             }
           },
@@ -1451,15 +1481,15 @@ function renderGantt(
 
     // Drag logic for whole bar — O1: pass signal to fix memory leak
     setupBarDrag(barGroup, bgRect, bar, pos, pxPerDay, config, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after drag
+      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after drag
     })
 
     // Resize handles drag — O5/O6: visual feedback + re-render
     setupResizeDrag(leftHandle, "start", bar, pos, pxPerDay, config, barGroup, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
+      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after resize
     })
     setupResizeDrag(rightHandle, "end", bar, pos, pxPerDay, config, barGroup, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
+      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after resize
     })
 
     // M7: Touch support — set touch-action once
@@ -1572,7 +1602,7 @@ function renderGantt(
         e.stopPropagation()
         // Calculate date from click position
         const svgRect = svg.getBoundingClientRect()
-        const clickX = e.clientX - svgRect.left + scrollWrapper.scrollLeft
+        const clickX = e.clientX - svgRect.left
         const dayOffset = Math.floor(clickX / pxPerDay)
         const clickedDate = addDays(rangeStart, dayOffset)
         const iso = toISODate(clickedDate)
@@ -1582,7 +1612,34 @@ function renderGantt(
           ut.start_date = iso
           ut.due_date = iso
           showToast(`Scheduled for ${fmtDate(clickedDate)}`)
-          // Re-render — task will move from undated to dated
+          
+          // Remove from undated list
+          const idx = undatedTasks.findIndex(t => t.id === ut.id)
+          if (idx !== -1) undatedTasks.splice(idx, 1)
+
+          // Add to dated bars list
+          const complete = isComplete(ut.status)
+          const overdue = !complete && clickedDate < startOfDay(new Date())
+          bars.push({
+            id: ut.id,
+            name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+            start: clickedDate,
+            end: clickedDate,
+            progress: Number(ut.progress ?? 0),
+            colour: ut.color || PRIORITY_COLOURS[ut.priority] || "#6366F1",
+            taskType: String(ut.task_type || "task"),
+            isComplete: complete,
+            isOverdue: overdue,
+            isMilestone: true,
+            priority: ut.priority,
+            original: ut,
+            deps: []
+          })
+
+          // Save scroll position to target the new date
+          localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(clickX - outerContainer.clientWidth / 2))
+
+          // Re-render
           renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
         } else {
           showToast("Failed to schedule", "error")
@@ -2004,11 +2061,30 @@ export function initTimelineController(signal: AbortSignal) {
     return filterBars(allBars, currentFilter)
   }
 
-  /** Filter undated tasks by search term (if any) */
+  /** Filter undated tasks by current active filters */
   function getVisibleUndated(): TimelineTask[] {
-    if (!currentFilter.search) return allUndated
-    const q = currentFilter.search.toLowerCase()
-    return allUndated.filter(t => t.title.toLowerCase().includes(q))
+    let result = allUndated
+    if (currentFilter.search) {
+      const q = currentFilter.search.toLowerCase()
+      result = result.filter(t => t.title.toLowerCase().includes(q))
+    }
+    if (currentFilter.status) {
+      if (currentFilter.status === "overdue") {
+        result = result.filter(t => t.is_overdue)
+      } else {
+        result = result.filter(t => t.status === currentFilter.status)
+      }
+    }
+    if (currentFilter.priority) {
+      result = result.filter(t => String(t.priority) === currentFilter.priority)
+    }
+    if (currentFilter.types.length > 0) {
+      result = result.filter(t => currentFilter.types.includes(t.task_kind || "standard_action"))
+    }
+    if (currentFilter.area) {
+      result = result.filter(t => t.area_id === currentFilter.area)
+    }
+    return result
   }
 
   function doRender(zoom: ZoomLevel) {

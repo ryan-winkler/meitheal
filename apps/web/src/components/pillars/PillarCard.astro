@@ -105,6 +105,7 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
           aria-expanded="false"
           aria-label={`${principles.length} Principle${principles.length !== 1 ? "s" : ""} — click to expand`}
         >
+          <span class="pillar-card__principles-chevron" data-principles-chevron aria-hidden="true">▶</span>
           <span class="pillar-card__principles-label">
             Principles
             <span class="pillar-card__principles-count">{principles.length}</span>
@@ -140,12 +141,6 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
     )}
 
     <div class="pillar-card__footer">
-      {principles.length > 0 && (
-        <span class="pillar-card__badge" title={`${principles.length} Principle${principles.length !== 1 ? "s" : ""}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          {principles.length}
-        </span>
-      )}
       {linkedGoalCount > 0 && (
         <span class="pillar-card__badge" title={`${linkedGoalCount} linked Goal${linkedGoalCount !== 1 ? "s" : ""}`}>
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -291,6 +286,7 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
 .pillar-card__principles-toggle {
   display: flex;
   align-items: center;
+  gap: 0.375rem;
   width: 100%;
   padding: 0.375rem 0;
   background: none;
@@ -306,6 +302,16 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
 
 .pillar-card__principles-toggle:hover {
   color: var(--pillar-accent);
+}
+
+.pillar-card__principles-chevron {
+  font-size: 0.5625rem;
+  transition: transform 200ms ease;
+  opacity: 0.6;
+}
+
+.pillar-card__principles-toggle[aria-expanded="true"] .pillar-card__principles-chevron {
+  transform: rotate(90deg);
 }
 
 .pillar-card__principles-label {

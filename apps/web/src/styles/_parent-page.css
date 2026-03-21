@@ -69,6 +69,38 @@
   gap: 0.25rem;
 }
 
+/* ── Link variant — makes the entire card a clickable navigation surface ── */
+.parent-section-hub--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+}
+
+.parent-section-hub--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.parent-section-hub__nav-hint {
+  position: absolute;
+  top: 50%;
+  right: 1.5rem;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.parent-section-hub--link:hover .parent-section-hub__nav-hint,
+.parent-section-hub--link:focus-visible .parent-section-hub__nav-hint {
+  opacity: 1;
+  transform: translateY(-50%) translateX(2px);
+  color: var(--accent);
+}
+
+/* Legacy action button — kept for planning page compatibility */
 .parent-section-hub__action {
   display: inline-flex;
   align-items: center;

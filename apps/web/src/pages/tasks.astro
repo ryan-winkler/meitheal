@@ -477,6 +477,7 @@ try {
                     data-priority={String(p)}
                     data-status={String(task.status)}
                     data-task-type={tt}
+                    data-task-kind={String(task.task_kind ?? "standard_action")}
                     data-area={String(task.area_id ?? "default")}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}

@@ -46,39 +46,26 @@
     }
   ],
   "settings": {
+    // Workspace-specific: hide noise in multi-root explorer
     "files.exclude": {
       "**/.git": true,
       "**/node_modules": true,
       "**/.astro": true,
       "**/.next": true,
     },
-    "search.exclude": {
-      "**/node_modules": true,
-      "**/.astro": true,
-      "**/pnpm-lock.yaml": true,
-      "**/dist": true,
-      "**/build": true,
-    },
+    // Workspace-specific: formatter overrides per language
     "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "emmet.includeLanguages": {
-      "astro": "html",
-    },
     "[astro]": {
       "editor.defaultFormatter": "astro-build.astro-vscode",
     },
     "[typescript]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode",
     },
-    "[json]": {
-      "editor.defaultFormatter": "vscode.json-language-features",
-    },
+    "typescript.disableAutomaticTypeAcquisition": false,
+    // Extension: project-specific config
     "piny.project_settings": {
       "open-pages": ["pinyfakepage.html"],
     },
-    "workbench.experimental.cloudChanges.autoStore": "onShutdown",
-    "git.autofetch": true,
-    "typescript.disableAutomaticTypeAcquisition": false,
-    "files.autoSave": "onFocusChange",
     "liveServer.settings.multiRootWorkspaceName": "📦 Meitheal Root",
   },
   "extensions": {

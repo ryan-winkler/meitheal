@@ -12,6 +12,7 @@
  */
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import SectionHubCard from "../components/layout/SectionHubCard.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
@@ -193,58 +194,46 @@ const visibleAreas = areas.filter((a: any) =>
 
     {/* ─── Eisenhower ─── */}
     <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">🎯</span>
-          <div>
-            <h2 class="parent-section-hub__title">Eisenhower Matrix</h2>
-            <p class="parent-section-hub__desc">Prioritise by urgency × importance — classify tasks into Do, Schedule, Delegate, or Eliminate quadrants.</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card stat-card--do"><span class="stat-value">{q1}</span><span class="stat-label">🔴 Do Now</span></div>
-          <div class="stat-card stat-card--schedule"><span class="stat-value">{q2}</span><span class="stat-label">🔵 Schedule</span></div>
-          <div class="stat-card stat-card--delegate"><span class="stat-value">{q3}</span><span class="stat-label">🟡 Delegate</span></div>
-          <div class="stat-card stat-card--eliminate"><span class="stat-value">{q4}</span><span class="stat-label">⚫ Eliminate</span></div>
-        </div>
-        <a href="/eisenhower" class="parent-section-hub__action">Open Full Matrix →</a>
-      </div>
+      <SectionHubCard
+        href="/eisenhower"
+        icon="🎯"
+        title="Eisenhower Matrix"
+        description="Prioritise by urgency × importance — classify tasks into Do, Schedule, Delegate, or Eliminate quadrants."
+        id="planning-eisenhower-link"
+      >
+        <div slot="stats" class="stat-card stat-card--do"><span class="stat-value">{q1}</span><span class="stat-label">🔴 Do Now</span></div>
+        <div slot="stats" class="stat-card stat-card--schedule"><span class="stat-value">{q2}</span><span class="stat-label">🔵 Schedule</span></div>
+        <div slot="stats" class="stat-card stat-card--delegate"><span class="stat-value">{q3}</span><span class="stat-label">🟡 Delegate</span></div>
+        <div slot="stats" class="stat-card stat-card--eliminate"><span class="stat-value">{q4}</span><span class="stat-label">⚫ Eliminate</span></div>
+      </SectionHubCard>
     </section>
 
     {/* ─── Triage ─── */}
     <section data-parent-section="triage" id="planning-section-triage" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">📥</span>
-          <div>
-            <h2 class="parent-section-hub__title">Triage</h2>
-            <p class="parent-section-hub__desc">Classify incoming tasks quickly — review unscored and uncategorised work that needs attention.</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{unscoredCount}</span><span class="stat-label">Needs Scoring</span></div>
-          <div class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
-        </div>
-        <span class="parent-section-hub__badge">Coming Soon</span>
-      </div>
+      <SectionHubCard
+        href="/triage"
+        icon="📥"
+        title="Triage"
+        description="Classify incoming tasks quickly — review unscored and uncategorised work that needs attention."
+        comingSoon={true}
+      >
+        <div slot="stats" class="stat-card"><span class="stat-value">{unscoredCount}</span><span class="stat-label">Needs Scoring</span></div>
+        <div slot="stats" class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
+      </SectionHubCard>
     </section>
 
     {/* ─── RICE ─── */}
     <section data-parent-section="rice" id="planning-section-rice" hidden>
-      <div class="parent-section-hub">
-        <div class="parent-section-hub__header">
-          <span class="parent-section-hub__icon">📊</span>
-          <div>
-            <h2 class="parent-section-hub__title">RICE Scoring</h2>
-            <p class="parent-section-hub__desc">Reach × Impact × Confidence ÷ Effort — data-driven prioritisation for your task backlog.</p>
-          </div>
-        </div>
-        <div class="parent-section-hub__stats">
-          <div class="stat-card"><span class="stat-value">{riceScoredCount}</span><span class="stat-label">Scored Tasks</span></div>
-          <div class="stat-card"><span class="stat-value">{avgRice}</span><span class="stat-label">Avg RICE</span></div>
-        </div>
-        <span class="parent-section-hub__badge">Coming Soon</span>
-      </div>
+      <SectionHubCard
+        href="/rice"
+        icon="📊"
+        title="RICE Scoring"
+        description="Reach × Impact × Confidence ÷ Effort — data-driven prioritisation for your task backlog."
+        comingSoon={true}
+      >
+        <div slot="stats" class="stat-card"><span class="stat-value">{riceScoredCount}</span><span class="stat-label">Scored Tasks</span></div>
+        <div slot="stats" class="stat-card"><span class="stat-value">{avgRice}</span><span class="stat-label">Avg RICE</span></div>
+      </SectionHubCard>
     </section>
 
   </ParentPageShell>

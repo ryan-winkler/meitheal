@@ -113,7 +113,7 @@ function switchView(view: TaskView) {
   }
   document.title = `Meitheal — ${viewTitles[view]}`
   // Also update the page heading
-  const heading = document.querySelector(".unified-bar__title-text")
+  const heading = document.querySelector(".unified-bar__switcher-label")
   if (heading) heading.textContent = viewTitles[view]
 
   // Persist preference

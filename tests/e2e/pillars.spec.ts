@@ -67,7 +67,7 @@ test("getPillars returns only active pillars by default", async () => {
 
   const active = await getPillars({ includeInactive: false })
   expect(active.length).toBe(1)
-  expect(active[0].name).toBe("Active One")
+  expect(active[0]!.name).toBe("Active One")
 
   const all = await getPillars({ includeInactive: true })
   expect(all.length).toBe(2)
@@ -196,12 +196,12 @@ test("can link and unlink entities to a pillar", async () => {
 
   const associations = await getAssociationsForPillar(pillar.id)
   expect(associations.length).toBe(2)
-  expect(associations[0].entityType).toBe("goal")
+  expect(associations[0]!.entityType).toBe("goal")
 
   await unlinkEntity(pillar.id, "goal", "goal-123")
   const afterUnlink = await getAssociationsForPillar(pillar.id)
   expect(afterUnlink.length).toBe(1)
-  expect(afterUnlink[0].entityId).toBe("goal-456")
+  expect(afterUnlink[0]!.entityId).toBe("goal-456")
 })
 
 test("linkEntity is idempotent", async () => {

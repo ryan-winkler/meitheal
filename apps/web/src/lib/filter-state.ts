@@ -308,8 +308,8 @@ export function isTaskVisible(
 
   // Type filter (multi-select — if types array has values, task must be one of them)
   if (state.types && state.types.length > 0) {
-    const taskType = el.dataset.taskType ?? el.dataset.task_type ?? "task"
-    if (!state.types.includes(taskType)) return false
+    const taskKind = el.dataset.taskKind ?? el.dataset.task_kind ?? "standard_action"
+    if (!state.types.includes(taskKind)) return false
   }
 
   // Label filter (multi-select — task must have at least one matching label)

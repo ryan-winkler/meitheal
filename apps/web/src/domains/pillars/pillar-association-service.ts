@@ -159,6 +159,7 @@ export async function getPillarsForEntity(
     const r = row as Record<string, unknown>
     return {
       id: String(r.id),
+      slug: String(r.slug),
       userId: String(r.user_id),
       name: String(r.name),
       manifesto: r.manifesto ? String(r.manifesto) : null,

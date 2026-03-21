@@ -5,7 +5,7 @@
  * - Toggle expand/collapse of principles list
  * - "Show all" / "Show less" toggle for overflow principles
  *
- * Wired via pageLifecycle.onLoad — each card instance is self-contained.
+ * Uses pageLifecycle.on() for automatic cleanup on page transitions.
  *
  * @domain pillars
  * @phase 19 — Pillars UX Polish
@@ -21,23 +21,28 @@ function init() {
     const list = card.querySelector<HTMLUListElement>("[data-principles-list]")
     const showAllBtn = card.querySelector<HTMLButtonElement>("[data-show-all-toggle]")
     const overflowItems = card.querySelectorAll<HTMLLIElement>("[data-overflow-principle]")
+    const chevron = toggle?.querySelector<HTMLElement>("[data-principles-chevron]")
 
     if (!toggle || !list) continue
 
     // Toggle expand/collapse
-    toggle.addEventListener("click", (e) => {
+    pageLifecycle.on(toggle, "click", (e: Event) => {
       e.preventDefault()
       e.stopPropagation()
       const expanded = toggle.getAttribute("aria-expanded") === "true"
       toggle.setAttribute("aria-expanded", String(!expanded))
       list.setAttribute("aria-hidden", String(expanded))
+      if (chevron) {
+        chevron.style.transform = expanded ? "" : "rotate(90deg)"
+      }
     })
 
     // Show all / show less toggle
     if (showAllBtn && overflowItems.length > 0) {
+      const totalCount = overflowItems.length + list.querySelectorAll("li:not([data-overflow-principle])").length
       let showingAll = false
 
-      showAllBtn.addEventListener("click", (e) => {
+      pageLifecycle.on(showAllBtn, "click", (e: Event) => {
         e.preventDefault()
         e.stopPropagation()
         showingAll = !showingAll
@@ -48,7 +53,7 @@ function init() {
 
         showAllBtn.textContent = showingAll
           ? "Show less"
-          : `Show all ${Number(overflowItems.length) + (list.querySelectorAll("li:not([data-overflow-principle])").length)}`
+          : `Show all ${totalCount}`
       })
     }
   }

@@ -253,7 +253,7 @@ export async function updatePillar(
   const client = getPersistenceClient()
 
   const sets: string[] = []
-  const args: unknown[] = []
+  const args: any[] = []
 
   if (data.name !== undefined) {
     sets.push("name = ?"); args.push(data.name)

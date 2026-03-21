@@ -221,6 +221,7 @@ const tableSignal =
                     data-title={task.title.toLowerCase()}
                     data-search={searchText}
                     data-task-type={task.task_type}
+                    data-task-kind={task.task_kind ?? "standard_action"}
                     data-depth={String(task.depth)}
                     data-parent-id={task.parent_id ? String(task.parent_id) : ""}
                     data-has-children={task.hasChildren ? "true" : ""}

@@ -171,7 +171,7 @@ export async function updatePrinciple(
   const client = getPersistenceClient()
 
   const sets: string[] = []
-  const args: unknown[] = []
+  const args: any[] = []
 
   if (data.statement !== undefined) { sets.push("statement = ?"); args.push(data.statement) }
   if (data.isNonNegotiable !== undefined) { sets.push("is_non_negotiable = ?"); args.push(data.isNonNegotiable ? 1 : 0) }

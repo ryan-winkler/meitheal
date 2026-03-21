@@ -35,6 +35,7 @@ export interface TaskViewItem {
   color: string | null;
   is_favorite: boolean;
   task_type: string;
+  task_kind: string | null;
   parent_id: string | null;
   ticket_number: number | null;
   assigned_to: string | null;
@@ -120,7 +121,7 @@ function isOverdue(dueDate: string | null, isDone: boolean): boolean {
 const TASK_VIEW_SQL = `
   SELECT id, title, description, status, priority, due_date, labels,
          framework_payload, calendar_sync_state, area_id, custom_fields,
-         start_date, end_date, progress, color, is_favorite, task_type,
+         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
          parent_id, ticket_number, assigned_to, checklists, created_at, updated_at,
          urgency, importance, eisenhower_override,
          effort_minutes, effort_type, blocked_by
@@ -197,6 +198,7 @@ export async function getTasksForView(): Promise<TaskViewResult> {
         color: row.color ? String(row.color) : null,
         is_favorite: Boolean(row.is_favorite),
         task_type: String(row.task_type ?? "task"),
+        task_kind: row.task_kind ? String(row.task_kind) : null,
         parent_id: row.parent_id ? String(row.parent_id) : null,
         ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
         assigned_to: row.assigned_to ? String(row.assigned_to) : null,

@@ -77,7 +77,10 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     updateActiveTab(sectionId)
 
     if (updateHash) {
-      history.replaceState(null, "", `#${sectionId}`)
+      const currentHash = window.location.hash.replace("#", "")
+      if (currentHash !== sectionId) {
+        history.pushState({ section: sectionId, shell: config.shellId }, "", `#${sectionId}`)
+      }
     }
   }
 
@@ -132,6 +135,22 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     })
   }
 
+  // ─── Back/Forward Navigation ────────────────────────────────────
+
+  function handlePopState(event: PopStateEvent): void {
+    // If the popstate event belongs to a different shell, ignore it
+    if (event.state?.shell && event.state.shell !== config.shellId) return
+
+    const sectionFromState = event.state?.section
+    if (sectionFromState && config.sectionIds.includes(sectionFromState)) {
+      activateSection(sectionFromState, false)
+      return
+    }
+
+    // Fallback: read from hash
+    syncFromHash()
+  }
+
   // ─── Init ──────────────────────────────────────────────────────
 
   initSectionLinks()
@@ -150,7 +169,7 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     fallbackMessage: "Task modal not ready — try again",
   })
 
-  pageLifecycle.on(window, "hashchange", syncFromHash)
+  pageLifecycle.on(window, "popstate", handlePopState as EventListener)
 
   // Initial activation
   syncFromHash()
