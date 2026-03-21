@@ -1,0 +1,78 @@
+---
+/**
+ * SectionHubCard — Clickable navigation card for parent page sub-views
+ *
+ * @domain navigation
+ * @bounded-context parent-page-shell
+ *
+ * Reusable card component used within ParentPageShell sections to provide
+ * direct navigation to full sub-page views (e.g., Pillars, Routines, Eisenhower).
+ *
+ * Replaces the old "Open X →" link pattern with an entire-card-as-link surface
+ * that has a hover chevron hint.
+ *
+ * @kcs This component wraps the .parent-section-hub CSS contract from
+ *      _parent-page.css. Styles are shared across all parent pages.
+ * @see _parent-page.css for the --link modifier and __nav-hint styles
+ *
+ * @usage
+ * ```astro
+ * <SectionHubCard href="/pillars" icon="🏛️" title="Pillars" id="progress-pillars-link">
+ *   <p slot="description">Your identity anchors...</p>
+ *   <Fragment slot="stats">
+ *     <div class="stat-card">...</div>
+ *   </Fragment>
+ * </SectionHubCard>
+ * ```
+ */
+
+interface Props {
+  /** Navigation target URL */
+  href: string
+  /** Emoji or icon string */
+  icon: string
+  /** Card heading */
+  title: string
+  /** Card description text */
+  description: string
+  /** Unique element ID for testing and controller hooks */
+  id?: string
+  /** Optional "Coming Soon" badge instead of link behavior */
+  comingSoon?: boolean
+}
+
+const { href, icon, title, description, id, comingSoon = false } = Astro.props
+const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"].filter(Boolean).join(" ")
+---
+
+{comingSoon ? (
+  <div class={classes} id={id}>
+    <div class="parent-section-hub__header">
+      <span class="parent-section-hub__icon">{icon}</span>
+      <div>
+        <h2 class="parent-section-hub__title">{title}</h2>
+        <p class="parent-section-hub__desc">{description}</p>
+      </div>
+    </div>
+    <div class="parent-section-hub__stats">
+      <slot name="stats" />
+    </div>
+    <span class="parent-section-hub__badge">Coming Soon</span>
+  </div>
+) : (
+  <a href={href} class={classes} id={id}>
+    <div class="parent-section-hub__header">
+      <span class="parent-section-hub__icon">{icon}</span>
+      <div>
+        <h2 class="parent-section-hub__title">{title}</h2>
+        <p class="parent-section-hub__desc">{description}</p>
+      </div>
+    </div>
+    <div class="parent-section-hub__stats">
+      <slot name="stats" />
+    </div>
+    <span class="parent-section-hub__nav-hint" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </span>
+  </a>
+)}

@@ -67,6 +67,14 @@
       "open-pages": ["pinyfakepage.html"],
     },
     "liveServer.settings.multiRootWorkspaceName": "📦 Meitheal Root",
+    "files.autoSave": "onFocusChange",
+    "notebook.formatOnSave.enabled": true,
+    "git.promptToSaveFilesBeforeCommit": "never",
+    "git.promptToSaveFilesBeforeStash": "staged",
+    "editor.codeActions.triggerOnFocusChange": true,
+    "workbench.editor.highlightModifiedTabs": true,
+    "java.typeHierarchy.lazyLoad": false,
+    "workbench.commandPalette.history": 100,
   },
   "extensions": {
     "recommendations": [
