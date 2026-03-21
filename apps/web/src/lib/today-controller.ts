@@ -780,14 +780,15 @@ function setupDragReorder(container: HTMLElement) {
     list.querySelectorAll<HTMLElement>(".tli").forEach(item => {
       item.setAttribute("draggable", "true")
 
-      item.addEventListener("dragstart", (e) => {
+      lm.on(item, "dragstart", (e: Event) => {
+        const de = e as DragEvent
         dragSource = item
         item.classList.add("tli--dragging")
-        e.dataTransfer?.setData("text/plain", item.dataset.id ?? "")
-        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"
+        de.dataTransfer?.setData("text/plain", item.dataset.id ?? "")
+        if (de.dataTransfer) de.dataTransfer.effectAllowed = "move"
       })
 
-      item.addEventListener("dragend", () => {
+      lm.on(item, "dragend", () => {
         item.classList.remove("tli--dragging")
         dragSource = null
         // Remove all drop indicators
@@ -796,18 +797,20 @@ function setupDragReorder(container: HTMLElement) {
         )
       })
 
-      item.addEventListener("dragover", (e) => {
+      lm.on(item, "dragover", (e: Event) => {
         e.preventDefault()
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "move"
+        const de = e as DragEvent
+        if (de.dataTransfer) de.dataTransfer.dropEffect = "move"
         item.classList.add("tli--drag-over")
       })
 
-      item.addEventListener("dragleave", () => {
+      lm.on(item, "dragleave", () => {
         item.classList.remove("tli--drag-over")
       })
 
-      item.addEventListener("drop", async (e) => {
+      lm.on(item, "drop", async (e: Event) => {
         e.preventDefault()
+        const de = e as DragEvent
         item.classList.remove("tli--drag-over")
         if (!dragSource || dragSource === item) return
 
@@ -819,7 +822,7 @@ function setupDragReorder(container: HTMLElement) {
         // Move DOM element
         const rect = item.getBoundingClientRect()
         const midY = rect.top + rect.height / 2
-        if (e.clientY < midY) {
+        if (de.clientY < midY) {
           item.parentNode?.insertBefore(dragSource, item)
         } else {
           item.parentNode?.insertBefore(dragSource, item.nextSibling)

@@ -10,6 +10,7 @@
 
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { exportFilename } from "@lib/export-filename"
 import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controller"
@@ -107,15 +108,6 @@ async function apiFetch(path: string, options?: RequestInit): Promise<RuleApiRes
   }
 }
 
-/** Escape HTML entities to prevent XSS when injecting user-provided text via innerHTML */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
 
 /** Download a JSON file in the browser */
 function downloadJson(data: unknown, label: string): void {

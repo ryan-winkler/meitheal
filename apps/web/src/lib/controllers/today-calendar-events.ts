@@ -9,12 +9,7 @@
  */
 
 import type { ListenerManager } from "../managed-listeners"
-
-function escapeHtml(str: string): string {
-  const div = document.createElement("div")
-  div.textContent = str
-  return div.innerHTML
-}
+import { escapeHtml } from "../safe-html"
 
 export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
   const section = document.getElementById("section-calendar-events")

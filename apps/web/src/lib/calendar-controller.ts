@@ -1,6 +1,7 @@
 import { createClientLogger } from "@lib/client-logger"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 import { taskApi } from "@lib/task-api-client"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { showToast } from "@lib/toast"
@@ -367,8 +368,3 @@ async function loadInlineEventPreviews(): Promise<void> {
   }
 }
 
-function escapeHtml(value: string): string {
-  const element = document.createElement("span")
-  element.textContent = value
-  return element.innerHTML
-}
