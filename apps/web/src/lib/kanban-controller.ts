@@ -53,7 +53,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // Section navigation removed — IA flattened in Phase 16.1
 
-    initLaneManagementPanel();
+    try { initLaneManagementPanel() } catch (e) { log.warn("Lane mgmt init failed", e) }
 
     function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
@@ -526,22 +526,21 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // Quick actions: popover, child task, assign user, set color
     // Extracted to @lib/controllers/kanban-quick-actions.ts
-    const _qa = initQuickActions(buildTaskApiUrl, __signal);
-
+    try { initQuickActions(buildTaskApiUrl, __signal) } catch (e) { log.warn("Quick actions init failed", e) }
 
     // T-1903: Click anywhere on kanban card is natively handled by Layout.astro delegated click listener.
 
     // Context menu for the More button (delete/archive)
     // Extracted to @lib/controllers/kanban-context-menu.ts
-    initContextMenu(buildTaskApiUrl, __signal);
+    try { initContextMenu(buildTaskApiUrl, __signal) } catch (e) { log.warn("Context menu init failed", e) }
 
     // Keyboard shortcuts, WIP limits, quick-add, search, board navigation
     // Extracted to @lib/controllers/kanban-keyboard.ts
-    initKeyboardAndSearch(__signal);
+    try { initKeyboardAndSearch(__signal) } catch (e) { log.warn("Keyboard/search init failed", e) }
 
     // Group-by/swimlane logic, filter integration, counts
     // Extracted to @lib/controllers/kanban-grouping.ts
-    initGroupingAndFilters();
+    try { initGroupingAndFilters() } catch (e) { log.warn("Grouping/filters init failed", e) }
 
     // T-1915: Column collapse toggle (REMOVED — clicking lane headers to collapse
     // was unintuitive UX and caused visual breakage, per user feedback).
@@ -584,9 +583,9 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // User filter: Jira-style assignee pills
     // Extracted to @lib/controllers/kanban-user-filter.ts
-    initUserFilter();
+    try { initUserFilter() } catch (e) { log.warn("User filter init failed", e) }
 
     // ─── Touch Drag Polyfill (Long-Press Paradigm) ─────────────
     // Extracted to @lib/controllers/kanban-touch-drag.ts
-    initTouchDrag(handleDrop, __signal);
+    try { initTouchDrag(handleDrop, __signal) } catch (e) { log.warn("Touch drag init failed", e) }
 }

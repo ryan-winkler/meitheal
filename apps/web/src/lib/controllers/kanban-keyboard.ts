@@ -7,7 +7,6 @@
  *      inline quick-add, search filter, and arrow-key board navigation.
  */
 import { createClientLogger } from "@lib/client-logger"
-import { escapeHtml } from "@lib/safe-html"
 
 const log = createClientLogger("kanban:keyboard")
 
@@ -175,7 +174,14 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
             const before = originalTitle.substring(0, idx)
             const matched = originalTitle.substring(idx, idx + query.length)
             const after = originalTitle.substring(idx + query.length)
-            titleEl.innerHTML = `${escapeHtml(before)}<mark class="search-highlight">${escapeHtml(matched)}</mark>${escapeHtml(after)}`
+            // DOM-based highlight (safer than innerHTML, avoids reparse)
+            titleEl.textContent = ""
+            if (before) titleEl.appendChild(document.createTextNode(before))
+            const mark = document.createElement("mark")
+            mark.className = "search-highlight"
+            mark.textContent = matched
+            titleEl.appendChild(mark)
+            if (after) titleEl.appendChild(document.createTextNode(after))
           } else {
             titleEl.textContent = originalTitle
           }

@@ -38,10 +38,15 @@ export function initContextMenu(
 
       const menu = document.createElement("div")
       menu.className = "kanban-context-menu"
-      menu.innerHTML = `
-        <button class="ctx-item ctx-delete" data-action="delete">🗑 Delete</button>
-        <button class="ctx-item ctx-archive" data-action="archive">📦 Archive</button>
-      `
+      const delBtn = document.createElement("button")
+      delBtn.className = "ctx-item ctx-delete"
+      delBtn.dataset.action = "delete"
+      delBtn.textContent = "🗑 Delete"
+      const archBtn = document.createElement("button")
+      archBtn.className = "ctx-item ctx-archive"
+      archBtn.dataset.action = "archive"
+      archBtn.textContent = "📦 Archive"
+      menu.append(delBtn, archBtn)
 
       // Position near button
       const rect = btn.getBoundingClientRect()

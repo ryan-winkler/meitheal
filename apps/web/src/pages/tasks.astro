@@ -789,60 +789,71 @@ try {
     import { pageLifecycle } from "@lib/page-lifecycle"
 
     pageLifecycle.onPageLoad((signal) => {
-      // Phase 16.1: Unified view switcher (kanban/table/calendar/timeline)
-      initTasksViewSwitcher(signal)
+      // Each init block is isolated with try/catch to prevent cascade failures.
+      // If one controller throws (import failure, missing DOM, etc.), the rest still register.
 
-      // Phase 16.2: Area/space context selector
-      initAreaSelector(signal)
+      try {
+        // Phase 16.1: Unified view switcher (kanban/table/calendar/timeline)
+        initTasksViewSwitcher(signal)
+      } catch (e) { console.error("[tasks] View switcher init failed:", e) }
 
-      // Kanban-specific controllers
-      initKanbanArea(signal)
+      try {
+        // Phase 16.2: Area/space context selector
+        initAreaSelector(signal)
+      } catch (e) { console.error("[tasks] Area selector init failed:", e) }
 
-      // Fields panel toggle
-      const fieldsBtn = document.getElementById("toggle-fields-btn")
-      const fieldsPanel = document.getElementById("kanban-fields-panel")
+      try {
+        // Kanban-specific controllers (drag-drop, lanes, touch, keyboard, grouping)
+        initKanbanArea(signal)
+      } catch (e) { console.error("[tasks] Kanban area init failed:", e) }
 
-      // Ensure panel starts hidden (guards against HMR/dep-optimization reloads)
-      fieldsPanel?.classList.add("hidden")
+      // ── Fields panel toggle ──────────────────────────────────────────────
+      try {
+        const fieldsBtn = document.getElementById("toggle-fields-btn")
+        const fieldsPanel = document.getElementById("kanban-fields-panel")
 
-      const hideFieldsPanel = () => {
+        // Ensure panel starts hidden (guards against HMR/dep-optimization reloads)
         fieldsPanel?.classList.add("hidden")
-        fieldsBtn?.setAttribute("aria-pressed", "false")
-      }
 
-      fieldsBtn?.addEventListener("click", () => {
-        const isHidden = fieldsPanel?.classList.toggle("hidden")
-        fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
-      }, { signal })
-
-      // Close button inside the CardCustomizer panel (event delegation — robust against timing)
-      fieldsPanel?.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).closest("#card-customizer-close")) {
-          e.stopPropagation()
-          hideFieldsPanel()
+        const hideFieldsPanel = () => {
+          fieldsPanel?.classList.add("hidden")
+          fieldsBtn?.setAttribute("aria-pressed", "false")
         }
-      }, { signal })
 
-      // Click outside closes Fields panel
-      document.addEventListener("click", (e) => {
-        if (
-          fieldsPanel && !fieldsPanel.classList.contains("hidden") &&
-          !fieldsPanel.contains(e.target as Node) &&
-          !fieldsBtn?.contains(e.target as Node)
-        ) {
-          hideFieldsPanel()
-        }
-      }, { signal })
+        fieldsBtn?.addEventListener("click", () => {
+          const isHidden = fieldsPanel?.classList.toggle("hidden")
+          fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
+        }, { signal })
 
-      // Escape key closes Fields panel
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && fieldsPanel && !fieldsPanel.classList.contains("hidden")) {
-          hideFieldsPanel()
-          fieldsBtn?.focus()
-        }
-      }, { signal })
+        // Close button inside the CardCustomizer panel (event delegation — robust against timing)
+        fieldsPanel?.addEventListener("click", (e) => {
+          if ((e.target as HTMLElement).closest("#card-customizer-close")) {
+            e.stopPropagation()
+            hideFieldsPanel()
+          }
+        }, { signal })
 
-      // Lanes panel toggle handled by kanban-controller
+        // Click outside closes Fields panel
+        document.addEventListener("click", (e) => {
+          if (
+            fieldsPanel && !fieldsPanel.classList.contains("hidden") &&
+            !fieldsPanel.contains(e.target as Node) &&
+            !fieldsBtn?.contains(e.target as Node)
+          ) {
+            hideFieldsPanel()
+          }
+        }, { signal })
+
+        // Escape key closes Fields panel
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape" && fieldsPanel && !fieldsPanel.classList.contains("hidden")) {
+            hideFieldsPanel()
+            fieldsBtn?.focus()
+          }
+        }, { signal })
+      } catch (e) { console.error("[tasks] Fields panel init failed:", e) }
+
+      // Lanes panel toggle handled by kanban-controller (inside initKanbanArea)
     })
   </script>
   </div><!-- /tasks-view-kanban -->
