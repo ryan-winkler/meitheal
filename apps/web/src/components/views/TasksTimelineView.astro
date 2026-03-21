@@ -66,7 +66,7 @@ const totalTasks = tasks.length;
       <span>Timeline view — add dates to tasks to see them here</span>
     )}
 
-    <!-- Zoom controls (T1/T7) -->
+    <!-- Zoom controls (T1/T7/M8) -->
     <div class="timeline-toolbar">
       <select id="timeline-zoom" class="timeline-zoom-select" aria-label="Zoom level">
         <option value="Day">Day</option>
@@ -104,6 +104,15 @@ const totalTasks = tasks.length;
           </div>
         </div>
       </details>
+
+      <!-- M8: Export as PNG -->
+      <button id="timeline-export-btn" class="timeline-export-btn" title="Export as PNG" aria-label="Export timeline as PNG">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1v8M7 9L4 6M7 9l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Export
+      </button>
     </div>
   </SignalBar>
 

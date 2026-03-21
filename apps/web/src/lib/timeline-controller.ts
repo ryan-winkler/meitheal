@@ -62,6 +62,14 @@ interface GanttBar {
 
 type ZoomLevel = "Day" | "Week" | "Month"
 
+interface TimelineFilterState {
+  search: string
+  status: string
+  priority: string
+  types: string[]
+  area: string
+}
+
 interface ZoomConfig {
   columnWidth: number
   unitDays: number
@@ -81,6 +89,7 @@ const ZOOM_KEY = "meitheal-timeline-zoom"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
 const HANDLE_WIDTH = 8
 const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+const ZOOM_ORDER: ZoomLevel[] = ["Day", "Week", "Month"]
 
 const PRIORITY_COLOURS: Record<number, string> = {
   1: "#EF4444", // P1 — urgent red
@@ -419,6 +428,98 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
   setTimeout(() => document.addEventListener("click", close), 10)
 }
 
+// ── M1: Data-Level Bar Filter ──────────────────────────────────────────────
+
+function filterBars(bars: GanttBar[], filter: TimelineFilterState): GanttBar[] {
+  return bars.filter((bar) => {
+    // Search (title match)
+    if (filter.search) {
+      if (!bar.name.toLowerCase().includes(filter.search.toLowerCase())) return false
+    }
+    // Status
+    if (filter.status) {
+      if (filter.status === "overdue") {
+        if (!bar.isOverdue) return false
+      } else {
+        if (bar.original.status !== filter.status) return false
+      }
+    }
+    // Priority
+    if (filter.priority) {
+      if (String(bar.priority) !== filter.priority) return false
+    }
+    // Types (multi-select)
+    if (filter.types.length > 0) {
+      if (!filter.types.includes(bar.taskType)) return false
+    }
+    // Area
+    if (filter.area) {
+      if (bar.original.area_id !== filter.area) return false
+    }
+    return true
+  })
+}
+
+// ── M8: Export as PNG ──────────────────────────────────────────────────────
+
+function exportTimelinePNG(outerContainer: HTMLElement) {
+  const svg = outerContainer.querySelector<SVGSVGElement>(".gantt-native")
+  const sidebar = outerContainer.querySelector<HTMLElement>(".gantt-sidebar")
+  if (!svg) { showToast("Nothing to export", "error"); return }
+
+  const svgRect = svg.getBoundingClientRect()
+  const sidebarW = sidebar ? SIDEBAR_WIDTH : 0
+  const totalW = sidebarW + svgRect.width
+  const totalH = svgRect.height
+
+  const canvas = document.createElement("canvas")
+  const scale = 2 // retina
+  canvas.width = totalW * scale
+  canvas.height = totalH * scale
+  const ctx = canvas.getContext("2d")
+  if (!ctx) { showToast("Export failed", "error"); return }
+  ctx.scale(scale, scale)
+
+  // Fill background
+  const bgColor = getComputedStyle(document.documentElement).getPropertyValue("--bg-card").trim() || "#1a1a2e"
+  ctx.fillStyle = bgColor
+  ctx.fillRect(0, 0, totalW, totalH)
+
+  // Draw sidebar text
+  if (sidebar) {
+    const rows = sidebar.querySelectorAll<HTMLElement>(".gantt-sidebar-row")
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text-primary").trim() || "#e0e0e0"
+    ctx.font = "12px sans-serif"
+    rows.forEach((row, i) => {
+      const name = row.textContent?.trim() ?? ""
+      ctx.fillText(name, 12, HEADER_HEIGHT + i * ROW_HEIGHT + ROW_HEIGHT / 2 + 4, sidebarW - 16)
+    })
+  }
+
+  // Serialize SVG and draw
+  const serializer = new XMLSerializer()
+  const svgStr = serializer.serializeToString(svg)
+  const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const img = new Image()
+  img.onload = () => {
+    ctx.drawImage(img, sidebarW, 0, svgRect.width, svgRect.height)
+    URL.revokeObjectURL(url)
+    // Download
+    const a = document.createElement("a")
+    const now = new Date()
+    a.download = `meitheal-timeline-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.png`
+    a.href = canvas.toDataURL("image/png")
+    a.click()
+    showToast("Timeline exported")
+  }
+  img.onerror = () => {
+    URL.revokeObjectURL(url)
+    showToast("Export failed", "error")
+  }
+  img.src = url
+}
+
 // ── Renderer ───────────────────────────────────────────────────────────────
 
 function renderGantt(
@@ -492,6 +593,7 @@ function renderGantt(
       border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
       font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       background:${i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
+      transition:background 0.15s;
     `
 
     // Type indicator dot
@@ -514,8 +616,27 @@ function renderGantt(
     name.title = bar.name
     row.appendChild(name)
 
-    // Click → open popup
+    // M2: Row cross-highlighting — sidebar → chart
+    row.addEventListener("mouseenter", () => {
+      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
+      if (chartRow) chartRow.setAttribute("opacity", "1")
+      row.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+    })
+    row.addEventListener("mouseleave", () => {
+      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
+      if (chartRow) chartRow.setAttribute("opacity", "0")
+      row.style.background = i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
+    })
+
+    // M4: Sidebar click → scroll chart to bar + open popup
     row.addEventListener("click", (e) => {
+      const barPos = barPositions.get(bar.id)
+      if (barPos) {
+        scrollWrapper.scrollTo({
+          left: barPos.x - scrollWrapper.clientWidth / 3,
+          behavior: REDUCED_MOTION ? "instant" : "smooth",
+        })
+      }
       showPopup(bar, e.clientX, e.clientY, document.body)
     })
 
@@ -562,6 +683,16 @@ function renderGantt(
         fill: i % 2 === 0 ? "var(--bg-card)" : "var(--bg-secondary, rgba(255,255,255,0.02))",
       }),
     )
+    // M2: Highlight overlay rect (hidden by default, shown on hover)
+    const highlightRect = svgEl("rect", {
+      x: 0, y, width: totalWidth, height: ROW_HEIGHT,
+      fill: "var(--accent, #7c3aed)", opacity: 0,
+      "data-row-id": `row-${bars[i]!.id}`,
+      class: "gantt-row-highlight",
+    })
+    highlightRect.style.transition = "opacity 0.15s"
+    highlightRect.style.pointerEvents = "none"
+    gridGroup.appendChild(highlightRect)
     gridGroup.appendChild(
       svgEl("line", {
         x1: 0, y1: y + ROW_HEIGHT, x2: totalWidth, y2: y + ROW_HEIGHT,
@@ -635,7 +766,7 @@ function renderGantt(
 
   svg.appendChild(headerGroup)
 
-  // ── Today Marker ─────────────────────────────────────────────────────
+  // ── Today Marker + M3: Today Label ───────────────────────────────────
 
   const today = startOfDay(new Date())
   const todayOffset = daysBetween(rangeStart, today)
@@ -657,6 +788,15 @@ function renderGantt(
         fill: "var(--accent, #7c3aed)",
       }),
     )
+    // M3: Today label
+    const todayLabel = svgEl("text", {
+      x: todayX, y: HEADER_HEIGHT - 2,
+      "text-anchor": "middle", fill: "var(--accent, #7c3aed)",
+      "font-size": 10, "font-weight": 700, "font-family": "inherit",
+      opacity: 0.9,
+    })
+    todayLabel.textContent = "Today"
+    todayGroup.appendChild(todayLabel)
 
     svg.appendChild(todayGroup)
   }
@@ -820,9 +960,26 @@ function renderGantt(
       )
     }
 
-    // T4: Hover tooltip
-    barGroup.addEventListener("mouseenter", (e) => showTooltip(bar, e.clientX, e.clientY, document.body))
-    barGroup.addEventListener("mouseleave", hideTooltip)
+    // T4: Hover tooltip + M2: cross-highlight from chart → sidebar
+    barGroup.addEventListener("mouseenter", (e) => {
+      showTooltip(bar, e.clientX, e.clientY, document.body)
+      // M2: Highlight matching sidebar row
+      const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${bar.id}"]`)
+      if (sidebarRow) sidebarRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+      // M2: Highlight chart row
+      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
+      if (chartRow) chartRow.setAttribute("opacity", "0.08")
+    })
+    barGroup.addEventListener("mouseleave", () => {
+      hideTooltip()
+      const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${bar.id}"]`)
+      if (sidebarRow) {
+        const idx = Array.from(sidebar.querySelectorAll(".gantt-sidebar-row")).indexOf(sidebarRow)
+        sidebarRow.style.background = idx % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
+      }
+      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
+      if (chartRow) chartRow.setAttribute("opacity", "0")
+    })
 
     // Click → popup
     barGroup.addEventListener("click", (e) => {
@@ -870,6 +1027,10 @@ function renderGantt(
     setupResizeDrag(rightHandle, "end", bar, pos, pxPerDay, config, barGroup, signal, () => {
       renderGantt(outerContainer, bars, zoom, signal) // O6: re-render after resize
     })
+
+    // M7: Touch support — map touch events to bar drag
+    barGroup.style.touchAction = "none"
+    barGroup.setAttribute("style", barGroup.getAttribute("style") + ";touch-action:none")
 
     barGroup.appendChild(leftHandle)
     barGroup.appendChild(rightHandle)
@@ -932,20 +1093,87 @@ function renderGantt(
     ], { duration: 1500, iterations: 2 })
   }
 
-  // ── T6: Keyboard shortcuts ───────────────────────────────────────────
+  // ── T6 + M5 + M6: Keyboard shortcuts ─────────────────────────────────
+
+  let focusedBarIndex = -1
+  const focusableBarEls = Array.from(svg.querySelectorAll<SVGGElement>(".gantt-bar, .gantt-milestone"))
 
   const keyHandler = (e: KeyboardEvent) => {
     // Only handle when timeline view is visible
-    const container = document.getElementById("tasks-view-timeline")
-    if (!container || container.style.display === "none") return
+    const timelineContainer = document.getElementById("tasks-view-timeline")
+    if (!timelineContainer || timelineContainer.style.display === "none") return
 
     // Don't capture when user is typing in an input
     const tag = (e.target as HTMLElement).tagName
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
 
-    if (e.key === "t" || e.key === "T") {
-      e.preventDefault()
-      scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
+    switch (e.key) {
+      case "t":
+      case "T":
+        e.preventDefault()
+        scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
+        break
+
+      // M5: Arrow key navigation between bars
+      case "ArrowDown":
+      case "j":
+        if (focusableBarEls.length > 0) {
+          e.preventDefault()
+          focusedBarIndex = Math.min(focusedBarIndex + 1, focusableBarEls.length - 1)
+          focusableBarEls[focusedBarIndex]?.focus()
+          // Scroll sidebar to keep in view
+          const sidebarEl = sidebar.querySelectorAll(".gantt-sidebar-row")[focusedBarIndex] as HTMLElement | undefined
+          sidebarEl?.scrollIntoView({ block: "nearest" })
+        }
+        break
+      case "ArrowUp":
+      case "k":
+        if (focusableBarEls.length > 0) {
+          e.preventDefault()
+          focusedBarIndex = Math.max(focusedBarIndex - 1, 0)
+          focusableBarEls[focusedBarIndex]?.focus()
+          const sidebarEl = sidebar.querySelectorAll(".gantt-sidebar-row")[focusedBarIndex] as HTMLElement | undefined
+          sidebarEl?.scrollIntoView({ block: "nearest" })
+        }
+        break
+      case "ArrowLeft":
+      case "h":
+        e.preventDefault()
+        scrollWrapper.scrollBy({ left: -120, behavior: REDUCED_MOTION ? "instant" : "smooth" })
+        break
+      case "ArrowRight":
+      case "l":
+        e.preventDefault()
+        scrollWrapper.scrollBy({ left: 120, behavior: REDUCED_MOTION ? "instant" : "smooth" })
+        break
+
+      // M6: Zoom keyboard shortcuts
+      case "+":
+      case "=":
+        e.preventDefault()
+        {
+          const idx = ZOOM_ORDER.indexOf(zoom)
+          if (idx > 0) {
+            const newZoom = ZOOM_ORDER[idx - 1]!
+            const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
+            if (zoomSelect) zoomSelect.value = newZoom
+            window.dispatchEvent(new CustomEvent("meitheal:timeline-zoom", { detail: { zoom: newZoom } }))
+          }
+        }
+        break
+      case "-":
+      case "_":
+        e.preventDefault()
+        {
+          const idx = ZOOM_ORDER.indexOf(zoom)
+          if (idx < ZOOM_ORDER.length - 1) {
+            const newZoom = ZOOM_ORDER[idx + 1]!
+            const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
+            if (zoomSelect) zoomSelect.value = newZoom
+            window.dispatchEvent(new CustomEvent("meitheal:timeline-zoom", { detail: { zoom: newZoom } }))
+          }
+        }
+        break
     }
   }
   document.addEventListener("keydown", keyHandler, { signal })
@@ -971,6 +1199,7 @@ function setupBarDrag(
 ) {
   let isDragging = false
   let dragOriginX = 0 // O4: origin-relative tracking (not frame-relative)
+  let touchDragActive = false
 
   // Store original positions for all elements (O4: fixes cumulative drift)
   const elemOrigPositions = new Map<Element, number>()
@@ -993,19 +1222,40 @@ function setupBarDrag(
     e.stopPropagation()
   })
 
-  const onMove = (e: MouseEvent) => {
+  // M7: Touch support for bar drag
+  barGroup.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]!
+    isDragging = true
+    touchDragActive = true
+    dragOriginX = touch.clientX
+    elemOrigPositions.clear()
+    barGroup.querySelectorAll("rect").forEach((r) => {
+      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
+    })
+    barGroup.querySelectorAll("text").forEach((t) => {
+      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
+    })
+    e.preventDefault()
+  }, { signal, passive: false })
+
+  const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
-    const totalDx = e.clientX - dragOriginX // O4: always relative to origin
+    const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
+    const totalDx = clientX - dragOriginX // O4: always relative to origin
     // Apply offset from original positions
     elemOrigPositions.forEach((origPos, el) => {
       el.setAttribute("x", String(origPos + totalDx))
     })
   }
 
-  const onUp = async (e: MouseEvent) => {
+  const onUp = async (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     isDragging = false
-    const totalDx = e.clientX - dragOriginX
+    const isTouch = touchDragActive
+    touchDragActive = false
+    const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
+    const totalDx = clientX - dragOriginX
     if (Math.abs(totalDx) < 5) return
 
     const daysDelta = Math.round(totalDx / pxPerDay)
@@ -1034,6 +1284,9 @@ function setupBarDrag(
   // O1: Use AbortSignal to prevent memory leaks on re-render
   document.addEventListener("mousemove", onMove, { signal })
   document.addEventListener("mouseup", onUp, { signal })
+  // M7: Touch move/end
+  document.addEventListener("touchmove", onMove as unknown as EventListener, { signal, passive: false })
+  document.addEventListener("touchend", onUp as unknown as EventListener, { signal })
 }
 
 function setupResizeDrag(
@@ -1060,12 +1313,22 @@ function setupResizeDrag(
     e.stopPropagation()
   })
 
-  const onMove = (e: MouseEvent) => {
+  // M7: Touch resize
+  handle.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return
+    isDragging = true
+    dragOriginX = e.touches[0]!.clientX
+    e.preventDefault()
+    e.stopPropagation()
+  }, { signal, passive: false })
+
+  const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     document.body.style.cursor = "ew-resize"
+    const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
     // O5: Visual feedback during resize
     if (bgRect) {
-      const dx = e.clientX - dragOriginX
+      const dx = clientX - dragOriginX
       if (edge === "start") {
         const newX = origBarX + dx
         const origW = Number(bgRect.getAttribute("width") || 0)
@@ -1077,17 +1340,18 @@ function setupResizeDrag(
       } else {
         const origW = Number(bgRect.getAttribute("width") || 0)
         bgRect.setAttribute("width", String(Math.max(20, origW + dx)))
-        dragOriginX = e.clientX // frame-relative for end edge is fine
+        dragOriginX = clientX // frame-relative for end edge is fine
       }
     }
   }
 
-  const onUp = async (e: MouseEvent) => {
+  const onUp = async (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     isDragging = false
     document.body.style.cursor = ""
 
-    const dx = e.clientX - dragOriginX
+    const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
+    const dx = clientX - dragOriginX
     const daysDelta = Math.round(dx / pxPerDay)
     if (daysDelta === 0) { onComplete(); return }
 
@@ -1117,6 +1381,9 @@ function setupResizeDrag(
 
   document.addEventListener("mousemove", onMove, { signal })
   document.addEventListener("mouseup", onUp, { signal })
+  // M7: Touch resize events
+  document.addEventListener("touchmove", onMove as unknown as EventListener, { signal, passive: false })
+  document.addEventListener("touchend", onUp as unknown as EventListener, { signal })
 }
 
 // ── Controller ─────────────────────────────────────────────────────────────
@@ -1137,9 +1404,47 @@ export function initTimelineController(signal: AbortSignal) {
     return
   }
 
-  const bars = mapTasks(tasks)
+  const allBars = mapTasks(tasks)
+  let currentFilter: TimelineFilterState = { search: "", status: "", priority: "", types: [], area: "" }
 
-  if (bars.length === 0) {
+  function getVisibleBars(): GanttBar[] {
+    return filterBars(allBars, currentFilter)
+  }
+
+  function doRender(zoom: ZoomLevel) {
+    const bars = getVisibleBars()
+    if (bars.length === 0) {
+      if (skeleton) skeleton.style.display = "none"
+      if (emptyState) {
+        emptyState.style.display = "flex"
+        // Customize message if filtering caused empty
+        const hasFilters = currentFilter.search || currentFilter.status || currentFilter.priority || currentFilter.types.length > 0 || currentFilter.area
+        const title = emptyState.querySelector(".empty-title")
+        const desc = emptyState.querySelector(".empty-desc")
+        if (hasFilters) {
+          if (title) title.textContent = "No tasks match current filters"
+          if (desc) desc.innerHTML = "Adjust your filters to see tasks on the timeline."
+        } else {
+          if (title) title.textContent = "No tasks on the timeline yet"
+          if (desc) desc.innerHTML = 'Add <strong>start dates</strong> and <strong>due dates</strong> to your tasks to see them here as interactive GANTT bars.'
+        }
+      }
+      container!.style.display = "none"
+      return
+    }
+
+    if (emptyState) emptyState.style.display = "none"
+    container!.style.display = "block"
+    renderGantt(container!, bars, zoom, signal)
+
+    // Update signal bar count
+    const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
+    if (countEl) {
+      countEl.innerHTML = `<strong>${bars.length}</strong> of ${allBars.length} tasks on timeline`
+    }
+  }
+
+  if (allBars.length === 0) {
     if (skeleton) skeleton.style.display = "none"
     if (emptyState) emptyState.style.display = "flex"
     container.style.display = "none"
@@ -1155,7 +1460,7 @@ export function initTimelineController(signal: AbortSignal) {
   let currentZoom: ZoomLevel = savedZoom && validZooms.includes(savedZoom) ? savedZoom : "Week"
 
   // Initial render
-  renderGantt(container, bars, currentZoom, signal)
+  doRender(currentZoom)
 
   // Wire zoom select
   const zoomSelect = document.getElementById("timeline-zoom") as HTMLSelectElement | null
@@ -1164,7 +1469,49 @@ export function initTimelineController(signal: AbortSignal) {
     zoomSelect.addEventListener("change", () => {
       currentZoom = zoomSelect.value as ZoomLevel
       localStorage.setItem(ZOOM_KEY, currentZoom)
-      renderGantt(container, bars, currentZoom, signal)
+      doRender(currentZoom)
+    }, { signal })
+  }
+
+  // M6: Listen for zoom keyboard shortcut dispatches
+  window.addEventListener("meitheal:timeline-zoom", ((e: CustomEvent) => {
+    const newZoom = e.detail?.zoom as ZoomLevel
+    if (newZoom && validZooms.includes(newZoom)) {
+      currentZoom = newZoom
+      localStorage.setItem(ZOOM_KEY, currentZoom)
+      if (zoomSelect) zoomSelect.value = currentZoom
+      doRender(currentZoom)
+    }
+  }) as EventListener, { signal })
+
+  // M1: Listen for unified filter events from FilterToolbar
+  // Timeline accepts events from ALL toolbars (table/kanban) since the filter
+  // toolbar is shared on the tasks page — no view restriction
+  document.addEventListener("meitheal:filter-change", ((e: CustomEvent) => {
+    const detail = e.detail ?? {}
+
+    currentFilter = {
+      search: detail.search ?? "",
+      status: detail.status ?? "",
+      priority: detail.priority ?? "",
+      types: detail.types ?? [],
+      area: detail.area ?? "",
+    }
+    doRender(currentZoom)
+  }) as EventListener, { signal })
+
+  // M1: Also listen for label filter events
+  document.addEventListener("meitheal:label-filter", (() => {
+    // Label filtering would need bar.original.labels — future enhancement
+    // For now, just re-render to stay consistent
+    doRender(currentZoom)
+  }) as EventListener, { signal })
+
+  // M8: Wire export button
+  const exportBtn = document.getElementById("timeline-export-btn")
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      exportTimelinePNG(container)
     }, { signal })
   }
 

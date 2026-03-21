@@ -26,15 +26,15 @@ const { class: className } = Astro.props
     <div class="card-customizer__density" id="card-density-selector">
       <span class="card-customizer__section-label">Card Size</span>
       <div class="card-customizer__density-group" role="radiogroup" aria-label="Card density">
-        <button type="button" class="card-density-btn" data-density="compact" title="Compact cards">
+        <button type="button" class="card-density-btn" data-density="compact" title="Compact cards" role="radio" aria-checked="false">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="16" x2="21" y2="16"/></svg>
           Compact
         </button>
-        <button type="button" class="card-density-btn active" data-density="comfortable" title="Comfortable cards">
+        <button type="button" class="card-density-btn active" data-density="comfortable" title="Comfortable cards" role="radio" aria-checked="true">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="18" height="7" rx="1"/></svg>
           Comfortable
         </button>
-        <button type="button" class="card-density-btn" data-density="spacious" title="Spacious cards">
+        <button type="button" class="card-density-btn" data-density="spacious" title="Spacious cards" role="radio" aria-checked="false">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
           Spacious
         </button>
@@ -179,6 +179,9 @@ const { class: className } = Astro.props
   type CardDensity = typeof VALID_DENSITIES[number]
   const DEFAULT_DENSITY: CardDensity = "comfortable"
 
+  // [F1] AbortController for listener cleanup on soft navigation re-init
+  let customizerAbort: AbortController | null = null
+
   function loadDensity(): CardDensity {
     try {
       const stored = localStorage.getItem(DENSITY_KEY)
@@ -196,9 +199,11 @@ const { class: className } = Astro.props
     if (!board) return
     VALID_DENSITIES.forEach(d => board.classList.remove(`density-${d}`))
     board.classList.add(`density-${density}`)
-    // Update button active states
+    // Update button active states + ARIA [F2]
     document.querySelectorAll<HTMLButtonElement>(".card-density-btn").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.density === density)
+      const isSelected = btn.dataset.density === density
+      btn.classList.toggle("active", isSelected)
+      btn.setAttribute("aria-checked", String(isSelected))
     })
   }
 
@@ -239,7 +244,7 @@ const { class: className } = Astro.props
   function renderFieldList() {
     const list = document.getElementById("card-customizer-list")
     if (!list) return
-    list.innerHTML = ""
+    list.replaceChildren() // [F4] Modern DOM clearing, no innerHTML
 
     const prefs = loadFieldPrefs()
 
@@ -276,6 +281,11 @@ const { class: className } = Astro.props
   }
 
   document.addEventListener("astro:page-load", () => {
+    // [F1] Abort previous listeners on soft navigation re-init
+    customizerAbort?.abort()
+    customizerAbort = new AbortController()
+    const signal = customizerAbort.signal
+
     const closeBtn = document.getElementById("card-customizer-close")
     const resetBtn = document.getElementById("card-customizer-reset")
     const panel = document.getElementById("card-customizer-panel")
@@ -296,7 +306,7 @@ const { class: className } = Astro.props
           saveDensity(density)
           applyDensity(density)
         }
-      })
+      }, { signal })
     })
 
     // Close button hides the wrapper panel (toggled by toolbar Fields button)
@@ -305,7 +315,7 @@ const { class: className } = Astro.props
         wrapper.classList.add("hidden")
         const fieldsBtn = document.getElementById("toggle-fields-btn")
         fieldsBtn?.setAttribute("aria-pressed", "false")
-      })
+      }, { signal })
     }
 
     if (resetBtn) {
@@ -315,7 +325,7 @@ const { class: className } = Astro.props
         renderFieldList()
         applyFieldVisibility()
         applyDensity(DEFAULT_DENSITY)
-      })
+      }, { signal })
     }
   })
 </script>

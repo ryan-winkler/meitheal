@@ -925,10 +925,17 @@ try {
   .kanban-fields-panel {
     margin-bottom: 12px;
     max-width: 280px;
-    transition: opacity 200ms ease;
+    animation: fields-panel-reveal 200ms ease both;
   }
   .kanban-fields-panel.hidden {
     display: none;
+  }
+  @keyframes fields-panel-reveal {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kanban-fields-panel { animation: none; }
   }
   .kanban-board {
     display: flex;

@@ -300,3 +300,37 @@
   text-decoration: line-through;
   opacity: 0.6;
 }
+
+/* ── M2: Row Cross-Highlighting ────────────────────────────────────────── */
+
+.gantt-row-highlight {
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* ── M8: Export Button ─────────────────────────────────────────────────── */
+
+.timeline-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.timeline-export-btn:hover {
+  border-color: var(--accent, #7c3aed);
+  color: var(--text-primary);
+}
+
+.timeline-export-btn:focus-visible {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
