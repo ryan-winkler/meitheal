@@ -14,20 +14,7 @@ const { class: className } = Astro.props
 ---
 
 <div class={`card-customizer ${className ?? ''}`}>
-  <button
-    type="button"
-    class="card-customizer__toggle btn btn-ghost"
-    id="card-customizer-toggle"
-    title="Customize Cards"
-    aria-label="Customize visible fields"
-    aria-expanded="false"
-    aria-controls="card-customizer-panel"
-  >
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-template"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-    <span class="card-customizer__label hide-mobile">Fields</span>
-  </button>
-
-  <div class="card-customizer__panel hidden" id="card-customizer-panel" role="region" aria-label="Card Visibility">
+  <div class="card-customizer__panel" id="card-customizer-panel" role="region" aria-label="Card Customization">
     <div class="card-customizer__header">
       <h4>Customize Cards</h4>
       <button type="button" class="btn-icon" id="card-customizer-close" aria-label="Close panel">
@@ -81,21 +68,13 @@ const { class: className } = Astro.props
   gap: 0.5rem;
 }
 .card-customizer__panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 0.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  width: 200px;
-  z-index: 50;
+  width: 100%;
   display: flex;
   flex-direction: column;
-}
-.card-customizer__panel.hidden {
-  display: none;
 }
 .card-customizer__header {
   padding: 0.75rem;
@@ -302,12 +281,12 @@ const { class: className } = Astro.props
   }
 
   document.addEventListener("astro:page-load", () => {
-    const toggleBtn = document.getElementById("card-customizer-toggle")
     const closeBtn = document.getElementById("card-customizer-close")
     const resetBtn = document.getElementById("card-customizer-reset")
     const panel = document.getElementById("card-customizer-panel")
+    const wrapper = document.getElementById("kanban-fields-panel")
 
-    if (!toggleBtn || !panel) return
+    if (!panel) return
 
     renderFieldList()
     applyFieldVisibility() // Apply initial state on load
@@ -325,15 +304,12 @@ const { class: className } = Astro.props
       })
     })
 
-    toggleBtn.addEventListener("click", () => {
-      const isHidden = panel.classList.toggle("hidden")
-      toggleBtn.setAttribute("aria-expanded", String(!isHidden))
-    })
-
-    if (closeBtn) {
+    // Close button hides the wrapper panel (toggled by toolbar Fields button)
+    if (closeBtn && wrapper) {
       closeBtn.addEventListener("click", () => {
-        panel.classList.add("hidden")
-        toggleBtn.setAttribute("aria-expanded", "false")
+        wrapper.classList.add("hidden")
+        const fieldsBtn = document.getElementById("toggle-fields-btn")
+        fieldsBtn?.setAttribute("aria-pressed", "false")
       })
     }
 
@@ -346,17 +322,5 @@ const { class: className } = Astro.props
         applyDensity(DEFAULT_DENSITY)
       })
     }
-
-    // Close on clicking outside
-    document.addEventListener("click", (e) => {
-      if (
-        !panel.classList.contains("hidden") &&
-        !panel.contains(e.target as Node) &&
-        !toggleBtn.contains(e.target as Node)
-      ) {
-        panel.classList.add("hidden")
-        toggleBtn.setAttribute("aria-expanded", "false")
-      }
-    })
   })
 </script>
