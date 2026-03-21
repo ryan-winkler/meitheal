@@ -220,6 +220,65 @@ async function fetchCalendarContext(): Promise<string | null> {
 }
 
 /**
+ * Fetch Pillar context: Non-Negotiable Principles and active Pillar names.
+ * Injected into AI prompts so the model respects user values and boundaries.
+ * Best-effort — returns null if unavailable.
+ *
+ * @domain pillars
+ * @kcs Non-Negotiables are behavioral boundaries the AI must never contradict
+ */
+async function fetchPillarContext(): Promise<string | null> {
+  try {
+    const res = await fetch(
+      (window.__ingress_path || "") + "/api/pillars"
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const pillars = data?.pillars ?? []
+    if (!Array.isArray(pillars) || pillars.length === 0) return null
+
+    const lines: string[] = []
+
+    // Active Pillar names for identity context
+    lines.push("Active Pillars (user's identity anchors):")
+    for (const p of pillars) {
+      const weight = p.weight ?? 1
+      lines.push(`- ${p.icon || "🏛️"} ${p.name} (weight: ${weight}/10)${p.manifesto ? ` — "${p.manifesto}"` : ""}`)
+    }
+
+    // Fetch Non-Negotiable Principles for each Pillar
+    const nnLines: string[] = []
+    for (const p of pillars) {
+      try {
+        const pRes = await fetch(
+          `${window.__ingress_path || ""}/api/pillars/${p.id}/principles`
+        )
+        if (!pRes.ok) continue
+        const pData = await pRes.json()
+        const principles = pData?.principles ?? []
+        for (const pr of principles) {
+          if (pr.isNonNegotiable) {
+            nnLines.push(`  ⚠️ [${p.name}] ${pr.statement}`)
+          }
+        }
+      } catch { /* skip this pillar's principles */ }
+    }
+
+    if (nnLines.length > 0) {
+      lines.push("")
+      lines.push("🛡️ NON-NEGOTIABLE PRINCIPLES (AI MUST respect these):")
+      lines.push(...nnLines)
+      lines.push("")
+      lines.push("IMPORTANT: Never suggest actions that violate Non-Negotiable Principles. If a task conflicts with these, flag it explicitly.")
+    }
+
+    return lines.join("\n")
+  } catch {
+    return null
+  }
+}
+
+/**
  * Fetch active habit streaks for AI context.
  * Best-effort — returns null if unavailable.
  */
@@ -253,9 +312,10 @@ export async function askAIForTask(taskId: string): Promise<AIResult> {
   const type = task.taskType ?? task.task_type ?? "Task";
 
   // Fetch contextual data in parallel (best-effort, non-blocking)
-  const [calendarContext, habitContext] = await Promise.all([
+  const [calendarContext, habitContext, pillarContext] = await Promise.all([
     fetchCalendarContext(),
     fetchHabitContext(),
+    fetchPillarContext(),
   ]);
 
   let prompt = `I am working on the following ${type} in Meitheal. Help me plan, break down, or solve blocking issues.
@@ -274,8 +334,11 @@ ${task.description || "No description provided."}`;
   if (habitContext) {
     prompt += `\n\nActive Habits:\n${habitContext}`;
   }
+  if (pillarContext) {
+    prompt += `\n\n${pillarContext}`;
+  }
 
-  prompt += `\n\nPlease act as a senior technical co-pilot. Break this down into actionable sub-tasks or suggest the next step. Consider my schedule and active habits when planning.`;
+  prompt += `\n\nPlease act as a senior technical co-pilot. Break this down into actionable sub-tasks or suggest the next step. Consider my schedule, active habits, and Pillar alignment when planning.`;
 
   try {
     const result = await callAssist(prompt);
