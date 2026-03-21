@@ -92,6 +92,6 @@ export function initContextMenu(
           }
         }
       })
-    })
+    }, { signal: __signal })
   })
 }

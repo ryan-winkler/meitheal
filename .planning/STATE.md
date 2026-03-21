@@ -2,10 +2,10 @@
 
 ## Current Position
 
-**Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete (5 waves, 5 commits).**
-**Active Tracks:** Unified bar cross-page program implemented locally across Today, Upcoming, Calendar, Kanban, and Table; Tier 2 ingress/companion closeout still pending; Phase 04.1 human-agent-ddd-core research/discuss
-**Last Completed Local Work:** Parallel Phases 14.2→14.7 unified bar cross-page reset and rollout — audit, planning reset, page-shell rollout, docs, and e2e verification — 2026-03-19
-**Session Date:** 2026-03-19
+**Core Sprint Status:** Phases 1, 2, 3, 4, 10, 11, 17, 18, 19 complete. Phase 12 (UX/UI Audit) Wave 1 committed. **Strategic Rules Engine — complete.** **Pillars Domain — complete (10 commits).** **Pillars UX Polish — complete.** **Progress & Growth Unification — complete.**
+**Active Tracks:** Unified bar cross-page program implemented locally; Tier 2 ingress/companion closeout still pending; Phase 04.1 human-agent-ddd-core research/discuss; Gantt chart redesign complete
+**Last Completed Local Work:** Phase 19 closeout — deprecated search bar suppression on ParentPageShell pages, GSD documentation — 2026-03-22
+**Session Date:** 2026-03-22
 
 ## Parallel Phase 04.3 Summary (COMPLETE ✅)
 
@@ -528,3 +528,78 @@ Kanban + Table list view overhaul, running in parallel with feature phases.
 - Always check `body.ha-ingress` before HA-specific behavior
 - Ingress fetch auto-prefixed by `Layout.astro` — do NOT double-wrap with `apiUrl()`
 - HA theme change event listener auto-re-syncs colors
+
+## Phase 17 Summary (COMPLETE ✅)
+
+**Objective:** Introduce the Pillars & Principles bounded context — the WHY layer.
+
+### Delivered on 2026-03-21 (10 commits)
+- Full domain: `pillar-service.ts`, `principle-service.ts`, `pillar-association-service.ts`
+- North Star UX: PillarCard (masonry grid), pillar detail view, PillarFormModal
+- AI: Principles injected into LLM system prompts, RICE Pillar boost scorer
+- 15 E2E tests, P0-P5 optimization pass, ingress-safe redirects, native `<a>` tags
+- Sub-phase 17C: Shared Icon/Color Picker components with i18n
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/web build` — passed ✅
+- Tier 1: 15 E2E tests passed ✅
+- Tier 1: `pnpm check` — passed ✅
+
+## Phase 18 Summary (COMPLETE ✅)
+
+**Objective:** Unify Progress & Growth — inline Goals & Achievements tabs directly into `progress.astro`.
+
+### Delivered on 2026-03-21
+- Replaced indirection pattern (summary cards linking to separate pages) with inline `GoalsTab.astro` and `AchievementsTab.astro` content
+- Cleaned up unused server-side data-fetching variables in `progress.astro` frontmatter
+- Committed as `54447ff`
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/web build` — passed ✅
+
+## Phase 19 Summary (COMPLETE ✅)
+
+**Objective:** Three surgical UX improvements — principles on PillarCard, slug URLs, deprecated search bar.
+
+### Delivered on 2026-03-21 → 2026-03-22
+- Expandable principles on PillarCard with Non-Negotiable visual distinction
+- Slug-based URLs (`/pillars/physical-longevity`) with auto-migration and collision handling
+- N+1 query fix: batch `getAllPrinciples()` replaces per-pillar fetches
+- Deprecated `#global-search` input suppressed on pages with ParentPageShell via `hideGlobalSearch` prop
+
+### Verification
+- Tier 1: `pnpm --filter @meitheal/web build` — passed ✅
+
+## Gantt Chart Redesign (COMPLETE ✅)
+
+**Objective:** Redesign Gantt chart component — Today marker, toolbar, date picker, click-to-schedule.
+
+### Delivered on 2026-03-21 (8 commits)
+- Fixed Today marker alignment
+- ClickUp-style toolbar with column management dropdown
+- Reusable InlineDatePicker component
+- Click-to-schedule for undated tasks
+- Meitheal lexicon in legend (Pillar/Project/Task)
+- Overdue bar styling, hierarchy support, detail panel handoff
+- Timeline group-by functionality
+
+## GSD Phase Reoptimization (Sessions 10-12 closeouts)
+
+### Delivered (committed earlier, documented for completeness)
+- `innerHTML` XSS hardening across all settings controllers
+- Memory leak fixes: `managedListeners`, `AbortController` signals on all fetch calls
+- Settings controller robustness: `pageLifecycle.on()` migration
+- Keyboard a11y for integration cards and n8n tabs
+
+### 2026-03-21 Session 14 — Pillars Domain + Gantt + Progress Unification
+- Phase 17: Complete Pillars domain (10 commits — core, UX, AI, tests, optimizations, deferrals)
+- Phase 17C: Shared Icon/Color Picker components
+- Gantt redesign: 8 commits (toolbar, date picker, click-to-schedule, a11y)
+- Phase 18: Progress & Growth Unification (Goals + Achievements inlined)
+- Phase 19: Pillars UX Polish (principles display, slug URLs, N+1 fix)
+- Codebase mapping refresh
+
+### 2026-03-22 Session 15 — Phase 19 Closeout + GSD Documentation
+- Phase 19 closeout: deprecated search bar suppression via `hideGlobalSearch` prop
+- GSD documentation: wrote `17-SUMMARY.md`, `19-SUMMARY.md`
+- STATE.md updated with phases 17-19 and sessions 14-15

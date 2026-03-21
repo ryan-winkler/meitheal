@@ -179,7 +179,7 @@ export function initQuickActions(
         btn.disabled = false
         btn.classList.remove("btn-loading")
       }
-    })
+    }, { signal: __signal })
   })
 
   // Restore scroll position after child task reload (P1-6)
@@ -293,7 +293,7 @@ export function initQuickActions(
         empty.textContent = "No users configured"
         content.appendChild(empty)
       }
-    })
+    }, { signal: __signal })
   })
 
   // =============================================
@@ -382,7 +382,7 @@ export function initQuickActions(
         content.appendChild(clearBtn)
 
         _qa.open(btn, content, "Card Color")
-      })
+      }, { signal: __signal })
     })
   })()
 

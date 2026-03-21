@@ -138,7 +138,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
           if (!form.contains(document.activeElement)) cleanup()
         }, 200)
       })
-    })
+    }, { signal: __signal })
   })
 
   // Header "+ New Task" button → open the full New Task modal dialog
@@ -148,7 +148,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
       if (typeof window.openNewTaskModal === "function") {
         window.openNewTaskModal()
       }
-    })
+    }, { signal: __signal })
 
   // T-1907: Search filters Kanban cards in real-time
   ;(() => {
@@ -189,7 +189,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
       })
 
       window.updateAllCounts?.()
-    })
+    }, { signal: __signal })
   })()
 
   // T-1914: Keyboard navigation for kanban board
@@ -216,7 +216,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
         const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic"
         localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded")
       }
-    })
+    }, { signal: __signal })
 
     let focusedCard: HTMLElement | null = null
 
@@ -277,7 +277,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
         focusedCard.classList.add("kb-focused")
         focusedCard.scrollIntoView({ block: "nearest" })
       }
-    })
+    }, { signal: __signal })
 
     // Focus first card when board gets focus
     board.addEventListener("focus", () => {
@@ -286,10 +286,10 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
         focusedCard = firstCard
         focusedCard.classList.add("kb-focused")
       }
-    })
+    }, { signal: __signal })
 
     board.addEventListener("blur", () => {
       if (focusedCard) focusedCard.classList.remove("kb-focused")
-    })
+    }, { signal: __signal })
   })()
 }
