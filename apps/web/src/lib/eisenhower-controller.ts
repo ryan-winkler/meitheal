@@ -228,7 +228,11 @@ function updateTriageBanner(page: HTMLElement) {
   } else {
     const textEl = banner.querySelector(".triage-banner__text")
     if (textEl) {
-      textEl.innerHTML = `<strong>${unclassifiedCount}</strong> ${unclassifiedCount === 1 ? "task needs" : "tasks need"} classification`
+      textEl.textContent = ""
+      const strong = document.createElement("strong")
+      strong.textContent = String(unclassifiedCount)
+      textEl.appendChild(strong)
+      textEl.appendChild(document.createTextNode(` ${unclassifiedCount === 1 ? "task needs" : "tasks need"} classification`))
     }
   }
 }

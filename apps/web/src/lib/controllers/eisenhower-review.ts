@@ -174,7 +174,13 @@ function showReviewTask(): void {
   if (nameEl) nameEl.textContent = task.title
 
   const sourceEl = document.getElementById("review-source")
-  if (sourceEl) sourceEl.innerHTML = `<span class="review-source__badge">${task.sourceLabel}</span>`
+  if (sourceEl) {
+    sourceEl.textContent = ""
+    const badge = document.createElement("span")
+    badge.className = "review-source__badge"
+    badge.textContent = task.sourceLabel
+    sourceEl.appendChild(badge)
+  }
 
   const progressEl = document.getElementById("review-progress")
   if (progressEl) progressEl.textContent = `${reviewIndex + 1} / ${reviewTasks.length}`
