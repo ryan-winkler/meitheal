@@ -40,12 +40,12 @@ const accentColor = colorHex || "var(--accent)"
 const weightDots = Math.min(weight, 10)
 ---
 
-<article
+<a
+  href={`/pillars/${id}`}
   class="pillar-card"
   data-pillar-id={id}
   style={`--pillar-accent: ${accentColor}`}
-  tabindex="0"
-  role="button"
+  role="article"
   aria-label={`${name} — ${manifesto || "No manifesto set"}`}
 >
   <div class="pillar-card__accent-bar"></div>
@@ -91,12 +91,15 @@ const weightDots = Math.min(weight, 10)
       )}
     </div>
   </div>
-</article>
+</a>
 
 <style>
 .pillar-card {
   --pillar-accent: var(--accent);
   position: relative;
+  display: block;
+  text-decoration: none;
+  color: inherit;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 12px);

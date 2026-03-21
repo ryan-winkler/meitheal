@@ -234,38 +234,8 @@ const enrichedPillars = await Promise.all(
   /**
    * Pillars page controller
    *
-   * Handles:
-   * - PillarCard click → navigate to detail
-   * - "New Pillar" button → opens PillarFormModal (wired in PillarFormModal.astro)
+   * Navigation is handled natively by <a> tags in PillarCard.
+   * PillarFormModal wires its own open/close via pageLifecycle.
+   * This script is intentionally minimal — no click delegation needed.
    */
-  document.addEventListener("astro:page-load", () => {
-    const page = document.getElementById("pillars-page")
-    if (!page) return
-
-    // Card click → navigate to pillar detail
-    page.addEventListener("click", (e) => {
-      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-pillar-id]")
-      if (!card) return
-
-      // If the click is on the add-principle button, don't navigate
-      if ((e.target as HTMLElement).closest("[data-action]")) return
-
-      const pillarId = card.dataset.pillarId
-      if (pillarId) {
-        window.location.href = `/pillars/${pillarId}`
-      }
-    })
-
-    // Card keyboard navigation
-    page.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return
-      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-pillar-id]")
-      if (!card) return
-      e.preventDefault()
-      const pillarId = card.dataset.pillarId
-      if (pillarId) {
-        window.location.href = `/pillars/${pillarId}`
-      }
-    })
-  })
 </script>
