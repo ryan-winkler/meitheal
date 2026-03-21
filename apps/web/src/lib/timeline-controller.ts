@@ -70,6 +70,7 @@ interface TimelineFilterState {
   priority: string
   types: string[]
   area: string
+  groupBy: string
 }
 
 interface ZoomConfig {
@@ -546,6 +547,7 @@ interface HierarchyBar extends GanttBar {
   depth: number
   hasChildren: boolean
   isCollapsed: boolean
+  isGroupHeader?: boolean
 }
 
 /** Collapsed parent IDs — persisted in module scope across re-renders */
@@ -555,7 +557,53 @@ const collapsedParents = new Set<string>()
  * Build a flat list sorted parent→children with depth levels.
  * Parents appear before their children. Orphan tasks stay at depth 0.
  */
-function buildHierarchy(bars: GanttBar[]): HierarchyBar[] {
+function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): HierarchyBar[] {
+  if (groupByKey !== "none") {
+    const groupKey = groupByKey
+    
+    // Group bars
+    const grouped = new Map<string, GanttBar[]>()
+    for (const bar of bars) {
+      let val = "Uncategorized"
+      if (groupKey === "status") val = bar.original.status || "Uncategorized"
+      else if (groupKey === "priority") val = `Priority ${bar.priority}`
+      else if (groupKey === "project" || groupKey === "area") val = bar.original.area_id || "Uncategorized"
+      else if (groupKey === "assignee") val = "Unassigned"
+      else if (groupKey === "type") val = bar.original.task_kind || bar.original.task_type || "Uncategorized"
+      
+      if (!grouped.has(val)) grouped.set(val, [])
+      grouped.get(val)!.push(bar)
+    }
+
+    // Sort group keys
+    const sortedKeys = Array.from(grouped.keys()).sort((a,b) => a.localeCompare(b))
+    
+    const result: HierarchyBar[] = []
+    for (const key of sortedKeys) {
+      const gBars = grouped.get(key)!
+      // Add fake header
+      const headerId = `group-${key}`
+      const collapsed = collapsedParents.has(headerId)
+      
+      result.push({
+        id: headerId,
+        name: key,
+        start: new Date(), end: new Date(),
+        progress: 0, colour: "transparent", taskType: "group",
+        isComplete: false, isOverdue: false, isMilestone: false, priority: 0,
+        original: {} as any, deps: [],
+        depth: 0, hasChildren: true, isCollapsed: collapsed, isGroupHeader: true
+      })
+      
+      if (!collapsed) {
+        gBars.forEach(b => {
+          result.push({ ...b, depth: 1, hasChildren: false, isCollapsed: false })
+        })
+      }
+    }
+    return result
+  }
+
   // Index: parent_id → children
   const childMap = new Map<string, GanttBar[]>()
   const parentIds = new Set<string>()
@@ -693,6 +741,7 @@ function renderGantt(
   zoom: ZoomLevel,
   _parentSignal: AbortSignal,
   undatedTasks: TimelineTask[] = [],
+  groupByKey: string = "none"
 ) {
   // M4: Abort previous render's listeners before creating new ones
   renderAbort?.abort()
@@ -717,7 +766,10 @@ function renderGantt(
   const totalDays = daysBetween(rangeStart, rangeEnd)
   const pxPerDay = config.columnWidth / config.unitDays
   const totalWidth = totalDays * pxPerDay
-  const totalRowCount = bars.length + (undatedTasks.length > 0 ? 1 + undatedTasks.length : 0) // +1 for divider
+  // Build hierarchy for sidebar (parent→child grouping with indentation or groupby)
+  const hBars = buildHierarchy(bars, groupByKey)
+
+  const totalRowCount = hBars.length + (undatedTasks.length > 0 ? 1 + undatedTasks.length : 0) // +1 for divider
   const totalHeight = HEADER_HEIGHT + totalRowCount * ROW_HEIGHT + 20
 
   // Clear previous render
@@ -799,7 +851,7 @@ function renderGantt(
         showDueDateCol = false
         try { localStorage.setItem(DUEDATE_VIS_KEY, "false") } catch { /* ignore */ }
         menu.remove()
-        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
       })
       menu.appendChild(hideItem)
       dueDateWrap.appendChild(menu)
@@ -849,7 +901,7 @@ function renderGantt(
       showDueDateCol = !showDueDateCol
       try { localStorage.setItem(DUEDATE_VIS_KEY, String(showDueDateCol)) } catch { /* ignore */ }
       menu.remove()
-      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
     })
     
     menu.appendChild(dueDateItem)
@@ -869,9 +921,6 @@ function renderGantt(
   sidebarRows.className = "gantt-sidebar-rows"
   sidebarRows.style.cssText = "overflow:hidden;"
 
-  // Build hierarchy for sidebar (parent→child grouping with indentation)
-  const hBars = buildHierarchy(bars)
-
   for (let i = 0; i < hBars.length; i++) {
     const bar = hBars[i]!
     const indentPx = bar.depth * 20
@@ -888,6 +937,42 @@ function renderGantt(
       background:${i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
       transition:background 0.15s;
     `
+
+    if (bar.isGroupHeader) {
+      row.style.background = "var(--bg-card)"
+      row.style.fontWeight = "bold"
+      row.style.color = "var(--text-primary)"
+      row.style.borderTop = i === 0 ? "none" : "1px solid var(--border)"
+      
+      const toggle = document.createElement("button")
+      toggle.className = "gantt-sidebar-toggle"
+      toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand group" : "Collapse group")
+      toggle.setAttribute("tabindex", "-1")
+      toggle.style.cssText = `
+        width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+        background:none;border:none;cursor:pointer;color:var(--text-muted);
+        margin-right:8px;flex-shrink:0;padding:0;border-radius:3px;
+        transition:transform 0.15s, background 0.15s;
+        transform:rotate(${bar.isCollapsed ? "0deg" : "90deg"});
+      `
+      toggle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5L7 5L3 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
+        else collapsedParents.add(bar.id)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+      })
+      row.appendChild(toggle)
+      
+      const name = document.createElement("span")
+      name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;"
+      name.textContent = bar.name
+      row.appendChild(name)
+      
+      sidebarRows.appendChild(row)
+      continue
+    }
 
     // Collapse/expand toggle for parent rows
     if (bar.hasChildren) {
@@ -912,7 +997,7 @@ function renderGantt(
           collapsedParents.add(bar.id)
         }
         // Re-render
-        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
       })
       toggle.addEventListener("mouseenter", () => {
         toggle.style.background = "var(--bg-secondary, rgba(255,255,255,0.08))"
@@ -1109,7 +1194,7 @@ function renderGantt(
               const targetX = daysBetween(rangeStart, date) * pxPerDay;
               localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(targetX - outerContainer.clientWidth / 2))
 
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
           onClear: () => {},
@@ -1305,8 +1390,12 @@ function renderGantt(
   // ── Dependency Arrows ────────────────────────────────────────────────
 
   const barPositions = new Map<string, { x: number; y: number; w: number }>()
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i]!
+  for (let i = 0; i < hBars.length; i++) {
+    const bar = hBars[i]!
+    if (bar.isGroupHeader) {
+      barPositions.set(bar.id, { x: 0, y: HEADER_HEIGHT + i * ROW_HEIGHT, w: 0 })
+      continue
+    }
     let xStart = daysBetween(rangeStart, bar.start) * pxPerDay
     const duration = Math.max(1, daysBetween(bar.start, bar.end) + 1)
     let w = bar.isMilestone ? 16 : duration * pxPerDay
@@ -1321,7 +1410,8 @@ function renderGantt(
   }
 
   const arrowGroup = svgEl("g", { class: "gantt-arrows" })
-  for (const bar of bars) {
+  for (const bar of hBars) {
+    if (bar.isGroupHeader) continue
     for (const depId of bar.deps) {
       const from = barPositions.get(depId)
       const to = barPositions.get(bar.id)
@@ -1346,9 +1436,26 @@ function renderGantt(
 
   const barsGroup = svgEl("g", { class: "gantt-bars" })
 
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i]!
+  for (let i = 0; i < hBars.length; i++) {
+    const bar = hBars[i]!
     const pos = barPositions.get(bar.id)!
+    
+    if (bar.isGroupHeader) {
+      barsGroup.appendChild(
+        svgEl("rect", {
+          x: 0, y: pos.y, width: totalWidth, height: ROW_HEIGHT,
+          fill: "var(--bg-secondary, rgba(255,255,255,0.03))"
+        })
+      )
+      barsGroup.appendChild(
+        svgEl("line", {
+          x1: 0, y1: pos.y + ROW_HEIGHT, x2: totalWidth, y2: pos.y + ROW_HEIGHT,
+          stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 1
+        })
+      )
+      continue
+    }
+    
     const barY = pos.y + BAR_Y_PAD
 
     // T10: Milestone rendering
@@ -2090,7 +2197,7 @@ export function initTimelineController(signal: AbortSignal) {
   }
 
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)
-  let currentFilter: TimelineFilterState = { search: "", status: "", priority: "", types: [], area: "" }
+  let currentFilter: TimelineFilterState = { search: "", status: "", priority: "", types: [], area: "", groupBy: "none" }
 
   function getVisibleBars(): GanttBar[] {
     return filterBars(allBars, currentFilter)
@@ -2252,6 +2359,7 @@ export function initTimelineController(signal: AbortSignal) {
       priority: detail.priority ?? "",
       types: detail.types ?? [],
       area: detail.area ?? "",
+      groupBy: detail.groupBy ?? "none",
     }
     doRender(currentZoom)
   }) as EventListener, { signal })
