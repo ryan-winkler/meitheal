@@ -204,11 +204,13 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
     }
   }, signal ? { signal } : undefined)
 
-  // Listen for "View Details" from popup/chart clicks
+  // Listen for "View Details" from popup/chart clicks — open detail panel (not page nav)
   window.addEventListener("meitheal:open-task", ((e: CustomEvent) => {
     const taskId = e.detail?.taskId
     if (taskId) {
-      window.location.href = `/tasks/${taskId}`
+      import("@lib/task-detail-handoff").then(({ openTaskDetailHandoff }) => {
+        openTaskDetailHandoff(taskId)
+      })
     }
   }) as EventListener, signal ? { signal } : undefined)
 }

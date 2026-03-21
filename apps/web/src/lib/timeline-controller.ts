@@ -294,7 +294,9 @@ function mapTasks(tasks: TimelineTask[]): GanttBar[] {
         start,
         end,
         progress: Number(t.progress ?? 0),
-        colour: t.color || PRIORITY_COLOURS[t.priority] || "#6366F1",
+        colour: overdue
+          ? "#EF4444"
+          : (t.color || PRIORITY_COLOURS[t.priority] || "#6366F1"),
         taskType: String(t.task_type || "task"),
         isComplete: complete,
         isOverdue: overdue,
@@ -494,6 +496,85 @@ function filterBars(bars: GanttBar[], filter: TimelineFilterState): GanttBar[] {
   })
 }
 
+// ── Hierarchy: Parent → Child grouping ─────────────────────────────────────
+
+interface HierarchyBar extends GanttBar {
+  depth: number
+  hasChildren: boolean
+  isCollapsed: boolean
+}
+
+/** Collapsed parent IDs — persisted in module scope across re-renders */
+const collapsedParents = new Set<string>()
+
+/**
+ * Build a flat list sorted parent→children with depth levels.
+ * Parents appear before their children. Orphan tasks stay at depth 0.
+ */
+function buildHierarchy(bars: GanttBar[]): HierarchyBar[] {
+  // Index: parent_id → children
+  const childMap = new Map<string, GanttBar[]>()
+  const parentIds = new Set<string>()
+
+  for (const bar of bars) {
+    const pid = bar.original.parent_id
+    if (pid) {
+      if (!childMap.has(pid)) childMap.set(pid, [])
+      childMap.get(pid)!.push(bar)
+      parentIds.add(pid)
+    }
+  }
+
+  const result: HierarchyBar[] = []
+  const placed = new Set<string>()
+
+  // First pass: place parents then their children
+  for (const bar of bars) {
+    if (placed.has(bar.id)) continue
+
+    const isParent = parentIds.has(bar.id)
+    const isChild = !!bar.original.parent_id
+
+    if (isParent && !isChild) {
+      // Top-level parent
+      const collapsed = collapsedParents.has(bar.id)
+      result.push({ ...bar, depth: 0, hasChildren: true, isCollapsed: collapsed })
+      placed.add(bar.id)
+
+      if (!collapsed) {
+        const children = childMap.get(bar.id) || []
+        for (const child of children) {
+          if (placed.has(child.id)) continue
+          // Check if child is also a parent (nested hierarchy)
+          const childIsParent = parentIds.has(child.id)
+          const childCollapsed = collapsedParents.has(child.id)
+          result.push({ ...child, depth: 1, hasChildren: childIsParent, isCollapsed: childCollapsed })
+          placed.add(child.id)
+
+          // Depth-2 grandchildren
+          if (childIsParent && !childCollapsed) {
+            const grandchildren = childMap.get(child.id) || []
+            for (const gc of grandchildren) {
+              if (placed.has(gc.id)) continue
+              result.push({ ...gc, depth: 2, hasChildren: false, isCollapsed: false })
+              placed.add(gc.id)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Second pass: any bars not yet placed (orphans / no parent_id)
+  for (const bar of bars) {
+    if (placed.has(bar.id)) continue
+    result.push({ ...bar, depth: 0, hasChildren: false, isCollapsed: false })
+    placed.add(bar.id)
+  }
+
+  return result
+}
+
 // ── M8: Export as PNG ──────────────────────────────────────────────────────
 
 function exportTimelinePNG(outerContainer: HTMLElement) {
@@ -628,21 +709,64 @@ function renderGantt(
   sidebarRows.className = "gantt-sidebar-rows"
   sidebarRows.style.cssText = "overflow:hidden;"
 
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i]!
+  // Build hierarchy for sidebar (parent→child grouping with indentation)
+  const hBars = buildHierarchy(bars)
+
+  for (let i = 0; i < hBars.length; i++) {
+    const bar = hBars[i]!
+    const indentPx = bar.depth * 20
     const row = document.createElement("div")
-    row.className = `gantt-sidebar-row${bar.isOverdue ? " gantt-sidebar-row--overdue" : ""}${bar.isComplete ? " gantt-sidebar-row--complete" : ""}`
+    row.className = `gantt-sidebar-row${bar.isOverdue ? " gantt-sidebar-row--overdue" : ""}${bar.isComplete ? " gantt-sidebar-row--complete" : ""}${bar.hasChildren ? " gantt-sidebar-row--parent" : ""}`
     row.setAttribute("role", "button")
     row.setAttribute("tabindex", "0")
     row.setAttribute("aria-label", `Navigate to ${bar.name}`)
     row.dataset.taskId = bar.id
     row.style.cssText = `
-      height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 12px;
+      height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px 0 ${8 + indentPx}px;
       border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
       font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       background:${i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
       transition:background 0.15s;
     `
+
+    // Collapse/expand toggle for parent rows
+    if (bar.hasChildren) {
+      const toggle = document.createElement("button")
+      toggle.className = "gantt-sidebar-toggle"
+      toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand children" : "Collapse children")
+      toggle.setAttribute("tabindex", "-1")
+      toggle.style.cssText = `
+        width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+        background:none;border:none;cursor:pointer;color:var(--text-muted);
+        margin-right:4px;flex-shrink:0;padding:0;border-radius:3px;
+        transition:transform 0.15s, background 0.15s;
+        transform:rotate(${bar.isCollapsed ? "0deg" : "90deg"});
+      `
+      toggle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5L7 5L3 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        if (collapsedParents.has(bar.id)) {
+          collapsedParents.delete(bar.id)
+        } else {
+          collapsedParents.add(bar.id)
+        }
+        // Re-render
+        renderGantt(outerContainer, bars, zoom, _parentSignal)
+      })
+      toggle.addEventListener("mouseenter", () => {
+        toggle.style.background = "var(--bg-secondary, rgba(255,255,255,0.08))"
+      })
+      toggle.addEventListener("mouseleave", () => {
+        toggle.style.background = "none"
+      })
+      row.appendChild(toggle)
+    } else if (bar.depth > 0) {
+      // Spacer for leaf children to align with toggle icons
+      const spacer = document.createElement("span")
+      spacer.style.cssText = "width:20px;flex-shrink:0;"
+      row.appendChild(spacer)
+    }
 
     // Type indicator dot
     const dot = document.createElement("span")
@@ -659,6 +783,7 @@ function renderGantt(
       overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);
       ${bar.isComplete ? "text-decoration:line-through;opacity:0.5;" : ""}
       ${bar.isOverdue ? "color:var(--accent-danger, #ef4444);" : ""}
+      ${bar.hasChildren ? "font-weight:600;" : ""}
     `
     name.textContent = bar.name
     name.title = bar.name
@@ -758,15 +883,15 @@ function renderGantt(
     )
   }
 
-  // Weekend highlighting (Day zoom)
-  if (zoom === "Day") {
+  // Weekend highlighting (Day + Week zoom)
+  if (zoom === "Day" || zoom === "Week") {
     for (let d = 0; d < totalDays; d++) {
       const date = addDays(rangeStart, d)
       if (isWeekend(date)) {
         gridGroup.appendChild(
           svgEl("rect", {
             x: d * pxPerDay, y: HEADER_HEIGHT, width: pxPerDay, height: totalHeight - HEADER_HEIGHT,
-            fill: "var(--bg-secondary, rgba(255,255,255,0.03))", opacity: 0.6,
+            fill: "var(--bg-secondary, rgba(255,255,255,0.06))", opacity: 0.7,
           }),
         )
       }
@@ -834,22 +959,22 @@ function renderGantt(
     todayGroup.appendChild(
       svgEl("line", {
         x1: todayX, y1: 0, x2: todayX, y2: totalHeight,
-        stroke: "var(--accent, #7c3aed)", "stroke-width": 2, opacity: 0.7,
+        stroke: "#EF4444", "stroke-width": 2.5, opacity: 0.85,
       }),
     )
     // Diamond
     todayGroup.appendChild(
       svgEl("polygon", {
         points: `${todayX},4 ${todayX + 6},12 ${todayX},20 ${todayX - 6},12`,
-        fill: "var(--accent, #7c3aed)",
+        fill: "#EF4444",
       }),
     )
     // M3: Today label
     const todayLabel = svgEl("text", {
       x: todayX, y: HEADER_HEIGHT - 2,
-      "text-anchor": "middle", fill: "var(--accent, #7c3aed)",
+      "text-anchor": "middle", fill: "#EF4444",
       "font-size": 10, "font-weight": 700, "font-family": "inherit",
-      opacity: 0.9,
+      opacity: 0.95,
     })
     todayLabel.textContent = "Today"
     todayGroup.appendChild(todayLabel)
