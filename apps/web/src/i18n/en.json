@@ -63,8 +63,7 @@
     "area_deleted": "Area deleted",
     "project_deleted": "Project deleted",
     "area_created": "Area created",
-    "updated": "Updated",
-    "no_projects": "No projects"
+    "updated": "Updated"
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",
