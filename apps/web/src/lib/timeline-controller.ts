@@ -214,6 +214,9 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
 
 // ── Toast Helper ───────────────────────────────────────────────────────────
 
+// M3: Track toast timers for cleanup on abort
+let toastTimers: ReturnType<typeof setTimeout>[] = []
+
 function showToast(message: string, type: "success" | "error" = "success") {
   const existing = document.querySelector(".gantt-toast")
   if (existing) existing.remove()
@@ -224,10 +227,18 @@ function showToast(message: string, type: "success" | "error" = "success") {
   document.body.appendChild(toast)
 
   requestAnimationFrame(() => toast.classList.add("gantt-toast--visible"))
-  setTimeout(() => {
+  const hideTimer = setTimeout(() => {
     toast.classList.remove("gantt-toast--visible")
-    setTimeout(() => toast.remove(), 300)
+    const removeTimer = setTimeout(() => toast.remove(), 300)
+    toastTimers.push(removeTimer)
   }, 2500)
+  toastTimers.push(hideTimer)
+}
+
+function clearToastTimers() {
+  toastTimers.forEach(t => clearTimeout(t))
+  toastTimers = []
+  document.querySelectorAll(".gantt-toast").forEach(t => t.remove())
 }
 
 // ── PATCH Helper ───────────────────────────────────────────────────────────
@@ -311,8 +322,11 @@ function showTooltip(bar: GanttBar, x: number, y: number, parent: HTMLElement) {
   tooltipTimer = setTimeout(() => {
     const tip = document.createElement("div")
     tip.className = "gantt-tooltip"
+    // U2: Clamp to viewport
+    const clampedX = Math.min(x + 12, window.innerWidth - 300)
+    const clampedY = Math.max(y - 8, 8)
     tip.style.cssText = `
-      position:fixed;z-index:9999;left:${x + 12}px;top:${y - 8}px;
+      position:fixed;z-index:9999;left:${clampedX}px;top:${clampedY}px;
       background:var(--bg-card);color:var(--text-primary);
       border:1px solid var(--border);border-radius:6px;
       padding:8px 12px;font-size:12px;line-height:1.4;
@@ -394,14 +408,16 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
   progLabel.textContent = `${progress}% complete`
   popup.appendChild(progLabel)
 
-  const detailLink = document.createElement("a")
-  detailLink.href = "javascript:void(0)"
+  // U5: Use button instead of javascript:void(0) link
+  const detailLink = document.createElement("button")
+  detailLink.type = "button"
   detailLink.className = "gantt-popup-detail-link"
-  detailLink.style.cssText = "color:var(--accent);font-size:12px;text-decoration:underline;cursor:pointer;"
+  detailLink.style.cssText = "color:var(--accent);font-size:12px;text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font-family:inherit;"
   detailLink.textContent = "View Details →"
   detailLink.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("meitheal:open-task", { detail: { taskId: bar.id } }))
     popup.remove()
+    cleanupClose()
   })
   popup.appendChild(detailLink)
 
@@ -418,13 +434,14 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement) {
     }
   })
 
-  // Close on click outside
+  // M1: Close on click outside — properly cleaned up
   const close = (e: MouseEvent) => {
     if (!popup.contains(e.target as Node)) {
       popup.remove()
-      document.removeEventListener("click", close)
+      cleanupClose()
     }
   }
+  const cleanupClose = () => document.removeEventListener("click", close)
   setTimeout(() => document.addEventListener("click", close), 10)
 }
 
@@ -471,6 +488,9 @@ function exportTimelinePNG(outerContainer: HTMLElement) {
   const sidebarW = sidebar ? SIDEBAR_WIDTH : 0
   const totalW = sidebarW + svgRect.width
   const totalH = svgRect.height
+
+  // C4: Guard against 0-size export (e.g. display:none)
+  if (totalW < 1 || totalH < 1) { showToast("Chart not visible — cannot export", "error"); return }
 
   const canvas = document.createElement("canvas")
   const scale = 2 // retina
@@ -522,12 +542,20 @@ function exportTimelinePNG(outerContainer: HTMLElement) {
 
 // ── Renderer ───────────────────────────────────────────────────────────────
 
+// M4: Track per-render AbortController to prevent listener accumulation
+let renderAbort: AbortController | null = null
+
 function renderGantt(
   outerContainer: HTMLElement,
   bars: GanttBar[],
   zoom: ZoomLevel,
-  signal: AbortSignal,
+  _parentSignal: AbortSignal,
 ) {
+  // M4: Abort previous render's listeners before creating new ones
+  renderAbort?.abort()
+  renderAbort = new AbortController()
+  const signal = renderAbort.signal
+
   const config = ZOOM_CONFIGS[zoom]
 
   // Compute date range with padding
@@ -940,7 +968,7 @@ function renderGantt(
 
       const label = svgEl("text", {
         x: pos.x + 10, y: barY + BAR_HEIGHT / 2 + 1,
-        fill: "#fff", "font-size": 11, "font-weight": 500,
+        fill: "var(--text-on-accent, #fff)", "font-size": 11, "font-weight": 500, // U4: contrast-safe label
         "font-family": "inherit", "dominant-baseline": "central",
         "clip-path": `url(#${clipId})`,
       })
@@ -1031,8 +1059,8 @@ function renderGantt(
     })
 
     // M7: Touch support — map touch events to bar drag
+    // M7: Touch support — U3: set once (removed duplicate)
     barGroup.style.touchAction = "none"
-    barGroup.setAttribute("style", barGroup.getAttribute("style") + ";touch-action:none")
 
     barGroup.appendChild(leftHandle)
     barGroup.appendChild(rightHandle)
@@ -1206,7 +1234,7 @@ function setupBarDrag(
   barGroup: SVGGElement,
   _bgRect: SVGRectElement,
   bar: GanttBar,
-  pos: { x: number; y: number; w: number },
+  _pos: { x: number; y: number; w: number },
   pxPerDay: number,
   _config: ZoomConfig,
   signal: AbortSignal, // O1: Accept signal to prevent memory leaks
@@ -1214,7 +1242,6 @@ function setupBarDrag(
 ) {
   let isDragging = false
   let dragOriginX = 0 // O4: origin-relative tracking (not frame-relative)
-  let touchDragActive = false
 
   // Store original positions for all elements (O4: fixes cumulative drift)
   const elemOrigPositions = new Map<Element, number>()
@@ -1242,7 +1269,6 @@ function setupBarDrag(
     if (e.touches.length !== 1) return
     const touch = e.touches[0]!
     isDragging = true
-    touchDragActive = true
     dragOriginX = touch.clientX
     elemOrigPositions.clear()
     barGroup.querySelectorAll("rect").forEach((r) => {
@@ -1256,8 +1282,12 @@ function setupBarDrag(
 
   const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
+    // C2: Guard against empty touches (e.g. touchend fires with empty touches array)
+    if ("touches" in e && (!e.touches || e.touches.length === 0)) return
     const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
     const totalDx = clientX - dragOriginX // O4: always relative to origin
+    // U1: Show grab cursor during drag
+    document.body.style.cursor = "grabbing"
     // Apply offset from original positions
     elemOrigPositions.forEach((origPos, el) => {
       el.setAttribute("x", String(origPos + totalDx))
@@ -1267,8 +1297,11 @@ function setupBarDrag(
   const onUp = async (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     isDragging = false
-    const isTouch = touchDragActive
-    touchDragActive = false
+    document.body.style.cursor = "" // U1: Reset cursor
+    // C1: Guard against empty changedTouches (multi-touch cancel)
+    if ("changedTouches" in e && (!e.changedTouches || e.changedTouches.length === 0)) {
+      onComplete(); return
+    }
     const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
     const totalDx = clientX - dragOriginX
     if (Math.abs(totalDx) < 5) return
@@ -1319,11 +1352,13 @@ function setupResizeDrag(
   let dragOriginX = 0
   const bgRect = barGroup.querySelector("rect:nth-of-type(2)") as SVGRectElement | null // main bar rect
   const origBarX = pos.x
+  let origBarW = 0 // C3: captured at drag start for origin-relative calc
 
   handle.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return
     isDragging = true
     dragOriginX = e.clientX
+    origBarW = Number(bgRect?.getAttribute("width") || 0) // C3: snapshot width at start
     e.preventDefault()
     e.stopPropagation()
   })
@@ -1333,29 +1368,30 @@ function setupResizeDrag(
     if (e.touches.length !== 1) return
     isDragging = true
     dragOriginX = e.touches[0]!.clientX
+    origBarW = Number(bgRect?.getAttribute("width") || 0) // C3: snapshot width at start
     e.preventDefault()
     e.stopPropagation()
   }, { signal, passive: false })
 
   const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
+    // C2: Guard against empty touches
+    if ("touches" in e && (!e.touches || e.touches.length === 0)) return
     document.body.style.cursor = "ew-resize"
     const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
-    // O5: Visual feedback during resize
+    // O5/C3: Visual feedback during resize — origin-relative calc
     if (bgRect) {
       const dx = clientX - dragOriginX
       if (edge === "start") {
         const newX = origBarX + dx
-        const origW = Number(bgRect.getAttribute("width") || 0)
-        const newW = origW - dx
+        const newW = origBarW - dx // C3: use snapshotted width, not stale DOM
         if (newW > 20) {
           bgRect.setAttribute("x", String(newX))
           bgRect.setAttribute("width", String(newW))
         }
       } else {
-        const origW = Number(bgRect.getAttribute("width") || 0)
-        bgRect.setAttribute("width", String(Math.max(20, origW + dx)))
-        dragOriginX = clientX // frame-relative for end edge is fine
+        const newW = origBarW + dx // C3: origin-relative for end edge too
+        bgRect.setAttribute("width", String(Math.max(20, newW)))
       }
     }
   }
@@ -1365,6 +1401,10 @@ function setupResizeDrag(
     isDragging = false
     document.body.style.cursor = ""
 
+    // C1: Guard against empty changedTouches
+    if ("changedTouches" in e && (!e.changedTouches || e.changedTouches.length === 0)) {
+      onComplete(); return
+    }
     const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
     const dx = clientX - dragOriginX
     const daysDelta = Math.round(dx / pxPerDay)
@@ -1540,7 +1580,10 @@ export function initTimelineController(signal: AbortSignal) {
 
   // Cleanup on abort
   signal.addEventListener("abort", () => {
+    renderAbort?.abort() // M4: Clean up per-render listeners
+    renderAbort = null
     container.replaceChildren()
     hideTooltip()
+    clearToastTimers() // M3: Clean up toast timers
   })
 }
