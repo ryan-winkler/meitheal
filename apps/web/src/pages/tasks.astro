@@ -227,7 +227,7 @@ try {
       hideAreaSelect
     />
     <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
-    <div class="kanban-toolbar-right" id="kanban-toolbar-actions" data-view-only="kanban">
+    <div class="kanban-toolbar-right" id="kanban-toolbar-actions" data-view-only="kanban" role="toolbar" aria-label="Kanban view actions">
       <button
         type="button"
         class="kanban-toolbar-btn"
@@ -804,6 +804,27 @@ try {
       fieldsBtn?.addEventListener("click", () => {
         const isHidden = fieldsPanel?.classList.toggle("hidden")
         fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
+      }, { signal })
+
+      // Click outside closes Fields panel
+      document.addEventListener("click", (e) => {
+        if (
+          fieldsPanel && !fieldsPanel.classList.contains("hidden") &&
+          !fieldsPanel.contains(e.target as Node) &&
+          !fieldsBtn?.contains(e.target as Node)
+        ) {
+          fieldsPanel.classList.add("hidden")
+          fieldsBtn?.setAttribute("aria-pressed", "false")
+        }
+      }, { signal })
+
+      // Escape key closes Fields panel
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && fieldsPanel && !fieldsPanel.classList.contains("hidden")) {
+          fieldsPanel.classList.add("hidden")
+          fieldsBtn?.setAttribute("aria-pressed", "false")
+          fieldsBtn?.focus()
+        }
       }, { signal })
 
       // Lanes panel toggle handled by kanban-controller
