@@ -74,8 +74,10 @@ export async function loadAttachments(taskId: string): Promise<void> {
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
     if (attachments.length === 0) {
-      container.innerHTML =
-        '<span class="text-[10px] text-text-muted italic">No attachments.</span>'
+      const emptyLabel = document.createElement("span")
+      emptyLabel.className = "text-[10px] text-text-muted italic"
+      emptyLabel.textContent = "No attachments."
+      container.appendChild(emptyLabel)
       return
     }
 
@@ -97,7 +99,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
         "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
       const delBtn = document.createElement("button")
       delBtn.className = "text-white text-xs hover:text-danger p-2"
-      delBtn.innerHTML = "🗑"
+      delBtn.textContent = "🗑"
       delBtn.onclick = async (e) => {
         e.stopPropagation()
         const ok = await confirmDialog({
@@ -126,7 +128,9 @@ export async function loadAttachments(taskId: string): Promise<void> {
     })
   } catch (e) {
     log.error("Failed to load attachments", e)
-    container.innerHTML =
-      '<span class="text-xs text-danger">Failed to load attachments</span>'
+    const errLabel = document.createElement("span")
+    errLabel.className = "text-xs text-danger"
+    errLabel.textContent = "Failed to load attachments"
+    container.appendChild(errLabel)
   }
 }

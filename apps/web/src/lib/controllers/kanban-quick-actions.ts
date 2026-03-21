@@ -6,7 +6,7 @@
  *      Manages the shared popover system and all quick-action card buttons.
  */
 import { createClientLogger } from "@lib/client-logger"
-import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+import { sanitizeCssColor } from "@lib/safe-html"
 
 const log = createClientLogger("kanban:quick-actions")
 
@@ -205,10 +205,13 @@ export function initQuickActions(
 
       // P1-5: Show popover immediately with loading skeleton
       const content = document.createElement("div")
-      content.innerHTML = `
-        <div class="popover-item skeleton" style="height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite"></div>
-        <div class="popover-item skeleton" style="height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite;animation-delay:0.3s"></div>
-      `
+      const skel1 = document.createElement("div")
+      skel1.className = "popover-item skeleton"
+      skel1.style.cssText = "height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite"
+      const skel2 = document.createElement("div")
+      skel2.className = "popover-item skeleton"
+      skel2.style.cssText = "height:28px;border-radius:var(--radius-sm);background:var(--bg-hover);animation:pulse 1.5s infinite;animation-delay:0.3s"
+      content.append(skel1, skel2)
       const popover = _qa.open(btn, content, "Assign User")
 
       // Fetch users
@@ -255,8 +258,14 @@ export function initQuickActions(
         item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
         item.setAttribute("role", "menuitem")
         // P2-7: Colored dot for user recognition
-        const dot = user.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle"></span>` : "👤 "
-        item.innerHTML = `${dot}${escapeHtml(user.name || user.id)}`
+        if (user.color) {
+          const dot = document.createElement("span")
+          dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
+          item.appendChild(dot)
+        } else {
+          item.appendChild(document.createTextNode("👤 "))
+        }
+        item.appendChild(document.createTextNode(user.name || user.id))
         item.addEventListener("click", async () => {
           // P3-4: Optimistic update
           btn.dataset.assigned = userId
