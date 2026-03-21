@@ -139,7 +139,9 @@ const pillarJson = JSON.stringify({ id: pillar.id, name: pillar.name, manifesto:
         const res = await fetch(`/api/pillars/${pillarData.id}`, { method: "DELETE" })
         if (res.ok) {
           showToast(`"${name}" deleted`, "success")
-          window.location.href = "/pillars"
+          // Ingress-safe redirect: derive base from current URL
+          const base = window.location.pathname.replace(/\/pillars\/.*$/, "")
+          window.location.href = base + "/pillars"
         } else {
           const err = await res.json().catch(() => ({ error: "Unknown error" }))
           showToast(err.error || "Failed to delete", "error")

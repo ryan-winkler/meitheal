@@ -229,9 +229,7 @@ async function fetchCalendarContext(): Promise<string | null> {
  */
 async function fetchPillarContext(): Promise<string | null> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/pillars"
-    )
+    const res = await fetch("/api/pillars")
     if (!res.ok) return null
     const data = await res.json()
     const pillars = data?.pillars ?? []
@@ -251,7 +249,7 @@ async function fetchPillarContext(): Promise<string | null> {
     for (const p of pillars) {
       try {
         const pRes = await fetch(
-          `${window.__ingress_path || ""}/api/pillars/${p.id}/principles`
+          `/api/pillars/${p.id}/principles`
         )
         if (!pRes.ok) continue
         const pData = await pRes.json()
