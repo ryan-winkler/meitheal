@@ -650,11 +650,26 @@ try {
                           typeof task.custom_fields === "string"
                             ? JSON.parse(String(task.custom_fields ?? "{}"))
                             : {};
-                        const keys = Object.keys(cf);
-                        if (keys.length > 0) {
+                        // For shopping lists, show a compact items summary
+                        if (String(task.task_kind) === "shopping_item" && cf.items && Array.isArray(cf.items)) {
+                          const itemNames = cf.items.map((i: { name: string }) => i.name).filter(Boolean);
                           return (
                             <div class="kanban-custom-fields">
-                              {keys.slice(0, 4).map((k) => (
+                              {cf.quantity && <span class="kanban-cf-chip" title={`qty: ${cf.quantity}`}>×{cf.quantity}</span>}
+                              {cf.category && <span class="kanban-cf-chip" title={`category: ${cf.category}`}>{String(cf.category)}</span>}
+                              {itemNames.length > 0 && <span class="kanban-cf-chip" title={itemNames.join(", ")}>{itemNames.length} items</span>}
+                            </div>
+                          );
+                        }
+                        // Generic custom fields — skip non-primitive values (arrays, objects)
+                        const displayKeys = Object.keys(cf).filter(k => {
+                          const v = cf[k];
+                          return v !== null && v !== undefined && typeof v !== "object";
+                        });
+                        if (displayKeys.length > 0) {
+                          return (
+                            <div class="kanban-custom-fields">
+                              {displayKeys.slice(0, 4).map((k) => (
                                 <span
                                   class="kanban-cf-chip"
                                   title={`${k}: ${cf[k]}`}
@@ -662,9 +677,9 @@ try {
                                   {k}: {String(cf[k]).slice(0, 20)}
                                 </span>
                               ))}
-                              {keys.length > 4 && (
+                              {displayKeys.length > 4 && (
                                 <span class="kanban-cf-chip">
-                                  +{keys.length - 4} more
+                                  +{displayKeys.length - 4} more
                                 </span>
                               )}
                             </div>

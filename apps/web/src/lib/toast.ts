@@ -194,3 +194,82 @@ export function showRetryToast(
     // Retry toasts stay for 8s — user needs time to read + decide
     setTimeout(() => removeToast(toast), 8000);
 }
+
+/**
+ * UX-03: Show a task-created toast with ticket key and clickable link.
+ * Subtle, dismissable, auto-fades in 4s.
+ *
+ * @param ticketKey - Human task key, e.g. "MTH-57"
+ * @param taskId - Task UUID for opening detail modal
+ * @param title - Task title (truncated in display)
+ */
+export function showTaskCreatedToast(
+    ticketKey: string | null,
+    taskId: string,
+    title: string,
+): void {
+    let container = document.getElementById("toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "toast-container";
+        container.className = "toast-container";
+        document.body.appendChild(container);
+    }
+
+    while (container.children.length >= MAX_VISIBLE_TOASTS) {
+        container.firstElementChild?.remove();
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "toast success";
+    toast.setAttribute("role", "alert");
+    toast.setAttribute("aria-live", "polite");
+
+    // Checkmark icon
+    const iconSpan = document.createElement("span");
+    iconSpan.style.marginRight = "8px";
+    iconSpan.style.display = "flex";
+    iconSpan.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    toast.appendChild(iconSpan);
+
+    // Message with clickable ticket key
+    const msgSpan = document.createElement("span");
+    msgSpan.style.cssText = "display:flex;align-items:center;gap:6px;flex:1;min-width:0;";
+
+    if (ticketKey) {
+        const link = document.createElement("button");
+        link.type = "button";
+        link.textContent = ticketKey;
+        link.title = `Open ${ticketKey}: ${title}`;
+        link.setAttribute("aria-label", `Open task ${ticketKey}`);
+        link.style.cssText = "background:none;border:none;color:var(--accent,#6366f1);font-weight:600;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px;font-size:inherit;white-space:nowrap;";
+        link.addEventListener("click", () => {
+            removeToast(toast);
+            if (typeof (window as any).openTaskDetail === "function") {
+                (window as any).openTaskDetail(taskId);
+            }
+        });
+        msgSpan.appendChild(link);
+    }
+
+    const titleSpan = document.createElement("span");
+    titleSpan.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0.85;";
+    const displayTitle = title.length > 40 ? title.slice(0, 37) + "…" : title;
+    titleSpan.textContent = ticketKey ? `— ${displayTitle}` : `Created: ${displayTitle}`;
+    msgSpan.appendChild(titleSpan);
+
+    toast.appendChild(msgSpan);
+
+    // Dismiss button
+    const dismiss = document.createElement("button");
+    dismiss.className = "toast-dismiss";
+    dismiss.setAttribute("aria-label", "Dismiss notification");
+    dismiss.textContent = "×";
+    dismiss.addEventListener("click", () => removeToast(toast));
+    toast.appendChild(dismiss);
+
+    container.appendChild(toast);
+
+    // Auto-dismiss after 4s — longer than standard to give time to click
+    setTimeout(() => removeToast(toast), 4000);
+}
