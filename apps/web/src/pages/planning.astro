@@ -103,6 +103,8 @@ const visibleAreas = areas.filter((a: any) =>
 ---
 
 <Layout title={`Meitheal — ${t("nav.planning", locale)}`} hideSearchHub={true} hideGlobalSearch={true}>
+  {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
+  <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">
 
     {/* ─── Spaces: Areas & Projects ─── */}

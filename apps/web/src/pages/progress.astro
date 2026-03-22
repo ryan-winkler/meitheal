@@ -76,6 +76,8 @@ try {
 ---
 
 <Layout title={`Meitheal — ${t("nav.progress", locale)}`} hideSearchHub={true} hideGlobalSearch={true}>
+  {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
+  <Fragment slot="custom-header" />
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
