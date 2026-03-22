@@ -33,6 +33,7 @@
 @import './_search-hub.css';
 @import './_modal.css';
 @import './_labels.css';
+@import './_settings-shared.css';
 
 /* 4. Cross-cutting concerns */
 @import './_responsive.css';

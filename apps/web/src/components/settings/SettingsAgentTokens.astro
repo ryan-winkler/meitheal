@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
+import SettingsPanelCard from "./SettingsPanelCard.astro";
 
 /**
  * SettingsAgentTokens — Manage scoped agent API tokens.
@@ -30,22 +31,18 @@ const scopeGroups = [
 ---
 
 <div class="settings-grid" style="margin-top: 16px;">
-  <div class="card" id="agent-tokens-card" style="grid-column: 1 / -1;">
-    <div class="card-header">
-      <div>
-        <div class="card-title">🔑 Agent Tokens</div>
-        <div class="card-subtitle">
-          Issue scoped API tokens for n8n, Node-RED, LLM agents, and automations.
-          Tokens use zero-trust principles — each gets only the permissions it needs.
-        </div>
-      </div>
-      <button
-        type="button"
-        class="btn btn-primary"
-        id="agent-token-create-btn"
-        style="font-size: 13px; white-space: nowrap;"
-      >+ New Token</button>
-    </div>
+  <SettingsPanelCard
+    id="agent-tokens-card"
+    title="🔑 Agent Tokens"
+    subtitle="Issue scoped API tokens for n8n, Node-RED, LLM agents, and automations. Tokens use zero-trust principles — each gets only the permissions it needs."
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="btn btn-primary"
+      id="agent-token-create-btn"
+      style="font-size: 13px; white-space: nowrap;"
+    >+ New Token</button>
 
     <!-- Token List -->
     <div id="agent-tokens-list" class="agent-tokens__list">
@@ -118,7 +115,7 @@ const scopeGroups = [
       </div>
       <button type="button" class="btn btn-primary" id="agent-token-reveal-done">Done</button>
     </div>
-  </div>
+  </SettingsPanelCard>
 </div>
 
 <style>

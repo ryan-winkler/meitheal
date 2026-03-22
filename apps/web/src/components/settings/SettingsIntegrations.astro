@@ -424,43 +424,7 @@ const { locale } = Astro.props
     font-style: italic;
   }
 
-  /* ═══════ Badges (standardized) ═══════ */
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .badge-active {
-    background: rgba(99, 102, 241, 0.15);
-    color: var(--accent);
-  }
-
-  .badge-pending {
-    background: rgba(107, 114, 128, 0.15);
-    color: var(--text-muted);
-  }
-
-  .badge-error {
-    background: rgba(239, 68, 68, 0.15);
-    color: var(--danger);
-  }
-
-  .badge-disabled {
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px dashed rgba(107, 114, 128, 0.4);
-    font-style: italic;
-    opacity: 0.7;
-  }
-
-  .badge-success {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
+  /* Badges: now in _settings-shared.css */
 
   /* ═══════ Responsive ═══════ */
   @media (max-width: 768px) {
@@ -501,34 +465,7 @@ const { locale } = Astro.props
     }
   }
 
-  /* ═══════ Form Validation States ═══════ */
-  .form-input--error {
-    border-color: var(--danger) !important;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
-  }
-
-  .form-error-text {
-    color: var(--danger);
-    font-size: 11px;
-    margin-top: 4px;
-    display: none;
-  }
-
-  .form-error-text--visible {
-    display: block;
-    animation: error-slide-in 200ms ease;
-  }
-
-  @keyframes error-slide-in {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
+  /* Form validation: now in _settings-shared.css */
 
   /* ═══════ Micro-Animations ═══════ */
   .integration-card__icon {
@@ -561,32 +498,7 @@ const { locale } = Astro.props
     box-shadow: none;
   }
 
-  .btn--saving {
-    opacity: 0.7;
-    pointer-events: none;
-    animation: saving-pulse 1s ease-in-out infinite;
-  }
-
-  @keyframes saving-pulse {
-    0%,
-    100% {
-      opacity: 0.7;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-
-  /* ═══════ Focus Ring Animation ═══════ */
-  .form-input:focus-visible,
-  .form-select:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-    transition:
-      border-color 200ms ease,
-      box-shadow 200ms ease;
-  }
+  /* btn--saving, saving-pulse, focus ring: now in _settings-shared.css */
 
   /* ═══════ HA Connection Card ═══════ */
   .ha-status-row {
@@ -738,31 +650,7 @@ const { locale } = Astro.props
     }
   }
 
-  /* ═══════ Info Button ═══════ */
-  .info-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 50%;
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
-    flex-shrink: 0;
-    padding: 0;
-    line-height: 1;
-  }
-
-  .info-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-light);
-    transform: scale(1.1);
-  }
+  /* Info button: now in _settings-shared.css */
 
   /* ═══════ Info Callout (blue) ═══════ */
   .integration-callout--info {

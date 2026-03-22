@@ -10,6 +10,7 @@
  */
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 interface Props {
   locale: Locale
@@ -19,19 +20,13 @@ const { locale } = Astro.props
 ---
 
 <div class="settings-shell-panel">
-  <div class="card" style="margin-bottom: 16px;">
-    <div class="card-header" style="padding: 12px 16px;">
-      <div>
-        <div class="card-title" style="font-size: 14px;">🏷️ Manage Labels</div>
-        <div class="card-subtitle" style="font-size: 12px;">
-          Create, edit, and remove labels used to categorize tasks
-        </div>
-      </div>
-    </div>
-
+  <SettingsPanelCard
+    title="🏷️ Manage Labels"
+    subtitle="Create, edit, and remove labels used to categorize tasks"
+  >
     {/* Create new label form */}
-    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border);">
-      <form id="create-label-form" style="display: flex; gap: 8px; align-items: center;">
+    <div class="labels-create-row">
+      <form id="create-label-form" class="labels-create-form">
         <input
           type="text"
           id="new-label-title"
@@ -46,7 +41,7 @@ const { locale } = Astro.props
           id="new-label-color"
           value="#6366f1"
           title="Label color"
-          style="width: 36px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;"
+          class="labels-color-picker"
         />
         <button type="submit" class="btn btn-primary" style="font-size: 13px; white-space: nowrap;">
           + Create
@@ -55,13 +50,43 @@ const { locale } = Astro.props
     </div>
 
     {/* Label list */}
-    <div id="labels-list" style="padding: 0;">
-      <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
+    <div id="labels-list" class="labels-list">
+      <div class="labels-empty">
         Loading labels...
       </div>
     </div>
-  </div>
+  </SettingsPanelCard>
 </div>
+
+<style>
+  .labels-create-row {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+
+  .labels-create-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .labels-color-picker {
+    width: 36px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .labels-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+</style>
 
 <script>
   import { showToast } from "@lib/toast"
