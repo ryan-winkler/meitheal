@@ -1,14 +1,13 @@
 ---
 /**
- * /pillars/[slug] — Redirect to parent Progress page (Pillars tab)
+ * /pillars/[slug] — Redirect to /progress#pillars
  *
- * The dedicated Pillar detail page has been replaced by PillarDetailModal (popup).
- * This redirect preserves old bookmarks and links.
+ * Slug-based pillar detail pages are now handled by the PillarDetailModal
+ * on the unified /progress page. Redirect all legacy pillar slug routes.
  *
- * @domain pillars
- * @phase 20 — Pillars UX Optimization
- * @kcs Redirect for backwards compatibility after popup migration
+ * @domain pillars → navigation
+ * @phase 19 — Pillars UX Polish
  */
-
-return Astro.redirect("/progress#pillars", 302)
 ---
+<script>window.location.replace("/progress#pillars")</script>
+<meta http-equiv="refresh" content="0;url=/progress#pillars" />

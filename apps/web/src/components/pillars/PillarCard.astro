@@ -439,8 +439,24 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
   border-radius: var(--radius-sm, 4px);
 }
 
+.pillar-card__principle::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pillar-accent);
+  flex-shrink: 0;
+  margin-top: 0.45em;
+  opacity: 0.6;
+}
+
 .pillar-card__principle:hover {
   background: color-mix(in srgb, var(--pillar-accent) 5%, transparent);
+}
+
+.pillar-card__principle--non-negotiable::before {
+  display: none;
 }
 
 .pillar-card__principle--non-negotiable {
@@ -494,6 +510,10 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.pillar-card__footer:empty {
+  display: none;
 }
 
 .pillar-card__badge {

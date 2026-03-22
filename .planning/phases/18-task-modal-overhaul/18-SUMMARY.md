@@ -1,31 +1,13 @@
-# Phase 18: Task Modal Overhaul - Research Synthesis
+# Research Synthesis: Task Modal Overhaul
 
-## Overview
-This synthesis bridges the findings from the 50-Persona Audit (`50-PERSONA-AUDIT.md`) and the technical realities of the codebase (`18-RESEARCH.md`). It establishes the definitive approach for overhauling the New Task and Edit Task modals.
+**Phase:** 18
 
-## Key Findings & Synthesis
+## Key Findings & Decisions
 
-### 1. Aesthetic Maturation (Glassmorphism & Theme)
-- **Desire:** A premium UI feeling similar to ClickUp but faster and aligned correctly with Meitheal's dark mode palette (Neon Nocturne).
-- **Reality:** We have base CSS variables in `index.css`. The modals currently use flat `<dialog>` elements with heavy backgrounds.
-- **Synthesis:** The new backdrop will use `backdrop-filter: blur(8px) bg-black/50`. The modal container will be `bg-bg-primary/90 border border-border-dim rounded-2xl shadow-xl`. Inputs will lose their heavy borders, relying on subtle backgrounds `bg-bg-secondary` and focus rings `focus:ring-brand-primary` to reduce visual noise.
+1. **Layout Paradigm Shift:** The rigid, single-column modals constrict data density. The shift to a responsive 2-column grid in `TaskDetailModal.astro` (stacking on mobile) is mathematically necessary to fit Strategic Lenses alongside core task data without inducing endless vertical scrolling.
+2. **Glassmorphism Aesthetic:** To achieve the "ClickUp-but-better" premium feel, native elements like `<select>` are dealbreakers. We must replace them with semantic, custom HTML constructs styled with utilities like `bg-bg-primary/90 backdrop-blur-md border-border-dim`.
+3. **Frictionless Capture:** The `NewTaskModal.astro` must retain speed. Auto-focusing an auto-expanding title textarea removes the physical constraint of a one-line input, accommodating ADHD brain-dumping behavior immediately.
+4. **Strategic Context Alignment:** Sidelining Pillars and Goals to a separate view breaks task coherence. By pulling `StrategicEvaluator.astro` directly into the edit modal's right rail, alignment becomes a primary action rather than an afterthought.
 
-### 2. Form Functionality (Title & Status)
-- **Desire:** Fast capture. Long titles should be fully readable. Status should be 1-click pills instead of a 2-click dropdown.
-- **Reality:** We currently use a 1-line `<input>` and a `<select>` bound directly to HTML forms submitted by `task-modal-controller.ts`.
-- **Synthesis:** 
-  - The title field will become an auto-expanding `<textarea>` (using a known CSS grid string or JS resize hook).
-  - The status dropdown will be replaced by a visual `.status-swimlane` component within the form. When a pill is clicked, JS updates a hidden `<input name="status" value="...">` to preserve the existing seamless Astro form `FormData` pipeline.
-
-### 3. Layout Restructuring (Edit Modal)
-- **Desire:** Deeper context without losing the "why" (Pillars, Goals). Needs to fit widescreen monitors better.
-- **Reality:** `TaskDetailModal.astro` is a single narrow column. Appending Pillar/Strategy there pushes description far down.
-- **Synthesis:** The `TaskDetailModal` will expand to a flex-based two-column layout (`md:grid-cols-3` or flex split) restricted by `max-w-4xl` or `5xl`.
-  - **Main Area (Left/Top):** The editable title textarea, a richer markdown description, and subtasks.
-  - **Sidebar (Right):** "Metadata & Strategy". This dedicated pane hosts the new swimlanes, dates, and natively integrates a condensed `StrategicEvaluator.astro`.
-
-## Technical Path Forward
-1. Update CSS variables to support enhanced glassmorphism and the swimlane active states.
-2. Rewrite the HTML structure of `NewTaskModal.astro` (keep concentrated) and `TaskDetailModal.astro` (expand to 2 columns).
-3. Inject the logic into `task-modal-controller.ts` for pill selection (status sync) and textarea auto-resize.
-4. Modularize or cleanly embed `StrategicEvaluator` into the Edit modal sidebar.
+## Next Steps
+Proceed to technical planning (`18-PLAN.md`) to map these architectural decisions into precise file modifications and task blocks.

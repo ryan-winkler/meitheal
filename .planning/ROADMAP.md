@@ -563,6 +563,15 @@
 
 **Depends on:** None (independent bounded context)
 
+### Phase 18: task-modal-overhaul
+
+**Goal:** [To be planned]
+**Depends on:** Phase 17
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 18 to break down)
+
 ---
 
 *Roadmap revised: 2026-03-21 — Phase 17 pillars domain from 50-persona GSD persona loop*

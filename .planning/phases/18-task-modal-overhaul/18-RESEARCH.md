@@ -1,52 +1,31 @@
-# Phase 18: Task Modal Overhaul - Research & Implementation Details
+# Research: Task Modal Overhaul
 
-## Existing Architecture Analysis
+**Phase:** 18
+**Date:** 2026-03-22
 
-### 1. `NewTaskModal.astro`
-- **Location:** `apps/web/src/components/tasks/NewTaskModal.astro`
-- **Current State:** A relatively standard `<dialog>` based modal with basic form inputs.
-- **Deficiencies:** Uses native `<select>` dropdowns for Status/Priority. Doesn't have an expanding title textarea (truncates visually). Lacks native strategic integration.
-- **Classes/Styling:** Currently uses basic `bg-bg-card` and standard borders. Needs an upgrade to the glassmorphism aesthetic (`backdrop-blur` and deeper neon accents).
+## Component Analysis
 
-### 2. `TaskDetailModal.astro`
-- **Location:** `apps/web/src/components/tasks/TaskDetailModal.astro`
-- **Current State:** The edit modal. Currently constrained in width. Similar layout approach as New Task but with more fields.
-- **Deficiencies:** Very dense single column. Status drop-down is clumsy for fast flow. Strategic elements are hidden. Markdown description editing is basic.
-- **Classes/Styling:** Needs structural overhaul to become a `max-w-4xl` or `max-w-5xl` 2-column layout (content vs metadata).
+### `NewTaskModal.astro`
+- Current state: Single column, basic inputs, native `<select>` for status, truncated title.
+- Structural Need: Requires expansion to a more breathable layout. Instead of native select, it needs a custom UI for status selection. The title needs to be a `<textarea>` that auto-expands.
 
-### 3. `task-modal-controller.ts`
-- **Location:** `apps/web/src/lib/task-modal-controller.ts`
-- **Current State:** A massive ~1500 line controller managing DOM events for both modals. Handles form submissions, subtasks, recurrence, and lane selection.
-- **Changes Needed:** 
-  - Add logic to intercept "status swimlane pill" clicks and secretly update a hidden form input (so Astro form submission still works without rewriting the whole pipeline to fetch).
-  - Add auto-resize logic for the new `<textarea>` title spanning.
-  - Integrate logic for selecting Pillars/Principles from the new embedded Strategic section.
+### `TaskDetailModal.astro`
+- Current state: Fixed `max-w-xl`, stacking all fields vertically.
+- Structural Need: Must be converted to CSS Grid (`grid-template-columns` or Tailwind `md:grid-cols-12`) to support the 2-column layout (e.g., 8 col left for content, 4 col right for metadata). 
+- Right Column contents needed: Status, Priority, Dates, Pillar/Goal context.
 
-### 4. `StrategicEvaluator.astro`
-- **Location:** `apps/web/src/components/tasks/StrategicEvaluator.astro`
-- **Current State:** Analyzes tasks against pillars. 
-- **Changes Needed:** Needs to be modularized or embedded directly into the right-hand column of `TaskDetailModal.astro` so users can link Pillars/Principles instantly while editing the task.
+### `task-modal-controller.ts`
+- Current state: Handles basic open/close and form submissions.
+- Behavioral Need: Must be updated to handle the auto-expanding textarea logic (`input` event listener adjusting `style.height`). Must handle the new custom status dropdown/pills, syncing visually selected state to a hidden `<input name="status">` for seamless form submission without rewriting the API layer.
 
-## New UI Requirements
+### `StrategicEvaluator.astro`
+- Current state: A standalone component or part of the detail view.
+- Integration Need: Needs to be securely embedded in the `TaskDetailModal.astro` right column, potentially lazy-loaded or conditionally expanded to keep initial modal render times sub-50ms. Must adhere to `domain-strategy` validation rules.
 
-1. **Title Auto-Expansion:**
-   - Swap `<input type="text" name="title">` for `<textarea name="title" rows="1" onInput="this.parentNode.dataset.replicatedValue = this.value">`. Use CSS grid tricks or JS to auto-expand height as the user types so long titles are fully visible.
-   
-2. **Status Swimlanes:**
-   - Swap `<select name="status">` for a visual pill group.
-   - Values exist: `backlog`, `todo`, `in_progress`, `done`.
-   - Visually: A flex row of 4 styled buttons. Clicking one makes it active (solid color) and updates a `<input type="hidden" name="status" value="...">`.
+## Theming & CSS
+- Need to leverage Meitheal's existing design tokens in `index.css` for glassmorphism (`backdrop-blur-md`, subtle borders, dark transparent backgrounds).
 
-3. **Two-Column Edit Layout:**
-   - Left column (flex-grow, ~60-70% width): Title, Description (textarea), Subtasks/Checklists.
-   - Right column (fixed width, ~30-40% width, distinct background `bg-bg-darker` or frosted): Status Swimlane, Due Date Calendar, Assigned Pillar, Priority, Metadata, Strategic Lens score.
-
-4. **Glassmorphism Aesthetic:**
-   - The outer `<dialog>` should have `backdrop-filter: blur(12px)`.
-   - The shell should use `bg-bg-primary/80` or `bg-surface/80` to let underlying page content bleed through softly.
-   - Form fields should be frameless or have very subtle borders (15% opacity), relying on subtle hover states and focus rings (`focus:ring-brand-primary/50`).
-
-## Risks & Constraints
-- **HA Ingress Context:** We must make sure that fetching Pillars or updating tasks relies on relative `/api/...` calls safely behind the ingress wrapper. No absolute pathings.
-- **Controller Size:** `task-modal-controller.ts` is already huge. Adding auto-resize and pill logic makes it larger. We should write exact, clean event delegation.
-- **Astro Components:** We rely on SSR. The modal content is pre-rendered. We must ensure the new swimlane pills and textareas serialize their state properly upon opening an existing task.
+## Constraints
+- **Performance:** Avoid heavy JS layout thrashing. CSS Grid is preferred.
+- **Accessibility:** Custom dropdowns must remain keyboard navigable.
+- **Ingress Safety:** Client-side fetches must retain ingress paths if any new API calls are introduced (though standard form submission avoids this).

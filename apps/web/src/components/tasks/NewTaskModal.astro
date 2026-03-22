@@ -14,7 +14,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   aria-modal="true"
   aria-labelledby="new-task-title"
 >
-  <div class="modal-content max-w-lg w-full p-6">
+  <div class="modal-content max-w-lg w-full p-6 bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-white/5 rounded-2xl">
     <div
       class="modal-header flex items-center justify-between mb-4 border-b border-border pb-3"
     >
@@ -31,19 +31,20 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     <form id="new-task-form" class="space-y-4">
       <div class="form-group">
-        <label for="new-task-title-input" class="form-label"
+        <label for="new-task-title-input" class="form-label ml-1"
           >{t("tasks.title_label", locale)}
           <span class="text-accent">*</span></label
         >
-        <input
-          type="text"
-          class="form-input bg-bg-input"
+        <textarea
+          class="form-input bg-bg-input/50 border-white/10 focus:bg-bg-input resize-none overflow-hidden text-lg font-medium py-3 rounded-xl transition-colors"
           id="new-task-title-input"
+          name="title"
+          rows="1"
           placeholder="What needs to be done? (Use #tags or 'today')"
           required
           autofocus
-          autocapitalize="sentences"
-        />
+          oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+        ></textarea>
       </div>
 
       <div class="form-group">
@@ -56,10 +57,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
-          <label for="new-task-priority" class="form-label"
+          <label for="new-task-priority" class="form-label ml-1"
             >{t("tasks.priority_label", locale)}</label
           >
-          <select class="form-select bg-bg-input" id="new-task-priority">
+          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl" id="new-task-priority">
             <option value="1">Urgent (1)</option>
             <option value="2">High (2)</option>
             <option value="3" selected>Medium (3)</option>
@@ -67,14 +68,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           </select>
         </div>
         <div class="form-group">
-          <label for="new-task-status" class="form-label"
+          <label for="new-task-status" class="form-label ml-1"
             >{t("tasks.status_label", locale)}</label
           >
-          <select class="form-select bg-bg-input" id="new-task-status">
-            <option value="backlog">Backlog</option>
-            <option value="pending" selected>Pending</option>
-            <option value="active">Active</option>
-            <option value="complete">Complete</option>
+          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors" id="new-task-status" name="status">
+            <option value="pending">⏳ Pending</option>
           </select>
         </div>
       </div>
@@ -122,14 +120,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       </div>
 
       <div
-        class="modal-actions pt-4 border-t border-border flex justify-end gap-3 mt-6"
+        class="modal-actions pt-5 border-t border-white/5 flex justify-end gap-3 mt-8"
       >
-        <button type="button" class="btn btn-ghost" id="cancel-new-task"
+        <button type="button" class="btn btn-ghost hover:bg-white/5 rounded-xl transition-colors" id="cancel-new-task"
           >{t("tasks.cancel", locale)}</button
         >
         <button
           type="submit"
-          class="btn btn-primary shadow-lg shadow-accent/20"
+          class="btn btn-primary rounded-xl shadow-[0_0_15px_rgba(var(--color-accent),0.3)] hover:shadow-[0_0_20px_rgba(var(--color-accent),0.5)] transition-all"
           id="submit-new-task-btn">Create Task</button
         >
       </div>
@@ -288,27 +286,41 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
   }
 
-  // Backlog mode: hide backlog option when disabled
-  (async function hideBacklogIfDisabled() {
+  // Swimlanes Loader
+  (async function loadStatusOptions() {
     try {
-      const res = await fetch(
-        (window.__ingress_path || "") + "/api/settings?key=backlog_mode",
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.value === "disabled") {
-        const statusSelect = document.getElementById(
-          "new-task-status",
-        ) as HTMLSelectElement;
-        if (statusSelect) {
-          const backlogOpt = statusSelect.querySelector(
-            'option[value="backlog"]',
-          );
-          if (backlogOpt) backlogOpt.remove();
+      const [lanesRes, modeRes] = await Promise.all([
+        fetch((window.__ingress_path || "") + "/api/lanes"),
+        fetch((window.__ingress_path || "") + "/api/settings?key=backlog_mode")
+      ]);
+      const statusSelect = document.getElementById("new-task-status") as HTMLSelectElement | null;
+      if (!statusSelect) return;
+      
+      let backlogMode = "visible";
+      if (modeRes.ok) {
+         try {
+           const md = await modeRes.json();
+           backlogMode = md.value;
+         } catch {} // ignore
+      }
+      
+      if (lanesRes.ok) {
+        const data = await lanesRes.json();
+        let lanes = data.lanes || [];
+        if (backlogMode === "disabled" || backlogMode === "hidden") {
+           lanes = lanes.filter((l: any) => l.key !== "backlog");
+        }
+        statusSelect.innerHTML = "";
+        for (const lane of lanes) {
+          const opt = document.createElement("option");
+          opt.value = lane.key;
+          opt.textContent = `${lane.icon} ${lane.label}`;
+          if (lane.key === "pending") opt.selected = true;
+          statusSelect.appendChild(opt);
         }
       }
     } catch {
-      /* offline — keep all options */
+      // offline — keep default options
     }
   })();
 
@@ -425,7 +437,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           10,
         ),
         status: (
-          document.getElementById("new-task-status") as HTMLSelectElement
+          document.getElementById("new-task-status") as HTMLInputElement
         ).value,
         labels: JSON.stringify(allLabels),
         due_date: extractedDue,
