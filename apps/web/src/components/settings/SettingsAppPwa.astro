@@ -445,309 +445,318 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 </style>
 
 <script>
-  function initPwaCompact() {
-    const dot = document.getElementById("pwa-compact-dot");
-    const label = document.getElementById("pwa-compact-label");
-    const badge = document.getElementById("pwa-compact-badge");
-    const details = document.getElementById("pwa-compact-details");
-    const versionEl = document.getElementById("pwa-compact-version");
-    const installBtn = document.getElementById("pwa-install-settings-btn");
-    const updateBtn = document.getElementById("pwa-update-settings-btn");
-    const installedBadge = document.getElementById("pwa-installed-badge");
-    if (!dot || !label || !badge) return;
-    if (dot.dataset.pwaInit) return;
-    dot.dataset.pwaInit = "true";
+  import { pageLifecycle } from "../../lib/page-lifecycle"
 
-    const isSecure = window.isSecureContext;
-    const hasSW = "serviceWorker" in navigator;
+  function initPwaCompact() {
+    const dot = document.getElementById("pwa-compact-dot")
+    const label = document.getElementById("pwa-compact-label")
+    const badge = document.getElementById("pwa-compact-badge")
+    const details = document.getElementById("pwa-compact-details")
+    const versionEl = document.getElementById("pwa-compact-version")
+    const installBtn = document.getElementById("pwa-install-settings-btn")
+    const updateBtn = document.getElementById("pwa-update-settings-btn")
+    const installedBadge = document.getElementById("pwa-installed-badge")
+    if (!dot || !label || !badge) return
+
+    const isSecure = window.isSecureContext
+    const hasSW = "serviceWorker" in navigator
 
     if (isSecure && hasSW) {
-      dot.className = "pwa-compact-dot pwa-compact-dot--active";
-      if (label && label.dataset.activeText) label.textContent = label.dataset.activeText;
+      dot.className = "pwa-compact-dot pwa-compact-dot--active"
+      if (label && label.dataset.activeText) label.textContent = label.dataset.activeText
       if (badge && badge.dataset.activeText) {
-        badge.textContent = badge.dataset.activeText;
-        badge.className = "badge badge-active";
+        badge.textContent = badge.dataset.activeText
+        badge.className = "badge badge-active"
       }
-      badge.style.fontSize = "11px";
+      badge.style.fontSize = "11px"
 
-      // Query SW version
+      // Query SW version — use abort signal for cleanup
       if (navigator.serviceWorker.controller && versionEl) {
-        navigator.serviceWorker.addEventListener("message", (e) => {
+        const swContainer = navigator.serviceWorker as EventTarget
+        pageLifecycle.on(swContainer as unknown as HTMLElement, "message", ((e: MessageEvent) => {
           if (e.data?.type === "VERSION") {
-            versionEl.textContent = `SW v${e.data.version}`;
-            versionEl.style.display = "";
+            versionEl.textContent = `SW v${e.data.version}`
+            versionEl.style.display = ""
           }
-        });
-        navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
+        }) as EventListener)
+        navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" })
       }
 
       // Check for waiting SW (update available)
-      navigator.serviceWorker.ready.then((reg) => {
-        if (reg.waiting && updateBtn) {
-          updateBtn.style.display = "";
-          updateBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            reg.waiting?.postMessage({ type: "SKIP_WAITING" });
-            window.location.reload();
-          });
-        }
-      });
-    } else {
-      dot.className = "pwa-compact-dot pwa-compact-dot--unavailable";
-      if (label && label.dataset.httpText) label.textContent = label.dataset.httpText;
-      if (badge && badge.dataset.httpText) {
-        badge.textContent = badge.dataset.httpText;
-        badge.className = "badge badge-pending";
+      if (updateBtn) {
+        navigator.serviceWorker.ready.then((reg) => {
+          if (reg.waiting) {
+            updateBtn.style.display = ""
+            pageLifecycle.on(updateBtn, "click", (e: Event) => {
+              e.preventDefault()
+              reg.waiting?.postMessage({ type: "SKIP_WAITING" })
+              window.location.reload()
+            })
+          }
+        })
       }
-      badge.style.fontSize = "11px";
-      if (details) details.style.display = "block";
+    } else {
+      dot.className = "pwa-compact-dot pwa-compact-dot--unavailable"
+      if (label && label.dataset.httpText) label.textContent = label.dataset.httpText
+      if (badge && badge.dataset.httpText) {
+        badge.textContent = badge.dataset.httpText
+        badge.className = "badge badge-pending"
+      }
+      badge.style.fontSize = "11px"
+      if (details) details.style.display = "block"
     }
 
     // Install button — show when install prompt available
     if (installBtn) {
       const showInstallBtn = () => {
-        if (window.__pwa_install_prompt) {
-          installBtn.style.display = "";
+        if ((window as any).__pwa_install_prompt) {
+          installBtn.style.display = ""
         }
-      };
-      showInstallBtn();
-      window.addEventListener("meitheal-pwa-installable", showInstallBtn);
+      }
+      showInstallBtn()
+      pageLifecycle.on(window as unknown as HTMLElement, "meitheal-pwa-installable", showInstallBtn)
 
-      installBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        const prompt = window.__pwa_install_prompt;
-        if (!prompt) return;
+      pageLifecycle.on(installBtn, "click", async (e: Event) => {
+        e.preventDefault()
+        const prompt = (window as any).__pwa_install_prompt
+        if (!prompt) return
         try {
-          await prompt.prompt();
-          const result = await prompt.userChoice;
+          await prompt.prompt()
+          const result = await prompt.userChoice
           if (result.outcome === "accepted") {
-            installBtn.style.display = "none";
-            if (installedBadge) installedBadge.style.display = "";
+            installBtn.style.display = "none"
+            if (installedBadge) installedBadge.style.display = ""
           }
         } catch {
           /* prompt can only be called once */
         }
-        window.__pwa_install_prompt = null;
-      });
+        ;(window as any).__pwa_install_prompt = null
+      })
     }
 
-    // Listen for installed event (window-level, guarded to prevent accumulation)
-    if (!window.__pwaCompactListenersBound) {
-      window.__pwaCompactListenersBound = true;
-      window.addEventListener("meitheal-pwa-installed", () => {
-        const ib = document.getElementById("pwa-install-settings-btn");
-        const iBadge = document.getElementById("pwa-installed-badge");
-        if (ib) ib.style.display = "none";
-        if (iBadge) iBadge.style.display = "";
-      });
-    }
+    // Listen for installed event — pageLifecycle handles cleanup
+    pageLifecycle.on(window as unknown as HTMLElement, "meitheal-pwa-installed", () => {
+      const ib = document.getElementById("pwa-install-settings-btn")
+      const iBadge = document.getElementById("pwa-installed-badge")
+      if (ib) ib.style.display = "none"
+      if (iBadge) iBadge.style.display = ""
+    })
   }
 
-  initPwaCompact();
+  initPwaCompact()
 
   // ── Pop out to browser (escape HA iframe for PWA install) ──
   function initPwaPopout() {
-    const popoutBtn = document.getElementById("pwa-popout-btn");
-    const uninstallBtn = document.getElementById("pwa-uninstall-btn");
-    const uninstallInfo = document.getElementById("pwa-uninstall-info");
-    if (!popoutBtn || popoutBtn.dataset.popoutInit) return;
-    popoutBtn.dataset.popoutInit = "true";
+    const popoutBtn = document.getElementById("pwa-popout-btn")
+    const uninstallBtn = document.getElementById("pwa-uninstall-btn")
+    const uninstallInfo = document.getElementById("pwa-uninstall-info")
+    if (!popoutBtn) return
 
-    popoutBtn?.addEventListener("click", (e) => {
-      e.preventDefault();
-      const ingressPath = window.__ingress_path || "";
-      let targetUrl: string;
+    pageLifecycle.on(popoutBtn, "click", (e: Event) => {
+      e.preventDefault()
+      const ingressPath = (window as any).__ingress_path || ""
+      let targetUrl: string
 
       if (ingressPath) {
         try {
           const parentOrigin =
-            window.top?.location?.origin || window.location.origin;
-          targetUrl = parentOrigin + ingressPath + "/settings#app-pwa-settings";
+            window.top?.location?.origin || window.location.origin
+          targetUrl = parentOrigin + ingressPath + "/settings#app-pwa-settings"
         } catch {
-          const referrer = document.referrer;
+          const referrer = document.referrer
           if (referrer) {
-            const refUrl = new URL(referrer);
+            const refUrl = new URL(referrer)
             targetUrl =
-              refUrl.origin + ingressPath + "/settings#app-pwa-settings";
+              refUrl.origin + ingressPath + "/settings#app-pwa-settings"
           } else {
-            targetUrl = ingressPath + "/settings#app-pwa-settings";
+            targetUrl = ingressPath + "/settings#app-pwa-settings"
           }
         }
       } else {
-        targetUrl = window.location.origin + "/settings#app-pwa-settings";
+        targetUrl = window.location.origin + "/settings#app-pwa-settings"
       }
 
-      window.open(targetUrl, "_blank", "noopener");
-    });
+      window.open(targetUrl, "_blank", "noopener")
+    })
 
-    uninstallBtn?.addEventListener("click", (e) => {
-      e.preventDefault();
-      if (uninstallInfo) {
-        const showing = uninstallInfo.style.display !== "none";
-        uninstallInfo.style.display = showing ? "none" : "block";
-      }
-    });
+    if (uninstallBtn) {
+      pageLifecycle.on(uninstallBtn, "click", (e: Event) => {
+        e.preventDefault()
+        if (uninstallInfo) {
+          const showing = uninstallInfo.style.display !== "none"
+          uninstallInfo.style.display = showing ? "none" : "block"
+        }
+      })
+    }
   }
 
-  initPwaPopout();
+  initPwaPopout()
 
   // ── PWA Troubleshooting Actions ──
   function showTroubleshootResult(msg: string, ok = true) {
-    const el = document.getElementById("pwa-troubleshoot-result");
-    if (!el) return;
-    el.textContent = msg;
-    el.style.display = "block";
-    el.style.color = ok ? "var(--accent)" : "var(--danger)";
+    const el = document.getElementById("pwa-troubleshoot-result")
+    if (!el) return
+    el.textContent = msg
+    el.style.display = "block"
+    el.style.color = ok ? "var(--accent)" : "var(--danger)"
     setTimeout(() => {
-      el.style.display = "none";
-    }, 4000);
+      el.style.display = "none"
+    }, 4000)
   }
 
   function initPwaTroubleshooting() {
-    const clearCacheBtn = document.getElementById("pwa-clear-cache-btn");
-    const forceUpdateBtn = document.getElementById("pwa-force-update-btn");
-    const clearOfflineBtn = document.getElementById("pwa-clear-offline-btn");
-    if (!clearCacheBtn || clearCacheBtn.dataset.troubleshootInit) return;
-    clearCacheBtn.dataset.troubleshootInit = "true";
+    const clearCacheBtn = document.getElementById("pwa-clear-cache-btn")
+    const forceUpdateBtn = document.getElementById("pwa-force-update-btn")
+    const clearOfflineBtn = document.getElementById("pwa-clear-offline-btn")
+    const pushBtn = document.getElementById("pwa-push-notif-btn")
+    const resetHintsBtn = document.getElementById("pwa-reset-hints-btn")
+    if (!clearCacheBtn) return
 
-    clearCacheBtn?.addEventListener("click", async () => {
+    pageLifecycle.on(clearCacheBtn, "click", async () => {
       try {
-        const names = await caches.keys();
-        await Promise.all(names.map((n) => caches.delete(n)));
+        const names = await caches.keys()
+        await Promise.all(names.map((n) => caches.delete(n)))
         showTroubleshootResult(
           `✓ Cleared ${names.length} cache(s). Reload to re-populate.`,
-        );
-      } catch (err) {
-        showTroubleshootResult("✗ Failed to clear caches.", false);
-      }
-    });
-
-    forceUpdateBtn?.addEventListener("click", async () => {
-      try {
-        if (!("serviceWorker" in navigator)) {
-          showTroubleshootResult("Service workers not available.", false);
-          return;
-        }
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) {
-          await reg.update();
-          if (reg.waiting) {
-            reg.waiting.postMessage({ type: "SKIP_WAITING" });
-          }
-          showTroubleshootResult("✓ SW update triggered. Reloading...");
-          setTimeout(() => window.location.reload(), 800);
-        } else {
-          showTroubleshootResult("No service worker registered.", false);
-        }
-      } catch (err) {
-        showTroubleshootResult("✗ SW update failed.", false);
-      }
-    });
-
-    clearOfflineBtn?.addEventListener("click", async () => {
-      try {
-        const dbNames = [
-          "meitheal-offline",
-          "meitheal-tasks",
-          "meitheal-sync",
-          "task_attachments",
-        ];
-        let deleted = 0;
-        for (const name of dbNames) {
-          try {
-            const req = indexedDB.deleteDatabase(name);
-            await new Promise<void>((resolve, reject) => {
-              req.onsuccess = () => {
-                deleted++;
-                resolve();
-              };
-              req.onerror = () => reject(req.error);
-              req.onblocked = () => resolve();
-            });
-          } catch {
-            /* skip individual failures */
-          }
-        }
-        [
-          "meitheal-sync-queue",
-          "meitheal-last-sync",
-          "meitheal-offline-tasks",
-        ].forEach((k) => {
-          try {
-            localStorage.removeItem(k);
-          } catch { /* non-fatal */ }
-        });
-        showTroubleshootResult(
-          `✓ Cleared ${deleted} offline database(s) and sync state.`,
-        );
-      } catch (err) {
-        showTroubleshootResult("✗ Failed to clear offline data.", false);
-      }
-    });
-
-    const pushBtn = document.getElementById("pwa-push-notif-btn");
-    pushBtn?.addEventListener("click", async () => {
-      if (!("Notification" in window)) {
-        showTroubleshootResult(
-          "Notifications not supported in this browser.",
-          false,
-        );
-        return;
-      }
-      const current = Notification.permission;
-      if (current === "granted") {
-        showTroubleshootResult("✓ Push notifications already enabled.");
-        return;
-      }
-      if (current === "denied") {
-        showTroubleshootResult(
-          "✗ Notifications blocked. Reset in browser settings → Site permissions.",
-          false,
-        );
-        return;
-      }
-      try {
-        const result = await Notification.requestPermission();
-        if (result === "granted") {
-          showTroubleshootResult("✓ Push notifications enabled!");
-          new Notification("Meitheal", {
-            body: "Push notifications are now active.",
-            icon: "/icons/icon-192.png",
-          });
-        } else {
-          showTroubleshootResult(
-            "Notifications dismissed. You can enable later in browser settings.",
-            false,
-          );
-        }
+        )
       } catch {
-        showTroubleshootResult(
-          "✗ Failed to request notification permission.",
-          false,
-        );
+        showTroubleshootResult("✗ Failed to clear caches.", false)
       }
-    });
+    })
 
-    const resetHintsBtn = document.getElementById("pwa-reset-hints-btn");
-    resetHintsBtn?.addEventListener("click", () => {
-      const keys = [
-        "meitheal-pwa-dismissed",
-        "meitheal_shortcut_hint_dismissed",
-      ];
-      let cleared = 0;
-      keys.forEach((k) => {
-        if (localStorage.getItem(k) !== null) {
-          localStorage.removeItem(k);
-          cleared++;
+    if (forceUpdateBtn) {
+      pageLifecycle.on(forceUpdateBtn, "click", async () => {
+        try {
+          if (!("serviceWorker" in navigator)) {
+            showTroubleshootResult("Service workers not available.", false)
+            return
+          }
+          const reg = await navigator.serviceWorker.getRegistration()
+          if (reg) {
+            await reg.update()
+            if (reg.waiting) {
+              reg.waiting.postMessage({ type: "SKIP_WAITING" })
+            }
+            showTroubleshootResult("✓ SW update triggered. Reloading...")
+            setTimeout(() => window.location.reload(), 800)
+          } else {
+            showTroubleshootResult("No service worker registered.", false)
+          }
+        } catch {
+          showTroubleshootResult("✗ SW update failed.", false)
         }
-      });
-      showTroubleshootResult(
-        cleared > 0
-          ? `✓ Reset ${cleared} hint(s). They'll reappear on next page load.`
-          : "No dismissed hints to reset.",
-      );
-    });
+      })
+    }
+
+    if (clearOfflineBtn) {
+      pageLifecycle.on(clearOfflineBtn, "click", async () => {
+        try {
+          const dbNames = [
+            "meitheal-offline",
+            "meitheal-tasks",
+            "meitheal-sync",
+            "task_attachments",
+          ]
+          let deleted = 0
+          for (const name of dbNames) {
+            try {
+              const req = indexedDB.deleteDatabase(name)
+              await new Promise<void>((resolve, reject) => {
+                req.onsuccess = () => {
+                  deleted++
+                  resolve()
+                }
+                req.onerror = () => reject(req.error)
+                req.onblocked = () => resolve()
+              })
+            } catch {
+              /* skip individual failures */
+            }
+          }
+          ;[
+            "meitheal-sync-queue",
+            "meitheal-last-sync",
+            "meitheal-offline-tasks",
+          ].forEach((k) => {
+            try {
+              localStorage.removeItem(k)
+            } catch { /* non-fatal */ }
+          })
+          showTroubleshootResult(
+            `✓ Cleared ${deleted} offline database(s) and sync state.`,
+          )
+        } catch {
+          showTroubleshootResult("✗ Failed to clear offline data.", false)
+        }
+      })
+    }
+
+    if (pushBtn) {
+      pageLifecycle.on(pushBtn, "click", async () => {
+        if (!("Notification" in window)) {
+          showTroubleshootResult(
+            "Notifications not supported in this browser.",
+            false,
+          )
+          return
+        }
+        const current = Notification.permission
+        if (current === "granted") {
+          showTroubleshootResult("✓ Push notifications already enabled.")
+          return
+        }
+        if (current === "denied") {
+          showTroubleshootResult(
+            "✗ Notifications blocked. Reset in browser settings → Site permissions.",
+            false,
+          )
+          return
+        }
+        try {
+          const result = await Notification.requestPermission()
+          if (result === "granted") {
+            showTroubleshootResult("✓ Push notifications enabled!")
+            new Notification("Meitheal", {
+              body: "Push notifications are now active.",
+              icon: "/icons/icon-192.png",
+            })
+          } else {
+            showTroubleshootResult(
+              "Notifications dismissed. You can enable later in browser settings.",
+              false,
+            )
+          }
+        } catch {
+          showTroubleshootResult(
+            "✗ Failed to request notification permission.",
+            false,
+          )
+        }
+      })
+    }
+
+    if (resetHintsBtn) {
+      pageLifecycle.on(resetHintsBtn, "click", () => {
+        const keys = [
+          "meitheal-pwa-dismissed",
+          "meitheal_shortcut_hint_dismissed",
+        ]
+        let cleared = 0
+        keys.forEach((k) => {
+          if (localStorage.getItem(k) !== null) {
+            localStorage.removeItem(k)
+            cleared++
+          }
+        })
+        showTroubleshootResult(
+          cleared > 0
+            ? `✓ Reset ${cleared} hint(s). They'll reappear on next page load.`
+            : "No dismissed hints to reset.",
+        )
+      })
+    }
   }
 
-  initPwaTroubleshooting();
+  initPwaTroubleshooting()
 </script>
+
