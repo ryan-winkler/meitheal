@@ -335,10 +335,10 @@
                     row.className =
                       "flex gap-2 items-baseline py-1 border-b border-border/30";
                     row.innerHTML = `
-                    <span class="text-text-muted shrink-0">${ago}</span>
-                    <span class="font-medium text-text-primary">${String(e.field)}</span>
+                    <span class="text-text-muted shrink-0">${escapeHtml(ago)}</span>
+                    <span class="font-medium text-text-primary">${escapeHtml(e.field)}</span>
                     <span class="text-text-muted">→</span>
-                    <span class="text-accent truncate">${String(e.new_value ?? "—").slice(0, 60)}</span>
+                    <span class="text-accent truncate">${escapeHtml(String(e.new_value ?? "—").slice(0, 60))}</span>
                   `;
                     activityDiv.appendChild(row);
                   }
@@ -1315,10 +1315,10 @@
                         : t.task_type === "story"
                           ? "📖"
                           : "✅";
-                    return `<div class="td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2" data-id="${t.id}">
+                    return `<div class="td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2" data-id="${escapeHtml(t.id)}">
                   <span>${typeIcon}</span>
-                  <span class="truncate">${String(t.title).slice(0, 60)}</span>
-                  <span class="text-xs text-text-muted ml-auto">${String(t.task_type ?? "task")}</span>
+                  <span class="truncate">${escapeHtml(String(t.title).slice(0, 60))}</span>
+                  <span class="text-xs text-text-muted ml-auto">${escapeHtml(String(t.task_type ?? "task"))}</span>
                 </div>`;
                   })
                   .join("");
@@ -1456,7 +1456,7 @@
               if (result.source === "ha-assist" && result.response) {
                 responseEl.className =
                   "p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed";
-                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">✨ AI Response</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div class="whitespace-pre-wrap">${result.response}</div>`;
+                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">✨ AI Response</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`;
                 btn.innerHTML = "✨ AI Responded";
               } else {
                 responseEl.className =

@@ -291,6 +291,7 @@ import { t } from "../../i18n/translations"
       }
 
       overlay?.classList.add("active")
+      document.body.style.overflow = "hidden"
       document.addEventListener("keydown", trapFocus)
       setTimeout(() => {
         document.getElementById("pillar-name")?.focus()
@@ -304,6 +305,7 @@ import { t } from "../../i18n/translations"
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
       const finishClose = () => {
         overlay.classList.remove("active", "closing")
+        document.body.style.overflow = ""
         form?.reset()
       }
       if (reducedMotion) { finishClose(); return }

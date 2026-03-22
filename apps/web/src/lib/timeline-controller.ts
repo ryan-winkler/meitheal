@@ -574,6 +574,7 @@ function showPopup(bar: GanttBar, x: number, y: number, _parent: HTMLElement, re
   }, 10)
 
   // P8: Auto-close popup on re-render (signal aborted)
+  // Also cleans up click/keydown listeners as a safety net against leaks
   renderSignal?.addEventListener("abort", () => {
     popup.remove()
     cleanupClose()
