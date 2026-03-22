@@ -351,6 +351,7 @@ const { locale } = Astro.props;
 
 <script>
   import { showToast } from "@lib/toast";
+  import { pageLifecycle } from "@lib/page-lifecycle";
 
   // ── HA Conversation Agent picker ──
   const haAgentSelect = document.getElementById(
@@ -404,9 +405,9 @@ const { locale } = Astro.props;
     }
   }
 
-  haAgentSelect?.addEventListener("change", updateAgentBadge);
+  pageLifecycle.on(haAgentSelect, "change", updateAgentBadge);
 
-  saveHaAgentBtn?.addEventListener("click", async () => {
+  if (saveHaAgentBtn) pageLifecycle.on(saveHaAgentBtn, "click", async () => {
     try {
       await fetch((window.__ingress_path || "") + "/api/settings", {
         method: "PUT",
@@ -423,7 +424,8 @@ const { locale } = Astro.props;
     }
   });
 
-  testHaAgentBtn?.addEventListener("click", async () => {
+  if (testHaAgentBtn) pageLifecycle.on(testHaAgentBtn, "click", async () => {
+    // T10: Clear previous result on next test click
     if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textTesting || "Testing…";
     try {
       const body: Record<string, string> = { text: "Hello" };
@@ -444,10 +446,8 @@ const { locale } = Astro.props;
     } catch {
       if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textFailed || "❌ Connection failed";
     }
-    // Auto-clear result after 5s (success or error)
-    setTimeout(() => {
-      if (testResult) testResult.textContent = "";
-    }, 5000);
+    // T10: Result persists until next user interaction (test or save)
+    // No auto-clear timer — ADHD-friendly
   });
 
   // ── External AI Provider — UI reactivity only ──
@@ -472,7 +472,7 @@ const { locale } = Astro.props;
     }
   }
 
-  aiProvider?.addEventListener("change", () => {
+  if (aiProvider) pageLifecycle.on(aiProvider, "change", () => {
     if (customUrlGroup) {
       customUrlGroup.style.display =
         aiProvider.value === "custom" || aiProvider.value === "ollama"
@@ -524,20 +524,26 @@ const { locale } = Astro.props;
     } catch { /* defaults are fine */ }
   }
 
-  saveBotBtn?.addEventListener("click", async () => {
+  if (saveBotBtn) pageLifecycle.on(saveBotBtn, "click", async () => {
     try {
-      const settings = [
-        { key: "bot_allow_proposals", value: String(botAllowProposals?.checked ?? true) },
-        { key: "bot_auto_accept", value: String(botAutoAccept?.checked ?? false) },
-        { key: "bot_lock_timeout", value: String(botLockTimeout?.value ?? "5") },
-      ];
-      for (const s of settings) {
-        await fetch((window.__ingress_path || "") + "/api/settings", {
+      // T5: Parallel save instead of sequential
+      await Promise.all([
+        fetch((window.__ingress_path || "") + "/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(s),
-        });
-      }
+          body: JSON.stringify({ key: "bot_allow_proposals", value: String(botAllowProposals?.checked ?? true) }),
+        }),
+        fetch((window.__ingress_path || "") + "/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "bot_auto_accept", value: String(botAutoAccept?.checked ?? false) }),
+        }),
+        fetch((window.__ingress_path || "") + "/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "bot_lock_timeout", value: String(botLockTimeout?.value ?? "5") }),
+        }),
+      ]);
       showToast(saveBotBtn?.dataset.textSaved || "Bot settings saved.", "success");
     } catch {
       showToast(saveBotBtn?.dataset.textFailed || "Failed to save bot settings.", "error");

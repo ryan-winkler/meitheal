@@ -19,6 +19,20 @@ interface Props {
 }
 const { locale } = Astro.props;
 
+/** Scope descriptions for tooltips (T9) */
+const scopeDescriptions: Record<string, string> = {
+  "tasks:read": "Read tasks, comments, and attachments",
+  "tasks:write": "Create, update, and delete tasks",
+  "projects:read": "List and view projects",
+  "projects:write": "Create, update, and delete projects",
+  "pillars:read": "Read pillars, principles, and goals",
+  "pillars:write": "Create, update, and delete pillars",
+  "search:read": "Search across all resources",
+  "settings:read": "Read application settings",
+  "settings:write": "Modify application settings",
+  "admin:*": "Full access to all resources and actions",
+}
+
 /** Group scopes by resource for the UI selector */
 const scopeGroups = [
   { label: "Tasks", scopes: ["tasks:read", "tasks:write"] },
@@ -80,7 +94,7 @@ const scopeGroups = [
             <div class="agent-tokens__scope-group">
               <div class="agent-tokens__scope-group-label">{group.label}</div>
               {group.scopes.map((scope) => (
-                <label class="agent-tokens__scope-item">
+                <label class="agent-tokens__scope-item" title={scopeDescriptions[scope] || scope}>
                   <input type="checkbox" name="agent-token-scopes" value={scope} />
                   <code>{scope}</code>
                 </label>
