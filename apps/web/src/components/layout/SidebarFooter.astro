@@ -38,33 +38,6 @@ const { locale } = Astro.props;
 </div>
 
 <script>
-  // Connection status check
-  async function checkHealth() {
-    const indicator = document.getElementById("connection-status");
-    if (!indicator) return;
-    const dot = indicator.querySelector(".status-dot");
-    const text = indicator.querySelector(".status-text");
-    try {
-      const res = await fetch((window.__ingress_path || "") + "/api/health");
-      const data = await res.json();
-      if (data.status === "ok") {
-        dot?.classList.add("bg-green-500");
-        dot?.classList.remove("bg-gray-400", "bg-red-500");
-        dot?.setAttribute("aria-label", "Connected");
-        if (text) text.textContent = "Connected";
-      } else {
-        dot?.classList.add("bg-red-500");
-        dot?.classList.remove("bg-gray-400", "bg-green-500");
-        dot?.setAttribute("aria-label", "Database offline");
-        if (text) text.textContent = "DB Offline";
-      }
-    } catch {
-      dot?.classList.add("bg-gray-400");
-      dot?.classList.remove("bg-green-500", "bg-red-500");
-      dot?.setAttribute("aria-label", "Disconnected");
-      if (text) text.textContent = "Disconnected";
-    }
-  }
-  checkHealth();
-  setInterval(checkHealth, 30000);
+  // Health check is managed by layout-controller.ts (singleton 30s interval, P0-4).
+  // Previously this component ran its own duplicate interval — removed in Phase 25 T5.
 </script>
