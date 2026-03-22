@@ -43,6 +43,12 @@
     {
       "path": "docs",
       "name": "📖 Docs"
+    },
+    {
+      "path": "../meitheal-io"
+    },
+    {
+      "path": "../coolock-village-forge"
     }
   ],
   "settings": {

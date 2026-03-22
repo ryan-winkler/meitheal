@@ -1,531 +1,494 @@
-import type { APIRoute } from "astro";
-import { apiJson, apiError } from "../../lib/api-response";
-import { getMcpTools, getToolByName, getToolCount } from "@meitheal/integration-core";
+import type { APIRoute } from "astro"
+import { apiJson, apiError } from "../../lib/api-response"
+import { readFileSync, existsSync } from "node:fs"
+import { resolve } from "node:path"
+import { parse } from "yaml"
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
  *
- * Accepts JSON-RPC 2.0 tool calls per the MCP specification.
- * Routes incoming tool requests to the Meitheal task API.
+ * Dynamically generates tool definitions from the OpenAPI spec at startup,
+ * then routes JSON-RPC 2.0 tool calls to internal API endpoints.
  *
- * Tool definitions come from the shared tool-registry in integration-core.
- * This endpoint is a thin JSON-RPC adapter — all business logic delegates
- * to internal REST API routes.
- *
- * Supports:
- * - "initialize" — handshake
- * - "tools/list" — enumerate available tools (from shared registry)
- * - "tools/call" — execute a tool
+ * Tool catalog is derived from openapi.yaml operationIds — no hardcoded
+ * switch/case. Custom tool overrides can be registered for operations
+ * that need special argument mapping or response shaping.
  *
  * @see https://modelcontextprotocol.io/
- * @see /.well-known/mcp.json for static discovery
- * @domain integration-core (tool definitions)
+ * @see /openapi.yaml for the source of truth
+ * @domain integration-core
+ * @bounded-context agent-protocols
  */
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface McpTool {
+  name: string
+  description: string
+  inputSchema: {
+    type: "object"
+    properties: Record<string, unknown>
+    required?: string[]
+  }
+}
+
+interface RouteMapping {
+  method: string
+  path: string
+  hasBody: boolean
+  pathParams: string[]
+  queryParams: string[]
+}
+
+type CustomToolHandler = (
+  args: Record<string, unknown>,
+  baseUrl: string
+) => Promise<Record<string, unknown>>
+
+// ─── OpenAPI → MCP Tool Discovery ────────────────────────────────────────────
+
+/** Operations to exclude from MCP tools (internal/system endpoints) */
+const EXCLUDED_OPS = new Set([
+  "mcpEndpoint",       // Self-reference
+  "healthPing",        // HEAD-only liveness
+  "subscribeSSE",      // SSE streaming, not callable
+  "exportDatabase",    // Large binary download
+  "exportSettings",    // File downloads
+  "importSettings",    // File upload
+])
+
+/** Operations where method names should be used as-is (no camelCase conversion) */
+const FRIENDLY_NAMES: Record<string, string> = {
+  searchMeitheal: "searchTasks",
+  getHealth: "getSystemHealth",
+}
+
+let _toolCache: McpTool[] | null = null
+let _routeCache: Map<string, RouteMapping> | null = null
+let _cacheTime = 0
+
+/** In dev, invalidate cache every 30s so hot-reloaded specs are picked up */
+const CACHE_TTL_MS = process.env.NODE_ENV === "development" ? 30_000 : Infinity
+
+function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping> } {
+  const now = Date.now()
+  if (_toolCache && _routeCache && (now - _cacheTime) < CACHE_TTL_MS) {
+    return { tools: _toolCache, routes: _routeCache }
+  }
+
+  const tools: McpTool[] = []
+  const routes = new Map<string, RouteMapping>()
+
+  // Try multiple paths (Docker, dev, relative)
+  const specPaths = [
+    resolve(process.cwd(), "public/openapi.yaml"),
+    resolve(process.cwd(), "dist/client/openapi.yaml"),
+    "./public/openapi.yaml",
+  ]
+
+  let specContent: string | null = null
+  for (const p of specPaths) {
+    try {
+      if (existsSync(p)) {
+        specContent = readFileSync(p, "utf-8")
+        break
+      }
+    } catch { /* try next */ }
+  }
+
+  if (!specContent) {
+    console.warn("[MCP] OpenAPI spec not found — tools will be empty")
+    _toolCache = tools
+    _routeCache = routes
+    return { tools, routes }
+  }
+
+  const spec = parse(specContent) as {
+    paths?: Record<string, Record<string, {
+      operationId?: string
+      summary?: string
+      description?: string
+      parameters?: Array<{
+        name: string
+        in: string
+        required?: boolean
+        description?: string
+        schema?: Record<string, unknown>
+      }>
+      requestBody?: {
+        required?: boolean
+        content?: Record<string, { schema?: Record<string, unknown> }>
+      }
+    }>>
+  }
+
+  if (!spec.paths) {
+    _toolCache = tools
+    _routeCache = routes
+    return { tools, routes }
+  }
+
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (!op.operationId || EXCLUDED_OPS.has(op.operationId)) continue
+
+      const toolName = FRIENDLY_NAMES[op.operationId] ?? op.operationId
+      const properties: Record<string, unknown> = {}
+      const required: string[] = []
+      const pathParams: string[] = []
+      const queryParams: string[] = []
+
+      // Extract path and query parameters
+      if (op.parameters) {
+        for (const param of op.parameters) {
+          if (param.in === "header") continue // Skip headers
+          const paramSchema = param.schema ?? { type: "string" }
+          properties[param.name] = {
+            ...paramSchema,
+            description: param.description ?? `${param.name} parameter`,
+          }
+          if (param.required) required.push(param.name)
+          if (param.in === "path") pathParams.push(param.name)
+          if (param.in === "query") queryParams.push(param.name)
+        }
+      }
+
+      // Extract request body properties
+      const hasBody = method === "post" || method === "put" || method === "patch"
+      if (hasBody && op.requestBody?.content?.["application/json"]?.schema) {
+        const bodySchema = op.requestBody.content["application/json"].schema
+        if (bodySchema.properties) {
+          for (const [propName, propSchema] of Object.entries(bodySchema.properties as Record<string, Record<string, unknown>>)) {
+            properties[propName] = propSchema
+          }
+          if (bodySchema.required && Array.isArray(bodySchema.required)) {
+            for (const r of bodySchema.required) {
+              if (!required.includes(r as string)) required.push(r as string)
+            }
+          }
+        }
+      }
+
+      tools.push({
+        name: toolName,
+        description: op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`,
+        inputSchema: {
+          type: "object",
+          properties,
+          ...(required.length > 0 ? { required } : {}),
+        },
+      })
+
+      routes.set(toolName, {
+        method: method.toUpperCase(),
+        path,
+        hasBody,
+        pathParams,
+        queryParams,
+      })
+    }
+  }
+
+  _toolCache = tools
+  _routeCache = routes
+  _cacheTime = Date.now()
+  console.log(`[MCP] Loaded ${tools.length} tools from OpenAPI spec`)
+  return { tools, routes }
+}
+
+// ─── Custom Tool Overrides ────────────────────────────────────────────────────
+// Some tools need special response shaping or multi-step logic.
+
+const customHandlers = new Map<string, CustomToolHandler>()
+
+// completeTask: supports both ID and title-based completion
+customHandlers.set("completeTask", async (args, baseUrl) => {
+  if (args.id) {
+    const safeId = encodeURIComponent(String(args.id))
+    const res = await fetch(`${baseUrl}/api/tasks/${safeId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "complete" }),
+    })
+    return { status: "completed", ...(await res.json().catch(() => ({}))) }
+  }
+  if (args.title) {
+    const searchRes = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
+    const data = (await searchRes.json().catch(() => ({ sections: [] }))) as {
+      sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
+    }
+    const taskSection = data.sections?.find((s) => s.id === "tasks")
+    const match = taskSection?.items?.find(
+      (t) => String(t.title).toLowerCase() === String(args.title).toLowerCase()
+    )
+    if (match) {
+      const taskId = match.taskId ?? match.id
+      await fetch(`${baseUrl}/api/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "complete" }),
+      })
+      return { status: "completed", id: taskId, title: match.title }
+    }
+    return { status: "not_found", title: args.title }
+  }
+  return { status: "error", message: "Provide id or title" }
+})
+
+// searchTasks: reshape search response for cleaner AI consumption
+customHandlers.set("searchTasks", async (args, baseUrl) => {
+  const params = new URLSearchParams()
+  if (args.query) params.set("q", String(args.query))
+  if (args.status) params.set("status", String(args.status))
+  if (args.priority) params.set("priority", String(args.priority))
+  if (args.assigned_to) params.set("assigned_to", String(args.assigned_to))
+  if (args.include_completed) params.set("include_completed", "1")
+  params.set("scope", "tasks")
+  const res = await fetch(`${baseUrl}/api/search?${params}`)
+  const data = (await res.json().catch(() => ({ sections: [] }))) as {
+    sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
+  }
+  const taskSection = data.sections?.find((s) => s.id === "tasks")
+  return {
+    tasks: (taskSection?.items ?? []).map((item) => ({
+      id: item.taskId ?? item.id,
+      title: item.title,
+      description: item.description,
+      status: (item.meta as Record<string, unknown> | undefined)?.status,
+      priority: (item.meta as Record<string, unknown> | undefined)?.priority,
+    })),
+    count: taskSection?.items?.length ?? 0,
+  }
+})
+
+// dailyBriefing: composite endpoint for agent daily planning
+customHandlers.set("dailyBriefing", async (_args, baseUrl) => {
+  const [tasksRes, habitsRes, reviewRes] = await Promise.allSettled([
+    fetch(`${baseUrl}/api/tasks?status=todo&sort=priority&limit=10`).then(r => r.json()),
+    fetch(`${baseUrl}/api/habits`).then(r => r.json()),
+    fetch(`${baseUrl}/api/review/weekly`).then(r => r.json()),
+  ])
+  return {
+    today_tasks: tasksRes.status === "fulfilled" ? tasksRes.value : { error: "unavailable" },
+    habits: habitsRes.status === "fulfilled" ? habitsRes.value : { error: "unavailable" },
+    weekly_review: reviewRes.status === "fulfilled" ? reviewRes.value : { error: "unavailable" },
+  }
+})
+
+// getEntityState: HA entity state lookup
+customHandlers.set("getEntityState", async (args, baseUrl) => {
+  const res = await fetch(`${baseUrl}/api/ha/events?entity_id=${encodeURIComponent(String(args.entity_id ?? ""))}`)
+  return await res.json().catch(() => ({ error: "Entity not found" }))
+})
+
+// ─── Dynamic Tool Executor ────────────────────────────────────────────────────
+
+async function executeTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  request: Request
+): Promise<Record<string, unknown>> {
+  const baseUrl = new URL(request.url).origin
+
+  // Check custom handlers first
+  const custom = customHandlers.get(toolName)
+  if (custom) return custom(args, baseUrl)
+
+  // Dynamic dispatch from OpenAPI routes
+  const { routes } = loadOpenAPISpec()
+  const route = routes.get(toolName)
+  if (!route) {
+    return { error: `Unknown tool: ${toolName}`, available: routes.size }
+  }
+
+  // Validate required path params before dispatch
+  for (const param of route.pathParams) {
+    if (args[param] == null) {
+      return { error: `Missing required path parameter: ${param}`, tool: toolName }
+    }
+  }
+
+  // Build URL with path params
+  let url = route.path
+  for (const param of route.pathParams) {
+    url = url.replace(`{${param}}`, encodeURIComponent(String(args[param])))
+  }
+
+  // Add query params
+  const qp = new URLSearchParams()
+  for (const param of route.queryParams) {
+    if (args[param] != null) qp.set(param, String(args[param]))
+  }
+  const queryString = qp.toString()
+  const fullUrl = `${baseUrl}${url}${queryString ? `?${queryString}` : ""}`
+
+  // Build body from remaining args (exclude path/query params)
+  const bodyKeys = new Set([...route.pathParams, ...route.queryParams])
+  const bodyArgs: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(args)) {
+    if (!bodyKeys.has(k)) bodyArgs[k] = v
+  }
+
+  const fetchOpts: RequestInit = {
+    method: route.method,
+    headers: { "content-type": "application/json" },
+  }
+
+  if (route.hasBody && Object.keys(bodyArgs).length > 0) {
+    fetchOpts.body = JSON.stringify(bodyArgs)
+  }
+
+  const res = await fetch(fullUrl, fetchOpts)
+  const data = await res.json().catch(() => ({}))
+  return { status: res.status, ...data }
+}
+
+// ─── JSON-RPC 2.0 Handler ────────────────────────────────────────────────────
 
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const body = await request.json().catch(() => null);
+    const body = await request.json().catch(() => null)
 
     if (!body || typeof body !== "object") {
       return apiJson(
         { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } },
         400
-      );
+      )
     }
 
     const { method, id: reqId = "1", params = {} } = body as {
-      method?: string;
-      id?: string;
-      params?: Record<string, unknown>;
-    };
+      method?: string
+      id?: string
+      params?: Record<string, unknown>
+    }
 
     // Initialize handshake
     if (method === "initialize") {
+      const { tools } = loadOpenAPISpec()
       return apiJson({
         jsonrpc: "2.0",
         id: reqId,
         result: {
           protocolVersion: "2025-03-26",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "meitheal", version: "0.3.0", toolCount: getToolCount() },
+          serverInfo: {
+            name: "meitheal",
+            version: "0.3.0",
+            toolCount: tools.length + customHandlers.size,
+            generatedFrom: "openapi",
+          },
         },
-      });
+      })
     }
 
-    // List tools
+    // List tools — dynamically from OpenAPI + custom handlers
     if (method === "tools/list") {
+      const { tools } = loadOpenAPISpec()
+
+      // Add custom-only tools not in OpenAPI (dailyBriefing, getEntityState, completeTask)
+      const customOnlyTools: McpTool[] = []
+      for (const [name] of customHandlers) {
+        if (!tools.find(t => t.name === name)) {
+          customOnlyTools.push({
+            name,
+            description: getCustomToolDescription(name),
+            inputSchema: getCustomToolSchema(name),
+          })
+        }
+      }
+
       return apiJson({
         jsonrpc: "2.0",
         id: reqId,
-        result: { tools: getMcpTools() },
-      });
+        result: { tools: [...tools, ...customOnlyTools] },
+      })
     }
 
     // Execute tool
     if (method === "tools/call") {
-      const toolName = (params as { name?: string }).name ?? "";
-      const args = (params as { arguments?: Record<string, unknown> }).arguments ?? {};
+      const toolName = (params as { name?: string }).name ?? ""
+      const args = (params as { arguments?: Record<string, unknown> }).arguments ?? {}
 
-      const result = await executeTool(toolName, args, request);
+      try {
+        const result = await executeTool(toolName, args, request)
+        const isError = "error" in result
 
-      return apiJson({
-        jsonrpc: "2.0",
-        id: reqId,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(result) }],
-          isError: false,
-        },
-      });
+        return apiJson({
+          jsonrpc: "2.0",
+          id: reqId,
+          result: {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            isError,
+          },
+        })
+      } catch (toolError) {
+        // Return JSON-RPC error format — never raw 500
+        return apiJson({
+          jsonrpc: "2.0",
+          id: reqId,
+          error: {
+            code: -32603,
+            message: toolError instanceof Error ? toolError.message : "Tool execution failed",
+          },
+        })
+      }
     }
 
     return apiJson(
       { jsonrpc: "2.0", id: reqId, error: { code: -32601, message: `Unknown method: ${method}` } },
       400
-    );
+    )
   } catch (error) {
     return apiError(
       error instanceof Error ? error.message : "MCP server error",
       500
-    );
+    )
   }
-};
+}
 
-/**
- * Route MCP tool calls to internal API endpoints.
- * This keeps the MCP server thin — it delegates to the existing
- * REST API rather than reimplementing business logic.
- */
-async function executeTool(
-  toolName: string,
-  args: Record<string, unknown>,
-  request: Request
-): Promise<Record<string, unknown>> {
-  const baseUrl = new URL(request.url).origin;
+// ─── Custom Tool Metadata ─────────────────────────────────────────────────────
 
-  switch (toolName) {
-    case "createTask": {
-      const res = await fetch(`${baseUrl}/api/tasks/create`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: args.title,
-          frameworkPayload: args.description ? { description: args.description } : undefined,
-          priority: args.priority,
-          urgency: args.urgency,
-          importance: args.importance,
-          dueDate: args.due_date,
-          assigned_to: args.assigned_to,
-        }),
-      });
-      return { status: "created", ...(await res.json().catch(() => ({}))) };
-    }
-
-    case "searchTasks": {
-      const params = new URLSearchParams();
-      if (args.query) params.set("q", String(args.query));
-      if (args.status) params.set("status", String(args.status));
-      if (args.priority) params.set("priority", String(args.priority));
-      if (args.assigned_to) params.set("assigned_to", String(args.assigned_to));
-      if (args.include_completed) params.set("include_completed", "1");
-      params.set("scope", "tasks");
-      const res = await fetch(`${baseUrl}/api/search?${params}`);
-      const data = (await res.json().catch(() => ({ sections: [] }))) as {
-        sections?: Array<{ id?: string; items?: Array<Record<string, unknown>> }>
-      };
-      const taskSection = data.sections?.find((section) => section.id === "tasks");
-      return {
-        tasks: (taskSection?.items ?? []).map((item) => ({
-          id: item.taskId ?? item.id,
-          title: item.title,
-          description: item.description,
-          status: (item.meta as Record<string, unknown> | undefined)?.status,
-          priority: (item.meta as Record<string, unknown> | undefined)?.priority,
-          matched_fields: (item.meta as Record<string, unknown> | undefined)?.matched_fields ?? [],
-        })),
-        count: taskSection?.items?.length ?? 0,
-      };
-    }
-
-    case "completeTask": {
-      if (args.id) {
-        const res = await fetch(`${baseUrl}/api/tasks/${args.id}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status: "complete" }),
-        });
-        return { status: "completed", ...(await res.json().catch(() => ({}))) };
-      }
-      // Title-based completion — search then update
-      if (args.title) {
-        const searchRes = await fetch(`${baseUrl}/api/tasks?q=${encodeURIComponent(String(args.title))}`);
-        const data = (await searchRes.json().catch(() => ({ tasks: [] }))) as { tasks: Array<{ id: string; title: string }> };
-        const match = data.tasks?.find(
-          (t: { title: string }) => t.title.toLowerCase() === String(args.title).toLowerCase()
-        );
-        if (match) {
-          await fetch(`${baseUrl}/api/tasks/${match.id}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status: "complete" }),
-          });
-          return { status: "completed", id: match.id, title: match.title };
-        }
-        return { status: "not_found", title: args.title };
-      }
-      return { status: "error", message: "Provide id or title" };
-    }
-
-    case "updateTask": {
-      const { id, ...updates } = args;
-      const res = await fetch(`${baseUrl}/api/tasks/${id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      return { status: "updated", ...(await res.json().catch(() => ({}))) };
-    }
-
-    case "deleteTask": {
-      await fetch(`${baseUrl}/api/tasks/${args.id}`, { method: "DELETE" });
-      return { status: "deleted", id: args.id };
-    }
-
-    case "getTask": {
-      const res = await fetch(`${baseUrl}/api/tasks/${args.id}`);
-      return await res.json().catch(() => ({ error: "Task not found" }));
-    }
-
-    case "getCalendarEvents": {
-      // Fetch tasks that were synced from HA calendar
-      const res = await fetch(`${baseUrl}/api/tasks?calendar_synced=true`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ title: string; due_date: string; calendar_sync_state: string; description: string }>
-      };
-      const daysAhead = typeof args.days_ahead === "number" ? args.days_ahead : 7;
-      const now = new Date();
-      const cutoff = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-      const today = now.toISOString().slice(0, 10);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-      const events = (data.tasks ?? []).filter(
-        (t) =>
-          t.calendar_sync_state === "synced" &&
-          t.due_date &&
-          t.due_date.slice(0, 10) >= today &&
-          t.due_date.slice(0, 10) <= cutoffStr
-      ).map((t) => ({
-        title: t.title,
-        date: t.due_date,
-        description: t.description || "",
-        source: "ha_calendar",
-      }));
-      return { events, count: events.length };
-    }
-
-    case "getUpcoming": {
-      const res = await fetch(`${baseUrl}/api/tasks`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ title: string; status: string; due_date: string; priority: number; calendar_sync_state: string }>
-      };
-      const daysAhead = typeof args.days_ahead === "number" ? args.days_ahead : 7;
-      const now = new Date();
-      const cutoff = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-      const today = now.toISOString().slice(0, 10);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-      const items = (data.tasks ?? []).filter(
-        (t) =>
-          t.status !== "complete" &&
-          t.due_date &&
-          t.due_date.slice(0, 10) >= today &&
-          t.due_date.slice(0, 10) <= cutoffStr
-      ).map((t) => ({
-        title: t.title,
-        date: t.due_date,
-        type: t.calendar_sync_state === "synced" ? "calendar_event" : "task",
-        priority: t.priority,
-      }));
-      return {
-        items,
-        count: items.length,
-        calendar_events: items.filter((i) => i.type === "calendar_event").length,
-        tasks: items.filter((i) => i.type === "task").length,
-      };
-    }
-
-    case "syncCalendar": {
-      const res = await fetch(`${baseUrl}/api/integrations/calendar/sync`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "sync",
-          entity_id: args.entity_id,
-        }),
-      });
-      return await res.json().catch(() => ({ error: "Calendar sync failed" }));
-    }
-
-    case "getOverdueTasks": {
-      const res = await fetch(`${baseUrl}/api/tasks`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ id: string; title: string; status: string; due_date: string; priority: number }>
-      };
-      const now = new Date().toISOString().slice(0, 10);
-      const overdue = (data.tasks ?? []).filter(
-        (t) => t.status !== "complete" && t.due_date && t.due_date.slice(0, 10) < now
-      ).map((t) => ({ id: t.id, title: t.title, due_date: t.due_date, priority: t.priority }));
-      return { tasks: overdue, count: overdue.length };
-    }
-
-    case "getTodaysTasks": {
-      const res = await fetch(`${baseUrl}/api/tasks`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ id: string; title: string; status: string; due_date: string; priority: number }>
-      };
-      const today = new Date().toISOString().slice(0, 10);
-      const tasks = (data.tasks ?? []).filter(
-        (t) => t.status !== "complete" && t.due_date && (
-          t.due_date.slice(0, 10) === today || t.due_date.slice(0, 10) < today
-        )
-      ).map((t) => ({
-        id: t.id, title: t.title, due_date: t.due_date,
-        priority: t.priority, is_overdue: t.due_date.slice(0, 10) < today,
-      }));
-      return { tasks, count: tasks.length };
-    }
-
-    case "getTaskSummary": {
-      const res = await fetch(`${baseUrl}/api/tasks`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ status: string; due_date: string }>
-      };
-      const all = data.tasks ?? [];
-      const now = new Date().toISOString().slice(0, 10);
-      const done = all.filter((t) => t.status === "complete").length;
-      const overdue = all.filter((t) => t.status !== "complete" && t.due_date && t.due_date.slice(0, 10) < now).length;
-      return { total: all.length, active: all.length - done, overdue, completed: done };
-    }
-
-    case "batchComplete": {
-      const res = await fetch(`${baseUrl}/api/tasks`);
-      const data = (await res.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ id: string; title: string; status: string; priority: number; labels: string[] }>
-      };
-      const label = args.label ? String(args.label).toLowerCase() : null;
-      const maxPri = typeof args.max_priority === "number" ? args.max_priority : null;
-      const titles = Array.isArray(args.titles) ? args.titles.map((t: unknown) => String(t).toLowerCase()) : null;
-
-      const targets = (data.tasks ?? []).filter((t) => {
-        if (t.status === "complete") return false;
-        if (titles && !titles.includes(t.title.toLowerCase())) return false;
-        if (label && !(t.labels ?? []).some((l) => l.toLowerCase() === label)) return false;
-        if (maxPri !== null && t.priority > maxPri) return false;
-        if (!titles && !label && maxPri === null) return false; // Safety
-        return true;
-      });
-
-      const completed: string[] = [];
-      for (const t of targets) {
-        try {
-          await fetch(`${baseUrl}/api/tasks/${t.id}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status: "complete" }),
-          });
-          completed.push(t.title);
-        } catch { /* skip */ }
-      }
-      return { completed, count: completed.length };
-    }
-
-    case "assignTask": {
-      const taskId = String(args.id ?? "");
-      if (!taskId || !/^[a-zA-Z0-9_-]+$/.test(taskId)) {
-        return { error: "id must be a non-empty alphanumeric string" };
-      }
-      const assignedTo = args.assigned_to != null ? String(args.assigned_to) : null;
-      if (assignedTo && !/^(ha_|custom_)/.test(assignedTo)) {
-        return { error: "assigned_to must start with 'ha_' or 'custom_'" };
-      }
-      if (assignedTo && assignedTo.length > 255) {
-        return { error: "assigned_to exceeds max length (255)" };
-      }
-      const res = await fetch(`${baseUrl}/api/tasks/${taskId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ assigned_to: assignedTo }),
-      });
-      return { status: "assigned", ...(await res.json().catch(() => ({}))) };
-    }
-
-    case "listUsers": {
-      const res = await fetch(`${baseUrl}/api/users`);
-      return await res.json().catch(() => ({ users: [] }));
-    }
-
-    case "linkTask": {
-      const res = await fetch(`${baseUrl}/api/tasks/${args.source_task_id}/links`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target_task_id: args.target_task_id, link_type: args.link_type }),
-      });
-      return await res.json().catch(() => ({ error: "Failed to create link" }));
-    }
-
-    case "unlinkTask": {
-      const res = await fetch(
-        `${baseUrl}/api/tasks/${args.task_id}/links?link_id=${encodeURIComponent(String(args.link_id))}`,
-        { method: "DELETE" },
-      );
-      return await res.json().catch(() => ({ error: "Failed to delete link" }));
-    }
-
-    case "getTaskLinks": {
-      const res = await fetch(`${baseUrl}/api/tasks/${args.task_id}/links`);
-      return await res.json().catch(() => ({ outbound: [], inbound: [] }));
-    }
-
-    // ─── Hierarchy (Areas, Goals, Projects) ───
-
-    case "listAreas": {
-      const res = await fetch(`${baseUrl}/api/areas`);
-      return await res.json().catch(() => ({ areas: [] }));
-    }
-
-    case "listGoals": {
-      const params = new URLSearchParams();
-      if (args.area_id) params.set("area_id", String(args.area_id));
-      const res = await fetch(`${baseUrl}/api/goals?${params}`);
-      return await res.json().catch(() => ({ goals: [] }));
-    }
-
-    case "moveTask": {
-      const taskId = String(args.task_id ?? "");
-      const payload: Record<string, unknown> = {};
-      if (args.project_id) payload.project_id = args.project_id;
-      if (args.area_id) payload.area_id = args.area_id;
-      const res = await fetch(`${baseUrl}/api/tasks/${taskId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      return { status: "moved", ...(await res.json().catch(() => ({}))) };
-    }
-
-    case "setGoalProgress": {
-      const goalId = String(args.goal_id ?? "");
-      const res = await fetch(`${baseUrl}/api/goals/${goalId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ progress: args.progress }),
-      });
-      return { status: "updated", ...(await res.json().catch(() => ({}))) };
-    }
-
-    // ─── Habits ───
-
-    case "getHabits": {
-      const res = await fetch(`${baseUrl}/api/habits`);
-      return await res.json().catch(() => ({ habits: [] }));
-    }
-
-    case "completeHabit": {
-      const res = await fetch(`${baseUrl}/api/habits`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ templateId: args.templateId, action: "complete" }),
-      });
-      return { status: "completed", ...(await res.json().catch(() => ({}))) };
-    }
-
-    // ─── Reviews ───
-
-    case "getWeeklyReview": {
-      const res = await fetch(`${baseUrl}/api/review/weekly`);
-      return await res.json().catch(() => ({ completed_last_week: [], upcoming: [] }));
-    }
-
-    // ─── Scoring/Frameworks ───
-
-    case "scoreTask": {
-      const taskId = String(args.task_id ?? "");
-      const res = await fetch(`${baseUrl}/api/tasks/${taskId}/score`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          framework: args.framework,
-          reach: args.reach,
-          impact: args.impact,
-          confidence: args.confidence,
-          effort: args.effort,
-        }),
-      });
-      return await res.json().catch(() => ({ error: "Scoring failed" }));
-    }
-
-    // ─── Export ───
-
-    case "exportTasks": {
-      const params = new URLSearchParams();
-      if (args.format) params.set("format", String(args.format));
-      if (args.status) params.set("status", String(args.status));
-      const res = await fetch(`${baseUrl}/api/export/tasks?${params}`);
-      return await res.json().catch(() => ({ error: "Export failed" }));
-    }
-
-    // ─── Labels ───
-
-    case "listLabels": {
-      const res = await fetch(`${baseUrl}/api/labels`);
-      return await res.json().catch(() => ({ labels: [] }));
-    }
-
-    // ─── Daily Briefing ───
-
-    case "dailyBriefing": {
-      // Compose a briefing from today's tasks + overdue + calendar
-      const [tasksRes, calendarRes] = await Promise.all([
-        fetch(`${baseUrl}/api/tasks`),
-        fetch(`${baseUrl}/api/tasks?calendar_synced=true`),
-      ]);
-      const taskData = (await tasksRes.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ title: string; status: string; due_date: string; priority: number }>
-      };
-      const calData = (await calendarRes.json().catch(() => ({ tasks: [] }))) as {
-        tasks: Array<{ title: string; due_date: string; calendar_sync_state: string }>
-      };
-      const today = new Date().toISOString().slice(0, 10);
-      const todayTasks = (taskData.tasks ?? []).filter(
-        (t) => t.status !== "complete" && t.due_date && t.due_date.slice(0, 10) <= today
-      );
-      const calEvents = (calData.tasks ?? []).filter(
-        (t) => t.calendar_sync_state === "synced" && t.due_date && t.due_date.slice(0, 10) === today
-      );
-      return {
-        date: today,
-        tasks_today: todayTasks.length,
-        overdue: todayTasks.filter((t) => t.due_date.slice(0, 10) < today).length,
-        calendar_events: calEvents.length,
-        tasks: todayTasks.map((t) => ({ title: t.title, due: t.due_date, priority: t.priority })),
-        events: calEvents.map((t) => ({ title: t.title, time: t.due_date })),
-      };
-    }
-
-    // ─── HA Entity State ───
-
-    case "getEntityState": {
-      const entityId = String(args.entity_id ?? "");
-      const res = await fetch(`${baseUrl}/api/ha/entity?entity_id=${encodeURIComponent(entityId)}`);
-      return await res.json().catch(() => ({ error: `Entity ${entityId} not found` }));
-    }
-
-    default: {
-      // Check if tool exists in registry but has no handler yet
-      const registryTool = getToolByName(toolName);
-      if (registryTool) {
-        return { error: `Tool '${toolName}' is registered but handler not yet implemented`, tool: registryTool.name };
-      }
-      return { error: `Unknown tool: ${toolName}` };
-    }
+function getCustomToolDescription(name: string): string {
+  const descriptions: Record<string, string> = {
+    completeTask: "Mark a task as complete by ID or title. Supports fuzzy title matching — search for the task first, then complete it.",
+    searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+    dailyBriefing: "Get a comprehensive daily briefing including today's tasks, habits due, and weekly review summary. Perfect for morning automation workflows.",
+    getEntityState: "Get the current state of a Home Assistant entity by entity_id. Useful for checking sensors, switches, or other HA devices.",
   }
+  return descriptions[name] ?? `Custom tool: ${name}`
+}
+
+function getCustomToolSchema(name: string): McpTool["inputSchema"] {
+  const schemas: Record<string, McpTool["inputSchema"]> = {
+    completeTask: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task ID to complete (preferred)" },
+        title: { type: "string", description: "Task title for fuzzy matching (fallback)" },
+      },
+    },
+    searchTasks: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query text" },
+        status: { type: "string", description: "Filter by status" },
+        priority: { type: "integer", description: "Filter by priority (1-5)" },
+        assigned_to: { type: "string", description: "Filter by assignee" },
+        include_completed: { type: "boolean", description: "Include completed tasks" },
+      },
+      required: ["query"],
+    },
+    dailyBriefing: {
+      type: "object",
+      properties: {},
+    },
+    getEntityState: {
+      type: "object",
+      properties: {
+        entity_id: { type: "string", description: "HA entity ID (e.g., sensor.temperature)" },
+      },
+      required: ["entity_id"],
+    },
+  }
+  return schemas[name] ?? { type: "object", properties: {} }
 }
