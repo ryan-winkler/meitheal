@@ -14,6 +14,7 @@ import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
+import JsonLd from "../components/seo/JsonLd.astro";
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
@@ -45,6 +46,8 @@ export interface Props {
   description?: string;
   hideSearchHub?: boolean;
   hideGlobalSearch?: boolean;
+  /** Optional JSON-LD schema for page-level structured data */
+  jsonLd?: Record<string, unknown>;
 }
 
 const {
@@ -52,6 +55,7 @@ const {
   description = "The cooperative task and life engine for your home.",
   hideSearchHub = false,
   hideGlobalSearch = false,
+  jsonLd,
 } = Astro.props;
 
 // OA-607: Sidebar task count badges (SSR)
@@ -391,6 +395,19 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <ClientRouter fallback="swap" />}
+    <JsonLd schema={jsonLd ?? {
+      "@type": "SoftwareApplication",
+      name: "Meitheal",
+      description,
+      applicationCategory: "ProductivityApplication",
+      operatingSystem: "Home Assistant",
+      url: Astro.url.href,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${Astro.url.origin}/api/search?q={query}`,
+        "query-input": "required name=query",
+      },
+    }} />
     <!-- Inject localization and settings maps into the window for client-scripts like toast.ts -->
     <script
       is:inline

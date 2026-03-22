@@ -1,0 +1,34 @@
+---
+/**
+ * JSON-LD Semantic Markup Component
+ *
+ * Injects a <script type="application/ld+json"> tag into the page head
+ * for browser-based AI agents and search engine structured data.
+ *
+ * Usage:
+ *   <JsonLd schema={{ "@type": "SoftwareApplication", "name": "Meitheal" }} />
+ *
+ * Security: Escapes </script> sequences to prevent XSS injection.
+ *
+ * @domain seo
+ * @bounded-context layout
+ */
+
+export interface Props {
+  /** JSON-LD schema object (must include @type) */
+  schema: Record<string, unknown>
+}
+
+const { schema } = Astro.props
+
+// Wrap with @context if not already present
+const fullSchema = {
+  "@context": "https://schema.org",
+  ...schema,
+}
+
+// XSS-safe: escape </script> in JSON output
+const json = JSON.stringify(fullSchema).replace(/<\/script>/gi, "<\\/script>")
+---
+
+<script type="application/ld+json" set:html={json} />
