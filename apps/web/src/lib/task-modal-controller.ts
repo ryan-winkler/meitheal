@@ -583,9 +583,63 @@
                 projectSelect.value = currentProjectId;
               }
             } catch {
-              if (currentProjectId) {
-                projectSelect.innerHTML = `<option value="">No project</option><option value="${currentProjectId}" selected>${currentProjectId}</option>`;
+              projectSelect.innerHTML = `<option value="${currentProjectId}">${currentProjectId}</option>`;
+            }
+
+            // Populate pillar dropdown
+            const pillarSelect = document.getElementById(
+              "td-pillar",
+            ) as HTMLSelectElement;
+            const currentPillarId = String(t.pillar_id ?? "");
+            try {
+              const pilRes = await fetch(
+                (window.__ingress_path || "") + "/api/pillars",
+                { signal: modalSignal },
+              );
+              if (pilRes.ok) {
+                const pilData = await pilRes.json();
+                const pillars = pilData.pillars ?? pilData ?? [];
+                pillarSelect.innerHTML = '<option value="">No pillar</option>';
+                (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
+                  const opt = document.createElement("option");
+                  opt.value = p.id;
+                  opt.textContent = `${p.icon ?? "🏛️"} ${p.name}`;
+                  pillarSelect.appendChild(opt);
+                });
+                pillarSelect.value = currentPillarId;
               }
+            } catch {
+              pillarSelect.innerHTML = `<option value="${currentPillarId}">${currentPillarId}</option>`;
+            }
+
+            // Populate principle dropdown
+            const principleSelect = document.getElementById(
+              "td-principle",
+            ) as HTMLSelectElement;
+            const currentPrincipleId = String(t.principle_id ?? "");
+            try {
+              if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
+                const prinRes = await fetch(
+                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`,
+                  { signal: modalSignal },
+                );
+                if (prinRes.ok) {
+                  const prinData = await prinRes.json();
+                  const principles = prinData.principles ?? prinData ?? [];
+                  principleSelect.innerHTML = '<option value="">No principle</option>';
+                  (principles as Array<{ id: string; description: string }>).forEach((p) => {
+                    const opt = document.createElement("option");
+                    opt.value = p.id;
+                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    principleSelect.appendChild(opt);
+                  });
+                  principleSelect.value = currentPrincipleId;
+                }
+              } else {
+                 principleSelect.innerHTML = '<option value="">No principle</option>';
+              }
+            } catch {
+              principleSelect.innerHTML = `<option value="${currentPrincipleId}">${currentPrincipleId}</option>`;
             }
             // Phase 20: Agile hierarchy type
             (
@@ -845,7 +899,16 @@
             // spurious save notifications
             // Hide skeleton, show loaded content
             if (tdSkeleton) tdSkeleton.style.display = "none";
-            if (tdLoaded) tdLoaded.classList.remove("hidden");
+            if (tdLoaded) {
+              tdLoaded.classList.remove("hidden");
+              const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
+              if (titleEl) {
+                titleEl.style.height = "auto";
+                setTimeout(() => {
+                  titleEl.style.height = titleEl.scrollHeight + "px";
+                }, 10);
+              }
+            }
             setTimeout(() => { _isPopulating = false }, 100);
           } catch (e) {
             if ((e as { name?: string })?.name === "AbortError") {
@@ -855,7 +918,17 @@
             _isPopulating = false;
             // Hide skeleton on error too so error message is visible
             if (tdSkeleton) tdSkeleton.style.display = "none";
-            if (tdLoaded) tdLoaded.classList.remove("hidden");
+            if (tdLoaded) {
+              tdLoaded.classList.remove("hidden");
+              const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
+              if (titleEl) {
+                titleEl.style.height = "auto";
+                // Short timeout to let browser layout engine catch up with visibility
+                setTimeout(() => {
+                  titleEl.style.height = titleEl.scrollHeight + "px";
+                }, 10);
+              }
+            }
             // Show error state in modal instead of closing — better UX for transient errors
             const titleEl = document.getElementById("td-title") as HTMLTextAreaElement | null;
             if (titleEl) {
@@ -1079,6 +1152,40 @@
         // Project change auto-save
         document.getElementById("td-project")?.addEventListener("change", (e) => {
           saveTD("project_id", (e.target as HTMLSelectElement).value || null);
+        });
+
+        // Pillar change auto-save & dynamic Principle update
+        document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
+          const pillarId = (e.target as HTMLSelectElement).value || null;
+          saveTD("pillar_id", pillarId);
+          // Auto-clear principle when pillar changes
+          saveTD("principle_id", null);
+          const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
+          if (principleSelect) {
+            principleSelect.innerHTML = '<option value="">No principle</option>';
+            if (pillarId) {
+              try {
+                const prinRes = await fetch(
+                  (window.__ingress_path || "") + `/api/pillars/${pillarId}/principles`,
+                );
+                if (prinRes.ok) {
+                  const prinData = await prinRes.json();
+                  const principles = prinData.principles || prinData || [];
+                  principles.forEach((p: any) => {
+                    const opt = document.createElement("option");
+                    opt.value = p.id;
+                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    principleSelect.appendChild(opt);
+                  });
+                }
+              } catch {}
+            }
+          }
+        });
+
+        // Principle change auto-save
+        document.getElementById("td-principle")?.addEventListener("change", (e) => {
+          saveTD("principle_id", (e.target as HTMLSelectElement).value || null);
         });
         // Assigned To: auto-save on change + toast feedback (UX2)
         document

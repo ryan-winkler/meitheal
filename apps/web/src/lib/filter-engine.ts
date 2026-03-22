@@ -18,6 +18,7 @@ export type FilterOperator =
 
 export interface FilterCondition {
   id: string
+  logic?: LogicOperator // How this condition joins with the accumulated result before it
   field: string
   operator: FilterOperator
   value: any
@@ -100,22 +101,35 @@ export function extractDataFromElement(el: HTMLElement): Record<string, any> {
  */
 export function evaluateFilterGroup(group: FilterGroup, data: Record<string, any>): boolean {
   if (!group.conditions || group.conditions.length === 0) {
-    return true // Empty group passes
+    return true
   }
 
-  const results = group.conditions.map(cond => {
-    if ("logic" in cond) {
-      return evaluateFilterGroup(cond as FilterGroup, data)
-    } else {
-      return evaluateCondition(cond as FilterCondition, data)
-    }
-  })
+  // Base result is the evaluation of the first condition/group
+  let result = evaluateNode(group.conditions[0]!, data)
 
-  if (group.logic === "AND") {
-    return results.every(res => res)
+  // Evaluate remaining nodes linearly left-to-right
+  for (let i = 1; i < group.conditions.length; i++) {
+    const node = group.conditions[i]!
+    const nodeResult = evaluateNode(node, data)
+    
+    // Use node's logic if present (for linear per-condition logic), else fallback to group logic
+    const op = ("logic" in node && node.logic) ? node.logic : group.logic
+
+    if (op === "AND") {
+      result = result && nodeResult
+    } else {
+      result = result || nodeResult
+    }
+  }
+
+  return result
+}
+
+function evaluateNode(node: FilterCondition | FilterGroup, data: Record<string, any>): boolean {
+  if ("conditions" in node) {
+    return evaluateFilterGroup(node, data)
   } else {
-    // OR
-    return results.some(res => res)
+    return evaluateCondition(node, data)
   }
 }
 

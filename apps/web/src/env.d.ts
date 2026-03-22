@@ -37,7 +37,7 @@ interface Window {
   /** Guard: filter state loaded */
   __filterStateLoaded?: boolean
   /** Filter visibility function exposed for cross-component use */
-  __isTaskVisible?: (el: HTMLElement) => boolean
+  __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
   /** Backlog mode toggle */
   __backlog_mode?: boolean
 

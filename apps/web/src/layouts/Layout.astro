@@ -9,7 +9,7 @@ import type { Locale } from "../lib/locale";
 import Sidebar from "../components/layout/Sidebar.astro";
 import SearchHub from "../components/layout/SearchHub.astro";
 import TopNavigation from "../components/layout/TopNavigation.astro";
-import StrategicEvaluator from "../components/tasks/StrategicEvaluator.astro";
+
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
@@ -572,7 +572,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         import "@lib/layout-body-controller";
       </script>
     </div>
-    <StrategicEvaluator />
+
     <NewTaskModal />
     <TaskDetailModal />
     <AskAssistModal />

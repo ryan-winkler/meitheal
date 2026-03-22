@@ -60,7 +60,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <label for="new-task-priority" class="form-label ml-1"
             >{t("tasks.priority_label", locale)}</label
           >
-          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl" id="new-task-priority">
+          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl min-h-[44px]" id="new-task-priority">
             <option value="1">Urgent (1)</option>
             <option value="2">High (2)</option>
             <option value="3" selected>Medium (3)</option>
@@ -71,7 +71,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <label for="new-task-status" class="form-label ml-1"
             >{t("tasks.status_label", locale)}</label
           >
-          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors" id="new-task-status" name="status">
+          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px]" id="new-task-status" name="status">
             <option value="pending">⏳ Pending</option>
           </select>
         </div>
@@ -93,6 +93,25 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         >
           Tip: Use @name in the title to auto-assign
         </p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div class="form-group">
+          <label for="new-task-pillar" class="form-label flex items-center gap-1.5" title="Pillars represent the permanent foundations of your life and strategic direction."><span title="Pillar">🏛️</span> Pillar</label>
+          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px]" id="new-task-pillar" name="pillar_id">
+            <option value="">No pillar</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="new-task-principle" class="form-label flex items-center gap-1.5" title="Principles are the qualitative standards guiding actions within a Pillar."><span title="Principle">⚖️</span> Principle</label>
+          <div class="relative flex items-center">
+            <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px] w-full" id="new-task-principle" name="principle_id">
+              <option value="">No principle</option>
+            </select>
+            <div id="new-task-principle-loader" class="absolute right-8 w-3 h-3 border-2 border-accent border-r-transparent rounded-full animate-spin hidden pointer-events-none"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Recurrence Picker (Phase 1: REC-02) -->
@@ -210,9 +229,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (e.target === overlay) closeNewTaskModal();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && overlay?.classList.contains("active")) {
-      e.preventDefault();
-      closeNewTaskModal();
+    if (overlay?.classList.contains("active")) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeNewTaskModal();
+      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        form?.requestSubmit();
+      }
     }
   });
 
@@ -322,6 +346,48 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     } catch {
       // offline — keep default options
     }
+  })();
+
+  // Pillars & Principles Loader
+  (async function loadPillarsAndPrinciples() {
+    const pillarSelect = document.getElementById("new-task-pillar") as HTMLSelectElement | null;
+    const principleSelect = document.getElementById("new-task-principle") as HTMLSelectElement | null;
+    if (!pillarSelect || !principleSelect) return;
+
+    try {
+      const pilRes = await fetch((window.__ingress_path || "") + "/api/pillars");
+      if (pilRes.ok) {
+        const pilData = await pilRes.json();
+        const pillars = pilData.pillars || pilData || [];
+        pillarSelect.innerHTML = '<option value="">No pillar</option>';
+        pillars.forEach((p: any) => {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = `${p.icon ?? "🏛️"} ${p.name}`;
+          pillarSelect.appendChild(opt);
+        });
+      }
+    } catch {}
+
+    pillarSelect.addEventListener("change", async (e) => {
+      const pillarId = (e.target as HTMLSelectElement).value;
+      principleSelect.innerHTML = '<option value="">No principle</option>';
+      if (!pillarId) return;
+
+      try {
+        const prinRes = await fetch((window.__ingress_path || "") + `/api/pillars/${pillarId}/principles`);
+        if (prinRes.ok) {
+          const prinData = await prinRes.json();
+          const principles = prinData.principles || prinData || [];
+          principles.forEach((p: any) => {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+            principleSelect.appendChild(opt);
+          });
+        }
+      } catch {}
+    });
   })();
 
   // Use event delegation on document.body to catch all create-task-btn clicks
@@ -443,6 +509,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         due_date: extractedDue,
         assigned_to: assignedTo || null,
         recurrence_rule: (document.getElementById("new-task-recurrence") as HTMLSelectElement)?.value || null,
+        pillar_id: (document.getElementById("new-task-pillar") as HTMLSelectElement)?.value || null,
+        principle_id: (document.getElementById("new-task-principle") as HTMLSelectElement)?.value || null,
         checklists: checklistItems.length > 0 ? JSON.stringify(checklistItems) : undefined,
       };
 

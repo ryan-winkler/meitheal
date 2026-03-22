@@ -175,53 +175,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </div>
   )}
 
-  {/* Status filter (table-style select) */}
-  {showStatusFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-status`} aria-label="Filter by status">
-      <option value="">{t("tasks.all_statuses", locale)}</option>
-      <option value="pending">{t("task_status.pending", locale)}</option>
-      <option value="active">{t("task_status.active", locale)}</option>
-      <option value="complete">{t("task_status.complete", locale)}</option>
-      <option value="overdue">{t("tasks.overdue", locale)}</option>
-    </select>
-  )}
-
-  {/* Priority filter */}
-  {showPriorityFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-priority`} aria-label="Filter by priority">
-      <option value="">{t("tasks.all_priorities", locale)}</option>
-      <option value="1">{t("priority.critical", locale)}</option>
-      <option value="2">{t("priority.high", locale)}</option>
-      <option value="3">{t("priority.medium", locale)}</option>
-      <option value="4">{t("priority.low", locale)}</option>
-      <option value="5">{t("priority.minimal", locale)}</option>
-    </select>
-  )}
-
-  {/* RICE filter */}
-  {showRICEFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-rice`} aria-label="Filter by RICE score">
-      <option value="">{t("tasks.all_rice", locale)}</option>
-      <option value="high">{t("tasks.rice_high", locale)}</option>
-      <option value="medium">{t("tasks.rice_medium", locale)}</option>
-      <option value="low">{t("tasks.rice_low", locale)}</option>
-    </select>
-  )}
-
-  {/* User filter select (table-style) */}
-  {showUserFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-user`} aria-label="Filter by assigned user">
-      <option value="">{t("tasks.all_users", locale)}</option>
-      <option value="__unassigned__">Unassigned</option>
-    </select>
-  )}
-
   {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
-  {!hideAreaSelect && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-area`} aria-label="Filter by area">
-      <option value="">All Areas</option>
-    </select>
-  )}
+  {/* Replaced by Unified Filter Builder */}
 
   {/* Group-by selector */}
   {showGroupBy && (
@@ -247,7 +202,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {/* Clear all button */}
   <button
     type="button"
-    class="filter-toolbar__clear"
+    class="filter-toolbar__clear-btn hidden"
     id={`${prefix}-clear-filters`}
     title="Clear all filters"
     aria-label="Clear all active filters"
@@ -255,48 +210,49 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     {t("tasks.clear_filters", locale)}
   </button>
 
-  {/* Advanced Filter Toggle */}
+  {/* Unified Filter Builder Toggle */}
   <button
     type="button"
-    class="filter-toolbar__advanced-toggle"
+    class="filter-pill filter-toolbar__advanced-toggle"
     id={`${prefix}-advanced-toggle`}
-    title="Advanced Filters"
-    aria-label="Toggle advanced filters"
+    title="Add custom filters"
+    aria-label="Toggle filter builder"
     aria-expanded="false"
   >
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sliders-horizontal"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
-    <span class="filter-pill__label font-medium">Advanced</span>
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-filter"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    <span class="filter-pill__label font-medium">Filter</span>
   </button>
 
-  {/* Advanced Filter Builder Dropdown (Hidden by default) */}
-  <div class="filter-toolbar__advanced-panel hidden absolute right-0 top-full mt-2 z-50 w-[380px] rounded-lg border border-border/40 bg-elevation-2/90 backdrop-blur-md shadow-glass-lg" id={`${prefix}-advanced-panel`} role="region" aria-label="Advanced Filter Builder">
-    <div class="advanced-panel__header px-3 py-2 border-b border-border/40 flex justify-between items-center bg-elevation-3/80 rounded-t-lg">
-      <h4 class="text-sm font-semibold text-text flex items-center gap-1.5">
+  {/* Unified Filter Builder Dropdown (Hidden by default) */}
+  <div class="filter-toolbar__advanced-panel hidden absolute left-0 top-full mt-2 z-50 w-[calc(100vw-32px)] sm:w-full max-w-[800px] rounded-lg border border-border bg-bg-card shadow-2xl" id={`${prefix}-advanced-panel`} role="region" aria-label="Custom Filter Builder">
+    <div class="advanced-panel__header px-4 py-3 border-b border-border flex justify-between items-center bg-bg-secondary rounded-t-lg">
+      <h4 class="text-sm font-semibold text-text-primary flex items-center gap-1.5">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-text-muted"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-        Advanced Filters
+        Filters
       </h4>
-      <button type="button" class="btn-icon p-1 rounded-md hover:bg-white/10 text-text-muted hover:text-text transition-colors" id={`${prefix}-advanced-close`} aria-label="Close advanced filters">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn-icon p-1 rounded-md hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors" id={`${prefix}-advanced-close`} aria-label="Close custom filters">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
     </div>
     
     <div class="advanced-panel__body p-3 max-h-[300px] overflow-y-auto custom-scrollbar" id={`${prefix}-advanced-conditions-container`}>
       <!-- Conditions rendered here by JS -->
       <div class="advanced-panel__empty-state text-sm text-text-muted italic py-4 text-center">
-        No advanced rules applied.<br/>Add a condition to start custom filtering.
+        No filters applied.<br/>Add a condition to filter tasks.
       </div>
     </div>
 
-    <div class="advanced-panel__footer px-3 py-2.5 bg-elevation-3/60 border-t border-border/40 flex justify-between items-center gap-2 rounded-b-lg">
+    <div class="advanced-panel__footer px-4 py-3 bg-bg-secondary border-t border-border flex justify-between items-center gap-2 rounded-b-lg">
       <div class="flex gap-2">
-        <button type="button" class="btn btn-outline text-xs px-2.5 py-1 min-h-[28px] border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 text-text" id={`${prefix}-advanced-add-condition`}>
+        <button type="button" class="btn btn-outline text-xs px-2.5 py-1 min-h-[28px] border-border hover:border-border-focus bg-bg-primary hover:bg-bg-hover text-text-primary" id={`${prefix}-advanced-add-condition`}>
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1 inline"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
           Condition
         </button>
       </div>
       <div class="flex gap-2">
-        <button type="button" class="btn text-xs px-2.5 py-1 min-h-[28px] text-text-muted hover:text-text hover:bg-white/5 bg-transparent border-transparent" id={`${prefix}-advanced-clear`}>
+        <button type="button" class="btn text-xs px-2.5 py-1 min-h-[28px] text-text-muted hover:text-text-primary hover:bg-bg-hover bg-transparent border-transparent transition-colors" id={`${prefix}-advanced-clear`}>
           Clear Rules
         </button>
         <button type="button" class="btn btn-primary text-xs px-3 py-1 min-h-[28px] shadow-sm" id={`${prefix}-advanced-apply`}>
@@ -306,16 +262,21 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </div>
   </div>
 
+  {/* Label filter bar — separate row below main toolbar */}
+  <div class="w-full mt-2 pt-2 border-t border-border/40">
+    <LabelFilterBar id={`${prefix}-label-filter`} />
+  </div>
 </div>
 
-{/* Label filter bar — separate row below main toolbar */}
-<LabelFilterBar id={`${prefix}-label-filter`} />
-
 <script>
+  // Expose global for inline views (kanban)
   import { isTaskVisible } from "../../lib/filter-state"
-
-  // Expose for Kanban's inline scripts which can't do module imports easily
-  ;window.__isTaskVisible = isTaskVisible
+  declare global {
+    interface Window {
+      __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
+    }
+  }
+  ;window.__isTaskVisible = isTaskVisible as any
 
   /**
    * FilterToolbar client-side controller
@@ -380,8 +341,32 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       row.className = "advanced-filter-row flex gap-2 items-center mb-2"
       row.dataset.type = "condition"
 
+      const hasRows = advContainer && advContainer.querySelectorAll(".advanced-filter-row").length > 0
+      
+      if (hasRows) {
+        const logicBtn = document.createElement("button")
+        logicBtn.type = "button"
+        logicBtn.className = "adv-logic text-[10px] font-bold px-2 py-1 min-h-[30px] bg-bg-primary border border-border hover:bg-bg-hover hover:border-border-focus text-accent rounded transition-colors break-keep whitespace-nowrap"
+        logicBtn.textContent = "AND"
+        logicBtn.dataset.logic = "AND"
+        logicBtn.addEventListener("click", () => {
+          const isAnd = logicBtn.dataset.logic === "AND"
+          logicBtn.dataset.logic = isAnd ? "OR" : "AND"
+          logicBtn.textContent = isAnd ? "OR" : "AND"
+          // Toggle styling for visual distinction
+          if (isAnd) {
+            logicBtn.classList.remove("text-accent")
+            logicBtn.classList.add("text-indigo-400")
+          } else {
+            logicBtn.classList.add("text-accent")
+            logicBtn.classList.remove("text-indigo-400")
+          }
+        })
+        row.appendChild(logicBtn)
+      }
+
       const fieldSel = document.createElement("select")
-      fieldSel.className = "adv-field form-select flex-1 text-xs py-1.5 min-h-[30px] bg-elevation-1 border-white/10"
+      fieldSel.className = "adv-field form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
       fields.forEach(f => {
         const opt = document.createElement("option")
         opt.value = f.id
@@ -390,7 +375,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
 
       const opSel = document.createElement("select")
-      opSel.className = "adv-op form-select flex-1 text-xs py-1.5 min-h-[30px] bg-elevation-1 border-white/10"
+      opSel.className = "adv-op form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
       operators.forEach(o => {
         const opt = document.createElement("option")
         opt.value = o.id
@@ -399,7 +384,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
 
       const valInput = document.createElement("input")
-      valInput.className = "adv-val form-input flex-1 text-xs py-1.5 min-h-[30px] px-2 bg-elevation-1 border-white/10"
+      valInput.className = "adv-val form-input flex-1 text-xs py-1.5 min-h-[30px] px-2 bg-bg-primary border border-border focus:border-border-focus rounded"
       valInput.type = "text"
       valInput.placeholder = "Value..."
 
@@ -418,6 +403,16 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`
       removeBtn.addEventListener("click", () => {
         row.remove()
+        
+        // Ensure first remaining row doesn't have a logic button
+        if (advContainer) {
+          const firstRow = advContainer.querySelector(".advanced-filter-row")
+          if (firstRow) {
+            const firstLogicBtn = firstRow.querySelector(".adv-logic")
+            if (firstLogicBtn) firstLogicBtn.remove()
+          }
+        }
+        
         checkEmptyState()
         updateClearVisibility()
       })
@@ -468,6 +463,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       updateClearVisibility()
     })
 
+    // Logic Toggle Actions (Removed from header)
+    // advClearBtn logic
     advClearBtn?.addEventListener("click", () => {
       if (!advContainer) return
       const rows = advContainer.querySelectorAll(".advanced-filter-row")
@@ -484,17 +481,17 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       if (rows.length === 0) {
         advancedFilterState = null
       } else {
-        // Build the root AND group from the flat list of conditions for now
-        // (Full recursive group UI can be added later, starting with a flat AND block)
-        const conditions = Array.from(rows).map(row => {
+        // Build the root filter group
+        const conditions = Array.from(rows).map((row, index) => {
+          const logic = (index === 0) ? "AND" : (row.querySelector<HTMLButtonElement>(".adv-logic")?.dataset.logic ?? "AND")
           const field = row.querySelector<HTMLSelectElement>(".adv-field")?.value ?? ""
           const operator = row.querySelector<HTMLSelectElement>(".adv-op")?.value ?? "equals"
           const value = row.querySelector<HTMLInputElement>(".adv-val")?.value ?? ""
-          return { id: Math.random().toString(36).substring(7), field, operator, value }
+          return { id: Math.random().toString(36).substring(7), logic, field, operator, value }
         })
         advancedFilterState = {
           id: "root",
-          logic: "AND",
+          logic: "AND", // Master logic is AND
           conditions
         }
       }
@@ -542,15 +539,29 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
       return {
         search: search?.value ?? "",
-        status: statusSel?.value ?? "",
-        priority: prioritySel?.value ?? "",
-        rice: riceSel?.value ?? "",
+        status: "",
+        priority: "",
+        rice: "",
         user: activeUser,
-        area: areaSel?.value ?? "",
+        area: "",
         groupBy: groupBySel?.value ?? "none",
         subGroupBy: subGroupBySel?.value ?? "none",
         types: activeTypes.length === typeToggles.length ? [] : activeTypes,
         advancedFilter: advancedFilterState,
+      }
+    }
+
+    function updateClearVisibility() {
+      if (!clearBtn) return
+      const hasAdvanced = advancedFilterState && advancedFilterState.conditions && advancedFilterState.conditions.length > 0
+      const hasSearch = search && search.value.trim().length > 0
+      const hasTypes = document.querySelectorAll(".filter-toolbar__type-btn:not(.active)").length > 0
+      const hasUser = toolbar.querySelector(".filter-toolbar__user-btn.active:not([data-user='all'])") !== null
+      
+      if (hasAdvanced || hasSearch || hasTypes || hasUser) {
+        clearBtn.classList.remove("hidden")
+      } else {
+        clearBtn.classList.add("hidden")
       }
     }
 

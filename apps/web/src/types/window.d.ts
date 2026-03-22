@@ -100,7 +100,7 @@ interface MeithealWindowExtensions {
 
   // === Cross-Component Functions ===
   /** Filter visibility check registered by FilterToolbar */
-  __isTaskVisible?: (task: Record<string, unknown>) => boolean;
+  __isTaskVisible?: (el: HTMLElement, state?: any) => boolean;
   /** Show toast notification */
   showToast?: (message: string, type?: string) => void;
   /** Start pomodoro timer for a task */
