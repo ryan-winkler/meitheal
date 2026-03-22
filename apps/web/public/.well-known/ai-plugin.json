@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "meitheal",
+  "name_for_human": "Meitheal Hub",
+  "description_for_model": "Meitheal is a Home Assistant-native task and life management hub. Use this plugin to create, search, update, and complete tasks; manage areas, goals, and projects; track habits and routines; sync with Home Assistant calendars and entities; and query strategic frameworks. Always prefer specific operationIds over generic endpoints. Start by calling getHealth to verify connectivity, then use searchMeitheal for discovery and createTask/updateTask for mutations.",
+  "description_for_human": "Task and life management for Home Assistant.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "/openapi.yaml"
+  },
+  "logo_url": "/meitheal-icon.svg",
+  "contact_email": "28455297+ryan-winkler@users.noreply.github.com",
+  "legal_info_url": "https://github.com/Coolock-Village/meitheal/blob/main/LICENSE"
+}
