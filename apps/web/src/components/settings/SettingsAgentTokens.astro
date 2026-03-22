@@ -68,6 +68,8 @@ const scopeGroups = [
           id="agent-token-name"
           placeholder="e.g., n8n-prod, nodered-home, claude-agent"
           maxlength="100"
+          autocomplete="off"
+          data-lpignore="true"
         />
       </div>
 
@@ -272,6 +274,7 @@ const scopeGroups = [
 
 <script>
   import { showToast } from "@lib/toast"
+  import { pageLifecycle } from "@lib/page-lifecycle"
 
   const listEl = document.getElementById("agent-tokens-list")!
   const emptyEl = document.getElementById("agent-tokens-empty")!
@@ -285,6 +288,7 @@ const scopeGroups = [
   const doneBtn = document.getElementById("agent-token-reveal-done")!
   const nameInput = document.getElementById("agent-token-name") as HTMLInputElement
   const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement
+  const ingressBase = (window as any).__ingress_path || ""
 
   interface TokenInfo {
     id: string
@@ -297,15 +301,31 @@ const scopeGroups = [
     revoked?: boolean
   }
 
+  // ── T7: Error state with retry ──
+  function showTokenError() {
+    listEl.innerHTML = `
+      <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+        Failed to load tokens.
+        <button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>
+      </div>
+    `
+    emptyEl.hidden = true
+    const retryBtn = document.getElementById("tokens-retry")
+    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadTokens())
+  }
+
   // ── Load tokens ──
   async function loadTokens() {
     try {
-      const res = await fetch("/api/agent-tokens")
-      if (!res.ok) return
+      const res = await fetch(ingressBase + "/api/agent-tokens")
+      if (!res.ok) {
+        showTokenError()
+        return
+      }
       const tokens: TokenInfo[] = await res.json()
       renderTokens(tokens)
     } catch {
-      // Silently fail — admin might not have access
+      showTokenError()
     }
   }
 
@@ -325,8 +345,9 @@ const scopeGroups = [
       row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
       row.dataset.tokenId = token.id
 
+      // T2: Escape scope strings to prevent XSS
       const scopeBadges = token.scopes
-        .map(s => `<span class="agent-tokens__scope-badge">${s}</span>`)
+        .map(s => `<span class="agent-tokens__scope-badge">${escapeHtml(s)}</span>`)
         .join("")
 
       const created = new Date(token.createdAt).toLocaleDateString()
@@ -355,17 +376,17 @@ const scopeGroups = [
       listEl.appendChild(row)
     }
 
-    // Bind action buttons
+    // T1: Bind action buttons with pageLifecycle for auto-cleanup
     listEl.querySelectorAll("[data-revoke]").forEach(btn => {
-      btn.addEventListener("click", () => revokeToken(btn.getAttribute("data-revoke")!))
+      pageLifecycle.on(btn, "click", () => revokeToken(btn.getAttribute("data-revoke")!))
     })
     listEl.querySelectorAll("[data-delete]").forEach(btn => {
-      btn.addEventListener("click", () => deleteToken(btn.getAttribute("data-delete")!))
+      pageLifecycle.on(btn, "click", () => deleteToken(btn.getAttribute("data-delete")!))
     })
   }
 
   // ── Create flow ──
-  createBtn.addEventListener("click", () => {
+  pageLifecycle.on(createBtn, "click", () => {
     formEl.hidden = false
     revealEl.hidden = true
     nameInput.value = ""
@@ -375,11 +396,11 @@ const scopeGroups = [
     expiresSelect.value = ""
   })
 
-  cancelBtn.addEventListener("click", () => {
+  pageLifecycle.on(cancelBtn, "click", () => {
     formEl.hidden = true
   })
 
-  saveBtn.addEventListener("click", async () => {
+  pageLifecycle.on(saveBtn, "click", async () => {
     const name = nameInput.value.trim()
     if (!name) {
       showToast("Token name is required", "error")
@@ -410,7 +431,7 @@ const scopeGroups = [
     saveBtn.textContent = "Creating…"
 
     try {
-      const res = await fetch("/api/agent-tokens", {
+      const res = await fetch(ingressBase + "/api/agent-tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, scopes, expiresAt }),
@@ -440,7 +461,7 @@ const scopeGroups = [
   })
 
   // ── Copy token ──
-  copyBtn.addEventListener("click", async () => {
+  pageLifecycle.on(copyBtn, "click", async () => {
     try {
       await navigator.clipboard.writeText(plaintextEl.textContent || "")
       showToast("Token copied to clipboard", "success")
@@ -451,7 +472,7 @@ const scopeGroups = [
     }
   })
 
-  doneBtn.addEventListener("click", () => {
+  pageLifecycle.on(doneBtn, "click", () => {
     revealEl.hidden = true
     plaintextEl.textContent = ""
   })
@@ -460,7 +481,7 @@ const scopeGroups = [
   async function revokeToken(id: string) {
     if (!confirm("Revoke this token? It will immediately stop working.")) return
     try {
-      const res = await fetch("/api/agent-tokens", {
+      const res = await fetch(ingressBase + "/api/agent-tokens", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -479,7 +500,7 @@ const scopeGroups = [
   async function deleteToken(id: string) {
     if (!confirm("Permanently delete this token? This cannot be undone.")) return
     try {
-      const res = await fetch("/api/agent-tokens", {
+      const res = await fetch(ingressBase + "/api/agent-tokens", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, hard: true }),
