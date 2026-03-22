@@ -4,6 +4,7 @@
         import { confirmDialog } from "@lib/confirm-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { pageLifecycle } from "@lib/page-lifecycle";
+        import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
 
         const log = createClientLogger("app", "layout");
 
@@ -69,6 +70,23 @@
           document.body.style.overflow = "";
           // Also remove editor-injected scroll lock class (e.g. from PWA banner)
           document.body.classList.remove("antigravity-scroll-lock");
+
+          // Phase 25 T10: Keyboard shortcut tooltip badges on hover
+          // Dynamically annotate known shortcut-bound elements
+          const shortcutMap: Record<string, string> = {
+            dashboard: "D", kanban: "K", table: "T",
+            today: "Y", upcoming: "U", calendar: "C",
+          }
+          for (const [page, key] of Object.entries(shortcutMap)) {
+            const link = document.querySelector<HTMLElement>(`[data-page="${page}"]`)
+            if (link && !link.dataset.shortcut) link.dataset.shortcut = key
+          }
+          // Search trigger
+          const searchBtn = document.querySelector<HTMLElement>("[data-search-trigger]")
+          if (searchBtn && !searchBtn.dataset.shortcut) searchBtn.dataset.shortcut = "/"
+
+          injectShortcutStyles();
+          attachShortcutTooltips(document.body);
 
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
           const rawPath = window.location.pathname;
