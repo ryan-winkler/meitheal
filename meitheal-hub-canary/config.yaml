@@ -1,5 +1,5 @@
 name: "Meitheal Canary"
-version: "944340c"
+version: "5c2a8d7"
 slug: "meitheal_canary"
 description: "⚠️ Bleeding-edge development build of Meitheal — may be unstable, break, or lose data. For testing and development only."
 url: "https://github.com/Coolock-Village/meitheal-ha-addon"
