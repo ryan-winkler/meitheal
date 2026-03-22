@@ -279,7 +279,7 @@
     background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 8%, transparent);
   }
 
-  /* Principles list */
+  /* Principles list container — children rendered dynamically, styled in is:global below */
   .pillar-detail-modal__principles {
     list-style: none;
     margin: 0;
@@ -289,99 +289,7 @@
     gap: 0.375rem;
   }
 
-  .pillar-detail-modal__principle-item {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.625rem;
-    background: var(--surface-raised, var(--surface));
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    transition: border-color 150ms ease;
-  }
-
-  .pillar-detail-modal__principle-item:hover {
-    border-color: color-mix(in srgb, var(--pillar-accent, var(--accent)) 50%, var(--border));
-  }
-
-  .pillar-detail-modal__principle-nn-badge {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    color: var(--pillar-accent, var(--accent));
-    font-size: 0.75rem;
-  }
-
-  .pillar-detail-modal__principle-text {
-    flex: 1;
-    font-size: 0.875rem;
-    line-height: 1.4;
-    color: var(--text);
-  }
-
-  .pillar-detail-modal__principle-item--nn .pillar-detail-modal__principle-text {
-    font-weight: 600;
-  }
-
-  .pillar-detail-modal__principle-actions {
-    display: flex;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .pillar-detail-modal__principle-item:hover .pillar-detail-modal__principle-actions {
-    opacity: 1;
-  }
-
-  .pillar-detail-modal__principle-action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: var(--radius-sm, 4px);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .pillar-detail-modal__principle-action-btn:hover {
-    color: var(--text);
-    background: var(--surface-raised, rgba(255,255,255,0.05));
-  }
-
-  .pillar-detail-modal__principle-action-btn--danger:hover {
-    color: var(--danger, #ef4444);
-  }
-
-  /* Non-Negotiable toggle */
-  .pillar-detail-modal__principle-nn-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: var(--radius-sm, 4px);
-    background: transparent;
-    color: var(--border);
-    cursor: pointer;
-    transition: all 150ms ease;
-    padding: 0;
-  }
-
-  .pillar-detail-modal__principle-nn-toggle:hover {
-    color: var(--pillar-accent, var(--accent));
-  }
-
-  .pillar-detail-modal__principle-nn-toggle--active {
-    color: var(--pillar-accent, var(--accent));
-  }
-
-  /* Add principle form */
+  /* Add principle form — static Astro-rendered elements, scoped is fine */
   .pillar-detail-modal__principle-form {
     margin-top: 0.75rem;
     padding: 0.75rem;
@@ -417,18 +325,6 @@
     justify-content: flex-end;
   }
 
-  /* Principles empty state */
-  .pillar-detail-modal__principles-empty {
-    margin: 0;
-    padding: 0.75rem;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    font-style: italic;
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-sm);
-    text-align: center;
-  }
-
   /* Goals */
   .pillar-detail-modal__goals {
     list-style: none;
@@ -446,5 +342,135 @@
     border-radius: var(--radius-sm);
     font-size: 0.875rem;
     color: var(--text);
+  }
+</style>
+
+<!-- Separate global styles for dynamically rendered content (innerHTML from controller) -->
+<!-- Scoped to #pillar-detail-overlay to avoid leaking into other components -->
+<style is:global>
+  /* ── Principle list items (rendered by pillar-detail-controller.ts) ── */
+  #pillar-detail-principles .pillar-detail-modal__principle-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    background: var(--surface-raised, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    transition: border-color 150ms ease;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item:hover {
+    border-color: color-mix(in srgb, var(--pillar-accent, var(--accent)) 50%, var(--border));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: var(--pillar-accent, var(--accent));
+    font-size: 0.75rem;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-text {
+    flex: 1;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item--nn .pillar-detail-modal__principle-text {
+    font-weight: 600;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    flex-shrink: 0;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item:hover .pillar-detail-modal__principle-actions {
+    opacity: 1;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn:hover {
+    color: var(--text);
+    background: var(--surface-raised, rgba(255,255,255,0.05));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn--danger:hover {
+    color: var(--danger, #ef4444);
+  }
+
+  /* ── Non-Negotiable toggle ── */
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--border);
+    cursor: pointer;
+    transition: all 150ms ease;
+    padding: 0;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle:hover {
+    color: var(--pillar-accent, var(--accent));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle--active {
+    color: var(--pillar-accent, var(--accent));
+  }
+
+  /* ── Empty state ── */
+  #pillar-detail-principles .pillar-detail-modal__principles-empty {
+    margin: 0;
+    padding: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm, 6px);
+    text-align: center;
+    list-style: none;
+  }
+
+  /* ── Weight dots (rendered by renderWeight()) ── */
+  #pillar-detail-weight .pillar-detail-modal__weight-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+
+  #pillar-detail-weight .pillar-detail-modal__weight-dot--filled {
+    background: var(--pillar-accent, var(--accent));
+  }
+
+  #pillar-detail-weight .pillar-detail-modal__weight-label {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
   }
 </style>
