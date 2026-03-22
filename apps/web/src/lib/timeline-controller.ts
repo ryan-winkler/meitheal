@@ -1,4 +1,5 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
+import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -43,6 +44,8 @@ interface TimelineTask {
   effort_minutes: number | null
   labels: string | null
   area_id: string | null
+  project_id: string | null
+  assigned_to: string | null
   is_overdue: boolean
 }
 
@@ -80,6 +83,15 @@ interface ZoomConfig {
   upperFormat: (d: Date) => string
 }
 
+// ── Area/Project name lookups (populated from SSR data) ──────────────────
+let areaLookup: Record<string, string> = {}
+let projectLookup: Record<string, string> = {}
+
+// ── Unscheduled section collapse state ─────────────────────────────────────
+const UNSCHEDULED_COLLAPSED_KEY = "meitheal-gantt-unscheduled-collapsed"
+let unscheduledCollapsed = false
+try { unscheduledCollapsed = localStorage.getItem(UNSCHEDULED_COLLAPSED_KEY) === "true" } catch { /* ignore */ }
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const ROW_HEIGHT = 44
@@ -87,19 +99,21 @@ const BAR_HEIGHT = 28
 const BAR_Y_PAD = (ROW_HEIGHT - BAR_HEIGHT) / 2
 const HEADER_HEIGHT = 56
 const BAR_RADIUS = 6
-const SIDEBAR_WIDTH = 320
+const BASE_SIDEBAR_WIDTH = 200
+const FIELD_COL_WIDTH = 80
 const ZOOM_KEY = "meitheal-timeline-zoom"
-const DUEDATE_VIS_KEY = "meitheal-gantt-show-duedate"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
 const HANDLE_WIDTH = 8
 const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
 const ZOOM_ORDER: ZoomLevel[] = ["Day", "Week", "Month"]
 
-let showDueDateCol = true
-try {
-  const stored = typeof window !== "undefined" ? localStorage.getItem(DUEDATE_VIS_KEY) : null
-  if (stored === "false") showDueDateCol = false
-} catch { /* ignore */ }
+/** Currently visible field IDs — drives sidebar column rendering */
+let visibleFields: Set<string> = loadVisibleFields("timeline", TASK_FIELD_DEFS)
+
+/** Compute sidebar width from visible field count */
+function sidebarWidth(): number {
+  return BASE_SIDEBAR_WIDTH + visibleFields.size * FIELD_COL_WIDTH
+}
 
 let showSidebar = true
 try {
@@ -624,10 +638,27 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
     for (const bar of bars) {
       let val = "Uncategorized"
       if (groupKey === "status") val = bar.original.status || "Uncategorized"
-      else if (groupKey === "priority") val = `Priority ${bar.priority}`
-      else if (groupKey === "project" || groupKey === "area") val = bar.original.area_id || "Uncategorized"
-      else if (groupKey === "assignee") val = "Unassigned"
-      else if (groupKey === "type") val = bar.original.task_kind || bar.original.task_type || "Uncategorized"
+      else if (groupKey === "priority") {
+        const labels = ["None", "Critical", "High", "Medium", "Low"]
+        val = labels[bar.priority] || `Priority ${bar.priority}`
+      }
+      else if (groupKey === "project") {
+        const rawId = bar.original.project_id || ""
+        val = rawId ? (projectLookup[rawId] || "Unknown Project") : "No Project"
+      }
+      else if (groupKey === "area") {
+        const rawId = bar.original.area_id || "default"
+        val = areaLookup[rawId] || "Unknown Area"
+      }
+      else if (groupKey === "assignee") val = bar.original.assigned_to || "Unassigned"
+      else if (groupKey === "type") {
+        const kind = bar.original.task_kind || bar.original.task_type || "standard_action"
+        const kindLabels: Record<string, string> = {
+          standard_action: "Task", routine: "Routine", shopping_item: "Shopping",
+          calendar_event: "Event",
+        }
+        val = kindLabels[kind] || kind
+      }
       
       if (!grouped.has(val)) grouped.set(val, [])
       grouped.get(val)!.push(bar)
@@ -730,12 +761,20 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
 function exportTimelinePNG(outerContainer: HTMLElement) {
   const svg = outerContainer.querySelector<SVGSVGElement>(".gantt-native")
   const sidebar = outerContainer.querySelector<HTMLElement>(".gantt-sidebar")
-  if (!svg) { showToast("Nothing to export", "error"); return }
+  const scrollWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
+  const headerOverlay = outerContainer.querySelector<HTMLElement>(".gantt-header-overlay")
+  const headerSvg = outerContainer.querySelector<SVGSVGElement>(".gantt-header-svg")
+  if (!svg || !scrollWrapper) { showToast("Nothing to export", "error"); return }
 
-  const svgRect = svg.getBoundingClientRect()
-  const sidebarW = sidebar ? SIDEBAR_WIDTH : 0
-  const totalW = sidebarW + svgRect.width
-  const totalH = svgRect.height
+  // Use visible viewport dimensions, not full SVG size
+  const visibleW = scrollWrapper.clientWidth
+  const visibleH = scrollWrapper.clientHeight
+  const scrollLeft = scrollWrapper.scrollLeft
+  const scrollTop = scrollWrapper.scrollTop
+  const sidebarW = sidebar && sidebar.style.display !== "none" ? sidebarWidth() : 0
+  const headerH = headerOverlay ? headerOverlay.clientHeight : 0
+  const totalW = sidebarW + visibleW
+  const totalH = headerH + visibleH
 
   // C4: Guard against 0-size export (e.g. display:none)
   if (totalW < 1 || totalH < 1) { showToast("Chart not visible — cannot export", "error"); return }
@@ -753,39 +792,73 @@ function exportTimelinePNG(outerContainer: HTMLElement) {
   ctx.fillStyle = bgColor
   ctx.fillRect(0, 0, totalW, totalH)
 
-  // Draw sidebar text
-  if (sidebar) {
+  // Draw sidebar text (visible rows only)
+  if (sidebar && sidebar.style.display !== "none") {
     const rows = sidebar.querySelectorAll<HTMLElement>(".gantt-sidebar-row")
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text-primary").trim() || "#e0e0e0"
     ctx.font = "12px sans-serif"
     rows.forEach((row, i) => {
+      const rowY = headerH + i * ROW_HEIGHT - scrollTop
+      if (rowY + ROW_HEIGHT < 0 || rowY > totalH) return // skip offscreen rows
       const name = row.textContent?.trim() ?? ""
-      ctx.fillText(name, 12, HEADER_HEIGHT + i * ROW_HEIGHT + ROW_HEIGHT / 2 + 4, sidebarW - 16)
+      ctx.fillText(name, 12, rowY + ROW_HEIGHT / 2 + 4, sidebarW - 16)
     })
   }
 
-  // Serialize SVG and draw
+  // Clone SVG for export with clipped viewBox matching visible area
+  const svgClone = svg.cloneNode(true) as SVGSVGElement
+  svgClone.setAttribute("viewBox", `${scrollLeft} ${scrollTop} ${visibleW} ${visibleH}`)
+  svgClone.setAttribute("width", String(visibleW))
+  svgClone.setAttribute("height", String(visibleH))
+
+  // If we have a frozen header, draw it first
   const serializer = new XMLSerializer()
-  const svgStr = serializer.serializeToString(svg)
+  let drawChain = Promise.resolve()
+
+  if (headerSvg) {
+    const hClone = headerSvg.cloneNode(true) as SVGSVGElement
+    // Clip header to visible horizontal range
+    hClone.setAttribute("viewBox", `${scrollLeft} 0 ${visibleW} ${headerH}`)
+    hClone.setAttribute("width", String(visibleW))
+    hClone.setAttribute("height", String(headerH))
+    const hStr = serializer.serializeToString(hClone)
+    const hBlob = new Blob([hStr], { type: "image/svg+xml;charset=utf-8" })
+    const hUrl = URL.createObjectURL(hBlob)
+    drawChain = drawChain.then(() => new Promise<void>((resolve) => {
+      const hImg = new Image()
+      hImg.onload = () => {
+        ctx.drawImage(hImg, sidebarW, 0, visibleW, headerH)
+        URL.revokeObjectURL(hUrl)
+        resolve()
+      }
+      hImg.onerror = () => { URL.revokeObjectURL(hUrl); resolve() }
+      hImg.src = hUrl
+    }))
+  }
+
+  // Draw the body SVG clipped to visible area
+  const svgStr = serializer.serializeToString(svgClone)
   const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" })
   const url = URL.createObjectURL(blob)
-  const img = new Image()
-  img.onload = () => {
-    ctx.drawImage(img, sidebarW, 0, svgRect.width, svgRect.height)
-    URL.revokeObjectURL(url)
-    // Download
-    const a = document.createElement("a")
-    const now = new Date()
-    a.download = `meitheal-timeline-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.png`
-    a.href = canvas.toDataURL("image/png")
-    a.click()
-    showToast("Timeline exported")
-  }
-  img.onerror = () => {
-    URL.revokeObjectURL(url)
-    showToast("Export failed", "error")
-  }
-  img.src = url
+  drawChain.then(() => {
+    const img = new Image()
+    img.onload = () => {
+      ctx.drawImage(img, sidebarW, headerH, visibleW, visibleH)
+      URL.revokeObjectURL(url)
+      // Download
+      const a = document.createElement("a")
+      const now = new Date()
+      a.download = `meitheal-timeline-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.png`
+      a.href = canvas.toDataURL("image/png")
+      a.click()
+      showToast("Timeline exported")
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      showToast("Export failed", "error")
+    }
+    img.src = url
+  })
 }
 
 // ── Renderer ───────────────────────────────────────────────────────────────
@@ -827,7 +900,8 @@ function renderGantt(
   // Build hierarchy for sidebar (parent→child grouping with indentation or groupby)
   const hBars = buildHierarchy(bars, groupByKey)
 
-  const totalRowCount = hBars.length + (undatedTasks.length > 0 ? 1 + undatedTasks.length : 0) // +1 for divider
+  const unscheduledRowCount = undatedTasks.length > 0 ? 1 + (unscheduledCollapsed ? 0 : undatedTasks.length) : 0
+  const totalRowCount = hBars.length + unscheduledRowCount
   const totalHeight = HEADER_HEIGHT + totalRowCount * ROW_HEIGHT + 20
 
   // Clear previous render
@@ -837,22 +911,22 @@ function renderGantt(
 
   const layout = document.createElement("div")
   layout.className = "gantt-layout"
-  layout.style.cssText = `display:flex;height:100%;position:relative;`
+  layout.style.cssText = `display:flex;flex:1;min-height:0;position:relative;`
 
   // Read column visibility from module-level state
-  // (showDueDateCol, showSidebar are at module scope)
+  // (visibleFields, showSidebar are at module scope)
 
   // Sidebar (fixed left) — hidden via display:none when toggle is off
   const sidebar = document.createElement("div")
   sidebar.className = "gantt-sidebar"
   sidebar.style.cssText = `
-    flex:0 0 auto;width:${showDueDateCol ? 320 : 200}px;
+    flex:0 0 auto;width:${sidebarWidth()}px;
     background:var(--bg-card);border-right:1px solid var(--border);
-    overflow:hidden;z-index:10;position:relative;
+    overflow:hidden;z-index:10;position:relative;display:flex;flex-direction:column;min-height:0;
     ${showSidebar ? "" : "display:none;"}
   `
 
-  // Sidebar header — multi-column (Name + Due Date + add-column)
+  // Sidebar header — multi-column (Name + dynamic field cols + add-column)
   const sidebarHeader = document.createElement("div")
   sidebarHeader.className = "gantt-sidebar-header"
   sidebarHeader.style.cssText = `
@@ -860,6 +934,7 @@ function renderGantt(
     padding:0 8px;border-bottom:1px solid var(--border);
     font-size:11px;font-weight:600;color:var(--text-muted);
     text-transform:uppercase;letter-spacing:0.04em;
+    position:sticky;top:0;z-index:5;background:var(--bg-card);
   `
 
   const nameCol = document.createElement("span")
@@ -867,102 +942,45 @@ function renderGantt(
   nameCol.textContent = "Task"
   sidebarHeader.appendChild(nameCol)
 
-  // Due Date column header with hide-column dropdown
-  if (showDueDateCol) {
-    const dueDateWrap = document.createElement("span")
-    dueDateWrap.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;display:flex;align-items:center;justify-content:flex-end;gap:2px;position:relative;"
+  // Dynamic field column headers based on visibleFields
+  for (const fieldId of visibleFields) {
+    const fieldDef = TASK_FIELD_DEFS.find(f => f.id === fieldId)
+    if (!fieldDef) continue
 
-    const dueDateLabel = document.createElement("span")
-    dueDateLabel.textContent = "Due Date"
-    dueDateLabel.style.cssText = "font-size:11px;"
-    dueDateWrap.appendChild(dueDateLabel)
+    const colWrap = document.createElement("span")
+    colWrap.style.cssText = `flex:0 0 ${FIELD_COL_WIDTH}px;text-align:right;padding-right:4px;display:flex;align-items:center;justify-content:flex-end;gap:2px;position:relative;`
 
-    // Dropdown arrow for column actions
-    const colMenuBtn = document.createElement("button")
-    colMenuBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0 2px;font-size:8px;opacity:0;transition:opacity 0.15s;"
-    colMenuBtn.textContent = "▼"
-    colMenuBtn.title = "Column options"
-    dueDateWrap.appendChild(colMenuBtn)
+    const colLabel = document.createElement("span")
+    colLabel.style.cssText = "font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+    colLabel.textContent = fieldDef.label
+    colLabel.title = fieldDef.label
+    colWrap.appendChild(colLabel)
 
-    // Show arrow on hover
-    dueDateWrap.addEventListener("mouseenter", () => { colMenuBtn.style.opacity = "1" })
-    dueDateWrap.addEventListener("mouseleave", () => { colMenuBtn.style.opacity = "0" })
-
-    colMenuBtn.addEventListener("click", (e) => {
-      e.stopPropagation()
-      createDropdown(dueDateWrap, "right", (menu, closeMenu) => {
-        const hideItem = document.createElement("button")
-        hideItem.style.cssText = "display:block;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:var(--text-primary);cursor:pointer;font-size:12px;font-family:inherit;"
-        hideItem.textContent = "Hide column"
-        hideItem.addEventListener("click", (ev) => {
-          ev.stopPropagation()
-          showDueDateCol = false
-          try { localStorage.setItem(DUEDATE_VIS_KEY, "false") } catch { /* ignore */ }
-          closeMenu()
-          renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-        })
-        menu.appendChild(hideItem)
-      })
-    })
-    sidebarHeader.appendChild(dueDateWrap)
+    sidebarHeader.appendChild(colWrap)
   }
 
-  // "+" button to add/show columns
+  // "+" button to open FieldPickerPanel
   const addColBtn = document.createElement("button")
   addColBtn.style.cssText = "position:relative;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
   addColBtn.textContent = "+"
   addColBtn.title = "Manage columns"
+
+  // Create FieldPickerPanel instance for this render
+  const fieldPicker = new FieldPickerPanel({
+    viewId: "timeline",
+    fields: TASK_FIELD_DEFS,
+    triggerEl: addColBtn,
+    onChanged: (ids) => {
+      visibleFields = new Set(ids)
+      try { localStorage.setItem("gantt-visible-fields", JSON.stringify(Array.from(visibleFields))) } catch { /* ignore */ }
+      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+    },
+    signal,
+  })
+
   addColBtn.addEventListener("click", (e) => {
     e.stopPropagation()
-    
-    createDropdown(addColBtn, "right", (menu, closeMenu) => {
-      // Due Date Toggle
-      const dueDateItem = document.createElement("button")
-      dueDateItem.style.cssText = "display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:var(--text-primary);cursor:pointer;font-size:12px;font-family:inherit;"
-      
-      // Static SVG checkmark to avoid innerHTML XSS context
-      const svgNS = "http://www.w3.org/2000/svg"
-      const svgNode = document.createElementNS(svgNS, "svg")
-      svgNode.setAttribute("width", "14")
-      svgNode.setAttribute("height", "14")
-      svgNode.setAttribute("viewBox", "0 0 24 24")
-      svgNode.setAttribute("fill", "none")
-      svgNode.setAttribute("stroke-width", "2")
-      
-      if (showDueDateCol) {
-        svgNode.setAttribute("stroke", "currentColor")
-        svgNode.setAttribute("stroke-linecap", "round")
-        svgNode.setAttribute("stroke-linejoin", "round")
-        const polyline = document.createElementNS(svgNS, "polyline")
-        polyline.setAttribute("points", "20 6 9 17 4 12")
-        svgNode.appendChild(polyline)
-      } else {
-        svgNode.setAttribute("stroke", "transparent")
-        const rect = document.createElementNS(svgNS, "rect")
-        rect.setAttribute("width", "18")
-        rect.setAttribute("height", "18")
-        rect.setAttribute("x", "3")
-        rect.setAttribute("y", "3")
-        rect.setAttribute("rx", "2")
-        svgNode.appendChild(rect)
-      }
-      
-      const labelText = document.createElement("span")
-      labelText.textContent = "Due Date"
-      
-      dueDateItem.appendChild(svgNode)
-      dueDateItem.appendChild(labelText)
-      
-      dueDateItem.addEventListener("click", (ev) => {
-        ev.stopPropagation()
-        showDueDateCol = !showDueDateCol
-        try { localStorage.setItem(DUEDATE_VIS_KEY, String(showDueDateCol)) } catch { /* ignore */ }
-        closeMenu()
-        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-      })
-      
-      menu.appendChild(dueDateItem)
-    })
+    fieldPicker.toggle()
   })
   sidebarHeader.appendChild(addColBtn)
   sidebar.appendChild(sidebarHeader)
@@ -970,7 +988,7 @@ function renderGantt(
   // Sidebar rows
   const sidebarRows = document.createElement("div")
   sidebarRows.className = "gantt-sidebar-rows"
-  sidebarRows.style.cssText = "overflow:hidden;"
+  sidebarRows.style.cssText = "flex:1;overflow:hidden;min-height:0;"
 
   for (let i = 0; i < hBars.length; i++) {
     const bar = hBars[i]!
@@ -990,6 +1008,9 @@ function renderGantt(
     `
 
     if (bar.isGroupHeader) {
+      row.setAttribute("role", "heading")
+      row.setAttribute("aria-label", `Group: ${bar.name}`)
+      row.removeAttribute("tabindex")
       row.style.background = "var(--bg-card)"
       row.style.fontWeight = "bold"
       row.style.color = "var(--text-primary)"
@@ -1022,6 +1043,13 @@ function renderGantt(
       row.appendChild(name)
       
       sidebarRows.appendChild(row)
+
+      // Group header row click → toggle collapse (not task detail)
+      row.addEventListener("click", () => {
+        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
+        else collapsedParents.add(bar.id)
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+      }, { signal })
       continue
     }
 
@@ -1085,37 +1113,91 @@ function renderGantt(
     name.title = bar.name
     row.appendChild(name)
 
-    // Due date column — InlineDatePicker for inline editing
-    if (showDueDateCol) {
-      const dueCell = document.createElement("span")
-      dueCell.style.cssText = `
-        flex:0 0 80px;text-align:right;padding-right:4px;
-        font-size:11px;white-space:nowrap;
+    // Dynamic field cells based on visibleFields
+    for (const fieldId of visibleFields) {
+      const cell = document.createElement("span")
+      cell.style.cssText = `
+        flex:0 0 ${FIELD_COL_WIDTH}px;text-align:right;padding-right:4px;
+        font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
       `
 
-      const dueStr = bar.original.due_date
-      const dueDate = dueStr ? parseDate(dueStr) : null
+      if (fieldId === "due_date") {
+        // Due date — InlineDatePicker for inline editing
+        const dueStr = bar.original.due_date
+        const dueDate = dueStr ? parseDate(dueStr) : null
+        new InlineDatePicker(cell, {
+          value: dueDate,
+          onChange: async (date) => {
+            const iso = toISODate(date)
+            const ok = await patchTask(bar.id, { due_date: iso })
+            if (ok) {
+              bar.original.due_date = iso
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+            }
+          },
+          onClear: async () => {
+            const ok = await patchTask(bar.id, { due_date: null })
+            if (ok) {
+              bar.original.due_date = undefined!
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+            }
+          },
+          signal,
+        })
+      } else if (fieldId === "start_date") {
+        // Start date — InlineDatePicker
+        const startStr = bar.original.start_date
+        const startDt = startStr ? parseDate(startStr) : null
+        new InlineDatePicker(cell, {
+          value: startDt,
+          onChange: async (date) => {
+            const iso = toISODate(date)
+            const ok = await patchTask(bar.id, { start_date: iso })
+            if (ok) {
+              bar.original.start_date = iso
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+            }
+          },
+          onClear: async () => {
+            const ok = await patchTask(bar.id, { start_date: null })
+            if (ok) {
+              bar.original.start_date = undefined!
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+            }
+          },
+          signal,
+        })
+      } else if (fieldId === "priority") {
+        const pLabel = PRIORITY_LABELS[bar.priority] || `P${bar.priority}`
+        const pColor = PRIORITY_COLOURS[bar.priority] || "var(--text-muted)"
+        cell.style.color = pColor
+        cell.textContent = pLabel
+        cell.title = `Priority: ${pLabel}`
+      } else if (fieldId === "status") {
+        cell.textContent = statusLabel(bar.original.status)
+        cell.style.color = bar.isComplete ? "var(--accent-success, #10b981)" : "var(--text-muted)"
+      } else if (fieldId === "ticket_number") {
+        cell.textContent = bar.original.ticket_number ? `MTH-${bar.original.ticket_number}` : "—"
+        cell.style.color = "var(--text-muted)"
+      } else if (fieldId === "progress") {
+        cell.textContent = `${bar.progress}%`
+        cell.style.color = bar.progress >= 100 ? "var(--accent-success, #10b981)" : "var(--text-muted)"
+      } else if (fieldId === "effort_minutes") {
+        const mins = bar.original.effort_minutes
+        if (mins && mins > 0) {
+          const h = Math.floor(mins / 60)
+          const m = mins % 60
+          cell.textContent = h > 0 ? `${h}h ${m}m` : `${m}m`
+        } else {
+          cell.textContent = "—"
+        }
+        cell.style.color = "var(--text-muted)"
+      } else if (fieldId === "task_kind") {
+        cell.textContent = bar.original.task_kind || bar.original.task_type || "—"
+        cell.style.color = "var(--text-muted)"
+      }
 
-      new InlineDatePicker(dueCell, {
-        value: dueDate,
-        onChange: async (date) => {
-          const iso = toISODate(date)
-          const ok = await patchTask(bar.id, { due_date: iso })
-          if (ok) {
-            bar.original.due_date = iso
-            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
-          }
-        },
-        onClear: async () => {
-          const ok = await patchTask(bar.id, { due_date: null })
-          if (ok) {
-            bar.original.due_date = undefined!
-            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
-          }
-        },
-        signal,
-      })
-      row.appendChild(dueCell)
+      row.appendChild(cell)
     }
 
     // M2: Row cross-highlighting — sidebar → chart
@@ -1157,7 +1239,7 @@ function renderGantt(
 
   // ── §5: Unscheduled tasks section ──────────────────────────────────
   if (undatedTasks.length > 0) {
-    // Divider
+    // Collapsible divider
     const divider = document.createElement("div")
     divider.className = "gantt-unscheduled-divider"
     divider.style.cssText = `
@@ -1166,11 +1248,26 @@ function renderGantt(
       font-size:10px;font-weight:600;color:var(--text-muted);
       text-transform:uppercase;letter-spacing:0.06em;
       background:var(--bg-secondary, rgba(255,255,255,0.03));
+      cursor:pointer;gap:4px;user-select:none;
     `
-    divider.textContent = `Unscheduled (${undatedTasks.length})`
+    const chevron = document.createElement("span")
+    chevron.style.cssText = `transition:transform 0.15s ease;display:inline-block;font-size:8px;`
+    chevron.textContent = "▸"
+    chevron.style.transform = unscheduledCollapsed ? "rotate(0deg)" : "rotate(90deg)"
+    divider.appendChild(chevron)
+
+    const divLabel = document.createElement("span")
+    divLabel.textContent = `Unscheduled (${undatedTasks.length})`
+    divider.appendChild(divLabel)
+
+    divider.addEventListener("click", () => {
+      unscheduledCollapsed = !unscheduledCollapsed
+      try { localStorage.setItem(UNSCHEDULED_COLLAPSED_KEY, String(unscheduledCollapsed)) } catch { /* ignore */ }
+      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+    }, { signal })
     sidebarRows.appendChild(divider)
 
-    for (let ui = 0; ui < undatedTasks.length; ui++) {
+    for (let ui = 0; ui < (unscheduledCollapsed ? 0 : undatedTasks.length); ui++) {
       const ut = undatedTasks[ui]!
       const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
       const utName = `${ticketPrefix}${ut.title}`
@@ -1204,7 +1301,7 @@ function renderGantt(
       utRow.appendChild(name)
 
       // Due date column — InlineDatePicker for setting date on unscheduled task
-      if (showDueDateCol) {
+      if (visibleFields.has("due_date")) {
         const dueCell = document.createElement("span")
         dueCell.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;font-size:11px;white-space:nowrap;"
 
@@ -1846,15 +1943,60 @@ function renderGantt(
   }
 
   scrollWrapper.appendChild(svg)
-  layout.appendChild(scrollWrapper)
+
+  // ── Split chart: frozen header + scrollable body ─────────────────────
+  // Create a chart column wrapper (header stays fixed, body scrolls)
+  const chartColumn = document.createElement("div")
+  chartColumn.className = "gantt-chart-column"
+  chartColumn.style.cssText = "flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;"
+
+  // Frozen header overlay — clips the top HEADER_HEIGHT of SVG
+  const headerOverlay = document.createElement("div")
+  headerOverlay.className = "gantt-header-overlay"
+  headerOverlay.style.cssText = `
+    flex:0 0 ${HEADER_HEIGHT}px;overflow:hidden;position:relative;
+    border-bottom:1px solid var(--border);background:var(--bg-card);z-index:3;
+  `
+
+  // Clone header-relevant elements into a separate SVG for the frozen header
+  const headerSvg = svgEl("svg", {
+    class: "gantt-header-svg",
+    width: totalWidth,
+    height: HEADER_HEIGHT,
+  })
+  headerSvg.style.cssText = `min-width:${totalWidth}px;display:block;`
+  // Copy header group and today marker header portion
+  const headerClone = svg.querySelector(".gantt-header")
+  if (headerClone) {
+    headerSvg.appendChild(headerClone.cloneNode(true))
+    // Remove original header from scrolling SVG to avoid duplicate
+    headerClone.remove()
+  }
+  // Also copy today marker diamond/label into header
+  const todayGroup = svg.querySelector(".gantt-today")
+  if (todayGroup) {
+    const todayHeaderClone = todayGroup.cloneNode(true) as SVGGElement
+    // Clip to header area (remove the long line, keep diamond + label)
+    headerSvg.appendChild(todayHeaderClone)
+  }
+  headerOverlay.appendChild(headerSvg)
+
+  // Offset body SVG so bars start at top of scroll area (header removed)
+  svg.style.marginTop = `-${HEADER_HEIGHT}px`
+
+  chartColumn.appendChild(headerOverlay)
+  chartColumn.appendChild(scrollWrapper)
+  layout.appendChild(chartColumn)
   outerContainer.appendChild(layout)
 
-  // ── Sync sidebar scroll with chart ───────────────────────────────────
+  // ── Sync sidebar + header scroll with chart ─────────────────────────
 
   // P8: Debounce localStorage writes to avoid performance hit during fast scroll
   let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null
   scrollWrapper.addEventListener("scroll", () => {
     sidebarRows.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
+    // Sync frozen header horizontal scroll with body
+    headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
     // T9: Persist scroll position (debounced)
     if (scrollSaveTimer) clearTimeout(scrollSaveTimer)
     scrollSaveTimer = setTimeout(() => {
@@ -2248,6 +2390,19 @@ export function initTimelineController(signal: AbortSignal) {
   }
 
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)
+
+  // Load area name lookup from SSR data
+  const areasEl = document.getElementById("timeline-areas")
+  if (areasEl) {
+    try { areaLookup = JSON.parse(areasEl.textContent || "{}") } catch { /* ignore */ }
+  }
+
+  // Load project name lookup from SSR data
+  const projectsEl = document.getElementById("timeline-projects")
+  if (projectsEl) {
+    try { projectLookup = JSON.parse(projectsEl.textContent || "{}") } catch { /* ignore */ }
+  }
+
   let currentFilter: TimelineFilterState = { search: "", status: "", priority: "", types: [], area: "", groupBy: "none" }
 
   function getVisibleBars(): GanttBar[] {
@@ -2310,7 +2465,7 @@ export function initTimelineController(signal: AbortSignal) {
 
     if (emptyState) emptyState.style.display = "none"
     container!.style.display = "block"
-    renderGantt(container!, bars, zoom, signal, undated)
+    renderGantt(container!, bars, zoom, signal, undated, currentFilter.groupBy)
 
     // Update signal bar count — P8: aria-live for screen readers
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
@@ -2414,6 +2569,24 @@ export function initTimelineController(signal: AbortSignal) {
     }
     doRender(currentZoom)
   }) as EventListener, { signal })
+
+  // M1: Listen for area selector changes from the nav bar "All Areas" dropdown
+  document.addEventListener("meitheal:area-changed", ((e: CustomEvent) => {
+    const areaId = e.detail?.areaId ?? ""
+    currentFilter = { ...currentFilter, area: areaId }
+    doRender(currentZoom)
+  }) as EventListener, { signal })
+
+  // Apply saved area from localStorage on init (AreaSelector persists choice)
+  try {
+    const savedArea = localStorage.getItem("meitheal-selected-area")
+    if (savedArea) {
+      const parsed = JSON.parse(savedArea)
+      if (parsed.areaId) {
+        currentFilter = { ...currentFilter, area: parsed.areaId }
+      }
+    }
+  } catch { /* ignore */ }
 
   // M1: Also listen for label filter events
   document.addEventListener("meitheal:label-filter", (() => {

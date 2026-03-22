@@ -20,6 +20,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 
 interface TaskRecord {
   id: string;
@@ -43,11 +44,26 @@ interface TaskRecord {
 }
 
 let tasks: TaskRecord[] = [];
+let areaMap: Record<string, string> = {};
+let projectMap: Record<string, string> = {};
 let fetchError = false;
 try {
   await ensureSchema();
-  const repo = new TaskRepository(getPersistenceClient());
+  const client = getPersistenceClient();
+  const repo = new TaskRepository(client);
   tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
+  // Load area/project names for grouping display (non-critical — graceful fallback)
+  try {
+    const areas = await repo.getAreas();
+    for (const [id, info] of Object.entries(areas)) {
+      areaMap[id] = info.name;
+    }
+    const hierarchyRepo = new HierarchyRepository(client);
+    const projects = await hierarchyRepo.findAllProjects();
+    for (const p of projects) {
+      projectMap[p.id] = p.title;
+    }
+  } catch { /* Area/project lookup failure is non-fatal — grouping will show IDs */ }
 } catch (e) {
   fetchError = true;
 }
@@ -156,6 +172,8 @@ const totalTasks = tasks.length;
 
   <!-- SSR data blob for client-side GANTT initialization -->
   <script type="application/json" id="timeline-data" set:html={JSON.stringify(tasks)} />
+  <script type="application/json" id="timeline-areas" set:html={JSON.stringify(areaMap)} />
+  <script type="application/json" id="timeline-projects" set:html={JSON.stringify(projectMap)} />
 
   <!-- Loading skeleton -->
   <div id="timeline-skeleton" class="timeline-skeleton">
@@ -196,6 +214,7 @@ const totalTasks = tasks.length;
 <style is:global>
   @import "../../styles/timeline-gantt.css";
   @import "../../styles/inline-date-picker.css";
+  @import "../../styles/field-picker-panel.css";
 </style>
 
 <style>

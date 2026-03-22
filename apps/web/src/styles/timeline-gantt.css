@@ -394,8 +394,36 @@
 
 /* ── Native SVG GANTT ───────────────────────────────────────────────────── */
 
+/* Viewport containment — chart fills available space, never overflows page */
+.gantt-chart-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+}
+
 .gantt-chart-wrapper .gantt-layout {
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The tasks-view-container needs to be a flex column that fills height */
+#tasks-view-timeline.tasks-view-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px); /* Account for main nav + view tabs */
+  min-height: 400px;
+  overflow: hidden;
+}
+
+/* Signal bar and controls should not flex-grow */
+#tasks-view-timeline .signal-bar,
+#tasks-view-timeline .timeline-controls-bar {
+  flex-shrink: 0;
 }
 
 /* Sidebar overdue row accent */

@@ -243,7 +243,7 @@ export class TaskRepository {
 
   /** All boards (for card badges on dashboard) */
   async getAreas(): Promise<Record<string, AreaInfo>> {
-    const result = await this.client.execute("SELECT id, title, color FROM areas");
+    const result = await this.client.execute("SELECT id, name, color FROM areas");
     const areaMap: Record<string, AreaInfo> = {
       default: { id: "default", name: "Default", color: "#6366F1" },
     };
@@ -251,7 +251,7 @@ export class TaskRepository {
       const br = b as Record<string, unknown>;
       areaMap[String(br.id)] = {
         id: String(br.id),
-        name: String(br.title ?? "Default"),
+        name: String(br.name ?? "Default"),
         color: String(br.color ?? "#6366F1"),
       };
     }
@@ -370,7 +370,7 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id
+      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
     return result.rows as unknown as TaskRow[];
