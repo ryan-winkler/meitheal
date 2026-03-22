@@ -5,7 +5,7 @@ export type LogLevel = "debug" | "info" | "warn" | "error"
  * Each event in the timeline records WHO performed the action.
  * Bounded enum — safe for use as a Loki label (low cardinality).
  */
-export type ActorType = "human" | "bot" | "system" | "webhook" | "calendar_sync" | "llm"
+export type ActorType = "human" | "bot" | "system" | "webhook" | "calendar_sync" | "llm" | "n8n" | "nodered" | "agent"
 
 /**
  * Structured actor identity attached to audit/timeline events.
@@ -43,6 +43,10 @@ export interface LogEvent {
   entity_type?: string
   /** Correlation ID linking related events across a workflow */
   correlation_id?: string
+  /** W3C trace-id (32 hex) — for Grafana Alloy / OTel trace correlation */
+  trace_id?: string
+  /** W3C span-id (16 hex) — for Grafana Alloy / OTel trace correlation */
+  span_id?: string
 }
 
 export interface LoggerConfig {

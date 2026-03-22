@@ -114,7 +114,7 @@ export function resetWebhookCacheForTests(): void {
   _n8nEventsCachedAt = 0;
 }
 
-export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string) {
+export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string, traceId?: string) {
   try {
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
@@ -202,6 +202,7 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         occurredAt: new Date().toISOString(),
         requestId: requestId ?? crypto.randomUUID(),
         payload,
+        ...(traceId ? { traceId } : {}),
       };
 
       // Dispatch background webhook requests without blocking

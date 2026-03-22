@@ -49,6 +49,9 @@ export async function emitWebhook(
   const payload = JSON.stringify(event)
   const signature = signPayload(subscriber.secret, payload)
 
+  // Pre-compute span ID for traceparent propagation (avoid per-attempt string ops)
+  const deliverySpanId = deliveryId.replace(/-/g, "").slice(0, 16)
+
   let lastStatusCode: number | null = null
   let lastError: string | undefined
 
@@ -70,9 +73,23 @@ export async function emitWebhook(
         signal: controller.signal,
         headers: {
           "content-type": "application/json",
+          // ── Meitheal signature headers ──
           "x-meitheal-signature": `sha256=${signature}`,
           "x-meitheal-event": event.eventType,
           "x-meitheal-delivery-id": deliveryId,
+          // ── CNCF CloudEvents 1.0 (binary content mode) ──
+          "ce-specversion": "1.0",
+          "ce-id": event.eventId ?? deliveryId,
+          "ce-type": `io.meitheal.${event.eventType}`,
+          "ce-source": event.source ?? "/meitheal",
+          "ce-time": event.occurredAt ?? new Date().toISOString(),
+          ...(event.payload && typeof event.payload === "object" && "id" in event.payload
+            ? { "ce-subject": String((event.payload as Record<string, unknown>).id) }
+            : {}),
+          // ── W3C Traceparent propagation ──
+          ...(event.traceId
+            ? { traceparent: `00-${event.traceId}-${deliverySpanId}-01` }
+            : {}),
           ...(subscriber.headers ?? {}),
         },
         body: payload,

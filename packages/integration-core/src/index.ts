@@ -4,6 +4,10 @@ export interface DomainEvent<TPayload = Record<string, unknown>> {
   occurredAt: string;
   requestId: string;
   payload: TPayload;
+  /** CloudEvents source URI — defaults to '/meitheal' */
+  source?: string;
+  /** W3C trace-id for distributed trace propagation */
+  traceId?: string;
 }
 
 export interface IntegrationPlugin {
