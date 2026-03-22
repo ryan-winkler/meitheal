@@ -186,7 +186,7 @@ const { class: className } = Astro.props
     try {
       const stored = localStorage.getItem(DENSITY_KEY)
       if (stored && VALID_DENSITIES.includes(stored as CardDensity)) return stored as CardDensity
-    } catch {}
+    } catch { /* localStorage may throw in private browsing — use default */ }
     return DEFAULT_DENSITY
   }
 

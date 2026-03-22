@@ -446,7 +446,7 @@
               try {
                 const dirtyHtml = String(marked.parse(String(t.description) || "*No description provided.*"));
                 if (descPreview) descPreview.innerHTML = sanitizeClient(dirtyHtml);
-              } catch {}
+              } catch (e) { console.warn("task-detail:markdown-preview", e) }
               descEditContainer?.classList.add("hidden");
               descPreviewContainer?.classList.remove("hidden");
             } else {
@@ -1179,7 +1179,7 @@
                     principleSelect.appendChild(opt);
                   });
                 }
-              } catch {}
+              } catch (e) { console.warn("task-detail:principles-fetch", e) }
             }
           }
         }, { signal: __signal });

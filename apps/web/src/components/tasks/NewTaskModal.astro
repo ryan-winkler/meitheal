@@ -884,7 +884,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
            try {
              const md = await modeRes.json();
              backlogMode = md.value;
-           } catch {} // ignore
+           } catch { /* backlog mode JSON parse non-fatal — default visible */ }
         }
         
         if (lanesRes.ok) {
@@ -987,7 +987,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             goalSelect.appendChild(opt);
           });
         }
-      } catch {}
+      } catch (e) { console.warn("new-task:goals-fetch", e) }
     })();
 
     // Use event delegation on document.body to catch all create-task-btn clicks
@@ -1191,7 +1191,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (res.ok) {
             // Parse created task for toast and auto-open
             let created: { id?: string; ticket_key?: string; task_kind?: string } = {};
-            try { created = await res.json(); } catch {}
+            try { created = await res.json(); } catch { /* non-JSON response — use empty obj */ }
 
             // Rich toast with clickable ticket key
             const { showTaskCreatedToast } = await import("../../lib/toast");

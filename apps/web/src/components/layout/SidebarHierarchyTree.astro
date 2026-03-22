@@ -1051,7 +1051,7 @@ const taskKinds = [
     const COLLAPSE_KEY = "meitheal_project_nav_collapsed"
     let collapsed: Set<string>
     try { const s = localStorage.getItem(COLLAPSE_KEY); collapsed = new Set(s ? JSON.parse(s) : []) } catch { collapsed = new Set() }
-    function saveCollapsed() { try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])) } catch {} }
+    function saveCollapsed() { try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])) } catch { /* localStorage unavailable in private browsing */ } }
 
     document.querySelectorAll<HTMLElement>("[data-area-toggle]").forEach((row) => {
       const areaId = row.dataset.areaToggle
@@ -1079,7 +1079,7 @@ const taskKinds = [
     const PIN_KEY = "meitheal-pinned-projects"
     let pinnedIds: Set<string>
     try { const s = localStorage.getItem(PIN_KEY); pinnedIds = new Set(s ? JSON.parse(s) : []) } catch { pinnedIds = new Set() }
-    function savePinned() { try { localStorage.setItem(PIN_KEY, JSON.stringify([...pinnedIds])) } catch {} }
+    function savePinned() { try { localStorage.setItem(PIN_KEY, JSON.stringify([...pinnedIds])) } catch { /* localStorage unavailable in private browsing */ } }
 
     function renderPinned() {
       const container = document.getElementById("project-nav-pinned")
@@ -1530,7 +1530,7 @@ const taskKinds = [
             badge.classList.add("stree__count--done")
           }
         }
-      } catch {}
+      } catch { /* non-critical: task count fetch failed silently */ }
     }
 
     // Fetch counts with staggered delay to avoid thundering herd
