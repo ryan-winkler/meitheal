@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "astro";
 import { ingressPolicy, type IngressContext } from "./lib/ingress-policy";
-import { apiRateLimited } from "./lib/api-response";
+import { apiProblem, apiRateLimited } from "./lib/api-response";
 import {
   getHassUserId,
   hasHassioToken,
@@ -12,6 +12,8 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 import { getPersistenceClient, ensureSchema } from "@domains/tasks/persistence/store";
 import { initHAIntegrations } from "@domains/ha";
 import type { DateFormat } from "./lib/date";
+import { idempotencyCache, type CachedResponse } from "./lib/idempotency-cache";
+import { resolveAgentAuth, resolveRouteScope, requireScope, type ResolvedAgent } from "./lib/agent-token-guard";
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -299,6 +301,39 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
     }
   }
 
+  // ── Agent Token Authorization (zero-trust, opt-in) ──
+  // Resolve Bearer token from Authorization header.
+  // HA ingress sessions bypass this entirely (X-Hass-User-Id present).
+  let resolvedAgent: ResolvedAgent | null = null
+  if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/health")) {
+    try {
+      resolvedAgent = await resolveAgentAuth(request)
+    } catch (authError) {
+      // resolveAgentAuth throws a Response for invalid/revoked/expired tokens
+      if (authError instanceof Response) return authError
+      // Unexpected error — log and continue (fail-open for safety)
+      logger.log("warn", {
+        event: "http.agent_auth_error",
+        domain: "security",
+        component: "middleware",
+        request_id: requestId,
+        message: `Agent auth error: ${authError instanceof Error ? authError.message : "unknown"}`,
+      })
+    }
+
+    // Scope enforcement — check route-level permissions for agent tokens
+    if (resolvedAgent) {
+      const requiredScope = resolveRouteScope(url.pathname, request.method)
+      if (requiredScope) {
+        const scopeError = requireScope(resolvedAgent, requiredScope)
+        if (scopeError) return scopeError
+      }
+    }
+  }
+
+  // Attach agent info to locals for downstream route access
+  locals.agentToken = resolvedAgent ?? undefined
+
   // CSRF origin check for mutating API requests (defense-in-depth)
   const method = request.method.toUpperCase();
   if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && url.pathname.startsWith("/api/")) {
@@ -322,12 +357,70 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
     }
   }
 
+  // ── Idempotency-Key — exactly-once execution for state-mutating requests ──
+  // If a request includes an Idempotency-Key header and we have a cached response,
+  // return the cached response immediately (prevents duplicate task creation etc.)
+  const idempotencyKey = request.headers.get("idempotency-key")
+  const isMutatingApi = url.pathname.startsWith("/api/") && ["POST", "PATCH", "DELETE"].includes(method)
+
+  if (idempotencyKey && isMutatingApi) {
+    // Check for cached response
+    const cached = idempotencyCache.get(idempotencyKey)
+    if (cached) {
+      logger.log("info", {
+        event: "http.idempotency_cache_hit",
+        domain: "observability",
+        component: "middleware",
+        request_id: requestId,
+        message: `Idempotency cache hit for key ${idempotencyKey.slice(0, 8)}...`,
+      })
+      const cachedHeaders = new Headers(cached.headers)
+      cachedHeaders.set("Idempotency-Key-Status", "cached")
+      cachedHeaders.set("x-request-id", requestId)
+      return new Response(cached.body, {
+        status: cached.status,
+        headers: cachedHeaders,
+      })
+    }
+
+    // Check for in-flight (concurrent duplicate)
+    if (idempotencyCache.isInFlight(idempotencyKey)) {
+      return apiProblem({
+        status: 409,
+        title: "Duplicate Request In Flight",
+        detail: "A request with this Idempotency-Key is currently being processed",
+        type: "https://meitheal.local/problems/idempotency-conflict",
+      })
+    }
+
+    // Mark as in-flight before processing
+    idempotencyCache.markInFlight(idempotencyKey)
+  }
+
   const securityHeaders = buildSecurityHeaders(behindIngress, import.meta.env.DEV);
 
   // HA Supervisor already validates ingress sessions before proxying requests.
   // No additional auth enforcement needed on our side.
 
   let response = await next();
+
+  // ── Cache response for idempotency ──
+  if (idempotencyKey && isMutatingApi && response.status < 500) {
+    try {
+      const cloned = response.clone()
+      const body = await cloned.text()
+      const headers: Record<string, string> = {}
+      cloned.headers.forEach((value, key) => { headers[key] = value })
+      idempotencyCache.set(idempotencyKey, { status: cloned.status, headers, body, processedAt: Date.now() })
+      response.headers.set("Idempotency-Key-Status", "processed")
+    } catch {
+      // Cache failure is non-fatal — just remove in-flight marker
+      idempotencyCache.remove(idempotencyKey)
+    }
+  } else if (idempotencyKey && isMutatingApi) {
+    // Don't cache 5xx errors — allow retries
+    idempotencyCache.remove(idempotencyKey)
+  }
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
     response = await rewriteIngressPaths(response, ingressPath);

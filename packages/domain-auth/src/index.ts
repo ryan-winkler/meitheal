@@ -7,6 +7,21 @@ export function canAutoLoginViaIngress(ctx: IngressContext): boolean {
   return Boolean(ctx.ingressPath && ctx.hassioTokenPresent);
 }
 
+// ── Agent Token Domain ──
+export {
+  type AgentScope,
+  type AgentScopeDescriptor,
+  type AgentTokenRecord,
+  type AgentTokenCreated,
+  type AgentTokenPublic,
+  AVAILABLE_SCOPES,
+  generateAgentToken,
+  hashToken,
+  validateScopes,
+  hasScope,
+  toPublicToken,
+} from "./agent-tokens"
+
 export interface WebAuthnConfig {
   rpId: string;
   rpName: string;

@@ -82,5 +82,17 @@ declare namespace App {
     timezone: string;
     weekStart: string;
     dateFormat: import("./lib/date").DateFormat;
+    /** Automation source: 'browser' (default), 'n8n', 'nodered', 'agent', 'mcp', etc. */
+    automationSource: string;
+    /** Agent identifier from X-Agent-Id header */
+    agentId: string;
+    /** W3C trace-id (32 hex chars) — parsed from traceparent header or generated */
+    traceId: string;
+    /** W3C span-id (16 hex chars) — parsed from traceparent header or generated */
+    spanId: string;
+    /** W3C trace-flags (2 hex chars, e.g. '01' = sampled) */
+    traceFlags: string;
+    /** Resolved agent token info (present when authenticated via Bearer token) */
+    agentToken?: import("./lib/agent-token-guard").ResolvedAgent | undefined;
   }
 }
