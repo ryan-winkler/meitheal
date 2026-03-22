@@ -103,6 +103,12 @@ const { locale } = Astro.props
 
   let labels: LabelData[] = []
 
+  /** Escape user strings for safe innerHTML insertion */
+  function escapeHtml(str: string): string {
+    const el = document.createElement("span")
+    el.textContent = str
+    return el.innerHTML
+  }
   // ── T7: Error state with retry ──
   function showListError() {
     if (!listEl) return
@@ -161,13 +167,13 @@ const { locale } = Astro.props
           data-badge-id="${l.id}"
           style="background: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}20; color: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}; border: 1px solid ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}40; flex-shrink: 0;"
         >
-          ${l.title}
+          ${escapeHtml(l.title)}
         </span>
         <input
           type="text"
           class="form-input label-title-edit"
           data-id="${l.id}"
-          value="${l.title.replace(/"/g, '&quot;')}"
+          value="${escapeHtml(l.title)}"
           maxlength="100"
           style="flex: 1; font-size: 13px; max-width: 240px;"
         />
