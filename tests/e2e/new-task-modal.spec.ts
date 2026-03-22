@@ -39,6 +39,7 @@ test.describe("New Task Modal", () => {
     // At least 1 pill (fallback "To Do") renders; more from /api/lanes
     const pillCount = await page.locator(".nt-status-pill").count()
     expect(pillCount).toBeGreaterThanOrEqual(1)
+    await expect(page.locator("#new-task-recurrence")).toBeVisible()
     await expect(page.locator("#submit-new-task-btn")).toBeVisible()
     await expect(page.locator("#cancel-new-task")).toBeVisible()
   })

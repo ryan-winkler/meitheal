@@ -124,6 +124,23 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
              <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
           </div>
         </div>
+        <!-- Recurrence -->
+        <div class="relative group">
+          <select class="form-select appearance-none bg-transparent hover:bg-white/5 border border-white/10 rounded-lg text-xs py-1.5 pl-7 pr-8 shadow-sm transition-colors cursor-pointer" id="new-task-recurrence" name="recurrence_rule">
+            <option value="">No repeat</option>
+            <option value="FREQ=DAILY">Every day</option>
+            <option value="FREQ=WEEKLY">Every week</option>
+            <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday</option>
+            <option value="FREQ=MONTHLY">Every month</option>
+            <option value="FREQ=YEARLY">Every year</option>
+          </select>
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-text-muted">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          </div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-muted">
+             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </div>
+        </div>
       </div>
 
       <!-- Contextual UI for Checklist / Event -->
@@ -584,6 +601,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
           const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
+          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
 
           const body: Record<string, unknown> = {
             title: finalTitle,
@@ -596,6 +614,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             assigned_to: assignedTo || null,
             goal_id: goalSelectEl?.value || null,
           };
+
+          const recurrenceVal = recurrenceSelectEl?.value;
+          if (recurrenceVal) body.recurrence_rule = recurrenceVal;
 
           if (contextualChecklists) {
             body.checklists = contextualChecklists;

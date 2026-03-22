@@ -270,12 +270,18 @@ export const POST: APIRoute = async ({ request }) => {
   const blocked_by = typeof body.blocked_by === "string" && body.blocked_by.trim().length > 0
     ? body.blocked_by.trim().slice(0, 500) : null
 
+  // Recurrence rule (RRULE string, e.g. "FREQ=DAILY")
+  const rawRecurrence = typeof body.recurrence_rule === "string" ? body.recurrence_rule.trim() : ""
+  const recurrence_rule = rawRecurrence && /^[A-Z=;,0-9]+$/.test(rawRecurrence) && rawRecurrence.length <= 200
+    ? rawRecurrence : null
+
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
     start_date, end_date, progress, color, is_favorite,
     task_type, task_kind, ticket_number, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
+    recurrence_rule,
   })
 
   const now = Date.now()
