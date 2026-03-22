@@ -261,6 +261,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["bot", "proposals", "handoff", "agent", "accept", "lock"],
   },
   {
+    id: "field-agent-tokens",
+    label: "Agent Tokens",
+    anchorId: "agent-tokens-card",
+    sectionId: "automation-ai-settings",
+    keywords: ["agent", "token", "api key", "bearer", "scope", "n8n", "node-red", "automation", "zero-trust", "revoke"],
+  },
+  {
     id: "field-export",
     label: "Export & Import",
     anchorId: "export-json-btn",

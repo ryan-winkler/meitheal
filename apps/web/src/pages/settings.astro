@@ -3,6 +3,7 @@ import SettingsLabels from "../components/settings/SettingsLabels.astro"
 import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
 import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
+import SettingsAgentTokens from "../components/settings/SettingsAgentTokens.astro"
 import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsPersonal from "../components/settings/SettingsPersonal.astro"
 import SettingsAppPwa from "../components/settings/SettingsAppPwa.astro"
@@ -68,6 +69,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
       >
         <SettingsSectionIntro section={automationAiSection} />
         <SettingsAgents locale={locale} />
+        <SettingsAgentTokens locale={locale} />
       </section>
 
       <!-- 5. Integrations -->
