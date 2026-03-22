@@ -35,6 +35,28 @@ function init() {
     }
   })
 
+  // ── Add Principle — delegated click handler ─────────────────
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement
+    const addBtn = target.closest<HTMLElement>("[data-action='add-principle']")
+    if (!addBtn) return
+
+    const card = addBtn.closest<HTMLElement>("[data-pillar-json]")
+    if (!card) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    try {
+      const pillarData = JSON.parse(card.dataset.pillarJson || "{}")
+      document.dispatchEvent(new CustomEvent("open-pillar-detail", {
+        detail: { ...pillarData, showPrincipleForm: true }
+      }))
+    } catch {
+      // malformed JSON — skip
+    }
+  })
+
   // ── Principles expand/collapse ────────────────────────────────
   const cards = document.querySelectorAll<HTMLElement>("[data-pillar-principles]")
   if (!cards.length) return

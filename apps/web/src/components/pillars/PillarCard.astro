@@ -97,49 +97,71 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
       )}
     </div>
 
-    {principles.length > 0 && (
-      <div class="pillar-card__principles" data-pillar-principles>
-        <button
-          type="button"
-          class="pillar-card__principles-toggle"
-          data-principles-toggle
-          aria-expanded="false"
-          aria-label={`${principles.length} Principle${principles.length !== 1 ? "s" : ""} — click to expand`}
-        >
-          <span class="pillar-card__principles-chevron" data-principles-chevron aria-hidden="true">▶</span>
-          <span class="pillar-card__principles-label">
-            Principles
-            <span class="pillar-card__principles-count">{principles.length}</span>
-          </span>
-        </button>
-
-        <ul class="pillar-card__principles-list" data-principles-list aria-hidden="true">
-          {displayPrinciples.map((p) => (
-            <li class:list={["pillar-card__principle", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]}>
-              {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
-              <span class="pillar-card__principle-text">{p.statement}</span>
-            </li>
-          ))}
-          {hiddenPrinciples.map((p) => (
-            <li class:list={["pillar-card__principle pillar-card__principle--overflow", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]} data-overflow-principle aria-hidden="true">
-              {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
-              <span class="pillar-card__principle-text">{p.statement}</span>
-            </li>
-          ))}
-        </ul>
-
-        {hasOverflow && (
+    <div class="pillar-card__principles" data-pillar-principles>
+      <div class="pillar-card__principles-header">
+        {principles.length > 0 ? (
           <button
             type="button"
-            class="pillar-card__show-all"
-            data-show-all-toggle
-            aria-label={`Show all ${principles.length} principles`}
+            class="pillar-card__principles-toggle"
+            data-principles-toggle
+            aria-expanded="false"
+            aria-label={`${principles.length} Principle${principles.length !== 1 ? "s" : ""} — click to expand`}
           >
-            Show all {principles.length}
+            <span class="pillar-card__principles-chevron" data-principles-chevron aria-hidden="true">▶</span>
+            <span class="pillar-card__principles-label">
+              Principles
+              <span class="pillar-card__principles-count">{principles.length}</span>
+            </span>
           </button>
+        ) : (
+          <span class="pillar-card__principles-toggle pillar-card__principles-toggle--empty">
+            <span class="pillar-card__principles-label">
+              Principles
+              <span class="pillar-card__principles-count pillar-card__principles-count--zero">0</span>
+            </span>
+          </span>
         )}
+        <button
+          type="button"
+          class="pillar-card__add-principle-btn"
+          data-action="add-principle"
+          aria-label="Add a new principle"
+          title="Add Principle"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
       </div>
-    )}
+
+      {principles.length > 0 && (
+        <Fragment>
+          <ul class="pillar-card__principles-list" data-principles-list aria-hidden="true">
+            {displayPrinciples.map((p) => (
+              <li class:list={["pillar-card__principle", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]}>
+                {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+                <span class="pillar-card__principle-text">{p.statement}</span>
+              </li>
+            ))}
+            {hiddenPrinciples.map((p) => (
+              <li class:list={["pillar-card__principle pillar-card__principle--overflow", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]} data-overflow-principle aria-hidden="true">
+                {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+                <span class="pillar-card__principle-text">{p.statement}</span>
+              </li>
+            ))}
+          </ul>
+
+          {hasOverflow && (
+            <button
+              type="button"
+              class="pillar-card__show-all"
+              data-show-all-toggle
+              aria-label={`Show all ${principles.length} principles`}
+            >
+              Show all {principles.length}
+            </button>
+          )}
+        </Fragment>
+      )}
+    </div>
 
     <div class="pillar-card__footer">
       {linkedGoalCount > 0 && (
@@ -295,6 +317,47 @@ const hiddenPrinciples = hasOverflow ? principles.slice(visibleLimit) : []
 }
 
 /* ── Principles section ─────────────────────────────────────── */
+.pillar-card__principles-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.pillar-card__add-principle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.pillar-card:hover .pillar-card__add-principle-btn {
+  opacity: 1;
+}
+
+.pillar-card__add-principle-btn:hover {
+  border-color: var(--pillar-accent);
+  color: var(--pillar-accent);
+  background: color-mix(in srgb, var(--pillar-accent) 8%, transparent);
+}
+
+.pillar-card__principles-toggle--empty {
+  cursor: default;
+}
+
+.pillar-card__principles-count--zero {
+  opacity: 0.5;
+}
+
 .pillar-card__principles {
   border-top: 1px solid var(--border);
   padding-top: 0.625rem;

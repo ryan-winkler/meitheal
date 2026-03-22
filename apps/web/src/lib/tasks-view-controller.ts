@@ -111,10 +111,13 @@ function switchView(view: TaskView) {
     calendar: "Calendar",
     timeline: "Timeline",
   }
-  document.title = `Meitheal — ${viewTitles[view]}`
-  // Also update the page heading
-  const heading = document.querySelector(".unified-bar__switcher-label")
-  if (heading) heading.textContent = viewTitles[view]
+  // Only update title/heading when tasks page is active (avoid stomping other pages)
+  const tasksBarSwitcher = document.getElementById("tasks-bar-switcher")
+  if (tasksBarSwitcher) {
+    document.title = `Meitheal — ${viewTitles[view]}`
+    const heading = tasksBarSwitcher.querySelector(".unified-bar__switcher-label")
+    if (heading) heading.textContent = viewTitles[view]
+  }
 
   // Persist preference
   try {

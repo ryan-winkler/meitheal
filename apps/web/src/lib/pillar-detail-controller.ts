@@ -93,7 +93,7 @@ function escapeHtml(unsafe: string): string {
 
 /* ── Open / Close ────────────────────────────────────────────────── */
 
-function openModal(pillar: PillarDetail) {
+function openModal(pillar: PillarDetail, opts?: { showPrincipleForm?: boolean }) {
   currentPillar = pillar
   const overlay = getEl("pillar-detail-overlay")
   if (!overlay) return
@@ -133,9 +133,18 @@ function openModal(pillar: PillarDetail) {
   const principlesList = getEl("pillar-detail-principles")
   if (principlesList) principlesList.innerHTML = renderPrinciples(pillar.principles)
 
-  // Hide add-principle form
+  // Show or hide add-principle form based on caller request
   const principleForm = getEl("pillar-detail-principle-form")
-  if (principleForm) principleForm.hidden = true
+  if (principleForm) {
+    principleForm.hidden = !opts?.showPrincipleForm
+    if (opts?.showPrincipleForm) {
+      // Auto-focus the input after the modal opens
+      requestAnimationFrame(() => {
+        const input = principleForm.querySelector<HTMLInputElement>("input")
+        if (input) input.focus()
+      })
+    }
+  }
 
   // Show overlay
   overlay.classList.add("active")
@@ -364,8 +373,9 @@ function boot() {
   })
 
   // Listen for CustomEvent to open modal
-  document.addEventListener("open-pillar-detail", ((e: CustomEvent<PillarDetail>) => {
-    openModal(e.detail)
+  document.addEventListener("open-pillar-detail", ((e: CustomEvent<PillarDetail & { showPrincipleForm?: boolean }>) => {
+    const { showPrincipleForm = false, ...pillar } = e.detail
+    openModal(pillar as PillarDetail, { showPrincipleForm })
   }) as EventListener)
 
   // After PillarFormModal saves, refresh detail if it was editing current pillar
