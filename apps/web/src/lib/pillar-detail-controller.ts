@@ -10,6 +10,7 @@
  * @phase 20 — Pillars UX Optimization
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { escapeHtml } from "@lib/safe-html"
 
 interface PillarDetail {
   id: string
@@ -87,9 +88,6 @@ function renderPrinciples(principles: PillarDetail["principles"]): string {
   return sorted.map((p) => renderPrinciple(p)).join("")
 }
 
-function escapeHtml(unsafe: string): string {
-  return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-}
 
 /* ── Open / Close ────────────────────────────────────────────────── */
 

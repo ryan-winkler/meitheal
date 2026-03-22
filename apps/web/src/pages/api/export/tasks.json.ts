@@ -4,6 +4,7 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { exportFilename } from "../../../lib/export-filename"
 import { logApiError } from "../../../lib/api-logger"
+import { apiProblem } from "../../../lib/api-response"
 
 /**
  * Export Tasks as JSON
@@ -11,7 +12,10 @@ import { logApiError } from "../../../lib/api-logger"
  * Downloads all server-side tasks as a formatted JSON file.
  * Filename format: meitheal-tasks-YYYY-MM-DD.json
  */
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
+    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+        return apiProblem({ status: 403, title: "Admin Required", detail: "Task export requires admin access or settings:write scope" })
+    }
     try {
         await ensureSchema()
         const repo = new TaskRepository(getPersistenceClient())

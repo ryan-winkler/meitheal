@@ -41,7 +41,10 @@ const ALLOWED_KEYS = new Set([
     "custom_theme_css", "custom_theme_name", "accent-color",
 ])
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+        return new Response(JSON.stringify({ error: "Admin access required for settings import" }), { status: 403, headers: { "Content-Type": "application/json" } })
+    }
     try {
         // Guard against oversized payloads (200KB max — increased for rules+frameworks)
         const contentLength = Number(request.headers.get("content-length") ?? 0)

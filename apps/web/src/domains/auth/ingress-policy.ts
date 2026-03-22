@@ -44,11 +44,10 @@ export function buildSecurityHeaders(behindIngress: boolean, isDev: boolean): Re
     ...(!behindIngress ? { "X-Frame-Options": "SAMEORIGIN" } : {}),
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "X-XSS-Protection": "1; mode=block",
     "Content-Security-Policy": [
       "default-src 'self'",
-      // data: needed for Astro ClientRouter navigation scripts
-      "script-src 'self' 'unsafe-inline' data:",
+      // data: removed from script-src — it allows trivial XSS bypass via data: URIs
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:", // blob: for attachment previews
       "font-src 'self' data:",

@@ -5,8 +5,12 @@ import { findAllRules } from "@domains/strategy/rule-repository"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { exportFilename } from "../../../lib/export-filename"
 import { logApiError } from "../../../lib/api-logger"
+import { apiProblem } from "../../../lib/api-response"
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
+    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+        return apiProblem({ status: 403, title: "Admin Required", detail: "Settings export requires admin access or settings:write scope" })
+    }
     try {
         await ensureSchema()
         const repo = new SettingsRepository(getPersistenceClient())

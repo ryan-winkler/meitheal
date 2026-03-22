@@ -3,8 +3,12 @@ import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { exportFilename } from "../../../lib/export-filename";
 import { logApiError } from "../../../lib/api-logger";
+import { apiProblem } from "../../../lib/api-response";
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
+    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+        return apiProblem({ status: 403, title: "Admin Required", detail: "Database export requires admin access or settings:write scope" })
+    }
     try {
         // Resolve DB path - matching the store.ts resolveDbUrl output for the file approach
         const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db";

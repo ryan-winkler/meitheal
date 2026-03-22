@@ -2,6 +2,7 @@ import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { normalizeStatus } from "@lib/status-config"
+import { apiProblem } from "../../../lib/api-response"
 
 /**
  * iCal Export — VCALENDAR with VTODO entries
@@ -19,7 +20,10 @@ import { normalizeStatus } from "@lib/status-config"
  * Meitheal P5 (minimal) → iCal 9 (lowest)
  */
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
+    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+        return apiProblem({ status: 403, title: "Admin Required", detail: "Task export requires admin access or settings:write scope" })
+    }
   try {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())

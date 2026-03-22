@@ -42,7 +42,8 @@ interface RouteMapping {
 
 type CustomToolHandler = (
   args: Record<string, unknown>,
-  baseUrl: string
+  baseUrl: string,
+  authHeaders: Record<string, string>
 ) => Promise<Record<string, unknown>>
 
 // ─── OpenAPI → MCP Tool Discovery ────────────────────────────────────────────
@@ -196,24 +197,46 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
   return { tools, routes }
 }
 
+// ─── Auth Header Forwarding ───────────────────────────────────────────────────
+// Internal fetches must carry the caller's auth context to prevent scope escalation.
+// Without this, a token with only mcp:execute could bypass scope checks on sub-requests.
+
+function extractAuthHeaders(request: Request): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const auth = request.headers.get("authorization")
+  if (auth) headers["authorization"] = auth
+  const hassUserId = request.headers.get("x-hass-user-id")
+  if (hassUserId) headers["x-hass-user-id"] = hassUserId
+  const hassAdmin = request.headers.get("x-hass-is-admin")
+  if (hassAdmin) headers["x-hass-is-admin"] = hassAdmin
+  return headers
+}
+
+/** Build fetch headers combining auth context and content-type */
+function jsonHeaders(authHeaders: Record<string, string>): Record<string, string> {
+  return { "content-type": "application/json", ...authHeaders }
+}
+
 // ─── Custom Tool Overrides ────────────────────────────────────────────────────
 // Some tools need special response shaping or multi-step logic.
 
 const customHandlers = new Map<string, CustomToolHandler>()
 
 // completeTask: supports both ID and title-based completion
-customHandlers.set("completeTask", async (args, baseUrl) => {
+customHandlers.set("completeTask", async (args, baseUrl, authHeaders) => {
   if (args.id) {
     const safeId = encodeURIComponent(String(args.id))
     const res = await fetch(`${baseUrl}/api/tasks/${safeId}`, {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: jsonHeaders(authHeaders),
       body: JSON.stringify({ status: "complete" }),
     })
     return { status: "completed", ...(await res.json().catch(() => ({}))) }
   }
   if (args.title) {
-    const searchRes = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
+    const searchRes = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`, {
+      headers: authHeaders,
+    })
     const data = (await searchRes.json().catch(() => ({ sections: [] }))) as {
       sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
     }
@@ -225,7 +248,7 @@ customHandlers.set("completeTask", async (args, baseUrl) => {
       const taskId = match.taskId ?? match.id
       await fetch(`${baseUrl}/api/tasks/${taskId}`, {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: jsonHeaders(authHeaders),
         body: JSON.stringify({ status: "complete" }),
       })
       return { status: "completed", id: taskId, title: match.title }
@@ -236,7 +259,7 @@ customHandlers.set("completeTask", async (args, baseUrl) => {
 })
 
 // searchTasks: reshape search response for cleaner AI consumption
-customHandlers.set("searchTasks", async (args, baseUrl) => {
+customHandlers.set("searchTasks", async (args, baseUrl, authHeaders) => {
   const params = new URLSearchParams()
   if (args.query) params.set("q", String(args.query))
   if (args.status) params.set("status", String(args.status))
@@ -244,7 +267,7 @@ customHandlers.set("searchTasks", async (args, baseUrl) => {
   if (args.assigned_to) params.set("assigned_to", String(args.assigned_to))
   if (args.include_completed) params.set("include_completed", "1")
   params.set("scope", "tasks")
-  const res = await fetch(`${baseUrl}/api/search?${params}`)
+  const res = await fetch(`${baseUrl}/api/search?${params}`, { headers: authHeaders })
   const data = (await res.json().catch(() => ({ sections: [] }))) as {
     sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
   }
@@ -262,11 +285,11 @@ customHandlers.set("searchTasks", async (args, baseUrl) => {
 })
 
 // dailyBriefing: composite endpoint for agent daily planning
-customHandlers.set("dailyBriefing", async (_args, baseUrl) => {
+customHandlers.set("dailyBriefing", async (_args, baseUrl, authHeaders) => {
   const [tasksRes, habitsRes, reviewRes] = await Promise.allSettled([
-    fetch(`${baseUrl}/api/tasks?status=todo&sort=priority&limit=10`).then(r => r.json()),
-    fetch(`${baseUrl}/api/habits`).then(r => r.json()),
-    fetch(`${baseUrl}/api/review/weekly`).then(r => r.json()),
+    fetch(`${baseUrl}/api/tasks?status=todo&sort=priority&limit=10`, { headers: authHeaders }).then(r => r.json()),
+    fetch(`${baseUrl}/api/habits`, { headers: authHeaders }).then(r => r.json()),
+    fetch(`${baseUrl}/api/review/weekly`, { headers: authHeaders }).then(r => r.json()),
   ])
   return {
     today_tasks: tasksRes.status === "fulfilled" ? tasksRes.value : { error: "unavailable" },
@@ -276,8 +299,10 @@ customHandlers.set("dailyBriefing", async (_args, baseUrl) => {
 })
 
 // getEntityState: HA entity state lookup
-customHandlers.set("getEntityState", async (args, baseUrl) => {
-  const res = await fetch(`${baseUrl}/api/ha/events?entity_id=${encodeURIComponent(String(args.entity_id ?? ""))}`)
+customHandlers.set("getEntityState", async (args, baseUrl, authHeaders) => {
+  const res = await fetch(`${baseUrl}/api/ha/events?entity_id=${encodeURIComponent(String(args.entity_id ?? ""))}`, {
+    headers: authHeaders,
+  })
   return await res.json().catch(() => ({ error: "Entity not found" }))
 })
 
@@ -289,10 +314,11 @@ async function executeTool(
   request: Request
 ): Promise<Record<string, unknown>> {
   const baseUrl = new URL(request.url).origin
+  const authHeaders = extractAuthHeaders(request)
 
   // Check custom handlers first
   const custom = customHandlers.get(toolName)
-  if (custom) return custom(args, baseUrl)
+  if (custom) return custom(args, baseUrl, authHeaders)
 
   // Dynamic dispatch from OpenAPI routes
   const { routes } = loadOpenAPISpec()
@@ -331,7 +357,7 @@ async function executeTool(
 
   const fetchOpts: RequestInit = {
     method: route.method,
-    headers: { "content-type": "application/json" },
+    headers: jsonHeaders(authHeaders),
   }
 
   if (route.hasBody && Object.keys(bodyArgs).length > 0) {

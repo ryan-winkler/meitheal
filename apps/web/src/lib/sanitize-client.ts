@@ -22,12 +22,11 @@ const ALLOWED_TAGS = new Set([
 /** Attributes allowed per-tag. `*` applies to all tags. */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
   a: new Set(["href", "name", "target"]),
-  img: new Set(["src", "alt", "title", "width", "height"]),
-  "*": new Set(["class", "id", "style"]),
+  "*": new Set(["class", "id"]),
 }
 
 /** Allowed URL schemes for href/src. */
-const ALLOWED_SCHEMES = new Set(["http:", "https:", "ftp:", "mailto:"])
+const ALLOWED_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
 /** Dangerous URI schemes to block (case-insensitive). */
 const BLOCKED_SCHEMES = /^\s*(javascript|vbscript|data|blob):/i
