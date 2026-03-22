@@ -146,6 +146,16 @@
     color: var(--text-muted);
   }
 
+  /* --- Tasks Filter Row --- */
+  .tasks-filter-row {
+    @apply flex items-center justify-between w-full px-6 py-2 border-b border-border/50 bg-bg-card/40 backdrop-blur-md z-10 sticky top-[60px];
+    min-height: 48px;
+  }
+  
+  .kanban-toolbar-right {
+    @apply flex items-center gap-2;
+  }
+
   /* Responsive table column hiding for HA panels */
   @media (max-width: 768px) {
 

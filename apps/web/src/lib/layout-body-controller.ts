@@ -21,11 +21,14 @@ async function refreshSidebarBadge() {
 refreshSidebarBadge()
 
 // Re-hydrate badge when tasks change (listen for custom events from task operations)
+// ⚠️ Intentionally permanent: this module loads once at app level and must persist
+// across all Astro navigations. No per-page cleanup needed (no AbortSignal).
 window.addEventListener("meitheal-tasks-changed", () =>
   refreshSidebarBadge(),
 )
 
 // ───── Sync Notifications ─────
+// ⚠️ Intentionally permanent: app-wide sync notification handler.
 window.addEventListener("meitheal-sync", async (e: Event) => {
   const ce = e as CustomEvent
   if (ce.detail?.type === "conflict-resolved") {
@@ -38,6 +41,7 @@ window.addEventListener("meitheal-sync", async (e: Event) => {
 })
 
 // ───── Route Transition Cleanup ─────
+// ⚠️ Intentionally permanent: must survive all navigations to reset overflow.
 window.addEventListener("pagehide", () => {
   const taskOverlay = document.getElementById("task-detail-overlay")
   if (taskOverlay && taskOverlay.classList.contains("active")) {

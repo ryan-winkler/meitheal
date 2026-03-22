@@ -191,6 +191,8 @@ export function initLaneManagementPanel(): void {
     const laneId = removeButton.dataset.id
     if (!laneId) return
 
+    if (!window.confirmDialog) return
+
     const ok = await window.confirmDialog({
       message: "Tasks in this lane will move to Pending.",
       variant: "warning",

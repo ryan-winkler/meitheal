@@ -8,13 +8,13 @@
 
 /* ---- Main toolbar container ---- */
 .filter-toolbar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 16px !important;
+  align-items: center !important;
+  flex: 1; /* allow it to grow if needed */
+  width: 100%;
 }
 
 /* ---- Search input ---- */
@@ -24,8 +24,9 @@
   flex: 0 1 200px;
 }
 
-/* ---- Type toggle buttons ---- */
-.filter-toolbar__type-toggles {
+/* ---- Type toggle & User Pills buttons ---- */
+.filter-toolbar__type-toggles,
+.filter-toolbar__user-pills {
   display: flex;
   gap: 4px;
   border: 1px solid var(--border);
@@ -34,36 +35,73 @@
   background: var(--bg-secondary);
 }
 
-.filter-toolbar__type-btn {
+.filter-toolbar__type-btn,
+.filter-toolbar__user-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 6px 12px;
   border: none;
   border-radius: var(--radius-sm, 4px);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
   white-space: nowrap;
 }
 
-.filter-toolbar__type-btn.active {
+.filter-toolbar__type-btn.active,
+.filter-toolbar__user-btn.active {
   background: var(--bg-card);
   color: var(--text-primary);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  opacity: 1;
 }
 
-.filter-toolbar__type-btn:not(.active) {
+.filter-toolbar__type-btn:not(.active),
+.filter-toolbar__user-btn:not(.active) {
   opacity: 0.5;
 }
 
-.filter-toolbar__type-btn:hover {
+.filter-toolbar__type-btn:not(.active):hover,
+.filter-toolbar__user-btn:not(.active):hover {
   background: var(--bg-hover);
   color: var(--text-primary);
   opacity: 1;
+}
+
+.filter-toolbar__type-btn:not(.active):hover,
+.filter-toolbar__advanced-toggle[aria-expanded="true"] {
+  background-color: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+/* Custom Dropdowns */
+details.filter-dropdown {
+  position: relative;
+}
+details.filter-dropdown summary {
+  list-style: none;
+  cursor: pointer;
+}
+details.filter-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Reset select background since we use custom nested SVG or no icon */
+.filter-dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background-image: none !important;
+  padding-right: 12px;
+}
+.filter-dropdown__trigger svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 /* Type dots */
@@ -163,18 +201,19 @@
 .filter-toolbar__clear-btn {
   display: inline-flex;
   align-items: center;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 12px;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
   font-weight: 500;
-  cursor: pointer;
-  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
   border-radius: var(--radius-full, 9999px);
-  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+  transition: all 0.2s ease;
   white-space: nowrap;
   margin-left: auto;
-  height: 28px;
 }
 
 .filter-toolbar__clear-btn:hover {
@@ -213,5 +252,35 @@
   .filter-toolbar__type-toggles {
     order: 10;
   }
+}
+
+/* ---- Select / Dropdown matching pill design ---- */
+.filter-toolbar__select {
+  height: 28px;
+  padding: 0 28px 0 10px;
+  max-width: 120px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  background-color: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2210%22%20height%3D%226%22%20viewBox%3D%220%200%2010%206%22%20fill%3D%22none%22%20stroke%3D%22%239CA3AF%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201l4%204%204-4%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: all 0.15s ease;
+}
+
+.filter-toolbar__select:hover,
+.filter-toolbar__select:focus {
+  background-color: var(--bg-hover);
+  border-style: solid;
+  color: var(--text-primary);
+  outline: none;
 }
 

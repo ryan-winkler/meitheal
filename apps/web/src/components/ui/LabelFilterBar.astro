@@ -33,7 +33,7 @@ const {
     tabindex="0"
     aria-pressed={activeLabels.length === 0 ? "true" : "false"}
   >
-    All
+    Clear
   </span>
   {/* Dynamic label chips populated by client JS */}
 </div>
@@ -54,7 +54,16 @@ const {
           const data = await res.json()
           allLabels = Array.isArray(data) ? data : data.labels || []
           loaded = true
-          renderChips()
+
+          // Unhide the border container if there are labels to show
+          const container = bar.closest('.w-full')
+          if (allLabels.length > 0) {
+            container?.classList.remove('hidden')
+            container?.classList.add('mt-2', 'pt-2', 'border-t', 'border-border/40')
+            renderChips()
+          } else {
+            container?.classList.add('hidden')
+          }
         }
       } catch { /* offline fallback */ }
     }

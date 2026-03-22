@@ -254,6 +254,7 @@ export const POST: APIRoute = async ({ request }) => {
   const task_kind = isValidTaskKind(rawTaskKind) ? rawTaskKind : "standard_action"
 
   const project_id = typeof body.project_id === "string" ? body.project_id : null
+  const goal_id = typeof body.goal_id === "string" ? body.goal_id : null
 
   // Phase 06: Eisenhower urgency/importance (0-5, default 0 = unclassified)
   const rawUrgency = typeof body.urgency === "number" ? body.urgency : 0
@@ -271,7 +272,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
-    framework_payload, parent_id, area_id, custom_fields, project_id,
+    framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
     start_date, end_date, progress, color, is_favorite,
     task_type, task_kind, ticket_number, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
@@ -279,7 +280,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
-  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance), eisenhower_override: 0, created_at: now, updated_at: now }
+  const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, goal_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance), eisenhower_override: 0, created_at: now, updated_at: now }
 
   dispatchTaskEvent("task.created", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 

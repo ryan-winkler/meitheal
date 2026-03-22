@@ -150,7 +150,7 @@ function switchView(view: TaskView) {
  * Initialize the tasks view controller.
  * Call from the page's script block via pageLifecycle.
  */
-export function initTasksViewSwitcher(signal?: AbortSignal) {
+export function initTasksViewSwitcher(signal: AbortSignal) {
   const activeView = resolveActiveView()
 
   // Mark kanban as always initialized (it's the default SSR view)
@@ -182,7 +182,7 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
       switchView(hash as TaskView)
     }
   }
-  window.addEventListener("hashchange", onHashChange, signal ? { signal } : undefined)
+  window.addEventListener("hashchange", onHashChange, { signal })
 
   // Listen for programmatic tab clicks
   document.querySelectorAll<HTMLElement>("[data-view-tab]").forEach(tab => {
@@ -192,7 +192,7 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
       if (view && VALID_VIEWS.includes(view)) {
         switchView(view)
       }
-    }, signal ? { signal } : undefined)
+    }, { signal })
   })
 
   // [T6] Keyboard shortcuts: 1-4 to switch views when no input is focused
@@ -217,7 +217,7 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
       e.preventDefault()
       switchView(view)
     }
-  }, signal ? { signal } : undefined)
+  }, { signal })
 
   // Listen for "View Details" from popup/chart clicks — open detail panel (not page nav)
   window.addEventListener("meitheal:open-task", ((e: CustomEvent) => {
@@ -227,5 +227,5 @@ export function initTasksViewSwitcher(signal?: AbortSignal) {
         openTaskDetailHandoff(taskId)
       })
     }
-  }) as EventListener, signal ? { signal } : undefined)
+  }) as EventListener, { signal })
 }

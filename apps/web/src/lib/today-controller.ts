@@ -22,7 +22,7 @@
  * dynamic content support.
  */
 
-import { taskApi } from "./task-api-client"
+import { taskApi, type TaskCreatePayload } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
@@ -484,7 +484,7 @@ function setupQuickAdd(container: HTMLElement) {
     }
 
     try {
-      const result = await taskApi.createTask(payload as any)
+      const result = await taskApi.createTask(payload as TaskCreatePayload)
       if (result) {
         quickInput.value = ""
         if (quickFeedback) quickFeedback.style.display = "none"

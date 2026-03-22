@@ -30,7 +30,7 @@ export const GET: APIRoute = async () => {
         active: syncStatus.active,
         entityId: syncStatus.entityId ?? "",
         lastSyncAt: syncStatus.lastSyncAt ?? null,
-        eventCount: syncStatus.eventCount ?? 0,
+        eventCount: syncStatus.lastSyncEventCount ?? 0,
       },
     }), {
       status: 200,

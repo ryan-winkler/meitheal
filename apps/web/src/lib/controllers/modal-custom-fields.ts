@@ -10,14 +10,17 @@
 export interface CustomFieldsDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
   getSettingsFields: () => Array<{ name: string; type: string; options?: string[] }>
+  signal?: AbortSignal
 }
 
 /**
  * Initialise custom fields panel with CRUD and categorised dropdown.
  */
-export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps): {
+export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFieldsDeps): {
   addCFRow: (key: string, value: string, fieldType?: string, options?: string[]) => void
 } {
+  const opts = signal ? { signal } : undefined
+  
   function getCFFromUI(): Record<string, string> {
     const result: Record<string, string> = {}
     document.querySelectorAll(".td-cf-row").forEach((row) => {
@@ -107,17 +110,17 @@ export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps
       cb?.addEventListener("change", () => {
         if (cbLabel) cbLabel.textContent = cb.checked ? "Yes" : "No"
         saveCF()
-      })
+      }, opts)
     } else {
       const valInput = row.querySelector(".td-cf-val")!
-      valInput.addEventListener("blur", saveCF)
-      valInput.addEventListener("input", saveCF)
+      valInput.addEventListener("blur", saveCF, opts)
+      valInput.addEventListener("input", saveCF, opts)
     }
 
     row.querySelector(".td-cf-remove")!.addEventListener("click", () => {
       row.remove()
       saveCF()
-    })
+    }, opts)
     cfDiv.appendChild(row)
   }
 
@@ -243,7 +246,7 @@ export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps
         ;(
           document.getElementById("td-add-cf-search") as HTMLInputElement
         ).value = ""
-      })
+      }, opts)
     })
   }
 
@@ -258,13 +261,13 @@ export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps
         document.getElementById("td-add-cf-search") as HTMLInputElement
       ).focus()
     }
-  })
+  }, opts)
 
   document
     .getElementById("td-add-cf-search")
     ?.addEventListener("input", (e) => {
       renderFieldDropdown((e.target as HTMLInputElement).value)
-    })
+    }, opts)
 
   document
     .getElementById("td-add-cf-search")
@@ -293,7 +296,7 @@ export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps
         document.getElementById("td-add-cf-dropdown")!.style.display =
           "none"
       }
-    })
+    }, opts)
 
   // Close dropdown on outside click
   document.addEventListener("click", (e) => {
@@ -312,7 +315,7 @@ export function initCustomFields({ saveTD, getSettingsFields }: CustomFieldsDeps
       const pr = document.getElementById("td-link-parent-results")
       if (pr) pr.style.display = "none"
     }
-  })
+  }, opts)
 
   return { addCFRow }
 }

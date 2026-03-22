@@ -540,7 +540,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // Group-by/swimlane logic, filter integration, counts
     // Extracted to @lib/controllers/kanban-grouping.ts
-    try { initGroupingAndFilters() } catch (e) { log.warn("Grouping/filters init failed", e) }
+    try { initGroupingAndFilters(__signal) } catch (e) { log.warn("Grouping/filters init failed", e) }
 
     // T-1915: Column collapse toggle (REMOVED — clicking lane headers to collapse
     // was unintuitive UX and caused visual breakage, per user feedback).
@@ -583,7 +583,7 @@ export function initKanbanArea(__signal: AbortSignal): void {
 
     // User filter: Jira-style assignee pills
     // Extracted to @lib/controllers/kanban-user-filter.ts
-    try { initUserFilter() } catch (e) { log.warn("User filter init failed", e) }
+    try { initUserFilter(__signal) } catch (e) { log.warn("User filter init failed", e) }
 
     // ─── Touch Drag Polyfill (Long-Press Paradigm) ─────────────
     // Extracted to @lib/controllers/kanban-touch-drag.ts

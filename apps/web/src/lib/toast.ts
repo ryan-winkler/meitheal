@@ -14,7 +14,7 @@ const MAX_VISIBLE_TOASTS = 5;
 /** Show a toast notification */
 export function showToast(
     message: string,
-    type: "success" | "error" = "success",
+    type: "success" | "error" | "warning" = "success",
 ): void {
     let container = document.getElementById("toast-container");
     if (!container) {

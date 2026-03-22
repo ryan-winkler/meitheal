@@ -12,12 +12,12 @@ import { logApiError } from "@lib/api-logger"
 
 export const GET: APIRoute = async ({ url }) => {
   try {
-    const taskType = url.searchParams.get("taskType") as TaskType | null
-    const tag = url.searchParams.get("tag")
-    const rules = await findAllRules({
-      taskType: taskType ?? undefined,
-      tag: tag ?? undefined,
-    })
+    const taskTypeParam = url.searchParams.get("taskType") as TaskType | null
+    const tagParam = url.searchParams.get("tag")
+    const filter: { taskType?: TaskType; tag?: string } = {}
+    if (taskTypeParam) filter.taskType = taskTypeParam
+    if (tagParam) filter.tag = tagParam
+    const rules = await findAllRules(filter)
     return new Response(JSON.stringify({ ok: true, data: rules }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

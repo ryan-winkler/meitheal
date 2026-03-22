@@ -12,7 +12,7 @@
 /**
  * Initialise the user filter pill bar for Kanban.
  */
-export async function initUserFilter(): Promise<void> {
+export async function initUserFilter(signal: AbortSignal): Promise<void> {
   const container = document.getElementById("kanban-user-filters")
   if (!container) return
 
@@ -92,7 +92,7 @@ export async function initUserFilter(): Promise<void> {
       .forEach((b) => b.classList.remove("active"))
     btn.classList.add("active")
     applyUserFilter()
-  })
+  }, { signal })
 
   // Apply on load
   applyUserFilter()

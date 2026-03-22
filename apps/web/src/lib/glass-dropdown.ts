@@ -5,6 +5,8 @@
  * Handles click-to-open, click-outside-to-close, and accessibility bindings.
  */
 
+let _globalClickAttached = false
+
 export function initGlassDropdowns() {
   const dropdowns = document.querySelectorAll<HTMLElement>(".glass-dropdown")
 
@@ -54,19 +56,22 @@ export function initGlassDropdowns() {
   })
 
   // Global click outside listener
-  document.addEventListener("click", (e) => {
-    const target = e.target as Node
-    const openDropdowns = document.querySelectorAll(".glass-dropdown__content.is-open")
-    
-    openDropdowns.forEach((content) => {
-      const dropdown = content.closest(".glass-dropdown")
-      if (dropdown && !dropdown.contains(target)) {
-        content.classList.remove("is-open")
-        const triggerBtn = dropdown.querySelector(".glass-dropdown__trigger button") || dropdown.querySelector(".glass-dropdown__trigger")
-        triggerBtn?.setAttribute("aria-expanded", "false")
-      }
+  if (!_globalClickAttached) {
+    _globalClickAttached = true
+    document.addEventListener("click", (e) => {
+      const target = e.target as Node
+      const openDropdowns = document.querySelectorAll(".glass-dropdown__content.is-open")
+      
+      openDropdowns.forEach((content) => {
+        const dropdown = content.closest(".glass-dropdown")
+        if (dropdown && !dropdown.contains(target)) {
+          content.classList.remove("is-open")
+          const triggerBtn = dropdown.querySelector(".glass-dropdown__trigger button") || dropdown.querySelector(".glass-dropdown__trigger")
+          triggerBtn?.setAttribute("aria-expanded", "false")
+        }
+      })
     })
-  })
+  }
 }
 
 function closeAllDropdowns() {

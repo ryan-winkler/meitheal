@@ -2567,7 +2567,13 @@ export function initTimelineController(signal: AbortSignal) {
       area: detail.area ?? "",
       groupBy: detail.groupBy ?? "none",
     }
-    doRender(currentZoom)
+    
+    // Only re-render if the timeline view is actually visible to prevent skeleton flashes 
+    // and layout thrashing in the background
+    const timelineView = document.getElementById("view-timeline")
+    if (timelineView && !timelineView.classList.contains("hidden")) {
+      doRender(currentZoom)
+    }
   }) as EventListener, { signal })
 
   // M1: Listen for area selector changes from the nav bar "All Areas" dropdown

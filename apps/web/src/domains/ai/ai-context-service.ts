@@ -18,7 +18,6 @@ const log = createClientLogger("ai", "context");
 interface TaskWithExtras extends OfflineTask {
   taskType?: string;
   task_type?: string;
-  priority?: number;
 }
 
 /** Result from an AI call — either inline response or fallback */

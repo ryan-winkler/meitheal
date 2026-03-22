@@ -72,6 +72,7 @@ export interface TaskRow {
   // ── Phase 4 (DDD hierarchy + human-agent) ──
   task_kind: string
   project_id: string | null
+  goal_id: string | null
   owner: string
   lock_holder: string | null
   lock_expires_at: number | null
@@ -727,7 +728,7 @@ export class TaskRepository {
     id: string; title: string; description: string; status: string;
     priority: number; due_date: string | null; labels: string;
     framework_payload: string; parent_id: string | null;
-    area_id: string; custom_fields: string; project_id?: string | null; start_date: string | null;
+    area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
     end_date: string | null; progress: number; color: string | null;
     is_favorite: number; task_type: string; task_kind?: string; ticket_number: number;
     assigned_to: string | null; checklists?: string | null;
@@ -738,16 +739,16 @@ export class TaskRepository {
     const now = Date.now();
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               framework_payload, calendar_sync_state, parent_id, time_tracked, project_id,
+                               framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
                                area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                                task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
                                urgency, importance, effort_minutes, effort_type, blocked_by,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id, data.title, data.description, data.status, data.priority,
         data.due_date, data.labels, data.framework_payload,
-        STATUS.PENDING, data.parent_id, data.project_id ?? null, data.area_id, data.custom_fields,
+        STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
         data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
         data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,

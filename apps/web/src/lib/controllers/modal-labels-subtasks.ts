@@ -11,17 +11,19 @@ export interface LabelsSubtasksDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
   getCurrentTaskId: () => string | null
   openTaskDetail: (id: string) => void
+  signal?: AbortSignal
 }
 
 /**
  * Initialise labels chip bar + inline subtask creation form.
  */
-export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail }: LabelsSubtasksDeps): {
+export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail, signal }: LabelsSubtasksDeps): {
   addLabelChip: (label: string) => void
   getCurrentLabels: () => string[]
   setCurrentLabels: (labels: string[]) => void
 } {
   let currentLabels: string[] = []
+  const opts = signal ? { signal } : {}
 
   function addLabelChip(label: string) {
     const labelsDiv = document.getElementById("td-labels") as HTMLElement
@@ -40,7 +42,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
         currentLabels = currentLabels.filter((l) => l !== label)
         chip.remove()
         saveTD("labels", JSON.stringify(currentLabels))
-      })
+      }, opts)
     chip.appendChild(removeBtn)
     labelsDiv.appendChild(chip)
   }
@@ -60,7 +62,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       addLabelChip(val)
       input.value = ""
       saveTD("labels", JSON.stringify(currentLabels))
-    })
+    }, opts)
 
   // Phase 1 (REC-04): Recurrence select → save on change
   document
@@ -72,7 +74,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       if (descEl) {
         descEl.textContent = val ? `🔁 ${(e.target as HTMLSelectElement).selectedOptions[0]?.textContent ?? ""}` : ""
       }
-    })
+    }, opts)
 
   // Phase 1 (SUB-02): Add subtask inline form
   const addSubBtn = document.getElementById("td-add-subtask-btn")
@@ -88,12 +90,12 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       addSubBtn.classList.add("hidden")
       addSubInput.value = ""
       addSubInput.focus()
-    })
+    }, opts)
     addSubCancel.addEventListener("click", () => {
       addSubForm.classList.add("hidden")
       addSubForm.classList.remove("flex")
       addSubBtn.classList.remove("hidden")
-    })
+    }, opts)
     const submitSubtask = async () => {
       const title = addSubInput.value.trim()
       if (!title) return
@@ -134,14 +136,14 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
         addSubInput.disabled = false
       }
     }
-    addSubSubmit.addEventListener("click", submitSubtask)
+    addSubSubmit.addEventListener("click", submitSubtask, opts)
     addSubInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitSubtask()
       if (e.key === "Escape") {
         addSubForm.classList.add("hidden")
         addSubBtn.classList.remove("hidden")
       }
-    })
+    }, opts)
   }
 
   return {

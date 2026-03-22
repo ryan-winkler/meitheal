@@ -92,29 +92,32 @@ export function initHelperSystem(): void {
   }
 
   // Global keyboard shortcut: ? to restore all helpers
-  document.addEventListener("keydown", (e) => {
-    // Only trigger if not in an input/textarea/contenteditable
-    const target = e.target as HTMLElement
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
+  if (!window.__helperKeyboardBound) {
+    window.__helperKeyboardBound = true
+    document.addEventListener("keydown", (e) => {
+      // Only trigger if not in an input/textarea/contenteditable
+      const target = e.target as HTMLElement
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
 
-    if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const count = dismissedCount()
-      if (count === 0) return
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const count = dismissedCount()
+        if (count === 0) return
 
-      restoreAllHelpers()
-      // Show all helpers on current page
-      const allHelpers = document.querySelectorAll<HTMLElement>("[data-helper-id]")
-      for (const h of allHelpers) {
-        h.style.display = ""
-        h.classList.remove("inline-helper--collapsed")
+        restoreAllHelpers()
+        // Show all helpers on current page
+        const allHelpers = document.querySelectorAll<HTMLElement>("[data-helper-id]")
+        for (const h of allHelpers) {
+          h.style.display = ""
+          h.classList.remove("inline-helper--collapsed")
+        }
+
+        // Brief flash notification
+        const flash = document.createElement("div")
+        flash.className = "helper-restore-flash"
+        flash.textContent = `${count} helper${count > 1 ? "s" : ""} restored — press ? again to dismiss`
+        document.body.appendChild(flash)
+        setTimeout(() => flash.remove(), 2500)
       }
-
-      // Brief flash notification
-      const flash = document.createElement("div")
-      flash.className = "helper-restore-flash"
-      flash.textContent = `${count} helper${count > 1 ? "s" : ""} restored — press ? again to dismiss`
-      document.body.appendChild(flash)
-      setTimeout(() => flash.remove(), 2500)
-    }
-  })
+    })
+  }
 }

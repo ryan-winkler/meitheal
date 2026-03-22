@@ -332,6 +332,44 @@ dialog[open] .modal-content,
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* --- NewTask Status Pills --- */
+.nt-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  background: var(--color-bg-input, rgba(255, 255, 255, 0.05));
+  color: var(--color-text-muted, #a1a1aa);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.nt-status-pill:hover {
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--color-border-focus, rgba(255, 255, 255, 0.2));
+  color: var(--color-text-primary, #fff);
+}
+
+.nt-status-pill.active {
+  background: color-mix(in srgb, var(--color-accent, #7c3aed) 18%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 50%, transparent);
+  color: var(--color-accent, #7c3aed);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent, #7c3aed) 15%, transparent);
+}
+
+.nt-status-pill-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
 /* Transitions for inputs/selects on hover/focus */
 .modal-content input[type="text"]:not(:focus),
 .modal-content input[type="date"]:not(:focus),

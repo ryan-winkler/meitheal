@@ -140,20 +140,20 @@ export async function reviewAction(action: "promote" | "archive" | "delete"): Pr
   }
 }
 
-export function setupReviewListeners(): void {
+export function setupReviewListeners(signal: AbortSignal): void {
   // Close on overlay backdrop click
   document.getElementById("review-overlay")?.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).classList.contains("review-overlay")) {
       closeReview()
     }
-  })
+  }, { signal })
 
   // Close on Escape key (when review is open)
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !document.getElementById("review-overlay")?.classList.contains("triage-overlay--hidden")) {
       closeReview()
     }
-  })
+  }, { signal })
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────

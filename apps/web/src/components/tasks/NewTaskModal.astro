@@ -14,141 +14,158 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   aria-modal="true"
   aria-labelledby="new-task-title"
 >
-  <div class="modal-content max-w-lg w-full p-6 bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-white/5 rounded-2xl">
+  <div class="modal-content max-w-2xl w-full p-6 bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-white/5 rounded-2xl">
     <div
-      class="modal-header flex items-center justify-between mb-4 border-b border-border pb-3"
+      class="modal-header flex items-center justify-between mb-4 border-b border-border"
     >
-      <h2 class="text-xl font-bold text-text-primary" id="new-task-title">
-        {t("tasks.new_task", locale)}
-      </h2>
+      <div class="flex gap-2" id="nt-kind-tabs">
+        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-accent text-text-primary transition-colors" data-kind="task">Task</button>
+        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="shopping_list">Shopping list</button>
+        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="checklist">Checklist</button>
+        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="event">Event</button>
+      </div>
       <button
         type="button"
-        class="btn-icon text-xl text-text-muted hover:text-text-primary"
+        class="btn-icon text-xl text-text-muted hover:text-text-primary pb-2"
         id="close-new-task-modal"
         aria-label="Close">✕</button
       >
     </div>
 
     <form id="new-task-form" class="space-y-4">
-      <div class="form-group">
-        <label for="new-task-title-input" class="form-label ml-1"
-          >{t("tasks.title_label", locale)}
-          <span class="text-accent">*</span></label
-        >
+      <input type="hidden" name="task_kind" id="new-task-kind" value="task" />
+      
+      <div class="form-group mb-2">
         <textarea
-          class="form-input bg-bg-input/50 border-white/10 focus:bg-bg-input resize-none overflow-hidden text-lg font-medium py-3 rounded-xl transition-colors"
+          class="form-input bg-transparent border-none focus:ring-0 text-2xl font-bold p-0 mb-2 placeholder:text-text-muted/50 w-full resize-none overflow-hidden leading-tight"
           id="new-task-title-input"
           name="title"
-          rows="1"
-          placeholder="What needs to be done? (Use #tags or 'today')"
+          placeholder="Task Name"
           required
           autofocus
+          rows="1"
+          style="height: 2.5rem; max-height: 120px;"
+          oninput="this.style.height = '2.5rem'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'"
+        ></textarea>
+      </div>
+
+      <div class="form-group mb-6">
+        <textarea
+          class="form-input bg-transparent border border-transparent focus:border-white/10 hover:border-white/5 rounded-lg text-sm w-full p-2 resize-none overflow-hidden placeholder:text-text-muted/50 transition-colors"
+          id="new-task-desc-input"
+          name="description"
+          rows="2"
+          placeholder="Add description..."
           oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
         ></textarea>
       </div>
 
-      <div class="form-group">
-        <label for="new-task-desc-input" class="form-label">Description</label>
-        <textarea
-          class="form-input bg-bg-input resize-y min-h-[80px]"
-          id="new-task-desc-input"
-          placeholder="Optional description (Markdown supported)"></textarea>
-      </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div class="form-group">
-          <label for="new-task-priority" class="form-label ml-1"
-            >{t("tasks.priority_label", locale)}</label
-          >
-          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl min-h-[44px]" id="new-task-priority">
-            <option value="1">Urgent (1)</option>
-            <option value="2">High (2)</option>
-            <option value="3" selected>Medium (3)</option>
-            <option value="4">Low (4)</option>
-          </select>
+      <div class="flex flex-wrap items-center gap-2 pb-4">
+        <!-- Status Pills -->
+        <input type="hidden" id="new-task-status" name="status" value="pending" />
+        <div id="nt-status-pills" class="flex items-center gap-1.5" role="radiogroup" aria-label="Task status">
+          <button type="button" class="nt-status-pill active" data-status="pending" role="radio" aria-checked="true">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><circle cx="12" cy="12" r="10"/></svg>
+            <span>To Do</span>
+          </button>
         </div>
-        <div class="form-group">
-          <label for="new-task-status" class="form-label ml-1"
-            >{t("tasks.status_label", locale)}</label
-          >
-          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px]" id="new-task-status" name="status">
-            <option value="pending">⏳ Pending</option>
+
+        <!-- Assignee -->
+        <div class="relative group">
+          <select class="form-select appearance-none bg-transparent hover:bg-white/5 border border-white/10 rounded-lg text-xs py-1.5 pl-8 pr-8 shadow-sm transition-colors cursor-pointer" id="new-task-assigned-to">
+            <option value="">Unassigned</option>
           </select>
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-text-muted">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          </div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-muted">
+             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </div>
         </div>
-      </div>
 
-      <div class="form-group">
-        <label for="new-task-labels" class="form-label">Labels</label>
-        <LabelPicker id="new-task-label-picker" name="labels" />
-      </div>
-
-      <div class="form-group">
-        <label for="new-task-assigned-to" class="form-label">Assign To</label>
-        <select class="form-select bg-bg-input" id="new-task-assigned-to">
-          <option value="">Unassigned</option>
-        </select>
-        <p
-          class="text-xs text-text-muted mt-1 hidden"
-          id="new-task-assignee-hint"
-        >
-          Tip: Use @name in the title to auto-assign
-        </p>
-      </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div class="form-group">
-          <label for="new-task-pillar" class="form-label flex items-center gap-1.5" title="Pillars represent the permanent foundations of your life and strategic direction."><span title="Pillar">🏛️</span> Pillar</label>
-          <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px]" id="new-task-pillar" name="pillar_id">
-            <option value="">No pillar</option>
+        <!-- Priority -->
+        <div class="relative group">
+          <select class="form-select appearance-none bg-transparent hover:bg-white/5 border border-white/10 rounded-lg text-xs py-1.5 pl-7 pr-8 shadow-sm transition-colors cursor-pointer" id="new-task-priority">
+            <option value="1">Urgent</option>
+            <option value="2">High</option>
+            <option value="3" selected>Normal</option>
+            <option value="4">Low</option>
           </select>
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-text-muted">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+          </div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-muted">
+             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </div>
         </div>
         
-        <div class="form-group">
-          <label for="new-task-principle" class="form-label flex items-center gap-1.5" title="Principles are the qualitative standards guiding actions within a Pillar."><span title="Principle">⚖️</span> Principle</label>
-          <div class="relative flex items-center">
-            <select class="form-select bg-bg-input/50 border-white/10 rounded-xl focus:ring-1 focus:ring-accent transition-colors min-h-[44px] w-full" id="new-task-principle" name="principle_id">
-              <option value="">No principle</option>
-            </select>
-            <div id="new-task-principle-loader" class="absolute right-8 w-3 h-3 border-2 border-accent border-r-transparent rounded-full animate-spin hidden pointer-events-none"></div>
+        <!-- Tags / Labels -->
+        <div class="relative group">
+          <button type="button" class="form-select appearance-none bg-transparent hover:bg-white/5 border border-white/10 rounded-lg text-xs py-1.5 pl-7 pr-8 shadow-sm transition-colors cursor-pointer w-full text-left" onclick="document.getElementById('new-task-labels-panel').classList.toggle('hidden')">
+            Tags
+          </button>
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-text-muted">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+          </div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-muted">
+             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+          </div>
+        </div>
+        
+        <!-- Goal -->
+        <div class="relative group">
+          <select class="form-select appearance-none bg-transparent hover:bg-white/5 border border-white/10 rounded-lg text-xs py-1.5 pl-7 pr-8 shadow-sm transition-colors cursor-pointer" id="new-task-goal" name="goal_id">
+            <option value="">No goal</option>
+          </select>
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-text-muted">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="text-accent" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+          </div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-muted">
+             <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
           </div>
         </div>
       </div>
 
-      <!-- Recurrence Picker (Phase 1: REC-02) -->
-      <div class="form-group">
-        <label for="new-task-recurrence" class="form-label">Recurrence</label>
-        <select class="form-select bg-bg-input" id="new-task-recurrence">
-          <option value="">None (one-time)</option>
-          <option value="FREQ=DAILY">Every day</option>
-          <option value="FREQ=WEEKLY">Every week</option>
-          <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday</option>
-          <option value="FREQ=MONTHLY">Every month</option>
-          <option value="FREQ=YEARLY">Every year</option>
-          <option value="FREQ=WEEKLY;INTERVAL=2">Every 2 weeks</option>
-        </select>
+      <!-- Contextual UI for Checklist / Event -->
+      <div id="nt-contextual-fields" class="hidden mb-4 p-3 bg-bg-input/20 border border-white/5 rounded-xl space-y-3">
+        <div class="form-group flex items-center gap-3">
+           <label class="text-xs font-semibold text-text-muted uppercase tracking-wider w-20">Due Date</label>
+           <input type="datetime-local" id="nt-contextual-due" class="form-input flex-1 bg-bg-input/50 border-white/10 rounded-lg text-sm px-3 py-1.5 focus:ring-accent focus:border-accent" />
+        </div>
+        
+        <div id="nt-contextual-checklist" class="hidden">
+           <div class="form-group flex flex-col gap-2">
+             <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">Sub-items</label>
+             <div id="nt-checklist-items-container" class="space-y-1"></div>
+             <input type="text" id="nt-checklist-builder-input" class="form-input bg-transparent border-none border-b border-white/10 rounded-none px-0 py-1 text-sm focus:ring-0 focus:border-accent w-full placeholder:text-text-muted/50" placeholder="Type an item and press Enter..." />
+           </div>
+        </div>
       </div>
 
-      <!-- Checklist (Phase 1: CHK-01) -->
-      <div class="form-group">
-        <label class="form-label">Checklist</label>
-        <div id="new-task-checklist-items" class="space-y-1"></div>
-        <button type="button" id="new-task-add-checklist" class="text-xs text-accent hover:text-accent-hover mt-1 flex items-center gap-1">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-           Add checklist item
-        </button>
+      <div id="new-task-labels-panel" class="hidden form-group bg-bg-input/30 p-3 rounded-lg border border-white/5">
+        <label for="new-task-labels" class="form-label text-xs">Select Tags</label>
+        <LabelPicker id="new-task-label-picker" name="labels" />
       </div>
 
       <div
-        class="modal-actions pt-5 border-t border-white/5 flex justify-end gap-3 mt-8"
+        class="modal-actions pt-4 border-t border-white/5 flex items-center justify-between mt-4"
       >
-        <button type="button" class="btn btn-ghost hover:bg-white/5 rounded-xl transition-colors" id="cancel-new-task"
-          >{t("tasks.cancel", locale)}</button
-        >
-        <button
-          type="submit"
-          class="btn btn-primary rounded-xl shadow-[0_0_15px_rgba(var(--color-accent),0.3)] hover:shadow-[0_0_20px_rgba(var(--color-accent),0.5)] transition-all"
-          id="submit-new-task-btn">Create Task</button
-        >
+        <button type="button" class="btn btn-ghost hover:bg-white/5 rounded-lg flex items-center gap-2 text-sm px-3" id="new-task-templates-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+          Templates
+        </button>
+
+        <div class="flex items-center gap-3">
+          <button type="button" class="btn-icon text-text-muted hover:text-text-primary" title="Attachments">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+          </button>
+          
+          <button
+            type="submit"
+            class="bg-white/90 hover:bg-white text-black font-semibold rounded-lg px-4 py-1.5 shadow-sm transition-colors text-sm"
+            id="submit-new-task-btn">Create Task</button
+          >
+        </div>
       </div>
     </form>
   </div>
@@ -157,6 +174,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 <script>
   import { showToast } from "@lib/toast";
   import { createClientLogger } from "@lib/client-logger";
+  import { pageLifecycle } from "@lib/page-lifecycle";
 
   const log = createClientLogger("tasks", "new-task-modal");
 
@@ -168,373 +186,460 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     return d;
   };
 
-  const overlay = document.getElementById("new-task-overlay");
-  const closeBtn = document.getElementById("close-new-task-modal");
-  const cancelBtn = document.getElementById("cancel-new-task");
-  const form = document.getElementById("new-task-form") as HTMLFormElement;
+  pageLifecycle.onPageLoad((signal) => {
+    const overlay = document.getElementById("new-task-overlay");
+    const closeBtn = document.getElementById("close-new-task-modal");
+    const cancelBtn = document.getElementById("cancel-new-task");
+    const form = document.getElementById("new-task-form") as HTMLFormElement | null;
 
-  // Checklist item management (CHK-01)
-  const checklistContainer = document.getElementById("new-task-checklist-items");
-  const addChecklistBtn = document.getElementById("new-task-add-checklist");
+    // Task Kind Tab Switching
+    const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
+    const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
 
-  function addChecklistRow(value = "") {
-    if (!checklistContainer) return;
-    const row = document.createElement("div");
-    row.className = "flex items-center gap-1";
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "form-input text-sm py-1 flex-1 bg-bg-input";
-    input.placeholder = "Checklist item...";
-    input.value = value;
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "text-text-muted hover:text-red-400 text-sm px-1";
-    removeBtn.textContent = "✕";
-    removeBtn.addEventListener("click", () => row.remove());
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); addChecklistRow(); }
-      if (e.key === "Escape" && !input.value.trim()) row.remove();
-    });
-    row.appendChild(input);
-    row.appendChild(removeBtn);
-    checklistContainer.appendChild(row);
-    setTimeout(() => input.focus(), 10);
-  }
-
-  addChecklistBtn?.addEventListener("click", () => addChecklistRow());
-
-  function closeNewTaskModal() {
-    if (!overlay || !overlay.classList.contains("active")) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const finishClose = () => {
-      overlay.classList.remove("active", "closing");
-      form?.reset();
-      if (checklistContainer) checklistContainer.innerHTML = "";
-    };
-    if (reducedMotion) { finishClose(); return; }
-    overlay.classList.add("closing");
-    const content = overlay.querySelector(".modal-content");
-    if (content) {
-      const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
-      content.addEventListener("animationend", onEnd, { once: true });
-      setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
-    } else {
-      finishClose();
-    }
-  }
-
-  closeBtn?.addEventListener("click", closeNewTaskModal);
-  cancelBtn?.addEventListener("click", closeNewTaskModal);
-  overlay?.addEventListener("click", (e) => {
-    if (e.target === overlay) closeNewTaskModal();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (overlay?.classList.contains("active")) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeNewTaskModal();
-      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        form?.requestSubmit();
-      }
-    }
-  });
-
-  // Expose global open method
-  window.openNewTaskModal = () => {
-    // If the detail panel is open, close it to avoid dual modal
-    document.getElementById("task-detail-panel")?.classList.remove("open");
-    document.getElementById("task-detail-overlay")?.classList.remove("active");
-
-    form?.reset();
-    overlay?.classList.add("active");
-    
-    // Load user list for assignment dropdown
-    loadAssigneeDropdown();
-    setTimeout(() => {
-      document.getElementById("new-task-title-input")?.focus();
-    }, 50);
-  };
-
-  // Fetch users and populate the Assign To dropdown
-  async function loadAssigneeDropdown() {
-    const select = document.getElementById(
-      "new-task-assigned-to",
-    ) as HTMLSelectElement;
-    const hint = document.getElementById("new-task-assignee-hint");
-    if (!select) return;
-
-    // Reset to just "Unassigned"
-    select.innerHTML = '<option value="">Unassigned</option>';
-
-    try {
-      const res = await fetch((window.__ingress_path || "") + "/api/users");
-      if (!res.ok) return;
-      const data = await res.json();
-      const users = data.users || [];
-
-      if (users.length === 0) {
-        // No users discovered — hide dropdown, show link to settings
-        select.parentElement!.style.display = "none";
-        return;
-      }
-
-      select.parentElement!.style.display = "";
-      if (hint) {
-        if (users.length > 1) hint.classList.remove("hidden")
-        else hint.classList.add("hidden")
-      }
-
-      for (const user of users) {
-        const opt = document.createElement("option");
-        opt.value = user.id;
-        opt.textContent =
-          user.name + (user.source === "home_assistant" ? " (HA)" : "");
-        select.appendChild(opt);
-      }
-
-      // Auto-select default assignee if set
-      if (data.default_assignee) {
-        select.value = data.default_assignee;
-      }
-
-      // Single-user auto-select
-      if (users.length === 1 && !data.default_assignee) {
-        select.value = users[0].id;
-      }
-
-      // Store users for @mention matching
-      window.__meitheal_users = users;
-    } catch {
-      // Standalone/offline — leave just "Unassigned"
-    }
-  }
-
-  // Swimlanes Loader
-  (async function loadStatusOptions() {
-    try {
-      const [lanesRes, modeRes] = await Promise.all([
-        fetch((window.__ingress_path || "") + "/api/lanes"),
-        fetch((window.__ingress_path || "") + "/api/settings?key=backlog_mode")
-      ]);
-      const statusSelect = document.getElementById("new-task-status") as HTMLSelectElement | null;
-      if (!statusSelect) return;
-      
-      let backlogMode = "visible";
-      if (modeRes.ok) {
-         try {
-           const md = await modeRes.json();
-           backlogMode = md.value;
-         } catch {} // ignore
-      }
-      
-      if (lanesRes.ok) {
-        const data = await lanesRes.json();
-        let lanes = data.lanes || [];
-        if (backlogMode === "disabled" || backlogMode === "hidden") {
-           lanes = lanes.filter((l: any) => l.key !== "backlog");
-        }
-        statusSelect.innerHTML = "";
-        for (const lane of lanes) {
-          const opt = document.createElement("option");
-          opt.value = lane.key;
-          opt.textContent = `${lane.icon} ${lane.label}`;
-          if (lane.key === "pending") opt.selected = true;
-          statusSelect.appendChild(opt);
-        }
-      }
-    } catch {
-      // offline — keep default options
-    }
-  })();
-
-  // Pillars & Principles Loader
-  (async function loadPillarsAndPrinciples() {
-    const pillarSelect = document.getElementById("new-task-pillar") as HTMLSelectElement | null;
-    const principleSelect = document.getElementById("new-task-principle") as HTMLSelectElement | null;
-    if (!pillarSelect || !principleSelect) return;
-
-    try {
-      const pilRes = await fetch((window.__ingress_path || "") + "/api/pillars");
-      if (pilRes.ok) {
-        const pilData = await pilRes.json();
-        const pillars = pilData.pillars || pilData || [];
-        pillarSelect.innerHTML = '<option value="">No pillar</option>';
-        pillars.forEach((p: any) => {
-          const opt = document.createElement("option");
-          opt.value = p.id;
-          opt.textContent = `${p.icon ?? "🏛️"} ${p.name}`;
-          pillarSelect.appendChild(opt);
+    kindTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        // Deactivate all
+        kindTabs.forEach(t => {
+          t.classList.remove("border-accent", "text-text-primary");
+          t.classList.add("border-transparent", "text-text-muted");
         });
-      }
-    } catch {}
+        // Activate clicked
+        tab.classList.remove("border-transparent", "text-text-muted");
+        tab.classList.add("border-accent", "text-text-primary");
+        
+        if (kindInput) kindInput.value = (tab as HTMLElement).dataset.kind || "task";
+        
+        const contextualDiv = document.getElementById("nt-contextual-fields");
+        const checklistDiv = document.getElementById("nt-contextual-checklist");
+        
+        const kind = kindInput?.value || "task";
+        if (kind === "shopping_list" || kind === "checklist") {
+          contextualDiv?.classList.remove("hidden");
+          checklistDiv?.classList.remove("hidden");
+        } else if (kind === "event") {
+          contextualDiv?.classList.remove("hidden");
+          checklistDiv?.classList.add("hidden");
+        } else {
+          contextualDiv?.classList.add("hidden");
+        }
+        
+        // Focus title input right away
+        document.getElementById("new-task-title-input")?.focus();
+      }, { signal });
+    });
 
-    pillarSelect.addEventListener("change", async (e) => {
-      const pillarId = (e.target as HTMLSelectElement).value;
-      principleSelect.innerHTML = '<option value="">No principle</option>';
-      if (!pillarId) return;
+    // Checklist Item Builder
+    const builderInput = document.getElementById("nt-checklist-builder-input") as HTMLInputElement | null;
+    const itemsContainer = document.getElementById("nt-checklist-items-container");
+    const extractedChecklistItems: string[] = [];
+
+    (window as any)._removeNTCItem = (val: string) => {
+       const idx = extractedChecklistItems.indexOf(val);
+       if (idx > -1) extractedChecklistItems.splice(idx, 1);
+    };
+
+    if (builderInput) {
+      builderInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault(); // stop form submit
+          const val = builderInput.value.trim();
+          if (val) {
+            extractedChecklistItems.push(val);
+            const pill = document.createElement("div");
+            pill.className = "flex items-center gap-2 text-sm bg-white/5 py-1 px-2 rounded group";
+            pill.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><circle cx="12" cy="12" r="10"></circle></svg>
+              <span class="flex-1">${val}</span>
+              <button type="button" class="text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onclick="this.parentElement.remove(); window._removeNTCItem('${val.replace(/'/g, "\\'")}')">✕</button>
+            `;
+            itemsContainer?.appendChild(pill);
+            builderInput.value = "";
+          }
+        }
+      }, { signal });
+    }
+
+    function closeNewTaskModal() {
+      if (!overlay || !overlay.classList.contains("active")) return;
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const finishClose = () => {
+        overlay.classList.remove("active", "closing");
+        form?.reset();
+        
+        // Reset tabs
+        kindTabs.forEach(t => {
+          t.classList.remove("border-accent", "text-text-primary");
+          t.classList.add("border-transparent", "text-text-muted");
+        });
+        if (kindTabs.length > 0) {
+          kindTabs[0]?.classList.add("border-accent", "text-text-primary");
+          kindTabs[0]?.classList.remove("border-transparent", "text-text-muted");
+        }
+        if (kindInput) kindInput.value = "task";
+
+        // Reset contextual fields
+        extractedChecklistItems.length = 0;
+        if (itemsContainer) itemsContainer.innerHTML = "";
+        document.getElementById("nt-contextual-fields")?.classList.add("hidden");
+        const contextualDue = document.getElementById("nt-contextual-due") as HTMLInputElement;
+        if (contextualDue) contextualDue.value = "";
+      };
+      if (reducedMotion) { finishClose(); return; }
+      overlay.classList.add("closing");
+      const content = overlay.querySelector(".modal-content");
+      if (content) {
+        const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
+        content.addEventListener("animationend", onEnd, { once: true });
+        setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
+      } else {
+        finishClose();
+      }
+    }
+
+    if (closeBtn) closeBtn.addEventListener("click", closeNewTaskModal, { signal });
+    if (cancelBtn) cancelBtn.addEventListener("click", closeNewTaskModal, { signal });
+    if (overlay) overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeNewTaskModal();
+    }, { signal });
+
+    document.addEventListener("keydown", (e) => {
+      if (overlay?.classList.contains("active")) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeNewTaskModal();
+        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          form?.requestSubmit();
+        }
+      }
+    }, { signal });
+
+    // Expose global open method
+    window.openNewTaskModal = () => {
+      // If the detail panel is open, close it to avoid dual modal
+      document.getElementById("task-detail-panel")?.classList.remove("open");
+      document.getElementById("task-detail-overlay")?.classList.remove("active");
+
+      form?.reset();
+      overlay?.classList.add("active");
+
+      // Reset title textarea height after form.reset()
+      const titleEl = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
+      if (titleEl) titleEl.style.height = "2.5rem";
+
+      // Reset status pills to "pending" (To Do)
+      const statusInput = document.getElementById("new-task-status") as HTMLInputElement | null;
+      if (statusInput) statusInput.value = "pending";
+      document.querySelectorAll(".nt-status-pill").forEach((p) => {
+        const isPending = (p as HTMLElement).dataset.status === "pending";
+        p.classList.toggle("active", isPending);
+        p.setAttribute("aria-checked", isPending ? "true" : "false");
+      });
+      
+      // Load user list for assignment dropdown
+      loadAssigneeDropdown();
+      setTimeout(() => {
+        titleEl?.focus();
+      }, 50);
+    };
+
+    // Fetch users and populate the Assign To dropdown
+    async function loadAssigneeDropdown() {
+      const select = document.getElementById("new-task-assigned-to") as HTMLSelectElement | null;
+      const hint = document.getElementById("new-task-assignee-hint");
+      if (!select) return;
+
+      // Reset to just "Unassigned"
+      select.innerHTML = '<option value="">Unassigned</option>';
 
       try {
-        const prinRes = await fetch((window.__ingress_path || "") + `/api/pillars/${pillarId}/principles`);
-        if (prinRes.ok) {
-          const prinData = await prinRes.json();
-          const principles = prinData.principles || prinData || [];
-          principles.forEach((p: any) => {
+        const res = await fetch((window.__ingress_path || "") + "/api/users", { signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        const users = data.users || [];
+
+        if (users.length === 0) {
+          // No users discovered — hide dropdown, show link to settings
+          if (select.parentElement) select.parentElement.style.display = "none";
+          return;
+        }
+
+        if (select.parentElement) select.parentElement.style.display = "";
+        if (hint) {
+          if (users.length > 1) hint.classList.remove("hidden")
+          else hint.classList.add("hidden")
+        }
+
+        for (const user of users) {
+          const opt = document.createElement("option");
+          opt.value = user.id;
+          opt.textContent =
+            user.name + (user.source === "home_assistant" ? " (HA)" : "");
+          select.appendChild(opt);
+        }
+
+        // Auto-select default assignee if set
+        if (data.default_assignee) {
+          select.value = data.default_assignee;
+        }
+
+        // Single-user auto-select
+        if (users.length === 1 && !data.default_assignee) {
+          select.value = users[0].id;
+        }
+
+        // Store users for @mention matching
+        (window as any).__meitheal_users = users;
+      } catch {
+        // Standalone/offline — leave just "Unassigned"
+      }
+    }
+
+    // Swimlanes Loader → Status Pills
+    (async function loadStatusPills() {
+      const pillsContainer = document.getElementById("nt-status-pills");
+      const statusHiddenInput = document.getElementById("new-task-status") as HTMLInputElement | null;
+      if (!pillsContainer || !statusHiddenInput) return;
+
+      function activatePill(pill: HTMLElement) {
+        pillsContainer!.querySelectorAll(".nt-status-pill").forEach((p) => {
+          p.classList.remove("active");
+          p.setAttribute("aria-checked", "false");
+        });
+        pill.classList.add("active");
+        pill.setAttribute("aria-checked", "true");
+        statusHiddenInput!.value = pill.dataset.status || "pending";
+      }
+
+      try {
+        const [lanesRes, modeRes] = await Promise.all([
+          fetch((window.__ingress_path || "") + "/api/lanes", { signal }),
+          fetch((window.__ingress_path || "") + "/api/settings?key=backlog_mode", { signal })
+        ]);
+        
+        let backlogMode = "visible";
+        if (modeRes.ok) {
+           try {
+             const md = await modeRes.json();
+             backlogMode = md.value;
+           } catch {} // ignore
+        }
+        
+        if (lanesRes.ok) {
+          const data = await lanesRes.json();
+          let lanes = data.lanes || [];
+          if (backlogMode === "disabled" || backlogMode === "hidden") {
+             lanes = lanes.filter((l: any) => l.key !== "backlog");
+          }
+          pillsContainer.innerHTML = "";
+          for (const lane of lanes) {
+            const pill = document.createElement("button");
+            pill.type = "button";
+            pill.className = `nt-status-pill${lane.key === "pending" ? " active" : ""}`;
+            pill.dataset.status = lane.key;
+            pill.setAttribute("role", "radio");
+            pill.setAttribute("aria-checked", lane.key === "pending" ? "true" : "false");
+            pill.innerHTML = `<span class="nt-status-pill-icon">${lane.icon}</span><span>${lane.label}</span>`;
+            pill.addEventListener("click", () => activatePill(pill), { signal });
+            pillsContainer.appendChild(pill);
+          }
+        }
+      } catch {
+        // offline — keep the single fallback pill
+        pillsContainer.querySelector(".nt-status-pill")?.addEventListener("click", (e) => {
+          activatePill(e.currentTarget as HTMLElement);
+        }, { signal });
+      }
+    })();
+
+    // Goals Loader
+    (async function loadGoals() {
+      const goalSelect = document.getElementById("new-task-goal") as HTMLSelectElement | null;
+      if (!goalSelect) return;
+
+      try {
+        const res = await fetch((window.__ingress_path || "") + "/api/goals", { signal });
+        if (res.ok) {
+          const data = await res.json();
+          const goals = data.goals || data || [];
+          goalSelect.innerHTML = '<option value="">No goal</option>';
+          goals.forEach((g: any) => {
             const opt = document.createElement("option");
-            opt.value = p.id;
-            opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
-            principleSelect.appendChild(opt);
+            opt.value = g.id;
+            opt.textContent = `🎯 ${g.title || g.name}`;
+            goalSelect.appendChild(opt);
           });
         }
       } catch {}
-    });
-  })();
+    })();
 
-  // Use event delegation on document.body to catch all create-task-btn clicks
-  // without cloning DOM nodes (which breaks other scripts' references).
-  document.body.addEventListener("click", (e) => {
-    const target = (e.target as HTMLElement).closest("#create-task-btn");
-    if (target) {
-      e.preventDefault();
-      window.openNewTaskModal?.();
-    }
-  });
+    // Use event delegation on document.body to catch all create-task-btn clicks
+    // without cloning DOM nodes (which breaks other scripts' references).
+    document.body.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest("#create-task-btn");
+      if (target) {
+        e.preventDefault();
+        window.openNewTaskModal?.();
+      }
+    }, { signal });
 
-  // Form Submission
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const titleInput = document.getElementById(
-      "new-task-title-input",
-    ) as HTMLInputElement;
-    let title = titleInput.value.trim();
-    if (!title) return;
+    // Form Submission
+    if (form) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const titleInput = document.getElementById("new-task-title-input") as HTMLInputElement | null;
+        if (!titleInput) return;
+        
+        let title = titleInput.value.trim();
+        if (!title) return;
 
-    const submitBtn = document.getElementById(
-      "submit-new-task-btn",
-    ) as HTMLButtonElement;
-    const originalText = submitBtn.textContent || "Create Task";
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Creating...";
-
-    try {
-      const extractedLabels: string[] = [];
-      let extractedDue: string | null = null;
-
-      // Extract #tags
-      title = title
-        .replace(/#(\w+)/g, (_match, label) => {
-          extractedLabels.push(label);
-          return "";
-        })
-        .trim();
-
-      // Extract date semantics
-      const dateKeywords: Record<string, () => Date> = {
-        today: () => new Date(),
-        tomorrow: () => {
-          const d = new Date();
-          d.setDate(d.getDate() + 1);
-          return d;
-        },
-        "next week": () => {
-          const d = new Date();
-          d.setDate(d.getDate() + 7);
-          return d;
-        },
-        monday: () => nextWeekday(1),
-        tuesday: () => nextWeekday(2),
-        wednesday: () => nextWeekday(3),
-        thursday: () => nextWeekday(4),
-        friday: () => nextWeekday(5),
-      };
-
-      for (const [kw, getDate] of Object.entries(dateKeywords)) {
-        const regex = new RegExp(`\\b${kw}\\b`, "i");
-        if (regex.test(title)) {
-          extractedDue = getDate().toISOString().slice(0, 16);
-          title = title.replace(regex, "").trim();
-          break;
+        const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
+        const originalText = submitBtn?.textContent || "Create Task";
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Creating...";
         }
-      }
 
-      const labelPickerValue = document.getElementById(
-        "new-task-label-picker-value",
-      ) as HTMLInputElement | null
-      const manualLabels: string[] = labelPickerValue
-        ? JSON.parse(labelPickerValue.value || "[]")
-        : []
+        try {
+          const extractedLabels: string[] = [];
+          let extractedDue: string | null = null;
 
-      const allLabels = [...new Set([...manualLabels, ...extractedLabels])];
-      let finalTitle = title || titleInput.value.trim();
+          // Extract #tags
+          title = title
+            .replace(/#(\w+)/g, (_match, label) => {
+              extractedLabels.push(label);
+              return "";
+            })
+            .trim();
 
-      // Extract @mentions for assignment
-      let assignedTo =
-        (document.getElementById("new-task-assigned-to") as HTMLSelectElement)
-          ?.value || "";
-      const users = window.__meitheal_users || [];
-      finalTitle = finalTitle
-        .replace(/@(\w+)/g, (_match: string, mention: string) => {
-          if (!assignedTo) {
-            const found = users.find((u: any) =>
-              u.name.toLowerCase().startsWith(mention.toLowerCase()),
-            );
-            if (found) assignedTo = found.id;
+          // Extract date semantics
+          const dateKeywords: Record<string, () => Date> = {
+            today: () => new Date(),
+            tomorrow: () => {
+              const d = new Date();
+              d.setDate(d.getDate() + 1);
+              return d;
+            },
+            "next week": () => {
+              const d = new Date();
+              d.setDate(d.getDate() + 7);
+              return d;
+            },
+            monday: () => nextWeekday(1),
+            tuesday: () => nextWeekday(2),
+            wednesday: () => nextWeekday(3),
+            thursday: () => nextWeekday(4),
+            friday: () => nextWeekday(5),
+          };
+
+          for (const [kw, getDate] of Object.entries(dateKeywords)) {
+            const regex = new RegExp(`\\b${kw}\\b`, "i");
+            if (regex.test(title)) {
+              extractedDue = getDate().toISOString().slice(0, 16);
+              title = title.replace(regex, "").trim();
+              break;
+            }
           }
-          return "";
-        })
-        .trim();
-      if (!finalTitle) finalTitle = titleInput.value.trim();
 
-      // Collect checklist items
-      const checklistItems: {text: string, done: boolean}[] = [];
-      document.querySelectorAll('#new-task-checklist-items input[type="text"]').forEach((inp) => {
-        const text = (inp as HTMLInputElement).value.trim();
-        if (text) checklistItems.push({ text, done: false });
-      });
+          const labelPickerValue = document.getElementById("new-task-label-picker-value") as HTMLInputElement | null;
+          let manualLabels: string[] = [];
+          if (labelPickerValue && labelPickerValue.value) {
+            try {
+              manualLabels = JSON.parse(labelPickerValue.value);
+            } catch {
+              // Ignore invalid JSON
+            }
+          }
 
-      const body: Record<string, unknown> = {
-        title: finalTitle,
-        description: (
-          document.getElementById("new-task-desc-input") as HTMLTextAreaElement
-        ).value.trim(),
-        priority: parseInt(
-          (document.getElementById("new-task-priority") as HTMLSelectElement)
-            .value,
-          10,
-        ),
-        status: (
-          document.getElementById("new-task-status") as HTMLInputElement
-        ).value,
-        labels: JSON.stringify(allLabels),
-        due_date: extractedDue,
-        assigned_to: assignedTo || null,
-        recurrence_rule: (document.getElementById("new-task-recurrence") as HTMLSelectElement)?.value || null,
-        pillar_id: (document.getElementById("new-task-pillar") as HTMLSelectElement)?.value || null,
-        principle_id: (document.getElementById("new-task-principle") as HTMLSelectElement)?.value || null,
-        checklists: checklistItems.length > 0 ? JSON.stringify(checklistItems) : undefined,
-      };
+          const allLabels = [...new Set([...manualLabels, ...extractedLabels])];
+          let finalTitle = title || titleInput.value.trim();
 
-      const res = await fetch((window.__ingress_path || "") + "/api/tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+          // Extract @mentions for assignment
+          const assignedToSelect = document.getElementById("new-task-assigned-to") as HTMLSelectElement | null;
+          let assignedTo = assignedToSelect?.value || "";
+          
+          const users = (window as any).__meitheal_users || [];
+          finalTitle = finalTitle
+            .replace(/@(\w+)/g, (_match: string, mention: string) => {
+              if (!assignedTo) {
+                const found = users.find((u: any) =>
+                  u.name.toLowerCase().startsWith(mention.toLowerCase()),
+                );
+                if (found) assignedTo = found.id;
+              }
+              return "";
+            })
+            .trim();
+            
+          if (!finalTitle) finalTitle = titleInput.value.trim();
 
-      if (res.ok) {
-        showToast("Task created successfully", "success");
-        closeNewTaskModal();
-        document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
-          detail: { action: "created" }
-        }))
-      } else {
-        showToast("Failed to create task", "error");
-      }
-    } catch (err) {
-      log.error("Failed to create task", err);
-      showToast("Network error creating task", "error");
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = originalText;
+          const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
+          const finalDue = explicitDue ? new Date(explicitDue).toISOString() : extractedDue;
+
+          const contextualChecklists = extractedChecklistItems.length > 0 ? JSON.stringify(extractedChecklistItems) : undefined;
+
+          const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
+          const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
+          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
+          const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
+          const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
+
+          const body: Record<string, unknown> = {
+            title: finalTitle,
+            description: descInputEl?.value.trim() || "",
+            task_kind: kindInputEl?.value || "task",
+            priority: parseInt(prioritySelectEl?.value || "3", 10),
+            status: statusSelectEl?.value || "pending",
+            labels: JSON.stringify(allLabels),
+            due_date: finalDue,
+            assigned_to: assignedTo || null,
+            goal_id: goalSelectEl?.value || null,
+          };
+
+          if (contextualChecklists) {
+            body.checklists = contextualChecklists;
+          }
+
+          const res = await fetch((window.__ingress_path || "") + "/api/tasks", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+            signal
+          });
+
+          if (res.ok) {
+            showToast("Task created successfully", "success");
+            closeNewTaskModal();
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
+              detail: { action: "created" }
+            }));
+            
+            // Auto-open detail modal immediately
+            try {
+              const created = await res.json();
+              if (created.task?.id && created.task?.task_kind !== "quick") {
+                setTimeout(() => window.openTaskDetail?.(created.task.id), 250);
+              }
+            } catch {}
+            
+          } else {
+            const err = await res.text();
+            showToast("Failed to create task", "error");
+            log.error("Create task failed:", err);
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
+          }
+        } catch (e) {
+          log.error("Form submission error", e);
+          showToast("Unexpected error creating task", "error");
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+          }
+        }
+      }, { signal });
     }
   });
 </script>

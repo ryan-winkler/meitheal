@@ -505,7 +505,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     import { initEisenhowerPage } from "@lib/eisenhower-controller"
     import { pageLifecycle } from "@lib/page-lifecycle"
 
-    pageLifecycle.onPageLoad(() => initEisenhowerPage())
+    pageLifecycle.onPageLoad((signal) => initEisenhowerPage({ signal }))
   </script>
 </Layout>
 

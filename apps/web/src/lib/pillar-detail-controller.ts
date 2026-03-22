@@ -272,20 +272,20 @@ async function deletePillar() {
 
 /* ── Boot ─────────────────────────────────────────────────────────── */
 
-function boot() {
+function boot(signal: AbortSignal) {
   // Close handlers
-  getEl("pillar-detail-close")?.addEventListener("click", closeModal)
+  getEl("pillar-detail-close")?.addEventListener("click", closeModal, { signal })
 
   const overlay = getEl("pillar-detail-overlay")
   overlay?.addEventListener("click", (e) => {
     if (e.target === overlay) closeModal()
-  })
+  }, { signal })
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && overlay?.classList.contains("active")) {
       closeModal()
     }
-  })
+  }, { signal })
 
   // Edit button → open PillarFormModal
   getEl("pillar-detail-edit-btn")?.addEventListener("click", () => {
@@ -323,10 +323,10 @@ function boot() {
     // Open the form modal
     modal.classList.add("active")
     document.body.style.overflow = "hidden"
-  })
+  }, { signal })
 
   // Delete button
-  getEl("pillar-detail-delete-btn")?.addEventListener("click", deletePillar)
+  getEl("pillar-detail-delete-btn")?.addEventListener("click", deletePillar, { signal })
 
   // Add principle toggle
   getEl("pillar-detail-add-principle")?.addEventListener("click", () => {
@@ -337,10 +337,10 @@ function boot() {
         getEl<HTMLInputElement>("pillar-detail-principle-input")?.focus()
       }
     }
-  })
+  }, { signal })
 
   // Principle save
-  getEl("pillar-detail-principle-save")?.addEventListener("click", addPrinciple)
+  getEl("pillar-detail-principle-save")?.addEventListener("click", addPrinciple, { signal })
 
   // Principle cancel
   getEl("pillar-detail-principle-cancel")?.addEventListener("click", () => {
@@ -348,12 +348,12 @@ function boot() {
     if (form) form.hidden = true
     const input = getEl<HTMLInputElement>("pillar-detail-principle-input")
     if (input) input.value = ""
-  })
+  }, { signal })
 
   // Enter to submit principle
   getEl("pillar-detail-principle-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") addPrinciple()
-  })
+  }, { signal })
 
   // Delegated click handlers on principles list
   getEl("pillar-detail-principles")?.addEventListener("click", (e) => {
@@ -370,13 +370,13 @@ function boot() {
     } else if (action === "toggle-nn") {
       toggleNonNegotiable(id)
     }
-  })
+  }, { signal })
 
   // Listen for CustomEvent to open modal
   document.addEventListener("open-pillar-detail", ((e: CustomEvent<PillarDetail & { showPrincipleForm?: boolean }>) => {
     const { showPrincipleForm = false, ...pillar } = e.detail
     openModal(pillar as PillarDetail, { showPrincipleForm })
-  }) as EventListener)
+  }) as EventListener, { signal })
 
   // After PillarFormModal saves, refresh detail if it was editing current pillar
   document.addEventListener("pillar-data-changed", async () => {
@@ -399,7 +399,7 @@ function boot() {
     } catch {
       // Silently handle
     }
-  })
+  }, { signal })
 }
 
-pageLifecycle.onPageLoad(() => boot())
+pageLifecycle.onPageLoad(boot)

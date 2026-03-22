@@ -12,7 +12,7 @@
 /**
  * Initialise the unified filtering, grouping, count updates, and collapse persistence.
  */
-export function initGroupingAndFilters(): void {
+export function initGroupingAndFilters(signal: AbortSignal): void {
   // Restore group-by state
   const groupBySelect = document.getElementById("kanban-group-by")
   const savedGroupBy = localStorage.getItem("meitheal-kanban-group-by") || "none"
@@ -57,7 +57,7 @@ export function initGroupingAndFilters(): void {
     }
 
     window.updateAllCounts?.()
-  })
+  }, { signal })
 
   // Unified count updater — column headers + swimlane badges
   window.updateAllCounts = function () {

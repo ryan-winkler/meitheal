@@ -109,7 +109,7 @@ function createChecklistList(habit: HabitData): HTMLUListElement {
   return list
 }
 
-function createHabitCard(habit: HabitData): HTMLArticleElement {
+function createHabitCard(habit: HabitData): HTMLElement {
   const card = document.createElement("article")
   card.className = `habit-card${habit.todayCompleted ? " completed" : ""}`
   card.dataset.habitId = habit.id

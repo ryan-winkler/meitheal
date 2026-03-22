@@ -133,7 +133,7 @@ export async function triageSave(): Promise<void> {
 }
 
 /** Setup triage slider input listeners */
-export function setupTriageListeners(): void {
+export function setupTriageListeners(signal: AbortSignal): void {
   const urgencySlider = document.getElementById("triage-urgency")
   const importanceSlider = document.getElementById("triage-importance")
   const urgencyVal = document.getElementById("triage-urgency-val")
@@ -142,26 +142,26 @@ export function setupTriageListeners(): void {
   urgencySlider?.addEventListener("input", () => {
     if (urgencyVal) urgencyVal.textContent = (urgencySlider as HTMLInputElement).value
     updateTriagePreview()
-  })
+  }, { signal })
 
   importanceSlider?.addEventListener("input", () => {
     if (importanceVal) importanceVal.textContent = (importanceSlider as HTMLInputElement).value
     updateTriagePreview()
-  })
+  }, { signal })
 
   // Close on overlay backdrop click
   document.getElementById("triage-overlay")?.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).classList.contains("triage-overlay")) {
       closeTriage()
     }
-  })
+  }, { signal })
 
   // Close on Escape key
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !document.getElementById("triage-overlay")?.classList.contains("triage-overlay--hidden")) {
       closeTriage()
     }
-  })
+  }, { signal })
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────

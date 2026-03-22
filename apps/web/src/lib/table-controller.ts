@@ -316,7 +316,7 @@ function setupFilterListeners() {
     currentFilterState.labels = e.detail?.labels ?? []
     saveFilterState(currentFilterState)
     applyAllFilters()
-  }) as EventListener)
+  }) as EventListener, { signal: __signal })
 }
 
 // =============================================================================

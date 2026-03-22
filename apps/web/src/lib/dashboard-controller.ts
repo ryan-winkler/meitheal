@@ -279,11 +279,15 @@ function initOpenTaskFilter(): void {
   const kanbanLink = document.getElementById("kanban-link") as HTMLAnchorElement | null
   if (!openSelect || !openList) return
 
+  // Capture narrowed references for use in closures (TS can't narrow across function boundaries)
+  const select = openSelect
+  const list = openList
+
   function applyOpenFilter(): void {
-    const value = openSelect.value
+    const value = select.value
     let visible = 0
 
-    openList
+    list
       .querySelectorAll<HTMLElement>(".task-item[data-assigned]")
       .forEach((item) => {
         const assigned = item.dataset.assigned || ""
@@ -304,7 +308,7 @@ function initOpenTaskFilter(): void {
       if (value === "all" || value === "__unassigned__") {
         titleEl.textContent = "Focus Queue"
       } else {
-        const selectedOption = openSelect.options[openSelect.selectedIndex]
+        const selectedOption = select.options[select.selectedIndex]
         const name = selectedOption?.textContent || value
         titleEl.textContent = `${name}'s Queue`
       }
@@ -326,23 +330,23 @@ function initOpenTaskFilter(): void {
         const option = document.createElement("option")
         option.value = user.id
         option.textContent = user.display_name || user.name || user.id
-        openSelect.appendChild(option)
+        select.appendChild(option)
       })
 
       const unassignedOption = document.createElement("option")
       unassignedOption.value = "__unassigned__"
       unassignedOption.textContent = "Unassigned"
-      openSelect.appendChild(unassignedOption)
+      select.appendChild(unassignedOption)
 
       const saved = localStorage.getItem("meitheal-dashboard-user-filter")
-      if (saved) openSelect.value = saved
+      if (saved) select.value = saved
 
       applyOpenFilter()
     })
     .catch(() => {})
 
-  pageLifecycle.on(openSelect, "change", () => {
-    localStorage.setItem("meitheal-dashboard-user-filter", openSelect.value)
+  pageLifecycle.on(select, "change", () => {
+    localStorage.setItem("meitheal-dashboard-user-filter", select.value)
     applyOpenFilter()
   })
 }

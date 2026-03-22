@@ -63,7 +63,7 @@ const Q1_WIP_LIMIT = 5
 // Main init
 // =============================================================================
 
-export function initEisenhowerPage() {
+export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
   const page = document.getElementById("eisenhower-shell")
   if (!page) return
 
@@ -82,8 +82,8 @@ export function initEisenhowerPage() {
   setupFocusMode(page)
   setupMobileTabs(page)
   checkWipLimits(page)
-  setupTriageListeners()
-  setupReviewListeners()
+  setupTriageListeners(signal)
+  setupReviewListeners(signal)
 }
 
 // =============================================================================

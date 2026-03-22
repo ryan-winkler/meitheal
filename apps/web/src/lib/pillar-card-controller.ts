@@ -5,14 +5,11 @@
  * - Toggle expand/collapse of principles list
  * - "Show all" / "Show less" toggle for overflow principles
  *
- * Uses pageLifecycle.on() for automatic cleanup on page transitions.
- *
- * @domain pillars
  * @phase 19 — Pillars UX Polish
  */
 import { pageLifecycle } from "./page-lifecycle"
 
-function init() {
+function init(signal: AbortSignal) {
   // ── Pillar detail popup — delegated click handler ──────────────
   // Must be registered BEFORE the principles guard below, because
   // cards without principles still need to open the detail modal.
@@ -33,7 +30,7 @@ function init() {
     } catch {
       // malformed JSON — skip
     }
-  })
+  }, { signal })
 
   // ── Add Principle — delegated click handler ─────────────────
   document.addEventListener("click", (e) => {
@@ -55,7 +52,7 @@ function init() {
     } catch {
       // malformed JSON — skip
     }
-  })
+  }, { signal })
 
   // ── Principles expand/collapse ────────────────────────────────
   const cards = document.querySelectorAll<HTMLElement>("[data-pillar-principles]")

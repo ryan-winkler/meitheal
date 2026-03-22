@@ -27,7 +27,7 @@ interface MeithealWindowExtensions {
     message: string;
     confirmText?: string;
     cancelText?: string;
-    dangerous?: boolean;
+    variant?: "danger" | "warning" | "default";
   }) => Promise<boolean>;
 
   // === App State ===
@@ -74,13 +74,15 @@ interface MeithealWindowExtensions {
   /** AbortController cleanup for table resize listener */
   __tableResizeCleanup?: () => void;
 
-  // === Search Hub ===
+  // === Search Hub & Helpers ===
   /** Opens the search hub modal, optionally pre-filling and/or pre-scoping */
   openSearchHub?: (options?: string | { prefill?: string; scope?: string }) => void;
   /** Closes the search hub modal */
   closeSearchHub?: () => void;
   /** Guard to prevent duplicate keyboard listeners for search hub */
   __searchHubKeyboardBound?: boolean;
+  /** Guard to prevent duplicate keyboard listeners for helper system */
+  __helperKeyboardBound?: boolean;
 
   // === Intervals / Singleton Guards ===
   /** Health check interval ID (prevents accumulation across navigations) */

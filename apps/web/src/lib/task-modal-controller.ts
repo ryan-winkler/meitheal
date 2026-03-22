@@ -17,12 +17,13 @@
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
 
         // Use lifecycle signal for all global listeners in this module
-        const __signal = pageLifecycle.signal;
+        pageLifecycle.onPageLoad(() => {
+          const __signal = pageLifecycle.signal;
 
-        // === Task Detail Panel ===
-        const tdOverlay = document.getElementById(
-          "task-detail-overlay",
-        ) as HTMLDivElement;
+          // === Task Detail Panel ===
+          const tdOverlay = document.getElementById(
+            "task-detail-overlay",
+          ) as HTMLDivElement;
         let currentTaskId: string | null = null;
         let _modalAbortController: AbortController | null = null;
         let _isPopulating = false;
@@ -125,7 +126,7 @@
                 fetch(
                   (window.__ingress_path || "") +
                     "/api/settings?key=backlog_mode",
-                  { signal: modalSignal },
+                  { signal: __signal },
                 ),
               ]);
               let backlogMode = "visible";
@@ -160,7 +161,7 @@
 
             const res = await fetch(
               `${window.__ingress_path || ""}/api/tasks/${taskId}`,
-              { signal: modalSignal },
+              { signal: __signal },
             );
             if (!res.ok) {
               closeTD()
@@ -261,7 +262,7 @@
               try {
                 const childRes = await fetch(
                   `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`,
-                  { signal: modalSignal },
+                  { signal: __signal },
                 );
                 if (childRes.ok) {
                   const childData = await childRes.json();
@@ -316,7 +317,7 @@
                 try {
                   const actRes = await fetch(
                     `${window.__ingress_path || ""}/api/tasks/${taskId}/activity`,
-                    { signal: modalSignal },
+                    { signal: __signal },
                   );
                   if (!actRes.ok) return;
                   const actData = await actRes.json();
@@ -541,7 +542,7 @@
             try {
               const boardRes = await fetch(
                 (window.__ingress_path || "") + "/api/areas",
-                { signal: modalSignal },
+                { signal: __signal },
               );
               if (boardRes.ok) {
                 const areaData = await boardRes.json();
@@ -568,7 +569,7 @@
             try {
               const projRes = await fetch(
                 (window.__ingress_path || "") + "/api/projects",
-                { signal: modalSignal },
+                { signal: __signal },
               );
               if (projRes.ok) {
                 const projData = await projRes.json();
@@ -594,7 +595,7 @@
             try {
               const pilRes = await fetch(
                 (window.__ingress_path || "") + "/api/pillars",
-                { signal: modalSignal },
+                { signal: __signal },
               );
               if (pilRes.ok) {
                 const pilData = await pilRes.json();
@@ -621,7 +622,7 @@
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch(
                   (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`,
-                  { signal: modalSignal },
+                  { signal: __signal },
                 );
                 if (prinRes.ok) {
                   const prinData = await prinRes.json();
@@ -666,7 +667,7 @@
               try {
                 const usersRes = await fetch(
                   (window.__ingress_path || "") + "/api/users",
-                  { signal: modalSignal },
+                  { signal: __signal },
                 );
                 if (usersRes.ok) {
                   const usersData = await usersRes.json();
@@ -705,7 +706,7 @@
             try {
               const settingsRes = await fetch(
                 (window.__ingress_path || "") + "/api/settings",
-                { signal: modalSignal },
+                { signal: __signal },
               );
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
@@ -852,7 +853,7 @@
                       saveTD("checklists", JSON.stringify(list));
                       window.refreshChecklistsVisuals?.();
                     }
-                  });
+                  }, { signal: __signal });
                   // Edit text
                   const txt = row.querySelector(
                     "input[type=text]",
@@ -862,17 +863,17 @@
                       list[index].text = txt.value.trim();
                       saveTD("checklists", JSON.stringify(list));
                     }
-                  });
+                  }, { signal: __signal });
                   txt.addEventListener("keydown", (e: KeyboardEvent) => {
                     if (e.key === "Enter") txt.blur();
-                  });
+                  }, { signal: __signal });
                   // Delete
                   const del = row.querySelector("button") as HTMLButtonElement;
                   del.addEventListener("click", () => {
                     list.splice(index, 1);
                     saveTD("checklists", JSON.stringify(list));
                     window.refreshChecklistsVisuals?.();
-                  });
+                  }, { signal: __signal });
                   checklistsContainer.appendChild(row);
                 });
 
@@ -1006,40 +1007,40 @@
           }
         }
 
-        descEditBtnHover?.addEventListener("click", () => enterDescEdit());
+        descEditBtnHover?.addEventListener("click", () => enterDescEdit(), { signal: __signal });
         // T9: Only enter edit mode when clicking preview container background, not rendered links/code
         descPreviewContainer?.addEventListener("click", (e) => {
           const target = e.target as HTMLElement;
           if (target.closest("a, code, pre, img")) return;
           enterDescEdit();
-        });
-        descSaveBtn?.addEventListener("click", () => exitDescEdit(true));
-        descCancelBtn?.addEventListener("click", () => exitDescEdit(false));
+        }, { signal: __signal });
+        descSaveBtn?.addEventListener("click", () => exitDescEdit(true), { signal: __signal });
+        descCancelBtn?.addEventListener("click", () => exitDescEdit(false), { signal: __signal });
         // T7: Cmd/Ctrl+S shortcut in description edit mode
         tdDescription?.addEventListener("keydown", (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "s") {
             e.preventDefault();
             exitDescEdit(true);
           }
-        });
+        }, { signal: __signal });
 
         // Auto-save on change
         const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
         if (tdTitleInput) {
           tdTitleInput.addEventListener("blur", (e) =>
             saveTD("title", (e.target as HTMLTextAreaElement).value),
-          );
+          { signal: __signal });
           tdTitleInput.addEventListener("input", function() {
             this.style.height = "auto";
             this.style.height = this.scrollHeight + "px";
-          });
+          }, { signal: __signal });
         }
         // Duplicate title blur listener removed — already handled above at line 1066
         document
           .getElementById("td-description")
           ?.addEventListener("blur", (e) =>
             saveTD("description", (e.target as HTMLTextAreaElement).value),
-          );
+          { signal: __signal });
 
         // Phase 23: Image attachments upload
         document
@@ -1077,7 +1078,7 @@
 
             // Reset input so the same file can be selected again
             input.value = "";
-          });
+          }, { signal: __signal });
 
         // Global Add Checklist Item handler
         document
@@ -1105,7 +1106,7 @@
                 }
               }
             });
-          });
+          }, { signal: __signal });
 
           document.getElementById("td-status")
           ?.addEventListener("change", (e) => {
@@ -1121,38 +1122,38 @@
               doneBtn.textContent = isDone
                 ? "↩ Mark as Undone"
                 : "✓ Mark as Done";
-          });
+          }, { signal: __signal });
         document
           .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
             saveTD("priority", Number((e.target as HTMLSelectElement).value)),
-          );
+          { signal: __signal });
         // Eisenhower urgency auto-save
         document
           .getElementById("td-urgency")
           ?.addEventListener("change", (e) =>
             saveTD("urgency", Number((e.target as HTMLSelectElement).value)),
-          );
+          { signal: __signal });
         // Eisenhower importance auto-save
         document
           .getElementById("td-importance")
           ?.addEventListener("change", (e) =>
             saveTD("importance", Number((e.target as HTMLSelectElement).value)),
-          );
+          { signal: __signal });
         // Phase 20: task_type auto-save
         document
           .getElementById("td-task-type")
           ?.addEventListener("change", (e) => {
             saveTD("task_type", (e.target as HTMLSelectElement).value);
-          });
+          }, { signal: __signal });
         // Phase 26: board change auto-save
         document.getElementById("td-area")?.addEventListener("change", (e) => {
           saveTD("area_id", (e.target as HTMLSelectElement).value);
-        });
+        }, { signal: __signal });
         // Project change auto-save
         document.getElementById("td-project")?.addEventListener("change", (e) => {
           saveTD("project_id", (e.target as HTMLSelectElement).value || null);
-        });
+        }, { signal: __signal });
 
         // Pillar change auto-save & dynamic Principle update
         document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
@@ -1181,12 +1182,12 @@
               } catch {}
             }
           }
-        });
+        }, { signal: __signal });
 
         // Principle change auto-save
         document.getElementById("td-principle")?.addEventListener("change", (e) => {
           saveTD("principle_id", (e.target as HTMLSelectElement).value || null);
-        });
+        }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
         document
           .getElementById("td-assigned-to")
@@ -1199,7 +1200,7 @@
               : "Unassigned";
             const { showToast } = await import("@lib/toast");
             showToast(val ? `Assigned to ${label}` : "Unassigned");
-          });
+          }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
         document.addEventListener("keydown", (e) => {
           const panel = document.getElementById("task-detail-panel");
@@ -1216,39 +1217,39 @@
             e.preventDefault();
             document.getElementById("td-assigned-to")?.focus();
           }
-        });
+        }, { signal: __signal });
         document
           .getElementById("td-progress")
           ?.addEventListener("input", (e) => {
             const v = (e.target as HTMLInputElement).value;
             const progEl = document.getElementById("td-progress-value");
             if (progEl) progEl.textContent = `${v}%`;
-          });
+          }, { signal: __signal });
         document
           .getElementById("td-progress")
           ?.addEventListener("change", (e) =>
             saveTD("progress", Number((e.target as HTMLInputElement).value)),
-          );
+          { signal: __signal });
         document
           .getElementById("td-color")
           ?.addEventListener("change", (e) =>
             saveTD("color", (e.target as HTMLInputElement).value),
-          );
+          { signal: __signal });
         document
           .getElementById("td-due-date")
           ?.addEventListener("change", (e) =>
             saveTD("due_date", (e.target as HTMLInputElement).value || null),
-          );
+          { signal: __signal });
         document
           .getElementById("td-start-date")
           ?.addEventListener("change", (e) =>
             saveTD("start_date", (e.target as HTMLInputElement).value || null),
-          );
+          { signal: __signal });
         document
           .getElementById("td-end-date")
           ?.addEventListener("change", (e) =>
             saveTD("end_date", (e.target as HTMLInputElement).value || null),
-          );
+          { signal: __signal });
         document
           .getElementById("td-time-tracked")
           ?.addEventListener("change", (e) =>
@@ -1256,13 +1257,14 @@
               "time_tracked",
               Number((e.target as HTMLInputElement).value) || 0,
             ),
-          );
+          { signal: __signal });
 
         // ───── Labels + Subtasks (extracted) ─────
         const labelsApi = initLabelsAndSubtasks({
           saveTD,
           getCurrentTaskId: () => currentTaskId,
           openTaskDetail,
+          signal: __signal,
         })
         const addLabelChip = labelsApi.addLabelChip
 
@@ -1271,6 +1273,7 @@
         const cfApi = initCustomFields({
           saveTD,
           getSettingsFields: () => _settingsFields,
+          signal: __signal,
         })
         const addCFRow = cfApi.addCFRow
 
@@ -1332,7 +1335,7 @@
                         // Refresh the panel to show the new parent
                         openTaskDetail(currentTaskId!);
                       }
-                    });
+                    }, { signal: __signal });
                   });
               }
               parentResultsDiv.style.display = "block";
@@ -1347,7 +1350,7 @@
             parentResultsDiv.style.display = "none";
             parentSearchInput.value = "";
           }
-        });
+        }, { signal: __signal });
 
         // ───── Related Links (extracted) ─────
         const relatedLinksApi = initRelatedLinks({
@@ -1380,7 +1383,7 @@
               const priorityEl = document.getElementById("td-priority") as HTMLSelectElement | null;
               onTaskCompleted(Number(priorityEl?.value ?? 3));
             }
-          });
+          }, { signal: __signal });
 
         // Toggle favorite
         document
@@ -1393,7 +1396,7 @@
             const isFav = btn.textContent?.startsWith("★");
             await saveTD("is_favorite", isFav ? 0 : 1);
             btn.textContent = isFav ? "⭐ Add to Favorites" : "★ Favorited";
-          });
+          }, { signal: __signal });
 
         // Duplicate task
         document
@@ -1428,7 +1431,7 @@
               document.querySelector(".toast-container")?.appendChild(toast);
               setTimeout(() => toast.remove(), 2500);
             }
-          });
+          }, { signal: __signal });
 
         // Ask AI — inline HA Assist response
         document
@@ -1468,7 +1471,7 @@
                 .querySelector("#td-ai-dismiss")
                 ?.addEventListener("click", () => {
                   responseEl.remove();
-                });
+                }, { signal: __signal });
             } catch (err) {
               log.error("AI context error", err);
               const { showToast: toast } = await import("@lib/toast");
@@ -1478,7 +1481,7 @@
 
             btn.classList.remove("opacity-60", "pointer-events-none");
             setTimeout(() => (btn.innerHTML = originalText), 4000);
-          });
+          }, { signal: __signal });
 
         // Attach Image
         document
@@ -1543,7 +1546,7 @@
               closeTD();
               document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
             }
-          });
+          }, { signal: __signal });
 
         // Add comment
         document
@@ -1563,13 +1566,13 @@
             );
             input.value = "";
             loadComments(currentTaskId);
-          });
+          }, { signal: __signal });
 
         // Close
-        document.getElementById("td-close")?.addEventListener("click", closeTD);
+        document.getElementById("td-close")?.addEventListener("click", closeTD, { signal: __signal });
         tdOverlay?.addEventListener("click", (e) => {
           if (e.target === tdOverlay) closeTD();
-        });
+        }, { signal: __signal });
 
         // Hash navigation — also handles mobile back button
         function checkHash() {
@@ -1637,4 +1640,5 @@
 
         // === Command Palette (extracted) ===
         initCommandPalette({ openTaskDetail, closeTD, __signal })
+        });
 

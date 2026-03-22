@@ -43,6 +43,8 @@ interface Props {
   showUserFilter?: boolean
   /** Show user filter pills (kanban-style) */
   showUserPills?: boolean
+  /** Show Sort By selector */
+  showSortBy?: boolean
   /** Group-by options override */
   groupByOptions?: { value: string; label: string }[]
   /** Hide area select (use with AreaSelector component) */
@@ -60,6 +62,7 @@ const {
   showRICEFilter = view === "table",
   showUserFilter = view === "table",
   showUserPills = view === "kanban",
+  showSortBy = true,
   groupByOptions,
   hideAreaSelect = false,
   class: className,
@@ -74,13 +77,13 @@ const prefix = view === "table" ? "table" : "kanban"
 const defaultGroupByOptions = view === "table"
   ? [
       { value: "none", label: "No Grouping" },
-      { value: "type", label: "Group by Type" },
-      { value: "priority", label: "Group by Priority" },
-      { value: "area", label: "Group by Area" },
-      { value: "project", label: "Group by Project" },
-      { value: "assignee", label: "Group by Assignee" },
-      { value: "status", label: "Group by Status" },
-      { value: "rice", label: "Group by RICE" },
+      { value: "type", label: "Type" },
+      { value: "priority", label: "Priority" },
+      { value: "area", label: "Area" },
+      { value: "project", label: "Project" },
+      { value: "assignee", label: "Assignee" },
+      { value: "status", label: "Status" },
+      { value: "rice", label: "RICE" },
     ]
   : [
       { value: "none", label: t("kanban.group_none", locale) },
@@ -157,47 +160,82 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </button>
   </div>
 
-  {/* User filter pills (kanban-style) */}
-  {showUserPills && (
-    <div
-      class="filter-toolbar__user-pills"
-      id={`${prefix}-user-filters`}
-      role="group"
-      aria-label="Filter by assignee"
-    >
-      <button type="button" class="filter-toolbar__user-btn active" data-user="all" title="Show all users">
-        👥 All
-      </button>
-      <button type="button" class="filter-toolbar__user-btn" data-user="unassigned" title="Unassigned tasks">
-        ∅
-      </button>
-      {/* Dynamic user pills populated by JS */}
-    </div>
-  )}
-
   {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
   {/* Replaced by Unified Filter Builder */}
 
   {/* Group-by selector */}
   {showGroupBy && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-group-by`} aria-label="Group tasks by">
-      {groupOptions.map((opt) => (
-        <option value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-group-by-dropdown`} aria-label="Group tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-group-by-label`}>
+        <span class="filter-dropdown__value">{groupOptions?.[0]?.label || "Group by"}</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Group by</div>
+        {groupOptions.map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-group-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
   )}
+  {showGroupBy && <input type="hidden" id={`${prefix}-group-by`} value="none" />}
 
   {/* Sub-group-by selector — only for table view with groupBy active */}
   {showGroupBy && view === "table" && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-sub-group-by`} aria-label="Sub-group tasks by" title="Then group by">
-      <option value="none">No sub-group</option>
-      <option value="status">Then by Status</option>
-      <option value="priority">Then by Priority</option>
-      <option value="type">Then by Type</option>
-      <option value="area">Then by Area</option>
-      <option value="rice">Then by RICE</option>
-    </select>
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sub-group-by-dropdown`} aria-label="Sub-group tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sub-group-by-label`}>
+        <span class="filter-dropdown__value">No sub-group</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Then group by</div>
+        {[
+          { value: "none", label: "No sub-group" },
+          { value: "status", label: "Then by Status" },
+          { value: "priority", label: "Then by Priority" },
+          { value: "type", label: "Then by Type" },
+          { value: "area", label: "Then by Area" },
+          { value: "rice", label: "Then by RICE" }
+        ].map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sub-group-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
   )}
+  {showGroupBy && view === "table" && <input type="hidden" id={`${prefix}-sub-group-by`} value="none" />}
+
+  {/* Sort-by selector */}
+  {showSortBy && (
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sort-by-dropdown`} aria-label="Sort tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sort-by-label`}>
+        <span class="filter-dropdown__value">Default Sort</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Sort by</div>
+        {[
+          { value: "none", label: "Default Sort" },
+          { value: "due_asc", label: "Due Date (Earliest)" },
+          { value: "due_desc", label: "Due Date (Latest)" },
+          { value: "priority_desc", label: "Priority (High to Low)" },
+          { value: "created_desc", label: "Recently Created" },
+          { value: "rice_desc", label: "RICE Score (High to Low)" }
+        ].map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sort-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
+  )}
+  {showSortBy && <input type="hidden" id={`${prefix}-sort-by`} value="none" />}
 
   {/* Clear all button */}
   <button
@@ -263,7 +301,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   </div>
 
   {/* Label filter bar — separate row below main toolbar */}
-  <div class="w-full mt-2 pt-2 border-t border-border/40">
+  <div class="w-full hidden" id={`${prefix}-label-filter-container`}>
     <LabelFilterBar id={`${prefix}-label-filter`} />
   </div>
 </div>
@@ -291,14 +329,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const search = toolbar.querySelector<HTMLInputElement>(`#${prefix}-search`)
     const statusSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-status`)
     const prioritySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-priority`)
-    const riceSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-rice`)
-    const userSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-user`)
-    const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-area`)
+    const riceSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-rice-filter`)
+    const userSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-user-filter`)
+    const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-area-filter`)
     const groupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-group-by`)
     const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
+    const sortBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sort-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
     const typeToggles = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__type-btn")
-    const userPills = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__user-btn")
 
     // Advanced Filter controls
     const advToggleBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-toggle`)
@@ -516,7 +554,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       user: "",
       area: "",
       groupBy: "none",
-      subGroupBy: "none"
+      subGroupBy: "none",
+      sortBy: "none"
     }
 
     function gatherState() {
@@ -528,14 +567,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         }
       })
 
-      // Collect active users (pill mode)
-      let activeUser = ""
-      if (userPills.length > 0) {
-        const activeUserBtn = toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn.active:not([data-user='all'])")
-        activeUser = activeUserBtn?.dataset.user ?? ""
-      } else {
-        activeUser = userSel?.value ?? ""
-      }
+      // Collect active users
+      const activeUser = userSel?.value ?? ""
 
       return {
         search: search?.value ?? "",
@@ -546,6 +579,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         area: "",
         groupBy: groupBySel?.value ?? "none",
         subGroupBy: subGroupBySel?.value ?? "none",
+        sortBy: sortBySel?.value ?? "none",
         types: activeTypes.length === typeToggles.length ? [] : activeTypes,
         advancedFilter: advancedFilterState,
       }
@@ -556,9 +590,11 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const hasAdvanced = advancedFilterState && advancedFilterState.conditions && advancedFilterState.conditions.length > 0
       const hasSearch = search && search.value.trim().length > 0
       const hasTypes = document.querySelectorAll(".filter-toolbar__type-btn:not(.active)").length > 0
-      const hasUser = toolbar.querySelector(".filter-toolbar__user-btn.active:not([data-user='all'])") !== null
+      // Check if group/sort have non-default values
+      const hasGroup = groupBySel && groupBySel.value !== "none"
+      const hasSort = sortBySel && sortBySel.value !== "none"
       
-      if (hasAdvanced || hasSearch || hasTypes || hasUser) {
+      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort) {
         clearBtn.classList.remove("hidden")
       } else {
         clearBtn.classList.add("hidden")
@@ -582,9 +618,56 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       searchTimer = setTimeout(emitChange, 150)
     })
 
-    // Select change listeners
-    ;[statusSel, prioritySel, riceSel, userSel, areaSel, groupBySel, subGroupBySel].forEach((sel) => {
+    // Select change listeners (for remaining native selects)
+    ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
       sel?.addEventListener("change", emitChange)
+    })
+
+    // Custom dropdown listeners
+    const dropdowns = toolbar.querySelectorAll<HTMLDetailsElement>(".filter-dropdown")
+    dropdowns.forEach((details) => {
+      details.addEventListener("click", () => {
+        // Close other dropdowns when one is clicked
+        dropdowns.forEach(d => {
+          if (d !== details) d.removeAttribute("open")
+        })
+      })
+      
+      const options = details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
+      const summaryValue = details.querySelector(".filter-dropdown__value")
+      
+      options.forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          
+          options.forEach(b => b.classList.remove("timeline-zoom-option--active"))
+          btn.classList.add("timeline-zoom-option--active")
+          
+          if (summaryValue) {
+            summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
+          }
+          
+          const hiddenInputId = btn.dataset.select
+          if (hiddenInputId) {
+            const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
+            if (hiddenInput && hiddenInput.value !== btn.dataset.value) {
+              hiddenInput.value = btn.dataset.value || ""
+              emitChange()
+            }
+          }
+          
+          details.removeAttribute("open")
+        })
+      })
+    })
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener("click", (e) => {
+      const target = e.target as Node
+      dropdowns.forEach(d => {
+        if (!d.contains(target)) d.removeAttribute("open")
+      })
     })
 
     // Type toggle listeners
@@ -592,28 +675,6 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       btn.addEventListener("click", () => {
         btn.classList.toggle("active")
         btn.setAttribute("aria-pressed", String(btn.classList.contains("active")))
-        emitChange()
-      })
-    })
-
-    // User pill listeners (kanban)
-    userPills.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const user = btn.dataset.user
-        if (user === "all") {
-          userPills.forEach((b) => {
-            b.classList.remove("active")
-          })
-          btn.classList.add("active")
-        } else {
-          toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.remove("active")
-          btn.classList.toggle("active")
-          // If none active, re-activate "all"
-          const anyActive = toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn.active:not([data-user='all'])")
-          if (!anyActive) {
-            toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.add("active")
-          }
-        }
         emitChange()
       })
     })
@@ -626,14 +687,34 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
       if (groupBySel) groupBySel.value = "none"
       if (subGroupBySel) subGroupBySel.value = "none"
+      if (sortBySel) sortBySel.value = "none"
+      
+      // Update custom dropdowns visually
+      dropdowns.forEach(d => {
+        const firstOpt = d.querySelector<HTMLButtonElement>(".filter-dropdown__option")
+        if (!firstOpt) return
+        const hiddenInputId = firstOpt.dataset.select
+        if (hiddenInputId) {
+          const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
+          const val = hiddenInput ? hiddenInput.value : "none"
+          
+          const options = d.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
+          options.forEach(btn => {
+            if (btn.dataset.value === val) {
+              btn.classList.add("timeline-zoom-option--active")
+              const summaryValue = d.querySelector(".filter-dropdown__value")
+              if (summaryValue) summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
+            } else {
+              btn.classList.remove("timeline-zoom-option--active")
+            }
+          })
+        }
+      })
+      
       typeToggles.forEach((btn) => {
         btn.classList.add("active")
         btn.setAttribute("aria-pressed", "true")
       })
-      userPills.forEach((btn) => {
-        btn.classList.remove("active")
-      })
-      toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.add("active")
       
       // Clear advanced filters too
       if (advContainer) {
@@ -642,9 +723,21 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         checkEmptyState()
       }
       advancedFilterState = null
-      advToggleBtn?.classList.remove("text-accent")
+      advToggleBtn?.classList.remove("filter-pill--active")
 
       emitChange()
+      clearBtn.classList.add("hidden") // Immediate visual feedback
+    })
+    
+    // Add Escape key handler to clear filters if they are active
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && clearBtn && !clearBtn.classList.contains("hidden")) {
+        // Only trigger if not typing in an input or textarea
+        const tag = document.activeElement?.tagName?.toLowerCase()
+        if (tag === "input" || tag === "textarea") return
+        e.preventDefault()
+        clearBtn.click()
+      }
     })
 
     // Load boards into board selector (idempotent via DOM attribute)

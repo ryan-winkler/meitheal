@@ -345,7 +345,7 @@ async function applyPreset(presetId: string): Promise<void> {
       message: `Switch to the "${preset.label}" preset? This will replace your current rule configuration.`,
       title: "Switch Preset",
       confirmText: `Apply ${preset.label}`,
-      variant: "info",
+      variant: "default",
     })
     if (!confirmed) return
   }

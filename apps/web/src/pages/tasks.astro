@@ -198,7 +198,7 @@ try {
 }
 ---
 
-<Layout title={`Meitheal — ${t("kanban.title", locale)}`} hideSearchHub={true}>
+<Layout title={`Meitheal — ${t("kanban.title", locale)}`}>
 
   <UnifiedBar
     title={t("kanban.title", locale)}
@@ -218,12 +218,14 @@ try {
     <AreaSelector slot="context" areas={areas} />
   </UnifiedBar>
 
-  <!-- Phase 16.3: Unified filter row — shared across all views -->
+  <!-- Phase 16.3: Unified filter row (shared across all views) -->
   <div class="tasks-filter-row" id="tasks-filter-row">
     <FilterToolbar
       view="kanban"
       showGroupBy
       hideAreaSelect
+      showUserFilter
+      showUserPills={false}
     />
     <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" data-view-only="kanban" role="toolbar" aria-label="Kanban view actions">
@@ -935,18 +937,19 @@ try {
   .tasks-filter-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 12px;
-    background: var(--bg-secondary);
+    gap: 16px;
+    margin-bottom: 24px;
+    background: var(--bg-card); /* Opaque background */
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 8px 12px;
-    position: sticky;
-    top: 0;
-    z-index: 90;
+    border-radius: var(--radius-lg, 12px);
+    padding: 12px 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    position: relative;
+    z-index: 100;
   }
-
+  
   /* View-specific toolbar actions: see <style is:global> block above */
   .kanban-fields-panel {
     margin-bottom: 12px;

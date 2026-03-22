@@ -10,6 +10,7 @@ export interface RelatedLinksDeps {
   getCurrentTaskId: () => string | null
   openTaskDetail: (id: string) => void
   saveTD: (field: string, value: unknown) => Promise<void>
+  signal?: AbortSignal
 }
 
 const LINK_TYPE_LABELS: Record<string, string> = {
@@ -31,9 +32,11 @@ const INVERSE_LABELS: Record<string, string> = {
 /**
  * Initialise Jira-style related links panel + search.
  */
-export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: RelatedLinksDeps): {
+export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, signal }: RelatedLinksDeps): {
   loadRelatedLinks: (taskId: string) => Promise<void>
 } {
+  const opts = signal ? { signal } : undefined
+
   async function loadRelatedLinks(taskId: string) {
     const container = document.getElementById("td-related-links")
     const countEl = document.getElementById("td-link-count")
@@ -57,7 +60,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
         errDiv.className =
           "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent"
         errDiv.textContent = "Failed to load links. Tap to retry."
-        errDiv.addEventListener("click", () => loadRelatedLinks(taskId))
+        errDiv.addEventListener("click", () => loadRelatedLinks(taskId), opts)
         container.appendChild(errDiv)
         if (countEl) countEl.textContent = ""
         return
@@ -169,7 +172,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
         el.addEventListener("click", () => {
           const tid = (el as HTMLElement).dataset.id
           if (tid) openTaskDetail(tid)
-        })
+        }, opts)
       })
 
       // Remove link on click — captures taskId in closure (#20 race guard)
@@ -190,7 +193,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
             if (liveRegion)
               liveRegion.textContent = "Failed to remove link"
           }
-        })
+        }, opts)
       })
     } catch {
       // Error boundary (#18)
@@ -199,7 +202,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
       errDiv.className =
         "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent"
       errDiv.textContent = "Failed to load links. Tap to retry."
-      errDiv.addEventListener("click", () => loadRelatedLinks(taskId))
+      errDiv.addEventListener("click", () => loadRelatedLinks(taskId), opts)
       container.appendChild(errDiv)
       if (countEl) countEl.textContent = ""
     }
@@ -311,7 +314,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
                     /* silent */
                   }
                 }
-              })
+              }, opts)
             })
         }
         linkSearchResults.style.display = "block"
@@ -320,14 +323,14 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
         /* silent */
       }
     }, 300)
-  })
+  }, opts)
 
   linkSearchInput?.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && linkSearchResults) {
       linkSearchResults.style.display = "none"
       linkSearchInput.value = ""
     }
-  })
+  }, opts)
 
   // Close link search results on outside click
   document.addEventListener("click", (e) => {
@@ -337,7 +340,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD }: R
     ) {
       if (linkSearchResults) linkSearchResults.style.display = "none"
     }
-  })
+  }, opts)
 
   return { loadRelatedLinks }
 }
