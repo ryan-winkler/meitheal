@@ -5,49 +5,32 @@
  * @domain tasks
  * @bounded-context tasks/ui
  *
- * Renders a configurable filter toolbar with:
+ * Renders a highly polished glassmorphic filter toolbar with:
  * - Type toggle buttons (Epic/Story/Task)
- * - Area filter selector (populated client-side from /api/areas)
- * - Group-by selector
- * - Status, Priority, RICE, User select filters (opt-in per view)
- * - Label filter bar (lazy-loaded)
- * - Clear all button
+ * - GlassDropdown Pill filters for Status, Priority, RICE, Assignee
+ * - Dynamic Area selector fetched from API
+ * - Advanced "Display" popover for Group By and Sub-Group By
+ * - Text search input
  *
  * Emits `meitheal:filter-change` CustomEvent whenever any filter changes.
- * Each view's controller (table-controller.ts, kanban inline script) listens
- * for this event to apply filtering.
- *
- * Usage:
- *   <FilterToolbar view="table" showSearch showGroupBy showStatusFilter showPriorityFilter showRICEFilter showUserFilter />
- *   <FilterToolbar view="kanban" showGroupBy />
  */
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
 import TaskTypeIcon from "./TaskTypeIcon.astro"
+import GlassDropdown from "./GlassDropdown.astro"
 
 interface Props {
-  /** View context — controls ID prefixing and default visibility */
   view: "table" | "kanban"
-  /** Show search input */
   showSearch?: boolean
-  /** Show group-by selector */
   showGroupBy?: boolean
-  /** Show status filter select */
   showStatusFilter?: boolean
-  /** Show priority filter select */
   showPriorityFilter?: boolean
-  /** Show RICE filter select */
   showRICEFilter?: boolean
-  /** Show user filter select */
   showUserFilter?: boolean
-  /** Show user filter pills (kanban-style) */
   showUserPills?: boolean
-  /** Group-by options override */
   groupByOptions?: { value: string; label: string }[]
-  /** Hide area select (use with AreaSelector component) */
   hideAreaSelect?: boolean
-  /** Additional CSS class */
   class?: string
 }
 
@@ -65,7 +48,6 @@ const {
   class: className,
 } = Astro.props
 
-// Resolve locale from cookie (same pattern as pages)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
@@ -74,13 +56,13 @@ const prefix = view === "table" ? "table" : "kanban"
 const defaultGroupByOptions = view === "table"
   ? [
       { value: "none", label: "No Grouping" },
-      { value: "type", label: "Group by Type" },
-      { value: "priority", label: "Group by Priority" },
-      { value: "area", label: "Group by Area" },
-      { value: "project", label: "Group by Project" },
-      { value: "assignee", label: "Group by Assignee" },
-      { value: "status", label: "Group by Status" },
-      { value: "rice", label: "Group by RICE" },
+      { value: "type", label: "Type" },
+      { value: "priority", label: "Priority" },
+      { value: "area", label: "Area" },
+      { value: "project", label: "Project" },
+      { value: "assignee", label: "Assignee" },
+      { value: "status", label: "Status" },
+      { value: "rice", label: "RICE" },
     ]
   : [
       { value: "none", label: t("kanban.group_none", locale) },
@@ -104,205 +86,158 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 >
   {/* Search input (table only by default) */}
   {showSearch && (
-    <input
-      type="text"
-      class="form-input filter-toolbar__search"
-      id={`${prefix}-search`}
-      placeholder={t("table.filter_placeholder", locale)}
-      aria-label="Filter by text"
-    />
-  )}
-
-  {/* Type toggle buttons — TaskKind behavioral classification */}
-  <div class="filter-toolbar__type-toggles" id={`${prefix}-type-toggles`}>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="standard_action"
-      aria-pressed="true"
-      title="Toggle Standard Tasks"
-    >
-      <TaskTypeIcon type="task" size={14} />
-      Task
-    </button>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="shopping_item"
-      aria-pressed="true"
-      title="Toggle Shopping Items"
-    >
-      <TaskTypeIcon type="task" size={14} />
-      Shopping
-    </button>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="checklist"
-      aria-pressed="true"
-      title="Toggle Checklists"
-    >
-      <TaskTypeIcon type="task" size={14} />
-      Checklist
-    </button>
-    <button
-      type="button"
-      class="filter-toolbar__type-btn active"
-      data-type="routine_instance"
-      aria-pressed="true"
-      title="Toggle Routines"
-    >
-      <TaskTypeIcon type="task" size={14} />
-      Routine
-    </button>
-  </div>
-
-  {/* User filter pills (kanban-style) */}
-  {showUserPills && (
-    <div
-      class="filter-toolbar__user-pills"
-      id={`${prefix}-user-filters`}
-      role="group"
-      aria-label="Filter by assignee"
-    >
-      <button type="button" class="filter-toolbar__user-btn active" data-user="all" title="Show all users">
-        👥 All
-      </button>
-      <button type="button" class="filter-toolbar__user-btn" data-user="unassigned" title="Unassigned tasks">
-        ∅
-      </button>
-      {/* Dynamic user pills populated by JS */}
+    <div class="filter-toolbar__search-wrapper">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input
+        type="text"
+        class="form-input filter-toolbar__search pl-8"
+        id={`${prefix}-search`}
+        placeholder={t("table.filter_placeholder", locale)}
+        aria-label="Filter by text"
+      />
     </div>
   )}
 
-  {/* Status filter (table-style select) */}
-  {showStatusFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-status`} aria-label="Filter by status">
-      <option value="">{t("tasks.all_statuses", locale)}</option>
-      <option value="pending">{t("task_status.pending", locale)}</option>
-      <option value="active">{t("task_status.active", locale)}</option>
-      <option value="complete">{t("task_status.complete", locale)}</option>
-      <option value="overdue">{t("tasks.overdue", locale)}</option>
-    </select>
-  )}
+  <div class="filter-toolbar__pills-container flex flex-wrap items-center gap-2 flex-1">
+    {/* Type toggle buttons */}
+    <div class="filter-toolbar__type-toggles" id={`${prefix}-type-toggles`}>
+      <button type="button" class="filter-toolbar__type-btn active" data-type="standard_action" aria-pressed="true" title="Toggle Tasks"><TaskTypeIcon type="task" size={14} />Task</button>
+      <button type="button" class="filter-toolbar__type-btn active" data-type="shopping_item" aria-pressed="true" title="Toggle Shopping"><TaskTypeIcon type="task" size={14} />Shop</button>
+      <button type="button" class="filter-toolbar__type-btn active" data-type="checklist" aria-pressed="true" title="Toggle Checklists"><TaskTypeIcon type="task" size={14} />Check</button>
+      <button type="button" class="filter-toolbar__type-btn active" data-type="routine_instance" aria-pressed="true" title="Toggle Routines"><TaskTypeIcon type="task" size={14} />Routine</button>
+    </div>
 
-  {/* Priority filter */}
-  {showPriorityFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-priority`} aria-label="Filter by priority">
-      <option value="">{t("tasks.all_priorities", locale)}</option>
-      <option value="1">{t("priority.critical", locale)}</option>
-      <option value="2">{t("priority.high", locale)}</option>
-      <option value="3">{t("priority.medium", locale)}</option>
-      <option value="4">{t("priority.low", locale)}</option>
-      <option value="5">{t("priority.minimal", locale)}</option>
-    </select>
-  )}
+    <div class="h-4 w-px bg-border mx-1"></div>
 
-  {/* RICE filter */}
-  {showRICEFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-rice`} aria-label="Filter by RICE score">
-      <option value="">{t("tasks.all_rice", locale)}</option>
-      <option value="high">{t("tasks.rice_high", locale)}</option>
-      <option value="medium">{t("tasks.rice_medium", locale)}</option>
-      <option value="low">{t("tasks.rice_low", locale)}</option>
-    </select>
-  )}
+    {/* Group-by / Display Options Custom Popover */}
+    {showGroupBy && (
+      <GlassDropdown id={`${prefix}-display-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill filter-pill--display" id={`${prefix}-btn-display`} type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><path d="M14 4h7"/><path d="M14 9h7"/><path d="M14 15h7"/><path d="M14 20h7"/></svg>
+          <span class="filter-pill__label font-medium">Display</span>
+          <span class="filter-pill__val font-semibold text-text" data-display="groupBy" id={`${prefix}-lbl-groupby`}>None</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        
+        <div class="p-1 min-w-[180px]">
+          <div class="glass-dropdown__label mt-1">Group By</div>
+          {groupOptions.map((opt) => (
+            <button type="button" class:list={["glass-dropdown__item", opt.value === "none" ? "is-active" : ""]} data-filter="groupBy" data-value={opt.value}>
+              {opt.label}
+            </button>
+          ))}
+          
+          {view === "table" && (
+            <>
+              <div class="glass-dropdown__divider mt-2"></div>
+              <div class="glass-dropdown__label mt-1">Sub-Group By</div>
+              <button type="button" class="glass-dropdown__item is-active" data-filter="subGroupBy" data-value="none">No sub-group</button>
+              <button type="button" class="glass-dropdown__item" data-filter="subGroupBy" data-value="status">Then by Status</button>
+              <button type="button" class="glass-dropdown__item" data-filter="subGroupBy" data-value="priority">Then by Priority</button>
+              <button type="button" class="glass-dropdown__item" data-filter="subGroupBy" data-value="type">Then by Type</button>
+              <button type="button" class="glass-dropdown__item" data-filter="subGroupBy" data-value="area">Then by Area</button>
+              <button type="button" class="glass-dropdown__item" data-filter="subGroupBy" data-value="rice">Then by RICE</button>
+            </>
+          )}
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* User filter select (table-style) */}
-  {showUserFilter && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-user`} aria-label="Filter by assigned user">
-      <option value="">{t("tasks.all_users", locale)}</option>
-      <option value="__unassigned__">Unassigned</option>
-    </select>
-  )}
+    {/* Status Filter */}
+    {showStatusFilter && (
+      <GlassDropdown id={`${prefix}-status-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill" id={`${prefix}-btn-status`} type="button">
+          <span class="filter-pill__label">Status</span>
+          <span class="filter-pill__val" data-display="status" id={`${prefix}-lbl-status`}>All</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="p-1 min-w-[140px]">
+          <button type="button" class="glass-dropdown__item is-active" data-filter="status" data-value="">{t("tasks.all_statuses", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="status" data-value="pending">{t("task_status.pending", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="status" data-value="active">{t("task_status.active", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="status" data-value="complete">{t("task_status.complete", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="status" data-value="overdue">{t("tasks.overdue", locale)}</button>
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
-  {!hideAreaSelect && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-filter-area`} aria-label="Filter by area">
-      <option value="">All Areas</option>
-    </select>
-  )}
+    {/* Priority Filter */}
+    {showPriorityFilter && (
+      <GlassDropdown id={`${prefix}-priority-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill" id={`${prefix}-btn-priority`} type="button">
+          <span class="filter-pill__label">Priority</span>
+          <span class="filter-pill__val" data-display="priority" id={`${prefix}-lbl-priority`}>All</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="p-1 min-w-[140px]">
+          <button type="button" class="glass-dropdown__item is-active" data-filter="priority" data-value="">{t("tasks.all_priorities", locale)}</button>
+          <button type="button" class="glass-dropdown__item text-red-400" data-filter="priority" data-value="1">! Critical</button>
+          <button type="button" class="glass-dropdown__item text-orange-400" data-filter="priority" data-value="2">High</button>
+          <button type="button" class="glass-dropdown__item text-yellow-400" data-filter="priority" data-value="3">Medium</button>
+          <button type="button" class="glass-dropdown__item text-blue-400" data-filter="priority" data-value="4">Low</button>
+          <button type="button" class="glass-dropdown__item text-text-muted" data-filter="priority" data-value="5">None</button>
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* Group-by selector */}
-  {showGroupBy && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-group-by`} aria-label="Group tasks by">
-      {groupOptions.map((opt) => (
-        <option value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
-  )}
+    {/* RICE Filter */}
+    {showRICEFilter && (
+      <GlassDropdown id={`${prefix}-rice-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill" id={`${prefix}-btn-rice`} type="button">
+          <span class="filter-pill__label">RICE</span>
+          <span class="filter-pill__val" data-display="rice" id={`${prefix}-lbl-rice`}>All</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="p-1 min-w-[120px]">
+          <button type="button" class="glass-dropdown__item is-active" data-filter="rice" data-value="">{t("tasks.all_rice", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="rice" data-value="high">{t("tasks.rice_high", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="rice" data-value="medium">{t("tasks.rice_medium", locale)}</button>
+          <button type="button" class="glass-dropdown__item" data-filter="rice" data-value="low">{t("tasks.rice_low", locale)}</button>
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* Sub-group-by selector — only for table view with groupBy active */}
-  {showGroupBy && view === "table" && (
-    <select class="form-select filter-toolbar__select" id={`${prefix}-sub-group-by`} aria-label="Sub-group tasks by" title="Then group by">
-      <option value="none">No sub-group</option>
-      <option value="status">Then by Status</option>
-      <option value="priority">Then by Priority</option>
-      <option value="type">Then by Type</option>
-      <option value="area">Then by Area</option>
-      <option value="rice">Then by RICE</option>
-    </select>
-  )}
+    {/* Assignee Filter */}
+    {showUserFilter && (
+      <GlassDropdown id={`${prefix}-user-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill" id={`${prefix}-btn-user`} type="button">
+          <span class="filter-pill__label">Assignee</span>
+          <span class="filter-pill__val" data-display="user" id={`${prefix}-lbl-user`}>All</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="p-1 min-w-[140px]">
+          <button type="button" class="glass-dropdown__item is-active" data-filter="user" data-value="">{t("tasks.all_users", locale)}</button>
+          <button type="button" class="glass-dropdown__item text-text-muted italic" data-filter="user" data-value="__unassigned__">Unassigned</button>
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* Clear all button */}
-  <button
-    type="button"
-    class="filter-toolbar__clear"
-    id={`${prefix}-clear-filters`}
-    title="Clear all filters"
-    aria-label="Clear all active filters"
-  >
-    {t("tasks.clear_filters", locale)}
-  </button>
+    {/* Area Filter */}
+    {!hideAreaSelect && (
+      <GlassDropdown id={`${prefix}-area-dropdown`} class="filter-toolbar__dropdown">
+        <button slot="trigger" class="filter-pill" id={`${prefix}-btn-area`} type="button">
+          <span class="filter-pill__label">Area</span>
+          <span class="filter-pill__val" data-display="area" id={`${prefix}-lbl-area`}>All Areas</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-pill__chevron opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="p-1 min-w-[180px] max-h-[300px] overflow-y-auto" id={`${prefix}-area-options`}>
+          <button type="button" class="glass-dropdown__item is-active" data-filter="area" data-value="">All Areas</button>
+        </div>
+      </GlassDropdown>
+    )}
 
-  {/* Advanced Filter Toggle */}
-  <button
-    type="button"
-    class="filter-toolbar__advanced-toggle"
-    id={`${prefix}-advanced-toggle`}
-    title="Advanced Filters"
-    aria-label="Toggle advanced filters"
-    aria-expanded="false"
-  >
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sliders-horizontal"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
-  </button>
-
-  {/* Advanced Filter Builder Dropdown (Hidden by default) */}
-<div class="filter-toolbar__advanced-panel hidden" id={`${prefix}-advanced-panel`} role="region" aria-label="Advanced Filter Builder">
-  <div class="advanced-panel__header">
-    <h4 class="text-sm font-semibold text-text">Advanced Filters</h4>
-    <button type="button" class="btn-icon" id={`${prefix}-advanced-close`} aria-label="Close advanced filters">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    {/* Clear all button */}
+    <button
+      type="button"
+      class="filter-toolbar__clear-btn hidden"
+      id={`${prefix}-clear-filters`}
+      title="Clear active filters"
+      aria-label="Clear all active filters"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      Clear
     </button>
   </div>
-  
-  <div class="advanced-panel__body" id={`${prefix}-advanced-conditions-container`}>
-    <!-- Conditions rendered here by JS -->
-    <div class="advanced-panel__empty-state text-sm text-text-muted italic py-2">
-      No advanced rules applied. Add a condition to start filtering.
-    </div>
-  </div>
-
-  <div class="advanced-panel__footer mt-3 pt-3 border-t border-border flex justify-between items-center gap-2">
-    <div class="flex gap-2">
-      <button type="button" class="btn btn-outline text-xs py-1" id={`${prefix}-advanced-add-condition`}>
-        + Add Condition
-      </button>
-      <button type="button" class="btn btn-outline text-xs py-1" id={`${prefix}-advanced-add-group`}>
-        + Add Group
-      </button>
-    </div>
-    <div class="flex gap-2">
-      <button type="button" class="btn text-xs py-1 text-text-muted hover:text-text" id={`${prefix}-advanced-clear`}>
-        Clear Rules
-      </button>
-      <button type="button" class="btn btn-primary text-xs py-1" id={`${prefix}-advanced-apply`}>
-        Apply Rules
-      </button>
-    </div>
-  </div>
-</div>
-
 </div>
 
 {/* Label filter bar — separate row below main toolbar */}
@@ -310,203 +245,71 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
 <script>
   import { isTaskVisible } from "../../lib/filter-state"
+  ;(window as any).__isTaskVisible = isTaskVisible
 
-  // Expose for Kanban's inline scripts which can't do module imports easily
-  ;window.__isTaskVisible = isTaskVisible
-
-  /**
-   * FilterToolbar client-side controller
-   *
-   * Binds all filter controls and emits a unified `meitheal:filter-change`
-   * CustomEvent whenever any filter value changes. Views listen for this event.
-   */
   function initFilterToolbar(toolbar: HTMLElement) {
     const prefix = toolbar.id.startsWith("table") ? "table" : "kanban"
 
-    // Gather all controls
     const search = toolbar.querySelector<HTMLInputElement>(`#${prefix}-search`)
-    const statusSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-status`)
-    const prioritySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-priority`)
-    const riceSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-rice`)
-    const userSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-user`)
-    const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-area`)
-    const groupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-group-by`)
-    const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
     const typeToggles = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__type-btn")
-    const userPills = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__user-btn")
-
-    // Advanced Filter controls
-    const advToggleBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-toggle`)
-    const advPanel = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-panel`)
-    const advCloseBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-close`)
-    const advAddCondBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-condition`)
-    const advAddGroupBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-group`)
-    const advClearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-clear`)
-    const advApplyBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-apply`)
-    const advContainer = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-conditions-container`)
-
-    // Internal state for advanced filters
-    let advancedFilterState: any = null
-
-    // Field definition for dropdowns
-    const fields = [
-      { id: "title", label: "Task Title" },
-      { id: "status", label: "Status" },
-      { id: "priority", label: "Priority" },
-      { id: "rice", label: "RICE Score" },
-      { id: "type", label: "Task Type" },
-      { id: "assigned", label: "Assignee" },
-      { id: "labels", label: "Labels" },
-      { id: "area", label: "Area ID" },
-    ]
-
-    const operators = [
-      { id: "equals", label: "Equals" },
-      { id: "notEquals", label: "Does not equal" },
-      { id: "contains", label: "Contains" },
-      { id: "notContains", label: "Does not contain" },
-      { id: "greaterThan", label: "Greater than" },
-      { id: "lessThan", label: "Less than" },
-      { id: "isEmpty", label: "Is empty" },
-      { id: "isNotEmpty", label: "Is not empty" },
-    ]
-
-    function renderAdvancedConditionRow() {
-      const row = document.createElement("div")
-      row.className = "advanced-filter-row"
-      row.dataset.type = "condition"
-
-      const fieldSel = document.createElement("select")
-      fieldSel.className = "adv-field"
-      fields.forEach(f => {
-        const opt = document.createElement("option")
-        opt.value = f.id
-        opt.textContent = f.label
-        fieldSel.appendChild(opt)
-      })
-
-      const opSel = document.createElement("select")
-      opSel.className = "adv-op"
-      operators.forEach(o => {
-        const opt = document.createElement("option")
-        opt.value = o.id
-        opt.textContent = o.label
-        opSel.appendChild(opt)
-      })
-
-      const valInput = document.createElement("input")
-      valInput.className = "adv-val"
-      valInput.type = "text"
-      valInput.placeholder = "Value..."
-
-      // Hide value input for empty/not-empty operators
-      opSel.addEventListener("change", () => {
-        if (opSel.value === "isEmpty" || opSel.value === "isNotEmpty") {
-          valInput.style.display = "none"
-        } else {
-          valInput.style.display = ""
-        }
-      })
-
-      const removeBtn = document.createElement("button")
-      removeBtn.type = "button"
-      removeBtn.className = "btn-icon text-text-muted hover:text-red-500"
-      removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`
-      removeBtn.addEventListener("click", () => {
-        row.remove()
-        checkEmptyState()
-      })
-
-      row.append(fieldSel, opSel, valInput, removeBtn)
-      return row
+    
+    // Internal state mapping
+    const state = {
+      status: "",
+      priority: "",
+      rice: "",
+      user: "",
+      area: "",
+      groupBy: "none",
+      subGroupBy: "none"
     }
 
-    function checkEmptyState() {
-      if (!advContainer) return
-      const emptyState = advContainer.querySelector(".advanced-panel__empty-state")
-      const hasRows = advContainer.querySelectorAll(".advanced-filter-row").length > 0
-      if (emptyState) {
-        (emptyState as HTMLElement).style.display = hasRows ? "none" : "block"
+    // Bind dropdown items
+    const filterItems = toolbar.querySelectorAll<HTMLButtonElement>(".glass-dropdown__item[data-filter]")
+    
+    filterItems.forEach(item => {
+      item.addEventListener("click", () => {
+        const key = item.dataset.filter as keyof typeof state
+        const val = item.dataset.value ?? ""
+        const label = item.textContent?.trim() ?? ""
+        
+        state[key] = val
+
+        // Update visual active state in the dropdown
+        const parentMenu = item.closest(".glass-dropdown__content")
+        if (parentMenu) {
+          parentMenu.querySelectorAll(`[data-filter="${key}"]`).forEach(btn => btn.classList.remove("is-active"))
+          item.classList.add("is-active")
+        }
+
+        // Update Pill UI label
+        const displayLbl = toolbar.querySelector<HTMLElement>(`#${prefix}-lbl-${key.toLowerCase()}`)
+        if (displayLbl) {
+          displayLbl.textContent = label
+          const btnParent = displayLbl.closest(".filter-pill")
+          if (btnParent) {
+            if (val !== "" && val !== "none") {
+               btnParent.classList.add("filter-pill--active")
+            } else {
+               btnParent.classList.remove("filter-pill--active")
+            }
+          }
+        }
+
+        updateClearVisibility()
+        emitChange()
+      })
+    })
+
+    function updateClearVisibility() {
+      const isFiltered = Object.entries(state).some(([k, v]) => k !== "groupBy" && k !== "subGroupBy" && v !== "" && v !== "none") || (search && search.value.trim() !== "")
+      if (clearBtn) {
+        clearBtn.classList.toggle("hidden", !isFiltered)
       }
     }
-
-    // Toggle Advanced Panel
-    advToggleBtn?.addEventListener("click", () => {
-      const isExpanded = advToggleBtn.getAttribute("aria-expanded") === "true"
-      advToggleBtn.setAttribute("aria-expanded", String(!isExpanded))
-      advPanel?.classList.toggle("hidden")
-    })
-
-    advCloseBtn?.addEventListener("click", () => {
-      advToggleBtn?.setAttribute("aria-expanded", "false")
-      advPanel?.classList.add("hidden")
-    })
-
-    // Click outside to close advanced panel
-    document.addEventListener("click", (e) => {
-      if (!advPanel?.classList.contains("hidden") && advToggleBtn && advPanel) {
-        if (!advPanel.contains(e.target as Node) && !advToggleBtn.contains(e.target as Node)) {
-          advToggleBtn.setAttribute("aria-expanded", "false")
-          advPanel.classList.add("hidden")
-        }
-      }
-    })
-
-    // Advanced Panel Actions
-    advAddCondBtn?.addEventListener("click", () => {
-      if (!advContainer) return
-      const emptyState = advContainer.querySelector(".advanced-panel__empty-state")
-      if (emptyState) (emptyState as HTMLElement).style.display = "none"
-      
-      const row = renderAdvancedConditionRow()
-      advContainer.appendChild(row)
-    })
-
-    advClearBtn?.addEventListener("click", () => {
-      if (!advContainer) return
-      const rows = advContainer.querySelectorAll(".advanced-filter-row")
-      rows.forEach(r => r.remove())
-      checkEmptyState()
-      advancedFilterState = null
-      emitChange()
-    })
-
-    advApplyBtn?.addEventListener("click", () => {
-      if (!advContainer) return
-      const rows = advContainer.querySelectorAll(".advanced-filter-row")
-      if (rows.length === 0) {
-        advancedFilterState = null
-      } else {
-        // Build the root AND group from the flat list of conditions for now
-        // (Full recursive group UI can be added later, starting with a flat AND block)
-        const conditions = Array.from(rows).map(row => {
-          const field = row.querySelector<HTMLSelectElement>(".adv-field")?.value ?? ""
-          const operator = row.querySelector<HTMLSelectElement>(".adv-op")?.value ?? "equals"
-          const value = row.querySelector<HTMLInputElement>(".adv-val")?.value ?? ""
-          return { id: Math.random().toString(36).substring(7), field, operator, value }
-        })
-        advancedFilterState = {
-          id: "root",
-          logic: "AND",
-          conditions
-        }
-      }
-      
-      // Visual feedback on toggle button
-      if (advancedFilterState && advancedFilterState.conditions.length > 0) {
-        advToggleBtn?.classList.add("text-accent")
-      } else {
-        advToggleBtn?.classList.remove("text-accent")
-      }
-
-      advToggleBtn?.setAttribute("aria-expanded", "false")
-      advPanel?.classList.add("hidden")
-      emitChange()
-    })
 
     function gatherState() {
-      // Collect active types
       const activeTypes: string[] = []
       typeToggles.forEach((btn) => {
         if (btn.classList.contains("active") && btn.dataset.type) {
@@ -514,51 +317,37 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         }
       })
 
-      // Collect active users (pill mode)
-      let activeUser = ""
-      if (userPills.length > 0) {
-        const activeUserBtn = toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn.active:not([data-user='all'])")
-        activeUser = activeUserBtn?.dataset.user ?? ""
-      } else {
-        activeUser = userSel?.value ?? ""
-      }
-
       return {
         search: search?.value ?? "",
-        status: statusSel?.value ?? "",
-        priority: prioritySel?.value ?? "",
-        rice: riceSel?.value ?? "",
-        user: activeUser,
-        area: areaSel?.value ?? "",
-        groupBy: groupBySel?.value ?? "none",
-        subGroupBy: subGroupBySel?.value ?? "none",
+        status: state.status,
+        priority: state.priority,
+        rice: state.rice,
+        user: state.user,
+        area: state.area,
+        groupBy: state.groupBy,
+        subGroupBy: state.subGroupBy,
         types: activeTypes.length === typeToggles.length ? [] : activeTypes,
-        advancedFilter: advancedFilterState,
+        advancedFilter: null,
       }
     }
 
     function emitChange() {
-      const state = gatherState()
       document.dispatchEvent(
         new CustomEvent("meitheal:filter-change", {
-          detail: { ...state, view: prefix },
+          detail: { ...gatherState(), view: prefix },
         })
       )
     }
 
-    // Debounce for search
     let searchTimer: ReturnType<typeof setTimeout>
     search?.addEventListener("input", () => {
       clearTimeout(searchTimer)
-      searchTimer = setTimeout(emitChange, 150)
+      searchTimer = setTimeout(() => {
+        updateClearVisibility()
+        emitChange()
+      }, 150)
     })
 
-    // Select change listeners
-    ;[statusSel, prioritySel, riceSel, userSel, areaSel, groupBySel, subGroupBySel].forEach((sel) => {
-      sel?.addEventListener("change", emitChange)
-    })
-
-    // Type toggle listeners
     typeToggles.forEach((btn) => {
       btn.addEventListener("click", () => {
         btn.classList.toggle("active")
@@ -567,61 +356,43 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
     })
 
-    // User pill listeners (kanban)
-    userPills.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const user = btn.dataset.user
-        if (user === "all") {
-          userPills.forEach((b) => {
-            b.classList.remove("active")
-          })
-          btn.classList.add("active")
-        } else {
-          toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.remove("active")
-          btn.classList.toggle("active")
-          // If none active, re-activate "all"
-          const anyActive = toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn.active:not([data-user='all'])")
-          if (!anyActive) {
-            toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.add("active")
-          }
-        }
-        emitChange()
-      })
-    })
-
-    // Clear all button
     clearBtn?.addEventListener("click", () => {
       if (search) search.value = ""
-      ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
-        if (sel) sel.value = ""
-      })
-      if (groupBySel) groupBySel.value = "none"
-      if (subGroupBySel) subGroupBySel.value = "none"
+      
+      // Reset state maps (expect groupBy items)
+      for (const k of Object.keys(state) as Array<keyof typeof state>) {
+         if (k === "groupBy" || k === "subGroupBy") continue
+         state[k] = ""
+         
+         const displayLbl = toolbar.querySelector<HTMLElement>(`#${prefix}-lbl-${k.toLowerCase()}`)
+         if (displayLbl) {
+            displayLbl.textContent = "All"
+            displayLbl.closest(".filter-pill")?.classList.remove("filter-pill--active")
+         }
+         
+         // reset active items in dropdowns
+         const parentDropdown = toolbar.querySelector(`#${prefix}-${k.toLowerCase()}-dropdown`)
+         if (parentDropdown) {
+           parentDropdown.querySelectorAll(`[data-filter="${k}"]`).forEach(btn => {
+              if (btn.getAttribute("data-value") === "") btn.classList.add("is-active")
+              else btn.classList.remove("is-active")
+           })
+         }
+      }
+
       typeToggles.forEach((btn) => {
         btn.classList.add("active")
         btn.setAttribute("aria-pressed", "true")
       })
-      userPills.forEach((btn) => {
-        btn.classList.remove("active")
-      })
-      toolbar.querySelector<HTMLButtonElement>(".filter-toolbar__user-btn[data-user='all']")?.classList.add("active")
-      
-      // Clear advanced filters too
-      if (advContainer) {
-        const rows = advContainer.querySelectorAll(".advanced-filter-row")
-        rows.forEach(r => r.remove())
-        checkEmptyState()
-      }
-      advancedFilterState = null
-      advToggleBtn?.classList.remove("text-accent")
 
+      updateClearVisibility()
       emitChange()
     })
 
-    // Load boards into board selector (idempotent via DOM attribute)
     async function loadAreas() {
-      if (!areaSel || areaSel.dataset.populated) return
-      areaSel.dataset.populated = "true"
+      const container = toolbar.querySelector<HTMLElement>(`#${prefix}-area-options`)
+      if (!container || container.dataset.populated) return
+      container.dataset.populated = "true"
       
       try {
         const res = await fetch("/api/areas")
@@ -630,29 +401,43 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         const boards: { id: string; name: string; icon?: string }[] = data.areas || []
         
         boards.forEach((b) => {
-          const opt = document.createElement("option")
-          opt.value = b.id
-          opt.textContent = `${b.icon ?? "📋"} ${b.name}`
-          areaSel.appendChild(opt)
+          const btn = document.createElement("button")
+          btn.type = "button"
+          btn.className = "glass-dropdown__item"
+          btn.dataset.filter = "area"
+          btn.dataset.value = b.id
+          btn.textContent = `${b.icon ?? "📋"} ${b.name}`
+          
+          btn.addEventListener("click", () => {
+            state.area = b.id
+            container.querySelectorAll('[data-filter="area"]').forEach(x => x.classList.remove("is-active"))
+            btn.classList.add("is-active")
+            
+            const displayLbl = toolbar.querySelector<HTMLElement>(`#${prefix}-lbl-area`)
+            if (displayLbl) {
+              displayLbl.textContent = b.name
+              displayLbl.closest(".filter-pill")?.classList.add("filter-pill--active")
+            }
+            updateClearVisibility()
+            emitChange()
+          })
+          
+          container.appendChild(btn)
         })
-      } catch { /* offline fallback */ }
+      } catch { }
     }
 
     loadAreas()
   }
 
-  // Initialize toolbars
   function bootToolbars() {
     document.querySelectorAll<HTMLElement>(".filter-toolbar").forEach((toolbar) => {
-      // Guard: don't re-initialize if already done
       if (toolbar.dataset.initialized) return
       toolbar.dataset.initialized = "true"
       initFilterToolbar(toolbar)
     })
   }
 
-  // Use both events but rely on data-initialized + data-populated for idempotency
   document.addEventListener("DOMContentLoaded", bootToolbars)
   document.addEventListener("astro:page-load", bootToolbars)
 </script>
-

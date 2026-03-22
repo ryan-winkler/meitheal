@@ -87,98 +87,103 @@
   background: var(--task-color, #22c55e);
 }
 
-/* ---- Filter selects ---- */
-.filter-toolbar__select {
-  font-size: 13px;
-  padding: 5px 28px 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 0.65em auto;
-  max-width: 160px;
-  transition: border-color 0.15s;
-}
-
-.filter-toolbar__select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.filter-toolbar__select option {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-/* ---- User filter pills (kanban-style) ---- */
-.filter-toolbar__user-pills {
+/* ---- Search Input Wrapper ---- */
+.filter-toolbar__search-wrapper {
+  position: relative;
   display: flex;
-  gap: 4px;
   align-items: center;
-  flex-wrap: wrap;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 6px);
-  padding: 2px;
-  background: var(--bg-secondary);
+  flex: 0 1 200px;
+  min-width: 140px;
 }
 
-.filter-toolbar__user-btn {
+/* ---- Filter Pills (Glassmorphic) ---- */
+.filter-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 4px 10px;
-  border: none;
-  border-radius: var(--radius-sm, 4px);
-  background: transparent;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-full, 9999px);
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  height: 28px;
 }
 
-.filter-toolbar__user-btn.active {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.filter-toolbar__user-btn:not(.active) {
-  opacity: 0.5;
-}
-
-.filter-toolbar__user-btn:hover {
+.filter-pill:hover {
   background: var(--bg-hover);
+  border-style: solid;
   color: var(--text-primary);
-  opacity: 1;
 }
 
-.filter-toolbar__user-btn.active:hover {
-  opacity: 1;
+.filter-pill--active {
+  background: var(--accent-transparent, rgba(138, 180, 248, 0.15));
+  border: 1px solid var(--accent-transparent, rgba(138, 180, 248, 0.3));
+  color: var(--accent, #8ab4f8);
+}
+
+.filter-pill--active:hover {
+  background: var(--accent-transparent, rgba(138, 180, 248, 0.25));
+  border-color: var(--accent, #8ab4f8);
+}
+
+.filter-pill--display {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.filter-pill__label {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.filter-pill__val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.filter-pill--active .filter-pill__val {
+  color: var(--accent, #8ab4f8);
+}
+
+.filter-pill__chevron {
+  margin-left: -2px;
+  transition: transform 0.2s ease;
+}
+
+.glass-dropdown__trigger[aria-expanded="true"] .filter-pill__chevron {
+  transform: rotate(180deg);
 }
 
 /* ---- Clear button ---- */
-.filter-toolbar__clear {
+.filter-toolbar__clear-btn {
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: none;
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm, 4px);
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 9999px);
   transition: color 0.15s, background 0.15s;
   white-space: nowrap;
   margin-left: auto;
+  height: 28px;
 }
 
-.filter-toolbar__clear:hover {
+.filter-toolbar__clear-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+
+.filter-toolbar__clear-btn.hidden {
+  display: none;
 }
 
 /* ---- Responsive: narrow HA ingress iframe ---- */
@@ -188,125 +193,25 @@
     padding: 8px 12px;
   }
 
-  .filter-toolbar__search {
+  .filter-toolbar__search-wrapper {
     min-width: 100px;
     max-width: none;
     flex: 1;
   }
 
+  .filter-toolbar__pills-container {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  
+  .filter-toolbar__pills-container::-webkit-scrollbar {
+    display: none;
+  }
+
   .filter-toolbar__type-toggles {
     order: 10;
-    width: 100%;
-  }
-
-  .filter-toolbar__select {
-    max-width: 120px;
-    font-size: 12px;
-  }
-
-  .filter-toolbar__user-pills {
-    order: 11;
-    width: 100%;
   }
 }
 
-/* =============================================
- * Advanced Filter Panel
- * ============================================= */
-
-.filter-toolbar__advanced-toggle {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-sm, 4px);
-  transition: color 0.15s, background 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.filter-toolbar__advanced-toggle:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.filter-toolbar__advanced-toggle[aria-expanded="true"] {
-  background: var(--accent);
-  color: #fff;
-}
-
-.filter-toolbar__advanced-panel {
-  position: absolute;
-  top: 100%;
-  right: 16px;
-  width: 450px;
-  max-width: calc(100vw - 32px);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 50;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.filter-toolbar__advanced-panel.hidden {
-  display: none;
-}
-
-.advanced-panel__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-}
-
-.advanced-panel__body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.advanced-filter-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 4px);
-  padding: 6px;
-}
-
-.advanced-filter-row select,
-.advanced-filter-row input {
-  font-size: 13px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-}
-
-.advanced-filter-row select {
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 0.65em auto;
-  padding-right: 24px;
-}
-
-/* Ensure relative positioning on the toolbar container to anchor the absolute panel */
-.filter-toolbar {
-  position: relative;
-}
