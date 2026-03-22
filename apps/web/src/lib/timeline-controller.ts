@@ -162,17 +162,25 @@ function createDropdown(
   }
   const existing = document.querySelector(".gantt-col-menu")
   if (existing) {
-    const isSameTrigger = existing.parentElement === triggerBtn
+    const isSameTrigger = existing.getAttribute("data-gantt-trigger") === triggerBtn.dataset.ganttTriggerId
     existing.remove()
     if (isSameTrigger) return // Toggle off
   }
 
+  // Assign a trigger ID so toggle-off detection works with body-appended menus
+  if (!triggerBtn.dataset.ganttTriggerId) {
+    triggerBtn.dataset.ganttTriggerId = String(Date.now())
+  }
+
+  const rect = triggerBtn.getBoundingClientRect()
   const menu = document.createElement("div")
   menu.className = "gantt-col-menu"
+  menu.setAttribute("data-gantt-trigger", triggerBtn.dataset.ganttTriggerId)
   menu.style.cssText = `
-    position:absolute;top:100%;${align}:0;background:var(--bg-card);
-    border:1px solid var(--border);border-radius:6px;padding:4px 0;
-    box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;min-width:140px;
+    position:fixed;top:${rect.bottom + 4}px;
+    ${align === "right" ? `right:${window.innerWidth - rect.right}px` : `left:${rect.left}px`};
+    background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+    padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;min-width:140px;
   `
 
   activeDropdownController = new AbortController()
@@ -195,7 +203,7 @@ function createDropdown(
   }
   setTimeout(() => document.addEventListener("click", onBodyClick, { signal: activeDropdownController!.signal }), 0)
   
-  triggerBtn.appendChild(menu)
+  document.body.appendChild(menu)
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -901,7 +909,7 @@ function renderGantt(
 
   // "+" button to add/show columns
   const addColBtn = document.createElement("button")
-  addColBtn.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
+  addColBtn.style.cssText = "position:relative;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
   addColBtn.textContent = "+"
   addColBtn.title = "Manage columns"
   addColBtn.addEventListener("click", (e) => {

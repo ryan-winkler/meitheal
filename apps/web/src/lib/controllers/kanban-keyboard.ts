@@ -143,7 +143,7 @@ export function initKeyboardAndSearch(__signal: AbortSignal): void {
 
   // Header "+ New Task" button → open the full New Task modal dialog
   document
-    .getElementById("kanban-new-task-btn")
+    .querySelector<HTMLButtonElement>(".unified-bar__new-task-btn")
     ?.addEventListener("click", () => {
       if (typeof window.openNewTaskModal === "function") {
         window.openNewTaskModal()
