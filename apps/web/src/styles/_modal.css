@@ -192,8 +192,74 @@ dialog[open] .modal-content,
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  z-index: 5;
+}
+
+/* Priority color indicators (scoped to priority dropdown) */
+#nt-priority-dropdown .glass-dropdown__item[data-value="1"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
+#nt-priority-dropdown .glass-dropdown__item[data-value="2"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #f97316; flex-shrink: 0; }
+#nt-priority-dropdown .glass-dropdown__item[data-value="3"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; }
+#nt-priority-dropdown .glass-dropdown__item[data-value="4"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
+
+/* Prominent toggle switches */
+.nt-feature-card .switch-toggle {
+  width: 44px;
+  height: 24px;
+}
+
+/* ── New Task Modal: utility classes (replaces inline styles) ── */
+
+.nt-modal-header {
+  border-bottom: none;
+  background: transparent;
+  min-height: auto;
+}
+
+.nt-assignment-row {
+  margin-top: 0.25rem;
+}
+
+.nt-assignment-row .filter-toolbar__select {
+  max-width: 180px;
+}
+
+.nt-footer {
+  border-top: 1px solid var(--border-dim);
+}
+
+/* Unified toggle switch — replaces 3× duplicated inline Tailwind */
+.nt-toggle {
+  position: relative;
+  width: 2.25rem;  /* 36px / w-9 */
+  height: 1.25rem; /* 20px / h-5 */
+  background: var(--bg-input, rgba(0,0,0,0.15));
+  border: 1px solid var(--border-dim);
+  border-radius: 9999px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+}
+.nt-toggle::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;   /* 2px / top-0.5 */
+  left: 0.125rem;  /* 2px / left-0.5 */
+  width: 1rem;     /* 16px / w-4 */
+  height: 1rem;    /* 16px / h-4 */
+  background: white;
+  border-radius: 9999px;
+  transition: transform 0.15s ease;
+}
+.peer:checked ~ .nt-toggle {
+  background: var(--accent);
+  border-color: transparent;
+}
+.peer:checked ~ .nt-toggle::after {
+  transform: translateX(1rem);
+}
+.peer:focus ~ .nt-toggle {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 /* Keyboard shortcuts modal */
 .shortcut-modal-overlay {
@@ -332,37 +398,87 @@ dialog[open] .modal-content,
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* --- NewTask Status Pills --- */
+/* --- NewTask Kind Pills (Tab Switcher) --- */
+.nt-kind-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted, #a1a1aa);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.nt-kind-pill svg {
+  opacity: 0.6;
+  transition: opacity 0.18s ease;
+}
+
+.nt-kind-pill:hover {
+  background: color-mix(in srgb, var(--color-text-muted, #a1a1aa) 8%, transparent);
+  color: var(--color-text-primary, #fff);
+}
+.nt-kind-pill:hover svg {
+  opacity: 0.85;
+}
+
+.nt-kind-pill.active {
+  background: color-mix(in srgb, var(--color-accent, #7c3aed) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 30%, transparent);
+  color: var(--color-accent, #7c3aed);
+  font-weight: 600;
+}
+.nt-kind-pill.active svg {
+  opacity: 1;
+  stroke: var(--color-accent, #7c3aed);
+}
+
+/* --- NewTask Section Labels --- */
+.nt-section-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted, #a1a1aa);
+  margin-bottom: 0.5rem;
+}
+
+/* --- NewTask Status Pills (matching filter-pill design) --- */
 .nt-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-radius: 9999px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-  background: var(--color-bg-input, rgba(255, 255, 255, 0.05));
-  color: var(--color-text-muted, #a1a1aa);
+  gap: 6px;
+  padding: 4px 10px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
+  color: var(--text-muted, #a1a1aa);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
-  line-height: 1;
+  user-select: none;
 }
 
 .nt-status-pill:hover {
-  background: var(--color-bg-hover, rgba(255, 255, 255, 0.1));
-  border-color: var(--color-border-focus, rgba(255, 255, 255, 0.2));
-  color: var(--color-text-primary, #fff);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+  border-style: solid;
+  color: var(--text-primary, #fff);
 }
 
 .nt-status-pill.active {
-  background: color-mix(in srgb, var(--color-accent, #7c3aed) 18%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 50%, transparent);
-  color: var(--color-accent, #7c3aed);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent, #7c3aed) 15%, transparent);
+  background: var(--accent-transparent, rgba(138, 180, 248, 0.15));
+  border: 1px solid var(--accent-transparent, rgba(138, 180, 248, 0.3));
+  color: var(--accent, #8ab4f8);
 }
 
 .nt-status-pill-icon {
@@ -386,6 +502,29 @@ dialog[open] .modal-content,
 .modal-content textarea:hover:not(:focus) {
   background-color: var(--color-bg-hover);
   border-color: var(--color-border);
+}
+
+/* Subtle bottom-border on title/description for visual anchor */
+#new-task-title-input,
+#new-task-title-input:focus,
+#new-task-desc-input,
+#new-task-desc-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-dim) 40%, transparent) !important;
+  border-radius: 0 !important;
+}
+
+/* Feature cards (routine toggle, ai assist, custom fields) */
+.nt-feature-card {
+  border: 1px solid color-mix(in srgb, var(--border-dim) 40%, transparent);
+  background: color-mix(in srgb, var(--border-dim) 10%, transparent);
+  border-radius: var(--radius-xl, 12px);
+  transition: border-color 0.15s ease;
+}
+.nt-feature-card:hover {
+  border-color: color-mix(in srgb, var(--border-dim) 80%, transparent);
 }
 
 /* Specific styling for the priority dot */

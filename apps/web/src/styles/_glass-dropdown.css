@@ -79,3 +79,23 @@
   letter-spacing: 0.05em;
   color: var(--text-muted);
 }
+
+/* Tags dropdown — wider for LabelPicker */
+.nt-tags-content {
+  min-width: 300px;
+  padding: 8px 12px;
+}
+.nt-tags-content .label-picker__input {
+  background: var(--bg-input, rgba(255,255,255,0.06));
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md, 8px);
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  width: 100%;
+  margin-top: 4px;
+}
+.nt-tags-content .label-picker__dropdown {
+  max-height: 200px;
+  overflow-y: auto;
+}
