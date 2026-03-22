@@ -1,0 +1,774 @@
+#!/usr/bin/env node
+/**
+ * generate-openapi.mjs — Build-time OpenAPI 3.1 generator
+ *
+ * Generates apps/web/public/openapi.yaml from a declarative route catalog.
+ * Uses plain JS objects (no Zod import) to avoid ESM/CJS issues at build time.
+ * AI-prompt-engineered descriptions guide agent/automation usage.
+ *
+ * @domain integrations
+ * @bounded-context code-to-spec
+ */
+import { writeFileSync, mkdirSync } from "node:fs"
+import { resolve, dirname } from "node:path"
+import { stringify } from "yaml"
+
+const OUTPUT = resolve(dirname(new URL(import.meta.url).pathname), "../public/openapi.yaml")
+
+// ─── Reusable Schema Components ───────────────────────────────────────────────
+
+const schemas = {
+  TaskId: { type: "string", description: "Unique task identifier (UUID)", example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" },
+  Task: {
+    type: "object",
+    properties: {
+      id: { $ref: "#/components/schemas/TaskId" },
+      title: { type: "string", description: "Task title — the primary human-readable label" },
+      description: { type: "string", nullable: true, description: "Rich text task description" },
+      status: { type: "string", enum: ["todo", "in_progress", "complete", "archived"], description: "Current task lifecycle state" },
+      priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
+      due_date: { type: "string", format: "date-time", nullable: true },
+      assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
+      area_id: { type: "string", nullable: true },
+      goal_id: { type: "string", nullable: true },
+      project_id: { type: "string", nullable: true },
+      parent_id: { type: "string", nullable: true, description: "Parent task ID for subtask hierarchy" },
+      task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
+      labels: { type: "string", nullable: true, description: "Comma-separated label names" },
+      board_name: { type: "string", nullable: true },
+      ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
+      created_at: { type: "integer", description: "Unix timestamp (ms)" },
+      updated_at: { type: "integer", description: "Unix timestamp (ms)" },
+    },
+    required: ["id", "title", "status"],
+  },
+  Area: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      description: { type: "string", nullable: true },
+      icon: { type: "string", nullable: true },
+      color: { type: "string", nullable: true },
+      sort_order: { type: "integer" },
+    },
+    required: ["id", "name"],
+  },
+  Goal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: "string", nullable: true },
+      status: { type: "string", enum: ["active", "paused", "completed", "abandoned"] },
+      metric_type: { type: "string", nullable: true },
+      metric_target: { type: "number", nullable: true },
+      metric_current: { type: "number", nullable: true },
+    },
+    required: ["id", "title"],
+  },
+  Project: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      area_id: { type: "string", nullable: true },
+      goal_id: { type: "string", nullable: true },
+      status: { type: "string" },
+    },
+    required: ["id", "name"],
+  },
+  Pillar: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      identity_statement: { type: "string", nullable: true },
+      icon: { type: "string", nullable: true },
+      color: { type: "string", nullable: true },
+      sort_order: { type: "integer" },
+    },
+    required: ["id", "name"],
+  },
+  Label: {
+    type: "object",
+    properties: { id: { type: "integer" }, title: { type: "string" }, color: { type: "string" } },
+    required: ["id", "title"],
+  },
+  Setting: {
+    type: "object",
+    properties: { key: { type: "string" }, value: {} },
+    required: ["key", "value"],
+  },
+  WebhookEvent: {
+    type: "object",
+    description: "Outbound event fired on task lifecycle changes. Subscribe via webhook settings or HA event bus.",
+    properties: {
+      eventId: { type: "string", format: "uuid" },
+      eventType: { type: "string", enum: ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "area.updated"] },
+      occurredAt: { type: "string", format: "date-time" },
+      requestId: { type: "string" },
+      payload: { type: "object" },
+    },
+    required: ["eventId", "eventType", "occurredAt", "payload"],
+  },
+  ProblemDetail: {
+    type: "object",
+    description: "RFC 9457 Problem Details (application/problem+json). Agents MUST read `invalidParams` to self-correct validation errors.",
+    properties: {
+      type: { type: "string", format: "uri", description: "URI identifying the problem type — resolves to human docs" },
+      title: { type: "string", description: "Short human-readable summary of the problem type" },
+      status: { type: "integer", description: "HTTP status code" },
+      detail: { type: "string", description: "Human-readable explanation for this specific occurrence" },
+      instance: { type: "string", description: "URI reference identifying the specific request path" },
+      traceId: { type: "string", description: "Trace ID for correlation with structured logs" },
+      error: { type: "string", description: "Legacy alias for detail — backward compatibility" },
+      invalidParams: {
+        type: "array",
+        description: "Validation errors — agents should rewrite payload fields listed here and retry",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "JSON path to the invalid field (e.g., body.title)" },
+            reason: { type: "string", description: "Why the field is invalid" },
+          },
+          required: ["name", "reason"],
+        },
+      },
+    },
+    required: ["type", "title", "status"],
+  },
+  HealthResponse: {
+    type: "object",
+    properties: {
+      status: { type: "string", enum: ["ok", "degraded"] },
+      service: { type: "string" },
+      version: { type: "string" },
+      time: { type: "string", format: "date-time" },
+      uptime_seconds: { type: "integer" },
+      db_status: { type: "string" },
+      db_integrity: { type: "string" },
+      schema_version: { type: "integer" },
+      ha_mode: { type: "string", enum: ["ha-addon", "standalone"] },
+      supervisor_reachable: { type: "boolean" },
+    },
+  },
+  SearchResult: {
+    type: "object",
+    properties: {
+      results: { type: "array", items: { type: "object" } },
+      total: { type: "integer" },
+      scope: { type: "string" },
+      query: { type: "string" },
+    },
+  },
+}
+
+// ─── Helper: standard JSON responses ──────────────────────────────────────────
+
+const jsonContent = (schema, desc) => ({
+  description: desc,
+  content: { "application/json": { schema } },
+})
+
+const ref = (name) => ({ $ref: `#/components/schemas/${name}` })
+const arrOf = (name) => ({ type: "array", items: ref(name) })
+
+const problemContent = (desc) => ({
+  description: desc,
+  content: { "application/problem+json": { schema: ref("ProblemDetail") } },
+})
+
+const err400 = problemContent("Validation error (RFC 9457 — read invalidParams to self-correct)")
+const err500 = problemContent("Internal server error (RFC 9457)")
+
+// ─── Route Catalog ────────────────────────────────────────────────────────────
+// Each route has AI-prompt-engineered descriptions that guide agent usage.
+
+const paths = {
+  // ── Health ──
+  "/api/health": {
+    get: {
+      operationId: "getHealth",
+      tags: ["System"],
+      summary: "Health and readiness probe",
+      description: "Use this to verify Meitheal is running before making other API calls. Returns version, uptime, database status, and Home Assistant connectivity. Call this first in any automation workflow.",
+      responses: {
+        200: jsonContent(ref("HealthResponse"), "Service healthy"),
+        503: jsonContent(ref("HealthResponse"), "Service degraded"),
+      },
+    },
+    head: {
+      operationId: "healthPing",
+      tags: ["System"],
+      summary: "Lightweight liveness ping",
+      description: "Ultra-fast liveness check with no response body. Use this for frequent polling (e.g., every 30s) instead of the full GET health endpoint.",
+      responses: { 200: { description: "Alive" }, 503: { description: "Down" } },
+    },
+  },
+
+  // ── Tasks CRUD ──
+  "/api/tasks": {
+    get: {
+      operationId: "listTasks",
+      tags: ["Tasks"],
+      summary: "List all tasks with optional filters",
+      description: "Retrieve tasks filtered by status, area, project, labels, priority, assignee, or board. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
+      parameters: [
+        { name: "status", in: "query", schema: { type: "string" }, description: "Filter: todo, in_progress, complete, archived" },
+        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "project_id", in: "query", schema: { type: "string" } },
+        { name: "board_name", in: "query", schema: { type: "string" } },
+        { name: "assigned_to", in: "query", schema: { type: "string" } },
+        { name: "priority", in: "query", schema: { type: "integer" } },
+        { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["created", "updated", "priority", "due_date"] } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
+        { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
+      ],
+      responses: {
+        200: jsonContent(arrOf("Task"), "Task list"),
+        500: err500,
+      },
+    },
+  },
+  "/api/tasks/create": {
+    post: {
+      operationId: "createTask",
+      tags: ["Tasks"],
+      summary: "Create a new task",
+      description: "Create a task with optional calendar sync, assignment, and framework payload. Supports idempotency via Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      parameters: [
+        { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate creation on retry" },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["title"],
+              properties: {
+                title: { type: "string", description: "Task title (required)" },
+                description: { type: "string" },
+                status: { type: "string", default: "todo" },
+                priority: { type: "integer" },
+                due_date: { type: "string", format: "date-time" },
+                assigned_to: { type: "string", description: "Must start with 'ha_' or 'custom_'" },
+                area_id: { type: "string" },
+                project_id: { type: "string" },
+                parent_id: { type: "string" },
+                labels: { type: "string" },
+                board_name: { type: "string" },
+                task_kind: { type: "string" },
+                frameworkPayload: { type: "object" },
+                calendar: {
+                  type: "object",
+                  properties: {
+                    entityId: { type: "string" },
+                    startDateTime: { type: "string", format: "date-time" },
+                    endDateTime: { type: "string", format: "date-time" },
+                    durationMinutes: { type: "integer" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: jsonContent(ref("Task"), "Task created"),
+        200: jsonContent(ref("Task"), "Idempotent replay — task already existed"),
+        400: err400,
+        500: err500,
+      },
+    },
+  },
+  "/api/tasks/{id}": {
+    get: {
+      operationId: "getTask",
+      tags: ["Tasks"],
+      summary: "Get a single task by ID",
+      description: "Retrieve full task details including subtasks, checklists, comments count, and framework payload. Use this before updating a task to get its current state.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: jsonContent(ref("Task"), "Task details"), 404: jsonContent(ref("ProblemDetail"), "Not found") },
+    },
+    put: {
+      operationId: "updateTask",
+      tags: ["Tasks"],
+      summary: "Update a task",
+      description: "Partial update — only send fields you want to change. Setting status to 'complete' triggers webhook events and optional calendar cleanup. An empty body returns 200 (tolerant reader pattern).",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { content: { "application/json": { schema: ref("Task") } } },
+      responses: { 200: jsonContent(ref("Task"), "Updated"), 400: err400, 404: jsonContent(ref("ProblemDetail"), "Not found") },
+    },
+    delete: {
+      operationId: "deleteTask",
+      tags: ["Tasks"],
+      summary: "Delete a task",
+      description: "Permanently removes a task and its domain events. Consider setting status to 'archived' instead if you want recoverability.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Deleted" }, 404: jsonContent(ref("ProblemDetail"), "Not found") },
+    },
+  },
+  "/api/tasks/clear-completed": {
+    post: {
+      operationId: "clearCompletedTasks",
+      tags: ["Tasks"],
+      summary: "Archive all completed tasks",
+      description: "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
+      responses: { 200: jsonContent({ type: "object", properties: { archived: { type: "integer" } } }, "Count of archived tasks") },
+    },
+  },
+  "/api/tasks/delete-completed": {
+    delete: {
+      operationId: "deleteCompletedTasks",
+      tags: ["Tasks"],
+      summary: "Permanently delete all completed tasks",
+      description: "⚠️ Destructive. Permanently removes all tasks with status 'complete'. Cannot be undone. Prefer clearCompletedTasks for safe cleanup.",
+      responses: { 200: jsonContent({ type: "object", properties: { deleted: { type: "integer" } } }, "Count of deleted tasks") },
+    },
+  },
+  "/api/tasks/reorder": {
+    post: {
+      operationId: "reorderTasks",
+      tags: ["Tasks"],
+      summary: "Reorder tasks by position",
+      description: "Update sort positions for a list of tasks. Used by drag-and-drop UI but also useful for agents that want to prioritize task order.",
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, position: { type: "integer" } } } } } } } },
+      },
+      responses: { 200: { description: "Reordered" } },
+    },
+  },
+
+  // ── Task Sub-resources ──
+  "/api/tasks/{id}/comments": {
+    get: {
+      operationId: "getTaskComments",
+      tags: ["Tasks"],
+      summary: "List comments on a task",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: jsonContent({ type: "array", items: { type: "object" } }, "Comments") },
+    },
+    post: {
+      operationId: "addTaskComment",
+      tags: ["Tasks"],
+      summary: "Add a comment to a task",
+      description: "Agents should use this to record reasoning, status updates, or handoff notes on tasks they are working on.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { content: { "application/json": { schema: { type: "object", required: ["content"], properties: { content: { type: "string" }, author: { type: "string" } } } } } },
+      responses: { 201: { description: "Comment added" } },
+    },
+  },
+  "/api/tasks/{id}/links": {
+    get: { operationId: "getTaskLinks", tags: ["Tasks"], summary: "Get linked tasks", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Links" } } },
+    post: { operationId: "linkTask", tags: ["Tasks"], summary: "Link two tasks", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { target_id: { type: "string" }, link_type: { type: "string" } } } } } }, responses: { 200: { description: "Linked" } } },
+    delete: { operationId: "unlinkTask", tags: ["Tasks"], summary: "Remove a task link", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Unlinked" } } },
+  },
+  "/api/tasks/{id}/activity": {
+    get: { operationId: "getTaskActivity", tags: ["Tasks"], summary: "Get task activity timeline", description: "Returns the audit trail for a specific task — useful for understanding what changed and when.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Activity log" } } },
+  },
+  "/api/tasks/{id}/timeline": {
+    get: { operationId: "getTaskTimeline", tags: ["Tasks"], summary: "Get task timeline entries", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Timeline" } } },
+  },
+  "/api/tasks/{id}/time": {
+    get: { operationId: "getTaskTimeEntries", tags: ["Tasks"], summary: "Get time tracking entries", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Time entries" } } },
+    post: { operationId: "addTaskTimeEntry", tags: ["Tasks"], summary: "Log time against a task", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { duration_minutes: { type: "integer" }, note: { type: "string" } } } } } }, responses: { 201: { description: "Logged" } } },
+  },
+  "/api/tasks/{id}/duplicate": {
+    post: { operationId: "duplicateTask", tags: ["Tasks"], summary: "Duplicate a task", description: "Creates a copy of the task with a new ID. Useful for creating recurring instances or templates.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 201: jsonContent(ref("Task"), "Duplicated task") } },
+  },
+
+  // ── Search ──
+  "/api/search": {
+    get: {
+      operationId: "searchMeitheal",
+      tags: ["Search"],
+      summary: "Universal search across tasks, views, settings, and actions",
+      description: "The primary search endpoint for all Meitheal content. Supports scoped search (tasks, views, settings, actions), field selection, and sorting. Use scope=tasks for task-specific searches, or scope=all for universal discovery.",
+      parameters: [
+        { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query text" },
+        { name: "scope", in: "query", schema: { type: "string", enum: ["all", "tasks", "views", "settings", "actions"], default: "all" } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 8, maximum: 12 } },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "updated"], default: "relevance" } },
+        { name: "include_completed", in: "query", schema: { type: "boolean" } },
+        { name: "include_archived", in: "query", schema: { type: "boolean" } },
+        { name: "status", in: "query", schema: { type: "string" } },
+        { name: "assigned_to", in: "query", schema: { type: "string" } },
+        { name: "priority", in: "query", schema: { type: "integer" } },
+        { name: "task_fields", in: "query", schema: { type: "string" }, description: "Comma-separated: id,title,description,labels,custom_fields,comments" },
+      ],
+      responses: { 200: jsonContent(ref("SearchResult"), "Search results"), 500: err500 },
+    },
+  },
+
+  // ── Areas ──
+  "/api/areas": {
+    get: { operationId: "listAreas", tags: ["Hierarchy"], summary: "List all areas", description: "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.", responses: { 200: jsonContent(arrOf("Area"), "Areas") } },
+    post: { operationId: "createArea", tags: ["Hierarchy"], summary: "Create an area", requestBody: { content: { "application/json": { schema: ref("Area") } } }, responses: { 201: jsonContent(ref("Area"), "Created") } },
+  },
+  "/api/areas/{id}": {
+    get: { operationId: "getArea", tags: ["Hierarchy"], summary: "Get area details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Area"), "Area") } },
+    put: { operationId: "updateArea", tags: ["Hierarchy"], summary: "Update an area", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Area") } } }, responses: { 200: jsonContent(ref("Area"), "Updated") } },
+    delete: { operationId: "deleteArea", tags: ["Hierarchy"], summary: "Delete an area", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Goals ──
+  "/api/goals": {
+    get: { operationId: "listGoals", tags: ["Hierarchy"], summary: "List all goals", description: "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).", responses: { 200: jsonContent(arrOf("Goal"), "Goals") } },
+    post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
+  },
+  "/api/goals/{id}": {
+    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Goal"), "Goal") } },
+    put: { operationId: "updateGoal", tags: ["Hierarchy"], summary: "Update a goal, including progress metrics", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 200: jsonContent(ref("Goal"), "Updated") } },
+    delete: { operationId: "deleteGoal", tags: ["Hierarchy"], summary: "Delete a goal", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Projects ──
+  "/api/projects": {
+    get: { operationId: "listProjects", tags: ["Hierarchy"], summary: "List all projects", description: "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.", responses: { 200: jsonContent(arrOf("Project"), "Projects") } },
+    post: { operationId: "createProject", tags: ["Hierarchy"], summary: "Create a project", requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 201: jsonContent(ref("Project"), "Created") } },
+  },
+  "/api/projects/{id}": {
+    get: { operationId: "getProject", tags: ["Hierarchy"], summary: "Get project details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Project"), "Project") } },
+    put: { operationId: "updateProject", tags: ["Hierarchy"], summary: "Update a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 200: jsonContent(ref("Project"), "Updated") } },
+    delete: { operationId: "deleteProject", tags: ["Hierarchy"], summary: "Delete a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Pillars ──
+  "/api/pillars": {
+    get: { operationId: "listPillars", tags: ["Pillars"], summary: "List all identity pillars", description: "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.", responses: { 200: jsonContent(arrOf("Pillar"), "Pillars") } },
+    post: { operationId: "createPillar", tags: ["Pillars"], summary: "Create a pillar", requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 201: jsonContent(ref("Pillar"), "Created") } },
+  },
+  "/api/pillars/{id}": {
+    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Pillar"), "Pillar") } },
+    put: { operationId: "updatePillar", tags: ["Pillars"], summary: "Update a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 200: jsonContent(ref("Pillar"), "Updated") } },
+    delete: { operationId: "deletePillar", tags: ["Pillars"], summary: "Delete a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+  "/api/pillars/{id}/principles": {
+    get: { operationId: "listPillarPrinciples", tags: ["Pillars"], summary: "List principles for a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Principles" } } },
+    post: { operationId: "addPillarPrinciple", tags: ["Pillars"], summary: "Add a principle to a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { text: { type: "string" } } } } } }, responses: { 201: { description: "Added" } } },
+  },
+  "/api/pillars/{id}/associations": {
+    get: { operationId: "listPillarAssociations", tags: ["Pillars"], summary: "List goals/habits associated with a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Associations" } } },
+    post: { operationId: "addPillarAssociation", tags: ["Pillars"], summary: "Associate a goal or habit with a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { entity_type: { type: "string", enum: ["goal", "habit"] }, entity_id: { type: "string" } } } } } }, responses: { 201: { description: "Associated" } } },
+  },
+
+  // ── Labels ──
+  "/api/labels": {
+    get: { operationId: "listLabels", tags: ["Labels"], summary: "List all labels", responses: { 200: jsonContent(arrOf("Label"), "Labels") } },
+    post: { operationId: "createLabel", tags: ["Labels"], summary: "Create a label", requestBody: { content: { "application/json": { schema: ref("Label") } } }, responses: { 201: jsonContent(ref("Label"), "Created") } },
+  },
+  "/api/labels/{id}": {
+    put: { operationId: "updateLabel", tags: ["Labels"], summary: "Update a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Label"), "Updated") } },
+    delete: { operationId: "deleteLabel", tags: ["Labels"], summary: "Delete a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Habits ──
+  "/api/habits": {
+    get: { operationId: "listHabits", tags: ["Habits"], summary: "List all habits and routines", description: "Returns habit templates with current streak data, schedule, and completion history.", responses: { 200: { description: "Habits list" } } },
+    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a habit template", responses: { 201: { description: "Created" } } },
+    put: { operationId: "updateHabit", tags: ["Habits"], summary: "Update a habit or record completion", description: "Send { complete: true } to record today's completion. Send other fields to update the template.", responses: { 200: { description: "Updated" } } },
+    delete: { operationId: "deleteHabit", tags: ["Habits"], summary: "Delete a habit", responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Settings ──
+  "/api/settings": {
+    get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map of all settings. Keys include theme, language, timezone, webhook endpoints, n8n configuration, and feature flags.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
+    post: { operationId: "updateSettings", tags: ["Settings"], summary: "Update settings", description: "Send one or more key-value pairs to update. Existing keys are overwritten, new keys are created.", requestBody: { content: { "application/json": { schema: { type: "object", additionalProperties: true } } } }, responses: { 200: { description: "Updated" } } },
+  },
+
+  // ── Lanes (Kanban) ──
+  "/api/lanes": {
+    get: { operationId: "listLanes", tags: ["Views"], summary: "List kanban board lanes", responses: { 200: { description: "Lanes" } } },
+    post: { operationId: "createLane", tags: ["Views"], summary: "Create a kanban lane", responses: { 201: { description: "Created" } } },
+  },
+  "/api/lanes/{id}": {
+    put: { operationId: "updateLane", tags: ["Views"], summary: "Update a kanban lane", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
+    delete: { operationId: "deleteLane", tags: ["Views"], summary: "Delete a kanban lane", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Saved Filters ──
+  "/api/saved-filters": {
+    get: { operationId: "listSavedFilters", tags: ["Views"], summary: "List saved filter presets", responses: { 200: { description: "Saved filters" } } },
+    post: { operationId: "createSavedFilter", tags: ["Views"], summary: "Create a saved filter", responses: { 201: { description: "Created" } } },
+    put: { operationId: "updateSavedFilter", tags: ["Views"], summary: "Update a saved filter", responses: { 200: { description: "Updated" } } },
+    delete: { operationId: "deleteSavedFilter", tags: ["Views"], summary: "Delete a saved filter", responses: { 200: { description: "Deleted" } } },
+  },
+
+  // ── Templates ──
+  "/api/templates": {
+    get: { operationId: "listTemplates", tags: ["Tasks"], summary: "List task templates", responses: { 200: { description: "Templates" } } },
+    post: { operationId: "createTemplate", tags: ["Tasks"], summary: "Create a task template", responses: { 201: { description: "Created" } } },
+  },
+
+  // ── Users ──
+  "/api/users": {
+    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
+  },
+  "/api/users/custom": {
+    post: { operationId: "createCustomUser", tags: ["Users"], summary: "Create a custom user", responses: { 201: { description: "Created" } } },
+  },
+
+  // ── Gamification ──
+  "/api/gamification": {
+    get: { operationId: "getGamificationStats", tags: ["Progress"], summary: "Get gamification stats and achievements", description: "Returns XP, level, streaks, and unlocked achievements. Useful for motivation dashboards and daily briefings.", responses: { 200: { description: "Stats" } } },
+  },
+
+  // ── Pomodoro ──
+  "/api/pomodoro": {
+    get: { operationId: "getPomodoroState", tags: ["Focus"], summary: "Get current pomodoro timer state", responses: { 200: { description: "Timer state" } } },
+    post: { operationId: "startPomodoro", tags: ["Focus"], summary: "Start or control a pomodoro session", responses: { 200: { description: "Timer updated" } } },
+  },
+
+  // ── Reminders ──
+  "/api/reminders": {
+    get: { operationId: "listReminders", tags: ["Tasks"], summary: "List all active reminders", responses: { 200: { description: "Reminders" } } },
+    post: { operationId: "createReminder", tags: ["Tasks"], summary: "Create a reminder", responses: { 201: { description: "Created" } } },
+  },
+
+  // ── Review ──
+  "/api/review/weekly": {
+    get: { operationId: "getWeeklyReview", tags: ["Review"], summary: "Get weekly review summary", description: "Returns completed tasks, velocity trends, focus areas, and suggestions for the current or specified week. Perfect for weekly automation digests.", responses: { 200: { description: "Weekly review" } } },
+  },
+  "/api/review/velocity": {
+    get: { operationId: "getVelocity", tags: ["Review"], summary: "Get task completion velocity", responses: { 200: { description: "Velocity data" } } },
+  },
+
+  // ── Frameworks (RICE, etc.) ──
+  "/api/frameworks": {
+    get: { operationId: "listFrameworks", tags: ["Strategy"], summary: "List available strategic frameworks", responses: { 200: { description: "Frameworks" } } },
+    post: { operationId: "createFramework", tags: ["Strategy"], summary: "Create a framework", responses: { 201: { description: "Created" } } },
+  },
+  "/api/frameworks/{id}": {
+    get: { operationId: "getFramework", tags: ["Strategy"], summary: "Get framework details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Framework" } } },
+    put: { operationId: "updateFramework", tags: ["Strategy"], summary: "Update a framework", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
+  },
+  "/api/frameworks/{id}/export": {
+    get: { operationId: "exportFramework", tags: ["Strategy"], summary: "Export framework data", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Export" } } },
+  },
+
+  // ── Rules Engine ──
+  "/api/rules": {
+    get: { operationId: "listRules", tags: ["Automation"], summary: "List automation rules", description: "Rules engine for automatic task mutations (e.g., auto-assign, auto-label, auto-prioritize).", responses: { 200: { description: "Rules" } } },
+    post: { operationId: "createRule", tags: ["Automation"], summary: "Create an automation rule", responses: { 201: { description: "Created" } } },
+  },
+  "/api/rules/{id}": {
+    put: { operationId: "updateRule", tags: ["Automation"], summary: "Update a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
+    delete: { operationId: "deleteRule", tags: ["Automation"], summary: "Delete a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+  },
+  "/api/rules/defaults": {
+    get: { operationId: "getRuleDefaults", tags: ["Automation"], summary: "Get default rule configuration", responses: { 200: { description: "Defaults" } } },
+  },
+  "/api/rules/resolve": {
+    post: { operationId: "resolveRules", tags: ["Automation"], summary: "Test rule resolution against a task payload", description: "Dry-run: shows what rules would fire for a given task payload without applying changes.", responses: { 200: { description: "Resolution result" } } },
+  },
+
+  // ── Features ──
+  "/api/features": {
+    get: { operationId: "getFeatureFlags", tags: ["System"], summary: "Get runtime feature flags", responses: { 200: { description: "Feature flags" } } },
+  },
+
+  // ── Export ──
+  "/api/export/tasks.json": { get: { operationId: "exportTasksJson", tags: ["Export"], summary: "Export all tasks as JSON", responses: { 200: { description: "JSON export" } } } },
+  "/api/export/tasks.csv": { get: { operationId: "exportTasksCsv", tags: ["Export"], summary: "Export all tasks as CSV", responses: { 200: { description: "CSV export" } } } },
+  "/api/export/tasks.ics": { get: { operationId: "exportTasksIcs", tags: ["Export"], summary: "Export tasks as iCalendar feed", responses: { 200: { description: "ICS export" } } } },
+  "/api/export/database.sqlite": { get: { operationId: "exportDatabase", tags: ["Export"], summary: "Download full SQLite database backup", responses: { 200: { description: "SQLite file" } } } },
+  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", responses: { 200: { description: "Settings JSON" } } } },
+  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", responses: { 200: { description: "Imported" } } } },
+
+  // ── License ──
+  "/api/license/status": {
+    get: { operationId: "getLicenseStatus", tags: ["System"], summary: "Get license key verification status", description: "Returns plan type, expiry, and validation state. Grace mode: app is fully functional without a license.", responses: { 200: { description: "License status" } } },
+  },
+
+  // ── Home Assistant ──
+  "/api/ha/connection": { get: { operationId: "getHAConnection", tags: ["HomeAssistant"], summary: "Get HA WebSocket connection status", responses: { 200: { description: "Connection status" } } } },
+  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", responses: { 200: { description: "Calendars" } } } },
+  "/api/ha/events": { get: { operationId: "getHAEvents", tags: ["HomeAssistant"], summary: "List recent HA events", responses: { 200: { description: "Events" } } } },
+  "/api/ha/services": { get: { operationId: "getHAServices", tags: ["HomeAssistant"], summary: "List HA services", responses: { 200: { description: "Services" } } } },
+  "/api/ha/addons": { get: { operationId: "getHAAddons", tags: ["HomeAssistant"], summary: "List HA add-ons", responses: { 200: { description: "Add-ons" } } } },
+  "/api/ha/agents": { get: { operationId: "getHAAgents", tags: ["HomeAssistant"], summary: "List HA Assist agents", responses: { 200: { description: "Agents" } } } },
+  "/api/ha/assist": { post: { operationId: "sendHAAssist", tags: ["HomeAssistant"], summary: "Send a message to HA Assist", requestBody: { content: { "application/json": { schema: { type: "object", properties: { text: { type: "string" } } } } } }, responses: { 200: { description: "Assist response" } } } },
+
+  // ── Integrations ──
+  "/api/integrations/status": { get: { operationId: "getIntegrationsStatus", tags: ["Integrations"], summary: "Get status of all integrations", responses: { 200: { description: "Status map" } } } },
+  "/api/integrations/test-webhook": { post: { operationId: "testWebhook", tags: ["Integrations"], summary: "Fire a test webhook event", description: "Sends a test event to configured webhook endpoints. Use this to verify webhook connectivity.", responses: { 200: { description: "Test result" } } } },
+  "/api/integrations/test-event": { post: { operationId: "testEvent", tags: ["Integrations"], summary: "Fire a test HA event bus event", responses: { 200: { description: "Test result" } } } },
+  "/api/integrations/calendar/sync": { post: { operationId: "syncCalendar", tags: ["Integrations"], summary: "Trigger calendar sync", responses: { 200: { description: "Sync result" } } } },
+  "/api/integrations/calendar/status": { get: { operationId: "getCalendarSyncStatus", tags: ["Integrations"], summary: "Get calendar sync status", responses: { 200: { description: "Status" } } } },
+  "/api/integrations/n8n/health": { get: { operationId: "getN8nHealth", tags: ["Integrations"], summary: "Check n8n connectivity", responses: { 200: { description: "Health" } } } },
+  "/api/integrations/n8n/workflows": { get: { operationId: "listN8nWorkflows", tags: ["Integrations"], summary: "List n8n workflows", responses: { 200: { description: "Workflows" } } } },
+  "/api/integrations/nodered/status": { get: { operationId: "getNodeRedStatus", tags: ["Integrations"], summary: "Check Node-RED connectivity", responses: { 200: { description: "Status" } } } },
+  "/api/integrations/nodered/flows": { get: { operationId: "listNodeRedFlows", tags: ["Integrations"], summary: "List Node-RED flows", responses: { 200: { description: "Flows" } } } },
+
+  // ── Grocy ──
+  "/api/grocy/sync": { post: { operationId: "syncGrocy", tags: ["Integrations"], summary: "Sync shopping list with Grocy", responses: { 200: { description: "Sync result" } } } },
+  "/api/grocy/settings": { get: { operationId: "getGrocySettings", tags: ["Integrations"], summary: "Get Grocy integration settings", responses: { 200: { description: "Settings" } } } },
+  "/api/grocy/test": { post: { operationId: "testGrocy", tags: ["Integrations"], summary: "Test Grocy connectivity", responses: { 200: { description: "Test result" } } } },
+
+  // ── SSE ──
+  "/api/sse": {
+    get: { operationId: "subscribeSSE", tags: ["Events"], summary: "Subscribe to server-sent events", description: "Real-time event stream for task changes, sync status, and system events. Use EventSource API to connect. Events: task_updated, sync_status, notification.", responses: { 200: { description: "SSE stream", content: { "text/event-stream": { schema: { type: "string" } } } } } },
+  },
+
+  // ── Todo (HA sync) ──
+  "/api/todo": { get: { operationId: "listTodoLists", tags: ["HomeAssistant"], summary: "List HA todo list entities", responses: { 200: { description: "Todo lists" } } } },
+  "/api/todo/items": { get: { operationId: "getTodoItems", tags: ["HomeAssistant"], summary: "Get items from a HA todo list", responses: { 200: { description: "Items" } } } },
+  "/api/todo/sync": { post: { operationId: "syncTodo", tags: ["HomeAssistant"], summary: "Sync tasks with HA todo lists", responses: { 200: { description: "Sync result" } } } },
+
+  // ── Unfurl ──
+  "/api/unfurl": { post: { operationId: "unfurlUrl", tags: ["Tasks"], summary: "Unfurl a URL for link preview metadata", responses: { 200: { description: "Preview data" } } } },
+
+  // ── MCP ──
+  "/api/mcp": {
+    post: { operationId: "mcpEndpoint", tags: ["Agents"], summary: "Model Context Protocol JSON-RPC endpoint", description: "JSON-RPC 2.0 server for AI agents. Supports methods: initialize, tools/list, tools/call. Tools are dynamically generated from this OpenAPI spec. Use this for programmatic AI agent integration.", requestBody: { content: { "application/json": { schema: { type: "object", properties: { jsonrpc: { type: "string", const: "2.0" }, id: { type: "string" }, method: { type: "string", enum: ["initialize", "tools/list", "tools/call"] }, params: { type: "object" } } } } } }, responses: { 200: { description: "JSON-RPC response" } } },
+  },
+
+  // ── A2A ──
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get A2A agent card for discovery", responses: { 200: { description: "Agent card" } } } },
+  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Send A2A message", responses: { 200: { description: "Response" } } } },
+}
+
+// ─── Webhook events ───────────────────────────────────────────────────────────
+
+const webhooks = {
+  "task.created": {
+    post: {
+      operationId: "onTaskCreated",
+      summary: "Fires when a new task is created",
+      description: "Delivered to configured webhook endpoints and HA event bus (meitheal_task_created). Payload includes full task object.",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.updated": {
+    post: {
+      operationId: "onTaskUpdated",
+      summary: "Fires when a task is updated",
+      description: "Delivered to webhooks and HA event bus (meitheal_task_updated). If status changes to 'complete', also fires task.completed.",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.completed": {
+    post: {
+      operationId: "onTaskCompleted",
+      summary: "Fires when a task is marked complete",
+      description: "Delivered via meitheal_task_completed HA event. Includes completed_at timestamp.",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.deleted": {
+    post: {
+      operationId: "onTaskDeleted",
+      summary: "Fires when a task is permanently deleted",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.overdue": {
+    post: {
+      operationId: "onTaskOverdue",
+      summary: "Fires when a task passes its due date without completion",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "area.updated": {
+    post: {
+      operationId: "onAreaUpdated",
+      summary: "Fires when an area is modified",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+}
+
+// ─── Build the document ───────────────────────────────────────────────────────
+
+const document = {
+  openapi: "3.1.0",
+  info: {
+    title: "Meitheal Hub API",
+    version: "0.2.35",
+    description: "Meitheal is a Home Assistant-native household and homelab execution hub. This API powers task management, strategic planning, habits, calendar sync, agent orchestration, and automation integrations. All endpoints accept and return JSON unless noted otherwise.\n\n**For AI agents**: Use operationId values as tool names. Prefer searchMeitheal for discovery, createTask/updateTask for mutations. Check getHealth before starting workflows.",
+    contact: { name: "Ryan Winkler", url: "https://github.com/Coolock-Village/meitheal" },
+    license: { name: "AGPL-3.0", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
+  },
+  servers: [
+    { url: "/", description: "Local / HA ingress (relative)" },
+    { url: "http://localhost:4321", description: "Development server" },
+  ],
+  components: {
+    schemas,
+    securitySchemes: {
+      bearerAuth: { type: "http", scheme: "bearer", description: "API key or HA long-lived access token" },
+      haIngressToken: { type: "apiKey", in: "header", name: "Authorization", description: "Home Assistant Supervisor ingress token (auto-injected by HA)" },
+    },
+  },
+  security: [{ bearerAuth: [] }],
+  tags: [
+    { name: "System", description: "Health, features, and license" },
+    { name: "Tasks", description: "Task CRUD and sub-resources (comments, links, time, activity)" },
+    { name: "Search", description: "Universal search across all content types" },
+    { name: "Hierarchy", description: "Areas → Goals → Projects organizational structure" },
+    { name: "Pillars", description: "Identity pillars (the WHY layer), principles, and associations" },
+    { name: "Labels", description: "Task labels for categorization" },
+    { name: "Habits", description: "Habit templates, streaks, and routine tracking" },
+    { name: "Settings", description: "Application configuration" },
+    { name: "Views", description: "Kanban lanes, saved filters, and view configuration" },
+    { name: "Users", description: "User management (HA + custom)" },
+    { name: "Progress", description: "Gamification, achievements, and XP" },
+    { name: "Focus", description: "Pomodoro and focus session tracking" },
+    { name: "Review", description: "Weekly review, velocity, and productivity insights" },
+    { name: "Strategy", description: "Strategic frameworks (RICE scoring, etc.)" },
+    { name: "Automation", description: "Rules engine for automatic task mutations" },
+    { name: "Export", description: "Data export (JSON, CSV, ICS, SQLite)" },
+    { name: "Events", description: "Server-sent events for real-time updates" },
+    { name: "HomeAssistant", description: "Home Assistant integration endpoints" },
+    { name: "Integrations", description: "External integrations (n8n, Node-RED, Grocy, calendar)" },
+    { name: "Agents", description: "MCP and A2A agent protocol endpoints" },
+  ],
+  paths,
+  webhooks,
+}
+
+// ─── Write output ─────────────────────────────────────────────────────────────
+
+mkdirSync(dirname(OUTPUT), { recursive: true })
+
+// ─── Strict Structured Outputs: enforce additionalProperties: false ───────────
+// LLMs using structured output mode (Gemini, OpenAI) require strict schemas
+// to guarantee 100% deterministic outputs. Walk all object schemas and inject.
+function enforceStrictSchemas(obj) {
+  if (!obj || typeof obj !== "object") return
+  if (Array.isArray(obj)) { obj.forEach(enforceStrictSchemas); return }
+  if (obj.type === "object" && obj.properties && !("additionalProperties" in obj)) {
+    obj.additionalProperties = false
+  }
+  for (const val of Object.values(obj)) {
+    enforceStrictSchemas(val)
+  }
+}
+enforceStrictSchemas(document.components?.schemas)
+enforceStrictSchemas(document.paths)
+enforceStrictSchemas(document.webhooks)
+// Mark the spec as strict for LLM tooling discovery
+document["x-strict"] = true
+
+const yaml = stringify(document, { lineWidth: 120 })
+writeFileSync(OUTPUT, yaml, "utf-8")
+
+// Count endpoints for summary
+let endpointCount = 0
+for (const methods of Object.values(paths)) {
+  endpointCount += Object.keys(methods).length
+}
+console.log(`✅ Generated OpenAPI 3.1 spec → ${OUTPUT}`)
+console.log(`   ${endpointCount} operations across ${Object.keys(paths).length} paths`)
+console.log(`   ${Object.keys(schemas).length} component schemas`)
+console.log(`   ${Object.keys(webhooks).length} webhook events`)

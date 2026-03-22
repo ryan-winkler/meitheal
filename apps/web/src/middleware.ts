@@ -1,4 +1,6 @@
 import type { MiddlewareHandler } from "astro";
+import { ingressPolicy, type IngressContext } from "./lib/ingress-policy";
+import { apiRateLimited } from "./lib/api-response";
 import {
   getHassUserId,
   hasHassioToken,
@@ -21,6 +23,31 @@ const logger = createLogger({
 });
 
 
+// ── Known automation source identifiers (validated against for log safety) ──
+const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+
+// ── W3C Traceparent Parsing (OTel-compatible, zero-dep) ──
+// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+// Example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+const TRACEPARENT_RE = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/
+
+function parseTraceparent(header: string | null): { traceId: string, spanId: string, traceFlags: string } {
+  if (header) {
+    const match = header.trim().match(TRACEPARENT_RE)
+    if (match) {
+      return { traceId: match[2]!, spanId: match[3]!, traceFlags: match[4]! }
+    }
+  }
+  // Generate new trace context when no valid traceparent header.
+  // crypto.randomUUID() is faster than Uint8Array + hex conversion.
+  const uuid1 = crypto.randomUUID().replace(/-/g, "") // 32 hex → traceId
+  const uuid2 = crypto.randomUUID().replace(/-/g, "") // 32 hex → take first 16 for spanId
+  return {
+    traceId: uuid1,
+    spanId: uuid2.slice(0, 16),
+    traceFlags: "01", // sampled by default
+  }
+}
 
 // ── In-memory rate limiter (R-107) ──
 // Capped at MAX_ENTRIES to prevent OOM under DDoS. Oldest entries evicted
@@ -91,10 +118,15 @@ let _settingsCache: { timezone: string; weekStart: string; dateFormat: string } 
 let _settingsCacheExpiry = 0;
 const SETTINGS_CACHE_TTL_MS = 60_000;
 
-function applyRateLimitHeaders(response: Response, remaining: number, resetAt: number): void {
-  response.headers.set("x-ratelimit-limit", String(RATE_LIMIT));
-  response.headers.set("x-ratelimit-remaining", String(remaining));
-  response.headers.set("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)));
+function applyRateLimitHeaders(response: Response, remaining: number, resetAt: number, limit: number = RATE_LIMIT, windowSec: number = RATE_WINDOW_MS / 1000): void {
+  const resetSeconds = Math.max(0, Math.ceil((resetAt - Date.now()) / 1000))
+  // Legacy headers (backward compat — used by existing n8n/custom scripts)
+  response.headers.set("x-ratelimit-limit", String(limit))
+  response.headers.set("x-ratelimit-remaining", String(remaining))
+  response.headers.set("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)))
+  // IETF standard headers (draft-ietf-httpapi-ratelimit-headers-10)
+  response.headers.set("RateLimit", `limit=${limit}, remaining=${remaining}, reset=${resetSeconds}`)
+  response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
 }
 
 /**
@@ -167,6 +199,21 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
   locals.hassUserId = getHassUserId(request.headers);
   locals.hassIsAdmin = isHassAdmin(request.headers);
 
+  // ── Agent/Automation source identification ──
+  // n8n, Node-RED, and AI agents should send these headers to identify themselves.
+  // Validate against known sources to prevent log injection.
+  const rawSource = request.headers.get("x-automation-source")?.toLowerCase().replace(/[^a-z0-9_-]/g, "") ?? "browser"
+  const automationSource = KNOWN_AUTOMATION_SOURCES.has(rawSource) ? rawSource : "unknown"
+  const agentId = (request.headers.get("x-agent-id") ?? "").slice(0, 128).replace(/[^\w.-]/g, "")
+  locals.automationSource = automationSource
+  locals.agentId = agentId
+
+  // ── W3C Traceparent — distributed trace context ──
+  const traceCtx = parseTraceparent(request.headers.get("traceparent"))
+  locals.traceId = traceCtx.traceId
+  locals.spanId = traceCtx.spanId
+  locals.traceFlags = traceCtx.traceFlags
+
   // Suppress ingress.path.missing for healthcheck — it runs every 30s from
   // inside the container with SUPERVISOR_TOKEN but no x-ingress-path header.
   // Logging this would produce ~2,880 warnings/day, burying real issues.
@@ -220,16 +267,14 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
   const rateInfo = getRateLimit(ip);
 
   if (rateInfo.exceeded && url.pathname.startsWith("/api/")) {
-    return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-      status: 429,
-      headers: {
-        "content-type": "application/json",
-        "retry-after": String(Math.ceil((rateInfo.resetAt - Date.now()) / 1000)),
-        "x-ratelimit-limit": String(RATE_LIMIT),
-        "x-ratelimit-remaining": "0",
-        "x-ratelimit-reset": String(Math.ceil(rateInfo.resetAt / 1000)),
-      },
-    });
+    const retryAfter = Math.ceil((rateInfo.resetAt - Date.now()) / 1000)
+    return apiRateLimited(retryAfter, `Rate limit exceeded (${RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
+      "x-ratelimit-limit": String(RATE_LIMIT),
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-reset": String(Math.ceil(rateInfo.resetAt / 1000)),
+      "RateLimit": `limit=${RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
+      "RateLimit-Policy": `${RATE_LIMIT};w=${RATE_WINDOW_MS / 1000}`,
+    })
   }
 
   // Bot-specific rate limiting (PRA-08) — stricter 60/min for bot mutation endpoints
@@ -243,16 +288,14 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
         request_id: requestId,
         message: `Bot rate limit exceeded: ${request.method} ${url.pathname} from ${ip}`,
       });
-      return new Response(JSON.stringify({ error: "Bot rate limit exceeded", limit: BOT_RATE_LIMIT }), {
-        status: 429,
-        headers: {
-          "content-type": "application/json",
-          "retry-after": String(Math.ceil((botRate.resetAt - Date.now()) / 1000)),
-          "x-ratelimit-limit": String(BOT_RATE_LIMIT),
-          "x-ratelimit-remaining": "0",
-          "x-ratelimit-reset": String(Math.ceil(botRate.resetAt / 1000)),
-        },
-      });
+      const retryAfter = Math.ceil((botRate.resetAt - Date.now()) / 1000)
+      return apiRateLimited(retryAfter, `Bot rate limit exceeded (${BOT_RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
+        "x-ratelimit-limit": String(BOT_RATE_LIMIT),
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(Math.ceil(botRate.resetAt / 1000)),
+        "RateLimit": `limit=${BOT_RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
+        "RateLimit-Policy": `${BOT_RATE_LIMIT};w=${BOT_RATE_WINDOW_MS / 1000}`,
+      })
     }
   }
 
@@ -308,14 +351,39 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
   if (url.pathname.startsWith("/api/")) {
     applyRateLimitHeaders(response, rateInfo.remaining, rateInfo.resetAt);
     const elapsed = Date.now() - startTime;
-    if (elapsed > 1000) {
+
+    // ── Structured API request log (Grafana/Loki compatible) ──
+    // Log all API requests for agent traceability and observability.
+    // Only log at "info" level for non-health endpoints to avoid noise.
+    const isHealth = url.pathname === "/api/health"
+    if (!isHealth) {
+      logger.log(elapsed > 1000 ? "warn" : "info", {
+        event: elapsed > 1000 ? "http.slow_request" : "http.api_request",
+        domain: "observability",
+        component: "middleware",
+        request_id: requestId,
+        trace_id: locals.traceId,
+        span_id: locals.spanId,
+        message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
+        metadata: {
+          method: request.method,
+          path: url.pathname,
+          status: response.status,
+          latency_ms: elapsed,
+          automation_source: automationSource,
+          ...(agentId ? { agent_id: agentId } : {}),
+          ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+        },
+      })
+    } else if (elapsed > 1000) {
+      // Still log slow health checks
       logger.log("warn", {
         event: "http.slow_request",
         domain: "observability",
         component: "middleware",
         request_id: requestId,
-        message: `Slow API request: ${request.method} ${url.pathname} took ${elapsed}ms`,
-      });
+        message: `Slow health check: ${elapsed}ms`,
+      })
     }
   }
   return response;
