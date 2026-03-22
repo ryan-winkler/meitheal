@@ -92,3 +92,22 @@
 |----------|-------|---------|
 | `__MEITHEAL_ASTRO_FIRST__` | `true` | Feature flag for Astro-first codepaths |
 | `__MEITHEAL_VERSION__` | From `config.yaml` | Build-time version injection |
+
+## Client-Side Utilities
+
+| Module | Path | Purpose |
+|--------|------|---------|
+| `toast.ts` | `apps/web/src/lib/toast.ts` | Toast notification system — `showToast`, `showUndoToast`, `showRetryToast`, `showTaskCreatedToast` |
+| `ticket-key.ts` | `apps/web/src/lib/ticket-key.ts` | `formatTicketKey(n)` → `MTH-XX` format |
+| `page-lifecycle.ts` | `apps/web/src/lib/page-lifecycle.ts` | Astro page load lifecycle with `AbortSignal` for listener cleanup |
+| `layout-controller.ts` | `apps/web/src/lib/layout-controller.ts` | Global event handling — listens for `meitheal:tasks-changed` and triggers page refresh |
+| `kanban-controller.ts` | `apps/web/src/lib/kanban-controller.ts` | Kanban board interactivity — drag/drop, lanes, grouping |
+| `task-modal-controller.ts` | `apps/web/src/lib/task-modal-controller.ts` | Task detail modal lifecycle |
+
+## Key Client-Side Events
+
+| Event | Dispatch Context | Handler |
+|-------|-----------------|---------|
+| `meitheal:tasks-changed` | After task CRUD operations | `layout-controller.ts` → `window.location.reload()` |
+| `meitheal:task-detail` | Open task detail modal | `task-modal-controller.ts` |
+

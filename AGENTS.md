@@ -101,6 +101,10 @@ Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly
 
 - **Do NOT wrap client-side `fetch()` with `apiUrl()`** — `Layout.astro` already monkey-patches `window.fetch` to auto-prefix. Using `apiUrl()` double-prefixes the path
 - **`getHAConnectionStatus()` is passive** — it only reads in-memory state. Call `await getHAConnection()` first to ensure WebSocket is established
+- **Vite HMR listener accumulation** — HMR re-evaluates `<script>` blocks without aborting the previous Astro lifecycle signal. When adding `addEventListener` on long-lived DOM elements (forms, overlays), either: (1) use `element.cloneNode(true)` + `replaceWith()` to strip old listeners before registering, or (2) use a window-scoped guard flag. Module-scoped guards do NOT survive HMR since each re-eval creates a new scope.
+- **Task API POST response is FLAT** — `POST /api/tasks` returns `{ id, ticket_key, title, ... }`, NOT `{ task: { id, ... } }`. Wrapping access like `res.task?.id` will silently fail.
+- **Custom fields may contain non-primitives** — Shopping items store `items: [{name, qty, category}]` in `custom_fields`. Always filter with `typeof v !== "object"` before rendering with `String()`, or display `[object Object]`.
+- **Always pass `AbortSignal` to `addEventListener`** — Astro `pageLifecycle.onPageLoad(signal)` provides the signal. Listeners without `{ signal }` accumulate across navigations (memory leak).
 
 ## Settings Shell Patterns (Critical)
 
@@ -150,6 +154,44 @@ Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly
 - Schema: `{ ts, level, event, domain, component, request_id, message, metadata }`
 - Redact secrets by default via `defaultRedactionPatterns`
 - Do not introduce high-cardinality Loki labels (user IDs, task IDs, URLs)
+- `ActorType` includes: `human`, `bot`, `system`, `webhook`, `calendar_sync`, `llm`, `n8n`, `nodered`, `agent`
+- `trace_id` and `span_id` fields on `LogEvent` enable Grafana Alloy OTel trace correlation
+
+## Agent & Automation Infrastructure
+
+Build-time generators produce zero-drift documentation served as static files.
+
+| Artifact | Generator | Output |
+|----------|-----------|--------|
+| OpenAPI 3.1 spec | `apps/web/scripts/generate-openapi.mjs` | `public/openapi.yaml` |
+| AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
+| LLM context (router) | `apps/web/scripts/generate-llms.mjs` | `public/llms.txt` |
+| LLM context (full) | `apps/web/scripts/generate-llms.mjs` | `public/llms-full.txt` |
+| AI plugin manifest | Static file | `public/.well-known/ai-plugin.json` |
+
+- `prebuild` runs `generate:openapi` → `generate:llms` → `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
+- Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
+
+### MCP Dynamic Tools
+
+- `apps/web/src/pages/api/mcp.ts` reads `openapi.yaml` at startup, caches tool list
+- Tools are auto-generated from `operationId` → tool name, parameters → input schema
+- Custom handlers in `customHandlers` Map override specific tools (e.g., `completeTask`, `searchTasks`, `dailyBriefing`)
+- `EXCLUDED_OPS` set prevents internal endpoints from becoming tools
+- Dev mode: 30s cache TTL. Production: infinite cache
+
+### Agent Traceability Headers
+
+External callers (n8n, Node-RED, AI agents) should send:
+
+| Header | Purpose | Validation |
+|--------|---------|------------|
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+
+Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
 
 ## Git Commit Policy
 
