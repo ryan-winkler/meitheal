@@ -34,8 +34,11 @@ test.describe("New Task Modal", () => {
     await expect(page.locator("#new-task-title-input")).toBeVisible()
     await expect(page.locator("#new-task-desc-input")).toBeVisible()
     await expect(page.locator("#new-task-priority")).toBeVisible()
-    await expect(page.locator("#new-task-status")).toBeVisible()
-    await expect(page.locator("#new-task-recurrence")).toBeVisible()
+    // Status is now a hidden input backing interactive pill buttons
+    await expect(page.locator("#new-task-status")).toHaveCount(1)
+    // At least 1 pill (fallback "To Do") renders; more from /api/lanes
+    const pillCount = await page.locator(".nt-status-pill").count()
+    expect(pillCount).toBeGreaterThanOrEqual(1)
     await expect(page.locator("#submit-new-task-btn")).toBeVisible()
     await expect(page.locator("#cancel-new-task")).toBeVisible()
   })
