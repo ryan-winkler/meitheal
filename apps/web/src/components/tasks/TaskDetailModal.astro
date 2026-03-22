@@ -95,6 +95,10 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
             <!-- Properties Grid -->
             <div class="flex flex-col gap-5 py-5 mb-8 border-y border-border/50 bg-bg-card/10 -mx-6 px-6 lg:-mx-10 lg:px-10">
             <!-- Essential Properties -->
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
+              Properties
+            </h4>
             <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-sm w-full">
                
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
@@ -192,11 +196,16 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
              
 
             <!-- Timing Properties -->
+            <div class="border-t border-border/30 pt-4 mt-1"></div>
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Scheduling
+            </h4>
             <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 text-sm w-full">
                <div>
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Dates & Metrics</span>
                  <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
-                    <span class="text-xs text-text-secondary">Due</span>
+                    <span class="text-xs text-text-muted">Due</span>
                     <input id="td-due-date" type="date" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full cursor-pointer" />
                  </div>
                  
@@ -205,7 +214,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
                  <input id="td-end-date" type="date" class="hidden" />
                  
                  <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
-                    <span class="text-xs text-text-secondary">Progress</span>
+                    <span class="text-xs text-text-muted">Progress</span>
                     <div class="flex items-center gap-2 px-2 h-7 group-hover:bg-bg-hover rounded transition-colors border border-transparent group-hover:border-border">
                         <input id="td-progress" type="range" min="0" max="100" class="flex-1 accent-accent h-1.5 bg-bg-input rounded-lg cursor-pointer appearance-none" />
                         <span id="td-progress-value" class="text-xs font-mono text-text-primary w-8 text-right font-medium">0%</span>
@@ -213,13 +222,13 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
                  </div>
 
                  <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
-                    <span class="text-xs text-text-secondary">Tracked (min)</span>
+                    <span class="text-xs text-text-muted">Tracked (min)</span>
                     <input id="td-time-tracked" type="number" min="0" step="1" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full font-mono placeholder-text-muted" placeholder="0" />
                  </div>
                </div>
 
                <div>
-                  <span class="text-xs text-text-secondary mb-1.5 block">Recurrence Pattern</span>
+                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Recurrence Pattern</span>
                   <select id="td-recurrence" class="form-select text-xs py-1.5 px-2 bg-bg-input hover:border-border transition-colors w-full cursor-pointer font-medium">
                     <option value="">None (One-time)</option>
                     <option value="FREQ=DAILY">Every day</option>
@@ -232,7 +241,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
                </div>
                
                <div>
-                 <span class="text-xs text-text-secondary mb-1.5 block">Reminder Time</span>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Reminder Time</span>
                  <input id="td-reminder" type="datetime-local" class="form-input text-xs py-1.5 bg-bg-input hover:border-border transition-colors w-full cursor-pointer" />
                </div>
             </div>
@@ -240,6 +249,11 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
             
 
             <!-- Context Properties -->
+            <div class="border-t border-border/30 pt-4 mt-1"></div>
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+              Metadata
+            </h4>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
               
               <div>
