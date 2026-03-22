@@ -13,6 +13,29 @@
 import { pageLifecycle } from "./page-lifecycle"
 
 function init() {
+  // ── Pillar detail popup — delegated click handler ──────────────
+  // Must be registered BEFORE the principles guard below, because
+  // cards without principles still need to open the detail modal.
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement
+    const actionBtn = target.closest<HTMLElement>("[data-action='open-detail']")
+    if (!actionBtn) return
+
+    const card = actionBtn.closest<HTMLElement>("[data-pillar-json]")
+    if (!card) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    try {
+      const pillarData = JSON.parse(card.dataset.pillarJson || "{}")
+      document.dispatchEvent(new CustomEvent("open-pillar-detail", { detail: pillarData }))
+    } catch {
+      // malformed JSON — skip
+    }
+  })
+
+  // ── Principles expand/collapse ────────────────────────────────
   const cards = document.querySelectorAll<HTMLElement>("[data-pillar-principles]")
   if (!cards.length) return
 
@@ -60,3 +83,4 @@ function init() {
 }
 
 pageLifecycle.onPageLoad(init)
+

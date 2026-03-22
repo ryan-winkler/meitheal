@@ -13,6 +13,7 @@ import Layout from "../../layouts/Layout.astro"
 import PillarCard from "../../components/pillars/PillarCard.astro"
 import InlineHelper from "../../components/ui/InlineHelper.astro"
 import PillarFormModal from "../../components/pillars/PillarFormModal.astro"
+import PillarDetailModal from "../../components/pillars/PillarDetailModal.astro"
 import { getPillars } from "@domains/pillars/pillar-service"
 import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
@@ -34,7 +35,7 @@ const enrichedPillars = await Promise.all(
 )
 ---
 
-<Layout title="Meitheal — Pillars">
+<Layout title="Meitheal — Pillars" hideGlobalSearch={true}>
   <main class="pillars-page" id="pillars-page">
     <div class="pillars-page__header">
       <div class="pillars-page__title-row">
@@ -99,6 +100,7 @@ const enrichedPillars = await Promise.all(
     )}
   </main>
   <PillarFormModal />
+  <PillarDetailModal />
 </Layout>
 
 <style>
@@ -233,13 +235,14 @@ const enrichedPillars = await Promise.all(
 
 <script>
   import "@lib/pillar-card-controller"
+  import "@lib/pillar-detail-controller"
 
   /**
    * Pillars page controller
    *
-   * Navigation is handled natively by <a> tags in PillarCard.
+   * PillarCard dispatches open-pillar-detail events → PillarDetailModal.
    * PillarFormModal wires its own open/close via pageLifecycle.
-   * pillar-card-controller handles principles expand/collapse.
-   * This script is intentionally minimal — no click delegation needed.
+   * pillar-card-controller handles principles expand/collapse + detail popup.
+   * pillar-detail-controller manages the detail modal lifecycle.
    */
 </script>

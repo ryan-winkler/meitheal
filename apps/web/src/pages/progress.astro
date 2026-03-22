@@ -17,6 +17,7 @@ import AchievementsTab from "../components/progress/AchievementsTab.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
 import PillarCard from "../components/pillars/PillarCard.astro"
 import PillarFormModal from "../components/pillars/PillarFormModal.astro"
+import PillarDetailModal from "../components/pillars/PillarDetailModal.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import {
@@ -134,6 +135,7 @@ try {
         )}
       </div>
       <PillarFormModal />
+      <PillarDetailModal />
     </section>
 
     {/* ─── Routines (links to full /habits page — too complex for inline embed) ─── */}
@@ -174,6 +176,7 @@ try {
 
 <script>
   import "@lib/pillar-card-controller"
+  import "@lib/pillar-detail-controller"
 </script>
 
 <style>
