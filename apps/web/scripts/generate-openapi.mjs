@@ -162,6 +162,50 @@ const schemas = {
       query: { type: "string" },
     },
   },
+  AgentScope: {
+    type: "string",
+    enum: ["tasks:read", "tasks:write", "projects:read", "projects:write", "pillars:read", "pillars:write", "search:read", "settings:read", "settings:write", "webhooks:manage", "admin:*"],
+    description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs.",
+  },
+  AgentToken: {
+    type: "object",
+    description: "Public metadata for an agent token. The plaintext token is only returned once on creation.",
+    properties: {
+      id: { type: "string", format: "uuid" },
+      name: { type: "string", description: "Human label (e.g., 'n8n-prod', 'claude-agent')" },
+      tokenPrefix: { type: "string", description: "First 8 chars of the token for identification (e.g., 'mth_a1b2')" },
+      scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      createdAt: { type: "string", format: "date-time" },
+      expiresAt: { type: "string", format: "date-time", nullable: true },
+      lastUsedAt: { type: "string", format: "date-time", nullable: true },
+      revoked: { type: "boolean" },
+    },
+    required: ["id", "name", "tokenPrefix", "scopes", "createdAt"],
+  },
+  CreateAgentTokenRequest: {
+    type: "object",
+    description: "Payload for creating a new agent token. Scopes determine API access.",
+    properties: {
+      name: { type: "string", description: "Human label for the token" },
+      scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" }, minItems: 1 },
+      expiresAt: { type: "string", format: "date-time", nullable: true, description: "Optional expiry. Null = no expiry." },
+    },
+    required: ["name", "scopes"],
+  },
+  CreateAgentTokenResponse: {
+    type: "object",
+    description: "Response from token creation — includes the plaintext token (shown ONCE).",
+    properties: {
+      id: { type: "string", format: "uuid" },
+      name: { type: "string" },
+      token: { type: "string", description: "⚠️ Show-once. The Bearer token the agent must use. Never stored or retrievable again." },
+      tokenPrefix: { type: "string" },
+      scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      createdAt: { type: "string", format: "date-time" },
+      expiresAt: { type: "string", format: "date-time", nullable: true },
+    },
+    required: ["id", "name", "token", "tokenPrefix", "scopes", "createdAt"],
+  },
 }
 
 // ─── Helper: standard JSON responses ──────────────────────────────────────────
@@ -630,6 +674,66 @@ const paths = {
   // ── A2A ──
   "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get A2A agent card for discovery", responses: { 200: { description: "Agent card" } } } },
   "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Send A2A message", responses: { 200: { description: "Response" } } } },
+
+  // ── Agent Tokens (Zero-Trust Auth) ──
+  "/api/agent-tokens": {
+    post: {
+      operationId: "createAgentToken",
+      tags: ["Auth"],
+      summary: "Create a scoped API token for an agent or automation",
+      description: "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires admin access (HA admin or settings:write scope).\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
+      parameters: [
+        { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate token creation on retry" },
+      ],
+      requestBody: { required: true, content: { "application/json": { schema: ref("CreateAgentTokenRequest") } } },
+      responses: {
+        201: jsonContent(ref("CreateAgentTokenResponse"), "Token created — copy the plaintext token immediately"),
+        400: err400,
+        403: problemContent("Admin access required"),
+      },
+    },
+    get: {
+      operationId: "listAgentTokens",
+      tags: ["Auth"],
+      summary: "List all agent tokens (metadata only)",
+      description: "Returns public metadata for all active tokens. Token hashes and plaintexts are never exposed. Requires admin access.",
+      responses: {
+        200: jsonContent(arrOf("AgentToken"), "Token list"),
+        403: problemContent("Admin access required"),
+      },
+    },
+    patch: {
+      operationId: "updateAgentToken",
+      tags: ["Auth"],
+      summary: "Update a token's name or scopes",
+      description: "Modify the display name or permission scopes of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, scopes: { type: "array", items: ref("AgentScope") } }, required: ["id"] } } },
+      },
+      responses: {
+        200: jsonContent({ type: "object", properties: { ok: { type: "boolean" }, id: { type: "string" } } }, "Updated"),
+        400: err400,
+        403: problemContent("Admin access required"),
+        404: problemContent("Token not found"),
+      },
+    },
+    delete: {
+      operationId: "deleteAgentToken",
+      tags: ["Auth"],
+      summary: "Revoke or permanently delete a token",
+      description: "By default, soft-revokes the token (keeps record for audit trail). Set `hard: true` to permanently delete. Revoked tokens immediately stop working.",
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, hard: { type: "boolean", default: false, description: "true = permanent delete, false = soft revoke" } }, required: ["id"] } } },
+      },
+      responses: {
+        200: jsonContent({ type: "object", properties: { ok: { type: "boolean" }, id: { type: "string" }, action: { type: "string", enum: ["revoked", "deleted"] } } }, "Token revoked or deleted"),
+        403: problemContent("Admin access required"),
+        404: problemContent("Token not found"),
+      },
+    },
+  },
 }
 
 // ─── Webhook events ───────────────────────────────────────────────────────────
@@ -706,7 +810,7 @@ const document = {
   components: {
     schemas,
     securitySchemes: {
-      bearerAuth: { type: "http", scheme: "bearer", description: "API key or HA long-lived access token" },
+      bearerAuth: { type: "http", scheme: "bearer", description: "Agent token (mth_... prefix) or HA long-lived access token. Create tokens via POST /api/agent-tokens with least-privilege scopes." },
       haIngressToken: { type: "apiKey", in: "header", name: "Authorization", description: "Home Assistant Supervisor ingress token (auto-injected by HA)" },
     },
   },
@@ -732,6 +836,7 @@ const document = {
     { name: "HomeAssistant", description: "Home Assistant integration endpoints" },
     { name: "Integrations", description: "External integrations (n8n, Node-RED, Grocy, calendar)" },
     { name: "Agents", description: "MCP and A2A agent protocol endpoints" },
+    { name: "Auth", description: "Agent token management — zero-trust authorization for automations" },
   ],
   paths,
   webhooks,
