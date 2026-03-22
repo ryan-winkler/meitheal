@@ -14,32 +14,44 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   aria-modal="true"
   aria-labelledby="new-task-title"
 >
-  <div class="modal-content max-w-2xl w-full p-6 bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl">
+  <div class="modal-content max-w-2xl w-full bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl max-h-[90vh] flex flex-col">
     <div
-      class="modal-header flex items-center justify-between mb-4 border-b border-border"
+      class="modal-header flex items-center justify-between px-5 pt-4 pb-3"
     >
-      <div class="flex gap-2" id="nt-kind-tabs">
-        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-accent text-text-primary transition-colors" data-kind="standard_action">{t("task_modal.kind_task", locale)}</button>
-        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="shopping_item">{t("task_modal.kind_shopping_list", locale)}</button>
-        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="checklist">{t("task_modal.kind_checklist", locale)}</button>
-        <button type="button" class="px-3 py-3 text-sm font-medium border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors" data-kind="calendar_event">{t("task_modal.kind_event", locale)}</button>
+      <div class="flex gap-1.5" id="nt-kind-tabs">
+        <button type="button" class="nt-kind-pill active" data-kind="standard_action">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          {t("task_modal.kind_task", locale)}
+        </button>
+        <button type="button" class="nt-kind-pill" data-kind="shopping_item">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+          {t("task_modal.kind_shopping_list", locale)}
+        </button>
+        <button type="button" class="nt-kind-pill" data-kind="checklist">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          {t("task_modal.kind_checklist", locale)}
+        </button>
+        <button type="button" class="nt-kind-pill" data-kind="calendar_event">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          {t("task_modal.kind_event", locale)}
+        </button>
       </div>
       <button
         type="button"
-        class="btn-icon text-xl text-text-muted hover:text-text-primary pb-2"
+        class="btn-icon text-xl text-text-muted hover:text-text-primary"
         id="close-new-task-modal"
         aria-label="Close">✕</button
       >
     </div>
 
-    <form id="new-task-form" class="space-y-4"
+    <form id="new-task-form" class="px-5 pb-5 space-y-3 overflow-y-auto flex-1"
       data-toast-created={t("task_modal.toast_created", locale)}
       data-toast-error={t("task_modal.toast_error", locale)}
       data-toast-unexpected={t("task_modal.toast_unexpected", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
       
-      <div class="form-group mb-2">
+      <div class="form-group mb-1">
         <textarea
           class="bg-transparent border-none outline-none focus:ring-0 text-2xl font-bold p-0 mb-2 placeholder:text-text-muted/50 w-full resize-none overflow-hidden leading-tight"
           id="new-task-title-input"
@@ -57,7 +69,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         ></textarea>
       </div>
 
-      <div class="form-group mb-6">
+      <div class="form-group mb-3">
         <textarea
           class="form-input bg-transparent border border-transparent focus:border-border-dim hover:border-border-dim/50 rounded-lg text-sm w-full p-2 resize-none overflow-hidden placeholder:text-text-muted/50 transition-colors"
           id="new-task-desc-input"
@@ -263,17 +275,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       </div>
 
       <!-- Custom Fields (collapsible) -->
-      <div id="nt-custom-fields" class="mb-4">
-        <button type="button" id="nt-custom-fields-toggle" class="flex items-center justify-between w-full p-2 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
-          <span class="flex items-center gap-1.5">
+      <div id="nt-custom-fields" class="mb-3">
+        <div class="flex items-center justify-between p-2">
+          <button type="button" id="nt-custom-fields-toggle" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
             {t("task_modal.custom_fields_label", locale)}
-          </span>
+          </button>
           <button type="button" id="nt-add-custom-field-btn" class="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             {t("task_modal.custom_field_add", locale)}
           </button>
-        </button>
+        </div>
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 bg-bg-input/20 border border-border-dim/50 rounded-xl">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
           <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
@@ -363,12 +375,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       tab.addEventListener("click", () => {
         // Deactivate all
         kindTabs.forEach(t => {
-          t.classList.remove("border-accent", "text-text-primary");
-          t.classList.add("border-transparent", "text-text-muted");
+          t.classList.remove("active");
         });
         // Activate clicked
-        tab.classList.remove("border-transparent", "text-text-muted");
-        tab.classList.add("border-accent", "text-text-primary");
+        tab.classList.add("active");
         
         if (kindInput) kindInput.value = (tab as HTMLElement).dataset.kind || "standard_action";
         
@@ -521,12 +531,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         
         // Reset tabs
         kindTabs.forEach(t => {
-          t.classList.remove("border-accent", "text-text-primary");
-          t.classList.add("border-transparent", "text-text-muted");
+          t.classList.remove("active");
         });
         if (kindTabs.length > 0) {
-          kindTabs[0]?.classList.add("border-accent", "text-text-primary");
-          kindTabs[0]?.classList.remove("border-transparent", "text-text-muted");
+          kindTabs[0]?.classList.add("active");
         }
         if (kindInput) kindInput.value = "standard_action";
 
@@ -966,3 +974,40 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
   });
 </script>
+
+<style>
+  .nt-kind-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 9999px;
+    border: 1px solid var(--border-dim);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .nt-kind-pill:hover {
+    background: color-mix(in srgb, var(--border-dim) 20%, transparent);
+    color: var(--text-primary);
+  }
+  .nt-kind-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  #new-task-form::-webkit-scrollbar {
+    width: 4px;
+  }
+  #new-task-form::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #new-task-form::-webkit-scrollbar-thumb {
+    background: var(--border-dim);
+    border-radius: 4px;
+  }
+</style>
