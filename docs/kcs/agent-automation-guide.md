@@ -122,3 +122,20 @@ All API responses include dual rate limit headers:
 | Build fails on `generate:llms` | Malformed `openapi.yaml` | Fix the spec, `generate-llms.mjs` wraps parsing in try/catch |
 | CloudEvents headers missing | Old `webhook-emitter.ts` | Rebuild; headers are always emitted |
 | `trace_id` missing in logs | No `traceparent` header | Middleware auto-generates; check log schema |
+
+## Agentic Evaluation Tests
+
+LLM-in-the-loop E2E tests in `tests/e2e/agentic-eval.spec.ts` prove the API stays AI-readable:
+
+```bash
+# Requires running Meitheal + Gemini API key
+E2E_BASE_URL=http://localhost:4500 GEMINI_API_KEY=... pnpm --filter @meitheal/tests test e2e/agentic-eval.spec.ts
+```
+
+| Test | What it proves |
+|------|---------------|
+| Creates task from spec | LLM parses OpenAPI, identifies correct endpoint, formats valid JSON |
+| Self-corrects after error | RFC 9457 `invalidParams` enables autonomous payload fixing |
+| Discovers search endpoint | LLM navigates 120+ ops to find and use search with query params |
+
+**Env vars:** `GEMINI_API_KEY` (required), `E2E_BASE_URL` (required), `AGENTIC_EVAL_MODEL` (optional, default: `gemini-2.0-flash`).
