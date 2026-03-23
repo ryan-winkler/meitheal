@@ -30,6 +30,36 @@ export const POST: APIRoute = async ({ request }) => {
     let signingSecret = ""
     let source = "override"
 
+    // SSRF protection: validate user-supplied URL override
+    if (targetUrlOverride) {
+      try {
+        const parsed = new URL(targetUrlOverride)
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Invalid URL scheme — only http: and https: are allowed",
+          }), { status: 400, headers: { "content-type": "application/json" } })
+        }
+        // Block well-known internal/metadata addresses
+        const host = parsed.hostname.toLowerCase()
+        const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254", "metadata.google.internal"]
+        if (BLOCKED_HOSTS.some(b => host === b) || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+          // Allow .internal domains (HA ecosystem) but block generic internal IPs
+          if (!host.endsWith(".internal")) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: "URL points to a private/internal network address",
+            }), { status: 400, headers: { "content-type": "application/json" } })
+          }
+        }
+      } catch {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Invalid URL format",
+        }), { status: 400, headers: { "content-type": "application/json" } })
+      }
+    }
+
     if (!targetUrl) {
       // Try n8n webhook first, then generic webhook
       const n8nUrl = await repo.getByKey("n8n_webhook_url")

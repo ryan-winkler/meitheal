@@ -4,6 +4,7 @@
  * Handles: HA connection test, HA standalone form save,
  * webhook save/test, n8n mode tabs, expand integration cards.
  */
+import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -84,9 +85,9 @@ export function initHASettings(): void {
   }
 
   // Webhook Save
-  const saveWebhookBtn = document.getElementById("save-webhook")
+  const saveWebhookBtn = document.getElementById("save-webhook") as HTMLButtonElement
   if (saveWebhookBtn) {
-    pageLifecycle.on(saveWebhookBtn, "click", async () => {
+    pageLifecycle.on(saveWebhookBtn, "click", withAsyncButton(saveWebhookBtn, async () => {
     const endpoint = (document.getElementById("webhook-endpoint") as HTMLInputElement).value
     const secret = (document.getElementById("webhook-secret") as HTMLInputElement).value
     const format = (document.getElementById("webhook-format") as HTMLSelectElement).value
@@ -96,18 +97,11 @@ export function initHASettings(): void {
       return
     }
 
-    const btn = document.getElementById("save-webhook") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
-
     await saveSetting("webhook_endpoint", endpoint)
     if (secret) await saveSetting("webhook_secret", secret)
     await saveSetting("webhook_format", format)
-
-    btn.textContent = "Save Webhook"
-    btn.disabled = false
     showToast("settings.webhook_saved")
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // Webhook Test

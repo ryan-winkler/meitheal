@@ -95,7 +95,15 @@ const BOT_RATE_WINDOW_MS = 60_000;
 const BOT_PATH_PATTERNS = ["/accept-proposal", "/api/mcp"];
 
 function isBotEndpoint(pathname: string): boolean {
-  return BOT_PATH_PATTERNS.some(p => pathname.includes(p));
+  // Use segment-boundary matching to avoid false positives
+  // e.g. /api/mcp should not match /api/mcp-unrelated
+  return BOT_PATH_PATTERNS.some(p => {
+    const idx = pathname.indexOf(p)
+    if (idx === -1) return false
+    const afterIdx = idx + p.length
+    // Must be at end of path or followed by / or ?
+    return afterIdx >= pathname.length || pathname[afterIdx] === "/" || pathname[afterIdx] === "?"
+  })
 }
 
 function getBotRateLimit(ip: string): { remaining: number; resetAt: number; exceeded: boolean } {

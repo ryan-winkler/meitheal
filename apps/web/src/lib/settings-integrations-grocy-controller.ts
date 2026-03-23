@@ -4,6 +4,7 @@
  * Handles: Grocy save, auto-key, test connection, sync now,
  * and hydration of Grocy status on load.
  */
+import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -47,9 +48,9 @@ export function initGrocySettings(): void {
   }
 
   // Save Grocy settings
-  const saveGrocyBtn = document.getElementById("save-grocy")
+  const saveGrocyBtn = document.getElementById("save-grocy") as HTMLButtonElement
   if (saveGrocyBtn) {
-    pageLifecycle.on(saveGrocyBtn, "click", async () => {
+    pageLifecycle.on(saveGrocyBtn, "click", withAsyncButton(saveGrocyBtn, async () => {
     const url = (document.getElementById("grocy-url") as HTMLInputElement).value
     const key = (document.getElementById("grocy-key") as HTMLInputElement).value
     const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
@@ -74,9 +75,6 @@ export function initGrocySettings(): void {
       }
     }
 
-    const btn = document.getElementById("save-grocy") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
     try {
       const payload: Record<string, unknown> = {
         grocy_sync_mode: syncMode,
@@ -104,9 +102,7 @@ export function initGrocySettings(): void {
     } catch {
       showToast("Failed to save Grocy settings", "error")
     }
-    btn.textContent = "Save Grocy Settings"
-    btn.disabled = false
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // Test Connection

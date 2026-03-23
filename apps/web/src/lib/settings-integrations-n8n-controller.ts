@@ -6,6 +6,7 @@
  * HA bus status, Node-RED copy/deploy/status, event count,
  * n8n mode tab switching, and n8n settings restore.
  */
+import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -13,26 +14,21 @@ import { saveSetting, log } from "@lib/settings-utils"
 
 export function initN8nSettings(): void {
   // ───── n8n Save (HA Addon / Auto mode) ─────
-  const saveN8nBtn = document.getElementById("save-n8n")
+  const saveN8nBtn = document.getElementById("save-n8n") as HTMLButtonElement
   if (saveN8nBtn) {
-    pageLifecycle.on(saveN8nBtn, "click", async () => {
+    pageLifecycle.on(saveN8nBtn, "click", withAsyncButton(saveN8nBtn, async () => {
     const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value || ""
     const events: string[] = []
     document.querySelectorAll(".n8n-event:checked").forEach((cb) => {
       events.push((cb as HTMLInputElement).value)
     })
-    const btn = document.getElementById("save-n8n") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
     await saveSetting("n8n_mode", "ha_addon")
     if (webhookUrl) await saveSetting("n8n_webhook_url", webhookUrl)
     await saveSetting("n8n_events", events)
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
-    btn.textContent = "Save n8n Settings"
-    btn.disabled = false
     showToast("settings.n8n_saved")
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // ───── Test Event Bus ─────
@@ -156,9 +152,9 @@ export function initN8nSettings(): void {
   initNodeRedDeployStatus()
 
   // ───── n8n Standalone Save ─────
-  const saveStandaloneBtn = document.getElementById("save-n8n-standalone")
+  const saveStandaloneBtn = document.getElementById("save-n8n-standalone") as HTMLButtonElement
   if (saveStandaloneBtn) {
-    pageLifecycle.on(saveStandaloneBtn, "click", async () => {
+    pageLifecycle.on(saveStandaloneBtn, "click", withAsyncButton(saveStandaloneBtn, async () => {
     const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement).value
     const apiKey = (document.getElementById("n8n-api-key") as HTMLInputElement).value
     const secret = (document.getElementById("n8n-secret") as HTMLInputElement).value
@@ -167,9 +163,6 @@ export function initN8nSettings(): void {
     document.querySelectorAll(".n8n-event-standalone:checked").forEach((cb) => {
       events.push((cb as HTMLInputElement).value)
     })
-    const btn = document.getElementById("save-n8n-standalone") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
     await saveSetting("n8n_mode", "standalone")
     await saveSetting("n8n_webhook_url", webhookUrl)
     if (apiKey) await saveSetting("n8n_api_key", apiKey)
@@ -177,10 +170,8 @@ export function initN8nSettings(): void {
     await saveSetting("n8n_events", events)
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
-    btn.textContent = "Save Standalone Settings"
-    btn.disabled = false
     showToast("settings.n8n_saved")
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // ───── Test Webhook (Standalone) ─────

@@ -559,7 +559,7 @@
                 areaSelect.value = currentAreaId;
               }
             } catch {
-              areaSelect.innerHTML = `<option value="${currentAreaId}">${currentAreaId}</option>`;
+              areaSelect.innerHTML = `<option value="${escapeHtml(currentAreaId)}">${escapeHtml(currentAreaId)}</option>`;
             }
             // Populate project dropdown
             const projectSelect = document.getElementById(
@@ -584,7 +584,7 @@
                 projectSelect.value = currentProjectId;
               }
             } catch {
-              projectSelect.innerHTML = `<option value="${currentProjectId}">${currentProjectId}</option>`;
+              projectSelect.innerHTML = `<option value="${escapeHtml(currentProjectId)}">${escapeHtml(currentProjectId)}</option>`;
             }
 
             // Populate pillar dropdown
@@ -610,7 +610,7 @@
                 pillarSelect.value = currentPillarId;
               }
             } catch {
-              pillarSelect.innerHTML = `<option value="${currentPillarId}">${currentPillarId}</option>`;
+              pillarSelect.innerHTML = `<option value="${escapeHtml(currentPillarId)}">${escapeHtml(currentPillarId)}</option>`;
             }
 
             // Populate principle dropdown
@@ -640,7 +640,7 @@
                  principleSelect.innerHTML = '<option value="">No principle</option>';
               }
             } catch {
-              principleSelect.innerHTML = `<option value="${currentPrincipleId}">${currentPrincipleId}</option>`;
+              principleSelect.innerHTML = `<option value="${escapeHtml(currentPrincipleId)}">${escapeHtml(currentPrincipleId)}</option>`;
             }
             // Phase 20: Agile hierarchy type
             (
@@ -840,7 +840,7 @@
                   row.className = "flex items-center gap-2 group";
                   row.innerHTML = `
                     <input type="checkbox" class="form-checkbox h-4 w-4 bg-transparent border-border rounded" ${item.done ? "checked" : ""} />
-                    <input type="text" class="form-input flex-1 text-sm bg-transparent border-transparent px-1 py-0.5 focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)" value="${item.text.replace(/"/g, "&quot;")}" placeholder="Checklist item..." />
+                    <input type="text" class="form-input flex-1 text-sm bg-transparent border-transparent px-1 py-0.5 focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)" value="${escapeHtml(item.text)}" placeholder="Checklist item..." />
                     <button type="button" class="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-xs p-1" title="Delete item">×</button>
                   `;
                   // Toggle done

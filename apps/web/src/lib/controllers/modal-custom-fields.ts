@@ -6,6 +6,7 @@
  *      Manages custom field rows, categorised dropdown, field type rendering,
  *      and debounced save. Depends on saveTD + settingsFields from parent.
  */
+import { escapeHtml } from "@lib/safe-html"
 
 export interface CustomFieldsDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
@@ -81,20 +82,20 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     } else if (fieldType === "select" && options && options.length > 0) {
       valueHtml = `<select class="form-input td-cf-val text-sm py-1" style="flex:1;">
               <option value=""${!value ? " selected" : ""}>Select…</option>
-              ${options.map((o) => `<option value="${o.replace(/"/g, "&quot;")}"${o === value ? " selected" : ""}>${o}</option>`).join("")}
+              ${options.map((o) => `<option value="${escapeHtml(o)}"${o === value ? " selected" : ""}>${escapeHtml(o)}</option>`).join("")}
             </select>`
     } else if (fieldType === "number") {
-      valueHtml = `<input type="number" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${value.replace(/"/g, "&quot;")}" style="flex:1;" />`
+      valueHtml = `<input type="number" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${escapeHtml(value)}" style="flex:1;" />`
     } else if (fieldType === "date") {
-      valueHtml = `<input type="date" class="form-input td-cf-val text-sm py-1" value="${value.replace(/"/g, "&quot;")}" style="flex:1;" />`
+      valueHtml = `<input type="date" class="form-input td-cf-val text-sm py-1" value="${escapeHtml(value)}" style="flex:1;" />`
     } else if (fieldType === "url") {
-      valueHtml = `<input type="url" class="form-input td-cf-val text-sm py-1" placeholder="https://…" value="${value.replace(/"/g, "&quot;")}" style="flex:1;" />`
+      valueHtml = `<input type="url" class="form-input td-cf-val text-sm py-1" placeholder="https://…" value="${escapeHtml(value)}" style="flex:1;" />`
     } else {
-      valueHtml = `<input type="text" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${value.replace(/"/g, "&quot;")}" style="flex:1;" />`
+      valueHtml = `<input type="text" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${escapeHtml(value)}" style="flex:1;" />`
     }
 
     row.innerHTML = `
-          <input type="text" class="form-input td-cf-key text-sm py-1" placeholder="Field name" value="${key.replace(/"/g, "&quot;")}" style="flex:1;opacity:0.7;" readonly />
+          <input type="text" class="form-input td-cf-key text-sm py-1" placeholder="Field name" value="${escapeHtml(key)}" style="flex:1;opacity:0.7;" readonly />
           ${valueHtml}
           <button type="button" class="td-cf-remove" style="color:var(--danger);font-size:16px;cursor:pointer;background:none;border:none;padding:0 4px;">&times;</button>
         `
@@ -219,7 +220,7 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
             url: "🔗",
           }
           const badge = typeBadge[sfDef?.type || "text"] || "📝"
-          return `<div class="td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover" data-field="${f.replace(/"/g, "&quot;")}">${badge} ${f}</div>`
+          return `<div class="td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover" data-field="${escapeHtml(f)}">${badge} ${escapeHtml(f)}</div>`
         })
         .join("")
     }

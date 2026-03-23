@@ -4,6 +4,7 @@
  * Handles sidebar ordering (drag-drop + touch), custom links,
  * visibility toggles, save, and reset.
  */
+import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
@@ -29,9 +30,9 @@ const SIDEBAR_LABELS: Record<string, string> = {
 
 export function initSidebarSettings(): void {
   // Save sidebar config
-  const saveSidebarBtn = document.getElementById("save-sidebar")
+  const saveSidebarBtn = document.getElementById("save-sidebar") as HTMLButtonElement
   if (saveSidebarBtn) {
-    pageLifecycle.on(saveSidebarBtn, "click", async () => {
+    pageLifecycle.on(saveSidebarBtn, "click", withAsyncButton(saveSidebarBtn, async () => {
     const list = document.getElementById("sidebar-item-list")
     if (!list) return
 
@@ -70,21 +71,12 @@ export function initSidebarSettings(): void {
     config.labels = labels
     config.customItems = finalCustomItems
 
-    const btn = document.getElementById("save-sidebar") as HTMLButtonElement
-    if (!btn) return
-    const oText = btn.textContent
-    btn.textContent = "Saving..."
-    btn.disabled = true
-
     await saveSetting("sidebar_config", config)
-
-    btn.textContent = oText
-    btn.disabled = false
     showToast("settings.sidebar_saved")
     settingsStore.invalidate()
     // Dispatch event so Layout can reactively update sidebar without full reload
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // Reset sidebar to defaults
