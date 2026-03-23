@@ -195,7 +195,9 @@ pageLifecycle.onPageLoad(() => {
 
   function updateScopeUI(): void {
     scopeButtons.forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.scope === activeScope)
+      const isActive = button.dataset.scope === activeScope
+      button.classList.toggle("is-active", isActive)
+      button.setAttribute("aria-selected", String(isActive))
     })
     if (taskOptions) {
       taskOptions.hidden = activeScope !== "all" && activeScope !== "tasks"

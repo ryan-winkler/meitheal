@@ -98,6 +98,7 @@ const staticConfigJson = JSON.stringify(staticConfig)
             class="search-hub-input"
             type="search"
             placeholder={t("topbar.search_placeholder", locale)}
+            aria-label="Search tasks, views, settings, and actions"
             autocomplete="off"
           />
           <button
@@ -117,11 +118,11 @@ const staticConfigJson = JSON.stringify(staticConfig)
 
       <div class="search-hub-toolbar">
         <div class="search-hub-scopes" role="tablist" aria-label="Search scope">
-          <button class="search-hub-scope is-active" type="button" data-scope="all">All</button>
-          <button class="search-hub-scope" type="button" data-scope="tasks">Tasks</button>
-          <button class="search-hub-scope" type="button" data-scope="views">Views</button>
-          <button class="search-hub-scope" type="button" data-scope="settings">Settings</button>
-          <button class="search-hub-scope" type="button" data-scope="actions">Actions</button>
+          <button class="search-hub-scope is-active" type="button" role="tab" aria-selected="true" data-scope="all">All</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="tasks">Tasks</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="views">Views</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="settings">Settings</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="actions">Actions</button>
         </div>
 
         <div id="search-task-options" class="search-hub-task-options">
@@ -139,7 +140,7 @@ const staticConfigJson = JSON.stringify(staticConfig)
             <label><input id="search-include-archived" type="checkbox" /> Archived</label>
             <label class="search-hub-sort">
               Sort
-              <select id="search-sort">
+              <select id="search-sort" aria-label="Sort search results">
                 <option value="relevance">Relevance</option>
                 <option value="updated">Recently updated</option>
               </select>
