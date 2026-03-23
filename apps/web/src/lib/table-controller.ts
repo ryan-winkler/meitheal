@@ -285,12 +285,12 @@ function setupFilterListeners() {
     applyAllFilters()
   }
 
-  search?.addEventListener("input", debounce(onFilterChange, 150))
-  statusFilter?.addEventListener("change", onFilterChange)
-  priorityFilter?.addEventListener("change", onFilterChange)
-  riceFilter?.addEventListener("change", onFilterChange)
-  userFilter?.addEventListener("change", onFilterChange)
-  areaFilter?.addEventListener("change", onFilterChange)
+  search?.addEventListener("input", debounce(onFilterChange, 150), { signal: __signal })
+  statusFilter?.addEventListener("change", onFilterChange, { signal: __signal })
+  priorityFilter?.addEventListener("change", onFilterChange, { signal: __signal })
+  riceFilter?.addEventListener("change", onFilterChange, { signal: __signal })
+  userFilter?.addEventListener("change", onFilterChange, { signal: __signal })
+  areaFilter?.addEventListener("change", onFilterChange, { signal: __signal })
 
   clearBtn?.addEventListener("click", () => {
     clearFilterState()
@@ -309,7 +309,7 @@ function setupFilterListeners() {
     })
 
     applyAllFilters()
-  })
+  }, { signal: __signal })
 
   // Listen for label filter changes
   document.addEventListener("meitheal:label-filter", ((e: CustomEvent) => {
@@ -341,7 +341,7 @@ function setupTypeToggleListeners() {
       currentFilterState.types = activeTypes.length === allTypes.length ? [] : activeTypes
       saveFilterState(currentFilterState)
       applyAllFilters()
-    })
+    }, { signal: __signal })
   })
 }
 
@@ -357,7 +357,7 @@ function setupGroupByListener() {
     saveFilterState(currentFilterState)
     applyGrouping(currentGroupBy)
     applyAllFilters()
-  })
+  }, { signal: __signal })
 }
 
 // =============================================================================
@@ -789,7 +789,7 @@ function setupSubtaskToggles() {
       btn.setAttribute("aria-expanded", String(isCollapsed))
 
       toggleChildRows(parentId, isCollapsed)
-    })
+    }, { signal: __signal })
   })
 }
 
