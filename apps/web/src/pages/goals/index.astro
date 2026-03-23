@@ -507,7 +507,7 @@ const statusLabels: Record<string, string> = {
             setTimeout(() => { card.remove(); updateCount(); }, 200);
           }
         }
-      } catch { btn.disabled = false; }
+      } catch { btn.disabled = false; window.showToast?.("Failed — please try again", "error") }
       return;
     }
 
@@ -521,7 +521,7 @@ const statusLabels: Record<string, string> = {
           body: JSON.stringify({ status: "completed" }),
         });
         if (r.ok) window.location.reload();
-      } catch { btn.disabled = false; }
+      } catch { btn.disabled = false; window.showToast?.("Failed — please try again", "error") }
       return;
     }
 
@@ -535,7 +535,7 @@ const statusLabels: Record<string, string> = {
           body: JSON.stringify({ status: "active" }),
         });
         if (r.ok) window.location.reload();
-      } catch { btn.disabled = false; }
+      } catch { btn.disabled = false; window.showToast?.("Failed — please try again", "error") }
     }
   });
 
