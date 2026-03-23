@@ -253,7 +253,7 @@ export function initN8nSettings(): void {
           if (data.workflows.length === 0) {
             workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>No workflows found.</span></div>`
           } else {
-            workflowsList.innerHTML = ""
+            workflowsList.replaceChildren()
             data.workflows.forEach((wf: { id: string; name: string; active: boolean }) => {
               const el = document.createElement("div")
               el.className = "cal-entity-card"

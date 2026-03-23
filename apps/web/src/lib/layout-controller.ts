@@ -345,7 +345,7 @@
               if (res.ok) {
                 const data = await res.json();
                 const boards = data.areas ?? [];
-                select.innerHTML = "";
+                select.replaceChildren();
                 // "All Areas" option first
                 const allOpt = document.createElement("option");
                 allOpt.value = "all";

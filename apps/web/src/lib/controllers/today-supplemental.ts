@@ -106,7 +106,7 @@ export function setupContextGrouping(container: HTMLElement): void {
   }
 
   // Rebuild the list with context headers
-  todaySection.innerHTML = ""
+  todaySection.replaceChildren()
 
   for (const [ctx, ctxTasks] of groups) {
     const icon = contextIcons[ctx.toLowerCase()] ?? "📌"

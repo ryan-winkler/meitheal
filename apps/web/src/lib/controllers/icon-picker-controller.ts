@@ -169,7 +169,7 @@ export function initIconPicker(
   function setIcon(value: string) {
     if (preview) {
       if (value.startsWith("data:")) {
-        preview.innerHTML = ""
+        preview.replaceChildren()
         const img = document.createElement("img")
         img.src = value
         img.alt = "Custom icon"

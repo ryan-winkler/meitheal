@@ -234,7 +234,7 @@ function renderFields(): void {
   const template = document.getElementById("fw-field-template") as HTMLTemplateElement | null
   if (!list || !template) return
 
-  list.innerHTML = ""
+  list.replaceChildren()
 
   state.fields.forEach((field, index) => {
     const clone = template.content.cloneNode(true) as DocumentFragment
@@ -331,7 +331,7 @@ function renderBadges(): void {
   const template = document.getElementById("fw-badge-template") as HTMLTemplateElement | null
   if (!list || !template) return
 
-  list.innerHTML = ""
+  list.replaceChildren()
 
   state.badges.forEach((badge, index) => {
     const clone = template.content.cloneNode(true) as DocumentFragment

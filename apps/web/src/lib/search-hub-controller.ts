@@ -269,7 +269,7 @@ pageLifecycle.onPageLoad((signal) => {
   }
 
   function renderSections(sections: SearchResultSection[]): void {
-    resultsEl.innerHTML = ""
+    resultsEl.replaceChildren()
     renderedItems = []
 
     if (sections.length === 0 || sections.every((section) => section.items.length === 0)) {
@@ -340,7 +340,7 @@ pageLifecycle.onPageLoad((signal) => {
       return
     }
 
-    resultsEl.innerHTML = ""
+    resultsEl.replaceChildren()
     resultsEl.appendChild(createEmptyState("Searching..."))
 
     try {
@@ -355,7 +355,7 @@ pageLifecycle.onPageLoad((signal) => {
 
       renderSections([...staticSections, ...response.sections])
     } catch {
-      resultsEl.innerHTML = ""
+      resultsEl.replaceChildren()
       if (!query) {
         resultsEl.appendChild(createEmptyState("Start typing to search..."))
       } else {

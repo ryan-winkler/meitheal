@@ -146,7 +146,7 @@
                 if (backlogMode === "disabled") {
                   lanes = lanes.filter((l: any) => l.key !== "backlog");
                 }
-                statusSelect.innerHTML = "";
+                statusSelect.replaceChildren();
                 for (const lane of lanes) {
                   // Add the main key as an option
                   const opt = document.createElement("option");
@@ -254,7 +254,7 @@
               "td-link-children",
             ) as HTMLElement;
             if (childrenDiv) {
-              childrenDiv.innerHTML = "";
+              childrenDiv.replaceChildren();
               // Progress bar elements
               const progressWrap = document.getElementById("td-subtask-progress");
               const progressLabel = document.getElementById("td-subtask-progress-label");
@@ -312,7 +312,7 @@
             ) as HTMLElement;
             const activityDetails = activityDiv?.closest("details");
             if (activityDetails && activityDiv) {
-              activityDiv.innerHTML = "";
+              activityDiv.replaceChildren();
               const loadActivity = async () => {
                 try {
                   const actRes = await fetch(
@@ -328,7 +328,7 @@
                     activityDiv.innerHTML = `<span class="text-text-muted italic">No activity yet</span>`;
                     return;
                   }
-                  activityDiv.innerHTML = "";
+                  activityDiv.replaceChildren();
                   for (const e of entries.slice(0, 50)) {
                     const ago = new Date(Number(e.created_at)).toLocaleString();
                     const row = document.createElement("div");
@@ -547,7 +547,7 @@
               if (boardRes.ok) {
                 const areaData = await boardRes.json();
                 const boards = areaData.areas ?? [];
-                areaSelect.innerHTML = "";
+                areaSelect.replaceChildren();
                 boards.forEach(
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
@@ -737,7 +737,7 @@
             const labelsDiv = document.getElementById(
               "td-labels",
             ) as HTMLElement;
-            labelsDiv.innerHTML = "";
+            labelsDiv.replaceChildren();
             labelsApi.setCurrentLabels([]);
             try {
               const labels = JSON.parse(String(t.labels ?? "[]"));
@@ -756,7 +756,7 @@
             const cfDiv = document.getElementById(
               "td-custom-fields",
             ) as HTMLElement;
-            cfDiv.innerHTML = "";
+            cfDiv.replaceChildren();
             const renderedKeys = new Set<string>();
             try {
               const cf = JSON.parse(String(t.custom_fields ?? "{}")) as Record<
@@ -832,7 +832,7 @@
               type ChecklistItem = { id: string; text: string; done: boolean }
               const list = (window.__currentChecklists || []) as ChecklistItem[];
               if (checklistsContainer) {
-                checklistsContainer.innerHTML = "";
+                checklistsContainer.replaceChildren();
                 let doneCount = 0;
                 list.forEach((item: ChecklistItem, index: number) => {
                   if (item.done) doneCount++;

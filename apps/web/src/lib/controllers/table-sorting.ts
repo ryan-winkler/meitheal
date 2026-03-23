@@ -120,7 +120,7 @@ function sortRowsGlobally(tbody: HTMLElement, col: string, dir: "asc" | "desc", 
   rootRows.forEach((row) => appendWithChildren(row))
   if (noResults) fragment.appendChild(noResults)
 
-  tbody.innerHTML = ""
+  tbody.replaceChildren()
   tbody.appendChild(fragment)
 
   // Re-setup row event listeners

@@ -545,7 +545,7 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
 
   // Preserve no-results row
   const noResults = tbody.querySelector(".no-results-row")
-  tbody.innerHTML = ""
+  tbody.replaceChildren()
   tbody.appendChild(fragment)
   if (noResults) tbody.appendChild(noResults)
 

@@ -238,7 +238,7 @@ export class FieldPickerPanel {
     if (!container) return
 
     // Clear existing
-    container.innerHTML = ""
+    container.replaceChildren()
 
     const toggleable = this.opts.fields.filter(f => !f.alwaysVisible)
     const filtered = this.searchQuery

@@ -55,7 +55,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
       )
       if (!res.ok) {
         // Error boundary (#18): show retry option
-        container.innerHTML = ""
+        container.replaceChildren()
         const errDiv = document.createElement("div")
         errDiv.className =
           "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent"
@@ -75,7 +75,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
         countEl.textContent = totalLinks > 0 ? `(${totalLinks})` : ""
 
       if (totalLinks === 0) {
-        container.innerHTML = ""
+        container.replaceChildren()
         if (emptyState) {
           emptyState.style.display = ""
           container.appendChild(emptyState)
@@ -83,7 +83,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
         return
       }
 
-      container.innerHTML = ""
+      container.replaceChildren()
 
       // Helper: create a link row using DOM API (XSS-safe)
       function createLinkRow(
@@ -197,7 +197,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
       })
     } catch {
       // Error boundary (#18)
-      container.innerHTML = ""
+      container.replaceChildren()
       const errDiv = document.createElement("div")
       errDiv.className =
         "text-xs text-text-muted italic py-1 cursor-pointer hover:text-accent"
@@ -239,10 +239,10 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
           const noMatch = document.createElement("div")
           noMatch.className = "px-3 py-2 text-xs text-text-muted italic"
           noMatch.textContent = "No matches"
-          linkSearchResults.innerHTML = ""
+          linkSearchResults.replaceChildren()
           linkSearchResults.appendChild(noMatch)
         } else {
-          linkSearchResults.innerHTML = ""
+          linkSearchResults.replaceChildren()
           for (const t of tasks as Record<string, unknown>[]) {
             const typeIcon =
               t.task_type === "epic"

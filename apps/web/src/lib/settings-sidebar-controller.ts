@@ -154,7 +154,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
     function renderSidebarList() {
       const list = document.getElementById("sidebar-item-list")!
-      list.innerHTML = ""
+      list.replaceChildren()
       orderItems.forEach((key: string, index: number) => {
         const isVisible = sidebarConfig[key] !== false
         const labelStr =
@@ -297,7 +297,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
       // Custom links rendering
       const customList = document.getElementById("custom-links-list")!
-      customList.innerHTML = ""
+      customList.replaceChildren()
       customItems.forEach((item, index) => {
         const row = document.createElement("div")
         row.style.cssText =

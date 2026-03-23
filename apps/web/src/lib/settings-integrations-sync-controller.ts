@@ -493,7 +493,7 @@ async function hydrateTodoStatus() {
     if (entitiesList && entitiesContainer) {
       entitiesList.style.display = "block"
       if (entities.length === 0) {
-        entitiesContainer.innerHTML = ""
+        entitiesContainer.replaceChildren()
         if (noEntities) noEntities.style.display = "flex"
       } else {
         if (noEntities) noEntities.style.display = "none"

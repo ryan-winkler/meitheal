@@ -163,7 +163,7 @@ export function initColorPicker(
       colorList = Array.from(existing).map((s) => s.dataset.customSwatch || "")
     }
 
-    customContainer.innerHTML = ""
+    customContainer.replaceChildren()
     colorList.forEach((color) => {
       const btn = document.createElement("button")
       btn.type = "button"

@@ -226,7 +226,7 @@ export function initQuickActions(
 
       // Replace skeleton with real content
       if (!popover.parentNode) return // popover was closed during fetch
-      content.innerHTML = ""
+      content.replaceChildren()
 
       // Unassign option
       const unassignItem = document.createElement("button")

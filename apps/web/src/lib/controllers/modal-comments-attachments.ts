@@ -32,7 +32,7 @@ export async function loadComments(taskId: string): Promise<void> {
         created_at: string
       }>
     }
-    container.innerHTML = ""
+    container.replaceChildren()
     for (const c of data.comments || []) {
       const wrapper = document.createElement("div")
       wrapper.className =
@@ -57,7 +57,7 @@ export async function loadComments(taskId: string): Promise<void> {
       container.appendChild(wrapper)
     }
   } catch {
-    container.innerHTML = ""
+    container.replaceChildren()
   }
 }
 
@@ -69,7 +69,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
     "td-attachments",
   ) as HTMLElement
   if (!container) return
-  container.innerHTML = ""
+  container.replaceChildren()
 
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
