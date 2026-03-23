@@ -34,9 +34,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
       <select
-        class="form-select"
+        class="form-select settings-input-compact"
         id="locale-select"
-        style="max-width: 240px;"
       >
         <option value="en">{t("settings.language_en", locale)}</option>
         <option value="ga">{t("settings.language_ga", locale)}</option>
@@ -44,7 +43,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     </div>
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
-      <select class="form-select" id="theme-select" style="max-width: 240px;">
+      <select class="form-select settings-input-compact" id="theme-select">
         <option value="dark">{t("settings.theme_dark", locale)}</option>
         <option value="light">{t("settings.theme_light", locale)}</option>
         <option value="auto">{t("settings.theme_auto", locale)}</option>
@@ -113,8 +112,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           style="font-size: 11px; padding: 4px 8px;">{t("settings.accent_reset", locale)}</button
         >
       </div>
-      <small
-        style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;"
+      <small class="settings-hint" style="display: block;"
         >{t("settings.accent_hint", locale)}</small
       >
     </div>
@@ -139,7 +137,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
             style="display: none;"
           />
         </label>
-        <small style="color: var(--text-muted); font-size: 11px;"
+        <small class="settings-hint--sm"
           >{t("settings.theme_import_hint", locale)}</small
         >
       </div>
@@ -166,9 +164,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
       <select
-        class="form-select"
+        class="form-select settings-input-narrow"
         id="timezone-select"
-        style="max-width: 300px;"
       >
         <option value="Europe/Dublin">Europe/Dublin</option>
         <option value="Europe/London">Europe/London</option>
@@ -187,9 +184,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     <div class="form-group" style="margin-top: 12px;">
       <label class="form-label" for="week-start-select">{t("settings.week_start_title", locale)}</label>
       <select
-        class="form-select"
+        class="form-select settings-input-compact"
         id="week-start-select"
-        style="max-width: 240px;"
       >
         <option value="monday">{t("settings.week_start_monday", locale)}</option>
         <option value="sunday">{t("settings.week_start_sunday", locale)}</option>
@@ -201,9 +197,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         >{t("settings.date_format_title", locale)}</label
       >
       <select
-        class="form-select"
+        class="form-select settings-input-narrow"
         id="date-format-select"
-        style="max-width: 300px;"
       >
         <option value="relative">{t("settings.date_format_relative", locale)}</option>
         <option value="absolute-iso">{t("settings.date_format_absolute_iso", locale)}</option>
@@ -300,24 +295,21 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         href="https://github.com/Coolock-Village/meitheal#readme"
         target="_blank"
         rel="noopener noreferrer"
-        class="btn btn-secondary"
-        style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+        class="btn btn-secondary settings-link"
         >{t("settings.help_readme", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal/wiki"
         target="_blank"
         rel="noopener noreferrer"
-        class="btn btn-secondary"
-        style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+        class="btn btn-secondary settings-link"
         >{t("settings.help_wiki", locale)}</a
       >
       <a
         href="https://github.com/Coolock-Village/meitheal/blob/main/CHANGELOG.md"
         target="_blank"
         rel="noopener noreferrer"
-        class="btn btn-secondary"
-        style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+        class="btn btn-secondary settings-link"
         >{t("settings.help_changelog", locale)}</a
       >
     </SettingsActionRow>

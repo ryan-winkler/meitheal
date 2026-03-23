@@ -44,9 +44,7 @@ const { locale } = Astro.props;
             <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)}>
               <option value="" selected>{t("settings.ha_agent_default", locale)}</option>
             </select>
-            <small
-              style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;"
-            >
+            <small class="settings-hint" style="display: block;">
               {t("settings.ha_agent_help", locale)}
             </small>
           </div>
