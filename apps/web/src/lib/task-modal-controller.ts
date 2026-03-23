@@ -84,7 +84,7 @@
           const expanded = _sidebarProps?.classList.toggle("td-sidebar-expanded") ?? false;
           _sidebarToggle.setAttribute("aria-expanded", String(expanded));
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
-        });
+        }, { signal: __signal });
 
         async function openTaskDetail(taskId: string) {
           if (!tdOverlay) return;
