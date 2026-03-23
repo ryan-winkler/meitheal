@@ -44,9 +44,9 @@ const locale = Astro.props.locale || "en"
     </div>
 
     <!-- Mode toggle: HA Addon vs Standalone -->
-    <div class="n8n-mode-toggle" style="margin-bottom: 12px;">
+    <div class="n8n-mode-toggle mb-3">
       <label class="form-label" style="margin-bottom: 2px;">{t("settings.n8n_mode_label", locale)}</label>
-      <div class="settings-hint" style="margin-bottom: 8px;">
+      <div class="settings-hint mb-2">
         {t("settings.n8n_mode_desc", locale)}
       </div>
       <div class="mode-tabs">
@@ -112,7 +112,7 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- HA Connection Status (auto mode) -->
-      <div class="integration-callout integration-callout--info" style="margin-top: 12px;">
+      <div class="integration-callout integration-callout--info mt-3">
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
             <strong>{t("settings.n8n_ha_bus", locale)}</strong>
@@ -223,7 +223,7 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- n8n API Health & Last Delivery -->
-      <div class="integration-callout integration-callout--info" style="margin-top: 16px;">
+      <div class="integration-callout integration-callout--info mt-4">
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
             <strong>{t("settings.n8n_status_label", locale)}</strong>
@@ -237,8 +237,8 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- Workflow Discovery -->
-      <div style="margin-top: 16px;">
-        <label class="form-label" style="margin-bottom: 8px;">{t("settings.n8n_workflow_discovery", locale)}</label>
+      <div class="mt-4">
+        <label class="form-label mb-2">{t("settings.n8n_workflow_discovery", locale)}</label>
         <div id="n8n-workflows-list" class="cal-toggle-list" style="max-height: 240px; overflow-y: auto;">
           <div class="cal-empty-state">
             <span class="cal-empty-icon">📭</span>

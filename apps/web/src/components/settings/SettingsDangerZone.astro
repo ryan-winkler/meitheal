@@ -66,7 +66,7 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
       </div>
     </div>
 
-    <SettingsActionRow style="margin-top: 16px;">
+    <SettingsActionRow class="mt-4">
       <button
         class="btn btn-danger-outline"
         id="retention-delete-btn"
@@ -85,7 +85,7 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
     <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="⚠" tone="danger">
       {t("settings.danger_zone_callout_desc", locale)}
     </SettingsCallout>
-    <SettingsActionRow style="margin-top: 16px;">
+    <SettingsActionRow class="mt-4">
       <button
         class="btn btn-danger-outline"
         id="purge-tasks"

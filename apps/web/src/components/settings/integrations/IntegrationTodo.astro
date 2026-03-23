@@ -36,7 +36,7 @@ const locale = Astro.props.locale || "en"
 
   <div class="integration-card__body" id="integration-todo-body" aria-hidden="true">
     <!-- Bridge purpose explainer -->
-    <div class="integration-callout integration-callout--info" style="margin-bottom: 12px;">
+    <div class="integration-callout integration-callout--info mb-3">
       <strong>{t("settings.todo_bridge_title", locale)}</strong>
       <div class="integration-callout__detail">
         <span set:html={t("settings.todo_bridge_desc", locale)} />

@@ -36,7 +36,7 @@ const locale = Astro.props.locale || "en"
 
   <div class="integration-card__body" id="integration-webhooks-body" aria-hidden="true">
     <!-- Differentiation callout -->
-    <div class="integration-callout integration-callout--info" style="margin-bottom: 12px;">
+    <div class="integration-callout integration-callout--info mb-3">
       <strong>{t("settings.webhooks_vs_ai", locale)}</strong>
       <div class="integration-callout__detail">
         <span set:html={t("settings.webhooks_vs_ai_desc", locale)} />

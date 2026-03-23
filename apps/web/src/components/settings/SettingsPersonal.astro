@@ -31,7 +31,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     <SettingsCallout title={t("settings.callout_personal_title", locale)} icon="🎨">
       {t("settings.callout_personal_desc", locale)}
     </SettingsCallout>
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
       <select
         class="form-select settings-input-compact"
@@ -41,7 +41,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <option value="ga">{t("settings.language_ga", locale)}</option>
       </select>
     </div>
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
       <select class="form-select settings-input-compact" id="theme-select">
         <option value="dark">{t("settings.theme_dark", locale)}</option>
@@ -52,7 +52,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     </div>
 
     <!-- Accent Color -->
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label">{t("settings.accent_title", locale)}</label>
       <div
         style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"
@@ -161,7 +161,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         >
       </div>
     </div>
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
       <select
         class="form-select settings-input-narrow"
@@ -181,7 +181,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <option value="UTC">UTC</option>
       </select>
     </div>
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label" for="week-start-select">{t("settings.week_start_title", locale)}</label>
       <select
         class="form-select settings-input-compact"
@@ -192,7 +192,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <option value="saturday">{t("settings.week_start_saturday", locale)}</option>
       </select>
     </div>
-    <div class="form-group" style="margin-top: 12px;">
+    <div class="form-group mt-3">
       <label class="form-label" for="date-format-select"
         >{t("settings.date_format_title", locale)}</label
       >

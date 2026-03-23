@@ -1,12 +1,13 @@
 ---
 interface Props {
   style?: string
+  class?: string
 }
 
-const { style } = Astro.props
+const { style, class: className } = Astro.props
 ---
 
-<div class="settings-action-row" style={style}>
+<div class:list={["settings-action-row", className]} style={style}>
   <slot />
 </div>
 

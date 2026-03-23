@@ -109,7 +109,7 @@ const locale = Astro.props.locale || "en"
             />
           </div>
           <input type="url" class="form-input" id="caldav-url" placeholder="https://your-server.com/dav/calendars/" />
-          <small class="form-hint" style="margin-top: 4px;" set:html={t("settings.caldav_url_hint", locale)}>
+          <small class="form-hint mt-1" set:html={t("settings.caldav_url_hint", locale)}>
           </small>
         </div>
 
@@ -123,7 +123,7 @@ const locale = Astro.props.locale || "en"
           <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder={t("settings.caldav_password_placeholder", locale)} />
         </div>
 
-        <div class="integration-action-row" style="margin-top: 12px;">
+        <div class="integration-action-row mt-3">
           <button type="button" class="btn btn-secondary" id="caldav-test-btn" style="min-width: 120px;">
             {t("settings.caldav_test_btn", locale)}
           </button>
