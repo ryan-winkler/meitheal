@@ -38,15 +38,15 @@ const { locale } = Astro.props
         <SettingsActionRow style="margin-top: 16px;">
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-primary settings-text-sm"
             id="save-sidebar"
-            style="font-size: 13px;">Save Sidebar Config</button
+            >Save Sidebar Config</button
           >
           <button
             type="button"
-            class="btn btn-ghost"
+            class="btn btn-ghost settings-text-sm"
             id="reset-sidebar"
-            style="font-size: 13px;">Reset to Default</button
+            >Reset to Default</button
           >
         </SettingsActionRow>
       </div>
@@ -124,9 +124,9 @@ const { locale } = Astro.props
             </select>
             <button
               type="button"
-              class="btn btn-primary"
+              class="btn btn-primary settings-text-sm"
               id="save-default-assignee"
-              style="font-size: 13px;">Save</button
+              >Save</button
             >
           </div>
           <p class="settings-hint">
@@ -170,9 +170,9 @@ const { locale } = Astro.props
             />
             <button
               type="button"
-              class="btn btn-ghost"
+              class="btn btn-ghost settings-text-sm"
               id="add-custom-user-btn"
-              style="font-size: 13px;">+ Add User</button
+              >+ Add User</button
             >
           </SettingsActionRow>
         </div>
@@ -205,9 +205,9 @@ const { locale } = Astro.props
           </select>
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-primary settings-text-sm"
             id="save-backlog-mode"
-            style="font-size: 13px;">Save</button
+            >Save</button
           >
         </SettingsActionRow>
         <div
@@ -241,9 +241,9 @@ const { locale } = Astro.props
           </select>
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-primary settings-text-sm"
             id="save-completed-retention"
-            style="font-size: 13px;">Save</button
+            >Save</button
           >
         </SettingsActionRow>
         <p class="settings-hint">
@@ -270,7 +270,7 @@ const { locale } = Astro.props
           <div style="font-weight: 600; font-size: 13px;">
             Enable notifications
           </div>
-          <div style="font-size: 11px; color: var(--text-muted);">
+          <div class="settings-hint--sm">
             Task assignments, urgent escalations, and due-date reminders trigger
             notifications.
           </div>
@@ -290,10 +290,10 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div style="font-weight: 500; font-size: 13px;">
+              <div class="settings-label--inline">
                 🔔 HA Sidebar Bell
               </div>
-              <div style="font-size: 11px; color: var(--text-muted);">
+              <div class="settings-hint--sm">
                 Appears in the Home Assistant notification bell. Silent — no
                 sound or vibration.
               </div>
@@ -306,10 +306,10 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div style="font-weight: 500; font-size: 13px;">
+              <div class="settings-label--inline">
                 📱 Mobile Push
               </div>
-              <div style="font-size: 11px; color: var(--text-muted);">
+              <div class="settings-hint--sm">
                 Push notification to HA Companion App with sound and vibration.
               </div>
             </div>
@@ -338,10 +338,10 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div style="font-weight: 500; font-size: 13px;">
+              <div class="settings-label--inline">
                 ⏰ Due-Date Reminders
               </div>
-              <div style="font-size: 11px; color: var(--text-muted);">
+              <div class="settings-hint--sm">
                 Sends reminder notifications for tasks due within the configured
                 window.
               </div>
