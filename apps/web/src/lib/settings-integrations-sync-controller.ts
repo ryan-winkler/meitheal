@@ -31,7 +31,7 @@ export function initCalendarTodoSettings(): void {
       setTimeout(() => { input.style.borderColor = "" }, 1500)
       return
     }
-    if (container.querySelector(`[data-entity="${entityId}"]`)) { input.value = ""; return }
+    if (container.querySelector(`[data-entity="${CSS.escape(entityId)}"]`)) { input.value = ""; return }
     if (entitiesList) entitiesList.style.display = "block"
     const card = document.createElement("div")
     card.className = "cal-toggle-card cal-toggle-card--active"
@@ -209,7 +209,7 @@ export function initCalendarTodoSettings(): void {
     if (!entityId || !entityId.startsWith("todo.")) { showToast("Enter a valid entity ID (e.g. todo.shopping_list)", "error"); return }
     const container = document.getElementById("todo-entities-container")
     if (!container) return
-    if (container.querySelector(`[data-entity="${entityId}"]`)) { showToast("Entity already in the list", "error"); return }
+    if (container.querySelector(`[data-entity="${CSS.escape(entityId)}"]`)) { showToast("Entity already in the list", "error"); return }
     const card = document.createElement("div")
     card.className = "cal-toggle-card cal-toggle-card--active"
     card.dataset.entity = entityId

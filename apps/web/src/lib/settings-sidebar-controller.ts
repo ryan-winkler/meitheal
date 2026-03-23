@@ -10,6 +10,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
+import { escapeHtml } from "@lib/safe-html"
 
 // ───── Constants ─────
 
@@ -169,9 +170,9 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
         row.innerHTML = `
           <div class="drag-handle" title="Drag to reorder" style="cursor: grab; color: var(--text-muted); padding: 4px 8px; user-select: none; border-radius: 4px; transition: color 0.15s, background 0.15s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)'" onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent'">☰</div>
-          <input type="checkbox" class="sidebar-visible-cb" data-key="${key}" ${isVisible ? "checked" : ""} />
-          <span style="min-width: 100px; font-weight: 500;">${SIDEBAR_LABELS[key] || key}</span>
-          <input type="text" class="form-input sidebar-label-input" data-key="${key}" value="${labelStr}" placeholder="Custom Label" style="flex: 1; max-width: 240px;" />
+          <input type="checkbox" class="sidebar-visible-cb" data-key="${escapeHtml(key)}" ${isVisible ? "checked" : ""} />
+          <span style="min-width: 100px; font-weight: 500;">${escapeHtml(SIDEBAR_LABELS[key] || key)}</span>
+          <input type="text" class="form-input sidebar-label-input" data-key="${escapeHtml(key)}" value="${escapeHtml(labelStr)}" placeholder="Custom Label" style="flex: 1; max-width: 240px;" />
         `
 
         // Drag events
@@ -302,8 +303,8 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         row.style.cssText =
           "display: flex; gap: 8px; align-items: center; background: var(--bg-secondary); padding: 8px; border-radius: 4px; border: 1px solid var(--border);"
         row.innerHTML = `
-          <input type="text" class="form-input custom-item-label" placeholder="Label" value="${item.label.replace(/"/g, "&quot;")}" style="flex: 1;" />
-          <input type="text" class="form-input custom-item-href" placeholder="URL (e.g. /notes)" value="${item.href.replace(/"/g, "&quot;")}" style="flex: 2;" />
+          <input type="text" class="form-input custom-item-label" placeholder="Label" value="${escapeHtml(item.label)}" style="flex: 1;" />
+          <input type="text" class="form-input custom-item-href" placeholder="URL (e.g. /notes)" value="${escapeHtml(item.href)}" style="flex: 2;" />
           <button type="button" class="btn-icon text-danger remove-custom-link" data-index="${index}" style="font-size: 16px;">×</button>
         `
         customList.appendChild(row)

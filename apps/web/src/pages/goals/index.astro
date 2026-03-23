@@ -1,5 +1,6 @@
 ---
 import Layout from "../../layouts/Layout.astro"
+import EmptyState from "../../components/ui/EmptyState.astro"
 
 import ProgressRing from "../../components/ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -70,14 +71,14 @@ const statusLabels: Record<string, string> = {
     </header>
 
     {goals.length === 0 ? (
-      <div class="empty-state">
-        <div class="empty-state-icon">🎯</div>
-        <h2 class="empty-state-title">No goals yet</h2>
-        <p class="empty-state-desc">Create your first goal to define strategic outcomes for your work.</p>
-        <button type="button" class="btn btn-primary" id="empty-new-goal-btn">
-          Create Goal
-        </button>
-      </div>
+      <EmptyState
+        title="No goals yet"
+        description="Create your first goal to define strategic outcomes for your work."
+        actionText="Create Goal"
+        actionEvent="create-goal"
+      >
+        <span slot="icon">🎯</span>
+      </EmptyState>
     ) : (
       <div class="goal-list">
         {goals.map((goal) => (
@@ -159,27 +160,6 @@ const statusLabels: Record<string, string> = {
     white-space: nowrap;
   }
 
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    text-align: center;
-  }
-  .empty-state-icon { font-size: 48px; margin-bottom: 1rem; }
-  .empty-state-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
-  }
-  .empty-state-desc {
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    margin-bottom: 1.5rem;
-    max-width: 360px;
-  }
 
   .goal-list {
     display: flex;
@@ -372,8 +352,10 @@ const statusLabels: Record<string, string> = {
 <script>
   // --- Inline goal creation form ---
   const createBtn = document.getElementById("new-goal-btn");
-  const emptyBtn = document.getElementById("empty-new-goal-btn");
   let formVisible = false;
+
+  // Listen for the EmptyState actionEvent
+  document.addEventListener("create-goal", () => showCreate());
 
   function ensureCreateForm(): HTMLElement {
     let form = document.getElementById("goal-create-inline");
@@ -498,7 +480,6 @@ const statusLabels: Record<string, string> = {
   }
 
   createBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
-  emptyBtn?.addEventListener("click", () => formVisible ? hideCreate() : showCreate());
 
   // --- Goal card actions (delegated) ---
   document.querySelector(".goal-list")?.addEventListener("click", async (e: Event) => {
