@@ -46,7 +46,7 @@ const locale = Astro.props.locale || "en"
     <!-- Mode toggle: HA Addon vs Standalone -->
     <div class="n8n-mode-toggle" style="margin-bottom: 12px;">
       <label class="form-label" style="margin-bottom: 2px;">{t("settings.n8n_mode_label", locale)}</label>
-      <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+      <div class="settings-hint" style="margin-bottom: 8px;">
         {t("settings.n8n_mode_desc", locale)}
       </div>
       <div class="mode-tabs">
@@ -103,7 +103,7 @@ const locale = Astro.props.locale || "en"
         </div>
         <div class="event-count-summary" id="n8n-event-count-auto" data-text-summary={t("settings.n8n_event_summary", locale)}>4 of 6 events enabled</div>
       </div>
-      <div class="integration-card__actions" style="gap: 8px;">
+      <div class="integration-card__actions integration-action-row">
         <button type="button" class="btn btn-primary" id="save-n8n">{t("settings.save_n8n_events", locale)}</button>
         <button type="button" class="btn btn-ghost" id="test-event-bus">{t("settings.n8n_test_bus", locale)}</button>
       </div>
@@ -126,7 +126,7 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- ═══ Node-RED Flow Deployment ═══ -->
-      <hr style="border: none; border-top: 1px solid rgba(107, 114, 128, 0.2); margin: 20px 0 16px;" />
+      <hr class="settings-section-divider--spaced" style="border: none; margin: 20px 0 16px;" />
       <div class="integration-callout integration-callout--info" style="margin-top: 0;">
         <strong>{t("settings.n8n_flows_title", locale)}</strong>
         <div class="integration-callout__detail">
@@ -136,7 +136,7 @@ const locale = Astro.props.locale || "en"
         <!-- Deployment status -->
         <div id="nodered-deploy-status" style="margin: 8px 0; display: none;">
           <span id="nodered-deploy-badge" class="badge badge-disabled">{t("settings.status_checking", locale)}</span>
-          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost" style="display: none; margin-left: 8px; font-size: 12px;">{t("settings.n8n_open_nr", locale)}</a>
+          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost settings-btn-sm" style="display: none; margin-left: 8px;">{t("settings.n8n_open_nr", locale)}</a>
         </div>
 
         <!-- Deploy result message -->
@@ -144,7 +144,7 @@ const locale = Astro.props.locale || "en"
           <span id="nodered-deploy-message"></span>
         </div>
 
-        <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+        <div class="integration-action-row" style="margin-top: 8px; flex-wrap: wrap;">
           <button type="button" class="btn btn-primary" id="deploy-nodered-flows">{t("settings.n8n_deploy_nr", locale)}</button>
           <button type="button" class="btn btn-ghost" id="copy-nodered-flows">{t("settings.n8n_copy_flow", locale)}</button>
         </div>
