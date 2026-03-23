@@ -390,5 +390,5 @@ function bootDashboardPage(): void {
 bootDashboardPage()
 
 pageLifecycle.onPageLoad(() => {
-  bootDashboardPage()
+  try { bootDashboardPage() } catch (e) { console.error("[Meitheal][dashboard] Boot failed", e) }
 })

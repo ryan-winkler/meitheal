@@ -158,6 +158,7 @@ async function searchCatalog(
 }
 
 pageLifecycle.onPageLoad(() => {
+  try {
   const launcher = document.getElementById("global-search") as HTMLInputElement | null
   const overlay = document.getElementById("search-hub-overlay") as HTMLDivElement | null
   const panel = overlay?.querySelector(".search-hub-panel") as HTMLElement | null
@@ -492,4 +493,5 @@ pageLifecycle.onPageLoad(() => {
     })
 
   updateScopeUI()
+  } catch (e) { console.error("[Meitheal][search] Boot failed", e) }
 })

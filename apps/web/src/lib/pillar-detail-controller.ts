@@ -402,4 +402,6 @@ function boot(signal: AbortSignal) {
   }, { signal })
 }
 
-pageLifecycle.onPageLoad(boot)
+pageLifecycle.onPageLoad((signal) => {
+  try { boot(signal) } catch (e) { console.error("[Meitheal][pillar-detail] Boot failed", e) }
+})

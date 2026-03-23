@@ -449,5 +449,5 @@ function bootHabitsPage(): void {
 bootHabitsPage()
 
 pageLifecycle.onPageLoad(() => {
-  bootHabitsPage()
+  try { bootHabitsPage() } catch (e) { console.error("[Meitheal][habits] Boot failed", e) }
 })

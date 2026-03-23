@@ -101,5 +101,7 @@ function init(signal: AbortSignal) {
   }
 }
 
-pageLifecycle.onPageLoad(init)
+pageLifecycle.onPageLoad((signal) => {
+  try { init(signal) } catch (e) { console.error("[Meitheal][pillars] Boot failed", e) }
+})
 

@@ -1008,5 +1008,5 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
 // =============================================================================
 
 pageLifecycle.onPageLoad(() => {
-  init()
+  try { init() } catch (e) { console.error("[Meitheal][table] Boot failed", e) }
 })

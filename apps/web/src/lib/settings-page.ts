@@ -16,5 +16,5 @@ function bootSettingsPage(): void {
 bootSettingsPage()
 
 pageLifecycle.onPageLoad(() => {
-  bootSettingsPage()
+  try { bootSettingsPage() } catch (e) { console.error("[Meitheal][settings] Boot failed", e) }
 })
