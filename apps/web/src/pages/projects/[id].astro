@@ -768,7 +768,7 @@ const tabs = [
         window.location.reload();
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to save");
+        window.showToast?.(data.error || "Failed to save", "error");
         saveProjectBtn.textContent = "Save Changes";
         saveProjectBtn.disabled = false;
       }
@@ -781,7 +781,8 @@ const tabs = [
   // --- Settings: Delete ---
   const deleteProjectBtn = document.getElementById("delete-proj-btn");
   deleteProjectBtn?.addEventListener("click", async () => {
-    if (!confirm(`Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.`)) return;
+    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.`);
+    if (!confirmed) return;
 
     deleteProjectBtn.disabled = true;
     deleteProjectBtn.textContent = "Deleting…";
@@ -792,7 +793,7 @@ const tabs = [
         window.location.href = "/projects";
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to delete");
+        window.showToast?.(data.error || "Failed to delete", "error");
         deleteProjectBtn.textContent = "Delete Project";
         deleteProjectBtn.disabled = false;
       }

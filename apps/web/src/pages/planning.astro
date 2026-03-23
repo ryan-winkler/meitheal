@@ -413,8 +413,8 @@ const visibleAreas = areas.filter((a: any) =>
         body: JSON.stringify({ name: name.trim(), icon: "🏠", color: "#6366F1" }),
       })
       if (res.ok) window.location.reload()
-      else alert("Failed to create area")
-    } catch { alert("Failed to create area") }
+      else window.showToast?.("Failed to create area", "error")
+    } catch { window.showToast?.("Failed to create area", "error") }
   })
 
   // ─── Create Project dialog ───
@@ -429,7 +429,7 @@ const visibleAreas = areas.filter((a: any) =>
         body: JSON.stringify({ title: title.trim(), icon: "📋", color: "#6366F1" }),
       })
       if (res.ok) window.location.reload()
-      else alert("Failed to create project")
-    } catch { alert("Failed to create project") }
+      else window.showToast?.("Failed to create project", "error")
+    } catch { window.showToast?.("Failed to create project", "error") }
   })
 </script>

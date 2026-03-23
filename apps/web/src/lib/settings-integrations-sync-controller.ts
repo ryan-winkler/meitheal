@@ -64,20 +64,17 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── CalDAV Test ─────
-  const caldavTestBtn = document.getElementById("caldav-test-btn")
+  const caldavTestBtn = document.getElementById("caldav-test-btn") as HTMLButtonElement
   if (caldavTestBtn) {
-    pageLifecycle.on(caldavTestBtn, "click", async () => {
+    pageLifecycle.on(caldavTestBtn, "click", withAsyncButton(caldavTestBtn, async () => {
     const url = (document.getElementById("caldav-url") as HTMLInputElement).value
     const username = (document.getElementById("caldav-username") as HTMLInputElement).value
     const password = (document.getElementById("caldav-password") as HTMLInputElement).value
     const resultEl = document.getElementById("caldav-test-result")
-    const btn = document.getElementById("caldav-test-btn") as HTMLButtonElement
     if (!url || !username || !password) {
       if (resultEl) { resultEl.textContent = "URL, username, and password required"; resultEl.style.color = "var(--color-error)" }
       return
     }
-    btn.textContent = "Testing..."
-    btn.disabled = true
     if (resultEl) { resultEl.textContent = ""; resultEl.style.color = "" }
     try {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", {
@@ -92,11 +89,8 @@ export function initCalendarTodoSettings(): void {
       }
     } catch {
       if (resultEl) { resultEl.textContent = "❌ Request failed"; resultEl.style.color = "var(--color-error)" }
-    } finally {
-      btn.textContent = "Test Connection"
-      btn.disabled = false
     }
-    })
+    }, { loadingText: "Testing…" }))
   }
 
   const saveCalBtn = document.getElementById("save-cal") as HTMLButtonElement
@@ -146,13 +140,10 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── Calendar Sync Now ─────
-  const testCalBtn = document.getElementById("test-cal")
+  const testCalBtn = document.getElementById("test-cal") as HTMLButtonElement
   if (testCalBtn) {
-    pageLifecycle.on(testCalBtn, "click", async () => {
-    const btn = document.getElementById("test-cal") as HTMLButtonElement
+    pageLifecycle.on(testCalBtn, "click", withAsyncButton(testCalBtn, async () => {
     const resultEl = document.getElementById("cal-sync-result")
-    btn.textContent = "Syncing..."
-    btn.disabled = true
     try {
       const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -174,10 +165,8 @@ export function initCalendarTodoSettings(): void {
       if (resultEl) resultEl.textContent = "Sync failed"
       showToast("❌ Calendar sync failed", "error")
     }
-    btn.textContent = "Sync Now"
-    btn.disabled = false
     setTimeout(() => { if (resultEl) resultEl.textContent = "" }, 5000)
-    })
+    }, { loadingText: "Syncing…" }))
   }
 
   // ───── Todo Enable/Disable All ─────
@@ -274,14 +263,10 @@ export function initCalendarTodoSettings(): void {
     }, { loadingText: "Saving…" }))
   }
 
-  // ───── Todo Sync Now ─────
-  const syncTodoBtn = document.getElementById("sync-todo")
+  const syncTodoBtn = document.getElementById("sync-todo") as HTMLButtonElement
   if (syncTodoBtn) {
-    pageLifecycle.on(syncTodoBtn, "click", async () => {
-    const btn = document.getElementById("sync-todo") as HTMLButtonElement
+    pageLifecycle.on(syncTodoBtn, "click", withAsyncButton(syncTodoBtn, async () => {
     const resultEl = document.getElementById("todo-sync-result")
-    btn.textContent = "Syncing..."
-    btn.disabled = true
     try {
       const enabledTodos = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
       const entity = enabledTodos[0] || undefined
@@ -303,10 +288,8 @@ export function initCalendarTodoSettings(): void {
       if (resultEl) resultEl.textContent = "Sync failed"
       showToast("❌ Todo sync failed", "error")
     }
-    btn.textContent = "Sync Now"
-    btn.disabled = false
     setTimeout(() => { if (resultEl) resultEl.textContent = "" }, 5000)
-    })
+    }, { loadingText: "Syncing…" }))
   }
 }
 

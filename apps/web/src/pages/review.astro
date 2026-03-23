@@ -372,12 +372,12 @@ try {
           }
         } else {
           const data = await res.json()
-          alert("Failed: " + (data.error || "Unknown error"))
+          window.showToast?.(data.error || "Unknown error", "error")
           btn.removeAttribute("disabled")
           btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
         }
       } catch {
-        alert("Network error — please try again")
+        window.showToast?.("Network error — please try again", "error")
         btn.removeAttribute("disabled")
         btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
       }
