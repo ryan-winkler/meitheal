@@ -803,7 +803,10 @@ try {
     import { initKanbanArea } from "../lib/kanban-controller"
     import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
     import { initAreaSelector } from "@lib/area-selector-controller"
+    import { createClientLogger } from "@lib/client-logger"
     import { pageLifecycle } from "@lib/page-lifecycle"
+
+    const log = createClientLogger("tasks", "page-init")
 
     pageLifecycle.onPageLoad((signal) => {
       // Each init block is isolated with try/catch to prevent cascade failures.
@@ -812,17 +815,17 @@ try {
       try {
         // Phase 16.1: Unified view switcher (kanban/table/calendar/timeline)
         initTasksViewSwitcher(signal)
-      } catch (e) { console.error("[tasks] View switcher init failed:", e) }
+      } catch (e) { log.error("view switcher init failed", e) }
 
       try {
         // Phase 16.2: Area/space context selector
         initAreaSelector(signal)
-      } catch (e) { console.error("[tasks] Area selector init failed:", e) }
+      } catch (e) { log.error("area selector init failed", e) }
 
       try {
         // Kanban-specific controllers (drag-drop, lanes, touch, keyboard, grouping)
         initKanbanArea(signal)
-      } catch (e) { console.error("[tasks] Kanban area init failed:", e) }
+      } catch (e) { log.error("kanban area init failed", e) }
 
       // ── Fields panel toggle ──────────────────────────────────────────────
       try {
@@ -868,7 +871,7 @@ try {
             fieldsBtn?.focus()
           }
         }, { signal })
-      } catch (e) { console.error("[tasks] Fields panel init failed:", e) }
+      } catch (e) { log.error("fields panel init failed", e) }
 
       // Lanes panel toggle handled by kanban-controller (inside initKanbanArea)
     })

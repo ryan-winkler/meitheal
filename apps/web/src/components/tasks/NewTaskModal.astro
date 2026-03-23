@@ -987,7 +987,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             goalSelect.appendChild(opt);
           });
         }
-      } catch (e) { console.warn("new-task:goals-fetch", e) }
+      } catch (e) { log.warn("goals-fetch error", e) }
     })();
 
     // Use event delegation on document.body to catch all create-task-btn clicks

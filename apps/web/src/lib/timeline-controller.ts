@@ -1,4 +1,5 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
+import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
@@ -25,6 +26,8 @@ import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-pi
  */
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+const ganttLog = createClientLogger("timeline", "gantt")
 
 interface TimelineTask {
   id: string
@@ -347,10 +350,10 @@ async function patchTask(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     })
-    if (!res.ok) console.warn(`[gantt] PATCH /api/tasks/${taskId} → ${res.status}`)
+    if (!res.ok) ganttLog.warn(`PATCH /api/tasks/${taskId} → ${res.status}`)
     return res.ok
   } catch (e) {
-    console.warn("[gantt] PATCH failed:", e)
+    ganttLog.warn("PATCH failed:", e)
     return false
   }
 }
@@ -2386,7 +2389,7 @@ export function initTimelineController(signal: AbortSignal) {
   try {
     tasks = JSON.parse(dataEl.textContent || "[]")
   } catch {
-    console.error("[timeline] Failed to parse task data")
+    ganttLog.error("Failed to parse task data")
     return
   }
 

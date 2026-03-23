@@ -1,3 +1,7 @@
+import { createClientLogger } from "@lib/client-logger"
+
+const log = createClientLogger("ui", "async-button")
+
 /**
  * withAsyncButton — Prevent double-clicks on async actions
  *
@@ -25,7 +29,7 @@ export interface AsyncButtonOptions {
   loadingText?: string
   /** Class to add while the operation is in progress */
   loadingClass?: string
-  /** Callback for errors (defaults to console.warn) */
+  /** Callback for errors (defaults to structured log.warn) */
   onError?: (error: unknown) => void
 }
 
@@ -56,7 +60,7 @@ export function withAsyncButton(
       await handler(e)
     } catch (err) {
       if (onError) onError(err)
-      else console.warn("async-button:error", err)
+      else log.warn("handler error", err)
     } finally {
       button.disabled = false
       if (loadingText && originalText) button.textContent = originalText

@@ -138,6 +138,7 @@ async function generateUniqueSlug(
     if (existing.rows.length === 0) break
     counter++
     slug = `${base}-${counter}`
+    // eslint-disable-next-line no-console — slug collision is rare, server-side only
     console.warn(`[pillars] Slug collision detected for "${name}" — using "${slug}"`)
   }
 
