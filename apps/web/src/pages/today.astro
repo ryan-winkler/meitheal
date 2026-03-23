@@ -271,16 +271,15 @@ const todayCompletionPercent = Math.round(
       </div>
 
       <div class="card today-shell__capture-card">
-        <form id="quick-add-form" style="display: flex; gap: 8px; align-items: center;">
+        <form id="quick-add-form" class="quick-add-form">
           <input
             type="text"
             id="quick-add-input"
-            class="form-input flex-1"
+            class="form-input flex-1 quick-add-input"
             placeholder="Add a task... (try 'shopping: milk, eggs' or 'call dentist tomorrow')"
             autocomplete="off"
-            style="font-size: 14px;"
           />
-          <button type="submit" class="btn btn-primary" style="padding: 8px 16px; white-space: nowrap;">
+          <button type="submit" class="btn btn-primary quick-add-submit">
             Add
           </button>
         </form>
@@ -651,6 +650,18 @@ const todayCompletionPercent = Math.round(
   .today-shell__capture-card {
     margin-bottom: 0;
     padding: 12px 16px;
+  }
+  .quick-add-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .quick-add-input {
+    font-size: 14px;
+  }
+  .quick-add-submit {
+    padding: 8px 16px;
+    white-space: nowrap;
   }
 
   .today-shell__clear-btn {
