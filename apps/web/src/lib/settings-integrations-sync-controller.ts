@@ -5,6 +5,7 @@
  * CalDAV test, manual entity add, Todo hydration, save, sync.
  * All HA-ingress-aware via window.__ingress_path.
  */
+import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -98,10 +99,9 @@ export function initCalendarTodoSettings(): void {
     })
   }
 
-  // ───── Calendar Save ─────
-  const saveCalBtn = document.getElementById("save-cal")
+  const saveCalBtn = document.getElementById("save-cal") as HTMLButtonElement
   if (saveCalBtn) {
-    pageLifecycle.on(saveCalBtn, "click", async () => {
+    pageLifecycle.on(saveCalBtn, "click", withAsyncButton(saveCalBtn, async () => {
     const enabledEntities: string[] = []
     document.querySelectorAll<HTMLInputElement>(".cal-entity-toggle:checked").forEach((cb) => enabledEntities.push(cb.value))
     const syncModes: Record<string, string> = {}
@@ -115,9 +115,6 @@ export function initCalendarTodoSettings(): void {
     const caldavPassword = (document.getElementById("caldav-password") as HTMLInputElement).value
     const writeBack = (document.getElementById("cal-write-back") as HTMLInputElement)?.checked ?? false
     const intervalMs = Number((document.getElementById("cal-sync-interval") as HTMLSelectElement)?.value ?? "300000")
-    const btn = document.getElementById("save-cal") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
     await saveSetting("calendar_entities", enabledEntities)
     await saveSetting("calendar_entity", enabledEntities[0] ?? "")
     await saveSetting("calendar_sync_enabled", enabledEntities.length > 0 ? "true" : "false")
@@ -143,11 +140,9 @@ export function initCalendarTodoSettings(): void {
       statusEl.textContent = enabledEntities.length > 0 ? `${enabledEntities.length} syncing` : "Disabled"
       statusEl.className = enabledEntities.length > 0 ? "badge badge-active" : "badge badge-pending"
     }
-    btn.textContent = "Save Calendar Settings"
-    btn.disabled = false
     showToast("settings.calendar_saved")
     updateCalCountBadge()
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // ───── Calendar Sync Now ─────
@@ -252,17 +247,13 @@ export function initCalendarTodoSettings(): void {
     })
   }
 
-  // ───── Todo Save ─────
-  const saveTodoBtn = document.getElementById("save-todo")
+  const saveTodoBtn = document.getElementById("save-todo") as HTMLButtonElement
   if (saveTodoBtn) {
-    pageLifecycle.on(saveTodoBtn, "click", async () => {
+    pageLifecycle.on(saveTodoBtn, "click", withAsyncButton(saveTodoBtn, async () => {
     const enabled = (document.getElementById("todo-enabled") as HTMLInputElement).checked
     const enabledEntities = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
     const direction = (document.getElementById("todo-sync-direction") as HTMLSelectElement).value
     if (enabled && enabledEntities.length === 0) { showToast("Enable at least one todo list, or disable sync", "error"); return }
-    const btn = document.getElementById("save-todo") as HTMLButtonElement
-    btn.textContent = "Saving..."
-    btn.disabled = true
     await saveSetting("todo_sync_enabled", enabled)
     await saveSetting("todo_entities", enabledEntities)
     await saveSetting("todo_entity", enabledEntities[0] || "")
@@ -279,10 +270,8 @@ export function initCalendarTodoSettings(): void {
       statusEl.textContent = enabled ? `${enabledEntities.length} syncing` : "Disabled"
       statusEl.className = enabled ? "badge badge-active" : "badge badge-pending"
     }
-    btn.textContent = "Save Todo Settings"
-    btn.disabled = false
     showToast("settings.todo_saved")
-    })
+    }, { loadingText: "Saving…" }))
   }
 
   // ───── Todo Sync Now ─────
