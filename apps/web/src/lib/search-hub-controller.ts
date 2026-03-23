@@ -157,7 +157,7 @@ async function searchCatalog(
   return response.json() as Promise<SearchResponse>
 }
 
-pageLifecycle.onPageLoad(() => {
+pageLifecycle.onPageLoad((signal) => {
   try {
   const launcher = document.getElementById("global-search") as HTMLInputElement | null
   const overlay = document.getElementById("search-hub-overlay") as HTMLDivElement | null
@@ -427,27 +427,27 @@ pageLifecycle.onPageLoad(() => {
     launcherEl.addEventListener("focus", () => {
       if (suppressLauncherFocus) return
       openHub()
-    })
-    launcherEl.addEventListener("click", () => openHub())
+    }, { signal })
+    launcherEl.addEventListener("click", () => openHub(), { signal })
     launcherEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
         openHub()
       }
-    })
+    }, { signal })
   }
 
-  closeButtonEl.addEventListener("click", closeHub)
+  closeButtonEl.addEventListener("click", closeHub, { signal })
   overlayEl.addEventListener("click", (event) => {
     if (event.target === overlayEl) closeHub()
-  })
+  }, { signal })
 
   inputEl.addEventListener("input", () => {
     if (searchTimer) clearTimeout(searchTimer)
     searchTimer = setTimeout(() => {
       void refreshResults()
     }, 120)
-  })
+  }, { signal })
 
   inputEl.addEventListener("keydown", (event) => {
     if (event.key === "ArrowDown") {
@@ -469,14 +469,14 @@ pageLifecycle.onPageLoad(() => {
       event.preventDefault()
       closeHub()
     }
-  })
+  }, { signal })
 
   scopeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       activeScope = (button.dataset.scope as SearchScope) || "all"
       updateScopeUI()
       void refreshResults()
-    })
+    }, { signal })
   })
 
   ;[
@@ -489,7 +489,7 @@ pageLifecycle.onPageLoad(() => {
     .forEach((element) => {
       element?.addEventListener("change", () => {
         void refreshResults()
-      })
+      }, { signal })
     })
 
   updateScopeUI()

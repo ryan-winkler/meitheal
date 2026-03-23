@@ -459,6 +459,9 @@
 
         // Phase 13: Universal event listeners — reload page when tasks or navigation change.
         // Establishes event bus pattern. Future phases can intercept for targeted DOM updates.
-        const reloadOnEvent = () => window.location.reload()
-        document.addEventListener("meitheal:tasks-changed", reloadOnEvent)
-        document.addEventListener("meitheal:navigation-changed", reloadOnEvent)
+        // Moved inside layout init to use global lifecycle — these are permanent per session.
+        pageLifecycle.onPageLoad((signal) => {
+          const reloadOnEvent = () => window.location.reload()
+          document.addEventListener("meitheal:tasks-changed", reloadOnEvent, { signal })
+          document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })
+        })
