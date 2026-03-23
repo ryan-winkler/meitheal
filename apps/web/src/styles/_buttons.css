@@ -127,6 +127,15 @@
   color: var(--text-primary);
 }
 
+.btn-icon:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.btn-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .btn-danger {
   background: var(--danger);
   color: #fff;
