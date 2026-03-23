@@ -29,8 +29,8 @@ export function initAISettings(): void {
 
     const saveBtn = document.getElementById("save-ai") as HTMLButtonElement
     if (!saveBtn) return
-    const origText = saveBtn.innerHTML
-    saveBtn.innerHTML = "💾 Saving..."
+    const origText = saveBtn.textContent
+    saveBtn.textContent = "💾 Saving..."
     saveBtn.disabled = true
 
     await saveSetting("ai-provider", provider)
@@ -40,7 +40,7 @@ export function initAISettings(): void {
       localStorage.setItem("meitheal-ai-custom-url", customUrl)
     }
 
-    saveBtn.innerHTML = origText
+    saveBtn.textContent = origText
     saveBtn.disabled = false
     showToast("settings.ai_saved")
     })
@@ -56,8 +56,8 @@ export function initAISettings(): void {
 
     const saveBtn = document.getElementById("save-agent-protocols") as HTMLButtonElement
     if (!saveBtn) return
-    const origText = saveBtn.innerHTML
-    saveBtn.innerHTML = "💾 Saving..."
+    const origText = saveBtn.textContent
+    saveBtn.textContent = "💾 Saving..."
     saveBtn.disabled = true
 
     await saveSetting("agent-protocols-a2a-enabled", a2a)
@@ -72,7 +72,7 @@ export function initAISettings(): void {
       statusEl.className = anyEnabled ? "badge badge-active" : "badge badge-pending"
     }
 
-    saveBtn.innerHTML = origText
+    saveBtn.textContent = origText
     saveBtn.disabled = false
     showToast("settings.agent_protocols_saved")
     })

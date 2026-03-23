@@ -968,9 +968,11 @@ const taskKinds = [
         <span class="stree__count" data-project-task-count="${projectId}">0</span>
         <div class="stree__actions">
           <button type="button" class="stree__action-btn" data-project-menu="${projectId}"
-            data-project-title="${title}" data-project-color="${color}" data-project-icon-value="${icon}">⋯</button>
+            data-project-title="${title}" data-project-color="${color}" data-project-icon-value="${icon}"
+            title="Project options" aria-label="Project options - ${title}">⋯</button>
           <button type="button" class="stree__action-btn stree__action-btn--add"
-            data-task-add-project="${projectId}" data-task-add-name="${title}">+</button>
+            data-task-add-project="${projectId}" data-task-add-name="${title}"
+            title="Add task" aria-label="Add task to ${title}">+</button>
         </div>
       `
       // Mark previous last project as no longer last
@@ -1007,9 +1009,11 @@ const taskKinds = [
           <span class="stree__area-name">${name}</span>
           <div class="stree__actions">
             <button type="button" class="stree__action-btn" data-area-menu="${areaId}"
-              data-area-name="${name}" data-area-color="${color}" data-area-icon="${icon}">⋯</button>
+              data-area-name="${name}" data-area-color="${color}" data-area-icon="${icon}"
+              title="Area options" aria-label="Area options - ${name}">⋯</button>
             <button type="button" class="stree__action-btn stree__action-btn--add"
-              data-area-add="${areaId}">+</button>
+              data-area-add="${areaId}"
+              title="New project" aria-label="New project in ${name}">+</button>
           </div>
         </div>
         <div class="stree__children" data-area-projects="${areaId}">
