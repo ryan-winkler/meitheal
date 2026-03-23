@@ -116,11 +116,11 @@ const locale = Astro.props.locale || "en"
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
             <strong>{t("settings.n8n_ha_bus", locale)}</strong>
-            <div class="integration-callout__detail" id="n8n-ha-bus-status" style="margin-top: 4px;">{t("settings.status_checking", locale)}</div>
+            <div class="integration-callout__detail mt-1" id="n8n-ha-bus-status">{t("settings.status_checking", locale)}</div>
           </div>
           <div style="text-align: right;">
             <strong>{t("settings.n8n_ha_version", locale)}</strong>
-            <div class="integration-callout__detail" id="n8n-ha-version" style="margin-top: 4px;">—</div>
+            <div class="integration-callout__detail mt-1" id="n8n-ha-version">—</div>
           </div>
         </div>
       </div>
@@ -227,11 +227,11 @@ const locale = Astro.props.locale || "en"
         <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
           <div>
             <strong>{t("settings.n8n_status_label", locale)}</strong>
-            <div class="integration-callout__detail" id="n8n-health-detail" style="margin-top: 4px;">{t("settings.n8n_waiting_config", locale)}</div>
+            <div class="integration-callout__detail mt-1" id="n8n-health-detail">{t("settings.n8n_waiting_config", locale)}</div>
           </div>
           <div style="text-align: right;">
             <strong>{t("settings.n8n_last_delivery", locale)}</strong>
-            <div class="integration-callout__detail" id="n8n-last-delivery" style="margin-top: 4px;">{t("settings.n8n_never_sent", locale)}</div>
+            <div class="integration-callout__detail mt-1" id="n8n-last-delivery">{t("settings.n8n_never_sent", locale)}</div>
           </div>
         </div>
       </div>

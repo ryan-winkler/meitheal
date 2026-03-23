@@ -82,14 +82,13 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         <a
           href="/api/export/settings.json"
           download
-          class="btn btn-secondary"
+          class="btn btn-secondary flex-1 text-center no-underline"
           id="export-settings-btn"
-          style="flex: 1; text-align: center; text-decoration: none;"
           >{t("settings.export_config", locale)}</a
         >
         <label
-          class="btn btn-secondary"
-          style="flex: 1; text-align: center; cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center;"
+          class="btn btn-secondary flex-1 text-center no-underline"
+          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center;"
         >
           {t("settings.import_config", locale)}
           <input
