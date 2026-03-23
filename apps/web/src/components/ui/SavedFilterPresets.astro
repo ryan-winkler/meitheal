@@ -60,6 +60,7 @@ const { class: className } = Astro.props
 
 <script>
   import { confirmDialog } from "@lib/confirm-dialog"
+  import { promptDialog } from "@lib/prompt-dialog"
   import { createClientLogger } from "@lib/client-logger"
 
   const log = createClientLogger("tasks", "saved-presets")
@@ -163,8 +164,8 @@ const { class: className } = Astro.props
     }
 
     async function saveCurrentFilters() {
-      const name = prompt("Preset name:")
-      if (!name || !name.trim()) return
+      const name = await promptDialog({ title: "Save Filter Preset", placeholder: "Preset name", required: true })
+      if (!name) return
 
       // Gather current filter state from URL
       const params = new URLSearchParams(window.location.search)

@@ -2,6 +2,7 @@
 //   attachStrategicLens
 
         import { confirmDialog } from "@lib/confirm-dialog";
+        import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -431,8 +432,8 @@
             addBtn?.addEventListener(
               "click",
               async () => {
-                const title = prompt("Area name:");
-                if (!title?.trim()) return;
+                const title = await promptDialog({ title: "Create Area", placeholder: "Area name", required: true });
+                if (!title) return;
                 try {
                   const res = await fetch(
                     (window.__ingress_path || "") + "/api/areas",

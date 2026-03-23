@@ -23,6 +23,7 @@
 import { taskApi } from "@lib/task-api-client"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
+import { promptDialog } from "@lib/prompt-dialog"
 import { showToast } from "@lib/toast"
 import {
   startTriage,
@@ -634,8 +635,8 @@ async function assignQ3(page: HTMLElement) {
   const tasks = q3Zone.querySelectorAll<HTMLElement>(".tli")
   if (tasks.length === 0) return
 
-  const assignee = prompt("Assign all Delegate tasks to:")
-  if (!assignee || !assignee.trim()) return
+  const assignee = await promptDialog({ title: "Assign Delegate Tasks", placeholder: "Assignee name", required: true })
+  if (!assignee) return
 
   let successCount = 0
 

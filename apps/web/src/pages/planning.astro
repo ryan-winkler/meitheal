@@ -401,16 +401,18 @@ const visibleAreas = areas.filter((a: any) =>
 </style>
 
 <script>
+  import { promptDialog } from "@lib/prompt-dialog"
+
   // ─── Create Area dialog ───
   const createAreaBtn = document.getElementById("create-area-btn")
   createAreaBtn?.addEventListener("click", async () => {
-    const name = prompt("New area name:")
-    if (!name?.trim()) return
+    const name = await promptDialog({ title: "Create Area", placeholder: "Area name", required: true })
+    if (!name) return
     try {
       const res = await fetch("/api/areas", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), icon: "🏠", color: "#6366F1" }),
+        body: JSON.stringify({ name, icon: "🏠", color: "#6366F1" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create area", "error")
@@ -420,13 +422,13 @@ const visibleAreas = areas.filter((a: any) =>
   // ─── Create Project dialog ───
   const createProjectBtn = document.getElementById("create-project-btn")
   createProjectBtn?.addEventListener("click", async () => {
-    const title = prompt("New project title:")
-    if (!title?.trim()) return
+    const title = await promptDialog({ title: "Create Project", placeholder: "Project title", required: true })
+    if (!title) return
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), icon: "📋", color: "#6366F1" }),
+        body: JSON.stringify({ title, icon: "📋", color: "#6366F1" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create project", "error")

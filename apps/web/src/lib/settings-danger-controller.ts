@@ -5,6 +5,7 @@
  * All destructive operations require confirmation dialogs.
  */
 import { confirmDialog } from "@lib/confirm-dialog"
+import { promptDialog } from "@lib/prompt-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
@@ -118,8 +119,14 @@ export function initDangerZoneSettings(): void {
       confirmText: "Purge Everything",
     })
     if (!ok) return
-    const typed = prompt("Type YES to confirm purge:")
-    if (typed?.toUpperCase() !== "YES") {
+    const typed = await promptDialog({
+      title: "Final Confirmation",
+      message: "Type YES to confirm purge",
+      placeholder: "YES",
+      confirmText: "Purge",
+      validate: (v) => v.toUpperCase() !== "YES" ? "You must type YES to confirm" : "",
+    })
+    if (!typed) {
       showToast("settings.purge_cancelled", "error")
       return
     }

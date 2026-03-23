@@ -29,6 +29,16 @@ interface MeithealWindowExtensions {
     cancelText?: string;
     variant?: "danger" | "warning" | "default";
   }) => Promise<boolean>;
+  /** Prompt dialog utility registered by Layout.astro */
+  promptDialog?: (options: {
+    title?: string;
+    message?: string;
+    placeholder?: string;
+    defaultValue?: string;
+    confirmText?: string;
+    cancelText?: string;
+    required?: boolean;
+  }) => Promise<string | null>;
 
   // === App State ===
   /** Currently active board ID for filtering */

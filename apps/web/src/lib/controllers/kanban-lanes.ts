@@ -12,6 +12,7 @@
  */
 
 import { createClientLogger } from "@lib/client-logger"
+import { promptDialog } from "@lib/prompt-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 
 const log = createClientLogger("kanban-lanes")
@@ -163,8 +164,8 @@ export function initLaneManagementPanel(): void {
       const currentLabel = editButton.dataset.label ?? ""
       if (!laneId) return
 
-      const newName = window.prompt("Rename lane:", currentLabel)
-      if (!newName?.trim()) return
+      const newName = await promptDialog({ title: "Rename Lane", placeholder: "Lane name", defaultValue: currentLabel, required: true })
+      if (!newName) return
 
       try {
         await fetch(`/api/lanes/${laneId}`, {
