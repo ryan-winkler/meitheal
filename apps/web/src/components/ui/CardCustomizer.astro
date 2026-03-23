@@ -43,7 +43,7 @@ const { class: className } = Astro.props
 
     <div class="card-customizer__divider"></div>
 
-    <span class="card-customizer__section-label" style="padding: 0.5rem 0.75rem 0;">Visible Fields</span>
+    <span class="card-customizer__section-label card-customizer__section-label--padded">Visible Fields</span>
     <ul class="card-customizer__list" id="card-customizer-list">
       <!-- Populated by JS -->
     </ul>
@@ -132,6 +132,9 @@ const { class: className } = Astro.props
   letter-spacing: 0.05em;
   color: var(--text-muted);
   margin-bottom: 0.375rem;
+}
+.card-customizer__section-label--padded {
+  padding: 0.5rem 0.75rem 0;
 }
 .card-customizer__density-group {
   display: flex;

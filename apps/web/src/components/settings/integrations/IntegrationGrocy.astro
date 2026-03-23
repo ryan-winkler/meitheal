@@ -65,7 +65,7 @@ const locale = Astro.props.locale || "en"
             id="help-grocy-key"
           />
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div class="flex gap-2 items-center">
           <input type="password" class="form-input" id="grocy-key" placeholder="••••••••" style="flex: 1;" />
           <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title={t("settings.grocy_auto_key_title", locale)}>{t("settings.grocy_auto_key", locale)}</button>
         </div>
@@ -108,7 +108,7 @@ const locale = Astro.props.locale || "en"
 
       <!-- Last synced info -->
       <div class="form-group" id="grocy-sync-info" style="display: none;">
-        <div class="integration-callout integration-callout--info" style="margin: 0;">
+        <div class="integration-callout integration-callout--info m-0">
           <span id="grocy-last-synced">{t("settings.grocy_never_synced", locale)}</span>
           <span id="grocy-item-count" style="margin-left: auto; font-size: 12px; opacity: 0.7;"></span>
         </div>
