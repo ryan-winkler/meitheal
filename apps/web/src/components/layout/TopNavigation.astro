@@ -43,7 +43,7 @@ const { locale, hideGlobalSearch = false } = Astro.props;
         </div>
         <input
           type="search"
-          class="search-input w-full bg-bg-secondary/50 border border-border rounded-lg py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-bg-primary transition-all placeholder:text-text-muted"
+          class="search-input w-full bg-bg-secondary/50 border border-border rounded-lg py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-bg-primary transition-[background,border-color,box-shadow] placeholder:text-text-muted"
           id="global-search"
           placeholder={t("topbar.search_placeholder", locale)}
           aria-label={t("topbar.search_placeholder", locale)}

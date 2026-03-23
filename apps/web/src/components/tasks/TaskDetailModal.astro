@@ -51,7 +51,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
 
         <!-- Progress bar -->
         <div id="td-progress-bar-container" class="w-full h-1 bg-bg-input hidden">
-          <div id="td-progress-bar-fill" class="h-full bg-accent transition-all duration-300" style="width: 0%"></div>
+          <div id="td-progress-bar-fill" class="h-full bg-accent transition-[width] duration-300" style="width: 0%"></div>
         </div>
 
         <!-- Loading skeleton — shown while task data fetches -->
@@ -269,7 +269,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-2 block">Custom Fields</span>
                 <div id="td-custom-fields" class="space-y-2 mb-2"></div>
                 <div class="relative">
-                  <button id="td-add-cf" type="button" class="text-xs text-text-secondary px-3 py-1.5 rounded bg-bg-input hover:bg-bg-hover border border-border outline-dashed outline-1 outline-transparent hover:outline-border transition-all w-full text-left flex items-center gap-2">
+                  <button id="td-add-cf" type="button" class="text-xs text-text-secondary px-3 py-1.5 rounded bg-bg-input hover:bg-bg-hover border border-border outline-dashed outline-1 outline-transparent hover:outline-border transition-[background,outline-color] w-full text-left flex items-center gap-2">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                       Add Field
                   </button>
@@ -333,7 +333,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
               </div>
               <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
                   <div class="w-full mr-3 h-1.5 bg-bg-card rounded-full overflow-hidden border border-border">
-                    <div id="td-checklist-progress-bar" class="h-full bg-accent transition-all duration-300" style="width:0%"></div>
+                    <div id="td-checklist-progress-bar" class="h-full bg-accent transition-[width] duration-300" style="width:0%"></div>
                   </div>
                   <span class="whitespace-nowrap"><span id="td-checklist-done">0</span>/<span id="td-checklist-total">0</span></span>
               </div>
@@ -381,7 +381,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
                         <span id="td-subtask-progress-label">0/0</span>
                       </div>
                       <div class="w-full h-1.5 bg-bg-input rounded-full overflow-hidden border border-border/50">
-                        <div id="td-subtask-progress-bar" class="h-full bg-accent transition-all duration-300 rounded-full" style="width:0%"></div>
+                        <div id="td-subtask-progress-bar" class="h-full bg-accent transition-[width] duration-300 rounded-full" style="width:0%"></div>
                       </div>
                     </div>
                     <div id="td-add-subtask">
@@ -433,7 +433,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
           <!-- SIDEBAR (PROPERTIES) COLUMN -->
           <aside class="w-full md:w-[320px] bg-bg-card/30 backdrop-blur-md border-t md:border-t-0 md:border-l border-white/5 px-6 py-6 flex-none flex flex-col gap-6">
             
-            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5 td-done-btn">
+            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-[background,transform] flex items-center justify-center gap-2 hover:-translate-y-0.5 td-done-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 Mark as Done
             </button>
@@ -461,7 +461,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
               <div class="flex gap-3 items-start relative mt-6">
                 <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
                 <div class="flex-1">
-                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-all" placeholder="Add a comment... Press Cmd+Enter to submit"></textarea>
+                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" placeholder="Add a comment... Press Cmd+Enter to submit"></textarea>
                     <div class="flex justify-end items-center gap-3 mt-2">
                       <span class="text-[10px] text-text-muted hidden md:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
                       <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>
@@ -482,7 +482,7 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
             <!-- Strategic Actions -->
             <div class="mt-auto pt-6">
                  <div id="td-strategic-badge" class="mb-3 hidden"></div>
-                 <button id="td-evaluate-btn" class="w-full text-left px-3 py-2.5 text-sm rounded-lg bg-bg-input hover:bg-bg-hover border border-border/50 hover:border-border transition-all flex justify-between items-center group shadow-sm text-text-primary">
+                 <button id="td-evaluate-btn" class="w-full text-left px-3 py-2.5 text-sm rounded-lg bg-bg-input hover:bg-bg-hover border border-border/50 hover:border-border transition-[background,border-color] flex justify-between items-center group shadow-sm text-text-primary">
                    <div class="flex items-center gap-2">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                         <span class="font-medium">Strategic Lens</span>
