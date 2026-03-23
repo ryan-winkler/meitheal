@@ -350,6 +350,7 @@ const statusLabels: Record<string, string> = {
 </style>
 
 <script>
+  import { confirmDialog } from "@lib/confirm-dialog"
   // --- Inline goal creation form ---
   const createBtn = document.getElementById("new-goal-btn");
   let formVisible = false;
@@ -494,7 +495,8 @@ const statusLabels: Record<string, string> = {
 
     // Delete
     if (btn.classList.contains("goal-delete-btn")) {
-      if (!confirm("Delete this goal? This cannot be undone.")) return;
+      const confirmed = await confirmDialog({ message: "Delete this goal? This cannot be undone.", variant: "danger", confirmText: "Delete" });
+      if (!confirmed) return;
       btn.disabled = true;
       try {
         const r = await fetch(base, { method: "DELETE" });

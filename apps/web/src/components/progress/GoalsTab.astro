@@ -297,6 +297,7 @@ const statusLabels: Record<string, string> = {
 </style>
 
 <script>
+  import { confirmDialog } from "@lib/confirm-dialog"
   import { pageLifecycle } from "@lib/page-lifecycle"
 
   pageLifecycle.onPageLoad(() => {
@@ -411,7 +412,8 @@ const statusLabels: Record<string, string> = {
       const base = `/api/goals/${goalId}`
 
       if (btn.classList.contains("goals-tab__delete-btn")) {
-        if (!confirm("Delete this goal? This cannot be undone.")) return
+        const confirmed = await confirmDialog({ message: "Delete this goal? This cannot be undone.", variant: "danger", confirmText: "Delete" })
+        if (!confirmed) return
         btn.disabled = true
         try {
           const r = await fetch(base, { method: "DELETE" })

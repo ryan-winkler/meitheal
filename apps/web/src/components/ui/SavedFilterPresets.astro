@@ -59,6 +59,7 @@ const { class: className } = Astro.props
 </div>
 
 <script>
+  import { confirmDialog } from "@lib/confirm-dialog"
   import { createClientLogger } from "@lib/client-logger"
 
   const log = createClientLogger("tasks", "saved-presets")
@@ -191,7 +192,8 @@ const { class: className } = Astro.props
     }
 
     async function deletePreset(id: string) {
-      if (!confirm("Delete this preset?")) return
+      const confirmed = await confirmDialog({ message: "Delete this preset?", confirmText: "Delete" })
+      if (!confirmed) return
       try {
         await fetch(`/api/saved-filters?id=${id}`, { method: "DELETE" })
         await fetchPresets()

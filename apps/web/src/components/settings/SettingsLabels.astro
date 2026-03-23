@@ -89,6 +89,7 @@ const { locale } = Astro.props
 </style>
 
 <script>
+  import { confirmDialog } from "@lib/confirm-dialog"
   import { showToast } from "@lib/toast"
   import { pageLifecycle } from "@lib/page-lifecycle"
 
@@ -248,7 +249,8 @@ const { locale } = Astro.props
         pageLifecycle.on(btn, "click", async () => {
           const id = btn.dataset.id
           if (!id) return
-          if (!confirm(`Delete label? This will remove it from all tasks.`)) return
+          const confirmed = await confirmDialog({ message: "Delete label? This will remove it from all tasks.", variant: "danger", confirmText: "Delete" })
+          if (!confirmed) return
           try {
             const res = await fetch(ingressBase + `/api/labels/${id}`, { method: "DELETE" })
             if (res.ok) {

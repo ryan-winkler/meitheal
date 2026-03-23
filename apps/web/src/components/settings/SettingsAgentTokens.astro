@@ -287,6 +287,7 @@ const scopeGroups = [
 </style>
 
 <script>
+  import { confirmDialog } from "@lib/confirm-dialog"
   import { showToast } from "@lib/toast"
   import { pageLifecycle } from "@lib/page-lifecycle"
 
@@ -493,7 +494,8 @@ const scopeGroups = [
 
   // ── Revoke & Delete ──
   async function revokeToken(id: string) {
-    if (!confirm("Revoke this token? It will immediately stop working.")) return
+    const confirmed = await confirmDialog({ message: "Revoke this token? It will immediately stop working.", variant: "warning", confirmText: "Revoke" })
+    if (!confirmed) return
     try {
       const res = await fetch(ingressBase + "/api/agent-tokens", {
         method: "DELETE",
@@ -512,7 +514,8 @@ const scopeGroups = [
   }
 
   async function deleteToken(id: string) {
-    if (!confirm("Permanently delete this token? This cannot be undone.")) return
+    const deleteConfirmed = await confirmDialog({ message: "Permanently delete this token? This cannot be undone.", variant: "danger", confirmText: "Delete" })
+    if (!deleteConfirmed) return
     try {
       const res = await fetch(ingressBase + "/api/agent-tokens", {
         method: "DELETE",
