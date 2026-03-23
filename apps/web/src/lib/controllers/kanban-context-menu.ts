@@ -4,6 +4,7 @@
  * @domain kanban
  * @kcs Extracted from kanban-controller.ts for decomposition.
  */
+import { confirmDialog } from "@lib/confirm-dialog"
 
 /**
  * Initialise the context menu for kanban card "More" (⋯) buttons.
@@ -60,7 +61,8 @@ export function initContextMenu(
         closeMenu()
 
         if (action === "delete") {
-          if (!confirm("Delete this task permanently?")) return
+          const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete" })
+          if (!confirmed) return
           try {
             const res = await fetch(buildTaskApiUrl(id), { method: "DELETE" })
             if (res.ok) {

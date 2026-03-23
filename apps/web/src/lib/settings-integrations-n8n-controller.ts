@@ -7,6 +7,7 @@
  * n8n mode tab switching, and n8n settings restore.
  */
 import { withAsyncButton } from "@lib/async-button"
+import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -116,7 +117,8 @@ export function initN8nSettings(): void {
     const badge = document.getElementById("nodered-deploy-badge")
     if (!btn) return
     if (badge && badge.classList.contains("badge-success")) {
-      if (!confirm("This will replace existing Meitheal flows in Node-RED. Continue?")) return
+      const confirmed = await confirmDialog({ message: "This will replace existing Meitheal flows in Node-RED. Continue?", variant: "warning", confirmText: "Replace" })
+      if (!confirmed) return
     }
     btn.textContent = "🔄 Deploying..."
     btn.disabled = true

@@ -1,3 +1,4 @@
+import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { createClientLogger } from "@lib/client-logger"
@@ -178,7 +179,8 @@ async function completeHabit(habitId: string): Promise<void> {
 }
 
 async function deleteHabit(habitId: string): Promise<void> {
-  if (!window.confirm("Delete this habit? Associated tasks stay in your task history.")) {
+  const confirmed = await confirmDialog({ message: "Delete this habit? Associated tasks stay in your task history.", variant: "danger", confirmText: "Delete" })
+  if (!confirmed) {
     return
   }
 

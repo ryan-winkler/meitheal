@@ -9,6 +9,7 @@
  * @domain pillars
  * @phase 20 — Pillars UX Optimization
  */
+import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 
@@ -252,7 +253,8 @@ async function toggleNonNegotiable(principleId: string) {
 
 async function deletePillar() {
   if (!currentPillar) return
-  if (!confirm(`Delete "${currentPillar.name}"? This cannot be undone.`)) return
+  const confirmed = await confirmDialog({ message: `Delete "${currentPillar.name}"? This cannot be undone.`, variant: "danger", confirmText: "Delete" })
+  if (!confirmed) return
 
   try {
     const resp = await fetch(`/api/pillars/${currentPillar.id}`, { method: "DELETE" })
