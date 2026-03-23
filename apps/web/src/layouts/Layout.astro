@@ -578,7 +578,9 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       <script>
         import "@lib/layout-controller";
         import { initHAThemeBridge } from "@lib/ha-theme-bridge";
+        import { initGlobalErrorHandler } from "@lib/global-error-handler";
         initHAThemeBridge();
+        initGlobalErrorHandler();
       </script>
 
       <script>
