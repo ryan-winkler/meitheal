@@ -76,7 +76,7 @@ const locale = Astro.props.locale || "en"
     </div>
 
     <!-- Test Connection -->
-    <div class="integration-card__config" style="margin-top: 8px;">
+    <div class="integration-card__config form-group--spaced">
       <div class="integration-card__actions">
         <button type="button" class="btn btn-ghost" id="test-connection">
           {t("settings.test_connection", locale)}
@@ -112,11 +112,11 @@ const locale = Astro.props.locale || "en"
             id="ha-token"
             placeholder="••••••••"
           />
-          <small style="color: var(--text-muted); font-size: 12px;">
+          <small class="settings-hint">
             {t("settings.ha_token_desc", locale)}
           </small>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div class="integration-action-row">
           <button type="submit" class="btn btn-primary" id="save-ha">
             💾 Save
           </button>

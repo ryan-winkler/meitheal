@@ -52,7 +52,7 @@ const locale = Astro.props.locale || "en"
     <div id="todo-entities-list" style="display: none; margin-bottom: 12px;">
       <div class="cal-entities-header">
         <div>
-          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">{t("settings.todo_your_lists", locale)}</label>
+          <label class="form-label settings-text-xs" style="margin-bottom: 0;">{t("settings.todo_your_lists", locale)}</label>
           <span id="todo-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
         </div>
         <div class="cal-bulk-actions">
@@ -60,7 +60,7 @@ const locale = Astro.props.locale || "en"
           <button type="button" class="btn btn-ghost btn-xs" id="todo-disable-all" title={t("settings.todo_disable_all", locale)}>{t("settings.todo_disable_all", locale)}</button>
         </div>
       </div>
-      <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 8px;">
+      <p class="integration-hint">
         {t("settings.todo_toggle_desc", locale)}
       </p>
       <div id="todo-entities-container" class="cal-toggle-list"></div>
@@ -76,7 +76,7 @@ const locale = Astro.props.locale || "en"
         <span>{t("settings.todo_manual_title", locale)}</span>
         <small>{t("settings.todo_manual_desc", locale)}</small>
       </summary>
-      <div class="form-group" style="margin-top: 10px;">
+      <div class="form-group form-group--spaced">
         <div class="form-label-row">
           <label class="form-label" for="todo-entity-manual">{t("settings.todo_entity_label", locale)}</label>
           <HelpTooltip
@@ -85,7 +85,7 @@ const locale = Astro.props.locale || "en"
           />
         </div>
         <input type="text" class="form-input" id="todo-entity-manual" placeholder="todo.shopping_list" />
-        <button type="button" class="btn btn-ghost" id="todo-add-manual" style="margin-top: 6px; font-size: 12px;">
+        <button type="button" class="btn btn-ghost settings-btn-sm" id="todo-add-manual">
           {t("settings.todo_add_manual", locale)}
         </button>
       </div>
@@ -105,7 +105,7 @@ const locale = Astro.props.locale || "en"
             <input type="checkbox" id="todo-enabled" aria-label={t("settings.todo_enable_sync", locale)} />
             <span class="toggle-slider"></span>
           </label>
-          <span id="todo-enabled-label" style="font-size: 13px; color: var(--text-secondary);">{t("settings.todo_sync_off", locale)}</span>
+          <span id="todo-enabled-label" class="settings-text-sm" style="color: var(--text-secondary);">{t("settings.todo_sync_off", locale)}</span>
         </div>
       </div>
 
@@ -128,7 +128,7 @@ const locale = Astro.props.locale || "en"
         <button type="button" class="btn btn-primary" id="save-todo">{t("settings.save_todo_settings", locale)}</button>
         <button type="button" class="btn btn-ghost" id="sync-todo">{t("settings.sync_now_btn", locale)}</button>
         <span id="todo-sync-result" class="integration-card__result" data-text-success={t("settings.sync_success", locale || "en")} data-text-failed={t("settings.sync_failed", locale || "en")}></span>
-        <span id="todo-last-synced" class="integration-card__last-synced" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
+        <span id="todo-last-synced" class="integration-card__last-synced integration-last-synced"></span>
       </div>
     </div>
   </div>

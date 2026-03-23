@@ -53,7 +53,7 @@ const locale = Astro.props.locale || "en"
     <div id="cal-entities-list" style="display: none; margin-bottom: 12px;">
       <div class="cal-entities-header">
         <div>
-          <label class="form-label" style="font-size: 12px; margin-bottom: 0;">{t("settings.cal_your_calendars", locale)}</label>
+          <label class="form-label settings-text-xs" style="margin-bottom: 0;">{t("settings.cal_your_calendars", locale)}</label>
           <span id="cal-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
         </div>
         <div class="cal-bulk-actions">
@@ -61,7 +61,7 @@ const locale = Astro.props.locale || "en"
           <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title={t("settings.cal_disable_all", locale)}>{t("settings.cal_disable_all", locale)}</button>
         </div>
       </div>
-      <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 8px;">
+      <p class="integration-hint">
         {t("settings.cal_toggle_desc", locale)}
       </p>
       <div id="cal-entities-container" class="cal-toggle-list"></div>
@@ -78,7 +78,7 @@ const locale = Astro.props.locale || "en"
           <span>{t("settings.cal_manual_entity_title", locale)}</span>
           <small>{t("settings.cal_manual_entity_desc", locale)}</small>
         </summary>
-        <div class="form-group" style="margin-top: 10px;">
+        <div class="form-group form-group--spaced">
           <div class="form-label-row">
             <label class="form-label" for="cal-entity">{t("settings.cal_entity_id_label", locale)}</label>
             <HelpTooltip
@@ -87,7 +87,7 @@ const locale = Astro.props.locale || "en"
             />
           </div>
           <input type="text" class="form-input" id="cal-entity-manual" placeholder="calendar.my_calendar" />
-          <button type="button" class="btn btn-ghost" id="cal-add-manual" style="margin-top: 6px; font-size: 12px;">
+          <button type="button" class="btn btn-ghost settings-btn-sm" id="cal-add-manual">
             {t("settings.cal_add_manual", locale)}
           </button>
         </div>
@@ -100,7 +100,7 @@ const locale = Astro.props.locale || "en"
           <small>{t("settings.caldav_desc", locale)}</small>
         </summary>
 
-        <div class="form-group" style="margin-top: 10px;">
+        <div class="form-group form-group--spaced">
           <div class="form-label-row">
             <label class="form-label" for="caldav-url">{t("settings.caldav_url_label", locale)}</label>
             <HelpTooltip
@@ -113,21 +113,21 @@ const locale = Astro.props.locale || "en"
           </small>
         </div>
 
-        <div class="form-group" style="margin-top: 10px;">
+        <div class="form-group form-group--spaced">
           <label class="form-label" for="caldav-username">{t("settings.caldav_username", locale)}</label>
           <input type="text" class="form-input" id="caldav-username" autocomplete="username" placeholder={t("settings.caldav_username_placeholder", locale)} />
         </div>
 
-        <div class="form-group" style="margin-top: 10px;">
+        <div class="form-group form-group--spaced">
           <label class="form-label" for="caldav-password">{t("settings.caldav_password", locale)}</label>
           <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder={t("settings.caldav_password_placeholder", locale)} />
         </div>
 
-        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+        <div class="integration-action-row" style="margin-top: 12px;">
           <button type="button" class="btn btn-secondary" id="caldav-test-btn" style="min-width: 120px;">
             {t("settings.caldav_test_btn", locale)}
           </button>
-          <span id="caldav-test-result" style="font-size: 13px;"></span>
+          <span id="caldav-test-result" class="settings-text-sm"></span>
         </div>
 
         <div id="caldav-active-indicator" class="integration-callout integration-callout--success" style="display: none; margin-top: 12px;">
@@ -139,7 +139,7 @@ const locale = Astro.props.locale || "en"
       </details>
 
       <!-- Sync Direction (global default) -->
-      <div class="form-group" style="margin-top: 10px;">
+      <div class="form-group form-group--spaced">
         <label class="form-label" for="cal-sync-direction">{t("settings.cal_sync_direction_label", locale)}</label>
         <select id="cal-sync-direction" class="form-select">
           <option value="bidirectional" selected>{t("settings.cal_sync_bidirectional", locale)}</option>
@@ -150,7 +150,7 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- Write-back toggle -->
-      <div class="form-group" style="margin-top: 10px;">
+      <div class="form-group form-group--spaced">
         <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
           <input type="checkbox" id="cal-write-back" />
           <span>{t("settings.cal_write_back_label", locale)}</span>
@@ -159,7 +159,7 @@ const locale = Astro.props.locale || "en"
       </div>
 
       <!-- Sync interval selector -->
-      <div class="form-group" style="margin-top: 10px;">
+      <div class="form-group form-group--spaced">
         <label class="form-label" for="cal-sync-interval">{t("settings.cal_sync_interval_label", locale)}</label>
         <select id="cal-sync-interval" class="form-select">
           <option value="60000">{t("settings.cal_sync_1m", locale)}</option>
@@ -176,7 +176,7 @@ const locale = Astro.props.locale || "en"
         <button type="button" class="btn btn-primary" id="save-cal">{t("settings.save_calendar_settings", locale)}</button>
         <button type="button" class="btn btn-ghost" id="test-cal">{t("settings.sync_now_btn", locale)}</button>
         <span id="cal-sync-result" class="integration-card__result" data-text-success={t("settings.sync_success", locale || "en")} data-text-failed={t("settings.sync_failed", locale || "en")}></span>
-        <span id="cal-last-synced" class="integration-card__last-synced" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
+        <span id="cal-last-synced" class="integration-card__last-synced integration-last-synced"></span>
       </div>
     </div>
   </div>

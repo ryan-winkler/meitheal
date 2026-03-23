@@ -131,3 +131,38 @@
   align-items: center;
   gap: 6px;
 }
+
+/* ── Integration Components ────────────────────────────────── */
+
+/** Muted paragraph hint inside integration cards (11px, muted, spaced) */
+.integration-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 8px;
+}
+
+/** Form group with top margin — replaces style="margin-top: 10px" */
+.form-group--spaced {
+  margin-top: 10px;
+}
+
+/** Flex row with small gap — replaces style="display: flex; gap: 8px" */
+.integration-action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/** Small ghost-style button — replaces style="margin-top: 6px; font-size: 12px" */
+.settings-btn-sm {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/** Last-synced timestamp — replaces repeated inline styles */
+.integration-last-synced {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
