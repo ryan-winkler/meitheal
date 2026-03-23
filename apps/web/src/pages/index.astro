@@ -284,7 +284,7 @@ const heroHintHref =
                     statusLabels[String(favorite.status)] ?? String(favorite.status)
 
                   return (
-                    <div class="task-item" data-id={String(favorite.id)} style="cursor:pointer;">
+                    <div class="task-item cursor-pointer" data-id={String(favorite.id)}>
                       <div class="task-title">
                         <span
                           class="priority-dot"
@@ -407,10 +407,9 @@ const heroHintHref =
 
                 return (
                   <div
-                    class="task-item"
+                    class="task-item cursor-pointer"
                     data-id={String(task.id)}
                     data-assigned={String(task.assigned_to ?? "")}
-                    style="cursor:pointer;"
                   >
                     <div class="task-title">
                       <span class="priority-dot" style={`background: ${priorityColor}`} />

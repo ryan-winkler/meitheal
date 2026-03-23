@@ -262,7 +262,7 @@ const { locale } = Astro.props
     <div class="settings-stack">
       <!-- Global toggle -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <label class="toggle-switch" style="flex-shrink: 0;">
+        <label class="toggle-switch shrink-0">
           <input type="checkbox" id="notif-global-toggle" checked />
           <span class="toggle-slider"></span>
         </label>
@@ -285,11 +285,11 @@ const { locale } = Astro.props
         <div class="settings-stack--sm">
           <!-- Sidebar Bell -->
           <div class="settings-row">
-            <label class="toggle-switch" style="flex-shrink: 0;">
+            <label class="toggle-switch shrink-0">
               <input type="checkbox" id="notif-channel-sidebar" checked />
               <span class="toggle-slider"></span>
             </label>
-            <div style="flex: 1;">
+            <div class="flex-1">
               <div style="font-weight: 500; font-size: 13px;">
                 🔔 HA Sidebar Bell
               </div>
@@ -301,11 +301,11 @@ const { locale } = Astro.props
           </div>
           <!-- Mobile Push -->
           <div class="settings-row">
-            <label class="toggle-switch" style="flex-shrink: 0;">
+            <label class="toggle-switch shrink-0">
               <input type="checkbox" id="notif-channel-mobile" />
               <span class="toggle-slider"></span>
             </label>
-            <div style="flex: 1;">
+            <div class="flex-1">
               <div style="font-weight: 500; font-size: 13px;">
                 📱 Mobile Push
               </div>
@@ -333,11 +333,11 @@ const { locale } = Astro.props
           </div>
           <!-- Due-Date Reminders toggle (F12) -->
           <div class="settings-row">
-            <label class="toggle-switch" style="flex-shrink: 0;">
+            <label class="toggle-switch shrink-0">
               <input type="checkbox" id="notif-channel-reminders" checked />
               <span class="toggle-slider"></span>
             </label>
-            <div style="flex: 1;">
+            <div class="flex-1">
               <div style="font-weight: 500; font-size: 13px;">
                 ⏰ Due-Date Reminders
               </div>
