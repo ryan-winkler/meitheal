@@ -1,0 +1,133 @@
+/**
+ * Settings Utility Classes — extracted from repeated inline styles
+ *
+ * Provides semantic CSS classes for common settings panel patterns.
+ * Use these instead of inline styles in settings components.
+ *
+ * @domain settings (presentation)
+ * @kcs Extracted from Phase 26 audit of 220+ inline styles across
+ *      SettingsGeneral, SettingsPersonal, SettingsAppPwa,
+ *      SettingsAgents, IntegrationN8n components.
+ */
+
+/* ── Typography ─────────────────────────────────────────────── */
+
+.settings-label {
+  font-weight: 600;
+  font-size: 13px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.settings-label--inline {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.settings-hint--sm {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.settings-description {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.settings-caption {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.settings-text-sm {
+  font-size: 13px;
+}
+
+.settings-text-xs {
+  font-size: 12px;
+}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.settings-row--simple {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-stack--sm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-stack--xs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-section-divider {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.settings-section-divider--spaced {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+/* ── Form Controls ──────────────────────────────────────────── */
+
+.settings-input-narrow {
+  flex: 1;
+  max-width: 300px;
+}
+
+.settings-input-compact {
+  max-width: 240px;
+}
+
+/* ── Utility ────────────────────────────────────────────────── */
+
+.settings-flex-fill {
+  flex: 1;
+}
+
+.settings-flex-noshrink {
+  flex-shrink: 0;
+}
+
+.settings-link {
+  font-size: 12px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -34,6 +34,7 @@
 @import './_modal.css';
 @import './_labels.css';
 @import './_settings-shared.css';
+@import './settings-utilities.css';
 
 /* 4. Cross-cutting concerns */
 @import './_responsive.css';

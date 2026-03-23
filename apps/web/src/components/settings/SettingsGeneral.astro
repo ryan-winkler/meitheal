@@ -20,13 +20,11 @@ const { locale } = Astro.props
       <div>
         <div
           id="sidebar-item-list"
-          style="display: flex; flex-direction: column; gap: 8px;"
+          class="settings-stack--sm"
         >
           <!-- Populated by JS -->
         </div>
-        <div
-          style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;"
-        >
+        <div class="settings-section-divider--spaced">
           <div style="margin-bottom: 8px; font-weight: 500;">Custom Links</div>
           <div
             id="custom-links-list"
@@ -108,19 +106,18 @@ const { locale } = Astro.props
       title="👤 Users & Assignment"
       subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
     >
-      <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="settings-stack">
         <!-- Default Assignee -->
         <div>
           <label
             for="default-assignee-select"
-            style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;"
+            class="settings-label"
             >Default Assignee</label
           >
           <div style="display: flex; gap: 8px; align-items: center;">
             <select
               id="default-assignee-select"
-              class="form-select"
-              style="flex: 1; max-width: 300px;"
+              class="form-select settings-input-narrow"
               aria-label="Default task assignee"
             >
               <option value="">None (unassigned)</option>
@@ -132,9 +129,7 @@ const { locale } = Astro.props
               style="font-size: 13px;">Save</button
             >
           </div>
-          <p
-            style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"
-          >
+          <p class="settings-hint">
             New tasks will be assigned to this user by default.
           </p>
         </div>
@@ -146,17 +141,14 @@ const { locale } = Astro.props
           </div>
           <div
             id="discovered-users-list"
-            style="display: flex; flex-direction: column; gap: 4px;"
+            class="settings-stack--xs"
           >
-            <span
-              style="color: var(--text-muted); font-size: 12px; font-style: italic;"
-              >Loading…</span
-            >
+            <span class="settings-description">Loading…</span>
           </div>
         </div>
 
         <!-- Custom Users -->
-        <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+        <div class="settings-section-divider">
           <div
             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"
           >
@@ -193,19 +185,18 @@ const { locale } = Astro.props
     title="📊 Kanban Area"
     subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
   >
-    <div style="display: flex; flex-direction: column; gap: 16px;">
+    <div class="settings-stack">
       <!-- Backlog Mode -->
       <div>
         <label
           for="backlog-mode-select"
-          style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;"
+          class="settings-label"
           >Backlog lane</label
         >
         <SettingsActionRow>
           <select
             id="backlog-mode-select"
-            class="form-select"
-            style="flex: 1; max-width: 300px;"
+            class="form-select settings-input-narrow"
             aria-label="Backlog lane mode"
           >
             <option value="visible">📥 Visible (default)</option>
@@ -221,27 +212,26 @@ const { locale } = Astro.props
         </SettingsActionRow>
         <div
           id="backlog-mode-help"
-          style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"
+          class="settings-hint"
         >
           Backlog lane is shown on the Kanban board. Tasks can be placed in
           Backlog.
         </div>
       </div>
 
-      <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+      <div class="settings-section-divider">
       </div>
 
       <div>
         <label
           for="completed-retention-select"
-          style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;"
+          class="settings-label"
           >Completed task retention</label
         >
         <SettingsActionRow>
           <select
             id="completed-retention-select"
-            class="form-select"
-            style="flex: 1; max-width: 300px;"
+            class="form-select settings-input-narrow"
             aria-label="Completed task retention period"
           >
             <option value="7">7 days</option>
@@ -256,7 +246,7 @@ const { locale } = Astro.props
             style="font-size: 13px;">Save</button
           >
         </SettingsActionRow>
-        <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+        <p class="settings-hint">
           Done tasks older than this will be hidden from the Kanban board but
           remain in Table view.
         </p>
@@ -269,7 +259,7 @@ const { locale } = Astro.props
     title="🔔 Notifications"
     subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
   >
-    <div style="display: flex; flex-direction: column; gap: 16px;">
+    <div class="settings-stack">
       <!-- Global toggle -->
       <div style="display: flex; align-items: center; gap: 12px;">
         <label class="toggle-switch" style="flex-shrink: 0;">
@@ -292,11 +282,9 @@ const { locale } = Astro.props
         <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
           Notification channels
         </div>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="settings-stack--sm">
           <!-- Sidebar Bell -->
-          <div
-            style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
-          >
+          <div class="settings-row">
             <label class="toggle-switch" style="flex-shrink: 0;">
               <input type="checkbox" id="notif-channel-sidebar" checked />
               <span class="toggle-slider"></span>
@@ -312,9 +300,7 @@ const { locale } = Astro.props
             </div>
           </div>
           <!-- Mobile Push -->
-          <div
-            style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
-          >
+          <div class="settings-row">
             <label class="toggle-switch" style="flex-shrink: 0;">
               <input type="checkbox" id="notif-channel-mobile" />
               <span class="toggle-slider"></span>
@@ -340,18 +326,13 @@ const { locale } = Astro.props
             </div>
             <div
               id="notif-mobile-target-list"
-              style="display: flex; flex-direction: column; gap: 4px;"
+              class="settings-stack--xs"
             >
-              <span
-                style="color: var(--text-muted); font-size: 12px; font-style: italic;"
-                >Discovering devices…</span
-              >
+              <span class="settings-description">Discovering devices…</span>
             </div>
           </div>
           <!-- Due-Date Reminders toggle (F12) -->
-          <div
-            style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
-          >
+          <div class="settings-row">
             <label class="toggle-switch" style="flex-shrink: 0;">
               <input type="checkbox" id="notif-channel-reminders" checked />
               <span class="toggle-slider"></span>
@@ -394,10 +375,7 @@ const { locale } = Astro.props
         <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">
           Per-user overrides
         </div>
-        <span
-          style="color: var(--text-muted); font-size: 12px; font-style: italic;"
-          >Loading users…</span
-        >
+        <span class="settings-description">Loading users…</span>
       </div>
 
       <button
@@ -416,8 +394,8 @@ const { locale } = Astro.props
     title="⚡ Optional Features"
     subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
   >
-    <div id="feature-toggles-container" style="display: flex; flex-direction: column; gap: 10px;">
-      <span style="color: var(--text-muted); font-size: 12px; font-style: italic;">Loading features…</span>
+    <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
+      <span class="settings-description">Loading features…</span>
     </div>
   </SettingsPanelCard>
 </div>
