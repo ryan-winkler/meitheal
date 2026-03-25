@@ -195,14 +195,10 @@ Both are logged in structured API request logs (`metadata.automation_source`, `m
 
 ## Git Commit Policy
 
-**Commits must not be attributed to the Copilot bot identity.**
-
-- Every commit message produced by an AI agent **must** end with a `Co-authored-by` trailer:
-  ```
-  Co-authored-by: ryan-winkler <ryan-winkler@users.noreply.github.com>
-  ```
-- PRs opened by an AI agent should be **squash-merged** by the human owner so the final commit lands under the human author's identity.
-- Do not push force-authored bot commits directly to `main`.
+- No `Co-authored-by` trailers — commits come from the user's git identity
+- Commit with descriptive messages, never generic "update" messages
+- PRs opened by an AI agent should be **squash-merged** by the human owner so the final commit lands under the human author's identity
+- Do not push force-authored bot commits directly to `main`
 
 ## Deploy Rules
 

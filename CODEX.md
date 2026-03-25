@@ -9,11 +9,8 @@ conventions, commit policy, verification tiers, and deploy rules.
 
 ## Commit Authorship
 
-Every commit must include:
-
-```
-Co-authored-by: ryan-winkler <28455297+ryan-winkler@users.noreply.github.com>
-```
+- No `Co-authored-by` trailers — commits come from the user's git identity
+- Commit with descriptive messages, never generic "update" messages
 
 ## Coding Standards
 
