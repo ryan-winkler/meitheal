@@ -42,6 +42,21 @@ Refer to `AGENTS.md` and the inline docs for full conventions. Key points:
 - Use `./scripts/devcontainer-up.sh` for status, recovery, and logs around that devcontainer environment
 - Do not claim HA integration verification from Tier 1 alone
 
+## GSD Workflow
+
+- Treat `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/STATE.md` as authoritative build context when they exist
+- For non-trivial scoped work already represented in `.planning/`, prefer the GSD lifecycle: discuss -> plan -> execute -> verify
+- Use the workspace prompt files in `.github/prompts/` to delegate to the installed GSD workflows instead of reconstructing those workflows from memory
+- When phase artifacts exist (`*-CONTEXT.md`, `*-RESEARCH.md`, `*-PLAN.md`, `*-SUMMARY.md`, `*-VERIFICATION.md`), follow them exactly and keep the affected planning docs current in the same change set
+- For design-heavy, UX-heavy, or architecture-heavy changes, consult the relevant persona-loop outputs before treating the work as complete
+- Work from repository root where `.planning/` lives when executing GSD-backed workflows
+
+## Memory & Drift
+
+- Use the memory MCP to persist short, verified repo facts and session notes that reduce re-discovery across long GSD cycles
+- Only store validated facts, conventions, or durable decisions; never store secrets, tokens, private keys, or speculative assumptions
+- Update memory after resolving recurring environment or workflow issues so future sessions do not re-debug the same problem
+
 ## Release & Publishing
 
 Meitheal uses a **two-channel release strategy**:

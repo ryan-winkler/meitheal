@@ -1,60 +1,25 @@
 {
   "folders": [
     {
-      "path": ".",
-      "name": "📦 Meitheal Root"
-    },
-    {
-      "path": "meitheal-hub",
-      "name": "🏠 HA Add-on"
-    },
-    {
-      "path": "apps/web",
-      "name": "🌐 Web App"
-    },
-    {
-      "path": "apps/api",
-      "name": "🔌 API"
-    },
-    {
-      "path": "packages/domain-tasks",
-      "name": "📋 Domain: Tasks"
-    },
-    {
-      "path": "packages/domain-strategy",
-      "name": "🎯 Domain: Strategy"
-    },
-    {
-      "path": "packages/domain-auth",
-      "name": "🔐 Domain: Auth"
-    },
-    {
-      "path": "packages/domain-observability",
-      "name": "📊 Domain: Observability"
-    },
-    {
-      "path": "packages/integration-core",
-      "name": "🔗 Integration Core"
-    },
-    {
-      "path": "integrations/home-assistant",
-      "name": "🏡 HA Integration"
-    },
-    {
-      "path": "docs",
-      "name": "📖 Docs"
-    },
-    {
-      "path": "../meitheal-io"
-    },
-    {
-      "path": "../coolock-village-forge"
-    },
-    {
-      "path": "../ryanw-eu"
-    },
-    {
       "path": "../pobal-os"
+    },
+    {
+      "path": "."
+    },
+    {
+      "path": "../coolock-village-org-kit"
+    },
+    {
+      "path": "../ryanwinkler"
+    },
+    {
+      "path": "../pobal-os/apps/meitheal-io"
+    },
+    {
+      "path": "../pobal-os/apps/ryanw-eu"
+    },
+    {
+      "path": "../pobal-os/apps/coolock-village-forge"
     }
   ],
   "settings": {
@@ -76,7 +41,9 @@
     "typescript.disableAutomaticTypeAcquisition": false,
     // Extension: project-specific config
     "piny.project_settings": {
-      "open-pages": ["pinyfakepage.html"],
+      "open-pages": [
+        "pinyfakepage.html"
+      ],
     },
     "liveServer.settings.multiRootWorkspaceName": "📦 Meitheal Root",
     "files.autoSave": "onFocusChange",
