@@ -11,7 +11,7 @@
     "@axe-core/playwright": "^4.11.1",
     "@playwright/test": "^1.58.2",
     "@types/node": "^25.5.0",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "^0.45.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
