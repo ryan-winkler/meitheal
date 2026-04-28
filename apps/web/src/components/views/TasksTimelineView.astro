@@ -197,7 +197,15 @@ const totalTasks = tasks.length;
   </div>
 
   <!-- GANTT chart container (native SVG rendered here) -->
-  <div id="gantt-chart" class="gantt-chart-wrapper" style="display:none"></div>
+  <div
+    id="gantt-chart"
+    class="gantt-chart-wrapper"
+    style="display:none"
+    role="grid"
+    aria-label="Task timeline Gantt chart"
+    aria-rowcount={String(taskCount)}
+    aria-colcount="1"
+  ></div>
 
   <!-- Error state -->
   {fetchError && (

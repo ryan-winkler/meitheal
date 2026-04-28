@@ -38,6 +38,18 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     expect(ganttVisible || emptyVisible).toBe(true)
   })
 
+  test("timeline chart exposes grid semantics for assistive technology", async ({ page }) => {
+    const ganttChart = page.locator("#gantt-chart")
+
+    await expect(ganttChart).toHaveAttribute("role", "grid")
+    await expect(ganttChart).toHaveAttribute("aria-label", "Task timeline Gantt chart")
+
+    const rowCount = Number(await ganttChart.getAttribute("aria-rowcount"))
+    const columnCount = Number(await ganttChart.getAttribute("aria-colcount"))
+    expect(rowCount).toBeGreaterThanOrEqual(0)
+    expect(columnCount).toBeGreaterThanOrEqual(1)
+  })
+
   test("native GANTT chart renders SVG when tasks have dates", async ({ page }) => {
     const ganttChart = page.locator("#gantt-chart")
     const isEmpty = await page.locator("#timeline-empty").isVisible()
@@ -71,7 +83,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
   })
 
   test("zoom dropdown is present and functional", async ({ page }) => {
-    const zoomDropdown = page.locator(".timeline-zoom-dropdown")
+    const zoomDropdown = page.locator("#timeline-zoom-dropdown")
     await expect(zoomDropdown).toBeVisible()
 
     // Open the dropdown

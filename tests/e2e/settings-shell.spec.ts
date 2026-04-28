@@ -1,12 +1,17 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+
+async function waitForSettingsShell(page: Page): Promise<void> {
+  await expect(page.locator("#settings-shell")).toBeVisible()
+  await expect(page.locator("[data-settings-shell-section]").first()).toBeVisible()
+}
 
 test.describe("Settings Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/settings")
-    await page.waitForLoadState("networkidle")
+    await waitForSettingsShell(page)
   })
 
   test("search jumps directly to matching anchors", async ({ page }) => {
@@ -79,7 +84,7 @@ test.describe("Settings Shell", () => {
 
   test("webhooks callout uses the canonical automation and ai section id", async ({ page }) => {
     await page.goto("/settings#integrations-settings")
-    await page.waitForLoadState("networkidle")
+    await waitForSettingsShell(page)
 
     await page.locator('[aria-controls="integration-webhooks-body"]').click()
 
@@ -99,7 +104,7 @@ test.describe("Settings Shell", () => {
     page,
   }) => {
     await page.goto("/settings#app-pwa-settings")
-    await page.waitForLoadState("networkidle")
+    await waitForSettingsShell(page)
 
     await expect(page.locator("#app-pwa-settings")).toBeVisible()
     await expect(page.locator('[data-companion-link="app-pwa-settings"]')).toHaveAttribute(
@@ -116,7 +121,7 @@ test.describe("Settings Shell", () => {
 
   test("hash deep links keep the target section addressable", async ({ page }) => {
     await page.goto("/settings#danger-zone-settings")
-    await page.waitForLoadState("networkidle")
+    await waitForSettingsShell(page)
 
     await expect(page).toHaveURL(/#danger-zone-settings$/)
     await expect(page.locator("#danger-zone-settings")).toBeVisible()
@@ -125,14 +130,18 @@ test.describe("Settings Shell", () => {
 
   test("mobile nav works as a compact quick-jump surface", async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 })
-    await page.goto("/settings#workflow-settings")
-    await page.waitForLoadState("networkidle")
+    await page.goto("/settings")
+    await waitForSettingsShell(page)
 
     const mobileNavLink = page.locator(
       '[data-settings-nav="app-pwa-settings"][data-settings-nav-variant="mobile"]',
     )
 
     await expect(mobileNavLink).toBeVisible()
+    const box = await mobileNavLink.boundingBox()
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+
     await mobileNavLink.click()
 
     await expect(page).toHaveURL(/#app-pwa-settings$/)

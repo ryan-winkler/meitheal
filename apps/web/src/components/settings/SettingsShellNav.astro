@@ -43,3 +43,140 @@ const {
     ))}
   </div>
 </nav>
+
+<style>
+  .settings-shell-nav {
+    width: 100%;
+  }
+
+  .settings-shell-nav__list {
+    display: flex;
+    gap: 10px;
+  }
+
+  .settings-shell-nav--mobile .settings-shell-nav__list {
+    margin: 0;
+    padding: 0 0 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 4px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .settings-shell-nav--mobile .settings-shell-nav__list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-shell-nav__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 64px;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+    color: var(--text-primary);
+    text-decoration: none;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .settings-shell-nav--mobile .settings-shell-nav__link {
+    flex: 0 0 min(260px, 76vw);
+    scroll-snap-align: start;
+    padding: 10px 12px;
+  }
+
+  .settings-shell-nav__link:hover {
+    background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 8%);
+    border-color: color-mix(in srgb, var(--border) 55%, var(--accent) 45%);
+    transform: translateY(-1px);
+  }
+
+  .settings-shell-nav__link:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+    outline-offset: 2px;
+  }
+
+  .settings-shell-nav__link.is-active,
+  .settings-shell-nav__link[aria-current="location"] {
+    background: color-mix(in srgb, var(--bg-card) 84%, var(--accent) 12%);
+    border-color: color-mix(in srgb, var(--border) 45%, var(--accent) 55%);
+    box-shadow:
+      0 2px 12px rgba(0, 0, 0, 0.14),
+      0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .settings-shell-nav__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .settings-shell-nav__content {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .settings-shell-nav__content strong,
+  .settings-shell-nav__content small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-shell-nav__content strong {
+    font-size: 13px;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  .settings-shell-nav__content small {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .settings-shell-nav__meta {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .settings-shell-nav__jump {
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-shell-nav__link {
+      transition: none;
+    }
+
+    .settings-shell-nav__link:hover {
+      transform: none;
+    }
+  }
+</style>

@@ -803,10 +803,15 @@ try {
     import { initKanbanArea } from "../lib/kanban-controller"
     import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
     import { initAreaSelector } from "@lib/area-selector-controller"
+    import {
+      initUnifiedBarNewTaskButton,
+      initUnifiedBarSearchLauncher,
+    } from "@lib/unified-bar-controller"
     import { createClientLogger } from "@lib/client-logger"
     import { pageLifecycle } from "@lib/page-lifecycle"
 
     const log = createClientLogger("tasks", "page-init")
+    let fieldsPanelAbort: AbortController | null = null
 
     pageLifecycle.onPageLoad((signal) => {
       // Each init block is isolated with try/catch to prevent cascade failures.
@@ -823,12 +828,23 @@ try {
       } catch (e) { log.error("area selector init failed", e) }
 
       try {
+        // The tasks page uses the unified bar for global actions, but view
+        // switching is hash-based rather than page-shell section-based.
+        initUnifiedBarSearchLauncher("kanban-bar")
+        initUnifiedBarNewTaskButton({ barId: "kanban-bar" })
+      } catch (e) { log.error("unified bar actions init failed", e) }
+
+      try {
         // Kanban-specific controllers (drag-drop, lanes, touch, keyboard, grouping)
         initKanbanArea(signal)
       } catch (e) { log.error("kanban area init failed", e) }
 
       // ── Fields panel toggle ──────────────────────────────────────────────
       try {
+        fieldsPanelAbort?.abort()
+        fieldsPanelAbort = new AbortController()
+        signal.addEventListener("abort", () => fieldsPanelAbort?.abort(), { once: true })
+        const fieldsSignal = fieldsPanelAbort.signal
         const fieldsBtn = document.getElementById("toggle-fields-btn")
         const fieldsPanel = document.getElementById("kanban-fields-panel")
 
@@ -843,7 +859,7 @@ try {
         fieldsBtn?.addEventListener("click", () => {
           const isHidden = fieldsPanel?.classList.toggle("hidden")
           fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
-        }, { signal })
+        }, { signal: fieldsSignal })
 
         // Close button inside the CardCustomizer panel (event delegation — robust against timing)
         fieldsPanel?.addEventListener("click", (e) => {
@@ -851,7 +867,7 @@ try {
             e.stopPropagation()
             hideFieldsPanel()
           }
-        }, { signal })
+        }, { signal: fieldsSignal })
 
         // Click outside closes Fields panel
         document.addEventListener("click", (e) => {
@@ -862,7 +878,7 @@ try {
           ) {
             hideFieldsPanel()
           }
-        }, { signal })
+        }, { signal: fieldsSignal })
 
         // Escape key closes Fields panel
         document.addEventListener("keydown", (e) => {
@@ -870,7 +886,7 @@ try {
             hideFieldsPanel()
             fieldsBtn?.focus()
           }
-        }, { signal })
+        }, { signal: fieldsSignal })
       } catch (e) { log.error("fields panel init failed", e) }
 
       // Lanes panel toggle handled by kanban-controller (inside initKanbanArea)
@@ -1088,13 +1104,15 @@ try {
     padding: 6px 8px;
     gap: 4px;
   }
-  .kanban-board.density-compact .kanban-card__title {
+  .kanban-board.density-compact .kanban-card-title {
     font-size: 0.8rem;
     line-height: 1.2;
   }
-  .kanban-board.density-compact .kanban-card__meta,
-  .kanban-board.density-compact .kanban-card__description,
-  .kanban-board.density-compact .kanban-card__labels {
+  .kanban-board.density-compact .kanban-card-meta,
+  .kanban-board.density-compact .kanban-card-desc,
+  .kanban-board.density-compact .kanban-progress,
+  .kanban-board.density-compact .label-badges,
+  .kanban-board.density-compact .kanban-custom-fields {
     display: none;
   }
   .kanban-board.density-compact .kanban-cards {
@@ -1105,7 +1123,7 @@ try {
     padding: 16px;
     gap: 10px;
   }
-  .kanban-board.density-spacious .kanban-card__title {
+  .kanban-board.density-spacious .kanban-card-title {
     font-size: 0.95rem;
   }
   .kanban-board.density-spacious .kanban-cards {
@@ -1330,6 +1348,17 @@ try {
   }
   .card-action-btn svg {
     display: block;
+  }
+
+  @media (max-width: 768px), (pointer: coarse) {
+    .card-action-btn,
+    .kanban-toolbar-btn {
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
   }
 
   /* Task type icon vertical alignment in card header */
@@ -1863,6 +1892,35 @@ try {
 </style>
 
 <style is:global>
+  .kanban-board.density-compact .kanban-card {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  .kanban-board.density-compact .kanban-card-title {
+    font-size: 0.8rem;
+    line-height: 1.2;
+  }
+  .kanban-board.density-compact .kanban-card-meta,
+  .kanban-board.density-compact .kanban-card-desc,
+  .kanban-board.density-compact .kanban-progress,
+  .kanban-board.density-compact .label-badges,
+  .kanban-board.density-compact .kanban-custom-fields {
+    display: none;
+  }
+  .kanban-board.density-compact .kanban-cards {
+    gap: 4px;
+  }
+  .kanban-board.density-spacious .kanban-card {
+    padding: 16px;
+    gap: 10px;
+  }
+  .kanban-board.density-spacious .kanban-card-title {
+    font-size: 0.95rem;
+  }
+  .kanban-board.density-spacious .kanban-cards {
+    gap: 12px;
+  }
+
   /* T-1914: Keyboard focus ring */
   .kanban-card.kb-focused {
     outline: 2px solid var(--accent);

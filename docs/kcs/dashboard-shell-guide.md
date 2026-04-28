@@ -30,6 +30,12 @@ These anchors stay on the same route, which keeps them safe for Home Assistant i
 
 The URL hash updates as you move, so the current section can be reloaded or shared.
 
+### Use the dashboard on mobile
+
+1. Use the bottom navigation `Home` item to return to the dashboard from thumb reach.
+2. The closed sidebar stays hidden and non-interactive until opened, so focus does not land on off-screen links.
+3. Task sub-views such as Table remain under `Tasks`; the Calendar bottom item deep-links to `/tasks#calendar` so it avoids the legacy redirect route.
+
 ### Capture work without leaving the dashboard
 
 1. Go to `Capture`.

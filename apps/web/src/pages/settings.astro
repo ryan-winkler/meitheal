@@ -9,6 +9,7 @@ import SettingsPersonal from "../components/settings/SettingsPersonal.astro"
 import SettingsAppPwa from "../components/settings/SettingsAppPwa.astro"
 import SettingsDangerZone from "../components/settings/SettingsDangerZone.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
+import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import Layout from "../layouts/Layout.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import { t } from "../i18n/translations"
@@ -34,6 +35,9 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
   />
 
   <div id="settings-shell" class="settings-shell">
+    <div class="settings-shell__mobile-nav">
+      <SettingsShellNav sections={SETTINGS_SECTIONS} variant="mobile" />
+    </div>
 
     <div class="settings-shell__content">
 
@@ -123,9 +127,11 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
     flex-direction: column;
     gap: 20px;
   }
-  .settings-shell:not(.is-detail-view) .settings-shell__layout,
-  .settings-shell:not(.is-detail-view) .settings-shell__mobile-nav {
+  .settings-shell:not(.is-detail-view) .settings-shell__layout {
     display: none; /* Bar-specific overrides handled by UnifiedBar.astro component */
+  }
+  .settings-shell__mobile-nav {
+    display: none;
   }
   /* — Search results dropdown — */
   .settings-search-results {
@@ -549,6 +555,18 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
     background: white;
   }
   @media (max-width: 768px) {
+    .settings-shell__mobile-nav {
+      display: block;
+      position: sticky;
+      top: var(--settings-tab-bar-h, 56px);
+      z-index: 28;
+      margin: -4px -16px 8px;
+      padding: 10px 16px 2px;
+      background: color-mix(in srgb, var(--bg-primary) 96%, transparent);
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
     .settings-shell__hero {
       grid-template-columns: 1fr;
       padding: 18px;

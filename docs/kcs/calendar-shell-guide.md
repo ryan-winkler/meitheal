@@ -11,7 +11,7 @@ The Calendar shell sections are:
 - `#calendar-agenda`
 - `#calendar-flow`
 
-The route-level `TaskViewTabs` remain in place for Calendar, Kanban, Table, and Timeline, and they continue to preserve the current query string when switching views.
+The route-level view pills remain in place for Calendar, Kanban, Table, and Timeline, and they continue to preserve the current query string when switching views. On mobile, those pills stay visible as a horizontal touch strip under the unified bar.
 
 ## Common Jobs
 
@@ -30,7 +30,7 @@ The route-level `TaskViewTabs` remain in place for Calendar, Kanban, Table, and 
 ### Switch to another task view without dropping filters
 
 1. Apply the filters you want on Calendar.
-2. Use `TaskViewTabs` to switch to Table or Kanban.
+2. Use the route-level view pills to switch to Table or Kanban.
 3. Confirm the query string remains intact after the route change.
 
 ## Troubleshooting
@@ -43,5 +43,5 @@ The route-level `TaskViewTabs` remain in place for Calendar, Kanban, Table, and 
 
 ### View switching loses the current filters
 
-1. Confirm the target `TaskViewTabs` link contains the expected query string before clicking it.
+1. Confirm the target view-pill link contains the expected query string before clicking it.
 2. If the query string disappears after navigation, record the source route, target route, and active filters.

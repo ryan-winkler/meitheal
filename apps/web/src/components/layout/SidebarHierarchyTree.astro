@@ -864,6 +864,30 @@ const taskKinds = [
     outline-offset: -1px;
   }
 
+  @media (max-width: 768px), (pointer: coarse) {
+    .stree__area-row,
+    .stree__project-link {
+      min-height: 44px;
+    }
+
+    .stree__actions {
+      gap: 4px;
+      opacity: 1;
+    }
+
+    .stree__count {
+      display: none;
+    }
+
+    .stree__action-btn,
+    .stree__manage-link {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0;
+      justify-content: center;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .stree__children,
     .stree__toggle, .stree__area-link, .stree__project-link,

@@ -36,12 +36,16 @@
       position: fixed;
       z-index: 50;
       transform: translateX(-100%) !important;
+      visibility: hidden;
+      pointer-events: none;
       transition: transform 250ms ease;
   }
 
                 /* Mobile: slide sidebar in when .open is toggled */
   .sidebar.open {
     transform: translateX(0) !important;
+      visibility: visible;
+      pointer-events: auto;
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
@@ -463,6 +467,14 @@
     min-width: 44px;
     min-height: 44px;
     display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .card-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
   }

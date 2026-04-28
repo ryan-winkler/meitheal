@@ -383,6 +383,7 @@
         background: rgba(255, 255, 255, 0.06);
         padding: 1px 4px;
         border-radius: 3px;
+      }
 
 
 /* --- Task action buttons --- */
@@ -512,7 +513,6 @@
   height: 1px;
   background: var(--text-muted);
   animation: check-strike 0.3s ease-out forwards;
-}
 }
 
 /* Filter transitions */

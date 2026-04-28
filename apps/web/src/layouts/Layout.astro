@@ -494,6 +494,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
+      <a href="/" class="mobile-tab-bar__item" data-page="dashboard">
+        <span class="mobile-tab-bar__icon">⌂</span>
+        <span class="mobile-tab-bar__label">Home</span>
+      </a>
       <a href="/today" class="mobile-tab-bar__item" data-page="today">
         <span class="mobile-tab-bar__icon">☀️</span>
         <span class="mobile-tab-bar__label">Today</span>
@@ -502,11 +506,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         <span class="mobile-tab-bar__icon">📋</span>
         <span class="mobile-tab-bar__label">Tasks</span>
       </a>
-      <a href="/table" class="mobile-tab-bar__item" data-page="table">
-        <span class="mobile-tab-bar__icon">📊</span>
-        <span class="mobile-tab-bar__label">Table</span>
-      </a>
-      <a href="/calendar" class="mobile-tab-bar__item" data-page="calendar">
+      <a href="/tasks#calendar" class="mobile-tab-bar__item" data-page="calendar">
         <span class="mobile-tab-bar__icon">📅</span>
         <span class="mobile-tab-bar__label">Calendar</span>
       </a>
@@ -519,23 +519,39 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- Mobile tab bar: highlight active page -->
     <script is:inline>
       (function() {
-        var bar = document.getElementById("mobile-tab-bar");
-        if (!bar) return;
-        var path = window.location.pathname;
-        // Strip ingress prefix if present
-        var ip = window.__ingress_path || "";
-        if (ip && path.startsWith(ip)) path = path.slice(ip.length);
-        // Match page name from path
-        var page = path.replace(/^\//, "").split("/")[0] || "today";
-        // Dashboard (root) maps to "today"
-        if (page === "" || page === "index") page = "today";
-        if (page === "kanban") page = "tasks";
-        var items = bar.querySelectorAll(".mobile-tab-bar__item");
-        for (var i = 0; i < items.length; i++) {
-          if (items[i].getAttribute("data-page") === page) {
-            items[i].classList.add("active");
+        window.__meithealUpdateMobileTabBar = function() {
+          var bar = document.getElementById("mobile-tab-bar");
+          if (!bar) return;
+          var path = window.location.pathname;
+          // Strip ingress prefix if present
+          var ip = window.__ingress_path || "";
+          if (ip && path.startsWith(ip)) path = path.slice(ip.length);
+          // Match page name from path
+          var page = path.replace(/^\//, "").split("/")[0] || "dashboard";
+          if (page === "" || page === "index") page = "dashboard";
+          if (page === "kanban" || page === "table" || page === "timeline") page = "tasks";
+          if (page === "tasks" && window.location.hash === "#calendar") page = "calendar";
+          var items = bar.querySelectorAll(".mobile-tab-bar__item");
+          for (var i = 0; i < items.length; i++) {
+            var isActive = items[i].getAttribute("data-page") === page;
+            items[i].classList.toggle("active", isActive);
+            if (isActive) {
+              items[i].setAttribute("aria-current", "page");
+            } else {
+              items[i].removeAttribute("aria-current");
+            }
           }
+        };
+        if (!window.__meithealMobileTabBarBound) {
+          window.__meithealMobileTabBarBound = true;
+          window.addEventListener("hashchange", function() {
+            window.__meithealUpdateMobileTabBar && window.__meithealUpdateMobileTabBar();
+          });
+          document.addEventListener("astro:page-load", function() {
+            window.__meithealUpdateMobileTabBar && window.__meithealUpdateMobileTabBar();
+          });
         }
+        window.__meithealUpdateMobileTabBar();
       })();
     </script>
 

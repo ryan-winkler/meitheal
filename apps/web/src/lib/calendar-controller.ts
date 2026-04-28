@@ -18,15 +18,17 @@ const log = createClientLogger("tasks", "calendar-shell")
 let currentDrawerDate = ""
 
 export function initCalendarPage(): void {
-  initPageShellNavigation({
-    barId: "calendar-bar",
-    shellId: "calendar-shell",
-    sectionSelector: "[data-calendar-section]",
-    sectionIds: CALENDAR_SECTIONS.map((section) => section.id),
-    defaultSectionId: "calendar-overview",
-    flashClass: "page-shell__section--flash",
-    sectionLinkSelectors: ["[data-calendar-section-link]"],
-  })
+  if (document.getElementById("calendar-bar")) {
+    initPageShellNavigation({
+      barId: "calendar-bar",
+      shellId: "calendar-shell",
+      sectionSelector: "[data-calendar-section]",
+      sectionIds: CALENDAR_SECTIONS.map((section) => section.id),
+      defaultSectionId: "calendar-overview",
+      flashClass: "page-shell__section--flash",
+      sectionLinkSelectors: ["[data-calendar-section-link]"],
+    })
+  }
 
   initCalendarCells()
   initDrawerControls()
@@ -367,4 +369,3 @@ async function loadInlineEventPreviews(): Promise<void> {
     }
   }
 }
-

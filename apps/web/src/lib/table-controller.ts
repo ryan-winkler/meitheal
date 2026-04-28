@@ -62,15 +62,17 @@ const __signal = pageLifecycle.signal
 // =============================================================================
 
 function init() {
-  initPageShellNavigation({
-    barId: "table-bar",
-    shellId: "table-shell",
-    sectionSelector: "[data-table-section]",
-    sectionIds: TABLE_SECTIONS.map((section) => section.id),
-    defaultSectionId: "table-overview",
-    flashClass: "page-shell__section--flash",
-    sectionLinkSelectors: ["[data-table-section-link]"],
-  })
+  if (document.getElementById("table-bar")) {
+    initPageShellNavigation({
+      barId: "table-bar",
+      shellId: "table-shell",
+      sectionSelector: "[data-table-section]",
+      sectionIds: TABLE_SECTIONS.map((section) => section.id),
+      defaultSectionId: "table-overview",
+      flashClass: "page-shell__section--flash",
+      sectionLinkSelectors: ["[data-table-section-link]"],
+    })
+  }
 
   const table = document.getElementById("task-table") as HTMLTableElement | null
   if (!table) return

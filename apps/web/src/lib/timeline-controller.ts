@@ -907,6 +907,12 @@ function renderGantt(
   const unscheduledRowCount = undatedTasks.length > 0 ? 1 + (unscheduledCollapsed ? 0 : undatedTasks.length) : 0
   const totalRowCount = hBars.length + unscheduledRowCount
   const totalHeight = HEADER_HEIGHT + totalRowCount * ROW_HEIGHT + 20
+  const totalColumnCount = Math.max(1, Math.ceil(totalDays / config.unitDays))
+
+  outerContainer.setAttribute("role", "grid")
+  outerContainer.setAttribute("aria-label", "Task timeline Gantt chart")
+  outerContainer.setAttribute("aria-rowcount", String(totalRowCount))
+  outerContainer.setAttribute("aria-colcount", String(totalColumnCount))
 
   // Clear previous render
   outerContainer.replaceChildren()

@@ -26,7 +26,7 @@ The search now prefers direct field hits such as `Theme` over broad section matc
 
 ### Move between sections on mobile
 
-1. Open a Settings section.
+1. Open `Settings`.
 2. Use the horizontal `Section picker` quick-jump strip near the top.
 3. Tap the target section card to jump there without leaving the current Settings route.
 
