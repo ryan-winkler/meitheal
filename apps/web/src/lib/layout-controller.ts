@@ -51,6 +51,8 @@
         // Global error resilience — catch unhandled errors to prevent blank-page crashes
         // (These are global/permanent — intentionally NOT lifecycle-managed)
         window.addEventListener("error", (e) => {
+          // ResizeObserver loop errors are benign browser noise — suppress them
+          if (e.message?.includes("ResizeObserver loop")) return;
           log.error("Unhandled error", e.error ?? e.message);
         });
         window.addEventListener("unhandledrejection", (e) => {
@@ -79,7 +81,10 @@
             today: "Y", upcoming: "U", calendar: "C",
           }
           for (const [page, key] of Object.entries(shortcutMap)) {
-            const link = document.querySelector<HTMLElement>(`[data-page="${page}"]`)
+            const links = Array.from(
+              document.querySelectorAll<HTMLElement>(`[data-page="${page}"]`),
+            )
+            const link = links.find((candidate) => !candidate.closest("#mobile-tab-bar"))
             if (link && !link.dataset.shortcut) link.dataset.shortcut = key
           }
           // Search trigger
