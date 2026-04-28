@@ -2,33 +2,39 @@
 
 ## What This Is
 
-Meitheal is a Home Assistant-native household and homelab execution hub, shipped as a Home Assistant add-on. The core feature-completion sprint landed subtasks, recurrence, checklist UX, SQL repository migration, Smart Today, version tooling, and a docs-narrative refresh that now explains the product in clearer non-developer language. The active parallel work now focuses on **cross-page shell quality**, **search/navigation ergonomics**, **DDD language evolution**, and **Astro-native maintainability**.
+Meitheal is a Home Assistant-native household and homelab execution hub, shipped as a Home Assistant add-on. The core feature-completion sprint landed subtasks, recurrence, checklist UX, SQL repository migration, Smart Today, version tooling, a docs-narrative refresh, the complete unified page shell rollout across all 7 task views, search hub upgrade, settings redesign with full controller decomposition, pillars domain, strategic rules engine, progress & growth unification, and 37+ phases of code quality hardening (XSS, memory leaks, accessibility, inline style elimination, crash protection).
 
 ## Core Value
 
 Keep Meitheal competitive as a Home Assistant-native execution engine: make critical controls discoverable, reduce client-controller duplication, preserve ingress safety, and keep the codebase understandable enough to keep shipping.
 
-## Current State (2026-03-19)
+## Current State (2026-04-28)
 
-- Core sprint: hierarchy/recurrence/checklist work delivered
-- SQL repository migration delivered across task/board/settings-related routes
-- Smart Today and version-tooling phases delivered
-- Settings now uses a searchable shell with grouped navigation, summary cards, App & PWA companion affordances, and real manifest screenshots
-- The dashboard and habits now use the mature unified shell language, with the next rollout order queued for Today, Upcoming, Calendar, Kanban, and Table
-- Universal search hub work is present locally with repo-wide typecheck green; remaining follow-up is Tier 2 HA verification and polish
-- Public docs now tell the current product story consistently across README, protocol docs, add-on docs, custom-component docs, LLM-facing assets, and contributor identity surfaces
-- The canonical hierarchy in public docs is now `Area -> Goal -> Project -> Task -> Routine`, with explicit compatibility notes where legacy `task_type`, `Epic/Story`, or Vikunja terms still appear
-- Tier 2 HA verification is currently blocked on this workstation by Docker socket permissions
-- A new research/discuss track, `human-agent-ddd-core`, is active to replace `Epic/Story` with `Area/Goal/Project/Task/Routine` and add bot-safe task orchestration semantics before execution code begins
+- **Core sprint complete:** hierarchy/recurrence/checklist/SQL migration/Smart Today/version tooling all delivered
+- **Unified page shell:** all 7 pages (dashboard, habits, today, upcoming, calendar, kanban, table) use the mature `UnifiedBar` shell
+- **Settings:** searchable shell with grouped navigation, summary cards, App & PWA companion affordances, keyboard nav, and full controller decomposition (7 domain controllers)
+- **Search hub:** universal search across tasks, boards, saved filters, settings, pages, and actions — HA search/LLM/MCP parity
+- **Pillars domain:** complete with CRUD, principles, associations, slug URLs, AI integration, 15 E2E tests
+- **Strategic rules engine:** rule-driven framework assignment, weighted RICE, settings UI, 9 domain tests
+- **Code quality:** XSS hardened (innerHTML → replaceChildren), memory-safe (managed listeners + AbortSignals), crash-protected (global error handler), `transition:all` eliminated, native dialogs migrated, client logging unified
+- **Typecheck:** green (`pnpm check` passes)
+- **Tests:** 319+ at last full run
+- **Version:** `0.0.1` (unreleased — needs bump to `0.1.0` for first public beta)
+
+## Blockers
+
+1. **Tier 2 HA verification** — 5 gates open (SET-08, SET-12, SHELL-33, STM-15, Phase 09). Blocked by Docker socket permissions on Kubuntu.
+2. **No release artifacts** — no CHANGELOG.md, no CONTRIBUTING.md, no GitHub Release, no tagged build.
+3. **Canary drift** — canary version stuck at commit `154f292` from 2026-03-23.
 
 ## Active Goals
 
-1. **Page shell rollout** — extend the mature unified bar + section shell from dashboard and habits into the remaining Home Assistant-facing task views
-2. **Settings closeout** — complete Tier 2 verification for ingress-safe hashes, companion handoff, and PWA behavior
-3. **Search stabilization** — finish type-clean universal search orchestration through `domains/search/` and `/api/search`
-4. **Controller decomposition** — continue breaking oversized client controllers into lifecycle-safe modules
-5. **Docs/KCS accuracy** — use Phase `04.3` as the baseline and keep README, AGENTS, protocol docs, planning docs, and runbooks synchronized with shipped UX and language
-6. **Human-agent DDD core** — define the new strategic hierarchy, task kinds, bot handoff model, and offline-safe merge contract before implementation
+1. **Tier 2 closeout** — restore Docker on Kubuntu, run devcontainer verification for all 5 open gates
+2. **Release hardening** — bump version to `0.1.0`, write CHANGELOG, tag and build
+3. **Phase 04.2** — expose hierarchy (areas/goals/projects) via API + sidebar navigation tree
+4. **Phase 15** — hierarchy architecture overhaul (resolve Area/Project duplication, routine templates)
+5. **Phase 16** — unified `/tasks` page with hash-based view switching
+6. **Phase 18** — task modal overhaul
 
 ## Tech Stack
 

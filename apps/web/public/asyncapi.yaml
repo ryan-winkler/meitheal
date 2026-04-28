@@ -105,6 +105,7 @@ channels:
           required:
             - entity_id
             - state
+          additionalProperties: false
   webhook/task.created:
     description: Outbound webhook fired when a task is created. Delivered as
       CloudEvents 1.0 binary content mode.
@@ -231,6 +232,8 @@ channels:
                   type: string
                 name:
                   type: string
+              additionalProperties: false
+          additionalProperties: false
 components:
   schemas:
     TaskEvent:
