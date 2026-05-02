@@ -1,7 +1,7 @@
 # Releasing Meitheal
 
 > KCS runbook for the Meitheal two-channel release strategy.
-> Last updated: 2026-04-29
+> Last updated: 2026-03-20
 
 ## Channel Architecture
 
@@ -15,10 +15,10 @@ main branch
                  ghcr.io/coolock-village/meitheal-{arch}:{version}
 ```
 
-| Channel | Addon Name      | Version Format         | Trigger          | Stage          |
-| ------- | --------------- | ---------------------- | ---------------- | -------------- |
-| Stable  | Meitheal        | Semver (`0.0.1`)       | vtag push (`v*`) | `stable`       |
-| Canary  | Meitheal Canary | Commit SHA (`abc1234`) | Push to `main`   | `experimental` |
+| Channel | Addon Name | Version Format | Trigger | Stage |
+|---------|-----------|---------------|---------|-------|
+| Stable | Meitheal | Semver (`0.0.1`) | vtag push (`v*`) | `stable` |
+| Canary | Meitheal Canary | Commit SHA (`abc1234`) | Push to `main` | `experimental` |
 
 ## Cutting a Stable Release
 
@@ -31,7 +31,6 @@ node scripts/bump-version.mjs patch   # 0.0.1 → 0.0.2
 ```
 
 This updates 4 files atomically:
-
 - `meitheal-hub/config.yaml`
 - `meitheal-hub/run.sh`
 - `apps/web/package.json`
@@ -60,38 +59,10 @@ git push origin main --tags
 
 1. Developer pushes code to `main`
 2. `publish-canary-images.yml` triggers (if not a bot commit)
-3. Dedicated self-hosted canary runners build container images using the same `meitheal-hub/Dockerfile`
+3. CI builds Docker images using the same `meitheal-hub/Dockerfile`
 4. Images pushed as `meitheal-canary-{arch}:{sha}` + `:canary`
 5. CI updates `meitheal-hub-canary/config.yaml` version and commits back
 6. HA Supervisor sees new version on next repo refresh → offers update
-
-### Self-hosted canary runners
-
-Canary publishing intentionally uses narrow self-hosted runner labels instead of the general GitHub-hosted pool. This keeps the workaround scoped to add-on image publishing and prevents untrusted PR workflows from landing on a persistent runner.
-
-Required repository runners:
-
-| Architecture | Runner labels                                                        | Notes                                                                                                   |
-| ------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `amd64`      | `self-hosted`, `linux`, `meitheal-canary`, `meitheal-canary-amd64`   | Can run on an x86_64 Linux host with Podman                                                             |
-| `aarch64`    | `self-hosted`, `linux`, `meitheal-canary`, `meitheal-canary-aarch64` | Prefer a native ARM64 host; do not publish this arch from x86 unless binfmt/QEMU is explicitly verified |
-
-Runner host prerequisites:
-
-- `podman`
-- `jq`
-- `gh`
-- `node`
-- `base64`
-- network access to `ghcr.io`, `docker.io`, and `github.com`
-
-Security rules:
-
-- Do not run pull request jobs on the `meitheal-canary` labels.
-- Keep these labels dedicated to `.github/workflows/publish-canary-images.yml`.
-- Run the runner as an unprivileged user.
-- Rotate runner registration if the host is repurposed or compromised.
-- Keep OS and container tooling patched; self-hosted runners are persistent machines, not clean GitHub-hosted VMs.
 
 ### Guard against infinite loops
 
@@ -124,23 +95,22 @@ There's no automated promotion. To promote:
 ### HA shows wrong version
 
 HA Supervisor caches addon info. Try:
-
 1. Settings → Add-ons → Add-on Store → ⋮ → Reload
 2. Wait 5 minutes for background refresh
 3. Restart Home Assistant Supervisor (last resort)
 
 ## Files Reference
 
-| File                                          | Purpose                      | Managed by                       |
-| --------------------------------------------- | ---------------------------- | -------------------------------- |
-| `meitheal-hub/config.yaml`                    | Stable addon config          | `bump-version.mjs`               |
-| `meitheal-hub-canary/config.yaml`             | Canary addon config          | CI (`update-canary-version.mjs`) |
-| `scripts/bump-version.mjs`                    | Stable version bumps         | Developer                        |
-| `scripts/update-canary-version.mjs`           | Canary version updates       | CI only                          |
-| `scripts/check-version-sync.mjs`              | Version consistency guard    | CI                               |
-| `.github/workflows/publish-addon-images.yml`  | Stable image publish         | vtag trigger                     |
-| `.github/workflows/publish-canary-images.yml` | Canary image publish         | main push trigger                |
-| `.github/workflows/sync-addon-repo.yml`       | Sync manifests → public repo | main push / vtag                 |
+| File | Purpose | Managed by |
+|------|---------|-----------|
+| `meitheal-hub/config.yaml` | Stable addon config | `bump-version.mjs` |
+| `meitheal-hub-canary/config.yaml` | Canary addon config | CI (`update-canary-version.mjs`) |
+| `scripts/bump-version.mjs` | Stable version bumps | Developer |
+| `scripts/update-canary-version.mjs` | Canary version updates | CI only |
+| `scripts/check-version-sync.mjs` | Version consistency guard | CI |
+| `.github/workflows/publish-addon-images.yml` | Stable image publish | vtag trigger |
+| `.github/workflows/publish-canary-images.yml` | Canary image publish | main push trigger |
+| `.github/workflows/sync-addon-repo.yml` | Sync manifests → public repo | main push / vtag |
 
 ## Dual-Repo Architecture
 
@@ -171,3 +141,4 @@ After making the main repo private, GHCR packages default to private. You must m
 
 1. Go to `https://github.com/orgs/Coolock-Village/packages`
 2. For each `meitheal-*` package → Settings → Change visibility → Public
+
