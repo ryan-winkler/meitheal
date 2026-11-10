@@ -21,6 +21,19 @@ test("pages a large unscheduled queue and filters across every page", async ({ p
 
     const initial = await page.goto(`/today?search=${encodeURIComponent(prefix)}#today-work`)
     expect(await initial?.text()).not.toContain(target)
+    const due = page.getByRole("button", { name: "Toggle Due Today section" })
+    const dueList = page.locator("#today-due-list")
+    await expect(due).toHaveAttribute("aria-controls", "today-due-list")
+    await due.getByText("Due Today").click()
+    await expect(due).toHaveAttribute("aria-expanded", "false")
+    await expect(dueList).toHaveAttribute("inert", "")
+    await page.reload()
+    await expect(due).toHaveAttribute("aria-expanded", "false")
+    await expect(dueList).toHaveAttribute("inert", "")
+    await due.press("Enter")
+    await expect(due).toHaveAttribute("aria-expanded", "true")
+    await expect(dueList).not.toHaveAttribute("inert", "")
+
     const section = page.locator("#section-unscheduled")
     const toggle = section.getByRole("button", { name: "Toggle Unscheduled section" })
     const range = section.locator("[data-unscheduled-range]")
@@ -28,7 +41,7 @@ test("pages a large unscheduled queue and filters across every page", async ({ p
     await expect(page.locator("#batch-mode-toggle")).toBeAttached()
     await expect(toggle).toHaveAttribute("aria-expanded", "false")
     await expect(rows).toHaveCount(0)
-    await toggle.press("Enter")
+    await toggle.getByText("Unscheduled").click()
 
     await expect(toggle).toHaveAttribute("aria-expanded", "true")
     await expect(range).toHaveText("Showing 1–50 of 52")

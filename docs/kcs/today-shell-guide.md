@@ -58,7 +58,7 @@ While Today is open, the counters and progress bar refresh every 30 seconds. The
 
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.
 
-1. Open **Unscheduled** in **Work**. Today shows the full queue count and loads up to 50 task rows.
+1. In **Work**, select the **Unscheduled** heading or focus it and press Enter. Today shows the full queue count and loads up to 50 task rows. A task created by a Home Assistant automation without a due date appears here.
 2. Use **Next** and **Previous** to reach the rest of the queue. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. The count above the rows shows the matching range. Reload keeps the open page and filters.
 3. To change a card's manual board position, open the board in **Tasks**. Unscheduled pages use the selected sort order.
 4. If a page fails to load, use **Retry** in the section. The last loaded page stays visible while you retry.

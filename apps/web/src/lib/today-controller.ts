@@ -282,7 +282,7 @@ function setupEventDelegation(container: HTMLElement) {
       const header = target.closest(".today-section__header") as HTMLElement | null
       const section = header?.closest(".today-section") as HTMLElement | null
       if (section && section.id !== "section-unscheduled") {
-        section.classList.toggle("today-section--collapsed")
+        setSectionCollapsed(section, !section.classList.contains("today-section--collapsed"))
         saveSectionState()
       }
       return
@@ -703,6 +703,13 @@ function setupKeyboardNav(container: HTMLElement) {
 
 // ── Section Collapse ──────────────────────────────────────────────────────
 
+function setSectionCollapsed(section: HTMLElement, collapsed: boolean) {
+  section.classList.toggle("today-section--collapsed", collapsed)
+  section.querySelector(".today-section__toggle")?.setAttribute("aria-expanded", String(!collapsed))
+  const list = section.querySelector<HTMLElement>(".today-section__list")
+  if (list) list.inert = collapsed
+}
+
 function setupSectionCollapse(container: HTMLElement) {
   try {
     const saved = localStorage.getItem(SECTION_COLLAPSE_KEY)
@@ -712,7 +719,7 @@ function setupSectionCollapse(container: HTMLElement) {
     collapsed.forEach(id => {
       if (id === "section-unscheduled") return
       const section = container.querySelector(`#${id}`) as HTMLElement | null
-      if (section) section.classList.add("today-section--collapsed")
+      if (section) setSectionCollapsed(section, true)
     })
   } catch {
     /* ignore */
