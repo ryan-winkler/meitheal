@@ -48,7 +48,7 @@ test("uploaded SVG preserves Unicode text and presentation attributes", async ({
   expect(svg).toContain('fill="blue"')
 })
 
-test("non-SVG uploads cannot replace the selected emoji", async ({ page }) => {
+test("uploads with a non-SVG root cannot replace the selected emoji", async ({ page }) => {
   const value = page.locator("#pillar-icon-picker [data-icon-value]")
   const before = await value.inputValue()
   await page.locator("#pillar-icon-picker [data-icon-upload]").setInputFiles({

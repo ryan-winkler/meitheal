@@ -103,6 +103,7 @@ function stage(channel, config, version, destination) {
   }
 }
 
+/** Validate release CLI arguments before preparing metadata or staging discovery. */
 function main([command, channel, first, second, third]) {
   const config = channelConfig(channel)
   if (command === "prepare") {
