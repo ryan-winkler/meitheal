@@ -353,11 +353,19 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 </div>
               </div>
               <div id="td-desc-edit-container" class="hidden">
-                <textarea
-                  id="td-description"
-                  class="form-input min-h-[160px] resize-y text-sm w-full focus:ring-1 focus:ring-accent font-mono leading-relaxed"
-                  placeholder="Add a detailed description (Markdown supported)..."
-                ></textarea>
+                <div class="relative">
+                  <textarea
+                    id="td-description"
+                    class="form-input min-h-[160px] resize-y text-sm w-full focus:ring-1 focus:ring-accent font-mono leading-relaxed"
+                    placeholder="Add a detailed description (Markdown supported)..."
+                    aria-label={t("tasks.description", locale)}
+                    aria-describedby="td-desc-reference-hint"
+                    aria-autocomplete="list"
+                    data-task-reference
+                    maxlength="10000"
+                  ></textarea>
+                </div>
+                <p id="td-desc-reference-hint" class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
                 <div class="flex justify-end mt-2 gap-2">
                     <button id="td-desc-cancel-btn" class="btn text-xs px-3 py-1.5 border border-border text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors" type="button">Cancel</button>
                     <button id="td-desc-save-btn" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm" type="button">Save</button>
@@ -512,7 +520,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 class="text-sm text-text-primary [&:not(:empty)]:mb-3 focus:outline-2 focus:outline-accent"
                 data-unavailable={t("task_modal.comment_link_unavailable", locale)}
                 data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
-              <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)}
+              <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)} data-task-label={t("task_modal.kind_task", locale)}
                 class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
               <template id="td-reaction-controls"
                 data-task-label={t("reactions.task", locale)}
@@ -559,7 +567,10 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                   <button data-comment-delete type="button" class="btn btn-ghost min-h-11">{t("task_modal.comment_delete", locale)}</button>
                 </div>
                 <form data-comment-editor class="mt-2" hidden>
-                  <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} maxlength="5000" required></textarea>
+                  <div class="relative">
+                    <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} aria-autocomplete="list" data-task-reference maxlength="5000" required></textarea>
+                  </div>
+                  <p data-reference-hint class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
                   <div class="flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary min-h-11">{t("task_modal.comment_save", locale)}</button>
                     <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("common.cancel", locale)}</button>
@@ -569,8 +580,11 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               </template>
               <div class="flex gap-3 items-start relative mt-6">
                 <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
-                <div class="flex-1">
-                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error" maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
+                <div class="min-w-0 flex-1">
+                  <div class="relative">
+                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
+                  </div>
+                    <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
                     <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden>{t("task_modal.comment_failed", locale)}</p>
                     <div class="flex justify-end items-center gap-3 mt-2">
                       <span class="text-[10px] text-text-muted hidden md:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
@@ -579,6 +593,19 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 </div>
               </div>
             </section>
+
+            <div id="td-task-reference-picker" class="absolute inset-x-0 bottom-full z-30 mb-1 rounded-md border border-border bg-bg-card p-1 shadow-md"
+              data-loading={t("task_modal.reference_loading", locale)}
+              data-choose={t("task_modal.reference_choose", locale)}
+              data-empty={t("task_modal.reference_empty", locale)}
+              data-failed={t("task_modal.reference_failed", locale)}
+              data-update={t("task_modal.reference_update", locale)}
+              data-too-long={t("task_modal.reference_too_long", locale)}
+              data-task-label={t("task_modal.kind_task", locale)} hidden>
+              <p role="status" class="px-3 py-2 text-xs text-text-muted"></p>
+              <ul id="td-task-reference-results" role="listbox" class="max-h-44 overflow-y-auto"
+                aria-label={t("task_modal.reference_results", locale)} hidden></ul>
+            </div>
 
             <!-- Activity Log -->
             <details class="group border-t border-border pt-6 mt-6 pb-8">

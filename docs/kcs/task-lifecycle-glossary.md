@@ -27,6 +27,12 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Link to another task
+
+In Details, type `#` in the description, a new comment, or a comment you can edit. Choose a recent task, or type a ticket number or a word from its title immediately after `#` to narrow the list. Tap a result or use the arrow keys and Enter. Escape closes the list and keeps your text. A space after `#` lets you continue typing a Markdown heading in a description.
+
+The saved link follows the task’s ID when the title changes. It opens in the current Meitheal installation and requires the reader’s normal task access.
+
 ### Pin a task
 
 A personal pin is a relationship between one household user and one task. It survives changes to the task's workflow, including deferral and completion, and disappears when the task is permanently deleted. Shared favorites continue to drive the existing household views.

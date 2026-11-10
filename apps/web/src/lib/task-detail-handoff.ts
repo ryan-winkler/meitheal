@@ -10,11 +10,14 @@ export interface SearchDetailHandoff {
   onDismiss(reason: SearchDetailDismissal): void
 }
 
+export function buildTaskPath(taskId: string, commentId?: number): string {
+  const params = new URLSearchParams({ open: taskId })
+  if (commentId !== undefined) params.set("comment", String(commentId))
+  return `/tasks?${params}`
+}
+
 export function buildTaskPermalink(taskId: string, commentId?: number): string {
-  const url = new URL(buildIngressPagePath("/tasks"), window.location.origin)
-  url.searchParams.set("open", taskId)
-  if (commentId !== undefined) url.searchParams.set("comment", String(commentId))
-  return url.href
+  return new URL(buildIngressPagePath(buildTaskPath(taskId, commentId)), window.location.origin).href
 }
 
 export function getLegacyTaskId(hash: string): string | null {

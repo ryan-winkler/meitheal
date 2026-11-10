@@ -1,5 +1,6 @@
 import { createFocusTrap } from "@lib/focus-trap"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
+import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
@@ -12,17 +13,7 @@ import type {
   TaskSearchField,
 } from "@domains/search/search-types"
 
-const activeSearchCapability = "MEITHEAL_SEARCH_NETWORK_ONLY"
 const waitingSearchCapability = "MEITHEAL_SEARCH_WAITING_CAPABLE"
-
-function workerScope() {
-  return new URL((window.__ingress_path?.replace(/\/+$/, "") ?? "") + "/", window.location.origin)
-}
-
-async function searchRegistration(scope: URL) {
-  const registration = await navigator.serviceWorker?.getRegistration(scope.href)
-  return registration?.scope === scope.href ? registration : undefined
-}
 
 async function waitingSearchWorker(scope: URL) {
   const waiting = (await searchRegistration(scope))?.waiting
@@ -192,17 +183,7 @@ async function searchCatalog(
   if (includeCompleted) params.set("include_completed", "1")
   if (includeArchived) params.set("include_archived", "1")
 
-  const endpoint = `api/search?${params}`
-  const response = await fetch("/" + endpoint, {
-    cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
-  })
-  if (!response.ok || response.url !== new URL(endpoint, ingressScope).href ||
-      !response.headers.get("cache-control")?.includes("no-store")) {
-    void response.body?.cancel()
-    throw new Error(`Search failed: ${response.status}`)
-  }
-
-  return response.json() as Promise<SearchResponse>
+  return fetchOnlineSearch(params, ingressScope, AbortSignal.any([signal, AbortSignal.timeout(8_000)]))
 }
 
 pageLifecycle.onPageLoad((signal) => {
@@ -460,18 +441,17 @@ pageLifecycle.onPageLoad((signal) => {
 
     const request = new AbortController()
     searchRequest = request
-    const scope = workerScope()
+    const scope = searchWorkerScope()
     const worker = navigator.serviceWorker?.controller ?? null
     const isCurrent = () => isOpen && searchRequest === request && !signal.aborted && !request.signal.aborted &&
-      (navigator.serviceWorker?.controller ?? null) === worker && workerScope().href === scope.href
+      (navigator.serviceWorker?.controller ?? null) === worker && searchWorkerScope().href === scope.href
     showSearchStatus("Searching…")
 
     try {
       if (worker) {
-        const registration = await searchRegistration(scope)
+        const ready = await searchWorkerReady(scope, worker)
         if (!isCurrent()) return
-        if (registration?.active !== worker || worker.scriptURL !== new URL("sw.js", scope).href ||
-            !await workerAllowsNetworkOnly(worker, activeSearchCapability)) {
+        if (!ready) {
           const waiting = await waitingSearchWorker(scope)
           if (!isCurrent()) return
           renderSections(staticSections)

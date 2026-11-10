@@ -24,6 +24,8 @@
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
         import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
+        import { initModalTaskReferences } from "@lib/controllers/modal-task-references"
+        import { resolveDescriptionTaskReferences } from "@lib/task-references"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -48,6 +50,7 @@
         let detailGeneration = 0
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
+        const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
@@ -129,6 +132,7 @@
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason))) return
           const closing = ++detailGeneration
+          closeTaskReferences()
           search?.lifetime.abort()
           deferral.opening(false)
           pins.opening()
@@ -203,6 +207,7 @@
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search) })) return
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
+          closeTaskReferences()
           deferral.opening(newSession)
           pins.opening()
           // P3-4: Store focus origin for restore on close
@@ -597,8 +602,7 @@
             if (t.description) {
               // Render markdown preview (save=false prevents re-saving)
               try {
-                const dirtyHtml = String(marked.parse(String(t.description) || "*No description provided.*"));
-                if (descPreview) descPreview.innerHTML = sanitizeClient(dirtyHtml);
+                renderTaskDescription(String(t.description))
               } catch (e) { log.warn("markdown-preview error", e) }
               descEditContainer?.classList.add("hidden");
               descPreviewContainer?.classList.remove("hidden");
@@ -1057,6 +1061,12 @@
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
 
+        function renderTaskDescription(markdown: string) {
+          if (!descPreview) return
+          descPreview.innerHTML = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          resolveDescriptionTaskReferences(descPreview)
+        }
+
         function enterDescEdit() {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
@@ -1065,6 +1075,7 @@
         }
 
         function exitDescEdit(save: boolean) {
+          closeTaskReferences()
           descEditContainer?.classList.add("hidden");
           descPreviewContainer?.classList.remove("hidden");
           if (!save && tdDescription) {
@@ -1073,8 +1084,7 @@
           if (save && descPreview && tdDescription) {
             const rawMarkdown = tdDescription.value;
             try {
-              const dirtyHtml = marked.parse(rawMarkdown || "*No description provided.*") as string;
-              descPreview.innerHTML = sanitizeClient(dirtyHtml);
+              renderTaskDescription(rawMarkdown)
             } catch (e: any) {
               log.error("Markdown render error", e);
               descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${escapeHtml(e.message)}</div>`;
@@ -1647,6 +1657,7 @@
           const draft = commentInput?.value
           if (!taskId || !signal || !commentInput || !draft?.trim()) return
 
+          closeTaskReferences()
           commentButton.disabled = true
           commentError?.setAttribute("hidden", "")
           try {

@@ -11,12 +11,13 @@ import {
 import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
+import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
 
 const log = createClientLogger("tasks", "comments-attachments")
 
 function attachCommentManagement(
-  wrapper: HTMLElement, body: HTMLElement, url: string, signal: AbortSignal,
+  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, url: string, signal: AbortSignal,
 ): void {
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
@@ -29,8 +30,10 @@ function attachCommentManagement(
   const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
   const cancel = form.querySelector<HTMLButtonElement>("[data-comment-cancel]")!
   const error = controls.querySelector<HTMLElement>('[role="alert"]')!
+  const hint = controls.querySelector<HTMLElement>("[data-reference-hint]")!
   error.id = `${wrapper.id}-error`
-  input.setAttribute("aria-describedby", error.id)
+  hint.id = `${wrapper.id}-reference-hint`
+  input.setAttribute("aria-describedby", `${error.id} ${hint.id}`)
   wrapper.append(controls)
 
   const isCurrent = () => !signal.aborted && wrapper.isConnected
@@ -43,7 +46,7 @@ function attachCommentManagement(
   }
 
   edit.addEventListener("click", () => {
-    input.value = body.textContent ?? ""
+    input.value = content
     error.textContent = ""
     body.hidden = true
     actions.hidden = true
@@ -66,9 +69,10 @@ function attachCommentManagement(
         signal,
       })
       if (!response.ok) throw new Error("Comment edit failed")
-      const { content } = await response.json() as { content: string }
+      const updated = await response.json() as { content: string }
       if (!isCurrent()) return
-      body.textContent = content
+      content = updated.content
+      renderCommentTaskReferences(body, content, taskLabel)
       endEdit()
     } catch {
       if (isCurrent()) {
@@ -125,6 +129,7 @@ export async function loadComments(
   const container = document.getElementById("td-comments")
   const status = document.getElementById("td-comment-link-status")
   if (!container) return
+  const taskLabel = container.dataset.taskLabel ?? "Task"
   if (postedCommentId !== undefined && document.getElementById(`td-comment-${postedCommentId}`)) return
   const url = `/api/tasks/${encodeURIComponent(taskId)}/comments`
 
@@ -174,7 +179,7 @@ export async function loadComments(
 
       const body = document.createElement("div")
       body.className = "text-sm text-text-primary whitespace-pre-wrap break-words"
-      body.textContent = c.content
+      renderCommentTaskReferences(body, c.content, taskLabel)
 
       wrapper.id = `td-comment-${c.id}`
       wrapper.tabIndex = -1
@@ -182,7 +187,7 @@ export async function loadComments(
       wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
       wrapper.setAttribute("aria-describedby", body.id)
       wrapper.append(meta, body)
-      if (c.can_manage === true) attachCommentManagement(wrapper, body, `${url}/${c.id}`, signal)
+      if (c.can_manage === true) attachCommentManagement(wrapper, body, c.content, taskLabel, `${url}/${c.id}`, signal)
       mountReactions(wrapper, `${url}/${c.id}/reactions`, signal)
       container.appendChild(wrapper)
       if (String(c.id) === commentTarget) linkedComment = wrapper
