@@ -59,7 +59,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       const page = await context.newPage()
       await page.goto("/settings#theme-select")
       const origin = page.url()
-      const trigger = page.getByRole("button", { name: "Search settings…", exact: true })
+      const trigger = page.getByRole("button", { name: "Search settings", exact: true })
       const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
       const result = page.getByRole("option", { name: new RegExp(title) })
       const detail = page.locator("#task-detail-overlay")
@@ -112,7 +112,7 @@ test("Search-owned confirmation is cancelled on history to the same task", async
       history.pushState(history.state, "", current)
       return [older.href, current]
     }, id)
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.getByRole("button", { name: "Search settings", exact: true }).click()
     await page.getByRole("tab", { name: "Tasks" }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
     await input.fill("same task history")
@@ -172,7 +172,7 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
       history.pushState(history.state, "", current)
       return [older.href, current]
     }, id)
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.getByRole("button", { name: "Search settings", exact: true }).click()
     await page.getByRole("tab", { name: "Tasks" }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
     await input.fill(ticket)
@@ -272,7 +272,7 @@ test("All selects an exact task ahead of a static match and keeps the active opt
     }
     await page.setViewportSize({ width: 900, height: 480 })
     await page.goto(root + "/settings")
-    const trigger = page.getByRole("button", { name: "Search settings…", exact: true })
+    const trigger = page.getByRole("button", { name: "Search settings", exact: true })
     await trigger.click()
     await page.getByRole("tab", { name: "All" }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
@@ -366,7 +366,7 @@ test("Enter cannot select a stale result while the next query loads", async ({ r
     await page.goto("/settings")
     await page.waitForFunction(() => typeof window.openSearchHub === "function")
     await page.evaluate(() => document.dispatchEvent(new Event("astro:page-load")))
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.getByRole("button", { name: "Search settings", exact: true }).click()
     await page.getByRole("tab", { name: "Tasks" }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
     await expect(page.getByRole("option", { name: /Fresh lantern query fixture/ })).toBeVisible()
@@ -384,7 +384,7 @@ test("Enter cannot select a stale result while the next query loads", async ({ r
     await expect(page.getByRole("option", { name: /Obsolete search result/ })).toHaveCount(0)
     expect(freshReads).toBe(1)
     await input.press("Escape")
-    await expect(page.getByRole("button", { name: "Search settings…", exact: true })).toBeFocused()
+    await expect(page.getByRole("button", { name: "Search settings", exact: true })).toBeFocused()
   } finally {
     await context.close()
   }
@@ -447,7 +447,7 @@ test("Search waits for a compatible worker, purges old results and remains fresh
       if (path.endsWith("/api/search")) paths.push(path)
     })
     await page.goto(origin + prefix + "/settings")
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.getByRole("button", { name: "Search settings", exact: true }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
     await input.fill("Search current")
     await expect(page.locator("#search-hub-status")).toContainText("until the app updates")
