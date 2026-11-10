@@ -63,6 +63,19 @@ Access points after startup:
 ./scripts/devcontainer-up.sh logs
 ```
 
+## Host console protection
+
+The HA service masks guest `getty@tty1.service`, `getty@.service`, and
+`serial-getty@.service` before starting `/sbin/init`.
+Keep this guard in the Compose startup command so every recreated container
+applies it before guest systemd starts. A privileged guest console can claim
+the host display terminal and close its desktop session.
+
+Use `/usr/bin/systemctl --root=/ mask` for this step. The explicit binary path
+bypasses the image's `systemctl` shim, and `--root=/` applies the mask before
+systemd runs. The startup shell stops if masking fails. Editor post-start
+hooks run after init and are too late for this guard.
+
 ## Agent preflight
 
 Before claiming Tier 2 verification, confirm the editor-managed devcontainer is

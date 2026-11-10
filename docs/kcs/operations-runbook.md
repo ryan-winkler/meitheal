@@ -264,3 +264,10 @@ The upgrade runs automatically when the browser opens the database with a higher
 - `MEITHEAL_PERF_BUDGET_FILE`
 
 6. Home Assistant publishing readiness checklist: `docs/kcs/ha-publishing-checklist.md`.
+
+## Privileged development-container console
+
+Mask the guest getty units before starting init in a privileged development
+container. Use the absolute /usr/bin/systemctl path, since a base-image wrapper
+can bypass service changes. Keep this command in local Compose overrides that
+replace the development-container startup command.

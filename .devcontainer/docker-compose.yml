@@ -18,7 +18,13 @@ services:
   ha-devcontainer:
     image: ghcr.io/home-assistant/devcontainer:2-addons
     privileged: true
-    command: /sbin/init
+    # Apply the console mask before guest init on every container creation.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /usr/bin/systemctl --root=/ mask getty@tty1.service getty@.service serial-getty@.service
+        exec /sbin/init
     ports:
       - "${HA_UI_PORT:-7123}:8123"
       - "${HA_SUPERVISOR_PORT:-7357}:4357"
