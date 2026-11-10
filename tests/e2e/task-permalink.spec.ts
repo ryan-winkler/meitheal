@@ -194,7 +194,11 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await sourcePage.goto(taskUrl)
     const list = sourcePage.locator("#td-comments")
     await expect(list).toContainText("The linked comment")
-    const link = list.getByRole("article").filter({ hasText: "The linked comment" }).getByRole("link", { name: /^Comment link,/ })
+    const authorRow = sourcePage.locator(`#td-comment-${comment}`)
+    const link = authorRow.getByRole("link", { name: /^Comment link,/ })
+    const edit = authorRow.getByRole("button", { name: "Edit comment" })
+    const remove = authorRow.getByRole("button", { name: "Delete comment" })
+    const editor = authorRow.getByRole("textbox", { name: "Edit comment" })
     const href = `${taskUrl}&comment=${comment}`
     await expect(link).toHaveAttribute("href", href)
 
@@ -202,14 +206,72 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     expect(denied.status()).toBe(401)
     const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers, data: { content: "Wrong author" } })
     expect(forbiddenEdit.status()).toBe(404)
-    const edited = await source.request.patch(entry + commentApiPath, { headers, data: { content: "Edited linked comment" } })
-    expect(edited.status()).toBe(200)
+
+    await edit.press("Enter")
+    await expect(editor).toBeFocused()
+    await expect(editor).toHaveValue("The linked comment")
+    await editor.fill("Cancelled change")
+    await authorRow.getByRole("button", { name: "Cancel" }).press("Enter")
+    await expect(edit).toBeFocused()
+    await expect(authorRow).toContainText("The linked comment")
+    await edit.press("Enter")
+    await editor.fill("Edited linked comment")
+    const save = authorRow.getByRole("button", { name: "Save comment" })
+    const mutationUrl = entry + commentApiPath
+    await sourcePage.route(mutationUrl, route => route.fulfill({ status: 503 }))
+    await save.press("Enter")
+    await expect(authorRow.getByRole("alert")).toContainText("Could not save your comment")
+    await expect(editor).toHaveValue("Edited linked comment")
+    await expect(editor).toBeFocused()
+    await sourcePage.unroute(mutationUrl)
+
+    await sourcePage.locator("#td-comment-input").fill("Posted while editing")
+    await sourcePage.getByRole("button", { name: "Post Comment" }).press("Enter")
+    await expect(list.getByText("Posted while editing", { exact: true })).toBeVisible()
+    await expect(editor).toHaveValue("Edited linked comment")
+    await save.press("Enter")
+    await expect(authorRow).toContainText("Edited linked comment")
+    await expect(edit).toBeFocused()
+    await expect(link).toHaveAttribute("href", href)
+
+    const editStarted = deferred<void>()
+    const releaseEdit = deferred<void>()
+    const editReleased = deferred<void>()
+    await sourcePage.route(mutationUrl, async route => {
+      editStarted.resolve()
+      await releaseEdit.promise
+      try {
+        await route.fulfill({ json: { content: "Late edit must not render" } })
+      } catch {
+        // Closing the panel can abort the intercepted request before fulfillment.
+      } finally {
+        editReleased.resolve()
+      }
+    })
+    try {
+      await edit.press("Enter")
+      await editor.fill("Editing before closing")
+      await save.press("Enter")
+      await editStarted.promise
+      await sourcePage.getByRole("button", { name: "Close detail" }).press("Enter")
+      await expect.poll(() => new URL(sourcePage.url()).searchParams.has("open")).toBe(false)
+      await sourcePage.goBack()
+      await expect(authorRow).toContainText("Edited linked comment")
+    } finally {
+      releaseEdit.resolve()
+    }
+    await editReleased.promise
+    await sourcePage.unroute(mutationUrl)
+    await expect(authorRow).not.toContainText("Late edit must not render")
+    await expect(editor).toBeHidden()
 
     const page = await recipient.newPage()
     await page.goto(href)
     const target = page.locator(`#td-comment-${comment}`)
     await expect(target).toContainText("Edited linked comment")
     await expect(target).toBeFocused()
+    await expect(target.getByRole("button", { name: "Edit comment" })).toHaveCount(0)
+    await expect(target.getByRole("button", { name: "Delete comment" })).toHaveCount(0)
     await page.reload()
     await expect(target).toBeFocused()
 
@@ -218,8 +280,24 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(missing).toContainText("This comment is unavailable")
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
-    const deleted = await source.request.delete(entry + commentApiPath, { headers })
-    expect(deleted.status()).toBe(204)
+    const confirmation = sourcePage.getByRole("alertdialog", { name: "Delete comment" })
+    await remove.press("Enter")
+    const cancel = confirmation.getByRole("button", { name: "Cancel" })
+    await expect(cancel).toBeFocused()
+    await cancel.press("Enter")
+    await expect(remove).toBeFocused()
+    await expect(authorRow).toContainText("Edited linked comment")
+    await sourcePage.route(mutationUrl, route => route.fulfill({ status: 503 }))
+    await remove.press("Enter")
+    await confirmation.getByRole("button", { name: "Delete comment" }).press("Enter")
+    await expect(authorRow.getByRole("alert")).toContainText("Could not delete the comment")
+    await expect(remove).toBeFocused()
+    await sourcePage.unroute(mutationUrl)
+    const sibling = list.getByRole("article").filter({ hasText: "Posted while editing" })
+    await remove.press("Enter")
+    await confirmation.getByRole("button", { name: "Delete comment" }).press("Enter")
+    await expect(authorRow).toHaveCount(0)
+    await expect(sibling).toBeFocused()
     await page.goto(href)
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).toContainText("First visible comment")

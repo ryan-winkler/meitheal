@@ -13,9 +13,11 @@ export interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   variant?: "danger" | "warning" | "default";
+  signal?: AbortSignal;
 }
 
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
+  if (options.signal?.aborted) return Promise.resolve(false);
   return new Promise((resolve) => {
     // Remove any existing confirm dialog
     document.getElementById("meitheal-confirm-overlay")?.remove();
@@ -89,13 +91,23 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const okBtn = dialog.querySelector("#confirm-ok") as HTMLButtonElement;
     cancelBtn?.focus();
 
+    let closing = false;
+    const abort = () => cleanup(false);
     function cleanup(result: boolean) {
+      if (closing) return;
+      closing = true;
+      options.signal?.removeEventListener("abort", abort);
       overlay.style.opacity = "0";
       document.removeEventListener("keydown", onKey, true);
+      if (options.signal?.aborted) {
+        overlay.remove();
+        resolve(false);
+        return;
+      }
       setTimeout(() => {
         overlay.remove();
         // Restore focus to the element that was focused before the dialog
-        previouslyFocused?.focus();
+        if (!options.signal?.aborted) previouslyFocused?.focus();
       }, 100);
       resolve(result);
     }
@@ -129,6 +141,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       }
     }
     document.addEventListener("keydown", onKey, true);
+    options.signal?.addEventListener("abort", abort, { once: true });
   });
 }
 

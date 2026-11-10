@@ -1235,12 +1235,14 @@ export class TaskRepository {
   // ── Comment Methods ─────────────────────────────────────────────────
 
   /** List comments for a task, ordered by creation time ascending */
-  async getComments(taskId: string) {
+  async getComments(taskId: string, ownerKey: string | null) {
     const result = await this.client.execute({
-      sql: "SELECT id, task_id, content, author, created_at FROM comments WHERE task_id = ? ORDER BY created_at ASC, id ASC",
-      args: [taskId] as InValue[],
-    });
-    return result.rows;
+      sql: `SELECT id, task_id, content, author, created_at,
+                   CASE WHEN owner_key = ? THEN 1 ELSE 0 END AS can_manage
+            FROM comments WHERE task_id = ? ORDER BY created_at ASC, id ASC`,
+      args: [ownerKey, taskId],
+    })
+    return result.rows.map(row => ({ ...row, can_manage: Number(row.can_manage) === 1 }))
   }
 
   /** Insert and return this comment while the parent task exists. */

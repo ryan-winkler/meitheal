@@ -45,6 +45,17 @@ components:
           type: string
           description: SQLite UTC timestamp.
       additionalProperties: false
+    TaskCommentListItem:
+      allOf:
+        - $ref: "#/components/schemas/TaskComment"
+        - type: object
+          required:
+            - can_manage
+          properties:
+            can_manage:
+              type: boolean
+              description: Whether the caller can edit and delete this comment.
+          additionalProperties: false
     FeedbackSubmission:
       type: object
       properties:
@@ -1346,7 +1357,7 @@ paths:
                   comments:
                     type: array
                     items:
-                      $ref: "#/components/schemas/TaskComment"
+                      $ref: "#/components/schemas/TaskCommentListItem"
                 additionalProperties: false
     post:
       operationId: addTaskComment

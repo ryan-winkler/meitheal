@@ -493,6 +493,23 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
               <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)}
                 class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
+              <template id="td-comment-management"
+                data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
+                data-edit-failed={t("task_modal.comment_edit_failed", locale)}
+                data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
+                <div data-comment-actions class="flex flex-wrap gap-2">
+                  <button data-comment-edit type="button" class="btn btn-ghost min-h-11">{t("task_modal.comment_edit", locale)}</button>
+                  <button data-comment-delete type="button" class="btn btn-ghost min-h-11">{t("task_modal.comment_delete", locale)}</button>
+                </div>
+                <form data-comment-editor class="mt-2" hidden>
+                  <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} maxlength="5000" required></textarea>
+                  <div class="flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary min-h-11">{t("task_modal.comment_save", locale)}</button>
+                    <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("task_modal.cancel", locale)}</button>
+                  </div>
+                </form>
+                <p role="alert" class="text-sm text-text-primary [&:not(:empty)]:mt-2"></p>
+              </template>
               <div class="flex gap-3 items-start relative mt-6">
                 <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
                 <div class="flex-1">

@@ -40,6 +40,7 @@
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
         let currentCommentTarget: string | null = null
+        let commentsReady: Promise<void> = Promise.resolve()
         let _modalAbortController: AbortController | null = null;
         __signal.addEventListener("abort", () => {
           _modalAbortController?.abort()
@@ -871,11 +872,12 @@
             document.getElementById("td-comments")?.replaceChildren()
             document.getElementById("td-comment-link-status")?.replaceChildren()
             commentError?.setAttribute("hidden", "")
+            if (commentButton) commentButton.disabled = false
             if (commentInput && commentInput.dataset.taskId !== taskId) {
               commentInput.value = ""
               commentInput.dataset.taskId = taskId
             }
-            void loadComments(taskId, modalSignal, commentTarget)
+            commentsReady = loadComments(taskId, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
@@ -1502,6 +1504,7 @@
         commentButton?.addEventListener("click", async () => {
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
+          const initialComments = commentsReady
           const draft = commentInput?.value
           if (!taskId || !signal || !commentInput || !draft?.trim()) return
 
@@ -1517,11 +1520,13 @@
             if (!response.ok) throw new Error("Comment request failed")
             if (signal.aborted) return
             if (commentInput.value === draft) commentInput.value = ""
-            await loadComments(taskId, signal)
+            const { id } = await response.json() as { id: number }
+            await initialComments
+            if (!signal.aborted) await loadComments(taskId, signal, null, id)
           } catch {
             if (!signal.aborted) commentError?.removeAttribute("hidden")
           } finally {
-            commentButton.disabled = false
+            if (!signal.aborted) commentButton.disabled = false
           }
         }, { signal: __signal })
 

@@ -1,14 +1,19 @@
 import type { APIRoute } from "astro"
+import { hasScope } from "@meitheal/domain-auth"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
 import { commentFailure, commentJson, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ locals, params }) => {
   try {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
-    const comments = await repo.getComments(params.id!)
+    const agent = locals.agentToken
+    const owner = !agent || hasScope(agent.scopes, "tasks:write")
+      ? resolveCommentAuthor(locals)?.owner ?? null
+      : null
+    const comments = await repo.getComments(params.id!, owner)
     return commentJson({ comments })
   } catch {
     return commentFailure("get", "Failed to load comments")

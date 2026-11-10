@@ -49,6 +49,18 @@ const schemas = {
       created_at: { type: "string", description: "SQLite UTC timestamp." },
     },
   },
+  TaskCommentListItem: {
+    allOf: [
+      { $ref: "#/components/schemas/TaskComment" },
+      {
+        type: "object",
+        required: ["can_manage"],
+        properties: {
+          can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
+        },
+      },
+    ],
+  },
   FeedbackSubmission: {
     type: "object",
     properties: {
@@ -622,7 +634,7 @@ const paths = {
       tags: ["Tasks"],
       summary: "List comments on a task",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-      responses: { 200: jsonContent({ type: "object", required: ["comments"], properties: { comments: arrOf("TaskComment") } }, "Comments") },
+      responses: { 200: jsonContent({ type: "object", required: ["comments"], properties: { comments: arrOf("TaskCommentListItem") } }, "Comments") },
     },
     post: {
       operationId: "addTaskComment",
