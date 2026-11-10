@@ -365,6 +365,21 @@ const labelCleanupError = (description, codes) => jsonContent({
   properties: { ok: { const: false }, errorCode: { type: "string", enum: codes }, detail: { type: "string" } },
 }, description)
 
+const labelMutationErrors = Object.fromEntries(Object.entries({
+  400: labelCleanupError("Invalid ID, label change or unexpected deletion body", ["invalid"]),
+  403: labelCleanupError("Current HA administrator or local standalone operator required; agent tokens denied", ["denied"]),
+  404: labelCleanupError("Label no longer available", ["missing"]),
+  409: labelCleanupError("No change committed: ambiguous/conflicting names or malformed stored selections", ["conflict", "blocked"]),
+  413: labelCleanupError("Body exceeds 4 KiB", ["tooLarge"]),
+  415: labelCleanupError("PUT requires application/json", ["media"]),
+  499: labelCleanupError("Request cancelled before repository work", ["cancelled"]),
+  503: labelCleanupError("Current administrator verification, bounded body read or storage unavailable", ["unavailable"]),
+}).map(([status, response]) => [status, { ...response,
+  headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } },
+}]))
+const labelMutationId = [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1, maximum: 9007199254740991 } }]
+const labelDeletionErrors = Object.fromEntries(Object.entries(labelMutationErrors).filter(([status]) => !["413", "415"].includes(status)))
+
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` })
 const arrOf = (name) => ({ type: "array", items: ref(name) })
 
@@ -1336,8 +1351,27 @@ const paths = {
     },
   },
   "/api/labels/{id}": {
-    put: { operationId: "updateLabel", tags: ["Labels"], summary: "Update a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Label"), "Updated") } },
-    delete: { operationId: "deleteLabel", tags: ["Labels"], summary: "Delete a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+    put: {
+      operationId: "updateLabel", tags: ["Labels"], summary: "Update a shared label and its current references atomically",
+      description: "Requires fresh Home Assistant administrator verification, or the existing local standalone operator boundary. Agent tokens are denied and this operation is excluded from MCP discovery. Renaming rewrites current task, saved-draft and template selections in one writer transaction. Ambiguous equivalent definitions or malformed selections commit nothing. Color-only edits do not scan private selections. Body limit is 4 KiB with a five-second read bound. Responses are private and no-store. Existing middleware authentication, CSRF and rate limits still apply.",
+      parameters: labelMutationId,
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", additionalProperties: false, minProperties: 1,
+        properties: { title: { type: "string", description: "HTML is stripped, then the title is trimmed and validated as 1–100 UTF-16 code units with well-formed Unicode. The complete UTF-8 request must fit within 4 KiB." },
+          hex_color: { type: "string", pattern: "^#?[a-fA-F0-9]{6}$" } },
+      } } } },
+      responses: { ...labelMutationErrors, 200: { ...jsonContent({ type: "object", required: ["id", "title", "hex_color"], properties: {
+        id: { type: "integer", minimum: 1 }, title: { type: "string" }, hex_color: { type: "string", pattern: "^#[a-fA-F0-9]{6}$" },
+      } }, "Committed label"), headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } } } },
+    },
+    delete: {
+      operationId: "deleteLabel", tags: ["Labels"], summary: "Delete a shared label and its current references atomically",
+      description: "Requires a current HA administrator or local standalone operator; agent tokens are denied and MCP excludes this operation. Send no body. The final equivalent definition removes matching current task, draft and template selections; deleting one duplicate retains their shared name references. The selected ID's legacy junctions and definition are removed in the same writer transaction. Private no-store responses contain no draft/template bodies. Middleware authentication, CSRF and rate limits still apply.",
+      parameters: labelMutationId,
+      responses: { ...labelDeletionErrors, 200: { ...jsonContent({ type: "object", required: ["ok", "deleted"], properties: {
+        ok: { const: true }, deleted: { type: "integer", minimum: 1 },
+      } }, "Committed deletion"), headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } } } },
+    },
   },
 
   // ── Habits ──

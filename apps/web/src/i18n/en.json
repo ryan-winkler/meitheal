@@ -1101,6 +1101,38 @@
       "removed_many": "{count} labels removed.",
       "untitled": "Unnamed label",
       "color": "Label color"
+    },
+    "editor": {
+      "name": "Name",
+      "color": "Color",
+      "save": "Save",
+      "save_label": "Save {name}",
+      "delete": "Delete",
+      "delete_label": "Delete {name}",
+      "delete_title": "Delete shared label",
+      "delete_message": "Delete “{name}”? This removes it from tasks, saved drafts and templates. Equivalent surviving definitions keep their shared references.",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "saved": "Saved.",
+      "deleting": "Deleting…",
+      "deleted": "Label deleted.",
+      "creating": "Creating…",
+      "created": "Label created.",
+      "exists": "This label already exists.",
+      "empty": "No labels yet. Create one above.",
+      "loading": "Loading labels…",
+      "load_error": "Could not load labels. Try again.",
+      "retry": "Retry",
+      "failed": "Could not complete this change. Review the current labels before trying again.",
+      "invalid": "Use a name of 1 to 100 characters and a six-digit color.",
+      "denied": "Open Labels with a current Home Assistant administrator account.",
+      "blocked": "Stored label selections need attention. Check the Labels runbook.",
+      "conflict": "A definition shares the old or new name. Choose another name or remove a duplicate definition first.",
+      "missing": "This label is no longer available. Reload Labels.",
+      "unavailable": "Could not complete this change. Review the current labels before trying again.",
+      "cancelled": "The label change was cancelled.",
+      "tooLarge": "The label change is too large. Use a name of 1 to 100 characters.",
+      "media": "Could not send this label change. Reload Labels and try again."
     }
   },
   "gamification": {
@@ -1555,7 +1587,6 @@
   "settings.save_webhook": "Save Webhook",
   "settings.status_not_configured": "Not configured",
   "settings.send_webhook_test": "Send Test",
-
   "hierarchy.area": "Area",
   "hierarchy.goal": "Goal",
   "hierarchy.project": "Project",
@@ -1563,18 +1594,15 @@
   "hierarchy.routine": "Routine",
   "hierarchy.every_day": "Every Day",
   "hierarchy.breadcrumb_home": "Home",
-
   "helper.dismiss": "Dismiss",
   "helper.restore_all": "Restore all helpers",
   "helper.restored_count": "{count} helper(s) restored",
   "helper.keyboard_hint": "Press ? to restore dismissed helpers",
-
   "parent_page.open_full": "Open Full View",
   "parent_page.coming_soon": "Coming Soon",
   "parent_page.tasks_hub": "Tasks Hub",
   "parent_page.planning_hub": "Planning",
   "parent_page.progress_hub": "Progress & Growth",
-
   "pillars": {
     "new_pillar": "New Pillar",
     "edit_pillar": "Edit Pillar",
@@ -1600,7 +1628,6 @@
     "cancel": "Cancel",
     "required": "*"
   },
-
   "reactions": {
     "task": "Task reactions",
     "comment": "Comment reactions",
@@ -1821,7 +1848,6 @@
     "attachments_title": "Attachments",
     "close": "Close"
   },
-
   "picker": {
     "icon_label": "Icon",
     "choose_icon": "Choose icon",

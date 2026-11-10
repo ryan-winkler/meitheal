@@ -4123,34 +4123,303 @@ paths:
       operationId: updateLabel
       tags:
         - Labels
-      summary: Update a label
-      parameters:
+      summary: Update a shared label and its current references atomically
+      description: Requires fresh Home Assistant administrator verification, or the existing local standalone operator
+        boundary. Agent tokens are denied and this operation is excluded from MCP discovery. Renaming rewrites current
+        task, saved-draft and template selections in one writer transaction. Ambiguous equivalent definitions or
+        malformed selections commit nothing. Color-only edits do not scan private selections. Body limit is 4 KiB with a
+        five-second read bound. Responses are private and no-store. Existing middleware authentication, CSRF and rate
+        limits still apply.
+      parameters: &a42
         - name: id
           in: path
           required: true
           schema:
-            type: string
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                title:
+                  type: string
+                  description: HTML is stripped, then the title is trimmed and validated as 1–100 UTF-16 code units with well-formed
+                    Unicode. The complete UTF-8 request must fit within 4 KiB.
+                hex_color:
+                  type: string
+                  pattern: ^#?[a-fA-F0-9]{6}$
       responses:
         "200":
-          description: Updated
+          description: Committed label
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Label"
+                type: object
+                required:
+                  - id
+                  - title
+                  - hex_color
+                properties:
+                  id:
+                    type: integer
+                    minimum: 1
+                  title:
+                    type: string
+                  hex_color:
+                    type: string
+                    pattern: ^#[a-fA-F0-9]{6}$
+                additionalProperties: false
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "400": &a43
+          description: Invalid ID, label change or unexpected deletion body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - invalid
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "403": &a44
+          description: Current HA administrator or local standalone operator required; agent tokens denied
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - denied
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "404": &a45
+          description: Label no longer available
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - missing
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "409": &a46
+          description: "No change committed: ambiguous/conflicting names or malformed stored selections"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - conflict
+                      - blocked
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "413":
+          description: Body exceeds 4 KiB
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - tooLarge
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "415":
+          description: PUT requires application/json
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - media
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "499": &a47
+          description: Request cancelled before repository work
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - cancelled
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "503": &a48
+          description: Current administrator verification, bounded body read or storage unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - unavailable
+                  detail:
+                    type: string
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
     delete:
       operationId: deleteLabel
       tags:
         - Labels
-      summary: Delete a label
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Delete a shared label and its current references atomically
+      description: Requires a current HA administrator or local standalone operator; agent tokens are denied and MCP excludes
+        this operation. Send no body. The final equivalent definition removes matching current task, draft and template
+        selections; deleting one duplicate retains their shared name references. The selected ID's legacy junctions and
+        definition are removed in the same writer transaction. Private no-store responses contain no draft/template
+        bodies. Middleware authentication, CSRF and rate limits still apply.
+      parameters: *a42
       responses:
         "200":
-          description: Deleted
+          description: Committed deletion
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - deleted
+                properties:
+                  ok:
+                    const: true
+                  deleted:
+                    type: integer
+                    minimum: 1
+                additionalProperties: false
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+        "400": *a43
+        "403": *a44
+        "404": *a45
+        "409": *a46
+        "499": *a47
+        "503": *a48
   /api/habits:
     get:
       operationId: listHabits

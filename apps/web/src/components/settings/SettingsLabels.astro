@@ -1,61 +1,34 @@
 ---
-/**
- * SettingsLabels — Label management panel in Settings
- *
- * @domain labels
- * @bounded-context labels
- *
- * Lists all labels with inline edit/delete, plus create-new form.
- * All operations use /api/labels and /api/labels/[id] endpoints.
- */
+/** Shared label definitions and private-reference-safe cleanup. */
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 
-interface Props {
-  locale: Locale
-}
-
+interface Props { locale: Locale }
 const { locale } = Astro.props
 const cleanupKeys = ["review", "description", "selection", "remove", "confirm_title", "confirm_one", "confirm_many", "cancel", "loading", "removing", "empty", "previous", "next", "retry", "stale", "blocked", "denied", "unavailable", "offline", "removed_one", "removed_many", "untitled"]
 const cleanupCopy = Object.fromEntries(cleanupKeys.map(key => [key, t(`labels.cleanup.${key}`, locale)]))
+const editorKeys = ["name", "color", "save", "save_label", "delete", "delete_label", "delete_title", "delete_message", "cancel", "saving", "saved", "deleting", "deleted", "creating", "created", "exists", "empty", "loading", "load_error", "retry", "failed", "invalid", "denied", "blocked", "conflict", "missing", "unavailable", "cancelled", "tooLarge", "media"]
+const editorCopy: Record<string, string> = { ...Object.fromEntries(editorKeys.map(key => [key, t(`labels.editor.${key}`, locale)])), untitled: t("labels.cleanup.untitled", locale) }
 ---
 
 <div class="settings-shell-panel">
-  <SettingsPanelCard
-    title="🏷️ Manage Labels"
-    subtitle="Create, edit, and remove labels used to categorize tasks"
-  >
-    {/* Create new label form */}
-    <div class="labels-create-row">
+  <SettingsPanelCard title={t("labels.manage_labels", locale)} subtitle={t("labels.manage_subtitle", locale)}>
+    <div data-label-editor data-copy={JSON.stringify(editorCopy)}>
       <form id="create-label-form" class="labels-create-form">
-        <input
-          type="text"
-          id="new-label-title"
-          class="form-input"
-          placeholder="Label name"
-          maxlength="100"
-          required
-          style="flex: 1; font-size: 13px;"
-        />
-        <input
-          type="color"
-          id="new-label-color"
-          value="#6366f1"
-          title="Label color"
-          class="labels-color-picker"
-        />
-        <button type="submit" class="btn btn-primary" style="font-size: 13px; white-space: nowrap;">
-          + Create
-        </button>
+        <label class="label-name-field" for="new-label-title">
+          <span>{editorCopy.name}</span>
+          <input type="text" id="new-label-title" class="form-input" placeholder={t("labels.name_placeholder", locale)} maxlength="100" required />
+        </label>
+        <label class="label-color-field" for="new-label-color">
+          <span>{editorCopy.color}</span>
+          <input type="color" id="new-label-color" value="#6366f1" class="labels-color-picker" />
+        </label>
+        <button type="submit" class="btn btn-primary">{t("labels.create", locale)}</button>
       </form>
-    </div>
-
-    {/* Label list */}
-    <div id="labels-list" class="labels-list">
-      <div class="labels-empty">
-        Loading labels...
-      </div>
+      <p role="status" aria-atomic="true" data-label-editor-status>{editorCopy.loading}</p>
+      <button type="button" class="btn btn-outline" data-label-editor-retry hidden>{editorCopy.retry}</button>
+      <ul id="labels-list" class="labels-list" aria-label={t("labels.title", locale)}></ul>
     </div>
     <section class="label-cleanup" data-label-cleanup data-copy={JSON.stringify(cleanupCopy)}>
       <button type="button" class="btn btn-outline" data-cleanup-review>{cleanupCopy.review}</button>
@@ -86,258 +59,20 @@ const cleanupCopy = Object.fromEntries(cleanupKeys.map(key => [key, t(`labels.cl
   .label-cleanup :global(.label-cleanup-swatch) { flex: 0 0 auto; inline-size: 1rem; block-size: 1rem; border-radius: 50%; border: 1px solid var(--border); }
   .label-cleanup :global(.label-cleanup-name) { min-inline-size: 0; overflow-wrap: anywhere; }
   .label-cleanup [hidden] { display: none; }
-  .labels-create-row {
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
-  }
-
-  .labels-create-form {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .labels-color-picker {
-    width: 36px;
-    height: 32px;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    cursor: pointer;
-  }
-
-  .labels-empty {
-    padding: 24px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
+  .labels-create-form, :global(.label-row-fields), :global(.label-row-actions) { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+  .labels-create-form { padding-block-end: 1rem; border-block-end: 1px solid var(--border); }
+  .label-name-field, :global(.label-name-field) { display: grid; gap: .25rem; flex: 1 1 12rem; min-inline-size: 0; }
+  .label-color-field, :global(.label-color-field) { display: grid; gap: .25rem; min-inline-size: 0; }
+  .label-name-field input, :global(.label-name-field input) { inline-size: 100%; min-inline-size: 0; }
+  .labels-color-picker, :global(.labels-color-picker) { inline-size: 44px; block-size: 44px; padding: .25rem; border: 1px solid var(--border); border-radius: var(--radius-sm, 6px); background: var(--bg-card); }
+  [data-label-editor] button { min-block-size: 44px; max-inline-size: 100%; white-space: normal; }
+  :global(.label-row-actions button) { min-block-size: 44px; max-inline-size: 100%; white-space: normal; }
+  .labels-list { list-style: none; margin: 0; padding: 0; min-inline-size: 0; }
+  :global(.label-settings-row) { padding-block: 1rem; border-block-end: 1px solid var(--border); min-inline-size: 0; }
+  :global(.label-settings-form) { display: grid; gap: .75rem; min-inline-size: 0; }
+  :global(.label-settings-badge) { display: flex; gap: .5rem; align-items: start; min-inline-size: 0; color: var(--text-primary); }
+  :global(.label-settings-badge [data-badge-id]) { min-inline-size: 0; overflow-wrap: anywhere; white-space: normal; }
+  :global(.label-settings-swatch) { inline-size: 1rem; block-size: 1rem; margin-block-start: .2em; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 50%; }
+  :global(.label-row-status), [data-label-editor-status] { overflow-wrap: anywhere; margin-block: .5rem; }
+  [data-label-editor] [hidden] { display: none; }
 </style>
-
-<script>
-  import { confirmDialog } from "@lib/confirm-dialog"
-  import { showToast } from "@lib/toast"
-  import { pageLifecycle } from "@lib/page-lifecycle"
-
-  type LabelData = { id: number; title: string; hex_color: string }
-
-  const listEl = document.getElementById("labels-list")
-  const form = document.getElementById("create-label-form") as HTMLFormElement
-  const titleInput = document.getElementById("new-label-title") as HTMLInputElement
-  const colorInput = document.getElementById("new-label-color") as HTMLInputElement
-  const submitBtn = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
-  const ingressBase = (window as any).__ingress_path || ""
-
-  let labels: LabelData[] = []
-
-  /** Escape user strings for safe innerHTML insertion */
-  function escapeHtml(str: string): string {
-    const el = document.createElement("span")
-    el.textContent = str
-    return el.innerHTML
-  }
-  pageLifecycle.on(document, "meitheal:labels-changed", () => loadLabels())
-
-  // ── T7: Error state with retry ──
-  function showListError() {
-    if (!listEl) return
-    listEl.innerHTML = `
-      <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
-        Failed to load labels.
-        <button type="button" class="btn btn-ghost btn-sm" id="labels-retry" style="margin-left: 8px;">Retry</button>
-      </div>
-    `
-    const retryBtn = document.getElementById("labels-retry")
-    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadLabels())
-  }
-
-  async function loadLabels() {
-    if (listEl) listEl.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">Loading labels…</div>`
-    try {
-      const res = await fetch(ingressBase + "/api/labels")
-      if (res.ok) {
-        const data = await res.json()
-        labels = Array.isArray(data) ? data : data.labels || []
-        renderLabels()
-      } else {
-        showListError()
-      }
-    } catch {
-      showListError()
-    }
-  }
-
-  function renderLabels() {
-    if (!listEl) return
-
-    if (labels.length === 0) {
-      listEl.innerHTML = `
-        <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
-          No labels yet. Create one above!
-        </div>
-      `
-      return
-    }
-
-    listEl.innerHTML = labels
-      .map(
-        (l) => `
-      <div class="label-settings-row" data-id="${l.id}" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border);">
-        <input
-          type="color"
-          class="label-color-edit"
-          data-id="${l.id}"
-          value="${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}"
-          title="Change color"
-          style="width: 28px; height: 28px; padding: 1px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;"
-        />
-        <span
-          class="label-badge"
-          data-badge-id="${l.id}"
-          style="background: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}20; color: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}; border: 1px solid ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}40; flex-shrink: 0;"
-        >
-          ${escapeHtml(l.title)}
-        </span>
-        <input
-          type="text"
-          class="form-input label-title-edit"
-          data-id="${l.id}"
-          value="${escapeHtml(l.title)}"
-          maxlength="100"
-          style="flex: 1; font-size: 13px; max-width: 240px;"
-        />
-        <button
-          type="button"
-          class="btn btn-ghost label-delete-btn"
-          data-id="${l.id}"
-          title="Delete label"
-          style="color: var(--danger); font-size: 16px; padding: 4px 8px;"
-        >×</button>
-      </div>
-    `,
-      )
-      .join("")
-
-    bindRowHandlers()
-  }
-
-  function bindRowHandlers() {
-    if (!listEl) return
-
-    // T1: Use pageLifecycle.on for auto-cleanup
-    // T3: Title edit — update only the badge text, NOT full re-render
-    listEl.querySelectorAll<HTMLInputElement>(".label-title-edit").forEach(
-      (input) => {
-        let timeout: ReturnType<typeof setTimeout> | null = null
-        pageLifecycle.on(input, "input", () => {
-          if (timeout) clearTimeout(timeout)
-          timeout = setTimeout(async () => {
-            const id = input.dataset.id
-            const title = input.value.trim()
-            if (!id || !title) return
-            try {
-              await fetch(ingressBase + `/api/labels/${id}`, {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ title }),
-              })
-              const label = labels.find((l) => l.id === Number(id))
-              if (label) label.title = title
-              // T3: Update only the preview badge, not the full list
-              const badge = listEl!.querySelector<HTMLElement>(`[data-badge-id="${id}"]`)
-              if (badge) badge.textContent = title
-            } catch { /* silent */ }
-          }, 500)
-        })
-      },
-    )
-
-    listEl.querySelectorAll<HTMLInputElement>(".label-color-edit").forEach(
-      (input) => {
-        pageLifecycle.on(input, "change", async () => {
-          const id = input.dataset.id
-          const hexColor = input.value
-          if (!id) return
-          try {
-            await fetch(ingressBase + `/api/labels/${id}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ hex_color: hexColor }),
-            })
-            const label = labels.find((l) => l.id === Number(id))
-            if (label) label.hex_color = hexColor
-            renderLabels()
-          } catch { /* silent */ }
-        })
-      },
-    )
-
-    listEl.querySelectorAll<HTMLButtonElement>(".label-delete-btn").forEach(
-      (btn) => {
-        pageLifecycle.on(btn, "click", async () => {
-          const id = btn.dataset.id
-          if (!id) return
-          const confirmed = await confirmDialog({ message: "Delete label? This will remove it from all tasks.", variant: "danger", confirmText: "Delete" })
-          if (!confirmed) return
-          try {
-            const res = await fetch(ingressBase + `/api/labels/${id}`, { method: "DELETE" })
-            if (res.ok) {
-              labels = labels.filter((l) => l.id !== Number(id))
-              renderLabels()
-              showToast("Label deleted", "success")
-            } else {
-              showToast("Failed to delete label", "error")
-            }
-          } catch {
-            showToast("Network error", "error")
-          }
-        })
-      },
-    )
-  }
-
-  // T4: Disable submit during API call to prevent double-submit
-  if (form) {
-    pageLifecycle.on(form, "submit", async (e: Event) => {
-      e.preventDefault()
-      const title = titleInput.value.trim()
-      const hexColor = colorInput.value
-      if (!title) return
-
-      if (submitBtn) {
-        submitBtn.disabled = true
-        submitBtn.textContent = "Creating…"
-      }
-
-      try {
-        const res = await fetch(ingressBase + "/api/labels", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title, hex_color: hexColor }),
-        })
-        if (res.ok) {
-          const label = await res.json()
-          labels.push(label)
-          renderLabels()
-          titleInput.value = ""
-          showToast("Label created", "success")
-        } else {
-          const err = await res.json().catch(() => ({}))
-          showToast(err.error || "Failed to create label", "error")
-        }
-      } catch {
-        showToast("Network error", "error")
-      } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false
-          submitBtn.textContent = "+ Create"
-        }
-      }
-    })
-  }
-
-  if (labels.length === 0) {
-    loadLabels()
-  }
-</script>

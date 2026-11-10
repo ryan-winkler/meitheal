@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
+import { isWellFormedLabelName, labelNameKey as nameKey } from "./label-name"
 
 const batchSize = 250
 const pageSize = 25
@@ -22,10 +23,6 @@ type Stale = { ok: false; errorCode: "stale" }
 export type CleanupPreview = { ok: true; labels: CleanupLabel[]; nextAfter: number | null } | Blocked
 export type CleanupRemoval = { ok: true; removed: number[] } | Blocked | Stale
 
-function nameKey(name: string): string {
-  return name.trim().normalize("NFC").toLowerCase().normalize("NFC")
-}
-
 function labelNames(value: unknown, legacyObjects: boolean, emptyTaskSelection = false): string[] | null {
   if (typeof value !== "string") return null
   if (emptyTaskSelection && value.trim() === "") return []
@@ -34,8 +31,9 @@ function labelNames(value: unknown, legacyObjects: boolean, emptyTaskSelection =
     if (!Array.isArray(parsed)) return null
     const names: string[] = []
     for (const entry of parsed) {
-      if (typeof entry === "string") names.push(nameKey(entry))
+      if (typeof entry === "string" && isWellFormedLabelName(entry)) names.push(nameKey(entry))
       else if (legacyObjects && entry && typeof entry === "object" && typeof entry.name === "string") {
+        if (!isWellFormedLabelName(entry.name)) return null
         names.push(nameKey(entry.name))
       } else return null
     }

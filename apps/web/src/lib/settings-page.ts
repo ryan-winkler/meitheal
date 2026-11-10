@@ -4,6 +4,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
 import { initSettingsShell } from "@lib/settings-shell-controller"
+import { initSettingsLabels } from "@lib/settings-labels-controller"
 import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
 
 function initPwaNotificationTest(): void {
@@ -50,6 +51,7 @@ function bootSettingsPage(): void {
   initSettingsController()
   initSettingsShell()
   initSettingsFeedback()
+  initSettingsLabels(pageLifecycle.signal)
   initSettingsLabelCleanup()
   initPwaNotificationTest()
 }

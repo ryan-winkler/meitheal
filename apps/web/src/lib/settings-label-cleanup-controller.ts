@@ -2,9 +2,16 @@ import type { CleanupLabel } from "@domains/labels"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
+import type { LabelChangeDetail } from "@lib/settings-labels-controller"
 
 class CleanupError extends Error {
   constructor(readonly code: string) { super("Label cleanup request failed") }
+}
+
+interface FocusOwnership {
+  owned: boolean
+  generation: number
+  confirmation: HTMLElement | null
 }
 
 function isLabel(value: unknown): value is CleanupLabel {
@@ -15,8 +22,9 @@ function isLabel(value: unknown): value is CleanupLabel {
 }
 
 export function initSettingsLabelCleanup() {
-  const root = document.querySelector<HTMLElement>("[data-label-cleanup]")
-  if (!root || root.dataset.cleanupBooted === "true") return
+  const candidate = document.querySelector<HTMLElement>("[data-label-cleanup]")
+  if (!candidate || candidate.dataset.cleanupBooted === "true") return
+  const root = candidate
   root.dataset.cleanupBooted = "true"
   const copy = JSON.parse(root.dataset.copy ?? "{}") as Record<string, string>
   const review = root.querySelector<HTMLButtonElement>("[data-cleanup-review]")!
@@ -29,11 +37,16 @@ export function initSettingsLabelCleanup() {
   const list = root.querySelector<HTMLElement>("[data-cleanup-list]")!
   const selection = root.querySelector<HTMLElement>("[data-cleanup-selection]")!
   const signal = pageLifecycle.signal
+  let focusAway = 0
+  document.addEventListener("focusin", event => {
+    if (event.target instanceof Node && event.target !== document.body && !root.contains(event.target)) focusAway++
+  }, { signal })
   let requests = new AbortController()
   let generation = 0
   let open = false
   let busy = false
   let confirming = false
+  let removalFocus: FocusOwnership | undefined
   let labels: CleanupLabel[] = []
   let selected = new Set<number>()
   let cursors: Array<number | null> = [null]
@@ -109,10 +122,16 @@ export function initSettingsLabelCleanup() {
     controls()
   }
 
-  async function load(focus = true, notice = "") {
-    const restoreFocus = focus || root.contains(document.activeElement) ||
-      (confirming && document.getElementById("meitheal-confirm-overlay")?.contains(document.activeElement))
+  async function load(focus = true, notice = "", ownership?: FocusOwnership) {
+    const inCleanup = root.contains(document.activeElement)
+    const inConfirmation = confirming && document.getElementById("meitheal-confirm-overlay")?.contains(document.activeElement)
+    const ownedFocus = inCleanup || inConfirmation || document.activeElement === document.body
+    const restoreFocus = ownership ? ownership.owned : ownedFocus && (focus || inCleanup || inConfirmation)
     clear(text(navigator.onLine ? "loading" : "offline"))
+    const focusGeneration = ownership?.generation ?? focusAway
+    const mayRestoreFocus = () => restoreFocus && focusGeneration === focusAway &&
+      (root.contains(document.activeElement) || document.activeElement === document.body ||
+        Boolean(ownership?.confirmation?.contains(document.activeElement)))
     if (!navigator.onLine || signal.aborted) return
     open = true
     busy = true
@@ -130,13 +149,13 @@ export function initSettingsLabelCleanup() {
       busy = false
       render()
       status.textContent = notice || (labels.length ? "" : text("empty"))
-      if (restoreFocus) heading.focus()
+      if (mayRestoreFocus()) heading.focus()
     } catch (error) {
       if (signal.aborted || current !== generation) return
       const code = error instanceof CleanupError ? error.code : "unavailable"
       clear(text(Object.hasOwn(copy, code) ? code : "unavailable"))
       if (code === "denied") open = false
-      if (restoreFocus) review.focus()
+      if (mayRestoreFocus()) review.focus()
     }
   }
 
@@ -161,6 +180,13 @@ export function initSettingsLabelCleanup() {
       return
     }
     busy = true
+    const confirmation = document.getElementById("meitheal-confirm-overlay")
+    const ownership: FocusOwnership = {
+      owned: root.contains(document.activeElement) || Boolean(confirmation?.contains(document.activeElement)) || document.activeElement === document.body,
+      generation: focusAway,
+      confirmation,
+    }
+    removalFocus = ownership
     status.textContent = text("removing")
     controls()
     try {
@@ -172,14 +198,18 @@ export function initSettingsLabelCleanup() {
         throw new CleanupError("unavailable")
       }
       busy = false
-      document.dispatchEvent(new CustomEvent("meitheal:labels-changed", { detail: { removed: chosen.length } }))
+      document.dispatchEvent(new CustomEvent<LabelChangeDetail>("meitheal:labels-changed", {
+        detail: { source: "cleanup", removed: chosen.length, removedIds: data.removed },
+      }))
     } catch (error) {
       if (signal.aborted || current !== generation) return
       const code = error instanceof CleanupError ? error.code : "unavailable"
       clear(text(Object.hasOwn(copy, code) ? code : "unavailable"))
       if (code === "denied") open = false
-      review.focus()
-    }
+      if (ownership.owned && ownership.generation === focusAway &&
+          (root.contains(document.activeElement) || document.activeElement === document.body ||
+            ownership.confirmation?.contains(document.activeElement))) review.focus()
+    } finally { removalFocus = undefined }
   }
 
   review.addEventListener("click", () => {
@@ -197,10 +227,12 @@ export function initSettingsLabelCleanup() {
   remove.addEventListener("click", () => { void removeSelected() }, { signal })
   document.addEventListener("meitheal:labels-changed", event => {
     if (!open) return
-    const count = (event as CustomEvent<{ removed?: number }>).detail?.removed ?? 0
+    const detail = (event as CustomEvent<LabelChangeDetail>).detail
+    const count = detail?.removed ?? 0
     cursors = [null]
     page = 0
-    void load(true, count ? text(count === 1 ? "removed_one" : "removed_many", count) : "")
+    void load(detail?.source !== "editor", count ? text(count === 1 ? "removed_one" : "removed_many", count) : "",
+      detail?.source === "cleanup" ? removalFocus : undefined)
   }, { signal })
   function foreground() {
     if (open && document.visibilityState === "visible") void load(false)

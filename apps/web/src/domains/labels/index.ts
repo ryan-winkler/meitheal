@@ -30,3 +30,6 @@ export {
   type CleanupRemoval,
   type CleanupSelection,
 } from "./unused-labels"
+
+export { LabelMutationRepository, LabelMutationError } from "./label-mutation"
+export { labelNameKey, isWellFormedLabelName } from "./label-name"

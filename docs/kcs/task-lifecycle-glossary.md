@@ -27,6 +27,14 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Rename or delete a shared label
+
+In **Settings → Workflow → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.
+
+Renaming updates matching current task, saved-draft and template label selections together. Matching ignores surrounding whitespace and letter case and treats canonically equivalent Unicode names alike. An ambiguous rename changes nothing: use a distinct name or remove the duplicate definition first. Deleting one equivalent definition retains shared name selections while another definition survives; deleting the final definition removes those selections. It preserves the tasks, drafts, templates and unrelated fields.
+
+These shared changes require a currently verified Home Assistant administrator, or the local standalone operator. Agent credentials cannot rename or delete shared definitions. Colour-only edits leave task, draft and template selections untouched. An interrupted request may have committed: reload Labels and inspect the current badge before repeating it.
+
 ### Review unused labels
 
 Open **Settings → Workflow → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.

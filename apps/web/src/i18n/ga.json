@@ -65,7 +65,7 @@
     "task_kind_checklist": "Seicliosta",
     "task_kind_calendar_event": "Imeacht",
     "task_kind_quick_capture": "Gabháil Thapa",
-    "no_projects": "Gan tionscadail",
+    "no_projects": "Níl aon tionscadal",
     "manage_space": "Bainistigh Spás",
     "manage_project": "Bainistigh Tionscadal",
     "save": "Sábháil",
@@ -88,8 +88,7 @@
     "area_deleted": "Limistéar scriosta",
     "project_deleted": "Tionscadal scriosta",
     "area_created": "Limistéar cruthaithe",
-    "updated": "Nuashonraithe",
-    "no_projects": "Níl aon tionscadal"
+    "updated": "Nuashonraithe"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",
@@ -1099,6 +1098,38 @@
       "removed_many": "{count} lipéad bainte.",
       "untitled": "Lipéad gan ainm",
       "color": "Dath an lipéid"
+    },
+    "editor": {
+      "name": "Ainm",
+      "color": "Dath",
+      "save": "Sábháil",
+      "save_label": "Sábháil {name}",
+      "delete": "Scrios",
+      "delete_label": "Scrios {name}",
+      "delete_title": "Scrios lipéad comhroinnte",
+      "delete_message": "An bhfuil tú ag iarraidh “{name}” a scriosadh? Bainfear é de thascanna, dréachtaí sábháilte agus teimpléid. Coinnítear tagairtí comhroinnte má mhaireann sainmhíniú comhionann.",
+      "cancel": "Cealaigh",
+      "saving": "Á shábháil…",
+      "saved": "Sábháilte.",
+      "deleting": "Á scriosadh…",
+      "deleted": "Scriosadh an lipéad.",
+      "creating": "Á chruthú…",
+      "created": "Cruthaíodh an lipéad.",
+      "exists": "Tá an lipéad seo ann cheana féin.",
+      "empty": "Níl aon lipéid ann fós. Cruthaigh ceann thuas.",
+      "loading": "Lipéid á lódáil…",
+      "load_error": "Níorbh fhéidir na lipéid a lódáil. Bain triail eile as.",
+      "retry": "Bain triail eile as",
+      "failed": "Níorbh fhéidir an t-athrú seo a chur i gcrích. Athbhreithnigh na lipéid reatha sula ndéanann tú iarracht eile.",
+      "invalid": "Úsáid ainm idir 1 agus 100 carachtar agus dath sé dhigit.",
+      "denied": "Oscail Lipéid le cuntas riarthóra reatha Home Assistant.",
+      "blocked": "Tá aird de dhíth ar roghanna lipéad stóráilte. Féach ar threoir oibríochta na Lipéad.",
+      "conflict": "Tá an seanainm nó an t-ainm nua ag sainmhíniú eile. Roghnaigh ainm eile nó bain sainmhíniú dúblach ar dtús.",
+      "missing": "Níl an lipéad seo ar fáil a thuilleadh. Athlódáil Lipéid.",
+      "unavailable": "Níorbh fhéidir an t-athrú seo a chur i gcrích. Athbhreithnigh na lipéid reatha sula ndéanann tú iarracht eile.",
+      "cancelled": "Cealaíodh an t-athrú lipéid.",
+      "tooLarge": "Tá an t-athrú lipéid rómhór. Úsáid ainm idir 1 agus 100 carachtar.",
+      "media": "Níorbh fhéidir an t-athrú lipéid seo a sheoladh. Athlódáil Lipéid agus bain triail eile as."
     }
   },
   "gamification": {
@@ -1541,7 +1572,6 @@
   "settings.save_webhook": "Save Webhook",
   "settings.status_not_configured": "Not configured",
   "settings.send_webhook_test": "Seol Tástáil",
-
   "hierarchy.area": "Réimse",
   "hierarchy.goal": "Sprioc",
   "hierarchy.project": "Tionscadal",
@@ -1549,18 +1579,15 @@
   "hierarchy.routine": "Gnáthamh",
   "hierarchy.every_day": "Gach Lá",
   "hierarchy.breadcrumb_home": "Baile",
-
   "helper.dismiss": "Cuir as feidhm",
   "helper.restore_all": "Athchóirigh na cabhróirí go léir",
   "helper.restored_count": "{count} cabhróir(í) athchóirithe",
   "helper.keyboard_hint": "Brúigh ? chun cabhróirí a athchóiriú",
-
   "parent_page.open_full": "Oscail an Radharc Iomlán",
   "parent_page.coming_soon": "Ag Teacht go Luath",
   "parent_page.tasks_hub": "Mol na dTascanna",
   "parent_page.planning_hub": "Pleanáil",
   "parent_page.progress_hub": "Dul Chun Cinn & Fás",
-
   "pillars": {
     "new_pillar": "Colún Nua",
     "edit_pillar": "Cuir Colún in Eagar",
@@ -1586,7 +1613,6 @@
     "cancel": "Cealaigh",
     "required": "*"
   },
-
   "reactions": {
     "task": "Freagairtí don tasc",
     "comment": "Freagairtí don trácht",
@@ -1807,7 +1833,6 @@
     "attachments_title": "Ceangaltáin",
     "close": "Dún"
   },
-
   "picker": {
     "icon_label": "Deilbhín",
     "choose_icon": "Roghnaigh deilbhín",

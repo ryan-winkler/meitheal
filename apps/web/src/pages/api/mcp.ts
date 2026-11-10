@@ -54,6 +54,7 @@ type CustomToolHandler = (
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
   "useLabelCleanup",
+  "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
   "taskInactivity",
   "mcpEndpoint",       // Self-reference
   "healthPing",        // HEAD-only liveness

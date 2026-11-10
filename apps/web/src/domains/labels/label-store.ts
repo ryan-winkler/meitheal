@@ -1,6 +1,9 @@
 import type { InStatement } from "@libsql/client"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { stripHtml } from "../../lib/strip-html"
+import { LabelMutationRepository } from "./label-mutation"
+import { resetColorCache } from "./label-color-resolver"
+import { isWellFormedLabelName, labelNameKey } from "./label-name"
 
 export interface Label {
   id: number
@@ -9,11 +12,11 @@ export interface Label {
 }
 
 function readLabel(row: Record<string, unknown>): Label {
-  const color = String(row.hex_color)
+  const color = String(row.hex_color).replace(/^#/, "")
   return {
     id: Number(row.id),
     title: String(row.title),
-    hexColor: color.startsWith("#") ? color : `#${color}`,
+    hexColor: /^[a-f0-9]{6}$/i.test(color) ? `#${color}` : "#6b7280",
   }
 }
 
@@ -26,7 +29,8 @@ export async function listLabels(): Promise<Label[]> {
 }
 
 export function normalizeLabelTitle(title: string): string {
-  return stripHtml(title.trim()).slice(0, 100)
+  const normalized = stripHtml(title).trim().slice(0, 100)
+  return isWellFormedLabelName(normalized) ? normalized : ""
 }
 
 /** Add an explicitly created label only if the task write in this batch won. */
@@ -69,6 +73,7 @@ export async function createLabel(title: string, hexColor?: string): Promise<Lab
   if (!row) {
     throw new Error("Label write did not return a row")
   }
+  resetColorCache()
   return readLabel(row)
 }
 
@@ -81,55 +86,30 @@ export async function updateLabel(
   updates: { title?: string; hexColor?: string }
 ): Promise<Label | null> {
   await ensureSchema()
-  const client = getPersistenceClient()
-
-  const newTitle = updates.title
-    ? stripHtml(updates.title.trim()).slice(0, 100)
-    : null
-  const newColor = updates.hexColor
-    ? updates.hexColor.replace(/^#/, "")
-    : null
-
-  if (updates.title && !newTitle) return null
-
-  const result = await client.execute({
-    sql: `UPDATE vikunja_labels SET title = COALESCE(?,title), hex_color = COALESCE(?,hex_color)
-      WHERE id = ? RETURNING id,title,hex_color`,
-    args: [newTitle, newColor, id],
+  if (!Number.isSafeInteger(id) || id < 1) return null
+  const title = updates.title === undefined ? undefined : normalizeLabelTitle(updates.title)
+  if (title !== undefined && !title) return null
+  if (updates.hexColor !== undefined && !/^#?[0-9a-fA-F]{6}$/.test(updates.hexColor)) return null
+  const row = await new LabelMutationRepository(getPersistenceClient()).update(id, {
+    ...(title === undefined ? {} : { title }),
+    ...(updates.hexColor === undefined ? {} : { hexColor: updates.hexColor.replace(/^#/, "") }),
   })
-  const row = result.rows[0]
+  if (row) resetColorCache()
   return row ? readLabel(row) : null
 }
 
 /**
  * Delete a label by ID.
- * Also removes it from the vikunja_task_labels junction table.
+ * Removes persisted task, draft, template and junction references atomically.
+ * Equivalent surviving definitions retain their shared name references.
  * Returns true if label existed and was deleted.
  */
 export async function deleteLabel(id: number): Promise<boolean> {
   await ensureSchema()
-  const client = getPersistenceClient()
-
-  const existing = await client.execute({
-    sql: "SELECT id, title FROM vikunja_labels WHERE id = ? LIMIT 1",
-    args: [id],
-  })
-
-  if (existing.rows.length === 0) return false
-
-  // Remove from junction table
-  await client.execute({
-    sql: "DELETE FROM vikunja_task_labels WHERE label_id = ?",
-    args: [id],
-  })
-
-  // Remove the label itself
-  await client.execute({
-    sql: "DELETE FROM vikunja_labels WHERE id = ?",
-    args: [id],
-  })
-
-  return true
+  if (!Number.isSafeInteger(id) || id < 1) return false
+  const deleted = await new LabelMutationRepository(getPersistenceClient()).delete(id)
+  if (deleted) resetColorCache()
+  return deleted
 }
 
 /**
@@ -140,7 +120,7 @@ export async function getLabelColorMap(): Promise<Map<string, string>> {
   const labels = await listLabels()
   const map = new Map<string, string>()
   for (const label of labels) {
-    map.set(label.title.toLowerCase(), label.hexColor)
+    map.set(labelNameKey(label.title), label.hexColor)
   }
   return map
 }
