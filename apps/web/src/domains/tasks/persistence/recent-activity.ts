@@ -78,7 +78,7 @@ export function discardUnappliedTaskActivity(eventId: string): InStatement {
 
 export async function readRecentActivity(
   client: Client,
-  { areaId, personKey, before }: { areaId?: string; personKey?: string; before?: Cursor },
+  { areaId, personKey, before }: { areaId?: string | undefined; personKey?: string | undefined; before?: Cursor | undefined },
 ) {
   const size = 25
   const conditions = ["activity.feed_action IN ('added', 'edited', 'closed', 'reopened')"]
