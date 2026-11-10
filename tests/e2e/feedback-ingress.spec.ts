@@ -497,7 +497,7 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
   expect(escapedAssets).toEqual([])
 })
 
-test("a 2,000-task Table page keeps its assets and next view inside ingress", async ({ page, context }) => {
+test("a 2,000-task Table keeps its paged results, assets and views inside ingress", async ({ page, context }) => {
   test.setTimeout(45000)
   const db = new DatabaseSync(path.join(work, "meitheal.db"))
   try {
@@ -508,7 +508,7 @@ test("a 2,000-task Table page keeps its assets and next view inside ingress", as
     db.exec("BEGIN IMMEDIATE")
     for (let index = 1; index <= 2000; index++) {
       const id = `large-table-${index}`
-      task.run(id, `Nótaí & fittings ${index}`, "Inspect the equipment and record worn parts.", id, id, stamp, stamp)
+      task.run(id, `Nótaí & fittings ${index}`, "Inspect the equipment and record worn parts.", id, id, stamp + index, stamp + index)
     }
     db.exec("COMMIT")
   } finally {
@@ -524,9 +524,21 @@ test("a 2,000-task Table page keeps its assets and next view inside ingress", as
   })
   const table = await page.goto(origin + prefix + "/tasks?view=table#table")
   expect(table?.status()).toBe(200)
-  expect((await table!.body()).byteLength).toBeGreaterThan(5 * 1024 * 1024)
-  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(2000)
+  expect((await table!.body()).byteLength).toBeLessThan(1024 * 1024)
+  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(50)
   await expect(page.getByText("Nótaí & fittings 2000", { exact: true })).toBeVisible()
+  const nextPage = page.locator("#table-shell").getByRole("link", { name: "Next", exact: true })
+  const nextUrl = new URL((await nextPage.getAttribute("href"))!, origin)
+  expect(nextUrl.origin + nextUrl.pathname).toBe(origin + prefix + "/tasks")
+  expect(nextUrl.searchParams.get("view")).toBe("table")
+  expect(nextUrl.searchParams.get("tp")).toBe("2")
+  expect(nextUrl.hash).toBe("#table")
+  await nextPage.press("Enter")
+  await expect(page.locator("#task-table")).toHaveAttribute("data-table-page", "2")
+  await expect(page.getByText("Nótaí & fittings 1950", { exact: true })).toBeVisible()
+  await page.goto(origin + prefix + "/tasks?view=table&tp=40#table")
+  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(50)
+  await expect(page.getByText("Nótaí & fittings 1", { exact: true })).toBeVisible()
 
   const filters = page.locator("#table-shell").getByRole("button", { name: "Toggle filter builder" })
   await filters.press("Enter")
