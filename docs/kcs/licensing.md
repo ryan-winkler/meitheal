@@ -8,7 +8,7 @@ description: "Find the license boundaries for source, integrations, and distribu
 
 ## Source and published images
 
-The source repository contains the application, integration code, and release workflow. The [public add-on repository](https://github.com/Coolock-Village/meitheal-ha-addon) contains the Store manifests and [image distribution license](https://github.com/Coolock-Village/meitheal-ha-addon/blob/main/LICENSE).
+The source repository contains the application, integration code, and release workflow. The [public add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) contains the Store manifests and [image distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE).
 
 | Material | Where to check its terms |
 | --- | --- |

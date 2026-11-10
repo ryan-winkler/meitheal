@@ -12,4 +12,4 @@ You can run Meitheal inside your organisation for your own work. The [Meitheal s
 
 See the [license](LICENSE) for the full grant and conditions. See [Contributing](CONTRIBUTING.md) for how to offer changes. Use [private reporting](SECURITY.md) for a security-sensitive change.
 
-[Notices](NOTICE) lists separately licensed material. The compatibility API is outside this release and retains its existing license. Earlier add-on images have their own [distribution terms](https://github.com/Coolock-Village/meitheal-ha-addon/blob/main/LICENSE).
+[Notices](NOTICE) lists separately licensed material. The compatibility API is outside this release and retains its existing license. Earlier add-on images have their own [distribution terms](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE).

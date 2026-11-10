@@ -44,6 +44,8 @@ For tools that need special logic beyond simple CRUD dispatch:
 
 Open Meitheal through Home Assistant as an administrator, then go to **Settings → Automation & AI → Agent Tokens**. Give each client its own token and select the scopes for its operations. Copy the token during creation and store it in the client’s secret storage. Send it as an `Authorization: Bearer` header. A token is required for MCP and needs both `mcp:execute` and the scope of the tool it calls.
 
+Keep tokens out of examples, logs, and reports. Use sample tasks to test a connection. Ask the installation owner before you send task details or household data to an external service.
+
 | Operation | Scope |
 |-----------|-------|
 | List tasks, read a task, or read its links | `tasks:read` |

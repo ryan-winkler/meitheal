@@ -27,7 +27,6 @@ jobs:
         run: |
           test -f README.md
           test -f AGENTS.md
-          test -f AI_POLICY.md
           test -f .coderabbit.yaml
           test -f COMMERCIAL.md
           test -f LICENSE

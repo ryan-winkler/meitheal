@@ -6,7 +6,7 @@
 
 Meitheal helps people keep track of household tasks and routines in Home Assistant. It stores task data locally. The app connects tasks to calendars, to-do lists, and automations that users set up.
 
-The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation policy](AI_POLICY.md) for use by tools and agents.
+The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
 
 ## Hard Requirements
 
@@ -54,7 +54,7 @@ Cross-context imports must occur through public package APIs, not deep path impo
 
 ## Dual-Repo Architecture
 
-The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/Coolock-Village/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
+The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
 
 - The release workflow verifies both image digests before stable promotion.
 - Stable promotion uses `ADDON_REPO_TOKEN` scoped to the add-on repository.
@@ -237,7 +237,7 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 ## Required Files (CI Enforced)
 
-- `README.md`, `AGENTS.md`, `AI_POLICY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
 - `WEBMCP.md` and the discovery files `public/.well-known/mcp.json` and `public/.well-known/jsondoc.json`
 - `.coderabbit.yaml`, `repository.yaml`, and the stable App manifest and docs
 - `docs/index.md`, the Home Assistant devcontainer and operations runbooks, and the architecture and licensing decisions

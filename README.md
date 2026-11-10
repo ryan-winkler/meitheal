@@ -84,7 +84,7 @@ Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-ad
 1. Open **Settings → Apps → Install app** in Home Assistant.
 2. Open the menu.
 3. Select **Repositories**.
-4. Add `https://github.com/Coolock-Village/meitheal-ha-addon`.
+4. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
 5. When the image is available, select **Meitheal**.
 6. Select **Install**.
 7. Select **Start**.
@@ -139,11 +139,11 @@ The optional Home Assistant integration adds voice and conversation-agent contro
 ## Contribute and Get Help
 
 - [Contribute a change](CONTRIBUTING.md)
-- [Use automation with Meitheal](AI_POLICY.md)
+- [Use automation with Meitheal](docs/kcs/agent-automation-guide.md)
 - [Community conduct](CODE_OF_CONDUCT.md)
 - [Support](SUPPORT.md)
 - [Report a security problem privately](SECURITY.md)
 
 ## Legal and Licensing
 
-Meitheal is source-available. Use it at home or inside your organisation. Keep attribution when you share it, and offer changes upstream even if you use them only inside your organisation. The [license](LICENSE) sets the conditions and restrictions on paid copies, access, and services. See [business use](COMMERCIAL.md) for examples. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/Coolock-Village/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.
+Meitheal is source-available. Use it at home or inside your organisation. Keep attribution when you share it, and offer changes upstream even if you use them only inside your organisation. The [license](LICENSE) sets the conditions and restrictions on paid copies, access, and services. See [business use](COMMERCIAL.md) for examples. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.

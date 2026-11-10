@@ -7,10 +7,12 @@ Meitheal keeps household tasks and routines in Home Assistant. Use **Today** to 
 1. Open **Settings → Apps → Install app** in Home Assistant.
 2. Open the menu.
 3. Select **Repositories**.
-4. Add `https://github.com/Coolock-Village/meitheal-ha-addon`.
+4. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
 5. Search for **Meitheal**.
 
 In earlier versions of Home Assistant, the store is under **Settings → Add-ons → Add-on Store**.
+
+If Meitheal is already installed, keep its current repository entry. Home Assistant may show a separate Meitheal entry for the new URL. Back up the existing App before moving to that entry.
 
 ## Install and open
 
@@ -46,4 +48,4 @@ Meitheal stores its database in the add-on data folder. Make a Home Assistant ba
 
 ## Get help
 
-Use the [public issue tracker](https://github.com/Coolock-Village/meitheal-ha-addon/issues). Include your Meitheal version and the step where you got stuck.
+Use the [public issue tracker](https://github.com/ryan-winkler/meitheal-ha-addon/issues). Include your Meitheal version and the step where you got stuck.
