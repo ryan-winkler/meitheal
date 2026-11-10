@@ -106,16 +106,20 @@ start_stack() {
   local existing
   if [[ "$COMPOSE_CMD" == *podman* ]]; then
     # podman-compose 1.x lists stopped containers, but accepts no service filter.
-    existing=""
-    local container service
-    for container in $(run_compose ps -q); do
+    if existing=$(run_compose ps --all --quiet ha-devcontainer 2>/dev/null); then
+      : # Docker Compose providers accept service and stopped-container filters.
+    else
+      existing=""
+      local container service
+      for container in $(run_compose ps -q); do
       if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
         service=$(flatpak-spawn --host podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
       else
         service=$(podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
       fi
-      if [[ "$service" == ha-devcontainer ]]; then existing="$container"; break; fi
-    done
+        if [[ "$service" == ha-devcontainer ]]; then existing="$container"; break; fi
+      done
+    fi
   else
     existing=$(run_compose ps --all --quiet ha-devcontainer)
   fi

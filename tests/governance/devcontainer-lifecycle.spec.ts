@@ -35,12 +35,20 @@ if (args[0] !== "inspect") process.exit(1)
 console.log(args.at(-1) === "stopped-editor" ? "ha-devcontainer" : "grocy")
 `, { mode: 0o700 })
     }
+    if (backend === "podman-provider") {
+      writeFileSync(join(bin, "podman"), `#!/usr/bin/env node
+const fs = require("node:fs")
+const args = process.argv.slice(2)
+fs.appendFileSync(process.env.LAUNCH_CALLS, JSON.stringify(["podman", ...args]) + "\\n")
+if (args.includes("ps")) console.log(args.includes("--all") && process.env.LAUNCH_EXISTING === "1" ? "stopped-editor" : "")
+`, { mode: 0o700 })
+    }
     const calls = join(fixture, "calls.jsonl")
     writeFileSync(calls, "")
     writeFileSync(join(bin, "docker"), `#!/usr/bin/env node
 const fs = require("node:fs")
 const args = process.argv.slice(2)
-if (process.env.LAUNCH_BACKEND === "podman" && args.includes("version")) process.exit(1)
+if (process.env.LAUNCH_BACKEND !== "docker" && args.includes("version")) process.exit(1)
 fs.appendFileSync(process.env.LAUNCH_CALLS, JSON.stringify(["docker", ...args]) + "\\n")
 if (args.includes("ps") && process.env.LAUNCH_EXISTING === "1") console.log("editor-container")
 if (args.includes("exec") && process.env.LAUNCH_TOOLS !== "1") process.exit(1)
@@ -104,4 +112,12 @@ test("Podman recovery identifies a stopped editor among sidecars without unsuppo
   const sidecarOnly = launch("up", false, true, true, "podman")
   expect(sidecarOnly.status, sidecarOnly.error).toBe(0)
   expect(sidecarOnly.calls).toContainEqual(expect.arrayContaining(["devcontainer", "up"]))
+})
+
+
+test("Podman with a Docker Compose provider includes its stopped editor", () => {
+  const stopped = launch("up", true, false, true, "podman-provider")
+  expect(stopped.status, stopped.error).toBe(0)
+  expect(stopped.calls).toContainEqual(expect.arrayContaining(["ps", "--all", "--quiet", "ha-devcontainer"]))
+  expect(stopped.calls).toContainEqual(expect.arrayContaining(["start", "ha-devcontainer"]))
 })
