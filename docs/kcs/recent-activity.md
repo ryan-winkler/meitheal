@@ -20,3 +20,5 @@ When your browser restores the page from history, Recent activity refreshes usin
 ## Verify a new release
 
 In a disposable App session with two active Home Assistant accounts, create tasks in two areas. Have the second account edit and close one task and the first reopen it. Confirm each action appears once, that the area and person filters work together, and that a moved task appears in its new area. Follow a task link, then go Back and confirm the filters are retained. Repeat after revoking the viewing account while the task is open and confirm Back denies access without displaying the activity or filters.
+
+Check task links and filter controls in both Light and Dark at phone width. Tab from Current area through Person to Apply filters and confirm each control has a visible focus indicator.

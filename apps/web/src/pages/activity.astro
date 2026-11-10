@@ -73,7 +73,7 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
     {invalid || unavailable ? (
       <div role="status">
         <p>{t(invalid ? "recent_activity.invalid" : "recent_activity.unavailable", locale)}</p>
-        <a href={invalid ? "/activity" : pageHref()} class="btn btn-outline" data-astro-prefetch="false" data-astro-reload>
+        <a href={invalid ? "/activity" : pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>
           {t(invalid ? "recent_activity.clear" : "recent_activity.refresh", locale)}
         </a>
       </div>
@@ -95,7 +95,7 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
             </select>
           </label>
           <button type="submit" class="btn btn-primary">{t("recent_activity.apply", locale)}</button>
-          {(areaId || personKey) && <a href="/activity" class="btn btn-outline" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.clear", locale)}</a>}
+          {(areaId || personKey) && <a href="/activity" class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.clear", locale)}</a>}
         </form>
         {page.items.length ? (
           <ol class="activity-list" aria-label={t("recent_activity.title", locale)}>
@@ -121,8 +121,8 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
           </ol>
         ) : <p role="status">{t("recent_activity.empty", locale)}</p>}
         <nav class="activity-pages" aria-label={t("recent_activity.pages", locale)}>
-          <a href={pageHref()} class="btn btn-outline" data-astro-prefetch="false" data-astro-reload>{t(before ? "recent_activity.latest" : "recent_activity.refresh", locale)}</a>
-          {page.next && <a href={pageHref(page.next)} class="btn btn-outline" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.older", locale)}</a>}
+          <a href={pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t(before ? "recent_activity.latest" : "recent_activity.refresh", locale)}</a>
+          {page.next && <a href={pageHref(page.next)} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.older", locale)}</a>}
         </nav>
       </>
     )}
@@ -176,6 +176,13 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
   .activity-filters select { width: 100%; min-width: 0; }
   .activity-filters .btn, .activity-filters select, .activity-pages .btn { min-height: 2.75rem; }
 
+  .activity-filters .btn-primary {
+    background: var(--accent-text);
+    color: var(--bg-card);
+  }
+
+  .activity-filters .btn-primary:hover { background: var(--text-primary); }
+
   .activity-list {
     display: grid;
     gap: .5rem;
@@ -195,7 +202,8 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
     overflow-wrap: anywhere;
   }
 
-  .activity-entry a { font-weight: 600; text-decoration: underline; }
+  .activity-entry a { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
+  .activity-entry a:hover { text-decoration-thickness: 2px; }
   .activity-action { margin-block: 0 .25rem; }
   .activity-meta { display: grid; gap: .25rem; font-size: .875rem; text-align: end; }
 

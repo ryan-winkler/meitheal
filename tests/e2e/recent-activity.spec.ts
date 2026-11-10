@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Page } from "@playwright/test"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
@@ -120,6 +121,12 @@ test("verified members see committed task activity and can filter it by current 
     await a.setViewportSize({ width: 320, height: 740 })
     await expect.poll(() => a.locator(".recent-activity").evaluate(element =>
       element.scrollWidth <= element.clientWidth)).toBe(true)
+    await a.evaluate(() => localStorage.setItem("meitheal-theme", "dark"))
+    await a.reload()
+    await expect(a.locator("html")).toHaveAttribute("data-theme", "dark")
+    const contrast = await new AxeBuilder({ page: a }).include("[data-recent-activity]")
+      .withRules(["color-contrast"]).analyze()
+    expect(contrast.violations).toEqual([])
     const people = a.getByRole("combobox", { name: "Person" })
     const optionA = people.locator(`option[value="${aKey}"]`)
     const optionB = people.locator(`option[value="${bKey}"]`)
