@@ -710,6 +710,59 @@ const paths = {
       },
     },
   },
+  "/api/tasks/{id}/handoff": {
+    post: {
+      operationId: "manageTaskHandoff",
+      tags: ["Tasks"],
+      summary: "Claim, release, or propose edits to a task",
+      description: "Requires tasks:propose. Claim returns a five-minute lease. Release and propose require that lease and the issuing token. Propose sends title or description changes to the administrator review queue without changing the task.",
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "Task ID or ticket key" }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action"],
+        properties: {
+          action: { type: "string", enum: ["claim", "release", "propose"] },
+          lease: { type: "string", format: "uuid", description: "Required for release and propose" },
+          summary: { type: "string", maxLength: 500, description: "Required for propose" },
+          updates: { type: "object", description: "Required for propose. Include at least one field.", properties: {
+            title: { type: "string", minLength: 1, maxLength: 500 },
+            description: { type: "string", maxLength: 10000 },
+          }, additionalProperties: false },
+        },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Claim returns lease and expiresAt. Proposal returns hash and reviewUntil. Times are Unix milliseconds." },
+        400: { description: "Invalid handoff request" },
+        401: { description: "An active agent token is required" },
+        403: { description: "The agent token lacks tasks:propose" },
+        404: { description: "Task not found" },
+        409: { description: "The task, claim, or proposal is unavailable or changed" },
+        422: { description: "The proposal does not change the task" },
+      },
+    },
+  },
+  "/api/tasks/{id}/accept-proposal": {
+    post: {
+      operationId: "reviewTaskProposal",
+      tags: ["Tasks"],
+      summary: "Approve or reject a pending task proposal",
+      description: "Home Assistant administrator session and same-site request required. A proposal hash ties the decision to the reviewed content. Agent tokens cannot review proposals.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action", "proposal_hash"],
+        properties: { action: { type: "string", enum: ["accept", "reject"] }, proposal_hash: { type: "string", pattern: "^[a-f0-9]{64}$" } },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Review decision applied" },
+        403: { description: "A same-site Home Assistant administrator session is required" },
+        409: { description: "The proposal expired, was already reviewed, or its task changed" },
+      },
+    },
+  },
   "/api/tasks/{id}": {
     get: {
       operationId: "getTask",

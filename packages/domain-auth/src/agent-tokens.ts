@@ -16,6 +16,7 @@ import { createHash, randomBytes } from "node:crypto"
 export type AgentScope =
   | "tasks:read"
   | "tasks:write"
+  | "tasks:propose"
   | "tasks:delete"
   | "projects:read"
   | "projects:write"
@@ -38,6 +39,7 @@ export interface AgentScopeDescriptor {
 /** All available scopes with labels and descriptions */
 export const AVAILABLE_SCOPES: readonly AgentScopeDescriptor[] = [
   { scope: "tasks:read", label: "Read Tasks", description: "List and view tasks, statuses, and metadata", category: "tasks" },
+  { scope: "tasks:propose", label: "Propose Task Changes", description: "Claim tasks and propose title or description changes for human review", category: "tasks" },
   { scope: "tasks:write", label: "Create & Update Tasks", description: "Create new tasks and update existing ones", category: "tasks" },
   { scope: "tasks:delete", label: "Delete Tasks", description: "Permanently delete tasks", category: "tasks" },
   { scope: "projects:read", label: "Read Projects", description: "List and view projects and hierarchies", category: "projects" },
