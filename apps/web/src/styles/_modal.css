@@ -574,7 +574,6 @@ dialog[open] .modal-content,
 @media (max-width: 767px) {
   .td-sidebar-props {
     display: none;
-    overflow: hidden;
   }
   .td-sidebar-props.td-sidebar-expanded {
     display: flex;

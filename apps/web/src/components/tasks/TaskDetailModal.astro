@@ -603,7 +603,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               data-too-long={t("task_modal.reference_too_long", locale)}
               data-task-label={t("task_modal.kind_task", locale)} hidden>
               <p role="status" class="px-3 py-2 text-xs text-text-muted"></p>
-              <ul id="td-task-reference-results" role="listbox" class="max-h-44 overflow-y-auto"
+              <ul id="td-task-reference-results" role="listbox"
                 aria-label={t("task_modal.reference_results", locale)} hidden></ul>
             </div>
 

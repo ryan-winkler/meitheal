@@ -68,6 +68,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
       input.setAttribute("aria-controls", list.id)
       picker.hidden = false
       status.textContent = picker.dataset.loading ?? ""
+      picker.scrollIntoView({ block: "nearest" })
       const params = new URLSearchParams({ scope: "tasks", task_fields: "id,title", limit: String(limit), include_completed: "1" })
       if (token.query) {
         params.set("q", token.query)
@@ -92,12 +93,12 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
           option.dataset.index = String(index)
           option.setAttribute("role", "option")
           option.setAttribute("aria-selected", "false")
-          option.className = "flex min-h-11 cursor-pointer select-none items-center gap-2 rounded px-3 py-2 hover:bg-bg-hover aria-selected:bg-bg-hover"
+          option.className = "flex min-h-11 cursor-pointer select-none items-center gap-2 rounded px-3 py-2 hover:bg-bg-hover aria-selected:outline-2 aria-selected:-outline-offset-2 aria-selected:outline-accent"
           const title = document.createElement("span")
-          title.className = "min-w-0 flex-1 wrap-anywhere"
+          title.className = "line-clamp-2 min-w-0 flex-1 wrap-anywhere"
           title.textContent = item.title
           const ticket = document.createElement("span")
-          ticket.className = "shrink-0 text-xs text-text-muted"
+          ticket.className = "shrink-0 text-xs text-text-secondary"
           const label = ticketLabel(item)
           ticket.textContent = label === "Task" ? picker.dataset.taskLabel ?? "" : label
           option.append(title, ticket)
@@ -105,6 +106,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
         }))
         list.hidden = results.length === 0
         status.textContent = (results.length ? picker.dataset.choose : picker.dataset.empty) ?? ""
+        picker.scrollIntoView({ block: "nearest" })
       } catch {
         if (isCurrent(state)) status.textContent = picker.dataset.failed ?? ""
       }

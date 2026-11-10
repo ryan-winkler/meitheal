@@ -3,6 +3,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Page } from "@playwright/test"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -99,6 +100,7 @@ test("task references preserve text editing and open the saved task through HTTP
     expect(await list.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     await description.press("ArrowDown")
     await expect(option).toHaveAttribute("aria-selected", "true")
+    await expect(option).toHaveCSS("outline-width", "2px")
     await expect(description).toHaveAttribute("aria-activedescendant", (await option.getAttribute("id"))!)
     await description.press("Enter")
     const storedLink = `[${target.ticket_key}](/tasks?open=${target.id})`
@@ -132,6 +134,12 @@ test("task references preserve text editing and open the saved task through HTTP
     await comment.getByRole("button", { name: "Edit comment" }).click()
     const commentEditor = comment.getByRole("textbox", { name: "Edit comment" })
     await expect(commentEditor).toHaveValue("Confirm " + storedLink)
+    await commentEditor.fill("#")
+    await expect(list.getByRole("option")).toHaveCount(3)
+    await expect(page.locator("#td-task-reference-picker")).toBeInViewport({ ratio: 0.95 })
+    await expect(commentEditor).toBeFocused()
+    const audit = await new AxeBuilder({ page }).include("#td-task-reference-picker").include("[data-comment-editor]").analyze()
+    expect(audit.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) }))).toEqual([])
     const hostile = "[MTH-99](javascript:alert) [MTH-98](//example.invalid/tasks?open=x)"
     await commentEditor.fill("Revisit #orchard")
     await list.getByRole("option", { name: /Independent orchard fixture/ }).tap()
