@@ -58,7 +58,7 @@ function initGoToTop(): void {
   if (!button || !marker) return
 
   const observer = new IntersectionObserver(([entry]) => {
-    button.hidden = entry.boundingClientRect.bottom >= 0
+    if (entry) button.hidden = entry.boundingClientRect.bottom >= 0
   })
   observer.observe(marker)
   pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
