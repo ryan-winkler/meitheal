@@ -124,7 +124,7 @@ test.describe("Settings Shell", () => {
     const input = page.locator("#search-hub-input")
     await expect(input).toBeFocused()
     await input.fill("Calendar Sync")
-    await page.locator("#search-hub-results").getByRole("button", { name: /Calendar Sync/i }).first().click()
+    await page.locator("#search-hub-results").getByRole("option", { name: /Calendar Sync/i }).first().click()
     await expect(page).toHaveURL(/#integration-calendar$/)
     const toggle = page.locator('[aria-controls="integration-calendar-body"]')
     await expect(toggle).toHaveAttribute("aria-expanded", "true")

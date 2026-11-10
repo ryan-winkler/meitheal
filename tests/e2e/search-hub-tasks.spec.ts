@@ -431,10 +431,15 @@ test("Search waits for a compatible worker, purges old results and remains fresh
       if (!create.ok) throw new Error("Could not seed Search fixture")
       const { version } = await (await fetch(prefix + "/version.json")).json()
       const stored = () => new Response("Synthetic stale search data", { headers: { date: new Date().toUTCString() } })
+      // The legacy worker can fill the API bucket with ingress assets. Keep the unrelated
+      // sentinel newer than those entries so the size cap does not remove it on activation.
+      const retained = () => new Response("Synthetic unrelated data", {
+        headers: { date: new Date(Date.now() + 60_000).toUTCString() },
+      })
       for (const kind of ["api", "nav", "precache", "static"]) {
         const cache = await caches.open(`meitheal-${kind}-v${version}`)
         for (const path of variants) await cache.put(path, stored())
-        await cache.put(prefix + "/unrelated-fixture", stored())
+        await cache.put(prefix + "/unrelated-fixture", retained())
       }
       await (await caches.open("other-app-fixture")).put(prefix + "/unrelated-fixture", stored())
       return String(version)

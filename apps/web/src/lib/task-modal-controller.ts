@@ -1693,8 +1693,8 @@
           if (e.target === tdOverlay) closeTD("discard")
         }, { signal: __signal });
 
-        function checkTaskLocation() {
-          if (waitForDetailWrites(checkTaskLocation)) return
+        function checkTaskLocation(fromHistory = false) {
+          if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
           const url = new URL(window.location.href)
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")
@@ -1702,14 +1702,22 @@
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
             void openTaskDetail(taskId, commentTarget)
+            if (fromHistory) {
+              const generation = detailGeneration
+              // The browser can restore a Settings anchor after popstate finishes.
+              requestAnimationFrame(() => {
+                if (!__signal.aborted && generation === detailGeneration && tdOverlay.classList.contains("active") &&
+                    !tdOverlay.contains(document.activeElement)) tdClose?.focus({ preventScroll: true })
+              })
+            }
           }
         }
         const discardSearchDetail = () => { if (searchSession) closeTD("history") }
         window.addEventListener("popstate", discardSearchDetail, { capture: true, signal: __signal })
         window.addEventListener("hashchange", discardSearchDetail, { capture: true, signal: __signal })
         window.addEventListener("pagehide", discardSearchDetail, { signal: __signal })
-        window.addEventListener("popstate", checkTaskLocation, { signal: __signal })
-        window.addEventListener("hashchange", checkTaskLocation, { signal: __signal })
+        window.addEventListener("popstate", () => checkTaskLocation(true), { signal: __signal })
+        window.addEventListener("hashchange", () => checkTaskLocation(true), { signal: __signal })
         checkTaskLocation()
 
         // Expose openTaskDetail globally for cross-page use (table, index new-task flow)
