@@ -10,7 +10,7 @@ import RiceScoreEditor from "./RiceScoreEditor.astro"
 interface Props {
   tasks: TaskViewItem[]
   locale: Locale
-  taskRepo?: TaskRepository
+  taskRepo?: TaskRepository | undefined
 }
 
 const { tasks, locale, taskRepo } = Astro.props

@@ -9,7 +9,7 @@ import { t } from "../../i18n/translations"
 interface Props {
   locale: Locale
   mode?: TriageMode
-  queue?: Awaited<ReturnType<TaskRepository["findBacklogPage"]>>
+  queue?: Awaited<ReturnType<TaskRepository["findBacklogPage"]>> | undefined
 }
 
 const { locale, mode, queue } = Astro.props
