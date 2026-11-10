@@ -16,6 +16,8 @@
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
 - [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
+- [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.
+- [Settings outline icons](settings-outline-icons.md) - Maintain local Settings icons and their attribution.
 - [Troubleshooting](troubleshooting.md) - Diagnose common connection, search, and sync problems.
 - [Local feedback queue](feedback-and-support.md) - Understand feedback storage, review, and export.
 
