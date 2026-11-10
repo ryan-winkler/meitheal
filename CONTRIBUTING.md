@@ -47,7 +47,7 @@ pnpm --filter @meitheal/tests exec playwright install chromium
 E2E_BASE_URL=http://127.0.0.1:3000 pnpm --filter @meitheal/tests test e2e/pages.spec.ts
 ```
 
-To run the suite against the isolated production build used by CI, run `pnpm --filter @meitheal/web build` and then `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test`. [Test fixture and troubleshooting](docs/kcs/ci-test-determinism.md).
+To run the full suite as CI does, run `pnpm --filter @meitheal/web build` and then `pnpm --filter @meitheal/tests test:ci`. The runner starts a fresh server and database for each spec. [Test fixture and troubleshooting](docs/kcs/ci-test-determinism.md).
 
 A local Astro check covers web behavior. Changes to ingress, Supervisor, Home Assistant integration or sync, and App lifecycle need the Home Assistant devcontainer. Confirm real-device claims on supported hardware and record the exact versions tested. [Home Assistant devcontainer runbook](docs/kcs/home-assistant-devcontainer.md) · [Release runbook](docs/kcs/releasing.md).
 

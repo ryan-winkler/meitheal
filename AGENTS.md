@@ -20,8 +20,7 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 
 ## Automation Review
 
-- CodeRabbitAI is enabled for PR review on this repository
-- Treat CodeRabbit findings as required triage items (accept, fix, or explicitly document reject rationale)
+- Review each automated pull request finding. Fix it or record why it does not apply.
 
 ## Architecture
 
@@ -132,7 +131,7 @@ Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly
 
 | Command | What |
 |---------|------|
-| `pnpm --filter @meitheal/tests test` | All tests |
+| `pnpm --filter @meitheal/tests test:ci` | Full suite with a fresh server per spec. Build the web app first. |
 | `pnpm --filter @meitheal/tests test <file>` | Specific spec |
 | `pnpm check` | Typecheck all packages |
 
