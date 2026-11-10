@@ -10,7 +10,7 @@ description: "Understand the task table and its controls."
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
 
-On narrow screens, swipe sideways over the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view while the table scrolls sideways.
+Scroll sideways within the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view, and Presets and Columns stay above the scroll area. Long titles wrap and can still be edited in full.
 
 ## Common Jobs
 

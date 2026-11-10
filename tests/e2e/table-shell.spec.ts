@@ -146,6 +146,90 @@ test.describe("Table Shell", () => {
     await expect(detail.locator("#td-title")).toHaveValue(task.title)
   })
 
+  test("long titles keep toolbar controls reachable while columns scroll and titles stay editable", async ({ page, request, baseURL, tableTasks }) => {
+    const [ordinary] = tableTasks
+    const longTitle = "UniqueAuditLongTitle" + "X".repeat(150)
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title: longTitle } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json() as { id: string }
+
+    async function openTitle(title: string) {
+      await page.goto("/tasks?" + new URLSearchParams({ view: "table", search: title }) + "#table")
+      await expect(page.locator("#task-table .table-row")).toHaveCount(1)
+      await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveText(title)
+    }
+
+    async function expectToolbarInView(width: number) {
+      const controls = [
+        page.getByRole("button", { name: "Saved filter presets" }),
+        page.getByRole("button", { name: "Customize visible columns" }),
+        page.getByRole("button", { name: "Toggle filter builder" }),
+        page.locator("#table-label-filter > summary"),
+      ]
+      for (const control of controls) {
+        await control.focus()
+        await expect(control).toBeFocused()
+        const box = await control.boundingBox()
+        expect(box).not.toBeNull()
+        expect(box!.x).toBeGreaterThanOrEqual(0)
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
+    }
+
+    async function expectScrollableColumns() {
+      const region = page.getByRole("region", { name: "Table View" })
+      const scroll = await region.evaluate(node => ({ width: node.clientWidth, content: node.scrollWidth }))
+      expect(scroll.content).toBeGreaterThan(scroll.width)
+      await region.focus()
+      await page.keyboard.press("ArrowRight")
+      await expect.poll(() => region.evaluate(node => node.scrollLeft)).toBeGreaterThan(0)
+      await region.evaluate(node => { node.scrollLeft = node.scrollWidth })
+      const edges = await region.evaluate(node => {
+        const region = node.getBoundingClientRect()
+        const first = node.querySelector("td.col-checkbox")!.getBoundingClientRect()
+        const last = node.querySelector("td.col-actions")!.getBoundingClientRect()
+        return { first: first.left - region.left, last: last.right - region.right }
+      })
+      expect(Math.abs(edges.first)).toBeLessThanOrEqual(1)
+      expect(edges.last).toBeLessThanOrEqual(1)
+    }
+
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openTitle(ordinary.title)
+      await expectToolbarInView(1440)
+
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 })
+        await openTitle(longTitle)
+        await expectToolbarInView(width)
+        await expect(page.getByRole("region", { name: "Table View" })).toHaveCSS("overflow-x", "auto")
+        if (width < 1440) await expectScrollableColumns()
+      }
+
+      const editor = page.getByRole("textbox", { name: "Title", exact: true })
+      await editor.focus()
+      await editor.press("Control+End")
+      await page.keyboard.insertText(" updated")
+      await editor.press("Tab")
+      const edited = longTitle + " updated"
+      await expect.poll(async () => (await (await request.get(`/api/tasks/${id}`)).json()).title).toBe(edited)
+
+      const wide = await request.patch(`/api/tasks/${id}`, {
+        headers, data: { custom_fields: JSON.stringify({ Reference: "W".repeat(200) }) },
+      })
+      expect(wide.ok(), await wide.text()).toBeTruthy()
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openTitle(edited)
+      await expectToolbarInView(1440)
+      await expectScrollableColumns()
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("a completed row exposes its title and type and remains editable by keyboard", async ({ page, tableTasks }) => {
     const [, task] = tableTasks
     await page.goto("/tasks?view=table")

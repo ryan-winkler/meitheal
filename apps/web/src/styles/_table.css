@@ -23,44 +23,37 @@
 }
 
 /* --- Table view --- */
-.table-container {
-  display: contents;
+#table-shell {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-@media (max-width: 768px) {
-  #table-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.table-container {
+  min-width: 0;
+  overflow-x: auto;
+  position: relative;
+}
 
-  .table-container {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-    position: relative;
-  }
+.table-container:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
 
-  .table-container:focus-visible {
-    outline: 2px solid var(--accent-text);
-    outline-offset: -2px;
-  }
+/* A short edge shadow scrolls out of view as more columns come into view. */
+.table-container.has-scroll::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 40px;
+  background: linear-gradient(to left, var(--bg-primary), transparent);
+  pointer-events: none;
+}
 
-  /* A short edge shadow scrolls out of view as more columns come into view. */
-  .table-container.has-scroll::after {
-    content: "";
-    position: absolute;
-    inset: 0 0 0 auto;
-    width: 40px;
-    background: linear-gradient(to left, var(--bg-primary), transparent);
-    pointer-events: none;
-  }
+.table-container .data-table thead th:first-child {
+  z-index: 4;
+}
 
-  .table-container .data-table thead th:first-child {
-    z-index: 4;
-  }
-
-  .table-container .data-table tbody tr:nth-child(even):not(:hover) td:first-child {
-    background: var(--bg-primary);
-  }
+.table-container .data-table tbody tr:nth-child(even):not(:hover) td:first-child {
+  background: var(--bg-primary);
 }
 
 .data-table {
@@ -118,6 +111,7 @@
 
 .editable-cell {
   @apply outline-none rounded px-1 py-0.5 transition-colors min-h-[1.5em] text-text-primary;
+  overflow-wrap: anywhere;
 }
 
 .editable-cell:focus {
@@ -127,6 +121,16 @@
 /* --- Table extras --- */
 .table-filter-bar {
   @apply flex gap-3 items-center flex-wrap px-4 py-3;
+}
+
+.table-filter-bar .filter-toolbar--table {
+  min-width: 0;
+  flex-wrap: wrap !important;
+}
+
+.filter-toolbar--table .filter-toolbar__type-toggles {
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .row-check {
