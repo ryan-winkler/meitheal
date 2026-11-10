@@ -146,10 +146,6 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
   const requestUrl = new URL(request.url)
   const requestPath = requestUrl.pathname
-  // Astro can route a decoded API namespace that the raw-path scope checks would miss.
-  if (routePattern.startsWith("/api/") && !requestPath.startsWith("/api/")) {
-    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
-  }
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
   const searchRoute = routePattern === searchPath || url.pathname === searchPath
   if (!pinRoute && !searchRoute) return handleRequest(context, next, requestUrl)
@@ -180,6 +176,10 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
       detail: "Database download not found.",
       extraHeaders: { "cache-control": "private, no-store" },
     })
+  }
+  // Astro can route a decoded API namespace that the raw-path scope checks would miss.
+  if (routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
   const method = request.method.toUpperCase();
   const isHealthCheck = url.pathname === "/api/health" && (method === "GET" || method === "HEAD");
