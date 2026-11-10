@@ -94,7 +94,7 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--shell-accent, var(--accent)) 82%, white);
+  color: var(--accent-text);
 }
 
 .page-hero__title-row {

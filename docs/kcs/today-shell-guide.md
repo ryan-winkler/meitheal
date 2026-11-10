@@ -26,6 +26,8 @@ The Today shell sections are:
 
 These anchors stay on the same route, which keeps the page ingress-safe in Home Assistant and companion-safe when reopened from the webview.
 
+The small heading above the Today overview title uses the active palette's accent text color. It stays readable when your personal accent matches the page background.
+
 ## Common Jobs
 
 ### Jump to the part of Today you need

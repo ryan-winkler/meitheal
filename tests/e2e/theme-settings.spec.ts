@@ -140,6 +140,13 @@ test.describe("Theme Settings", () => {
       await page.getByRole("link", { name: "Today", exact: true }).first().click()
       await expect(page).toHaveURL(/\/today$/)
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
+      const eyebrow = page.locator("#today-overview .page-hero__eyebrow")
+      const paletteAccent = await eyebrow.evaluate(element =>
+        getComputedStyle(element).getPropertyValue("--accent-text").trim(),
+      )
+      const accentRgb = paletteAccent.match(/[0-9a-f]{2}/gi)?.map(part => Number.parseInt(part, 16))
+      expect(accentRgb).toHaveLength(3)
+      await expect(eyebrow).toHaveCSS("color", `rgb(${accentRgb?.join(", ")})`)
       await page.goBack()
       await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
       await expect(picker).toHaveValue(surface)
