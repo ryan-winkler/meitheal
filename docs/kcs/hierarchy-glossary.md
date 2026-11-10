@@ -84,6 +84,10 @@ Area (areas table)
 - `tasks.routine_template_id` → Task → Routine link
 - `tasks.spawned_for_date` → Unique constraint for routine deduplication
 
+## Goal progress
+
+Goal detail and list responses return progress as a percentage from 0 to 100, calculated from the stored current metric and its positive target. A missing or invalid target reports zero progress. Saving a percentage through `PUT /api/goals/{id}` updates the current metric on the existing target's scale. A goal without a positive target becomes a percentage goal with a target of 100. Fractional percentages are supported; invalid values return 400 and leave the goal unchanged.
+
 ## Move a task to another project
 
 Open the task, then choose its **Project** in the details panel. Choose **No project** to clear the assignment. The task keeps its existing area, status and ticket key. If the destination was deleted, reopen the task to refresh the project list and choose another destination.

@@ -186,6 +186,7 @@ const schemas = {
       metric_type: { type: "string", nullable: true },
       metric_target: { type: "number", nullable: true },
       metric_current: { type: "number", nullable: true },
+      progress: { type: "number", minimum: 0, maximum: 100, description: "Percentage derived from the stored metric. An update maps this percentage to the goal's metric target, or initializes a percentage target of 100." },
     },
     required: ["id", "title"],
   },
