@@ -149,7 +149,7 @@ if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scr
   existing_id="$(isolated_podman publisher pull --tls-verify=true --quiet --authfile "$scratch/publisher.json" --platform "$platform" "$image")"
   [[ "$existing_id" == "$image_id" ]] || fail 'Published version already points to a different image'
   digest="$(repo_digest publisher "$image")"
-elif grep -Eq ': manifest unknown$' "$scratch/manifest-error"; then
+elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
   require_current_main
   release_podman push --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
   digest="$(cat "$scratch/digest")"

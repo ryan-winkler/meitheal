@@ -86,7 +86,7 @@ if (command === "image" && args.includes("--format")) {
 } else if (command === "manifest") {
   if (!store.endsWith("/publisher/storage")) process.exit(98)
   if (process.env.FIXTURE_EXISTING_ID) process.exit(0)
-  console.error("fixture: manifest unknown")
+  console.error("fixture: " + (process.env.FIXTURE_MANIFEST_ERROR || "manifest unknown"))
   process.exit(1)
 } else if (command === "push") {
   writeFileSync(option("--digestfile"), digest + "\\n")
@@ -312,4 +312,18 @@ test("a passing receipt cannot overwrite an existing tag", ({ harness }) => {
   expect(same.stdout).toContain(`digest=${digest}`)
   expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\npull\nimage\npull\nimage\nimage\n")
   expect(readFileSync(harness.trace, "utf8")).not.toContain("push\n")
+})
+
+test("first publication accepts a missing package and rejects registry failures", ({ harness }) => {
+  const args = publish("aarch64", arm, harness.receipt)
+  const missing = harness.run(args, { FIXTURE_MANIFEST_ERROR: "name unknown" })
+  expect(missing.status, missing.stderr).toBe(0)
+  expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\nmain\npush\npull\n")
+
+  for (const error of ["unauthorized", "denied", "too many requests", "service unavailable"]) {
+    const failed = harness.run(args, { FIXTURE_MANIFEST_ERROR: error })
+    expect(failed.status).toBe(1)
+    expect(failed.stderr).toContain("Could not confirm the version tag is absent")
+    expect(readFileSync(harness.trace, "utf8")).not.toContain("push\n")
+  }
 })
