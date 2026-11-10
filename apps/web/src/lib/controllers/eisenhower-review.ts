@@ -10,6 +10,7 @@
 
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
+import { STATUS } from "@lib/status-config"
 import { getExistingFrameworkPayload } from "./eisenhower-triage"
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ let reviewStats = { promoted: 0, archived: 0, deleted: 0, skipped: 0 }
 // ── Public API ────────────────────────────────────────────────────────────
 
 export async function startReview(): Promise<void> {
-  const page = document.getElementById("eisenhower-page")
+  const page = document.getElementById("eisenhower-shell")
   if (!page) return
 
   reviewTasks = []
@@ -114,7 +115,7 @@ export async function reviewAction(action: "promote" | "archive" | "delete"): Pr
         break
       }
       case "archive": {
-        await taskApi.updateTask(task.id, { status: "done" })
+        await taskApi.updateTask(task.id, { status: STATUS.COMPLETE })
         reviewStats.archived++
         break
       }
@@ -141,6 +142,14 @@ export async function reviewAction(action: "promote" | "archive" | "delete"): Pr
 }
 
 export function setupReviewListeners(signal: AbortSignal): void {
+  // The UnifiedBar action lives outside the shell's delegated click listener.
+  const startButton = document.querySelector<HTMLButtonElement>('[data-action="start-review"]')
+  if (startButton && !document.getElementById("eisenhower-shell")?.contains(startButton)) {
+    const fresh = startButton.cloneNode(true) as HTMLButtonElement
+    startButton.replaceWith(fresh)
+    fresh.addEventListener("click", () => { void startReview() }, { signal })
+  }
+
   // Close on overlay backdrop click
   document.getElementById("review-overlay")?.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).classList.contains("review-overlay")) {

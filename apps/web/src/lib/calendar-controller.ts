@@ -6,6 +6,7 @@ import { taskApi } from "@lib/task-api-client"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { showToast } from "@lib/toast"
 import { CALENDAR_SECTIONS } from "@lib/calendar-registry"
+import { normalizeStatus, STATUS } from "@lib/status-config"
 
 interface CalendarEventRecord {
   summary: string
@@ -280,11 +281,11 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     }
 
     drawerTasks.innerHTML = tasks.map((task: Record<string, unknown>) => {
-      const status = String(task.status ?? "")
+      const status = normalizeStatus(String(task.status ?? ""))
       const statusIcon =
-        status === "done"
+        status === STATUS.COMPLETE
           ? "✅"
-          : status === "in_progress"
+          : status === STATUS.ACTIVE
             ? "🔵"
             : "⬜"
       return `<div class="day-drawer-item" data-task-id="${String(task.id)}" style="cursor:pointer">

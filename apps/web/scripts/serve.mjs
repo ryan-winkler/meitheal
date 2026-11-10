@@ -27,6 +27,10 @@ import http from "node:http";
 // Prevent Astro standalone from auto-starting its own HTTP server.
 process.env.ASTRO_NODE_AUTOSTART = "disabled";
 
+// Server-private marker: only this wrapper overwrites the socket-peer header.
+// Astro's clientAddress may contain X-Forwarded-For and is not an auth boundary.
+globalThis[Symbol.for("meitheal.trusted-socket-peer-header")] = true;
+
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 
@@ -44,6 +48,9 @@ if (INGRESS_PATH) {
 const { handler } = await import("../dist/server/entry.mjs");
 
 const server = http.createServer((req, res) => {
+  // Always replace caller input with the immediate socket peer, including an
+  // empty value when unavailable. This header is never trusted in bare Astro.
+  req.headers["x-meitheal-socket-peer"] = req.socket.remoteAddress ?? "";
   // 1. Normalize URL: collapse duplicate slashes (// → /)
   //    Prevents Astro's collapseDuplicateTrailingSlashes from issuing
   //    301 redirects that escape the ingress iframe.

@@ -96,7 +96,20 @@ const { locale } = Astro.props
     border-color: color-mix(in srgb, var(--border) 70%, var(--accent));
   }
 
+  .integration-card__header-row {
+    display: flex;
+    align-items: center;
+    background: var(--bg-secondary);
+  }
+
+  .integration-card__header-row > .info-btn {
+    margin-inline-end: 18px;
+    flex-shrink: 0;
+  }
+
   .integration-card__header {
+    flex: 1;
+    min-width: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;

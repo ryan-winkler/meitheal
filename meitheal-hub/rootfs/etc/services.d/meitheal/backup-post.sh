@@ -2,7 +2,7 @@
 # Meitheal Supervisor Post-Backup Script
 #
 # Called by HA Supervisor AFTER snapshot of /data completes.
-# Signals the addon that backup is done and normal IO can resume.
+# Acknowledges completion; checkpoint preparation does not pause normal IO.
 #
 # @see https://developers.home-assistant.io/docs/add-ons/configuration#optional-configuration-options
 

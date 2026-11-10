@@ -25,6 +25,7 @@ import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
 import { promptDialog } from "@lib/prompt-dialog"
 import { showToast } from "@lib/toast"
+import { STATUS } from "@lib/status-config"
 import {
   startTriage,
   closeTriage,
@@ -67,6 +68,12 @@ const Q1_WIP_LIMIT = 5
 export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
   const page = document.getElementById("eisenhower-shell")
   if (!page) return
+  const owner = window as Window & { __meithealEisenhowerController?: { page: HTMLElement; signal: AbortSignal } }
+  if (owner.__meithealEisenhowerController?.page === page && owner.__meithealEisenhowerController.signal === signal) return
+  owner.__meithealEisenhowerController = { page, signal }
+  signal.addEventListener("abort", () => {
+    if (owner.__meithealEisenhowerController?.signal === signal) delete owner.__meithealEisenhowerController
+  }, { once: true })
 
   initPageShellNavigation({
     barId: "eisenhower-bar",
@@ -78,7 +85,7 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
 
   setupDragAndDrop(page)
   setupClickToOpen(page)
-  setupActionButtons(page)
+  setupActionButtons(page, signal)
   setupQuickCapture(page)
   setupFocusMode(page)
   setupMobileTabs(page)
@@ -268,7 +275,7 @@ function checkWipLimits(page: HTMLElement) {
 // Action buttons (Q1 Commit, Q4 Defer/Complete)
 // =============================================================================
 
-function setupActionButtons(page: HTMLElement) {
+function setupActionButtons(page: HTMLElement, signal: AbortSignal) {
   page.addEventListener("click", async (e: Event) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
     if (!btn) return
@@ -332,7 +339,7 @@ function setupActionButtons(page: HTMLElement) {
       btn.removeAttribute("disabled")
       btn.style.opacity = ""
     }
-  })
+  }, { signal })
 }
 
 /**
@@ -455,7 +462,7 @@ async function completeQ4(page: HTMLElement) {
     if (!id) continue
 
     try {
-      await taskApi.updateTask(id, { status: "done" })
+      await taskApi.updateTask(id, { status: STATUS.COMPLETE })
       successCount++
     } catch {
       // Continue with remaining tasks

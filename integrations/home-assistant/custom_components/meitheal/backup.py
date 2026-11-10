@@ -6,8 +6,8 @@ system can coordinate with Meitheal before and after creating backups.
 Pre-backup: calls the addon's /api/backup/prepare endpoint to flush
 the SQLite WAL to disk, ensuring data consistency in the snapshot.
 
-Post-backup: calls the addon's /api/backup/complete endpoint to signal
-that normal operations can resume.
+Post-backup: calls the addon's /api/backup/complete endpoint to acknowledge
+completion. Preparation checkpoints committed frames but never pauses writes.
 
 @see https://developers.home-assistant.io/docs/core/platform/backup/#adding-support
 """
@@ -73,10 +73,10 @@ async def async_pre_backup(hass: HomeAssistant) -> None:
 
 
 async def async_post_backup(hass: HomeAssistant) -> None:
-    """Clean up after backup completes.
+    """Acknowledge backup completion.
 
-    Called by HA Core after a backup finishes. Signals the Meitheal addon
-    that backup is complete and normal operations can resume.
+    Called by HA Core after a backup finishes. No write lock is held by
+    preparation; this hook is an idempotent completion signal.
     """
     base_url = _get_base_url(hass)
     if not base_url:

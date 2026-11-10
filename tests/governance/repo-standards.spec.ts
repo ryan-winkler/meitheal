@@ -50,7 +50,7 @@ test("addon config includes publishing image contract", () => {
 test("repository metadata keeps Home Assistant publishing fields", () => {
   const repositoryConfig = readFileSync(join(repoRoot, "repository.yaml"), "utf8");
   expect(repositoryConfig).toMatch(/^name:\s*".+"/m);
-  expect(repositoryConfig).toMatch(/^url:\s*"https:\/\/github\.com\/Coolock-Village\/meitheal"/m);
+  expect(repositoryConfig).toMatch(/^url:\s*"https:\/\/github\.com\/Coolock-Village\/meitheal-ha-addon"/m);
 
   const maintainer = repositoryConfig.match(/^maintainer:\s*"([^"]+)"/m)?.[1] ?? "";
   expect(maintainer).toMatch(/^[^<]+<[^@\s]+@[^>\s]+>$/);

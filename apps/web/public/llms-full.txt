@@ -1,6 +1,6 @@
 # Meitheal — Full System Context for AI Agents
 
-> Generated: 2026-11-10T19:09:21.449Z
+> Generated: 2026-11-10T21:37:42.176Z
 > This file is auto-generated at build time. Do not edit manually.
 
 ---
@@ -710,6 +710,8 @@ The add-on ships with a restrictive AppArmor profile and uses Home Assistant's a
 - `GET /api/health` — getHealth: Health and readiness probe
 - `HEAD /api/health` — healthPing: Lightweight liveness ping
 - `GET /api/features` — getFeatureFlags: Get runtime feature flags
+- `POST /api/backup/prepare` — prepareBackup: Checkpoint SQLite WAL before a managed backup
+- `POST /api/backup/complete` — completeBackup: Acknowledge completion of a managed backup
 - `GET /api/license/status` — getLicenseStatus: Get license key verification status
 
 ### Tasks

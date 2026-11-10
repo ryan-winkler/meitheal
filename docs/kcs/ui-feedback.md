@@ -48,3 +48,16 @@ The feedback bridge is owned by one page-lifecycle signal, including fallback
 initialization and repeated page-load/HMR setup. One acknowledged action emits
 one feedback toast. Production MCP self-requests use the app's local runtime
 origin; HA's externally forwarded Host is not an internal API destination.
+
+Calendar, timeline and Eisenhower presentation use the shared canonical status
+configuration. Legacy aliases are normalized on read, and completion actions
+send the canonical complete status. The manual screenshot spec is opt-in with
+`E2E_BASE_URL` and `MEITHEAL_CAPTURE_SCREENSHOT=1`; its output uses the Playwright
+run directory rather than a developer-specific path.
+
+Eisenhower weekly review launches from the current shell and the UnifiedBar
+action outside its delegated listener. The header binding is lifecycle-owned
+and replaces previous bindings during repeated setup; completion submits the
+canonical status once.
+
+Integration disclosure headers keep the native expand button and help button as siblings. Never nest buttons: HTML parser recovery can move later Settings panels outside the main layout, leaving controls visible but clipped and unclickable. When diagnosing blocked Settings clicks after compiler upgrades, inspect DOM ancestry and main-content width before changing controller readiness or test timeouts.

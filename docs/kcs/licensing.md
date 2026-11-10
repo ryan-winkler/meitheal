@@ -77,3 +77,12 @@ Check: https://github.com/orgs/Coolock-Village/packages
 | `verifyLicenseKey` returns `expired` | JWT `exp` claim in the past | Generate new key with later `--expires` |
 | GHCR images not pullable | Package went private | Set to public at org packages page |
 | User can't find add-on | Wrong repo URL | Must use `Coolock-Village/meitheal-ha-addon` |
+
+## License verification tests
+
+License regressions generate an ephemeral Ed25519 issuer in memory and pass
+its public key explicitly to `verifyLicenseKey`. Production calls omit this
+argument and retain the embedded verification key; a regression verifies that
+the default verifier rejects the ephemeral issuer. CI never reads or publishes
+`.keys/meitheal-license.pem`. Wrong-key, issuer and expiry checks still exercise
+the actual cryptographic verifier.

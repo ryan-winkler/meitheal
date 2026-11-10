@@ -14,25 +14,27 @@ const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-webhooks">
-  <button
-    type="button"
-    class="integration-card__header"
-    aria-expanded="false"
-    aria-controls="integration-webhooks-body"
-  >
-    <div class="integration-card__title-row">
-      <span class="integration-card__icon">🔔</span>
-      <div class="integration-card__title-info">
-        <strong>{t("settings.webhooks_title", locale)}</strong>
-        <span class="integration-card__desc">{t("settings.webhooks_desc", locale)}</span>
-      </div>
-    </div>
-    <div class="integration-card__header-right">
-      <button type="button" class="info-btn" data-explainer="webhooks" aria-label={t("settings.webhooks_explainer", locale)} onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-disabled" id="webhook-status">{t("settings.status_not_configured", locale)}</span>
-      <span class="integration-card__chevron">▸</span>
-    </div>
-  </button>
+  <div class="integration-card__header-row">
+    <button
+      type="button"
+      class="integration-card__header"
+      aria-expanded="false"
+      aria-controls="integration-webhooks-body"
+    >
+      <span class="integration-card__title-row">
+        <span class="integration-card__icon">🔔</span>
+        <span class="integration-card__title-info">
+          <strong>{t("settings.webhooks_title", locale)}</strong>
+          <span class="integration-card__desc">{t("settings.webhooks_desc", locale)}</span>
+        </span>
+      </span>
+      <span class="integration-card__header-right">
+        <span class="badge badge-disabled" id="webhook-status">{t("settings.status_not_configured", locale)}</span>
+        <span class="integration-card__chevron">▸</span>
+      </span>
+    </button>
+    <button type="button" class="info-btn" data-explainer="webhooks" aria-label={t("settings.webhooks_explainer", locale)}>ℹ️</button>
+  </div>
 
   <div class="integration-card__body" id="integration-webhooks-body" aria-hidden="true">
     <!-- Differentiation callout -->

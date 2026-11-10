@@ -14,30 +14,32 @@ const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-calendar">
-  <button
-    type="button"
-    class="integration-card__header"
-    aria-expanded="false"
-    aria-controls="integration-calendar-body"
-  >
-    <div class="integration-card__title-row">
-      <span class="integration-card__icon">📅</span>
-      <div class="integration-card__title-info">
-        <strong>{t("settings.calendar_title", locale)}</strong>
-        <span class="integration-card__desc">{t("settings.calendar_desc", locale)}</span>
-      </div>
-    </div>
-    <div class="integration-card__header-right">
-      <button
+  <div class="integration-card__header-row">
+    <button
+      type="button"
+      class="integration-card__header"
+      aria-expanded="false"
+      aria-controls="integration-calendar-body"
+    >
+      <span class="integration-card__title-row">
+        <span class="integration-card__icon">📅</span>
+        <span class="integration-card__title-info">
+          <strong>{t("settings.calendar_title", locale)}</strong>
+          <span class="integration-card__desc">{t("settings.calendar_desc", locale)}</span>
+        </span>
+      </span>
+      <span class="integration-card__header-right">
+        <span class="badge badge-pending" id="cal-status">{t("settings.status_checking", locale)}</span>
+        <span class="integration-card__chevron">▸</span>
+      </span>
+    </button>
+    <button
         type="button"
         class="info-btn"
         data-explainer="calendar"
         aria-label={t("settings.calendar_explainer", locale)}
-        onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-pending" id="cal-status">{t("settings.status_checking", locale)}</span>
-      <span class="integration-card__chevron">▸</span>
-    </div>
-  </button>
+       >ℹ️</button>
+  </div>
 
   <div class="integration-card__body" id="integration-calendar-body" aria-hidden="true">
     <!-- HA auto-sync info callout -->

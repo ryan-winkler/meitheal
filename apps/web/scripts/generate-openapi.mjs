@@ -740,6 +740,18 @@ const paths = {
     get: { operationId: "getFeatureFlags", tags: ["System"], summary: "Get runtime feature flags", responses: { 200: { description: "Feature flags" } } },
   },
 
+  // ── Internal backup hooks ──
+  "/api/backup/prepare": { post: {
+    operationId: "prepareBackup", tags: ["System"], summary: "Checkpoint SQLite WAL before a managed backup",
+    description: "Internal HA/Supervisor hook. Does not pause writes or create a backup. Retain the database and WAL together when checkpointing is busy or fails.",
+    responses: { 200: { description: "Checkpoint confirmed" }, 403: { description: "Administrator or trusted native hook required" }, 503: { description: "Checkpoint busy, invalid or failed" } },
+  } },
+  "/api/backup/complete": { post: {
+    operationId: "completeBackup", tags: ["System"], summary: "Acknowledge completion of a managed backup",
+    description: "Internal idempotent hook. No write lock was held by preparation, so this acknowledgement does not unlock database writes.",
+    responses: { 200: { description: "Acknowledged; writes were never paused" }, 403: { description: "Administrator or trusted native hook required" } },
+  } },
+
   // ── Export ──
   "/api/export/tasks.json": { get: { operationId: "exportTasksJson", tags: ["Export"], summary: "Export all tasks as JSON", responses: { 200: { description: "JSON export" } } } },
   "/api/export/tasks.csv": { get: { operationId: "exportTasksCsv", tags: ["Export"], summary: "Export all tasks as CSV", responses: { 200: { description: "CSV export" } } } },

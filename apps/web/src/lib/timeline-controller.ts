@@ -1,5 +1,6 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { createClientLogger } from "@lib/client-logger"
+import { getStatusDef, isDoneStatus as isComplete } from "@lib/status-config"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
@@ -281,19 +282,7 @@ function fmtDate(d: Date): string {
 }
 
 function statusLabel(status: string): string {
-  const map: Record<string, string> = {
-    open: "Open",
-    pending: "Pending",
-    active: "Active",
-    in_progress: "In Progress",
-    complete: "Complete",
-    done: "Done",
-  }
-  return map[status] ?? status
-}
-
-function isComplete(status: string): boolean {
-  return status === "complete" || status === "done"
+  return getStatusDef(status)?.label ?? (status === "open" ? "Open" : status)
 }
 
 // ── SVG Helper ─────────────────────────────────────────────────────────────

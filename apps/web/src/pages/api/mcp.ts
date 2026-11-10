@@ -63,6 +63,8 @@ const EXCLUDED_OPS = new Set([
   "exportDatabase",    // Large binary download
   "exportSettings",    // File downloads
   "importSettings",    // File upload
+  "prepareBackup",    // Internal HA/Supervisor lifecycle hook
+  "completeBackup",   // Internal HA/Supervisor lifecycle hook
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */

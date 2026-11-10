@@ -13,6 +13,7 @@ import { initHAIntegrations } from "@domains/ha";
 import type { DateFormat } from "./lib/date";
 import { idempotencyCache, type CachedResponse } from "./lib/idempotency-cache";
 import { resolveAgentAuth, resolveRouteScope, requireScope, type ResolvedAgent } from "./lib/agent-token-guard";
+import { isNativeBackupHook } from "./lib/backup-hook-policy"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -336,7 +337,7 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
       const scopeError = requireScope(resolvedAgent, requiredScope)
       if (scopeError) return scopeError
     } else if (requiredScope === "settings:write" &&
-      (supervisorTokenPresent || locals.hassUserId) && !locals.hassIsAdmin) {
+      (supervisorTokenPresent || locals.hassUserId) && !locals.hassIsAdmin && !isNativeBackupHook(request)) {
       return apiProblem({ status: 403, detail: "A Home Assistant administrator must change household settings." })
     }
   }

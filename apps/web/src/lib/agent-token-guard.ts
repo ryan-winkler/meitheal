@@ -89,6 +89,7 @@ export function resolveRouteScope(pathname: string, method: string): AgentScope 
   const at = (prefix: string) => pathname === prefix || pathname.startsWith(prefix + "/")
   if (method === "POST" && /^\/api\/tasks\/[^/]+\/handoff$/.test(pathname)) return "tasks:propose"
   if (at("/api/agent-tokens") || pathname === "/api/import/settings") return "settings:write"
+  if (pathname === "/api/backup/prepare" || pathname === "/api/backup/complete") return "settings:write"
   if (pathname === "/api/nfc/complete") return "tasks:write"
   if (at("/api/tasks")) {
     if (method === "DELETE" || ["/api/tasks/delete", "/api/tasks/batch-delete", "/api/tasks/clear-completed", "/api/tasks/delete-completed"].includes(pathname)) return "tasks:delete"

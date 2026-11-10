@@ -14,25 +14,27 @@ const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-n8n">
-  <button
-    type="button"
-    class="integration-card__header"
-    aria-expanded="false"
-    aria-controls="integration-n8n-body"
-  >
-    <div class="integration-card__title-row">
-      <span class="integration-card__icon">⚙</span>
-      <div class="integration-card__title-info">
-        <strong>{t("settings.n8n_title", locale)}</strong>
-        <span class="integration-card__desc">{t("settings.n8n_desc", locale)}</span>
-      </div>
-    </div>
-    <div class="integration-card__header-right">
-      <button type="button" class="info-btn" data-explainer="n8n" aria-label={t("settings.n8n_explainer", locale)} onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-disabled" id="n8n-status">{t("settings.status_not_configured", locale)}</span>
-      <span class="integration-card__chevron">▸</span>
-    </div>
-  </button>
+  <div class="integration-card__header-row">
+    <button
+      type="button"
+      class="integration-card__header"
+      aria-expanded="false"
+      aria-controls="integration-n8n-body"
+    >
+      <span class="integration-card__title-row">
+        <span class="integration-card__icon">⚙</span>
+        <span class="integration-card__title-info">
+          <strong>{t("settings.n8n_title", locale)}</strong>
+          <span class="integration-card__desc">{t("settings.n8n_desc", locale)}</span>
+        </span>
+      </span>
+      <span class="integration-card__header-right">
+        <span class="badge badge-disabled" id="n8n-status">{t("settings.status_not_configured", locale)}</span>
+        <span class="integration-card__chevron">▸</span>
+      </span>
+    </button>
+    <button type="button" class="info-btn" data-explainer="n8n" aria-label={t("settings.n8n_explainer", locale)}>ℹ️</button>
+  </div>
 
   <div class="integration-card__body" id="integration-n8n-body" aria-hidden="true">
     <!-- HA addon auto-detect callout -->

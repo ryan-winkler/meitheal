@@ -64,7 +64,10 @@ export type LicenseResult = LicenseValid | LicenseInvalid | LicenseGrace
  * Returns a grace result if no key is provided (app runs without restrictions).
  * Returns invalid if the key is malformed, expired, or has a bad signature.
  */
-export function verifyLicenseKey(token: string | undefined | null): LicenseResult {
+export function verifyLicenseKey(
+  token: string | undefined | null,
+  publicKeyPem = LICENSE_PUBLIC_KEY_PEM,
+): LicenseResult {
   // Grace mode: no key provided — app runs freely
   if (!token || token.trim() === "") {
     return { valid: true, plan: "none", email: null, expiresAt: null, issuedAt: null, grace: true }
@@ -85,7 +88,7 @@ export function verifyLicenseKey(token: string | undefined | null): LicenseResul
     }
 
     // Verify signature
-    const publicKey = createPublicKey(LICENSE_PUBLIC_KEY_PEM)
+    const publicKey = createPublicKey(publicKeyPem)
     const signingInput = Buffer.from(`${headerB64}.${payloadB64}`)
     const signature = Buffer.from(signatureB64, "base64url")
 

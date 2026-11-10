@@ -271,3 +271,28 @@ Mask the guest getty units before starting init in a privileged development
 container. Use the absolute /usr/bin/systemctl path, since a base-image wrapper
 can bypass service changes. Keep this command in local Compose overrides that
 replace the development-container startup command.
+
+## Contributor agreement automation
+
+The CLA action is pinned to the verified upstream v2.6.1 commit rather than an
+unpublished major-version alias. Local signature storage needs contents write
+permission; the agreement link is the full repository document URL. Comment
+triggers accept only the configured signature or recheck text on pull requests.
+The privileged workflow does not check out or execute contributor source.
+
+## Client asset budget
+
+Self-hosted fonts use WOFF2, including JetBrains Mono400/500, consistent with the
+other shipped families and supported Home Assistant browsers. Duplicate legacy
+WOFF files are not bundled. The existing client-byte, memory and latency budgets
+remain unchanged; run the build and perf:budget command to verify output.
+
+## Dependency security gate
+
+Run unsuppressed pnpm audit with the frozen lockfile; all CI audit severities
+must pass. The patched Astro7.3 line and matching Node adapter preserve the
+Node>=22.12 baseline. Keep the declared bounded version range until a deliberate
+validated upgrade, and do not restore unused MDX or unpatched dependency chains.
+After upgrades, run the full tests/build/typecheck, performance budgets and
+relevant local/HA runtime checks. Older framework receipts are not evidence of
+an exact upgraded runtime.

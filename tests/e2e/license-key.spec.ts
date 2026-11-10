@@ -1,17 +1,16 @@
 import { test, expect } from "@playwright/test";
 import { verifyLicenseKey } from "../../packages/domain-auth/src/index";
-import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { generateKeyPairSync, createPrivateKey, sign } from "node:crypto";
 
-const __testdir = dirname(fileURLToPath(import.meta.url));
+const fixtureKeys = generateKeyPairSync("ed25519", {
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" }
+})
+const verifyFixtureLicense = (token: string) => verifyLicenseKey(token, fixtureKeys.publicKey)
 
-/** Helper: create a JWT signed with the PRODUCTION key for testing */
-function createProductionJWT(payload: Record<string, unknown>): string {
-  const keyPath = resolve(__testdir, "../../.keys/meitheal-license.pem");
-  const privateKeyPem = readFileSync(keyPath, "utf-8");
-  const privateKey = createPrivateKey(privateKeyPem);
+/** Sign with an ephemeral test issuer; never read the production private key. */
+function createFixtureJWT(payload: Record<string, unknown>): string {
+  const privateKey = createPrivateKey(fixtureKeys.privateKey);
 
   const header = { alg: "EdDSA", typ: "JWT" };
   const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64url");
@@ -78,7 +77,7 @@ test.describe("License Key Verification", () => {
 
   test("valid key: accepts a properly signed token", () => {
     const now = Math.floor(Date.now() / 1000);
-    const token = createProductionJWT({
+    const token = createFixtureJWT({
       iss: "meitheal",
       sub: "test@example.com",
       plan: "personal",
@@ -86,7 +85,7 @@ test.describe("License Key Verification", () => {
       exp: now + 86400
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(true);
     if (result.valid && "email" in result) {
       expect(result.plan).toBe("personal");
@@ -97,14 +96,14 @@ test.describe("License Key Verification", () => {
 
   test("valid key: no-expiry token is valid", () => {
     const now = Math.floor(Date.now() / 1000);
-    const token = createProductionJWT({
+    const token = createFixtureJWT({
       iss: "meitheal",
       sub: "forever@example.com",
       plan: "household",
       iat: now
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(true);
     if (result.valid && "email" in result) {
       expect(result.plan).toBe("household");
@@ -114,7 +113,7 @@ test.describe("License Key Verification", () => {
 
   test("expired key: returns invalid with reason=expired", () => {
     const pastTime = Math.floor(Date.now() / 1000) - 86400;
-    const token = createProductionJWT({
+    const token = createFixtureJWT({
       iss: "meitheal",
       sub: "expired@example.com",
       plan: "personal",
@@ -122,12 +121,17 @@ test.describe("License Key Verification", () => {
       exp: pastTime
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.reason).toBe("expired");
     }
   });
+
+  test("production verifier rejects an ephemeral test issuer by default", () => {
+    const token = createFixtureJWT({ iss: "meitheal", sub: "fixture@example.com", plan: "personal" })
+    expect(verifyLicenseKey(token)).toEqual({ valid: false, reason: "invalid_signature", plan: "none" })
+  })
 
   test("wrong key: token signed with different key returns invalid_signature", () => {
     const now = Math.floor(Date.now() / 1000);
@@ -139,7 +143,7 @@ test.describe("License Key Verification", () => {
       exp: now + 86400
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.reason).toBe("invalid_signature");
@@ -148,7 +152,7 @@ test.describe("License Key Verification", () => {
 
   test("wrong issuer: returns invalid_issuer", () => {
     const now = Math.floor(Date.now() / 1000);
-    const token = createProductionJWT({
+    const token = createFixtureJWT({
       iss: "not-meitheal",
       sub: "test@example.com",
       plan: "personal",
@@ -156,7 +160,7 @@ test.describe("License Key Verification", () => {
       exp: now + 86400
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.reason).toBe("invalid_issuer");
@@ -165,7 +169,7 @@ test.describe("License Key Verification", () => {
 
   test("commercial plan: correctly identifies commercial license", () => {
     const now = Math.floor(Date.now() / 1000);
-    const token = createProductionJWT({
+    const token = createFixtureJWT({
       iss: "meitheal",
       sub: "business@corp.com",
       plan: "commercial",
@@ -173,7 +177,7 @@ test.describe("License Key Verification", () => {
       exp: now + 31536000
     });
 
-    const result = verifyLicenseKey(token);
+    const result = verifyFixtureLicense(token);
     expect(result.valid).toBe(true);
     if (result.valid && "email" in result) {
       expect(result.plan).toBe("commercial");

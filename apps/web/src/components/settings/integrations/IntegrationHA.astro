@@ -14,30 +14,32 @@ const locale = Astro.props.locale || "en"
 ---
 
 <div class="integration-card" id="integration-ha">
-  <button
-    type="button"
-    class="integration-card__header"
-    aria-expanded="false"
-    aria-controls="integration-ha-body"
-  >
-    <div class="integration-card__title-row">
-      <span class="integration-card__icon">🏠</span>
-      <div class="integration-card__title-info">
-        <strong>{t("settings.ha_title", locale)}</strong>
-        <span class="integration-card__desc">{t("settings.ha_desc", locale)}</span>
-      </div>
-    </div>
-    <div class="integration-card__header-right">
-      <button
-        type="button"
-        class="info-btn"
-        data-explainer="ha"
-        aria-label={t("settings.ha_explainer", locale)}
-        onclick="event.stopPropagation()">ℹ️</button>
-      <span class="badge badge-pending" id="ha-connection-badge">{t("settings.status_checking", locale)}</span>
-      <span class="integration-card__chevron">▸</span>
-    </div>
-  </button>
+  <div class="integration-card__header-row">
+    <button
+      type="button"
+      class="integration-card__header"
+      aria-expanded="false"
+      aria-controls="integration-ha-body"
+    >
+      <span class="integration-card__title-row">
+        <span class="integration-card__icon">🏠</span>
+        <span class="integration-card__title-info">
+          <strong>{t("settings.ha_title", locale)}</strong>
+          <span class="integration-card__desc">{t("settings.ha_desc", locale)}</span>
+        </span>
+      </span>
+      <span class="integration-card__header-right">
+        <span class="badge badge-pending" id="ha-connection-badge">{t("settings.status_checking", locale)}</span>
+        <span class="integration-card__chevron">▸</span>
+      </span>
+    </button>
+    <button
+      type="button"
+      class="info-btn"
+      data-explainer="ha"
+      aria-label={t("settings.ha_explainer", locale)}
+    >ℹ️</button>
+  </div>
 
   <div class="integration-card__body" id="integration-ha-body" aria-hidden="true">
     <!-- Connection Status Display -->

@@ -1,8 +1,8 @@
-# Truthful Settings, agent workflows and HA integration verification
+# Verify truthful Settings and household integrations
 
-Verified 10 November 2026 on the remediation branch. This records the bounded
-acceptance performed for the false-success and unsupported-behavior findings;
-it is not a whole-repository security or accessibility certification.
+Use this runbook after changes to Settings, agent transports or HA integration.
+Keep dated execution receipts, audit histories, screenshots and credentials in
+private local evidence, outside source control.
 
 ## User-visible contracts
 
@@ -25,54 +25,68 @@ it is not a whole-repository security or accessibility certification.
   patterns and sensitive metadata are redacted before stdout/Loki. The optional
   native sink is bounded and best-effort; it does not promise durable delivery.
 
-## Validation performed
+## Local automated checks
 
-- Pinned workspace `pnpm check` passed. Direct Astro check covered439 files:
-  zero errors, zero warnings and183 nonblocking hints.
-- Focused Playwright batches passed:31 framework/transport/logging cases,
-  21 HA identity/security/transport cases,28 Settings/lifecycle cases,
-  nine overdue/filter/cold-start cases and ten logger/Loki cases. Counts
-  overlap and must not be summed. Twenty Python adapter tests also passed.
-- Actual temporary Chromium WebMCP registration/search/disable/reenable/HMR
-  acceptance passed, alongside two browser contract cases.
-- Actual amd64 HA devcontainer: one source-built Canary installed, updated,
-  stopped/restarted and healthy. Real ingress verified owner persistence and
-  a single toast, household/spoof rejection with retained edits after1.5 seconds
-  and zero document reloads, native MCP search/calendar/approval permissions,
-  replay refusal, real HA component services/tools/voice/NFC, and logger/Loki
-  delivery. A natural five-minute overdue tick delivered one HA event and one
-  HTTP event, triggered the actual device automation, and remained deduplicated
-  after restart with reminders disabled.
-- Two consecutive fresh EGM rounds were clean of unsettled Major/Blocker
-  findings following the approved review extension and supported fixes.
-- The console guard was independently verified by maintenance: all guest getty
-  masks applied before init;65.23 seconds of stable desktop observation,
-  unchanged GUI process IDs and zero display-manager restarts. The commit/PR
-  step performs no HA container recreation.
+Use the declared Node version and the frozen pnpm lockfile. Run:
 
-## Environment and limits
+```sh
+pnpm install --frozen-lockfile
+pnpm audit
+pnpm check
+pnpm --filter @meitheal/tests test
+pnpm --filter @meitheal/web perf:budget
+```
 
-Current Supervisor forced pulling a local FROM tag, so the test-only local
-Canary used an exact exported source-built runtime filesystem, preserving its
-entrypoint, environment, workdir, labels and healthcheck, then underwent native
-Supervisor build/install/update. No image was pushed or production deployed.
-Failed and probe-invalidated evidence was retained separately, never counted
-as passing acceptance. Synthetic test data and credentials stayed local.
+Build before running the performance check. Do not raise budgets or suppress
+audit severities to make a failing check pass. License tests generate ephemeral
+Ed25519 issuers; the production signing key is never required by CI.
 
-Production/Tier3, ARM execution, phone hardware, screen readers, full browser
-zoom and comprehensive contrast/performance acceptance are not claimed.
-Remaining UI typography/Irish-copy/palette nits are documented. Adjacent
-pre-existing Task.kanban_position response-schema numeric/null drift remains a
-nonblocking known gap; corrected MCP input discovery is unaffected.
+Live API/browser specs require an explicit disposable `E2E_BASE_URL` and skip at
+collection before browser fixture setup when it is absent. Run the relevant
+Settings, framework, transport, task-handoff, completion-feedback and canonical
+status browser cases against a local Astro server with an isolated database.
+The development-only worst-content harness supports responsive and failure
+checks, and must return404 in a production build.
 
-Raw logs, screenshots, source hashes and runtime receipts remain in the owner's
-private dated local evidence archive, outside source control.
+Check rapid edits, concurrent saves, immediate navigation/export, rejected
+writes, missing-framework restore and denied lookup responses. A failed save
+must retain input, restore retry and emit no success feedback; repeated page
+setup must not multiply listeners or task mutations.
 
-## PR CI discovery
+## Home Assistant acceptance
 
-Live API/browser specs require an explicit disposable `E2E_BASE_URL`, and skip
-at collection before Playwright resolves browser fixtures when it is absent.
-The source-status guard recognizes overdue terminal aliases as an explicit
-legacy compatibility boundary; the todo route policy names the API path rather
-than a task-status literal. Neither change alters runtime permission or SQL
-semantics. Existing repository-wide CI failures remain separately triaged.
+Use the checked-in guarded development environment. Keep the pre-init console
+mask in Compose and any startup override. Follow the devcontainer workflow; do
+not recreate a container to obtain a passing test while maintenance is active.
+Use one Canary entry and preserve its existing HA config entry.
+
+Verify real ingress owner/member identity, conflicting legacy headers, scoped
+agent permissions, same-site proposal decisions/replay refusal and generated MCP
+inputs. An app JSON permission denial must preserve edits beyond any session
+recovery delay. Check real calendar success, empty and provider-failure outcomes,
+NFC retry/ambiguity, pagination and todo reorder through the loaded HA adapter.
+
+For overdue routing, disable reminder notifications, select a future deadline,
+observe one HA event and one configured HTTP delivery, then verify no duplicate
+after restart. An explicitly empty event selection must remain silent. Treat
+ledger observation as distinct from successful downstream delivery.
+
+For logging, use a synthetic receiver and dummy credentials. Verify configured
+level/category/audit behavior, identical redacted stdout/remote lines, static
+labels, bounded queue/batches and failure/timeout behavior.
+
+Backup hooks have their own [checkpoint and native-caller contract](backup-hooks.md).
+Test their checked busy/failure outcomes and actual wrapper provenance; forwarded
+client headers do not establish a trusted native caller.
+
+## Evidence boundaries
+
+Source checks, local fixtures, actual HA runtime and production acceptance are
+separate gates. Record the exact source/build and environment for each result.
+Do not promote older framework/runtime receipts to a rebuilt-version claim.
+A development amd64 pass does not establish ARM or production/Tier3 acceptance.
+
+Full browser zoom, phone hardware, screen readers, contrast and runtime
+performance require their own checks. Known adjacent response-schema nullability
+and UI typography/translation/palette work should remain explicit rather than
+being hidden behind a broad certification claim.
