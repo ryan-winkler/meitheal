@@ -359,3 +359,7 @@ When another session saves a checklist, Meitheal merges compatible edits by item
 Ticket drawers retain the background queue URL in history state. Match an in-flight decision against that background URL so opening a ticket does not discard its acknowledgement. Returning to Triage revalidates the queue; accepted decisions must not reappear as available actions. The Triage browser suite covers a held acknowledgement, closing the ticket, and changing the queue location.
 
 Ticket drawers keep their canonical URL while editing. On standalone pages, Layout registers the drawer history guard before Astro ClientRouter so Back and Forward restore the existing drawer and queue rather than replacing the page. The guard only handles history entries owned by the currently mounted drawer. Home Assistant ingress retains its native navigation path. If Triage receives a decision acknowledgement while a ticket is open, its background route remains the comparison target; the saved status stays visible after closing the drawer.
+
+### Held-body revocation fixture in production builds
+
+The ingress fixture observes the bounded body-parser module when it waits for the next request chunk. Production builds minify function names, so the fixture matches the parser module filename rather than a function name in the stack. Keep the same held-body, revocation, replay and disconnect assertions when checking a minified release image.
