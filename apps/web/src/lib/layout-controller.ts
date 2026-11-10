@@ -394,6 +394,8 @@
         // Moved inside layout init to use global lifecycle — these are permanent per session.
         pageLifecycle.onPageLoad((signal) => {
           const reloadOnEvent = () => window.location.reload()
-          document.addEventListener("meitheal:tasks-changed", reloadOnEvent, { signal })
+          document.addEventListener("meitheal:tasks-changed", event => {
+            if (!(event as CustomEvent<{ dataOnly?: boolean }>).detail?.dataOnly) reloadOnEvent()
+          }, { signal })
           document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })
         })

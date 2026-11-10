@@ -2,7 +2,9 @@
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
         import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
-        import { buildTaskPermalink, getLegacyTaskId } from "@lib/task-detail-handoff"
+        import {
+          buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
+        } from "@lib/task-detail-handoff"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -36,6 +38,14 @@
         let pinnedSession: {
           reconcile: () => void; dirty: boolean; pending: number; queued?: () => void
         } | undefined
+        let searchSession: {
+          handoff: SearchDetailHandoff
+          lifetime: AbortController
+          dirty: boolean
+          pending: number
+          queued?: () => void
+        } | undefined
+        let detailGeneration = 0
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const tdClose = document.getElementById("td-close")
@@ -53,6 +63,9 @@
         let _modalAbortController: AbortController | null = null;
         __signal.addEventListener("abort", () => {
           _modalAbortController?.abort()
+          searchSession?.lifetime.abort()
+          searchSession?.handoff.onDismiss("history")
+          searchSession = undefined
           delete tdOverlay.dataset.detailController
         }, { once: true })
         let _isPopulating = false;
@@ -65,8 +78,9 @@
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
 
-        function beginPinnedWrite() {
-          const session = pinnedSession
+        function beginScopedWrite() {
+          const search = searchSession
+          const session = pinnedSession ?? search
           if (!session) return undefined
           session.pending++
           session.dirty = true
@@ -76,21 +90,28 @@
               if (--session.pending !== 0) return
               const next = session.queued
               delete session.queued
-              if (next && !__signal.aborted && session === pinnedSession) queueMicrotask(next)
+              if (search && search !== searchSession && !__signal.aborted) {
+                deferral.reconcileSearch()
+                return
+              }
+              if (next && !__signal.aborted && session === (pinnedSession ?? searchSession)) queueMicrotask(next)
             },
           }
         }
 
         function waitForDetailWrites(next: () => void): boolean {
-          if (pinnedSession?.pending) {
-            pinnedSession.queued = next
+          const generation = detailGeneration
+          const run = () => { if (generation === detailGeneration) next() }
+          const session = pinnedSession ?? searchSession
+          if (session?.pending) {
+            session.queued = run
             return true
           }
-          return deferral.waitForWrite(next) || pins.waitForWrite(next)
+          return deferral.waitForWrite(run) || pins.waitForWrite(run)
         }
 
         function setTaskLocation(taskId: string | null, replace = false, commentTarget: string | null = null) {
-          if (pinnedSession) return
+          if (pinnedSession || searchSession) return
           const url = new URL(window.location.href)
           if (taskId) url.searchParams.set("open", taskId)
           else url.searchParams.delete("open")
@@ -102,9 +123,13 @@
           else history.pushState(history.state, "", url)
         }
 
-        function closeTD() {
-          if (!tdOverlay?.classList.contains("active") || tdOverlay.classList.contains("closing")) return
-          if (waitForDetailWrites(closeTD)) return
+        function closeTD(reason: SearchDetailDismissal = "dismiss") {
+          const search = searchSession
+          const immediate = reason === "history" && Boolean(search)
+          if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
+          if (!immediate && waitForDetailWrites(() => closeTD(reason))) return
+          const closing = ++detailGeneration
+          search?.lifetime.abort()
           deferral.opening(false)
           pins.opening()
           // Abort any in-flight fetches
@@ -117,7 +142,7 @@
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
           const finishClose = () => {
-            if (currentTaskId !== null || !tdOverlay.classList.contains("active")) return
+            if (closing !== detailGeneration || currentTaskId !== null || !tdOverlay.classList.contains("active")) return
             tdOverlay.classList.remove("active", "closing");
             document.body.style.overflow = "";
             // D1: Collapse sidebar on close (reset for next open)
@@ -125,20 +150,23 @@
             _sidebarToggle?.setAttribute("aria-expanded", "false");
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (_previouslyFocused instanceof HTMLElement &&
+            if (!search && _previouslyFocused instanceof HTMLElement &&
                 _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
               _previouslyFocused.focus()
-            } else {
+            } else if (!search) {
               document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
             }
             _previouslyFocused = null
             const closed = pinnedSession
             pinnedSession = undefined
-            const deferralChanged = deferral.closed(Boolean(closed))
+            searchSession = undefined
+            const deferralChanged = deferral.closed(Boolean(closed), Boolean(search))
             if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
+            if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
+            search?.handoff.onDismiss(reason)
           };
 
-          if (reducedMotion) {
+          if (reducedMotion || immediate) {
             finishClose();
             return;
           }
@@ -147,7 +175,7 @@
           const panel = document.getElementById("task-detail-panel");
           if (panel) {
             const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
-            panel.addEventListener("animationend", onEnd, { once: true });
+            panel.addEventListener("animationend", onEnd, { once: true, signal: __signal });
             // Safety fallback — never leave modal stuck
             setTimeout(() => { panel.removeEventListener("animationend", onEnd); finishClose(); }, 300);
           } else {
@@ -165,14 +193,20 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
-        async function openTaskDetail(taskId: string, commentTarget: string | null = null) {
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
-          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget) })) return
           const newSession = !tdOverlay.classList.contains("active")
+          if (search && !newSession) {
+            search.onDismiss("history")
+            return
+          }
+          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search) })) return
+          if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
+          detailGeneration++
           deferral.opening(newSession)
           pins.opening()
           // P3-4: Store focus origin for restore on close
-          if (newSession) _previouslyFocused = document.activeElement
+          if (newSession) _previouslyFocused = search ? null : document.activeElement
           currentTaskId = taskId;
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
@@ -234,6 +268,7 @@
               signal: modalSignal,
               ...(pendingChecklist ? { cache: "no-store" } : {}),
             })
+            if (modalSignal.aborted) return
             if (!res.ok) {
               showTaskError([401, 403, 404].includes(res.status))
               return
@@ -964,7 +999,7 @@
               if (modalSignal.aborted) return
               _isPopulating = false
               if (projectField) projectField.disabled = !projectFieldReady
-              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal)
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
             }, 100)
           } catch (e) {
@@ -978,8 +1013,10 @@
 
         async function saveTaskField(field: string, value: unknown): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
+          const generation = detailGeneration
+          const search = searchSession
           const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = ["title", "status", "project_id"].includes(field) ? beginPinnedWrite() : undefined
+          const scopedWrite = search || ["title", "status", "project_id"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
             const response = await fetch(`/api/tasks/${currentTaskId}`, {
@@ -989,7 +1026,7 @@
               ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
             })
             saved = response.ok
-            if (saved) return true
+            if (saved) return !search || generation === detailGeneration
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
@@ -997,8 +1034,9 @@
             completeDeferralWrite(saved)
             scopedWrite?.finish()
           }
+          if (search && generation !== detailGeneration) return false
           const { showToast } = await import("@lib/toast")
-          showToast("common.failed_update", "error")
+          if (!search || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
 
@@ -1353,7 +1391,9 @@
                     el.addEventListener("click", async () => {
                       const newParentId = (el as HTMLElement).dataset.id;
                       if (newParentId) {
+                        const modalSignal = _modalAbortController?.signal
                         await saveTD("parent_id", newParentId);
+                        if (modalSignal?.aborted) return
                         parentSearchInput.value = "";
                         parentResultsDiv.style.display = "none";
                         // Refresh the panel to show the new parent
@@ -1414,11 +1454,14 @@
           .getElementById("td-toggle-favorite")
           ?.addEventListener("click", async () => {
             if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
             const btn = document.getElementById(
               "td-toggle-favorite",
             ) as HTMLElement;
             const isFav = btn.textContent?.startsWith("★");
             await saveTD("is_favorite", isFav ? 0 : 1);
+            if (search && generation !== detailGeneration) return
             btn.textContent = isFav ? "⭐ Add to Favorites" : "★ Favorited";
           }, { signal: __signal });
 
@@ -1427,6 +1470,10 @@
           .getElementById("td-duplicate")
           ?.addEventListener("click", async () => {
             if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
+            const write = search ? beginScopedWrite() : undefined
+            const stale = () => search && generation !== detailGeneration
             const toast = document.createElement("div");
             toast.className = "toast";
             try {
@@ -1434,8 +1481,10 @@
                 `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
                 {
                   method: "POST",
+                  ...(write ? { signal: write.signal } : {}),
                 },
               );
+              if (stale()) return
               if (!res.ok) {
                 toast.className = "toast error";
                 toast.textContent = "Failed to duplicate";
@@ -1444,16 +1493,20 @@
                 return;
               }
               const data = await res.json();
+              if (stale()) return
               toast.className = "toast success";
               toast.textContent = `Duplicated → ${data.title}`;
               document.querySelector(".toast-container")?.appendChild(toast);
               setTimeout(() => toast.remove(), 2500);
-              openTaskDetail(data.id);
+              if (!search?.queued) void openTaskDetail(data.id)
             } catch {
+              if (stale()) return
               toast.className = "toast error";
               toast.textContent = "Network error";
               document.querySelector(".toast-container")?.appendChild(toast);
               setTimeout(() => toast.remove(), 2500);
+            } finally {
+              write?.finish()
             }
           }, { signal: __signal });
 
@@ -1547,14 +1600,18 @@
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
             if (!taskId) return
+            const search = searchSession
+            const generation = detailGeneration
+            const stale = () => search && generation !== detailGeneration
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
+              ...(search ? { signal: search.lifetime.signal } : {}),
             });
-            if (!ok || taskId !== currentTaskId) return
-            const scopedWrite = beginPinnedWrite()
+            if (!ok || stale() || taskId !== currentTaskId) return
+            const scopedWrite = beginScopedWrite()
             try {
               const res = await fetch(
                 `${window.__ingress_path || ""}/api/tasks/${taskId}`,
@@ -1563,15 +1620,20 @@
                   ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
                 },
               );
+              if (stale()) return
               // Treat 204 (deleted) and 404 (already gone) as success
               if (res.ok || res.status === 404) {
-                const deferred = currentTaskId ? deferral.removing(currentTaskId) : false
-                closeTD();
+                const deferred = deferral.removing(taskId)
+                closeTD("discard")
                 if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
+              } else if (search) {
+                const { showToast } = await import("@lib/toast")
+                if (!stale()) showToast("Couldn’t delete the task.", "error")
               }
             } catch {
+              if (stale()) return
               // Network error — still close and refresh to re-sync
-              closeTD();
+              closeTD("discard")
               if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
             } finally {
               scopedWrite?.finish()
@@ -1626,9 +1688,9 @@
         }, { signal: __signal })
 
         // Close
-        tdClose?.addEventListener("click", closeTD, { signal: __signal })
+        tdClose?.addEventListener("click", () => closeTD(), { signal: __signal })
         tdOverlay?.addEventListener("click", (e) => {
-          if (e.target === tdOverlay) closeTD();
+          if (e.target === tdOverlay) closeTD("discard")
         }, { signal: __signal });
 
         function checkTaskLocation() {
@@ -1636,12 +1698,16 @@
           const url = new URL(window.location.href)
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")
-          if (taskId === null) closeTD()
+          if (taskId === null) closeTD("discard")
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
             void openTaskDetail(taskId, commentTarget)
           }
         }
+        const discardSearchDetail = () => { if (searchSession) closeTD("history") }
+        window.addEventListener("popstate", discardSearchDetail, { capture: true, signal: __signal })
+        window.addEventListener("hashchange", discardSearchDetail, { capture: true, signal: __signal })
+        window.addEventListener("pagehide", discardSearchDetail, { signal: __signal })
         window.addEventListener("popstate", checkTaskLocation, { signal: __signal })
         window.addEventListener("hashchange", checkTaskLocation, { signal: __signal })
         checkTaskLocation()
@@ -1696,6 +1762,6 @@
         });
 
         // === Command Palette (extracted) ===
-        initCommandPalette({ openTaskDetail, closeTD, __signal })
+        initCommandPalette({ openTaskDetail, __signal })
         });
 

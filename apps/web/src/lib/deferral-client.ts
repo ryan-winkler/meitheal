@@ -4,6 +4,12 @@ export const DEFERRAL_TIMEOUT_MS = 8000
 export const TASK_COUNTS_CHANGED = "meitheal:task-counts-changed"
 export const DEFERRAL_RECONCILED = "meitheal:deferral-reconciled"
 
+export interface DeferralReconciliation {
+  taskId?: string
+  changedIds?: string[]
+  dataOnly?: boolean
+}
+
 export interface DeferralGuard {
   updated_at: number
   deferral_revision: string | null

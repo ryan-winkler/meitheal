@@ -2,6 +2,7 @@ import { pageLifecycle } from "./page-lifecycle"
 import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
 import {
   allowsDeferral, DEFERRAL_RECONCILED, DEFERRAL_TIMEOUT_MS, notifyTaskCountsChanged, readDeferralGuard, writeDeferral,
+  type DeferralReconciliation,
 } from "./deferral-client"
 
 function queueUrl(): URL {
@@ -58,17 +59,20 @@ pageLifecycle.onPageLoad(signal => {
     openWhenReady()
   }
 
-  async function readQueue(focus?: string, notice?: string) {
+  async function readQueue(focus?: string, notice?: string, dataOnly = false) {
     const current = ++generation
     const worker = workers?.controller ?? null
     const origin = queueUrl().href
+    const currentLocation = location.href
     const apply = () => live() && generation === current && queueUrl().href === origin &&
-      (workers?.controller ?? null) === worker
-    visible = false
+      (workers?.controller ?? null) === worker && (!dataOnly || location.href === currentLocation)
     updateRequired = false
-    ui.content.replaceChildren()
-    ui.permalink.hidden = true
-    showStatus(message("loading", "Loading deferred work…"))
+    if (!dataOnly) {
+      visible = false
+      ui.content.replaceChildren()
+      ui.permalink.hidden = true
+      showStatus(message("loading", "Loading deferred work…"))
+    }
     try {
       if (!await allowsDeferral(worker)) {
         if (apply()) {
@@ -96,11 +100,12 @@ pageLifecycle.onPageLoad(signal => {
       if (!apply()) return
       ui.content.replaceChildren(fragment.content.cloneNode(true))
       visible = true
+      showStatus(notice ?? "")
+      if (dataOnly) return
       const url = new URL(location.href)
       if (page > 1) url.searchParams.set("page", String(page))
       else url.searchParams.delete("page")
       history.replaceState(history.state, "", url)
-      showStatus(notice ?? "")
       if (focus !== undefined) {
         const control = focus ? cardFor(focus)?.querySelector<HTMLElement>("[data-deferred-details]") : null
         ;(control ?? ui.heading).focus()
@@ -186,7 +191,11 @@ pageLifecycle.onPageLoad(signal => {
   }, { signal })
   window.addEventListener("popstate", openFromLocation, { signal })
   window.addEventListener(DEFERRAL_RECONCILED, event => {
-    const origin = (event as CustomEvent<{ taskId?: string }>).detail?.taskId
+    const { taskId: origin, dataOnly } = (event as CustomEvent<DeferralReconciliation>).detail ?? {}
+    if (dataOnly) {
+      void readQueue(undefined, undefined, true)
+      return
+    }
     const card = origin ? cardFor(origin) : null
     const next = (card?.nextElementSibling ?? card?.previousElementSibling) as HTMLElement | null
     void readQueue(next?.dataset.deferredCard ?? "")

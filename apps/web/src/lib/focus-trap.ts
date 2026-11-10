@@ -55,7 +55,7 @@ export function containTabFocus(container: HTMLElement, event: KeyboardEvent): v
 
 export interface FocusTrap {
   activate(): void
-  deactivate(): void
+  deactivate(restoreFocus?: boolean): void
 }
 
 export function createFocusTrap(container: HTMLElement): FocusTrap {
@@ -76,10 +76,10 @@ export function createFocusTrap(container: HTMLElement): FocusTrap {
       }
     },
 
-    deactivate() {
+    deactivate(restoreFocus = true) {
       container.removeEventListener("keydown", onKeyDown)
       // Restore previous focus
-      if (previouslyFocused && previouslyFocused.isConnected) {
+      if (restoreFocus && previouslyFocused?.isConnected) {
         previouslyFocused.focus()
       }
       previouslyFocused = null

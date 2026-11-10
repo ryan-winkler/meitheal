@@ -2,6 +2,7 @@ import { createFocusTrap } from "@lib/focus-trap"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
   SearchResponse,
@@ -33,6 +34,13 @@ async function waitingSearchWorker(scope: URL) {
 interface StaticRegistry {
   pages: SearchResultItem[]
   actions: SearchResultItem[]
+}
+
+interface SearchReturn {
+  taskId: string
+  prefill: string
+  scope: SearchScope
+  trigger: HTMLElement | null
 }
 
 function getStaticRegistry(): StaticRegistry {
@@ -115,6 +123,7 @@ function renderResultItem(
 
   const icon = document.createElement("span")
   icon.className = "search-hub-item-icon"
+  icon.setAttribute("aria-hidden", "true")
   if (item.color) {
     icon.style.boxShadow = `inset 0 0 0 1px rgba(var(--border-rgb), 0.4), 0 0 0 1px ${item.color}`
   }
@@ -235,6 +244,9 @@ pageLifecycle.onPageLoad((signal) => {
   let searchTimer: ReturnType<typeof setTimeout> | null = null
   let searchRequest: AbortController | null = null
   let suppressLauncherFocus = false
+  let searchTrigger: HTMLElement | null = null
+  let detailReturn: SearchReturn | undefined
+  let returnSelection: string | undefined
 
   function updateScopeUI(): void {
     scopeButtons.forEach((button) => {
@@ -284,7 +296,7 @@ pageLifecycle.onPageLoad((signal) => {
     setSelectedIndex(-1)
   }
 
-  function closeHub(): void {
+  function closeHub(restoreFocus = true): void {
     if (!isOpen) return
     isOpen = false
     overlayEl.classList.add("hidden")
@@ -292,11 +304,17 @@ pageLifecycle.onPageLoad((signal) => {
     invalidateResults()
     inputEl.value = ""
     if (launcherEl) launcherEl.value = ""
+    returnSelection = undefined
+    focusTrap.deactivate(false)
+    if (restoreFocus) focusSearchTrigger(searchTrigger)
+    searchTrigger = null
+  }
+
+  function focusSearchTrigger(trigger: HTMLElement | null): void {
+    if (!trigger?.isConnected) return
     suppressLauncherFocus = true
-    focusTrap.deactivate()
-    setTimeout(() => {
-      suppressLauncherFocus = false
-    }, 0)
+    trigger.focus()
+    suppressLauncherFocus = false
   }
 
   function runAction(actionId: string | undefined): void {
@@ -311,11 +329,21 @@ pageLifecycle.onPageLoad((signal) => {
   }
 
   function selectItem(item: SearchResultItem): void {
-    closeHub()
-    if (item.kind === "task" && item.taskId && typeof window.openTaskDetail === "function") {
-      window.openTaskDetail(item.taskId)
+    if (item.kind === "task" && item.taskId) {
+      const snapshot = { taskId: item.taskId, prefill: inputEl.value, scope: activeScope, trigger: searchTrigger }
+      detailReturn = snapshot
+      closeHub(false)
+      openTaskDetailHandoff(item.taskId, {
+        onDismiss(reason) {
+          if (signal.aborted || detailReturn !== snapshot) return
+          detailReturn = undefined
+          if (reason === "dismiss") openHub(snapshot, snapshot)
+          else if (reason === "discard") focusSearchTrigger(snapshot.trigger)
+        },
+      })
       return
     }
+    closeHub()
     if (item.kind === "action") {
       runAction(item.actionId)
       return
@@ -334,7 +362,7 @@ pageLifecycle.onPageLoad((signal) => {
     }
   }
 
-  function renderSections(sections: SearchResultSection[], exactFirst = false): void {
+  function renderSections(sections: SearchResultSection[], exactFirst = false, restoredTaskId?: string): void {
     resultsEl.replaceChildren()
     statusEl.replaceChildren()
     renderedItems = []
@@ -371,7 +399,8 @@ pageLifecycle.onPageLoad((signal) => {
     const exactIndex = exactFirst ? renderedItems.findIndex(item =>
       item.kind === "task" && Number(item.meta?.score) >= EXACT_TASK_IDENTIFIER_SCORE,
     ) : -1
-    setSelectedIndex(Math.max(0, exactIndex))
+    const restoredIndex = restoredTaskId ? renderedItems.findIndex(item => item.taskId === restoredTaskId) : -1
+    setSelectedIndex(restoredIndex >= 0 ? restoredIndex : Math.max(0, exactIndex))
   }
 
   function buildStaticSections(query: string): SearchResultSection[] {
@@ -480,7 +509,10 @@ pageLifecycle.onPageLoad((signal) => {
         scope,
         request.signal,
       )
-      if (isCurrent()) renderSections([...staticSections, ...response.sections], sort === "relevance")
+      if (isCurrent()) {
+        renderSections([...staticSections, ...response.sections], sort === "relevance", returnSelection)
+        returnSelection = undefined
+      }
     } catch {
       if (!isCurrent()) return
       renderSections(staticSections)
@@ -488,7 +520,8 @@ pageLifecycle.onPageLoad((signal) => {
     }
   }
 
-  function openHub(options?: string | { prefill?: string; scope?: string }): void {
+  function openHub(options?: string | { prefill?: string; scope?: string }, restored?: SearchReturn): void {
+    if (detailReturn) return
     const prefill = typeof options === "string" ? options : options?.prefill ?? ""
     const scope = typeof options === "object" ? options?.scope : undefined
 
@@ -501,6 +534,8 @@ pageLifecycle.onPageLoad((signal) => {
 
     if (!isOpen) {
       isOpen = true
+      searchTrigger = restored ? restored.trigger : document.activeElement instanceof HTMLElement ? document.activeElement : null
+      returnSelection = restored?.taskId
       overlayEl.classList.remove("hidden")
       inputEl.setAttribute("aria-expanded", "true")
       focusTrap.activate()
@@ -557,12 +592,13 @@ pageLifecycle.onPageLoad((signal) => {
     }, { signal })
   }
 
-  closeButtonEl.addEventListener("click", closeHub, { signal })
+  closeButtonEl.addEventListener("click", () => closeHub(), { signal })
   overlayEl.addEventListener("click", (event) => {
     if (event.target === overlayEl) closeHub()
   }, { signal })
 
   inputEl.addEventListener("input", () => {
+    returnSelection = undefined
     invalidateResults()
     showSearchStatus("Searching…")
     searchTimer = setTimeout(() => {
@@ -598,10 +634,19 @@ pageLifecycle.onPageLoad((signal) => {
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
     if (isOpen) void refreshResults()
   }, { signal })
-  signal.addEventListener("abort", invalidateResults, { once: true })
+  window.addEventListener("pagehide", () => {
+    detailReturn = undefined
+    closeHub(false)
+  }, { signal })
+  signal.addEventListener("abort", () => {
+    detailReturn = undefined
+    focusTrap.deactivate(false)
+    invalidateResults()
+  }, { once: true })
 
   scopeButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      returnSelection = undefined
       activeScope = (button.dataset.scope as SearchScope) || "all"
       updateScopeUI()
       void refreshResults()
@@ -617,6 +662,7 @@ pageLifecycle.onPageLoad((signal) => {
     .filter(Boolean)
     .forEach((element) => {
       element?.addEventListener("change", () => {
+        returnSelection = undefined
         void refreshResults()
       }, { signal })
     })

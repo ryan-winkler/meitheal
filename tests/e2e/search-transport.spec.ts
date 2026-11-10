@@ -16,6 +16,9 @@ test("the packaged Search route accepts its canonical path and rejects aliases w
   expect(canonical.status()).toBe(200)
   expect(canonical.headers()["cache-control"]).toBe(noStore)
   expect(await canonical.json()).toHaveProperty("sections")
+  const invalid = await request.get(searchPath + "?limit=1.5")
+  expect(invalid.status()).toBe(400)
+  expect(invalid.headers()["cache-control"]).toBe(noStore)
 
   const authorization = "Bearer mth_fixture-invalid"
   const denied = await request.get(searchPath, { headers: { authorization } })
@@ -28,6 +31,13 @@ test("the packaged Search route accepts its canonical path and rejects aliases w
     expect(result.headers()["cache-control"], alias).toBe(noStore)
     expect(result.headers()["location"], alias).toBeUndefined()
   }
+  let limited
+  for (let attempt = 0; attempt < 301; attempt++) {
+    limited = await request.get(searchPath + "?scope=actions")
+    if (limited.status() === 429) break
+  }
+  expect(limited?.status()).toBe(429)
+  expect(limited?.headers()["cache-control"]).toBe(noStore)
 })
 
 test("trusted ingress still enforces a presented agent token on Search", async ({ request }) => {

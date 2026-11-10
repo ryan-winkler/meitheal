@@ -94,9 +94,11 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     let closing = false;
     const abort = () => cleanup(false);
     function cleanup(result: boolean) {
-      if (closing) return;
+      if (closing) {
+        if (options.signal?.aborted) overlay.remove();
+        return;
+      }
       closing = true;
-      options.signal?.removeEventListener("abort", abort);
       overlay.style.opacity = "0";
       document.removeEventListener("keydown", onKey, true);
       if (options.signal?.aborted) {
@@ -105,6 +107,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
         return;
       }
       setTimeout(() => {
+        options.signal?.removeEventListener("abort", abort);
         overlay.remove();
         // Restore focus to the element that was focused before the dialog
         if (!options.signal?.aborted) previouslyFocused?.focus();

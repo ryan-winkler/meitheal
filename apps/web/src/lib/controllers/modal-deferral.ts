@@ -10,6 +10,7 @@ interface CurrentTask {
   state?: DeferralState
   deferred: boolean
   nativeWrites: number
+  dataOnly: boolean
 }
 
 export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
@@ -35,6 +36,14 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
     if (task) delete task.state
     if (action) action.hidden = true
     if (retry) retry.hidden = true
+  }
+  function reconcile(taskId: string | undefined, changedIds: string[], dataOnly: boolean) {
+    if (signal.aborted) return
+    if (document.querySelector("#kanban-board, [data-deferred-root]")) {
+      window.dispatchEvent(new CustomEvent(DEFERRAL_RECONCILED, { detail: { taskId, changedIds, dataOnly } }))
+    } else {
+      document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "deferral", dataOnly } }))
+    }
   }
   function render(selected: CurrentTask, state: DeferralState) {
     selected.state = state
@@ -90,8 +99,14 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
       }
       const result = await writeDeferral(selected.id, defer, {
         updated_at: guard.updated_at, deferral_revision: guard.deferral_revision,
-      }, selected.signal)
-      if (!relevant(selected)) return
+      }, selected.dataOnly ? signal : selected.signal)
+      if (!relevant(selected)) {
+        if (selected.dataOnly && (result.kind === "saved" || result.kind === "uncertain")) {
+          notifyTaskCountsChanged(selected.projectId)
+          reconcile(selected.id, [selected.id], true)
+        }
+        return
+      }
       if (result.kind === "saved") {
         changed.add(selected.id)
         notifyTaskCountsChanged(selected.projectId)
@@ -141,9 +156,9 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
       showStatus("")
       if (newSession) { originId = undefined; changed = new Set() }
     },
-    loaded(id: string, projectId: string | null, initialMarker: boolean, modalSignal: AbortSignal) {
+    loaded(id: string, projectId: string | null, initialMarker: boolean, modalSignal: AbortSignal, dataOnly = false) {
       originId ??= id
-      task = { id, projectId, signal: modalSignal, deferred: initialMarker, nativeWrites: 0 }
+      task = { id, projectId, signal: modalSignal, deferred: initialMarker, nativeWrites: 0, dataOnly }
       void refresh()
     },
     nativeWrite(field: string, value: unknown) {
@@ -175,18 +190,17 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
       notifyTaskCountsChanged(task.projectId)
       return true
     },
-    closed(suppressGlobal = false): boolean {
+    reconcileSearch() {
+      reconcile(undefined, [], true)
+    },
+    closed(suppressGlobal = false, dataOnly = false): boolean {
       const changedIds = [...changed]
       const taskId = originId
       originId = undefined
       changed.clear()
       if (!changedIds.length || signal.aborted) return false
       if (suppressGlobal) return true
-      if (document.querySelector("#kanban-board, [data-deferred-root]")) {
-        window.dispatchEvent(new CustomEvent(DEFERRAL_RECONCILED, { detail: { taskId, changedIds } }))
-      } else {
-        document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "deferral" } }))
-      }
+      reconcile(taskId, changedIds, dataOnly)
       return true
     },
   }

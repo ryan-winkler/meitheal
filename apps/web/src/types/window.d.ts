@@ -12,7 +12,7 @@
 interface MeithealWindowExtensions {
   // === Task UI ===
   /** Opens task detail panel/modal for the given task ID */
-  openTaskDetail?: (taskId: string) => void;
+  openTaskDetail?: (taskId: string, commentTarget?: string | null, search?: import("../lib/task-detail-handoff").SearchDetailHandoff) => void;
   openPinnedTaskDetail?: (taskId: string, reconcile: () => void) => void;
   /** Opens the new task creation modal */
   openNewTaskModal?: () => void;

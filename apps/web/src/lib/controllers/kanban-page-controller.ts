@@ -1,5 +1,5 @@
 import { getSelectedAreaId } from "@lib/area-selector-controller"
-import { DEFERRAL_RECONCILED } from "@lib/deferral-client"
+import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initLaneManagementPanel } from "./kanban-lanes"
@@ -33,13 +33,14 @@ export function initKanbanPage(signal: AbortSignal): void {
     retry.hidden = !failed
   }
 
-  async function load(url: URL, focus?: KanbanRefreshFocus, reset = false): Promise<void> {
+  async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
     pending?.abort()
     const request = new AbortController()
     pending = request
     desired = url
     lastFocus = focus
     resetScroll = reset
+    const origin = location.href
     board.setAttribute("aria-busy", "true")
     renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
 
@@ -57,6 +58,10 @@ export function initKanbanPage(signal: AbortSignal): void {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
       if (request.signal.aborted || signal.aborted) return
+      if (dataOnly && location.href !== origin) {
+        renderStatus("")
+        return
+      }
       if (!replacement) throw new Error("Board response unavailable")
 
       const active = document.activeElement
@@ -92,11 +97,11 @@ export function initKanbanPage(signal: AbortSignal): void {
         else url.searchParams.set(key, value)
       }
       url.hash = current.hash
-      history.replaceState(history.state, "", url)
+      if (!dataOnly) history.replaceState(history.state, "", url)
       board.scrollLeft = horizontal
       renderStatus("")
 
-      if (shouldFocus && (focus || active === retry)) {
+      if (!dataOnly && shouldFocus && (focus || active === retry)) {
         const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
@@ -152,7 +157,11 @@ export function initKanbanPage(signal: AbortSignal): void {
     retry.focus()
   }, { signal })
   window.addEventListener(DEFERRAL_RECONCILED, event => {
-    const { taskId, changedIds } = (event as CustomEvent<{ taskId?: string; changedIds?: string[] }>).detail ?? {}
+    const { taskId, changedIds, dataOnly } = (event as CustomEvent<DeferralReconciliation>).detail ?? {}
+    if (dataOnly) {
+      void load(new URL(desired), undefined, false, true)
+      return
+    }
     const origin = taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(taskId)}"]`) : null
     const lane = origin?.closest<HTMLElement>(".kanban-column")?.dataset.status
     const sibling = (origin?.nextElementSibling ?? origin?.previousElementSibling) as HTMLElement | null

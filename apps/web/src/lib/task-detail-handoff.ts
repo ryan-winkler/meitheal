@@ -4,6 +4,12 @@ import { waitForFn } from "@lib/wait-for-fn"
 
 const log = createClientLogger("tasks", "detail-handoff")
 
+export type SearchDetailDismissal = "dismiss" | "discard" | "history"
+
+export interface SearchDetailHandoff {
+  onDismiss(reason: SearchDetailDismissal): void
+}
+
 export function buildTaskPermalink(taskId: string, commentId?: number): string {
   const url = new URL(buildIngressPagePath("/tasks"), window.location.origin)
   url.searchParams.set("open", taskId)
@@ -21,12 +27,17 @@ export function getLegacyTaskId(hash: string): string | null {
   }
 }
 
-export function openTaskDetailHandoff(taskId: string): void {
+export function openTaskDetailHandoff(taskId: string, search?: SearchDetailHandoff): void {
   const normalizedTaskId = String(taskId).trim()
   if (!normalizedTaskId) return
 
   if (typeof window.openTaskDetail === "function") {
-    window.openTaskDetail(normalizedTaskId)
+    window.openTaskDetail(normalizedTaskId, undefined, search)
+    return
+  }
+
+  if (search) {
+    window.location.assign(buildTaskPermalink(normalizedTaskId))
     return
   }
 

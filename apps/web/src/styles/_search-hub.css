@@ -146,6 +146,7 @@
 
 .search-hub-empty button {
   margin-inline-start: 0.5rem;
+  min-height: 44px;
 }
 
 .search-hub-section {
