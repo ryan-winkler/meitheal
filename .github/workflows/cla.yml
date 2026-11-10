@@ -7,7 +7,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
   pull-requests: write
   statuses: write
 
@@ -17,17 +17,17 @@ jobs:
     if: |
       (github.event_name == 'pull_request_target' && github.event.action != 'closed') ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-       contains(github.event.comment.body, 'recheck') ||
-       contains(github.event.comment.body, 'I have read the CLA'))
+       (github.event.comment.body == 'recheck' ||
+        github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA.'))
     steps:
       - name: CLA Assistant
-        uses: contributor-assistant/github-action@v2
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_TOKEN }}
         with:
           path-to-signatures: "signatures/version1/cla.json"
-          path-to-document: ".github/CLA.md"
+          path-to-document: "https://github.com/Coolock-Village/meitheal/blob/main/.github/CLA.md"
           branch: "main"
           allowlist: ryan-winkler,dependabot[bot],renovate[bot],github-actions[bot],copilot[bot]
           custom-notsigned-prcomment: |
