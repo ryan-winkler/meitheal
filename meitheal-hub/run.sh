@@ -128,13 +128,8 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   # The user supplies the scoped API token in the discovery form.
   # The Supervisor deduplicates these calls, so it's safe every boot.
   #
-  # After discovery, the custom component registers:
-  # - TodoListEntity (todo.meitheal_tasks) for built-in Assist intents
-  # - MeithealLLMAPI (20 tools) for advanced conversation agents
-  # - 3 sensors (active, overdue, total task counts)
-  # - 5 services (create, complete, sync, search, get_overdue)
-  #
-  # To enable voice/Assist: Settings → Voice Assistants → [Agent] → LLM APIs → select "Meitheal Tasks"
+  # The integration provides the to-do entity, task sensors and actions.
+  # Home Assistant controls whether the entity is exposed to Assist.
   if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     DISCOVERY_PAYLOAD="{\"service\":\"meitheal\",\"config\":{\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT}}}"
     DISC_SUCCESS=false
@@ -146,7 +141,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
         http://supervisor/discovery 2>/dev/null || true)
       if [ -n "${DISC_RESULT}" ]; then
         DISC_UUID=$(echo "${DISC_RESULT}" | grep -o '"uuid":"[^"]*"' | head -1 | sed 's/"uuid":"\(.*\)"/\1/' || true)
-        echo "{\"event\":\"discovery.registered\",\"uuid\":\"${DISC_UUID:-unknown}\",\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT},\"attempt\":${disc_attempt},\"note\":\"Select 'Meitheal Tasks' in Voice Assistant LLM APIs for Assist integration\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+        echo "{\"event\":\"discovery.registered\",\"uuid\":\"${DISC_UUID:-unknown}\",\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT},\"attempt\":${disc_attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
         DISC_SUCCESS=true
         break
       fi
