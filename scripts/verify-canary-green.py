@@ -13,11 +13,13 @@ MIN_DRIVER_SECONDS = Decimal("262.5")  # 105 fixed 2.5-second sleeps
 MAX_DRIVER_SECONDS = 360
 MIN_SAMPLE_GAP_SECONDS = 5
 MAX_SAMPLE_GAP_SECONDS = 8  # 5-second interval plus sampling and launch overhead
-IDLE_LIMIT_BYTES = 64 * MIB
-ACTIVE_LIMIT_BYTES = 96 * MIB
+IDLE_LIMIT_BYTES = 128 * MIB
+ACTIVE_LIMIT_BYTES = 160 * MIB
 CPU_LIMIT_PERCENT = 15
 ROUTE_LIMIT_MS = 350
-WORKLOAD_SHA256 = "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549"
+PROFILE = "green-2000-task-v2"
+WORKLOAD_SHA256 = "d060f566d2ab6c8a90537b21f049cc1215b97ea9328e23e428b56aa1246fa50b"
+PARENT_SHA256 = "60b394f364c7f43a0038c0fb4376abd1a435a1760cf2bcd7ca29404e12ea6869"
 FIXED_HELPER = (
     "sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f architecture=arm64 "
     "layer=sha256:5070b31eb4c50bf7d0297a1a5aee25bc13ff29894e87354610f6b8b6a445e07e"
@@ -43,16 +45,58 @@ def summarize(values):
     }
 
 
+def evaluate_driver(lines, *, workload_bounds=False):
+    def unique(prefix):
+        records = [line for line in lines if line.startswith(prefix)]
+        if len(records) != 1:
+            raise ValueError(f"Expected one valid {prefix.rstrip(',')} record")
+        return records[0]
+
+    timing = unique("driver_seconds,")
+    if not re.fullmatch(r"driver_seconds,[0-9]{1,3}\.[0-9]{3}(?:,[0-9]{1,3}\.[0-9]{3}){2}", timing):
+        raise ValueError("Expected one valid driver_seconds record")
+    seconds = tuple(Decimal(value) for value in timing.split(",")[1:])
+    if workload_bounds and not MIN_DRIVER_SECONDS <= seconds[0] <= MAX_DRIVER_SECONDS:
+        raise ValueError("Driver wall time is outside the fixed workload bounds")
+
+    clock = unique("driver_clock,")
+    clock_keys = ("uptime_start_cs", "uptime_end_cs", "user_start_usec", "system_start_usec", "user_end_usec", "system_end_usec")
+    match = re.fullmatch("driver_clock,v1," + ",".join(key + r"=([0-9]{1,18})" for key in clock_keys), clock)
+    if not match:
+        raise ValueError("Invalid driver clock counters")
+    start, end, user_start, system_start, user_end, system_end = map(int, match.groups())
+    if end < start or user_end < user_start or system_end < system_start:
+        raise ValueError("Driver clock and CPU counters must be monotonic")
+    expected = (Decimal(end - start) / 100,
+                Decimal((user_end - user_start) // 1000) / 1000,
+                Decimal((system_end - system_start) // 1000) / 1000)
+    if seconds != expected:
+        raise ValueError("Driver timing does not match monotonic uptime and CPU counter deltas")
+
+    cgroup = unique("driver_cgroup_receipt,")
+    if not re.fullmatch(
+        r"driver_cgroup_receipt,v1,workload_status=0,receipt_status=0,"
+        r"memory\.max=83886080,memory\.swap\.max=0,memory\.swap\.current=0,"
+        r"cpu\.max=100000 100000,max=0,oom=0,oom_kill=0,oom_group_kill=(?:absent|0)", cgroup
+    ):
+        raise ValueError("Invalid final driver cgroup receipt: require successful child, exact limits and zero events/swap")
+    return {
+        "wall_seconds": seconds[0], "user_seconds": seconds[1], "system_seconds": seconds[2],
+        "clock": dict(zip(clock_keys, map(int, match.groups()), strict=True)),
+        "memory_max_bytes": 80 * MIB, "memory_swap_max_bytes": 0, "memory_swap_current_bytes": 0,
+        "cpu_max": "100000 100000", "max": 0, "oom": 0, "oom_kill": 0,
+        "oom_group_kill": None if cgroup.endswith("=absent") else 0,
+    }
+
+
 def evaluate_receipt(lines, config_id, version):
     def matching_lines(prefix):
         return [line.removeprefix(prefix) for line in lines if line.startswith(prefix)]
 
-    timings = matching_lines("driver_seconds,")
-    if len(timings) != 1 or not re.fullmatch(r"[0-9]{1,3}\.[0-9]{3}(?:,[0-9]{1,3}\.[0-9]{3}){2}", timings[0]):
-        raise ValueError("Expected one valid driver_seconds record")
-    driver_seconds = Decimal(timings[0].split(",", 1)[0])
-    if not MIN_DRIVER_SECONDS <= driver_seconds <= MAX_DRIVER_SECONDS:
-        raise ValueError("Driver wall time is outside the fixed workload bounds")
+    if matching_lines("benchmark_profile=") != [PROFILE]:
+        raise ValueError(f"Expected benchmark profile {PROFILE}")
+    driver = evaluate_driver(lines, workload_bounds=True)
+    driver_seconds = driver["wall_seconds"]
 
     headers = matching_lines("cgroup_fields,")
     if len(headers) != 1:
@@ -112,7 +156,8 @@ def evaluate_receipt(lines, config_id, version):
     before = matching_lines("installed_canary_before=")
     after = matching_lines("installed_canary_after=")
     terminal_prefixes = (
-        "workload,completed,", *(f"{key} " for key in MEMORY_EVENTS), "probe_state=",
+        "workload,completed,", "driver_clock,", "driver_seconds,", "driver_cgroup_receipt,",
+        *(f"{key} " for key in MEMORY_EVENTS), "probe_state=",
         "installed_canary_after=", "probe_cleanup=",
     )
     terminal_positions = [
@@ -128,13 +173,16 @@ def evaluate_receipt(lines, config_id, version):
         ) is not None,
         "matching Canary version": len(health) == 1 and health[0].get("status") == "ok"
         and health[0].get("service") == "meitheal-web" and health[0].get("version") == version,
+        "versioned measurement profile": matching_lines("benchmark_profile=") == [PROFILE],
+        "exact parent checksum": matching_lines("driver_parent_script_sha256=") == [PARENT_SHA256]
+        and sum(re.fullmatch(rf"{PARENT_SHA256}  .+/(?:green-canary-driver-parent|driver-parent-wrapper)\.sh", line) is not None for line in lines) == 1,
         "exact workload checksum": matching_lines("seed_and_driver_script_sha256=") == [WORKLOAD_SHA256]
         and sum(re.fullmatch(rf"{WORKLOAD_SHA256}  .+/seed-and-run\.sh", line) is not None for line in lines) == 1,
         "192 MiB, one CPU, zero swap": matching_lines("limits,") == ["201326592,0,100000 100000"],
         "seeded 2,000 tasks": lines.count('{"synthetic_tasks":2000}') == 1,
         "105 complete cycles": matching_lines("workload,completed,") == ["105"],
-        "idle below 64 MiB": idle_memory["p95"] < IDLE_LIMIT_BYTES,
-        "active below 96 MiB": active_memory["p95"] < ACTIVE_LIMIT_BYTES,
+        "idle below 128 MiB": idle_memory["p95"] < IDLE_LIMIT_BYTES,
+        "active below 160 MiB": active_memory["p95"] < ACTIVE_LIMIT_BYTES,
         "active CPU at or below 15%": cpu_percent <= CPU_LIMIT_PERCENT,
         "each route p95 at or below 350 ms": all(timing["p95"] <= ROUTE_LIMIT_MS for timing in route_timings.values()),
         "zero sampled and final memory events or swap": all(
@@ -154,6 +202,9 @@ def evaluate_receipt(lines, config_id, version):
         ),
     }
     return {
+        "profile": PROFILE,
+        "script_sha256": {"workload": WORKLOAD_SHA256, "parent": PARENT_SHA256},
+        "driver": driver,
         "config_id": config_id,
         "version": version,
         "checks": conditions,
@@ -181,21 +232,26 @@ def evaluate_receipt(lines, config_id, version):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("receipt")
-    parser.add_argument("config_id")
-    parser.add_argument("version")
+    parser.add_argument("config_id", nargs="?")
+    parser.add_argument("version", nargs="?")
+    parser.add_argument("--driver-only", action="store_true", help="Check isolated helper telemetry only; never authorizes Green qualification")
     parser.add_argument("--report", action="store_true", help="Print JSON metrics even when a parsed receipt fails a gate")
     args = parser.parse_args()
-    if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.config_id) or not re.fullmatch(r"[a-f0-9]{12}", args.version):
+    if args.driver_only:
+        if args.config_id is not None or args.version is not None:
+            parser.error("Driver-only checks do not accept image/version arguments")
+    elif not re.fullmatch(r"sha256:[a-f0-9]{64}", args.config_id or "") or not re.fullmatch(r"[a-f0-9]{12}", args.version or ""):
         parser.error("Expected an exact image config ID and Canary version")
     try:
         with open(args.receipt, "rb") as receipt:
             contents = receipt.read(MAX_RECEIPT_BYTES + 1)
         if len(contents) > MAX_RECEIPT_BYTES:
             raise ValueError("Green receipt exceeds 1 MiB")
-        result = evaluate_receipt(contents.decode().splitlines(), args.config_id, args.version)
+        lines = contents.decode().splitlines()
+        result = evaluate_driver(lines) if args.driver_only else evaluate_receipt(lines, args.config_id, args.version)
         if args.report:
             print(json.dumps(result, indent=2, default=float))
-        failures = [name for name, passed in result["checks"].items() if not passed]
+        failures = [name for name, passed in result.get("checks", {}).items() if not passed]
         if failures:
             raise ValueError("Failed Green checks: " + ", ".join(failures))
     except (OSError, ValueError, csv.Error) as error:

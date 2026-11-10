@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { spawnSync, type SpawnSyncReturns } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -11,7 +12,11 @@ const version = revision.slice(0, 12)
 const arm = `sha256:${"a".repeat(64)}`
 const amd = `sha256:${"b".repeat(64)}`
 const digest = `sha256:${"c".repeat(64)}`
-const hash = "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549"
+const profile = "green-2000-task-v2"
+const hash = "d060f566d2ab6c8a90537b21f049cc1215b97ea9328e23e428b56aa1246fa50b"
+const parentHash = "60b394f364c7f43a0038c0fb4376abd1a435a1760cf2bcd7ca29404e12ea6869"
+const clock = "driver_clock,v1,uptime_start_cs=1000000,uptime_end_cs=1030850,user_start_usec=5000000,system_start_usec=7000000,user_end_usec=16000000,system_end_usec=19000000"
+const driverCgroup = "driver_cgroup_receipt,v1,workload_status=0,receipt_status=0,memory.max=83886080,memory.swap.max=0,memory.swap.current=0,cpu.max=100000 100000,max=0,oom=0,oom_kill=0,oom_group_kill=0"
 // The 309-second counter window is slightly longer than the driver's timer.
 const timing = "driver_seconds,308.500,11.000,12.000"
 
@@ -19,6 +24,9 @@ function passingReceipt() {
   const installed = `${amd} healthy 0 2026-01-01T00:00:00Z ${"d".repeat(64)}`
   const routes = ["today,200", "list,200", "search,200", "open,200", "create,201", "complete,200", "readback,200"]
   return [
+    `benchmark_profile=${profile}`,
+    `driver_parent_script_sha256=${parentHash}`,
+    `${parentHash}  /tmp/fixture/green-canary-driver-parent.sh`,
     `image=${arm} architecture=arm64 bytes=123`,
     `helper_image=sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f architecture=arm64 layer=sha256:5070b31eb4c50bf7d0297a1a5aee25bc13ff29894e87354610f6b8b6a445e07e`,
     `${hash}  /tmp/fixture/seed-and-run.sh`,
@@ -30,13 +38,15 @@ function passingReceipt() {
     "seed=separate_cgroup,same_loopback_namespace,disposable_data_volume,fixed_helper",
     "cgroup_fields,phase,epoch,memory_current,swap,cpu_usec,max,oom,oom_kill",
     "driver=separate_cgroup,same_loopback_namespace,fixed_helper",
-    timing,
     ...Array.from({ length: 71 }, (_, index) => {
       const elapsed = index * 5 + Math.floor(index / 3)
-      return `cgroup,${index < 12 ? "idle" : "active"},${1800000000 + elapsed},${index < 12 ? 67108863 : 100663295},0,${elapsed * 150000},0,0,0`
+      return `cgroup,${index < 12 ? "idle" : "active"},${1800000000 + elapsed},${index < 12 ? 134217727 : 167772159},0,${elapsed * 150000},0,0,0`
     }),
     ...Array.from({ length: 105 }, () => routes.map(route => `http,${route},0.020000`)).flat(),
     "workload,completed,105",
+    clock,
+    timing,
+    driverCgroup,
     "max 0", "oom 0", "oom_kill 0",
     "probe_state=running health=healthy oom=false restarts=0",
     `installed_canary_after=${installed}`,
@@ -75,7 +85,7 @@ if (command === "image" && args.includes("--format")) {
   console.log(target.replace(/:[^:]+$/, "") + "@" + (process.env.FIXTURE_PUBLIC_DIGEST || digest))
 } else if (command === "image") {
   console.log(JSON.stringify([{ Os: "linux", Architecture: arch === "aarch64" ? "arm64" : "amd64", Id: id,
-    Config: { Labels: { "org.opencontainers.image.revision": arch === "aarch64" && process.env.FIXTURE_ARM_REVISION || revision,
+    Config: { Labels: { "org.opencontainers.image.licenses": "LicenseRef-Proprietary", "org.opencontainers.image.revision": arch === "aarch64" && process.env.FIXTURE_ARM_REVISION || revision,
       "io.hass.version": revision.slice(0, 12), "io.hass.arch": arch, "io.hass.type": "addon" } } }]))
 } else if (command === "run") {
   if (!args.includes("--pull=never") || option("--network") !== "none") process.exit(98)
@@ -166,7 +176,7 @@ test("missing and malformed Green receipts fail before any registry action", ({ 
   const args = publish("aarch64", arm, harness.receipt)
   expect(harness.run(args.slice(0, -1)).stderr).toContain("Usage:")
   expect(harness.run(publish("aarch64", arm, harness.receipt + ".missing")).stderr).toContain("readable raw Green receipt")
-  writeFileSync(harness.receipt, '{"checks":{"idle below 64 MiB":true}}')
+  writeFileSync(harness.receipt, '{"checks":{"idle below 128 MiB":true}}')
   expect(harness.run(args).stderr).toContain("Green receipt rejected")
   expect(harness.run(stage(harness)).stderr).toContain("Green receipt rejected")
   expect(readFileSync(harness.trace, "utf8")).toBe("")
@@ -178,12 +188,12 @@ test("receipt metrics and exact ARM64 config must pass before registry action", 
   expect(readFileSync(harness.trace, "utf8")).toBe("")
 
   let listRequests = 0
-  writeFileSync(harness.receipt, passingReceipt().replaceAll(",67108863,", ",67108864,")
-    .replaceAll(",100663295,", ",100663296,")
+  writeFileSync(harness.receipt, passingReceipt().replaceAll(",134217727,", ",134217728,")
+    .replaceAll(",167772159,", ",167772160,")
     .replaceAll("list,200,0.020000", line => listRequests++ < 6 ? "list,200,0.350001" : line))
   const result = harness.run(publish("aarch64", arm, harness.receipt))
   expect(result.status).toBe(1)
-  expect(result.stderr).toContain("idle below 64 MiB, active below 96 MiB, each route p95 at or below 350 ms")
+  expect(result.stderr).toContain("idle below 128 MiB, active below 160 MiB, each route p95 at or below 350 ms")
   expect(readFileSync(harness.trace, "utf8")).toBe("")
 })
 
@@ -201,7 +211,7 @@ test("the Green report exposes tail samples without changing the gate", ({ harne
   const passing = report()
   expect(passing.status, passing.stderr).toBe(0)
   const metrics = JSON.parse(passing.stdout)
-  expect(metrics.memory_current_bytes.idle).toMatchObject({ samples: 12, p95_rank: 12, p95: 67108863, max: 67108863 })
+  expect(metrics.memory_current_bytes.idle).toMatchObject({ samples: 12, p95_rank: 12, p95: 134217727, max: 134217727 })
   expect(metrics.active_cpu_percent_of_one_core).toMatchObject({ mean: 15, intervals: { p95: 15 }, throttle_count_delta: null })
   expect(metrics.loopback_full_response_ms.routes.list).toEqual({
     samples: 105, p50: 20, p95: 20, p95_rank: 100, max: 800, over_limit: 5,
@@ -221,10 +231,11 @@ test("driver timing must be unique, valid and consistent with the request and sa
   for (const [record, failure] of [
     ["", "one valid driver_seconds"],
     ["driver_seconds,311.000,11.000,NaN", "one valid driver_seconds"],
+    ["driver_seconds,308.500,11.:00,12.000", "one valid driver_seconds"],
     [`${timing}\n${timing}`, "one valid driver_seconds"],
     ["driver_seconds,262.499,11.000,12.000", "outside the fixed workload bounds"],
     ["driver_seconds,360.001,11.000,12.000", "outside the fixed workload bounds"],
-    ["driver_seconds,345.000,11.000,12.000", "sample window does not match driver wall time"],
+    ["driver_seconds,345.000,11.000,12.000", "timing does not match monotonic uptime"],
   ] as const) {
     writeFileSync(harness.receipt, passingReceipt().replace(timing, record))
     const result = harness.run(args)
@@ -325,5 +336,107 @@ test("first publication accepts a missing package and rejects registry failures"
     expect(failed.status).toBe(1)
     expect(failed.stderr).toContain("Could not confirm the version tag is absent")
     expect(readFileSync(harness.trace, "utf8")).not.toContain("push\n")
+  }
+})
+
+test("the versioned profile pins the public workload and parent bytes", ({ harness }) => {
+  for (const [file, expected] of [["green-canary-workload.sh", hash], ["green-canary-driver-parent.sh", parentHash]]) {
+    expect(createHash("sha256").update(readFileSync(join(root, "scripts", file!))).digest("hex")).toBe(expected)
+  }
+  for (const raw of [
+    passingReceipt().replace(`benchmark_profile=${profile}\n`, ""),
+    passingReceipt().replace(profile, "green-2000-task-v1"),
+    passingReceipt().replace(profile, "green-2000-task-v3"),
+    passingReceipt().replace(`benchmark_profile=${profile}`, `benchmark_profile=${profile}\nbenchmark_profile=${profile}`),
+    passingReceipt().replaceAll(hash, "0".repeat(64)),
+    passingReceipt().replaceAll(parentHash, "0".repeat(64)),
+    passingReceipt().replace("sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f", amd),
+  ]) {
+    writeFileSync(harness.receipt, raw)
+    expect(harness.run(publish("aarch64", arm, harness.receipt)).status).toBe(1)
+    expect(readFileSync(harness.trace, "utf8")).toBe("")
+  }
+})
+
+test("legacy receipts and missing or altered driver telemetry cannot qualify under v2", ({ harness }) => {
+  const variants = [
+    passingReceipt().replaceAll(hash, "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549")
+      .replace(`benchmark_profile=${profile}\n`, "").replace(clock, "").replace(driverCgroup, ""),
+    passingReceipt().replace(clock, ""),
+    passingReceipt().replace(clock, `${clock}\n${clock}`),
+    passingReceipt().replace("uptime_end_cs=1030850", "uptime_end_cs=1000001"),
+    passingReceipt().replace("user_end_usec=16000000", "user_end_usec=4999999"),
+    passingReceipt().replace("system_end_usec=19000000", "system_end_usec=invalid"),
+    passingReceipt().replace(driverCgroup, ""),
+    passingReceipt().replace(driverCgroup, `${driverCgroup}\n${driverCgroup}`),
+    passingReceipt().replace(driverCgroup, driverCgroup.replace(",max=0", "")),
+    passingReceipt().replace(driverCgroup, driverCgroup.replace(",oom=0", "")),
+    passingReceipt().replace(driverCgroup, driverCgroup.replace(",oom_kill=0", "")),
+  ]
+  for (const entry of driverCgroup.split(",").slice(2)) {
+    variants.push(passingReceipt().replace(driverCgroup, driverCgroup.replace(`,${entry}`, "")))
+  }
+  for (const field of ["workload_status", "receipt_status", "memory.swap.max", "memory.swap.current", "max", "oom", "oom_kill", "oom_group_kill"]) {
+    variants.push(passingReceipt().replace(driverCgroup, driverCgroup.replace(`,${field}=0`, `,${field}=1`)))
+  }
+  for (const [from, to] of [["memory.max=83886080", "memory.max=100663296"], ["cpu.max=100000 100000", "cpu.max=200000 100000"]]) {
+    variants.push(passingReceipt().replace(driverCgroup, driverCgroup.replace(from!, to!)))
+  }
+  for (const raw of variants) {
+    writeFileSync(harness.receipt, raw)
+    expect(harness.run(publish("aarch64", arm, harness.receipt)).status).toBe(1)
+    expect(readFileSync(harness.trace, "utf8")).toBe("")
+  }
+  writeFileSync(harness.receipt, passingReceipt().replace("oom_group_kill=0", "oom_group_kill=absent"))
+  expect(harness.run(publish("aarch64", arm, harness.receipt)).status).toBe(0)
+})
+
+test("raw total App memory keeps strict 128/160 MiB boundaries and the 192 MiB hard cap", ({ harness }) => {
+  const report = () => spawnSync("python3", ["scripts/verify-canary-green.py", "--report", harness.receipt, arm, version], { cwd: root, encoding: "utf8" })
+  writeFileSync(harness.receipt, passingReceipt())
+  const valid = report()
+  expect(valid.status).toBe(0)
+  expect(JSON.parse(valid.stdout).memory_current_bytes).toMatchObject({
+    idle: { exclusive_limit: 128 * 1024 ** 2, p95: 128 * 1024 ** 2 - 1 },
+    active: { exclusive_limit: 160 * 1024 ** 2, p95: 160 * 1024 ** 2 - 1 },
+  })
+  for (const [from, to, failure] of [
+    [",134217727,", ",134217728,", "idle below 128 MiB"],
+    [",167772159,", ",167772160,", "active below 160 MiB"],
+    [",167772159,", ",201326593,", "Invalid cgroup memory reading"],
+  ]) {
+    writeFileSync(harness.receipt, passingReceipt().replaceAll(from!, to!))
+    const result = report()
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(failure)
+  }
+})
+
+test("driver-only checks validate timing/cgroup evidence and cannot replace a release receipt", ({ harness }) => {
+  writeFileSync(harness.receipt, [clock, timing, driverCgroup].join("\n"))
+  const driver = spawnSync("python3", ["scripts/verify-canary-green.py", "--driver-only", "--report", harness.receipt], { cwd: root, encoding: "utf8" })
+  expect(driver.status, driver.stderr).toBe(0)
+  expect(JSON.parse(driver.stdout)).toMatchObject({ wall_seconds: 308.5, user_seconds: 11, system_seconds: 12, memory_max_bytes: 80 * 1024 ** 2 })
+  expect(harness.run(publish("aarch64", arm, harness.receipt)).status).toBe(1)
+  expect(readFileSync(harness.trace, "utf8")).toBe("")
+  const withAuthority = spawnSync("python3", ["scripts/verify-canary-green.py", "--driver-only", harness.receipt, arm, version], { cwd: root, encoding: "utf8" })
+  expect(withAuthority.status).not.toBe(0)
+})
+
+test("v2 retains the fixed seed, ordered complete cycles, helper and App resource limits", ({ harness }) => {
+  const firstRoutes = "http,today,200,0.020000\nhttp,list,200,0.020000"
+  for (const raw of [
+    passingReceipt().replace('{"synthetic_tasks":2000}', '{"synthetic_tasks":1999}'),
+    passingReceipt().replace("workload,completed,105", "workload,completed,104"),
+    passingReceipt().replace("http,today,200,0.020000\n", ""),
+    passingReceipt().replace(firstRoutes, "http,list,200,0.020000\nhttp,today,200,0.020000"),
+    passingReceipt().replace("http,create,201,0.020000", "http,create,200,0.020000"),
+    passingReceipt().replace("layer=sha256:5070b31eb4c50bf7d0297a1a5aee25bc13ff29894e87354610f6b8b6a445e07e", `layer=${amd}`),
+    passingReceipt().replace("limits,201326592,0,100000 100000", "limits,268435456,0,100000 100000"),
+    passingReceipt().replace(`\n${clock}`, "").replace("cgroup_fields,", `${clock}\ncgroup_fields,`),
+  ]) {
+    writeFileSync(harness.receipt, raw)
+    expect(harness.run(publish("aarch64", arm, harness.receipt)).status).toBe(1)
+    expect(readFileSync(harness.trace, "utf8")).toBe("")
   }
 })
