@@ -240,7 +240,7 @@ const { locale } = Astro.props;
   <div class="settings-grid mt-4">
     <SettingsPanelCard
       title={t("settings.bot_handoff_title", locale)}
-      subtitle={t("settings.bot_handoff_subtitle", locale)}
+      subtitle={locale === "ga" ? "Déanann riarthóir reatha Home Assistant athruithe a mholann gníomhairí a athbhreithniú sula gcuirtear i bhfeidhm iad." : "A current Home Assistant administrator reviews agent proposals before their changes apply."}
     >
       <a id="bot-allow-proposals" class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
     </SettingsPanelCard>

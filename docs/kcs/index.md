@@ -49,6 +49,7 @@
 # Task automation and configuration
 
 - [Agent task approvals](agent-task-approvals.md) - Submit and review scoped automation proposals.
+- [Review agent proposals](proposal-review.md) - Compare displayed changes and submit a current administrator decision.
 - [Recovering rules and framework settings](settings-configuration-recovery.md) - Preserve configuration when saves and imports fail.
 - [Complete tasks with NFC](nfc-task-completion.md) - Use unique tag assignments and acknowledged task completion.
 - [Task completion results](task-completion-results.md) - Understand committed completion rewards and optional failures.

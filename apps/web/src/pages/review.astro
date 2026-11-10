@@ -1,145 +1,115 @@
 ---
+import { ensureSchema, getPersistenceClient, TaskHandoff } from "@domains/tasks"
+import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
 import Layout from "../layouts/Layout.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
-import {
-  ensureSchema,
-  getPersistenceClient,
-} from "@domains/tasks/persistence/store"
+import { verifiedIngressUser } from "../lib/verified-ingress-user"
+import { taskDetailPath } from "../lib/task-page-url"
+import { formatTicketKey } from "../lib/ticket-key"
 
 Astro.response.headers.set("Cache-Control", "private, no-store")
-
-interface ParsedProposal {
-  ticket_number: number | null
-  title: string
-  lock_holder: string | null
-  updated_at: number
-  agent: string
-  summary: string
-  changes: Array<{ field: string; from: string; to: string }>
-}
-
-let proposals: ParsedProposal[] = []
+const user = verifiedIngressUser(Astro.locals)
+const authority = user?.isAdmin ? await verifyCurrentHAAdministrator(user.id, Astro.request.signal) : "denied"
+const allowed = authority === "allowed"
+if (!allowed) Astro.response.status = authority === "unavailable" ? 503 : 403
+const pageSize = 25
+const requestedPage = Number(Astro.url.searchParams.get("page") ?? 1)
+const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, 1000) : 1
+const refreshPath = `/review${page > 1 ? `?page=${page}` : ""}`
+let proposals: Awaited<ReturnType<TaskHandoff["queue"]>> = []
 let fetchError = false
-
-try {
-  await ensureSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT ticket_number, title, lock_holder, proposal_json, updated_at
-          FROM tasks
-          WHERE handoff_state = 'proposed'
-          ORDER BY updated_at DESC
-          LIMIT 50`,
-    args: [],
-  })
-
-  proposals = result.rows.map(row => {
-    let agent = ""
-    let summary = ""
-    let changes: Array<{ field: string; from: string; to: string }> = []
-
-    try {
-      if (row.proposal_json) {
-        const parsed = JSON.parse(String(row.proposal_json))
-        agent = parsed.agent ?? ""
-        summary = parsed.summary ?? ""
-        if (parsed.changes && typeof parsed.changes === "object") {
-          changes = Object.entries(parsed.changes).map(([field, val]) => ({
-            field,
-            from: String((val as Record<string, unknown>)?.from ?? ""),
-            to: String((val as Record<string, unknown>)?.to ?? ""),
-          }))
-        }
-      }
-    } catch { /* invalid JSON */ }
-
-    return {
-      ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
-      title: String(row.title ?? ""),
-      lock_holder: row.lock_holder ? String(row.lock_holder) : null,
-      updated_at: Number(row.updated_at ?? 0),
-      agent,
-      summary,
-      changes,
-    }
-  })
-} catch {
-  fetchError = true
+let hasMore = false
+if (allowed) {
+  try {
+    await ensureSchema()
+    const queue = await new TaskHandoff(getPersistenceClient()).queue((page - 1) * pageSize, pageSize + 1)
+    hasMore = queue.length > pageSize
+    proposals = queue.slice(0, pageSize)
+  } catch {
+    fetchError = true
+    Astro.response.status = 503
+  }
 }
+const displayValue = (value: string | null) => value === null ? "(not set)" : value || "(empty)"
 ---
 
 <Layout title="Meitheal — Review Queue">
-  <span slot="page-title">🤖 Review Queue</span>
+  <span slot="page-title">Review Queue</span>
   <div slot="actions">
-    <a href="/review" class="btn btn-sm" data-astro-reload>Refresh</a>
+    <a href={refreshPath} class="btn btn-secondary btn-sm" data-astro-reload>Refresh queue</a>
   </div>
 
-  <p class="review-note">Saved proposals are available to read. Approval and rejection are unavailable.</p>
-
-  {fetchError && (
-    <div class="review-error">
-      <p>Saved proposals could not be loaded.</p>
+  {!allowed ? (
+    <div class="review-error" role="alert">
+      <h2>{authority === "unavailable" ? "Administrator access could not be checked" : "Administrator access required"}</h2>
+      <p>{authority === "unavailable"
+        ? "Home Assistant could not confirm your current access. Refresh to try again."
+        : "Open Review through Home Assistant ingress with an active administrator account."}</p>
     </div>
-  )}
-
-  {proposals.length === 0 && !fetchError && (
-    <EmptyState
-      title="No saved proposals"
-      description="This page displays proposals already stored in Meitheal."
-    />
-  )}
-
-  <div class="review-queue" id="review-queue">
-    {proposals.map(p => (
-      <div class="review-card">
-        <div class="review-card__header">
-          <div class="review-card__title-row">
-            <span class="review-card__ticket">
-              {p.ticket_number ? "#" + p.ticket_number : "—"}
-            </span>
-            <h3 class="review-card__title">{p.title}</h3>
-          </div>
-          <div class="review-card__meta">
-            <span class="review-card__agent">{p.agent || p.lock_holder || "unknown agent"}</span>
-            <span class="review-card__time">
-              {new Date(p.updated_at).toLocaleString()}
-            </span>
-          </div>
-        </div>
-
-        {p.summary && (
-          <div class="review-card__summary">
-            <strong>Summary:</strong> {p.summary}
-          </div>
-        )}
-
-        {p.changes.length > 0 && (
-          <div class="review-card__diff">
-            <table class="diff-table">
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Current</th>
-                  <th>Proposed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {p.changes.map(c => (
-                  <tr>
-                    <td class="diff-field">{c.field}</td>
-                    <td class="diff-from">{c.from || "—"}</td>
-                    <td class="diff-to">{c.to || "—"}</td>
+  ) : (
+    <>
+      <p class="review-note">Compare the saved proposal with the current task before deciding. Only the displayed proposal can be accepted or rejected. Refresh to read any newer proposal.</p>
+      <p id="review-authority-status" role="status" aria-live="polite" class="review-note"></p>
+      {fetchError && <div class="review-error" role="alert"><p>The review queue could not be loaded. Refresh to try again.</p></div>}
+      {proposals.length === 0 && !fetchError && <EmptyState
+        title="No pending proposals"
+        description="There are no unexpired proposals on this page. Accepted, rejected and expired proposals leave the queue."
+      />}
+      <div class="review-queue" id="review-queue">
+        {proposals.map(p => (
+          <article class="review-card" data-proposal-review data-task-id={p.id} data-proposal-hash={p.hash}
+            data-expires-at={p.expiresAt} data-stale={String(p.stale)} aria-labelledby={`proposal-title-${p.id}`}>
+            <div class="review-card__header">
+              <div class="review-card__title-row">
+                <a class="review-card__ticket" href={taskDetailPath(p.id)}>{formatTicketKey(p.ticketNumber) ?? "Open task"}</a>
+                <h2 class="review-card__title" id={`proposal-title-${p.id}`}>{p.title}</h2>
+              </div>
+              <div class="review-card__meta">
+                <span class="review-card__agent">{p.agent}</span>
+                <span>Review before <time datetime={new Date(p.expiresAt).toISOString()}>{new Date(p.expiresAt).toLocaleString("en-IE")}</time></span>
+              </div>
+            </div>
+            <div class="review-card__summary"><strong>Summary:</strong> {p.summary}</div>
+            {p.stale && <p class="review-stale">The task changed after this proposal was created. Acceptance is unavailable. Review the current values, then reject the proposal or refresh the queue.</p>}
+            <div class="review-card__diff">
+              <table class="diff-table">
+                <caption class="sr-only">Changes proposed by {p.agent} for {p.title}</caption>
+                <thead><tr><th scope="col">Field</th><th scope="col">When proposed</th><th scope="col">Current</th><th scope="col">Proposed</th></tr></thead>
+                <tbody>{p.fields.map(field => (
+                  <tr data-proposal-field={field.field}>
+                    <th scope="row" class="diff-field">{field.field === "title" ? "Title" : "Description"}</th>
+                    <td class="diff-from">{displayValue(field.from)}</td>
+                    <td data-current-value>{displayValue(field.current)}</td>
+                    <td class="diff-to" data-proposed-value>{displayValue(field.to)}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))}</tbody>
+              </table>
+            </div>
+            <details class="review-fingerprint"><summary>Proposal details</summary><p>Fingerprint: <code>{p.hash}</code></p></details>
+            <div class="review-card__actions">
+              <form data-review-decision aria-label={`Review proposal for ${p.title}`}>
+                <button type="submit" name="action" value="accept" class="btn btn-primary" disabled aria-disabled={p.stale}>Accept proposal</button>
+                <button type="submit" name="action" value="reject" class="btn btn-secondary" disabled>Reject proposal</button>
+              </form>
+              <a href={refreshPath} class="btn btn-secondary" data-review-refresh data-astro-reload>Refresh proposal</a>
+            </div>
+            <p class="review-card__status" data-review-status role="status" aria-live="polite" tabindex="-1"></p>
+          </article>
+        ))}
       </div>
-    ))}
-  </div>
+      {(page > 1 || hasMore) && <nav class="review-pages" aria-label="Review queue pages">
+        {page > 1 && <a class="btn btn-secondary" href={`/review?page=${page - 1}`} data-astro-reload>Previous page</a>}
+        <span>Page {page}</span>
+        {hasMore && <a class="btn btn-secondary" href={`/review?page=${page + 1}`} data-astro-reload>Next page</a>}
+      </nav>}
+      <noscript><p>JavaScript is needed to submit a review decision. The displayed proposal remains available to read.</p></noscript>
+    </>
+  )}
 </Layout>
+
+<script>
+  import "@lib/proposal-review-controller"
+</script>
 
 <style>
   .review-note {
@@ -202,7 +172,7 @@ try {
   .review-card__title {
     font-size: 15px;
     font-weight: 600;
-    color: var(--text);
+    color: var(--text-primary);
     margin: 0;
     letter-spacing: -0.01em;
   }
@@ -222,7 +192,7 @@ try {
   .review-card__summary {
     padding: 12px 16px;
     font-size: 13px;
-    color: var(--text);
+    color: var(--text-primary);
     border-bottom: 1px solid var(--border);
   }
 
@@ -253,16 +223,27 @@ try {
   }
   .diff-field {
     font-weight: 600;
-    color: var(--text);
-    white-space: nowrap;
+    color: var(--text-primary);
+    white-space: normal;
   }
   .diff-from {
-    color: var(--danger, #ef4444);
-    text-decoration: line-through;
-    opacity: 0.7;
+    color: var(--text-secondary);
   }
   .diff-to {
     color: var(--success, #22c55e);
     font-weight: 500;
   }
+  .review-card__title-row { flex-wrap: wrap; }
+  .review-card__meta { flex-wrap: wrap; }
+  .review-card__title, .review-card__summary, .diff-table :is(td, th) { overflow-wrap: anywhere; }
+  .diff-table :is(td, th) { min-width: 7rem; white-space: pre-wrap; }
+  .review-stale, .review-fingerprint, .review-card__actions, .review-card__status { margin: 12px 16px; }
+  .review-stale { color: var(--warning); }
+  .review-fingerprint code { overflow-wrap: anywhere; }
+  .review-card__actions, [data-review-decision], .review-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .review-card__actions .btn { min-height: 44px; }
+  .review-card__actions button[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+  .review-card__status { white-space: pre-wrap; }
+  .review-card__status:empty { margin: 0; }
+  .review-pages { margin-block: 16px; }
 </style>
