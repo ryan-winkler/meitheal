@@ -30,19 +30,23 @@ export async function initEntitySubscription(): Promise<void> {
     unsubscribe = subscribeEntities(conn, (entities) => {
       const prevCache = entityCache;
       entityCache = entities;
-      for (const [entityId, entity] of Object.entries(entities)) {
-        const prev = prevCache[entityId];
-        if (!prev || prev.state !== entity.state || prev.last_updated !== entity.last_updated) {
-          const listeners = changeListeners.get(entityId);
-          if (listeners) {
-            for (const listener of listeners) {
-              try { listener(entity); } catch (err) {
-                logger.log("error", {
-                  event: "ha.entity.listener_error", domain: "ha", component: "ha-entities",
-                  request_id: SYS_REQ, message: `Entity change listener error for ${entityId}: ${err}`,
-                });
-              }
-            }
+      if (!changeListeners.size) return
+
+      // Keep the full snapshot for discovery. Snapshot only tracked IDs because
+      // a listener can unsubscribe or register another listener during delivery.
+      for (const entityId of [...changeListeners.keys()]) {
+        const entity = entities[entityId]
+        const prev = prevCache[entityId]
+        if (!entity || prev === entity || !Object.hasOwn(entities, entityId)) continue
+        if (prev && prev.state === entity.state && prev.last_updated === entity.last_updated) continue
+        const listeners = changeListeners.get(entityId)
+        if (!listeners) continue
+        for (const listener of listeners) {
+          try { listener(entity); } catch (err) {
+            logger.log("error", {
+              event: "ha.entity.listener_error", domain: "ha", component: "ha-entities",
+              request_id: SYS_REQ, message: `Entity change listener error for ${entityId}: ${err}`,
+            });
           }
         }
       }

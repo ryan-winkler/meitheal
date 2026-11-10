@@ -2,7 +2,15 @@ import { getEventListeners, once } from "node:events"
 import { createServer } from "node:http"
 import { expect, test } from "@playwright/test"
 import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
-import { closeHAConnection, getCalendarEntities, getTodoEntities, initEntitySubscription, stopEntitySubscription } from "../../apps/web/src/domains/ha"
+import {
+  closeHAConnection,
+  getCalendarEntities,
+  getEntity,
+  getTodoEntities,
+  initEntitySubscription,
+  onEntityChange,
+  stopEntitySubscription,
+} from "../../apps/web/src/domains/ha"
 import { GET, HEAD, emitSSE } from "../../apps/web/src/pages/api/sse"
 
 const url = "http://meitheal.test/api/sse"
@@ -182,10 +190,20 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
       event: { a: {
         "calendar.test": { s: "off", a: {}, lc: 1, c: "seed" },
         "todo.test": { s: "1", a: {}, lc: 1, c: "seed" },
+        "sensor.unwatched": { s: "off", a: {}, lc: 1, c: "seed" },
+        "sensor.resubscribe": { s: "off", a: {}, lc: 1, c: "seed" },
       } },
     })
     expect(getCalendarEntities()).toHaveLength(1)
     expect(getTodoEntities()).toHaveLength(1)
+    expect(getEntity("sensor.unwatched")?.state).toBe("off")
+
+    const delivered: string[] = []
+    const unsubscribe = onEntityChange("sensor.resubscribe", entity => {
+      delivered.push(entity.state)
+      unsubscribe()
+      onEntityChange("sensor.resubscribe", next => { delivered.push(next.state) })
+    })
 
     const { reader: first } = await open()
     const { reader: second } = await open()
@@ -196,14 +214,46 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
         id: socket!.entitySubscription,
         event: { c: {
           "calendar.test": { "+": { s: "on", lu: 2 } },
-          "todo.test": { "+": { s: "2", lu: 2 } },
+          "todo.test": { "+": { lu: 2 } },
+          "sensor.unwatched": { "+": { s: "on", lu: 2 } },
+          "sensor.resubscribe": { "+": { s: "on", lu: 2 } },
         } },
       })
+      expect(delivered).toEqual(["on"])
+      expect(getEntity("sensor.unwatched")?.state).toBe("on")
       emitSSE("probe", {})
       for (const reader of [first, second]) {
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"calendar.test","state":"on"/)
-        expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"todo.test","state":"2"/)
+        expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"todo.test","state":"1".*"last_updated":"1970-01-01T00:00:02.000Z"/)
         expect(decoder.decode((await reader.read()).value)).toBe("event: probe\ndata: {}\n\n")
+      }
+
+      socket!.receive({
+        type: "event",
+        id: socket!.entitySubscription,
+        event: {
+          c: {
+            "todo.test": { "+": { s: "1", lu: 2 } },
+            "sensor.resubscribe": { "+": { s: "off", lu: 3 } },
+          },
+          r: ["calendar.test"],
+        },
+      })
+      expect(delivered).toEqual(["on", "off"])
+      expect(getCalendarEntities()).toHaveLength(0)
+      emitSSE("probe", {})
+      for (const reader of [first, second]) {
+        expect(decoder.decode((await reader.read()).value)).toBe("event: probe\ndata: {}\n\n")
+      }
+
+      socket!.receive({
+        type: "event",
+        id: socket!.entitySubscription,
+        event: { a: { "calendar.test": { s: "off", a: {}, lc: 4, c: "seed" } } },
+      })
+      expect(getCalendarEntities()).toHaveLength(1)
+      for (const reader of [first, second]) {
+        expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"calendar.test","state":"off"/)
       }
     } finally {
       await Promise.all([first.cancel(), second.cancel()])
