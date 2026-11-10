@@ -68,11 +68,11 @@ RUN chmod +x /run.sh /run-local.sh
 # Copy rootfs overlay (backup scripts, service definitions)
 COPY --from=builder /build/meitheal-hub/rootfs/ /
 
-# Ensure data directory exists
-RUN mkdir -p /data
-
-# NOTE: HA addons run as root — Supervisor-managed /data volume requires root
-# access on fresh installs. This follows the hassio-addons convention.
+# s6 starts as root to prepare the Supervisor volume. The App processes
+# use the same service UID and GID on both supported architectures.
+RUN addgroup -S -g 10001 meitheal \
+    && adduser -S -D -H -h /data -s /sbin/nologin -u 10001 -G meitheal meitheal \
+    && mkdir -p /data
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1

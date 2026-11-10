@@ -182,9 +182,13 @@ Recommended Loki filter sequence:
 3. If health is failing:
 
 - verify `MEITHEAL_DB_URL` and add-on write permissions.
-- run migration commands manually in add-on shell.
+- for a manual migration check in the add-on shell, use `s6-setuidgid meitheal node scripts/migrate.mjs --check` from `/opt/meitheal/apps/web` with the configured database URL.
 
-The add-on defaults to `file:/data/meitheal.db`. File and in-memory URLs use the local SQLite client in both startup and migrations. An explicit remote database URL still selects the standard libSQL client.
+The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open file and in-memory databases with Node’s built-in SQLite. Verify the SQLite version in the actual runtime with `node -e 'console.log(new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS version").get().version)'`. The app requires 3.51.3 or newer for safe WAL writes. An explicit remote database URL still selects the standard libSQL network client. [SQLite WAL fix](https://sqlite.org/wal.html#the_wal_reset_bug).
+
+Local SQLite returns busy errors immediately so feedback can retry without blocking the event loop. Check the primary SQLite error code and the numeric `rawCode` when diagnosing a failure. The adapter also names extended busy and constraint codes.
+
+On a Supervisor start, s6 prepares the App’s files under `/data`, including a restored database and any SQLite sidecars, before starting migrations and the web server as `meitheal` (UID and GID `10001`). Supervisor’s `/data/options.json` keeps its ownership. If the ownership transfer fails, startup stops before opening the database and retries the transfer on the next start. Check that the volume permits writes and ownership changes. For a local database configured outside `/data`, provision directory and file access for UID and GID `10001` separately.
 
 ## Database Migrations
 

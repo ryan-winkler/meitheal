@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "@libsql/core": "0.18.0",
     "@meitheal/domain-auth": "workspace:*",
     "@meitheal/domain-observability": "workspace:*",
     "@meitheal/domain-strategy": "workspace:*",

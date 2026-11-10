@@ -14,10 +14,14 @@ export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
 export LOKI_URL="$(bashio::config 'loki_url')"
 export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key' '')"
 
-# Ensure /data is writable by meitheal user.
-# HA Supervisor mounts a fresh volume here which may have root-only permissions.
+# Transfer App files in fresh and restored Supervisor volumes before dropping
+# privileges. Retry any remaining entries on the next start after a failure.
 mkdir -p /data
-chown -R meitheal:meitheal /data 2>/dev/null || true
+if ! find /data -xdev -path /data/options.json -prune -o \
+    \( ! -user meitheal -o ! -group meitheal \) -exec chown -h meitheal:meitheal {} +; then
+  echo "Could not prepare /data for the meitheal service account" >&2
+  exit 1
+fi
 
 export MEITHEAL_DB_URL="${MEITHEAL_DB_URL:-file:/data/meitheal.db}"
 
@@ -83,12 +87,12 @@ HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 if [ -f /opt/meitheal/apps/web/package.json ]; then
   (
     cd /opt/meitheal/apps/web
-    node scripts/migrate.mjs
-    exit_code=$?
-    if [ "${exit_code}" -ne 0 ]; then
+    export HOME=/data
+    s6-setuidgid meitheal node scripts/migrate.mjs || {
+      exit_code=$?
       echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
       exit "${exit_code}"
-    fi
+    }
     export MEITHEAL_STARTUP_BACKUP_HANDLED=1
     if [ ! -f dist/server/entry.mjs ]; then
       echo "Missing Astro server entry at dist/server/entry.mjs"
@@ -98,9 +102,9 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
     # Use ingress-safe wrapper to normalize double slashes from HA Supervisor
     # before they reach Astro's routing layer (prevents 301 redirect loop).
     if [ -f scripts/serve.mjs ]; then
-      node scripts/serve.mjs
+      exec s6-setuidgid meitheal node scripts/serve.mjs
     else
-      node dist/server/entry.mjs
+      exec s6-setuidgid meitheal node dist/server/entry.mjs
     fi
   ) &
   WEB_PID=$!

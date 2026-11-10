@@ -1,7 +1,7 @@
 #!/bin/bash
 # Meitheal Hub — Local testing entrypoint (no bashio/Supervisor)
 #
-# Usage: podman run --rm -p 3333:3000 -v /tmp/meitheal-data:/data local/meitheal-hub /run-local.sh
+# Usage: podman run --rm -p 127.0.0.1:3333:3000 -v /tmp/meitheal-data:/data --entrypoint /run-local.sh local/meitheal-hub
 set -euo pipefail
 
 export MEITHEAL_LOG_LEVEL="${MEITHEAL_LOG_LEVEL:-info}"

@@ -12,24 +12,36 @@ VERSION=$6
 "$engine" image inspect "$image" |
   bash scripts/check-app-release-image.sh "$revision" "$ARCHITECTURE" "$platform" "$VERSION" "${7:-}"
 
-"$engine" run --rm --platform "$platform" --network none --env "EXPECTED_VERSION=$VERSION" --entrypoint bash "$image" -e -c '
-  export NODE_ENV=production HOST=127.0.0.1 PORT=3000 MEITHEAL_DB_URL=file:/data/smoke.db
-  cd /opt/meitheal/apps/web
-  node scripts/migrate.mjs
-  node scripts/migrate.mjs --check
-  node scripts/serve.mjs &
-  pid=$!
-  trap "kill $pid" EXIT
-  for attempt in {1..30}; do
-    if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then
-      break
+container="$("$engine" run --detach --platform "$platform" --network none \
+  --env "EXPECTED_VERSION=$VERSION" --env MEITHEAL_DB_URL=file:/data/smoke.db "$image")"
+cleanup() {
+  local status=$?
+  if [[ "$status" != 0 ]]; then "$engine" logs --tail 40 "$container" >&2 || true; fi
+  "$engine" rm --force --volumes "$container" >/dev/null || status=1
+  exit "$status"
+}
+trap cleanup EXIT
+
+"$engine" exec "$container" bash -e -o pipefail -c '
+  health="$(curl --silent --fail --max-time 2 --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/api/health)"
+  service_uid="$(id -u meitheal)"
+  test "$service_uid" != 0
+  web_processes=0
+  for command_line in /proc/[0-9]*/cmdline; do
+    if tr "\000" "\n" <"$command_line" 2>/dev/null |
+      grep -Fx -e scripts/serve.mjs -e dist/server/entry.mjs >/dev/null; then
+      status_file="${command_line%/cmdline}/status"
+      grep -Eq "^Uid:[[:space:]]+$service_uid[[:space:]]+$service_uid[[:space:]]" "$status_file"
+      grep -Eq "^CapEff:[[:space:]]+0+$" "$status_file"
+      web_processes=$((web_processes + 1))
     fi
-    sleep 1
   done
-  curl -fsS http://127.0.0.1:3000/api/health |
-    node -e '\''const health = JSON.parse(require("node:fs").readFileSync(0)); if (health.version !== process.env.EXPECTED_VERSION) process.exit(1)'\''
+  test "$web_processes" = 1
+  printf "%s" "$health" |
+    node -e '\''const health = JSON.parse(require("node:fs").readFileSync(0)); if (health.version !== process.env.EXPECTED_VERSION || health.db_integrity !== "ok") process.exit(1)'\''
   curl -fsS http://127.0.0.1:3000/today > /dev/null
   curl -fsS --json "{\"title\":\"Release smoke fixture\"}" \
     -H "Origin: http://127.0.0.1:3000" http://127.0.0.1:3000/api/tasks |
     node -e '\''const task = JSON.parse(require("node:fs").readFileSync(0)); if (!task.id || task.title !== "Release smoke fixture") process.exit(1)'\''
 '
+"$engine" exec --user meitheal --workdir /opt/meitheal/apps/web "$container" node scripts/migrate.mjs --check

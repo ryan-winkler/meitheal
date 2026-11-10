@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createClient } from "@libsql/client";
+import { openDatabase } from "./database-client.mjs"
 
 const execFileAsync = promisify(execFile);
 
@@ -59,7 +59,7 @@ async function main() {
     }
   });
 
-  const client = createClient({ url: dbUrl });
+  const client = openDatabase(dbUrl)
   const failures = [];
 
   try {
