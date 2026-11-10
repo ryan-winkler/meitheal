@@ -9,14 +9,14 @@
 # Usage: Opened automatically by VS Code devcontainer. Manual: docker compose up -d
 #
 # Ports:
-#   7123 → HA (8123)     UI + API
+#   7123 → HA (80; configurable for older Core)     UI + API
 #   7357 → HA (4357)     Supervisor API
 #   9192 → Grocy (80)    Grocy web UI + API
 #   1880 → Node-RED      Node-RED editor
 
 services:
   ha-devcontainer:
-    image: ghcr.io/home-assistant/devcontainer:2-addons
+    image: ghcr.io/home-assistant/devcontainer:6-apps
     privileged: true
     # Mask console logins before privileged init can claim a host tty.
     command:
@@ -26,7 +26,7 @@ services:
         /usr/bin/systemctl --root=/ mask getty@tty1.service getty@.service serial-getty@.service
         exec /sbin/init
     ports:
-      - "${HA_UI_PORT:-7123}:8123"
+      - "${HA_UI_PORT:-7123}:${HA_CORE_PORT:-80}"
       - "${HA_SUPERVISOR_PORT:-7357}:4357"
     environment:
       GIT_EDITOR: "code --wait"

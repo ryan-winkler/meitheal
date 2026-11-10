@@ -31,7 +31,7 @@ log "Dependencies installed."
 GROCY_URL="${GROCY_URL:-http://grocy:80}"
 log "Waiting for Grocy at ${GROCY_URL}..."
 for i in $(seq 1 30); do
-  if curl -fsS "${GROCY_URL}/api/system/info" >/dev/null 2>&1; then
+  if curl -fsS "${GROCY_URL}/" >/dev/null 2>&1; then
     log "Grocy ready (attempt ${i})."
     break
   fi

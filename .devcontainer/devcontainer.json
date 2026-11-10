@@ -1,9 +1,8 @@
 {
-  "name": "Meitheal — HA Addon Dev",
+  "name": "Meitheal \u2014 HA Addon Dev",
   "dockerComposeFile": "docker-compose.yml",
   "service": "ha-devcontainer",
   "workspaceFolder": "/workspaces/meitheal",
-  "postStartCommand": "bash devcontainer_bootstrap",
   "postCreateCommand": "bash /workspaces/meitheal/scripts/devcontainer-setup.sh",
   "runArgs": [
     "-e",
@@ -13,7 +12,8 @@
   "containerEnv": {
     "WORKSPACE_DIRECTORY": "/workspaces/meitheal",
     "GROCY_URL": "http://grocy:80",
-    "NODERED_URL": "http://nodered:1880"
+    "NODERED_URL": "http://nodered:1880",
+    "SUPERVISOR_CHANNEL": "beta"
   },
   "forwardPorts": [
     7123,
@@ -79,6 +79,13 @@
         "editor.formatOnType": true,
         "files.trimTrailingWhitespace": true
       }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "26",
+      "pnpmVersion": "10.8.0",
+      "nodeGypDependencies": false
     }
   }
 }
