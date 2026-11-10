@@ -439,6 +439,7 @@ try {
                 const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
+                const promoted = Number(task.is_promoted) === 1
                 const fp =
                   typeof task.framework_payload === "string"
                     ? JSON.parse(String(task.framework_payload))
@@ -478,6 +479,7 @@ try {
                         : ""
                     }
                     data-priority={String(p)}
+                    data-promoted={String(promoted)}
                     data-status={String(task.status)}
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
@@ -494,7 +496,7 @@ try {
                           type="button"
                           class="card-open-btn"
                           data-id={String(task.id)}
-                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}`}
+                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}${promoted ? `, ${t("kanban.promoted", locale)}` : ""}`}
                         >
                           <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
                           <span class="kanban-ticket-key">{ticketKey}</span>
@@ -529,6 +531,7 @@ try {
                         ⋯
                       </button>
                     </div>
+                    {promoted && <span class="kanban-promoted" aria-hidden="true">↑ {t("kanban.promoted", locale)}</span>}
                     {/* Attachment Placeholder */}
                     <img
                       class="kanban-attachment hidden"
@@ -1598,6 +1601,15 @@ try {
     color: var(--warning);
     font-size: 14px;
     flex-shrink: 0;
+  }
+  .kanban-promoted {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.75rem;
   }
   .kanban-reaction-count:not([hidden]) {
     display: inline-flex;

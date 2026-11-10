@@ -19,6 +19,7 @@ export async function loadKanbanBoard(repo: TaskRepository, lanes: KanbanLane[],
       byStatus.set(task.status, group)
     }
     group.total++
+    if (filters.promoted && task.is_promoted !== 1) continue
     const dataset = {
       title: task.title ?? "",
       search: task.title?.toLowerCase() ?? "",

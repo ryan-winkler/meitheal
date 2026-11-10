@@ -171,6 +171,7 @@ export function initKanbanArea(
         }, { signal: __signal });
         card.addEventListener("dragend", () => {
           card.classList.remove("dragging");
+          board.querySelector(".reorder-indicator")?.remove()
           document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
           document.querySelectorAll(".drag-over").forEach(c => c.classList.remove("drag-over"));
         }, { signal: __signal });
@@ -182,14 +183,16 @@ export function initKanbanArea(
       cardsContainer.addEventListener("dragover", event => {
         const drag = event as DragEvent
         drag.preventDefault()
-        const dragging = col.querySelector(".kanban-card.dragging")
+        const dragging = col.querySelector<HTMLElement>(".kanban-card.dragging")
         const targetList = dropList(drag)
         cardsContainer.querySelector(".reorder-indicator")?.remove()
         if (!dragging || dragging.parentElement !== targetList) return
+        const position = getReorderPosition(targetList, dragging, drag)
+        if (!position) return
 
         const indicator = document.createElement("div")
         indicator.className = "reorder-indicator"
-        targetList.insertBefore(indicator, getDragAfterElement(targetList, drag.clientY))
+        targetList.insertBefore(indicator, position.before ? position.anchor : position.anchor.nextElementSibling)
       }, { signal: __signal })
 
       cardsContainer.addEventListener("dragleave", () => {
@@ -208,17 +211,15 @@ export function initKanbanArea(
 
         drag.stopPropagation()
         col.classList.remove("drag-over")
-        const before = getDragAfterElement(targetList, drag.clientY) as HTMLElement | null
-        const anchor = before ?? Array.from(targetList.querySelectorAll<HTMLElement>(":scope > .kanban-card:not(.dragging)"))
-          .filter(candidate => candidate.getClientRects().length > 0).at(-1)
-        if (!id || !anchor?.dataset.id || id === anchor.dataset.id) return
+        const position = getReorderPosition(targetList, card, drag)
+        if (!id || !position?.anchor.dataset.id) return
 
         pendingMoves.set(card, col)
         try {
           const res = await fetch("/api/tasks/reorder", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ task_id: id, anchor_id: anchor.dataset.id, lane: col.dataset.status, before: Boolean(before) }),
+            body: JSON.stringify({ task_id: id, anchor_id: position.anchor.dataset.id, lane: col.dataset.status, before: position.before }),
           })
           if (!res.ok) throw new Error("Reorder rejected")
           if (!__signal.aborted) await refreshBoard()
@@ -230,26 +231,17 @@ export function initKanbanArea(
       }, { signal: __signal })
     });
 
-    /**
-     * Get the element after which the dragged card should be inserted,
-     * based on the Y position of the mouse during the drag event.
-     */
-    function getDragAfterElement(container: HTMLElement, y: number) {
-      const cards = [
-        ...container.querySelectorAll(":scope > .kanban-card:not(.dragging)"),
-      ];
-      return cards.reduce<{ offset: number; element: Element | null }>(
-        (closest, child) => {
-          if (!child.getClientRects().length) return closest
-          const box = child.getBoundingClientRect();
-          const offset = y - box.top - box.height / 2;
-          if (offset < 0 && offset > closest.offset) {
-            return { offset, element: child };
-          }
-          return closest;
-        },
-        { offset: Number.NEGATIVE_INFINITY, element: null },
-      ).element;
+    function getReorderPosition(container: HTMLElement, card: HTMLElement, event: DragEvent) {
+      const hovered = (event.target as Element | null)?.closest<HTMLElement>(".kanban-card")
+      if (hovered && hovered.dataset.promoted !== card.dataset.promoted) return
+      const peers = Array.from(container.querySelectorAll<HTMLElement>(":scope > .kanban-card:not(.dragging)"))
+        .filter(candidate => candidate !== card && candidate.dataset.promoted === card.dataset.promoted && candidate.getClientRects().length)
+      const before = peers.find(peer => {
+        const box = peer.getBoundingClientRect()
+        return event.clientY < box.top + box.height / 2
+      })
+      const anchor = before ?? peers.at(-1)
+      return anchor ? { anchor, before: Boolean(before) } : undefined
     }
     // Kanban card action handlers
     // T-1903: Edit button opens inline task detail panel (not redirect)

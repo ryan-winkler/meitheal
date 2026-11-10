@@ -253,6 +253,18 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   )}
   {showSortBy && <input type="hidden" id={`${prefix}-sort-by`} value="none" />}
 
+  {view === "kanban" && (
+    <button
+      type="button"
+      class:list={["filter-pill", { "filter-pill--active": Astro.url.searchParams.get("promoted") === "1" }]}
+      data-filter-promoted
+      aria-pressed={Astro.url.searchParams.get("promoted") === "1" ? "true" : "false"}
+    >
+      <span aria-hidden="true">↑</span>
+      <span class="filter-pill__label">{t("kanban.promoted_only", locale)}</span>
+    </button>
+  )}
+
   {/* Clear all button */}
   <button
     type="button"
@@ -355,6 +367,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
     const sortBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sort-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
+    const promotedToggle = toolbar.querySelector<HTMLButtonElement>("[data-filter-promoted]")
     const typeToggles = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__type-btn")
 
     // Advanced Filter controls
@@ -376,6 +389,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     let advancedFilterState = prefix === "kanban" ? initial.advancedFilter ?? null : null
     let { status = "", priority = "" } = initial
     let { rice = "", user = "", labels = [] } = prefix === "kanban" ? initial : {}
+    let promoted = promotedToggle?.getAttribute("aria-pressed") === "true"
     if (prefix === "timeline") {
       if (statusSel) statusSel.value = status
       if (prioritySel) prioritySel.value = priority
@@ -613,6 +627,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         search: search?.value ?? "",
         status: statusSel?.value ?? status,
         priority: prioritySel?.value ?? priority,
+        ...(promotedToggle ? { promoted } : {}),
         rice,
         user: activeUser,
         labels,
@@ -634,7 +649,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const hasGroup = groupBySel && groupBySel.value !== "none"
       const hasSort = sortBySel && sortBySel.value !== "none"
       
-      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || (statusSel?.value ?? status) ||
+      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || promoted || (statusSel?.value ?? status) ||
           (prioritySel?.value ?? priority) || rice || user || labels.length) {
         clearBtn.classList.remove("hidden")
       } else {
@@ -723,6 +738,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     // Clear all button
     clearBtn?.addEventListener("click", () => {
       if (search) search.value = ""
+      setPromoted(false)
       status = priority = rice = user = ""
       labels = []
       ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
@@ -770,6 +786,17 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
       emitChange()
       clearBtn.classList.add("hidden") // Immediate visual feedback
+    })
+
+    function setPromoted(value: boolean) {
+      promoted = value
+      promotedToggle?.setAttribute("aria-pressed", String(value))
+      promotedToggle?.classList.toggle("filter-pill--active", value)
+    }
+
+    promotedToggle?.addEventListener("click", () => {
+      setPromoted(!promoted)
+      emitChange()
     })
     
     // Add Escape key handler to clear filters if they are active

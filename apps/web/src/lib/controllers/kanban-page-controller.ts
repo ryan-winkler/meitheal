@@ -1,13 +1,13 @@
 import { getSelectedAreaId } from "@lib/area-selector-controller"
-import type { FilterState } from "@lib/filter-state"
 import { initKanbanArea } from "@lib/kanban-controller"
-import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters } from "@lib/kanban-query"
+import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initLaneManagementPanel } from "./kanban-lanes"
 import { initKanbanReactionCounts } from "./kanban-reaction-counts"
 
 export interface KanbanRefreshFocus {
   lane?: string
   taskId?: string
+  firstPage?: boolean
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -115,10 +115,12 @@ export function initKanbanPage(signal: AbortSignal): void {
   }
 
   function refresh(focus?: KanbanRefreshFocus) {
-    return load(new URL(desired), focus)
+    const url = new URL(desired)
+    if (focus?.lane && focus.firstPage) setKanbanPage(url, focus.lane, 1)
+    return load(url, focus)
   }
 
-  function filter(values: Partial<FilterState>) {
+  function filter(values: KanbanFilters) {
     const url = new URL(desired)
     const before = url.search
     const previous = readKanbanFilters(url.searchParams)

@@ -10,13 +10,15 @@ import { expect, test } from "@playwright/test"
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
-test("task promotion is shared, typed, and independent of the stored manual order", async ({ request }) => {
+test("task promotion is shared, typed, and independent of the stored manual order", async ({ request, browser }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and the ingress fixture")
+  test.slow()
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-prominence-"))
   const file = join(work, "meitheal.db")
   const db = new DatabaseSync(file)
   let child: ReturnType<typeof fork> | undefined
+  const browserSessions = []
 
   try {
     child = fork(fixture, {
@@ -104,7 +106,68 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     expect(demoted.status()).toBe(200)
     expect(await demoted.json()).toMatchObject({ is_promoted: false, is_favorite: 1, priority: 4 })
     expect(positions().map(row => row.id)).toEqual([third, first, second])
+
+    const insert = db.prepare(`INSERT INTO tasks (id, title, status, kanban_position, idempotency_key, request_id, created_at, updated_at)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`)
+    for (let index = 0; index < 26; index++) {
+      const id = `prominence-page-${index}`
+      insert.run(id, `Paging card ${index}`, 10000 + index, id, id, 1700000000000, 1700000000000)
+    }
+    const targetId = "prominence-page-25"
+    const memberBrowser = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block", reducedMotion: "reduce" })
+    browserSessions.push(memberBrowser)
+    const adminBrowser = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block", viewport: { width: 390, height: 844 } })
+    browserSessions.push(adminBrowser)
+    await memberBrowser.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    await adminBrowser.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await memberBrowser.newPage()
+    await page.goto(ingress + "/tasks")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    const lane = page.locator('.kanban-column[data-status="pending"]')
+    const cards = lane.locator(".kanban-card")
+    const target = lane.locator(`.kanban-card[data-id="${targetId}"]`)
+    await expect(lane.locator("[data-kanban-range]")).toHaveText("1–25 of 29")
+    await expect(target).toHaveCount(0)
+    await lane.getByRole("link", { name: "Next" }).press("Enter")
+    const menuButton = target.getByRole("button", { name: "Task actions for Paging card 25" })
+    await menuButton.scrollIntoViewIfNeeded()
+    await menuButton.press("Enter")
+    const promote = page.getByRole("button", { name: "Promote to top", exact: true })
+    await expect(promote).toBeFocused()
+    await promote.press("Enter")
+    await expect(cards.first()).toHaveAttribute("data-id", targetId)
+    await expect(cards.nth(1)).toHaveAttribute("data-id", third)
+    await expect(menuButton).toBeFocused()
+    await expect(lane.locator("[data-kanban-range]")).toHaveText("1–25 of 29")
+    await expect(target.getByRole("button", { name: /Paging card 25.*Promoted/ })).toBeVisible()
+
+    const filter = page.getByRole("button", { name: "Promoted only" })
+    await filter.press("Enter")
+    await expect(filter).toHaveAttribute("aria-pressed", "true")
+    await expect(page).toHaveURL(/promoted=1/)
+    await expect(cards).toHaveCount(1)
+    await expect(lane).toHaveAttribute("data-total", "29")
+
+    const otherPage = await adminBrowser.newPage()
+    await otherPage.goto(page.url())
+    await expect(otherPage.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    const otherLane = otherPage.locator('.kanban-column[data-status="pending"]')
+    await expect(otherLane.locator(".kanban-card")).toHaveCount(1)
+    await otherLane.getByRole("button", { name: "Task actions for Paging card 25" }).click()
+    await otherPage.getByRole("button", { name: "Remove promotion", exact: true }).click()
+    await expect(otherLane.locator(".kanban-card")).toHaveCount(0)
+    await expect(otherLane).toHaveAttribute("data-total", "29")
+
+    await page.reload()
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    await expect(cards).toHaveCount(0)
+    await page.getByRole("button", { name: "Clear all active filters" }).press("Enter")
+    await expect(filter).toHaveAttribute("aria-pressed", "false")
+    await expect(cards.first()).toHaveAttribute("data-id", third)
+    await lane.getByRole("link", { name: "Next" }).press("Enter")
+    await expect(cards.last()).toHaveAttribute("data-id", targetId)
   } finally {
+    await Promise.allSettled(browserSessions.map(context => context.close()))
     if (child && child.exitCode === null) {
       const exited = once(child, "exit")
       child.kill("SIGTERM")

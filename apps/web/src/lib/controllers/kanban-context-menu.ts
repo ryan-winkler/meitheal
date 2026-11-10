@@ -21,6 +21,7 @@ export function initContextMenu(
   document.body.append(menu)
 
   let trigger: HTMLButtonElement | null = null
+  const pendingPromotions = new Set<string>()
 
   function closeMenu(restoreFocus = false) {
     const previous = trigger
@@ -78,11 +79,40 @@ export function initContextMenu(
     menu.setAttribute("aria-label", btn.title)
     menu.replaceChildren()
 
+    const current = card.closest<HTMLElement>(".kanban-column")
+    const promoted = card.dataset.promoted === "true"
+    if (!pendingPromotions.has(id)) {
+      const action = promoted
+        ? window.mI18n?.get("kanban.demote_card") ?? "Remove promotion"
+        : window.mI18n?.get("kanban.promote_card") ?? "Promote to top"
+      addAction(action, async () => {
+        pendingPromotions.add(id)
+        try {
+          const response = await fetch(buildTaskApiUrl(id), {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ is_promoted: !promoted }),
+            signal,
+          })
+          if (!response.ok) throw new Error("Promotion rejected")
+          if (signal.aborted) return
+          showToast(promoted
+            ? window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"
+            : window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+          const lane = current?.dataset.status
+          await refreshBoard(lane ? { taskId: id, lane, firstPage: !promoted } : { taskId: id })
+        } catch {
+          if (!signal.aborted) showToast(window.mI18n?.get("kanban.promotion_failed") ?? "Couldn’t save the promotion. Try again.", "error")
+        } finally {
+          pendingPromotions.delete(id)
+        }
+      })
+    }
+
     const label = document.createElement("p")
     label.className = "ctx-heading"
     label.textContent = window.mI18n?.get("kanban.move_to") ?? "Move to"
     menu.append(label)
-    const current = card.closest(".kanban-column")
     for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
       if (lane === current) continue
       const title = lane.querySelector(".kanban-column-title")?.textContent?.trim()

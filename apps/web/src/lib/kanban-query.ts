@@ -4,6 +4,7 @@ import type { FilterState } from "./filter-state"
 export const KANBAN_PAGE_SIZE = 25
 const PAGE_PREFIX = "kp."
 export const KANBAN_GROUP_KEY = "meitheal-kanban-group-by"
+export type KanbanFilters = Partial<FilterState> & { promoted?: boolean }
 
 export function storedKanbanGroup(): string {
   try { return localStorage.getItem(KANBAN_GROUP_KEY) ?? "none" } catch { return "none" }
@@ -31,7 +32,7 @@ function readRules(raw: string | null): FilterGroup | undefined {
   } catch { /* ignore malformed URL input */ }
 }
 
-export function readKanbanFilters(params: URLSearchParams): Partial<FilterState> {
+export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
   const list = (name: string) => (params.get(name) ?? "").split(",").filter(Boolean).slice(0, 50)
   return {
     area: params.get("area") ?? "",
@@ -39,6 +40,7 @@ export function readKanbanFilters(params: URLSearchParams): Partial<FilterState>
     user: params.get("user") ?? "",
     status: params.get("status") ?? "",
     priority: params.get("priority") ?? "",
+    promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",
     groupBy: params.get("groupBy") ?? "none",
     types: list("types"),
@@ -47,7 +49,7 @@ export function readKanbanFilters(params: URLSearchParams): Partial<FilterState>
   }
 }
 
-export function updateKanbanFilters(url: URL, filters: Partial<FilterState>): void {
+export function updateKanbanFilters(url: URL, filters: KanbanFilters): void {
   for (const key of ["area", "search", "user", "status", "priority", "rice", "groupBy"] as const) {
     const value = filters[key]
     if (value && (key !== "groupBy" || value !== "none")) url.searchParams.set(key, value)
@@ -59,6 +61,8 @@ export function updateKanbanFilters(url: URL, filters: Partial<FilterState>): vo
     if (values?.length) url.searchParams.set(key, values.join(","))
     else url.searchParams.delete(key)
   }
+  if (filters.promoted) url.searchParams.set("promoted", "1")
+  else url.searchParams.delete("promoted")
   if (filters.advancedFilter?.conditions.length) url.searchParams.set("advancedFilter", encodeURIComponent(JSON.stringify(filters.advancedFilter)))
   else url.searchParams.delete("advancedFilter")
   for (const key of Array.from(url.searchParams.keys())) {
