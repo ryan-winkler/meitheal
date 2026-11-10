@@ -453,3 +453,24 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   await chooser.selectOption("ice")
   await expect(page.getByRole("spinbutton", { name: "Ease", exact: true })).toHaveValue("9")
 })
+
+
+test("board refresh on a direct comment ticket preserves its background URL", async ({ page, request }) => {
+  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
+  const response = await request.post("/api/tasks", { data: { title: "Ticket background refresh fixture" } })
+  expect(response.status()).toBe(201)
+  const { id } = await response.json()
+  try {
+    await page.goto(`/tickets/${id}?comment=3`)
+    await expect(page.locator("#td-title")).toHaveValue("Ticket background refresh fixture")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("boardRefresh"))
+      await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+      expect((await refresh).status()).toBe(200)
+      await expect.poll(() => page.evaluate(() => history.state?.ticketDrawer?.returnTo)).toMatch(/\/tasks#kanban$/)
+    }
+    await page.keyboard.press("Escape")
+    await expect(page).toHaveURL(/\/tasks#kanban$/)
+  } finally { expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204) }
+})

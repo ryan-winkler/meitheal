@@ -369,3 +369,5 @@ The ingress fixture observes the bounded body-parser module when it waits for th
 Framework creation accepts finite numeric bounds and formulas using declared fields, numbers, parentheses and the four arithmetic operators. Unsupported stored formulas display an explicit framework error; edit the definition before scoring. Framework field bounds render as text attributes, including records retained from older versions. Evaluation saves use the normalized task version and retain estimates after a conflict. Assist suggestions preserve fields they do not replace and do not redraw a different framework selected during the request.
 
 The OpenAPI comment-list schema includes comment fields and `can_manage` in one object so schema validation accepts actual API responses.
+
+Keep CommonJS `sanitize-html` external in the Astro dev server; bundle it only in the production server build. Forcing it through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
