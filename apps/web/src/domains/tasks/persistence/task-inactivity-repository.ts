@@ -64,7 +64,8 @@ export class TaskInactivityRepository {
     const args = [areaId, proposed ?? null, now]
     const where = filterSql(filter)
     const [policies, areas, result, enabled] = await this.client.batch([
-      { sql: "SELECT scope, days, revision FROM task_inactivity_policy WHERE scope IN ('default', ?)",
+      { sql: `SELECT scope, days, CASE WHEN ${validInactivityRevisionSql} THEN revision END AS revision
+          FROM task_inactivity_policy WHERE scope IN ('default', ?)`,
         args: [selectedScope(areaId)] },
       areaCatalogSql,
       { sql: `${rowsCte}, filtered AS MATERIALIZED (SELECT * FROM dated WHERE ${where}),

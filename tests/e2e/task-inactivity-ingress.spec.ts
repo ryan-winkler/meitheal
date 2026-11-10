@@ -132,6 +132,23 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(status).toHaveText("Inactivity policy saved.")
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
 
+    await days.fill("2")
+    await page.getByRole("button", { name: "Preview change" }).click()
+    await expect(save).toBeEnabled()
+    const demoted = once(child, "message", { signal: AbortSignal.timeout(3_000) })
+    child.send({ type: "fixture-core", user: "admin", groupIds: ["system-users"] })
+    await demoted
+    await page.evaluate(() => { document.documentElement.dataset.inactivityDocument = "original" })
+    await save.click()
+    await expect(status).toHaveText("Your browser account could not access this action.")
+    await expect(content).toBeHidden()
+    await expect(rows.locator("li")).toHaveCount(0)
+    await expect(page.locator("html")).toHaveAttribute("data-inactivity-document", "original")
+    expect(await page.evaluate(() => sessionStorage.getItem("meitheal-ingress-reload"))).toBeNull()
+    const restored = once(child, "message", { signal: AbortSignal.timeout(3_000) })
+    child.send({ type: "fixture-core", user: "admin", groupIds: ["system-admin"] })
+    await restored
+
     await setOwner("member")
     await page.reload()
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
@@ -142,6 +159,10 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await changed
     expect((await pinRequest(page, api, "POST", requestBody)).status).toBe(403)
     expect((await pinRequest(page, api, "POST", { action: "board", ids: ["browser-card"] })).status).toBe(403)
+    await page.getByLabel("Show").selectOption("ready")
+    await expect(status).toHaveText("Your browser account could not access this action.")
+    await expect(content).toBeHidden()
+    await expect(rows.locator("li")).toHaveCount(0)
 
     await setOwner("admin")
     await page.reload()

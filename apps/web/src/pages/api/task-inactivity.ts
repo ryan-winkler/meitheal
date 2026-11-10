@@ -89,12 +89,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
     if (allAreas !== (action.areaGeneration === null) || allAreas === (action.expectedAreaCatalogRevision === null)) {
       return problem(400, "Preview the policy scope before saving.")
     }
-  } else if (user && !await isCurrentActiveHAUser(user.id, { fresh: true })) {
+  } else if (user && !await isCurrentActiveHAUser(user.id, { fresh: true, signal: request.signal })) {
     return problem(403, "Home Assistant could not verify this browser account.")
   }
 
+  if (request.signal.aborted) return problem(499, "The inactivity request was cancelled.")
   try {
     await ensureSchema()
+    if (request.signal.aborted) return problem(499, "The inactivity request was cancelled.")
     const repo = new TaskInactivityRepository(getPersistenceClient())
     const now = Date.now()
     if (action.action === "board") {

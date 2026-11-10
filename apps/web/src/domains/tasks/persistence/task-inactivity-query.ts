@@ -37,7 +37,7 @@ export const inactivityTaskSql = `tasks.deferred_at IS NULL
   AND ${unscheduled}
   AND NOT EXISTS (SELECT 1 FROM calendar_confirmations WHERE task_id = tasks.id)`
 
-export const validInactivityRevisionSql = "length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*'"
+export const validInactivityRevisionSql = "length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*'"
 const validatedDays = `CASE WHEN ${validInactivityRevisionSql} THEN days ELSE 0 END`
 const defaultDays = `(SELECT ${validatedDays} FROM task_inactivity_policy WHERE scope = 'default')`
 

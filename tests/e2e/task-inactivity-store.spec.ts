@@ -63,7 +63,7 @@ async function setPolicy(repo: TaskInactivityRepository, areaId: string | null, 
 }
 
 test("starts off, applies elapsed day boundaries, and honors explicit scope", async ({ db, inactivity }) => {
-  expect(getSchemaVersion()).toBe(16)
+  expect(getSchemaVersion()).toBe(17)
   await insertArea(db, "other")
   await seed(db, "ready", new Date(now - 8 * day).toISOString())
   await seed(db, "upcoming", now - day, "default", "todo")
@@ -256,6 +256,10 @@ test("fails closed for a persisted revision with trailing NUL bytes", async ({ d
   await db.execute("PRAGMA ignore_check_constraints=ON")
   await db.execute("UPDATE task_inactivity_policy SET revision = revision || char(0) || 'invalid'")
   await db.execute("PRAGMA ignore_check_constraints=OFF")
+  await expect(preview(inactivity)).rejects.toThrow("Malformed inactivity policy")
+  expect(await inactivity.hasEnabledPolicy()).toBe(false)
+  expect(await sweepInactiveTasks(db, now)).toBe(0)
+  await db.execute("UPDATE task_inactivity_policy SET revision = substr(revision, 1, 31) || char(0)")
   await expect(preview(inactivity)).rejects.toThrow("Malformed inactivity policy")
   expect(await inactivity.hasEnabledPolicy()).toBe(false)
   expect(await sweepInactiveTasks(db, now)).toBe(0)

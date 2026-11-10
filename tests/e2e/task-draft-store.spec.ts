@@ -31,7 +31,7 @@ test("CLI and runtime reconcile draft storage around an existing ordinary task",
     expect(migrate()).toContain("Applied migration: 0006_task_drafts.mjs")
     expect(migrate("--check")).toContain("Migration check passed")
     await ensureSchema()
-    expect(getSchemaVersion()).toBe(16)
+    expect(getSchemaVersion()).toBe(17)
 
     const initial = getPersistenceClient()
     await initial.batch([
@@ -46,7 +46,7 @@ test("CLI and runtime reconcile draft storage around an existing ordinary task",
 
     await ensureSchema()
     const upgraded = getPersistenceClient()
-    expect(getSchemaVersion()).toBe(16)
+    expect(getSchemaVersion()).toBe(17)
     expect(() => migrate("--check")).toThrow(/Pending migrations: 0006_task_drafts.mjs/)
     expect(migrate()).toContain("Applied migration: 0006_task_drafts.mjs")
     expect(migrate("--check")).toContain("Migration check passed")
