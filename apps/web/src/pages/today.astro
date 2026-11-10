@@ -158,14 +158,16 @@ function unscheduledLink(page: number): string {
 const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
 const todayHeroSignal = `${todayTasks.length} due today · ${carriedForwardTasks.length} carried forward`
 const todayDate = new Date()
-const todayLocale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
-const todayTimezone = Astro.locals.timezone || "Europe/Dublin"
-const todayParts = Object.fromEntries(new Intl.DateTimeFormat("en", { timeZone: todayTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(todayDate).map(part => [part.type, part.value]))
-const todayDateKey = `${todayParts.year}-${todayParts.month}-${todayParts.day}`
-const todayDateLabel = new Intl.DateTimeFormat(todayLocale, {
+const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
+const todayDateLabel = new Intl.DateTimeFormat(locale, {
   weekday: "long", day: "numeric", month: "long",
-  timeZone: todayTimezone,
+  timeZone: todayTimeZone,
 }).format(todayDate)
+const todayDateParts = new Intl.DateTimeFormat("en-IE", {
+  year: "numeric", month: "2-digit", day: "2-digit", timeZone: todayTimeZone,
+}).formatToParts(todayDate)
+const todayIsoDate = ["year", "month", "day"].map(type => todayDateParts.find(part => part.type === type)?.value).join("-")
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
 ---
 
@@ -204,7 +206,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <header class="today-summary">
         <div>
           <h1>Today</h1>
-          <p class="today-summary__date"><time datetime={todayDateKey}>{todayDateLabel}</time></p>
+          <p class="today-summary__date"><time datetime={todayIsoDate}>{todayDateLabel}</time></p>
         </div>
         <p class="today-summary__signal" id="today-signal-summary">{todayHeroSignal}</p>
       </header>

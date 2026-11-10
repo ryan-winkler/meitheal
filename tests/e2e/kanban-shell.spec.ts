@@ -55,6 +55,37 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
+  test("color saves keep focus on the card during the request and after refresh", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title: "Color focus regression", priority: 2 } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    let release: (() => void) | undefined
+    try {
+      await page.reload()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      const more = card.locator(".card-more-btn")
+      await page.route(`**/api/tasks/${id}`, async route => {
+        if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+        await route.continue()
+      })
+      await card.hover()
+      await card.locator(".card-color-btn").click()
+      await page.getByRole("radio", { name: "Set color: Blue", exact: true }).press("Enter")
+      await expect(card.locator(".card-color-btn")).toBeDisabled()
+      await expect(more).toBeFocused()
+      await expect.poll(() => Boolean(release)).toBe(true)
+      release?.()
+      await expect(card.locator(".card-color-btn")).toHaveAttribute("data-color", "#3b82f6")
+      await expect(more).toBeFocused()
+    } finally {
+      release?.()
+      await page.unroute(`**/api/tasks/${id}`)
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("manage lanes opens the lane management panel", async ({ page }) => {
     const panel = page.locator("#lane-mgmt")
 

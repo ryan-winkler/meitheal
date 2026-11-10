@@ -85,7 +85,8 @@
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
-        const drawerSession = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+          byte => byte.toString(16).padStart(2, "0")).join("")
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         function beginScopedWrite() {
@@ -135,7 +136,7 @@
             const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
             url.searchParams.delete("open")
             url.searchParams.delete("comment")
-            if (getLegacyTaskId(url.hash) !== null) url.hash = "kanban"
+            if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
             if (legacy || replace) history.replaceState(state, "", target)
             else {

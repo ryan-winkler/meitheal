@@ -13,11 +13,13 @@ Use a disposable development host for changes to ingress, Supervisor integration
 1. Install devcontainer support in a compatible editor such as VS Code and open the repository.
 2. Choose **Reopen in Container** using the checked-in [devcontainer configuration](../../.devcontainer/devcontainer.json).
 3. In the container, run the **Start Home Assistant** editor task or run `supervisor_run`.
-4. Build the candidate with Docker Buildx from the workspace root, using the architecture and base image in `meitheal-hub/build.json`. Push it to a registry reachable by the disposable Supervisor.
-5. Stage the App manifest and AppArmor profile in the local App directory. In the staged copy, set `image` to the test registry’s image template and keep `version` aligned with the tested tag. Supervisor pulls a configured registry image during installation.
+4. Build the Canary candidate with the shared `meitheal-hub/Dockerfile`, using the architecture and base image in `meitheal-hub-canary/build.json`. Push it to a registry reachable by the disposable Supervisor.
+5. Stage the `meitheal-hub-canary` manifest and shared AppArmor profile in the local App directory. Keep slug `meitheal_canary` and image family `meitheal-canary-{arch}`. In the staged copy, set the image registry to the disposable registry and keep `version` aligned with the tested tag. Supervisor pulls the configured image during installation. Keep one installed Meitheal App; back up and retire any older fixture before installing its replacement.
 6. Run `ha store reload`. Install the local App and open its web UI from Home Assistant. Record the exact image digest, App and Home Assistant versions, ingress roles tested, and AppArmor state.
 
-The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal`. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal-hub-canary`. Older versions use `/mnt/supervisor/addons/local/meitheal-hub-canary`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+
+The privileged development container masks `getty@tty1.service`, `getty@.service` and `serial-getty@.service` before starting init, so a guest login prompt cannot claim a host console. Preserve the checked-in command when overriding startup. It uses the real `/usr/bin/systemctl --root=/` before init and exits if masking fails; a PATH-resolved systemctl shim may require systemd to be running already.
 
 ## Local configuration and recovery
 

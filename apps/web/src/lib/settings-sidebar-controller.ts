@@ -30,6 +30,12 @@ const SIDEBAR_LABELS: Record<string, string> = {
   mentionInbox: "Mentions",
 }
 
+function customLinkId(): string {
+  const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    byte => byte.toString(16).padStart(2, "0")).join("")
+  return `custom-${id}`
+}
+
 // ───── Init ─────
 
 export function initSidebarSettings(): void {
@@ -63,7 +69,7 @@ export function initSidebarSettings(): void {
       const href = (row.querySelector(".custom-item-href") as HTMLInputElement).value
       if (label || href) {
         finalCustomItems.push({
-          id: (row as HTMLElement).dataset.customId || `custom-${crypto.randomUUID()}`,
+          id: (row as HTMLElement).dataset.customId || customLinkId(),
           label: label || "Link",
           href: href || "/",
           icon: "link",
@@ -349,7 +355,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
     // Wire up "Add Custom Link" button locally
     pageLifecycle.on(window, "meitheal:sidebar-add-custom-link", () => {
-      customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
+      customItems.push({ id: customLinkId(), label: "New Link", href: "/", icon: "link" })
       renderSidebarList()
     })
 

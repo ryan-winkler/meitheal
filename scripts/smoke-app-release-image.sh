@@ -40,6 +40,12 @@ trap cleanup EXIT
   printf "%s" "$health" |
     node -e '\''const health = JSON.parse(require("node:fs").readFileSync(0)); if (health.version !== process.env.EXPECTED_VERSION || health.db_integrity !== "ok") process.exit(1)'\''
   curl -fsS http://127.0.0.1:3000/today > /dev/null
+  curl -fsS http://127.0.0.1:3000/api/frameworks |
+    node -e '\''const {data} = JSON.parse(require("node:fs").readFileSync(0)); const ids = new Set(data.filter(f => f.source === "built-in").map(f => f.id)); if (!["rice", "ice", "eisenhower", "heart", "moscow", "wsjf", "ddd", "drice", "kcs"].every(id => ids.has(id))) process.exit(1)'\''
+  collision_status="$(curl --silent --output /tmp/framework-collision.json --write-out "%{http_code}" \
+    --json "{\"id\":\"rice\",\"name\":\"RICE\",\"archetype\":\"formula\",\"badgeThresholds\":[],\"formula\":\"reach\",\"fields\":[{\"key\":\"reach\",\"label\":\"Reach\",\"type\":\"number\",\"uiType\":\"number\",\"weight\":1,\"helpText\":\"\"}]}" \
+    -H "Origin: http://127.0.0.1:3000" http://127.0.0.1:3000/api/frameworks)"
+  test "$collision_status" = 409
   curl -fsS --json "{\"title\":\"Release smoke fixture\"}" \
     -H "Origin: http://127.0.0.1:3000" http://127.0.0.1:3000/api/tasks |
     node -e '\''const task = JSON.parse(require("node:fs").readFileSync(0)); if (!task.id || task.title !== "Release smoke fixture") process.exit(1)'\''

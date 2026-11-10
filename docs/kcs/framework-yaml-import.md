@@ -19,3 +19,6 @@ If the dialog stays open, read its error before retrying:
 Existing `application/json` clients keep their camelCase configuration payload and validation behavior. Both representations use the existing authorization and ingress-safe fetch path. See the generated OpenAPI `createFramework` operation for request formats and responses.
 
 Run `pnpm --filter @meitheal/tests test e2e/framework-yaml-import.spec.ts e2e/client-translations.spec.ts`. Browser/API checks require the existing disposable fixture (`MEITHEAL_TEST_BROWSER=1`) after building. Check an actual Settings import behind ingress, invalid and oversized input, a duplicate ID, and a server failure. Build and run the unchanged `perf:budget` check to verify aggregate client bytes; code splitting alone does not reduce that total.
+
+
+Built-in framework list, detail, override/reset and YAML export use the existing Astro `frameworks` content collection. Astro includes those definitions in the packaged SSR output; APIs must not resolve YAML relative to a compiled chunk or require the source checkout. A missing production catalog can hide built-in ID conflicts even while the ticket editor's SSR fallback still shows RICE. Verify the packaged registry includes the baked definitions and rejects imports that shadow a built-in. Export returns the built-in defaults, including while user overrides are active.

@@ -148,14 +148,14 @@ entries in this response. No provider list or language filter is applied. A
 configured integration without a loaded conversation agent is not runnable and
 will not appear until Home Assistant loads it.
 
-Both pickers refresh when opened and offer **Refresh agents**. Discovery bypasses
+Both pickers refresh when opened and offer **Refresh agents**. Keyboard focus stays on Refresh while discovery runs; repeated activation is ignored. Refresh and discovery status use the selected language. Proxy failures with HTML or empty responses show a stable discovery error instead of a JSON parser exception. Discovery bypasses
 browser caching. A saved agent ID stays selected if the agent is removed or HA
 cannot be reached; it is never silently replaced by the default. An unavailable
 agent is labelled in the picker. Ask Home Assistant prevents sending to an agent
 confirmed missing by a successful discovery. Select an available agent, or fix
 its integration in HA and refresh. A failed discovery displays a retry message
 while preserving the last selection. This failure is separate from the app's
-own connection to its server.
+own connection to its server. The compact app status beside Settings remains reachable through its accessible description. Operator logs distinguish static `invalid_agent_payload` and `websocket_request_failed` reasons without recording the HA payload.
 
 Ask Home Assistant keeps its chat and HA conversation ID when closed and
 reopened on the same page. Changing the selected agent starts a new conversation.
@@ -171,12 +171,16 @@ not establish Supervisor permissions or HA integration health.
 Upstream contract: [HA conversation WebSocket implementation](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/http.py)
 and [registered-agent manager](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/agent_manager.py).
 
-Regional preferences apply on the next page request after a successful Settings save. Today formats its readable date and machine-readable date in the same workspace timezone.
-
 ## Verify a Settings change
 
 Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
 
 Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
 
-Saved To-do selections support JSON arrays and legacy single entity IDs. If a custom AI handoff URL is invalid, the task drawer explains how to correct it in Automation & AI and leaves the provider window closed.
+## Navigation and daily review
+
+Ticket links retain the background view when changing board pages or using keyboard view shortcuts. Closing a legacy ticket link returns to its source page. Direct ticket URLs select Tasks in the mobile tab bar. On local HTTP, drawer and custom-link IDs use the browser's available cryptographic random source. Project deletion keeps the Home Assistant ingress path.
+
+Today formats its visible and machine-readable dates in the workspace timezone, using the selected language. Evening dismissal and snoozing use the browser's local calendar date; blocked browser storage does not stop the review controls.
+
+Regional preferences decode persisted JSON and apply on the next page after a successful Settings save. Invalid stored time zones fall back to Europe/Dublin. Saved To-do selections support JSON arrays and legacy single entity IDs. Invalid custom AI URLs explain how to correct Automation & AI settings without opening a provider window.

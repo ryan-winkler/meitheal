@@ -233,7 +233,7 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 - Keep existing third-party notices and the separate license files in `integrations/`.
 - Integration code in `integrations/` communicates with the core through network APIs.
-- Keep the license and notices with future image builds. Use `LicenseRef-Meitheal-Source-Available-1.0` for the Meitheal grant.
+- Keep the license and notices with future image builds. `LicenseRef-Meitheal-Source-Available-1.0` describes the Meitheal source grant. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
 - Keep contributor agreements in the repository’s signing workflow.
 - Keep private signing keys outside Git.
 

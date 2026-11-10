@@ -21,29 +21,34 @@ const { locale } = Astro.props;
   >
     <span class="nav-icon"><Icon name="settings" /></span>
     <span class="nav-label">{t("nav.settings", locale)}</span>
-    <span
-      class="status-indicator sidebar-readiness"
-      id="connection-status"
-      role="status"
-      aria-live="polite"
-      data-ready={t("status.app_ready", locale)}
-      data-storage-offline={t("status.db_offline", locale)}
-      data-unreachable={t("status.app_unreachable", locale)}
-    >
-      <span class="status-dot w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>
-      <span class="status-text sr-only">{t("status.checking", locale)}</span>
-    </span>
   </a>
+  <span
+    class="status-indicator sidebar-readiness"
+    id="connection-status"
+    role="status"
+    aria-live="polite"
+    data-ready={t("status.app_ready", locale)}
+    data-storage-offline={t("status.db_offline", locale)}
+    data-unreachable={t("status.app_unreachable", locale)}
+  >
+    <span class="status-dot w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>
+    <span class="status-text sr-only">{t("status.checking", locale)}</span>
+  </span>
 </div>
 
 <style>
   .sidebar-footer {
+    position: relative;
     padding-block: 0.5rem 0;
   }
 
   .sidebar-readiness {
     display: inline-flex;
-    margin-inline-start: auto;
+    position: absolute;
+    inset-inline-end: 12px;
+    top: calc(50% + 0.25rem);
+    transform: translateY(-50%);
+    pointer-events: none;
     flex: none;
   }
 </style>

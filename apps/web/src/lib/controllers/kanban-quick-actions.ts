@@ -5,10 +5,10 @@
  * @kcs Extracted from kanban-controller.ts for decomposition.
  *      Manages the shared popover system and all quick-action card buttons.
  */
-import type { KanbanRefreshFocus } from "./kanban-page-controller"
 import { createClientLogger } from "@lib/client-logger"
 import { sanitizeCssColor } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
+import type { KanbanRefreshFocus } from "./kanban-page-controller"
 
 const log = createClientLogger("kanban:quick-actions")
 
@@ -63,9 +63,8 @@ export function initQuickActions(
 
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
-    const focus = button.closest(".kanban-card")?.querySelector<HTMLButtonElement>(".card-more-btn")
     close()
-    focus?.focus()
+    button.closest(".kanban-card")?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
     button.disabled = true
     try {
       const response = await fetch(buildTaskApiUrl(taskId), {

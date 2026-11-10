@@ -1,0 +1,14 @@
+{
+	"pid": 1409887,
+	"port": 4640,
+	"url": "http://127.0.0.1:4640",
+	"urls": {
+		"local": [
+			"http://127.0.0.1:4640/"
+		],
+		"network": [],
+		"networkInterfaceNames": []
+	},
+	"background": true,
+	"startedAt": "2026-11-10T22:17:44.914Z"
+}

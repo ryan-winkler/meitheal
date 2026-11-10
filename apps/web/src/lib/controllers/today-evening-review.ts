@@ -14,18 +14,28 @@ import { showToast } from "../toast"
 
 const EVENING_REVIEW_KEY = "meitheal-evening-review-dismissed"
 
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
+function rememberDismissal(date: string): void {
+  try { localStorage.setItem(EVENING_REVIEW_KEY, date) } catch { /* Storage can be blocked in embedded contexts. */ }
+}
+
 export function setupEveningReview(
   container: HTMLElement,
   lm: ListenerManager,
 ): void {
   container.querySelector(".evening-review-banner")?.remove()
-  const currentHour = new Date().getHours()
+  const now = new Date()
+  const currentHour = now.getHours()
   if (currentHour < 18) return // Only show after 6 PM
 
   // Check if already dismissed today
-  const todayStr = new Date().toISOString().split("T")[0]
-  const dismissed = localStorage.getItem(EVENING_REVIEW_KEY)
-  if (dismissed === todayStr) return
+  const todayStr = localDateKey(now)
+  try {
+    if (localStorage.getItem(EVENING_REVIEW_KEY) === todayStr) return
+  } catch { /* Continue the review when storage is unavailable. */ }
 
   // Count incomplete tasks
   const incompleteTasks = container.querySelectorAll(".tli:not(.tli--done)")
@@ -58,14 +68,14 @@ export function setupEveningReview(
   }
 
   lm.on(banner.querySelector(".evening-dismiss")!, "click", () => {
-    localStorage.setItem(EVENING_REVIEW_KEY, todayStr!)
+    rememberDismissal(todayStr)
     banner.remove()
   })
 
   lm.on(banner.querySelector(".evening-snooze-all")!, "click", async () => {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
-    const dateStr = tomorrow.toISOString().split("T")[0]!
+    const dateStr = localDateKey(tomorrow)
 
     const ids = Array.from(incompleteTasks).map(el =>
       (el as HTMLElement).dataset.id
@@ -74,7 +84,7 @@ export function setupEveningReview(
     try {
       await Promise.all(ids.map(id => taskApi.updateTask(id, { due_date: dateStr })))
       showToast("common.task_snoozed")
-      localStorage.setItem(EVENING_REVIEW_KEY, todayStr!)
+      rememberDismissal(todayStr)
       setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-evening-reschedule" } })), 500)
     } catch {
       showToast("common.failed", "error")

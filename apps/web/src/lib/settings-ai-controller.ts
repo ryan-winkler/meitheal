@@ -1,4 +1,3 @@
-import { t, getClientLocale } from "../i18n/client"
 import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
 import { withAsyncButton } from "@lib/async-button"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
@@ -11,6 +10,7 @@ import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { getClientLocale, t } from "../i18n/client"
 
 function renderAgentBadge(select: HTMLSelectElement, label?: string) {
   const badge = document.getElementById("ha-agent-status")
@@ -25,11 +25,13 @@ function initHaAgentSettings() {
     renderAgentBadge(select)
     const status = document.getElementById("ha-agent-discovery-status")
     if (status) status.textContent = select.selectedOptions[0]?.dataset.unavailable === "true"
-      ? t("settings.ha_agent_missing", getClientLocale())
-      : t("settings.ha_agent_choose_saved", getClientLocale())
+      ? t("settings.ha_agent_selected_unavailable", getClientLocale())
+      : t("settings.ha_agent_save_hint", getClientLocale())
   })
   const refresh = document.getElementById("refresh-ha-agents")
-  if (refresh) pageLifecycle.on(refresh, "click", () => { if (refresh.getAttribute("aria-disabled") !== "true") void restoreHaAgent(select.value) })
+  if (refresh) pageLifecycle.on(refresh, "click", () => {
+    if (refresh.getAttribute("aria-busy") !== "true") void restoreHaAgent(select.value)
+  })
   const section = select.closest<HTMLElement>("[data-settings-shell-section]")
   if (section) {
     const observer = new MutationObserver(() => {
@@ -83,7 +85,10 @@ async function restoreHaAgent(savedAgent: unknown) {
   const status = document.getElementById("ha-agent-discovery-status")
   const refresh = document.querySelector<HTMLButtonElement>("#refresh-ha-agents")
   if (status) status.textContent = t("settings.ha_agent_loading", getClientLocale())
-  if (refresh) { refresh.setAttribute("aria-disabled", "true"); refresh.setAttribute("aria-busy", "true") }
+  if (refresh) {
+    refresh.setAttribute("aria-disabled", "true")
+    refresh.setAttribute("aria-busy", "true")
+  }
   try {
     const agents = await fetchHaAgents(signal)
     if (signal.aborted || version !== agentDiscoveryVersion) return
@@ -91,14 +96,17 @@ async function restoreHaAgent(savedAgent: unknown) {
     const missing = renderHaAgentOptions(select, agents, select.value)
     renderAgentBadge(select)
     if (status) status.textContent = missing
-      ? t("settings.ha_agent_missing", getClientLocale())
-      : agents.length ? t("settings.ha_agent_count", getClientLocale(), { count: String(agents.length) }) : t("settings.ha_agent_empty", getClientLocale())
+      ? t("settings.ha_agent_selected_unavailable", getClientLocale())
+      : agents.length ? t("settings.ha_agent_available_count", getClientLocale(), { count: String(agents.length) }) : t("settings.ha_agent_none", getClientLocale())
   } catch (error) {
     if (signal.aborted || version !== agentDiscoveryVersion) return
     renderAgentBadge(select, t("settings.ha_agent_discovery_unavailable", getClientLocale()))
-    if (status) status.textContent = `${error instanceof Error ? error.message : "Agent discovery failed"}. ${t("settings.ha_agent_retry", getClientLocale())}`
+    if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: error instanceof Error ? error.message : t("settings.ha_agent_discovery_failed", getClientLocale()) })
   } finally {
-    if (!signal.aborted && version === agentDiscoveryVersion && refresh) { refresh.setAttribute("aria-disabled", "false"); refresh.setAttribute("aria-busy", "false") }
+    if (!signal.aborted && version === agentDiscoveryVersion && refresh) {
+      refresh.setAttribute("aria-disabled", "false")
+      refresh.setAttribute("aria-busy", "false")
+    }
   }
 }
 

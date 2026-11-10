@@ -7,8 +7,8 @@ const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const canaryVersion = /^[0-9a-f]{12}$/
 const architectures = { amd64: "linux/amd64", aarch64: "linux/arm64" }
 const channels = {
-  stable: { dir: "meitheal-hub", slug: "meitheal", image: "meitheal" },
-  canary: { dir: "meitheal-hub-canary", slug: "meitheal_canary", image: "meitheal-canary" },
+  stable: { dir: "meitheal-hub", slug: "meitheal", image: "ghcr.io/ryan-winkler/meitheal-{arch}" },
+  canary: { dir: "meitheal-hub-canary", slug: "meitheal_canary", image: "ghcr.io/coolock-village/meitheal-canary-{arch}" },
 }
 
 function fail(message) {
@@ -40,7 +40,7 @@ function channelConfig(channel) {
   for (const [name, config] of Object.entries(channels)) {
     const source = join(root, config.dir)
     const manifest = readFileSync(join(source, "config.yaml"), "utf8")
-    const image = `ghcr.io/ryan-winkler/${config.image}-{arch}`
+    const image = config.image
     const imageFields = manifest.match(/^image: .+$/gm)
     if (imageFields?.length !== 1 || imageFields[0] !== `image: "${image}"`) fail("Unexpected App image template")
     const slugFields = manifest.match(/^slug: .+$/gm)

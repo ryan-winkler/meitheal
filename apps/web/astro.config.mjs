@@ -39,7 +39,10 @@ export default defineConfig({
     name: "compact-server-output",
     hooks: {
       "astro:build:setup": ({ target, updateConfig }) => {
-        if (target === "server") updateConfig({ build: { minify: true }, ssr: { noExternal: ["date-fns", "date-fns-tz", "zod", "yaml", "home-assistant-js-websocket", "parse5-html-rewriting-stream", "sanitize-html"] } })
+        if (target === "server") updateConfig({
+          ssr: { noExternal: ["date-fns", "date-fns-tz", "zod", "yaml", "home-assistant-js-websocket", "parse5-html-rewriting-stream", "sanitize-html"] },
+          build: { minify: "terser", terserOptions: { keep_fnames: true, keep_classnames: true } },
+        })
       },
     },
   }],

@@ -169,11 +169,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   function updateControls() {
     submitBtn.disabled = sending || loadingAgents || !input.value.trim() || agentSelect.dataset.agentUnavailable === "true"
-    if ((sending || loadingAgents) && document.activeElement === agentSelect) input.focus()
-    agentSelect.disabled = sending || loadingAgents
+    const busy = sending || loadingAgents
+    if (busy && document.activeElement === agentSelect) input.focus({ preventScroll: true })
+    agentSelect.disabled = busy
     if (refreshAgents) {
-      refreshAgents.setAttribute("aria-disabled", String(sending || loadingAgents))
-      refreshAgents.setAttribute("aria-busy", String(loadingAgents))
+      refreshAgents.setAttribute("aria-disabled", String(busy))
+      refreshAgents.setAttribute("aria-busy", String(busy))
     }
   }
 
@@ -223,7 +224,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
   }
 
-  if (refreshAgents) pageLifecycle.on(refreshAgents, "click", () => { if (!sending && !loadingAgents) void loadAgents() })
+  if (refreshAgents) pageLifecycle.on(refreshAgents, "click", () => {
+    if (!loadingAgents && !sending) void loadAgents()
+  })
   pageLifecycle.on(agentSelect, "change", () => {
     sessionStorage.setItem("meitheal:assist-agent", agentSelect.value)
     agentSelect.dataset.agentUnavailable = String(agentSelect.selectedOptions[0]?.dataset.unavailable === "true")
@@ -389,7 +392,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       updateControls()
     }
     initHints();
-    setTimeout(() => input?.focus(), 50);
+    setTimeout(() => {
+      if (!signal.aborted && isModalOpen && !overlay?.contains(document.activeElement)) input?.focus();
+    }, 50);
   };
 
   pageLifecycle.on(document.body, "click", (e) => {
