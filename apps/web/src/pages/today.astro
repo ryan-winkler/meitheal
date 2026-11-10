@@ -197,14 +197,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       data-today-section
     >
       <div class="page-hero">
-        <div class="page-hero__eyebrow">Home Assistant Native Daily Cockpit</div>
         <div class="page-hero__title-row">
           <div class="page-hero__copy">
-            <h1 class="page-hero__title">A calmer command surface for today</h1>
-            <p class="page-hero__description">
-              Capture quickly, see what is truly due, and keep habits, calendar context,
-              and task flow aligned inside the same local-first execution surface.
-            </p>
+            <h1 class="page-hero__title">Today</h1>
           </div>
 
           <div class="page-hero__chips" aria-label="Today quick jumps">
@@ -292,11 +287,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="page-shell__intro">
         <div>
           <div class="page-shell__eyebrow">Focus</div>
-          <h2 class="page-shell__title">See the next best move before the long list</h2>
-          <p class="page-shell__description">
-            The focus stack and filters work together here so triage feels deliberate
-            instead of reactive.
-          </p>
+          <h2 class="page-shell__title">Priority tasks</h2>
         </div>
       </div>
 
@@ -400,11 +391,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="page-shell__intro">
         <div>
           <div class="page-shell__eyebrow">Triage</div>
-          <h2 class="page-shell__title">Reduce carry-over before it crowds out today</h2>
-          <p class="page-shell__description">
-            Overdue work and suggestions belong together so the page helps you make
-            cleanup choices first.
-          </p>
+          <h2 class="page-shell__title">Overdue and suggested tasks</h2>
         </div>
       </div>
 
@@ -453,10 +440,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="page-shell__intro">
         <div>
           <div class="page-shell__eyebrow">Work</div>
-          <h2 class="page-shell__title">Run the actual queue without losing context</h2>
+          <h2 class="page-shell__title">Your task list</h2>
           <p class="page-shell__description">
-            Pinned work, today’s commitments, calendar context, and unscheduled tasks
-            stay together as the main operating surface.
+            Open Unscheduled to find tasks without a due date, including ones added by Home Assistant automations.
           </p>
         </div>
       </div>
@@ -560,11 +546,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="page-shell__intro">
         <div>
           <div class="page-shell__eyebrow">Habits</div>
-          <h2 class="page-shell__title">Keep routines attached to real work</h2>
-          <p class="page-shell__description">
-            Habits stay visible here as execution support, not as a separate tracking
-            world detached from the rest of Meitheal.
-          </p>
+          <h2 class="page-shell__title">Your routines</h2>
         </div>
       </div>
 
@@ -617,33 +599,30 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="page-shell__intro">
         <div>
           <div class="page-shell__eyebrow">Flow</div>
-          <h2 class="page-shell__title">Shift context when today narrows or broadens</h2>
-          <p class="page-shell__description">
-            Today is the execution cockpit. When work needs a wider horizon or a different lens, these handoffs keep context intact.
-          </p>
+          <h2 class="page-shell__title">Other views</h2>
         </div>
       </div>
 
       <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="🧭" variant="tip">
-        <p>These links connect your daily cockpit to the wider system. <strong>Tasks Hub</strong> shows all views (Kanban, Calendar, Table, Timeline). <strong>Planning</strong> helps prioritise. <strong>Progress</strong> tracks routines and goals.</p>
+        <p>Open <strong>Tasks Hub</strong> for Kanban, Calendar, Table or Timeline. Use <strong>Planning</strong> to prioritise and <strong>Progress</strong> to review routines and goals.</p>
       </InlineHelper>
 
       <div class="page-flow-grid">
         <a class="card page-flow-card" href="/upcoming">
           <strong>📅 Upcoming</strong>
-          <p>Move into the next-week view when today's queue dries up.</p>
+          <p>See what’s due in the next seven days.</p>
         </a>
         <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
           <strong>🗓️ Calendar</strong>
-          <p>See the full month horizon and plan around events.</p>
+          <p>See tasks and events by date.</p>
         </a>
         <a class="card page-flow-card" href="/planning#eisenhower">
           <strong>⚡ Eisenhower</strong>
-          <p>Sort by urgency × importance when the queue feels overwhelming.</p>
+          <p>Sort tasks by urgency and importance.</p>
         </a>
         <a class="card page-flow-card" href="/tasks#kanban">
           <strong>📊 Kanban</strong>
-          <p>Track status across lanes when work moves in stages.</p>
+          <p>Move tasks between status columns.</p>
         </a>
         <a class="card page-flow-card" href="/progress#routines">
           <strong>🏆 Progress</strong>
