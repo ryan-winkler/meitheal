@@ -1,3 +1,3 @@
 pytest-homeassistant==2026.11.1
-# Match the Supervisor client required by the 2026.11.1 hassio integration.
-aiohasupervisor==0.8.1
+# Supervisor client exercised by the Core integration enrollment tests.
+aiohasupervisor==0.10.0
