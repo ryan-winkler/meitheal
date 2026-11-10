@@ -55,7 +55,7 @@ interface MeithealWindowExtensions {
     [key: string]: unknown;
   };
   /** I18n translation map */
-  mI18n?: Map<string, string>;
+  mI18n?: { locale: import("../lib/locale").Locale; get: (key: string, locale?: import("../lib/locale").Locale) => string };
 
   // === Strategic Lens ===
   /** Attaches strategic lens evaluator for a task (registered by StrategicEvaluator.astro) */

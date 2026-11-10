@@ -678,8 +678,8 @@ export function initRulesSettings(): void {
       try {
         // Send YAML as-is to server for parsing (using parseFrameworkConfig on server)
         // But we need a simpler approach: parse YAML client-side and POST as JSON
-        const yamlModule = await import("yaml")
-        const parsed = yamlModule.parse(yamlText) as Record<string, unknown>
+        const { parse: parseYaml } = await import("yaml")
+        const parsed = parseYaml(yamlText) as Record<string, unknown>
 
         if (!parsed || !parsed.name) {
           if (yamlImportErrors) {
