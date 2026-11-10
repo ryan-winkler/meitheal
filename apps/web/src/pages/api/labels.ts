@@ -43,7 +43,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const input = typeof body.title === "string" ? body.title : ""
-    const title = stripHtml(input.trim())
+    const title = stripHtml(input).trim()
 
     if (!title) {
       return apiError("title is required", 400);

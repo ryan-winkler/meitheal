@@ -375,3 +375,5 @@ Keep CommonJS dependencies such as `sanitize-html` and `yaml` external in the As
 Assist scoring ignores undeclared fields and non-primitive suggestions. Malformed framework field arrays return validation errors. Regional preferences retain Saturday week starts and validate saved date formats. Custom/Ollama handoff never substitutes another provider when its URL is missing or unavailable; recovery messages follow the chosen language.
 
 Built-in catalog and field descriptions survive packaged discovery and YAML export. The Settings link exposes the current readiness tooltip while retaining its full click target. Switching tickets resets an aborted Assist action. Both Supervisor build metadata files use the same Proprietary image license label as the Dockerfile.
+
+Search keeps one persistent live announcement region; retry controls remain outside it. Task table controls use the shared table stylesheet, including dynamically created rows. Label names are trimmed after HTML stripping so task creation and the labels API share a stable normalized name. CI action revisions are pinned to verified release commits.

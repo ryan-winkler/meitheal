@@ -131,7 +131,7 @@ Complete → Archive → Delete (selective) → Purge (everything)
 
 Open **Tasks → Inactivity** to see open work that is ready to move to Deferred or within seven elapsed days of its cutoff. The rule starts Off. An administrator can set a shared interval and give an Area its own interval, turn the Area Off, or let it inherit. Preview the proposed policy before saving. If an Area or rule changes while you review, preview again before saving. Existing work that is already past the new cutoff can move at the next sweep.
 
-The cutoff uses the most recent task activity, including comments and a real Resume. Scheduled work, reminders, recurring work, and confirmed calendar links, and active work with open prerequisites are protected. Automatic moves keep the task's workflow status. The Deferred queue identifies automatic moves and offers **Resume**, which starts a fresh inactivity window.
+The cutoff uses the most recent task activity, including comments and a real Resume. Scheduled work, reminders, recurring work, confirmed calendar links and active work with open prerequisites are protected. Automatic moves keep the task's workflow status. The Deferred queue identifies automatic moves and offers **Resume**, which starts a fresh inactivity window.
 
 ## Task participation
 

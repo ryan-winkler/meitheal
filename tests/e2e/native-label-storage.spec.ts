@@ -52,6 +52,16 @@ test("concurrent case variants resolve to one label", async () => {
   expect(await listed.json()).toHaveLength(1)
 })
 
+test("HTML stripping and API validation retain an idempotent trimmed label title", async () => {
+  const request = (title: string) => new Request("http://localhost/api/labels", { method: "POST", body: JSON.stringify({ title }) })
+  const created = await POST({ request: request(" home <b>") } as Parameters<typeof POST>[0])
+  expect(created.status).toBe(201)
+  const label = await created.json()
+  expect(label.title).toBe("home")
+  expect(await createLabel(label.title)).toMatchObject({ id: label.id, title: "home" })
+  expect((await POST({ request: request("<b> </b>") } as Parameters<typeof POST>[0])).status).toBe(400)
+})
+
 test("the source release serves native labels and has no legacy route", async ({ request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable production fixture")
   const response = await request.post("/api/labels", {
