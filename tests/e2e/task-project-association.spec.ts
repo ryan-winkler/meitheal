@@ -102,6 +102,43 @@ test("createTask without project_id defaults to null", async () => {
   expect(tasks).toHaveLength(0)
 })
 
+test("completing a recurring task keeps the next occurrence in its project", async ({ request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+  const area = await request.post("/api/areas", { data: { name: "Recurring project area" } })
+  expect(area.status()).toBe(201)
+  const { id: areaId } = await area.json()
+  const project = await request.post("/api/projects", { data: { title: "Recurring work", area_id: areaId } })
+  expect(project.status()).toBe(201)
+  const { id: projectId } = await project.json()
+  const title = "Recurring project checklist"
+  const assignment = { area_id: areaId, assigned_to: "custom_recurring_fixture" }
+  const created = await request.post("/api/tasks", {
+    data: {
+      ...assignment, title, project_id: projectId, due_date: "2031-02-14",
+      recurrence_rule: "FREQ=DAILY", checklists: JSON.stringify([{ text: "Check supplies", done: true }]),
+    },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const complete = await request.patch(`/api/tasks/${id}`, { data: { status: "complete" } })
+  expect(complete.status()).toBe(200)
+
+  const list = await request.get("/api/tasks", { params: { q: title, due_date: "2031-02-15" } })
+  expect(list.status()).toBe(200)
+  const { tasks } = await list.json()
+  expect(tasks).toHaveLength(1)
+  const next = await request.get(`/api/tasks/${tasks[0].id}`)
+  expect(next.status()).toBe(200)
+  const occurrence = await next.json()
+  expect(occurrence.id).not.toBe(id)
+  expect(occurrence).toMatchObject({
+    ...assignment, title, project_id: projectId, status: "pending", due_date: "2031-02-15",
+    recurrence_rule: "FREQ=DAILY",
+  })
+  expect(JSON.parse(occurrence.checklists)).toEqual([{ text: "Check supplies", done: false }])
+})
+
 test("task detail reassigns projects, rejects a deleted destination, and preserves the task", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
 

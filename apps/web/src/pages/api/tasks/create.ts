@@ -84,6 +84,7 @@ function createCalendarAdapter(): CalendarIntegrationAdapter {
 export const POST: APIRoute = async ({ request, locals }) => {
   const body = (await request.json().catch(() => ({}))) as {
     title?: string;
+    description?: string;
     assigned_to?: string | null;
     frameworkPayload?: Record<string, unknown>;
     calendar?: {
@@ -97,6 +98,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const rawTitle = typeof body.title === "string" ? body.title : "";
   const title = sanitize(rawTitle).trim();
+  const legacyDescription = body.frameworkPayload?.description
+  const rawDescription = typeof body.description === "string" ? body.description
+    : typeof legacyDescription === "string" ? legacyDescription : ""
+  const description = sanitize(rawDescription.slice(0, 10_000))
 
   if (!title) {
     return apiError("title is required", 400);
@@ -124,6 +129,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const result = await createTaskAndSyncCalendar(
     {
       title,
+      description,
       assignedTo,
       ...(body.frameworkPayload ? { frameworkPayload: body.frameworkPayload } : {}),
       requestId,

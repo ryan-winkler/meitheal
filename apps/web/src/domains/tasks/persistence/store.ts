@@ -1077,20 +1077,21 @@ export async function findTaskById(taskId: string): Promise<PersistedTask | null
   return toTask(taskRow);
 }
 
-export async function persistInitialPlan(plan: CreateTaskPlan): Promise<void> {
+export async function persistInitialPlan(plan: CreateTaskPlan, description: string | null): Promise<void> {
   const now = Date.now();
 
   await getClient().batch([
     {
       sql: `
         INSERT INTO tasks(
-          id, title, status, framework_payload, calendar_sync_state,
+          id, title, description, status, framework_payload, calendar_sync_state,
           ticket_number, idempotency_key, request_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
       `,
       args: [
         plan.aggregate.task.id,
         plan.aggregate.task.title,
+        description,
         plan.aggregate.task.status,
         JSON.stringify(plan.aggregate.task.frameworkPayload),
         plan.aggregate.calendarSyncState,

@@ -24,6 +24,7 @@ export interface CalendarDefaults {
 
 export interface CreateTaskAndSyncInput {
   title: string;
+  description?: string
   assignedTo?: string | null;
   frameworkPayload?: Record<string, unknown>;
   requestId: string;
@@ -112,7 +113,7 @@ export async function createTaskAndSyncCalendar(
   const plan = createTaskWithFrameworkAndCalendarSync(command);
 
   try {
-    await persistInitialPlan(plan);
+    await persistInitialPlan(plan, input.description || null)
   } catch (error) {
     if (isIdempotencyConflict(error)) {
       const recovered = await findByIdempotencyKey(input.idempotencyKey);

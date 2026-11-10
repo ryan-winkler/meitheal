@@ -60,6 +60,8 @@ An invalid, revoked, or expired token returns HTTP 401. A valid token without pe
 2. Create a task with `POST /api/tasks`. The response includes its ID at the top level.
 3. Update the task with `PATCH /api/tasks/{id}`. Set `status` to `complete` when the work is done.
 
+The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
+
 ### Retry a task mutation
 
 For an authenticated task mutation, send the same `Idempotency-Key` and resend the same method, path, query, content type, and body when retrying. The retry key is limited to 255 characters. Retryable request bodies are limited to 64 KiB. A matching request that is still running returns HTTP 409. The server can replay a recent successful JSON response of up to 16 KiB, with up to 256 entries held per process. Calendar-aware task creation also stores the scoped retry digest in SQLite.

@@ -1004,7 +1004,7 @@ export class TaskRepository {
   async getRecurrenceData(id: string): Promise<TaskRow | null> {
     const result = await this.client.execute({
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels,
-                   area_id, parent_id, task_type, assigned_to, checklists, custom_fields
+                   area_id, project_id, parent_id, task_type, assigned_to, checklists, custom_fields
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
@@ -1035,12 +1035,15 @@ export class TaskRepository {
       } catch { /* keep null */ }
     }
 
-     await this.client.execute({
+    // Resolve the project in the insert so legacy references and concurrent
+    // project deletion cannot create a dangling reference.
+    await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               recurrence_rule, recurrence_anchor, area_id, parent_id, task_type, assigned_to,
+                               recurrence_rule, recurrence_anchor, area_id, project_id, parent_id, task_type, assigned_to,
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         newId,
         sourceTask.title ? String(sourceTask.title) : "Recurring task",
@@ -1052,6 +1055,7 @@ export class TaskRepository {
         recurrenceRule,
         sourceTask.recurrence_anchor ? String(sourceTask.recurrence_anchor) : "due_date",
         sourceTask.area_id ? String(sourceTask.area_id) : "default",
+        sourceTask.project_id ?? null,
         sourceTask.parent_id ? String(sourceTask.parent_id) : null,
         sourceTask.task_type ? String(sourceTask.task_type) : "task",
         sourceTask.assigned_to ? String(sourceTask.assigned_to) : null,
