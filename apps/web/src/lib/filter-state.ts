@@ -14,6 +14,7 @@
 import { VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 
 import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
+import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
 
 // =============================================================================
@@ -197,7 +198,9 @@ function normalizeTableRules(raw: unknown): FilterGroup | undefined {
         id: typeof item.id === "string" && item.id.length <= 100 ? item.id : String(count),
         field,
         operator: operator as FilterOperator,
-        value: value ?? "",
+        value: field === "status" && typeof value === "string" && (operator === "equals" || operator === "notEquals")
+          ? normalizeStatus(value)
+          : value ?? "",
         ...(item.logic === "OR" || item.logic === "AND" ? { logic: item.logic } : {}),
       })
     }
@@ -227,7 +230,9 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
   const result: Partial<FilterState> = {}
   for (const key of ["search", "status", "priority", "rice", "user"] as const) {
     const value = input[key]
-    if (typeof value === "string" && value && value.length <= 500) result[key] = value
+    if (typeof value === "string" && value && value.length <= 500) {
+      result[key] = key === "status" ? normalizeStatus(value) : value
+    }
     else if ((key === "search" || key === "priority") && typeof value === "number" && Number.isFinite(value)) {
       result[key] = String(value)
     } else if (key === "search" && typeof value === "boolean") result.search = String(value)

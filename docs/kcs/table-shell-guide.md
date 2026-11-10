@@ -45,7 +45,7 @@ The type icon in each row has a text equivalent. Completed rows stay readable an
 
 Table reads filters and presentation with `readTableFilterParams`. An explicit `area_id` takes priority over `area` and the legacy `board` query key. An empty Area explicitly shows all Areas. Only a URL that omits Area uses the browser's remembered Area. Presets and Search write the normalized `area` key.
 
-The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
+The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Older status values such as `todo` appear with their current status. Custom statuses keep their names. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
 
 ### Table rows could not update
 

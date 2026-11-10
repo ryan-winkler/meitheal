@@ -1,4 +1,5 @@
 import { getGroupKey, isTaskVisible, type FilterState } from "./filter-state"
+import { CANONICAL_STATUSES, normalizeStatus, STATUS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
 import { formatTicketKey } from "./ticket-key"
 
@@ -26,7 +27,7 @@ interface TableRow {
 
 const groupOrders: Record<string, readonly string[]> = {
   rice: ["high", "medium", "low", "none"],
-  status: ["backlog", "pending", "active", "complete"],
+  status: CANONICAL_STATUSES,
   type: ["epic", "story", "task"],
 }
 
@@ -84,6 +85,7 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
     return direction === "desc" ? -order : order
   }
 
+  const byId = new Map<string, TaskViewItem>()
   const matching = new Map<string, { task: TaskViewItem; group: string; subgroup: string }>()
   const groups = new Map<string, TableGroupStats>()
   const subgroups = new Map<string, TableGroupStats>()
@@ -91,7 +93,13 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
   const subgroupOrder = new Map<string, number>()
   let active = 0
   let overdue = 0
-  for (const task of tasks) {
+  for (const source of tasks) {
+    const status = normalizeStatus(source.status)
+    const isDone = status === STATUS.COMPLETE
+    const task = status === source.status ? source : {
+      ...source, status, is_done: isDone, is_overdue: !isDone && source.is_overdue,
+    }
+    byId.set(task.id, task)
     const row = {
       dataset: {
         title: task.title.toLowerCase(),
@@ -112,7 +120,7 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
     const subgroup = subgroupBy === "none" ? "" : JSON.stringify([group, getGroupKey(row, subgroupBy)])
     matching.set(task.id, { task, group, subgroup })
     recordMatch(total, task.rice)
-    if (task.status === "active" && task.deferred_at === null) active++
+    if (task.status === STATUS.ACTIVE && task.deferred_at === null) active++
     if (task.is_overdue) overdue++
     if (groupBy === "none") continue
     groupStats(groups, group, task.rice)
@@ -123,7 +131,6 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
   }
 
   const ordered: TableRow[] = []
-  const byId = new Map(tasks.map(task => [task.id, task]))
   if (groupBy !== "none") {
     const matches = [...matching.values()]
     matches.sort((a, b) => compareGroups(groupBy, a.group, b.group)
@@ -133,7 +140,7 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
   } else {
     const children = new Map<string, TaskViewItem[]>()
     const roots: TaskViewItem[] = []
-    for (const task of tasks) {
+    for (const task of byId.values()) {
       if (!task.parent_id || !byId.has(task.parent_id)) {
         roots.push(task)
         continue
@@ -144,17 +151,31 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
     }
     if (column) roots.sort(compare)
     const visited = new Set<string>()
-    function append(task: TaskViewItem, depth: number, parentId?: string) {
-      if (visited.has(task.id)) return
-      visited.add(task.id)
-      const included = matching.has(task.id)
-      if (included) ordered.push({ task, depth, parentId, hasChildren: false })
-      for (const child of children.get(task.id) ?? []) {
-        append(child, depth + Number(included), included ? task.id : parentId)
+    const stack: Array<{ task: TaskViewItem; depth: number; parentId?: string | undefined }> = []
+    function append(root: TaskViewItem) {
+      stack.push({ task: root, depth: 0 })
+      while (stack.length) {
+        const { task, depth, parentId } = stack.pop()!
+        if (visited.has(task.id)) continue
+        visited.add(task.id)
+        const included = matching.has(task.id)
+        if (included) ordered.push({ task, depth, parentId, hasChildren: false })
+
+        // Push in reverse to keep the original depth-first sibling order.
+        const siblings = children.get(task.id) ?? []
+        for (let index = siblings.length - 1; index >= 0; index--) {
+          stack.push({
+            task: siblings[index]!,
+            depth: depth + Number(included),
+            parentId: included ? task.id : parentId,
+          })
+        }
       }
     }
-    for (const root of roots) append(root, 0)
-    for (const task of tasks) append(task, 0)
+    for (const root of roots) append(root)
+    for (const task of byId.values()) {
+      if (!visited.has(task.id)) append(task)
+    }
   }
 
   const pageCount = Math.max(1, Math.ceil(ordered.length / TABLE_PAGE_SIZE))

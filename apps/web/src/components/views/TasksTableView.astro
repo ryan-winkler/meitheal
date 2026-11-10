@@ -13,7 +13,7 @@ import type { Locale } from "../../lib/locale";
 import { formatRegionalDate } from "../../lib/date";
 import { formatTicketKey } from "../../lib/ticket-key";
 import { getTasksForView } from "../../lib/task-queries";
-import { STATUS_CONFIG } from "../../lib/status-config";
+import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
 import { readTableFilterParams } from "../../lib/filter-state"
 import { getTablePage } from "../../lib/table-page"
 
@@ -260,10 +260,11 @@ const priorityClasses: Record<number, string> = {
                         data-id={task.id}
                         aria-label={`Status for ${task.title}`}
                       >
+                        {!CANONICAL_STATUSES.includes(task.status) && <option value={task.status} selected>{task.status}</option>}
                         {STATUS_CONFIG.map((s) => (
                           <option
                             value={s.canonical}
-                            selected={task.status === s.canonical || (s.canonical === "complete" && task.is_done)}
+                            selected={task.status === s.canonical}
                           >
                             {t(s.i18nKey as any, locale)}
                           </option>
