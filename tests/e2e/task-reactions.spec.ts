@@ -153,7 +153,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     const issueToken = async (scopes: string[]) => {
       const response = await request.post(ingress + "/api/agent-tokens", { headers: admin, data: { name: "Fixture", scopes } })
       expect(response.status()).toBe(201)
-      return { authorization: `Bearer ${(await response.json()).token}` }
+      return { authorization: `Bearer ${(await response.json()).token}`, origin }
     }
     const reader = await issueToken(["tasks:read", "mcp:execute"])
     const writer = await issueToken(["tasks:write", "mcp:execute"])
@@ -171,7 +171,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
 
     const tools = async (headers: Record<string, string>) => {
       const response = await request.post(origin + "/api/mcp", {
-        headers: { ...headers, origin }, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        headers, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
       })
       expect(response.status(), await response.text()).toBe(200)
       return (await response.json()).result.tools.map((tool: { name: string }) => tool.name)
@@ -187,7 +187,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
       const response = await request.post(origin + "/api/mcp", {
         headers, data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } },
       })
-      expect(response.status()).toBe(200)
+      expect(response.status(), await response.text()).toBe(200)
       return response.json()
     }
     const mcpAdded = await call(writer, "addTaskCommentReaction", { id: taskId, commentId, content: "MCP reaction" })
