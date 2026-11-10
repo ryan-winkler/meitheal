@@ -15,6 +15,7 @@
 - [Task Lifecycle Glossary](task-lifecycle-glossary.md) - Find task status definitions and transition rules.
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
+- [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
 - [Troubleshooting](troubleshooting.md) - Diagnose common connection, search, and sync problems.
 - [Local feedback queue](feedback-and-support.md) - Understand feedback storage, review, and export.
 

@@ -8,6 +8,7 @@
  * @kcs Framework extensibility — wizard-guided custom framework creation
  */
 
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 
 /** State for the wizard */
@@ -262,12 +263,12 @@ function renderFields(): void {
     if (weightInput) weightInput.value = String(field.weight)
     if (helpInput) helpInput.value = field.helpText
     if (removeBtn) {
-      removeBtn.addEventListener("click", () => removeField(index))
+      pageLifecycle.on(removeBtn, "click", () => removeField(index))
     }
 
     // Auto-generate key from label
     if (labelInput && keyInput) {
-      labelInput.addEventListener("input", () => {
+      pageLifecycle.on(labelInput, "input", () => {
         keyInput.value = slugify(labelInput.value).replace(/-/g, "_")
       })
     }
@@ -348,7 +349,7 @@ function renderBadges(): void {
     if (minInput) minInput.value = String(badge.min)
     if (labelInput) labelInput.value = badge.label
     if (colorSelect) colorSelect.value = badge.color
-    if (removeBtn) removeBtn.addEventListener("click", () => removeBadge(index))
+    if (removeBtn) pageLifecycle.on(removeBtn, "click", () => removeBadge(index))
 
     list.appendChild(clone)
   })
@@ -480,15 +481,18 @@ async function saveFramework(): Promise<boolean> {
   }
 
   try {
+    const signal = pageLifecycle.signal
     const res = await fetch("/api/frameworks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal,
     })
 
     const data = await res.json()
 
-    if (!data.ok) {
+    signal.throwIfAborted()
+    if (!res.ok || data?.ok !== true) {
       const msg = data.errors?.join(". ") || data.message || "Failed to create framework"
       showErrors([msg])
       return false
@@ -535,18 +539,21 @@ export function closeWizard(): void {
   dialog?.close()
 }
 
-export function initFrameworkWizard(onCreated?: () => void): void {
+export function initFrameworkWizard(
+  onCreated?: () => void,
+  mutate: (action: () => Promise<boolean>) => Promise<boolean> = (action) => action(),
+): void {
   const dialog = document.getElementById("framework-wizard-dialog") as HTMLDialogElement | null
   if (!dialog) return
 
   // Close buttons
   $$("[data-action='close']", dialog).forEach((el) => {
-    el.addEventListener("click", closeWizard)
+    pageLifecycle.on(el, "click", closeWizard)
   })
 
   // Step nav buttons
   $$(".fw-wizard-step", dialog).forEach((stepBtn) => {
-    stepBtn.addEventListener("click", () => {
+    pageLifecycle.on(stepBtn, "click", () => {
       const targetStep = Number(stepBtn.dataset.step)
       if (targetStep < state.step) {
         // Allow going back
@@ -560,7 +567,7 @@ export function initFrameworkWizard(onCreated?: () => void): void {
   const nameInput = $("#fw-name") as HTMLInputElement | null
   const idInput = $("#fw-id") as HTMLInputElement | null
   if (nameInput && idInput) {
-    nameInput.addEventListener("input", () => {
+    pageLifecycle.on(nameInput, "input", () => {
       state.name = nameInput.value.trim()
       state.id = slugify(state.name)
       idInput.value = state.id
@@ -569,23 +576,23 @@ export function initFrameworkWizard(onCreated?: () => void): void {
 
   // Archetype change
   $$("input[name='fw-archetype']").forEach((radio) => {
-    radio.addEventListener("change", () => {
+    pageLifecycle.on(radio, "change", () => {
       state.archetype = (radio as HTMLInputElement).value
     })
   })
 
   // Add field
   const addFieldBtn = $("#fw-add-field")
-  if (addFieldBtn) addFieldBtn.addEventListener("click", addField)
+  if (addFieldBtn) pageLifecycle.on(addFieldBtn, "click", addField)
 
   // Add badge
   const addBadgeBtn = $("#fw-add-badge")
-  if (addBadgeBtn) addBadgeBtn.addEventListener("click", addBadge)
+  if (addBadgeBtn) pageLifecycle.on(addBadgeBtn, "click", addBadge)
 
   // Next
   const nextBtn = $("#fw-next-btn")
   if (nextBtn) {
-    nextBtn.addEventListener("click", () => {
+    pageLifecycle.on(nextBtn, "click", () => {
       syncCurrentStep()
       const errors = validateStep(state.step)
       if (errors.length > 0) {
@@ -604,7 +611,7 @@ export function initFrameworkWizard(onCreated?: () => void): void {
   // Previous
   const prevBtn = $("#fw-prev-btn")
   if (prevBtn) {
-    prevBtn.addEventListener("click", () => {
+    pageLifecycle.on(prevBtn, "click", () => {
       syncCurrentStep()
       let prevStep = state.step - 1
       // Skip formula step for non-formula archetypes
@@ -618,11 +625,12 @@ export function initFrameworkWizard(onCreated?: () => void): void {
   // Save
   const saveBtn = $("#fw-save-btn")
   if (saveBtn) {
-    saveBtn.addEventListener("click", async () => {
+    pageLifecycle.on(saveBtn, "click", async () => {
       saveBtn.setAttribute("disabled", "")
       saveBtn.textContent = "Saving…"
 
-      const success = await saveFramework()
+      let success = false
+      try { success = await mutate(saveFramework) } catch (error) { showErrors([`Could not save framework: ${error}`]) }
       if (success) {
         closeWizard()
         onCreated?.()
@@ -634,7 +642,7 @@ export function initFrameworkWizard(onCreated?: () => void): void {
   }
 
   // Close on escape
-  dialog.addEventListener("cancel", (e) => {
+  pageLifecycle.on(dialog, "cancel", (e) => {
     e.preventDefault()
     closeWizard()
   })

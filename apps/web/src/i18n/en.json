@@ -1,4 +1,5 @@
 {
+  "settings.rules_import_partial": "Rules and built-in settings were imported, but a custom framework failed. Review the configuration before retrying.",
   "settings.defaults_restored": "Defaults restored.",
   "settings.framework_created": "Framework created.",
   "settings.framework_imported": "Framework imported.",
