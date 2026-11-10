@@ -1,5 +1,5 @@
 import type { FilterCondition, FilterGroup } from "./filter-engine"
-import type { FilterState } from "./filter-state"
+import { readFilterLabels, writeFilterLabels, type FilterState } from "./filter-state"
 
 export const KANBAN_PAGE_SIZE = 25
 const PAGE_PREFIX = "kp."
@@ -33,7 +33,6 @@ function readRules(raw: string | null): FilterGroup | undefined {
 }
 
 export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
-  const list = (name: string) => (params.get(name) ?? "").split(",").filter(Boolean).slice(0, 50)
   return {
     area: params.get("area") ?? "",
     search: (params.get("search") ?? "").trim().slice(0, 500),
@@ -43,8 +42,8 @@ export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
     promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",
     groupBy: params.get("groupBy") ?? "none",
-    types: list("types"),
-    labels: list("labels"),
+    types: (params.get("types") ?? "").split(",").filter(Boolean).slice(0, 50),
+    labels: readFilterLabels(params),
     advancedFilter: readRules(params.get("advancedFilter")) ?? null,
   }
 }
@@ -56,11 +55,9 @@ export function updateKanbanFilters(url: URL, filters: KanbanFilters): void {
     else if (key === "area") url.searchParams.set(key, "")
     else url.searchParams.delete(key)
   }
-  for (const key of ["types", "labels"] as const) {
-    const values = filters[key]
-    if (values?.length) url.searchParams.set(key, values.join(","))
-    else url.searchParams.delete(key)
-  }
+  if (filters.types?.length) url.searchParams.set("types", filters.types.join(","))
+  else url.searchParams.delete("types")
+  writeFilterLabels(url.searchParams, filters.labels ?? [])
   if (filters.promoted) url.searchParams.set("promoted", "1")
   else url.searchParams.delete("promoted")
   if (filters.advancedFilter?.conditions.length) url.searchParams.set("advancedFilter", encodeURIComponent(JSON.stringify(filters.advancedFilter)))

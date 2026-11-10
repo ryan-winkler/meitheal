@@ -7,6 +7,8 @@
  * Bounded context: lib (shared UI utility)
  */
 
+import { mountDialogOverlay } from "./dialog-overlay"
+
 export interface ConfirmOptions {
   title?: string;
   message: string;
@@ -81,38 +83,35 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     `;
 
     overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
+
 
     // Save previously focused element for restoration
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    mountDialogOverlay(overlay)
 
     // Focus the cancel button by default (safer)
     const cancelBtn = dialog.querySelector("#confirm-cancel") as HTMLButtonElement;
     const okBtn = dialog.querySelector("#confirm-ok") as HTMLButtonElement;
     cancelBtn?.focus();
 
-    let closing = false;
-    const abort = () => cleanup(false);
-    function cleanup(result: boolean) {
-      if (closing) {
-        if (options.signal?.aborted) overlay.remove();
-        return;
+    let settled = false
+    const abort = () => cleanup(false, true)
+    function cleanup(result: boolean, immediate = false) {
+      function remove() {
+        document.removeEventListener("keydown", onKey, true)
+        options.signal?.removeEventListener("abort", abort)
+        overlay.remove()
+        if (!options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
       }
-      closing = true;
-      overlay.style.opacity = "0";
-      document.removeEventListener("keydown", onKey, true);
-      if (options.signal?.aborted) {
-        overlay.remove();
-        resolve(false);
-        return;
+      if (settled) {
+        if (immediate) remove()
+        return
       }
-      setTimeout(() => {
-        options.signal?.removeEventListener("abort", abort);
-        overlay.remove();
-        // Restore focus to the element that was focused before the dialog
-        if (!options.signal?.aborted) previouslyFocused?.focus();
-      }, 100);
-      resolve(result);
+      settled = true
+      overlay.style.opacity = "0"
+      if (immediate) remove()
+      else setTimeout(remove, 100)
+      resolve(result)
     }
 
     cancelBtn?.addEventListener("click", () => cleanup(false));
@@ -130,6 +129,13 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     // Escape cancels and Tab keeps focus in the dialog.
     const focusable = [cancelBtn, okBtn].filter(Boolean);
     function onKey(e: KeyboardEvent) {
+      if (settled) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();

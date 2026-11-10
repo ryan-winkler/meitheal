@@ -8,7 +8,7 @@ description: "Understand the task table and its controls."
 
 ## Open the Table view
 
-Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
+Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
 
 On narrow screens, swipe sideways over the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view while the table scrolls sideways.
 
@@ -19,6 +19,13 @@ On narrow screens, swipe sideways over the table to reach more columns. With a k
 1. Enter text in **Filter by text**, or choose **Filter** above the table to add rules.
 2. Select **Apply Rules**. The current rules are recorded in the URL and apply after reload.
 3. If no rows match, change the filters or use **Clear all active filters** above the table.
+
+### Save a working view
+
+1. Set the filters, grouping, sort and visible columns you want. Use **Labels** for label selection, **Columns** to choose fields and a column header to sort. **Title** is always visible.
+2. Open **Presets**, choose **Save Current Filters** and name the view.
+3. Apply the preset from **Presets** or find it in Search Meitheal under **Views**. Both open Table with the same filters and columns, even if the receiving browser remembers a different Area.
+4. Remove an individual saved filter using its chip, or choose **Clear all active filters**. For a preset with nested rules, use **Clear Rules** before replacing the group with new rules.
 
 ### Open task detail from the dense table
 
@@ -33,7 +40,19 @@ On narrow screens, swipe sideways over the table to reach more columns. With a k
 
 The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
 
+## Table query contract
+
+Table reads filters and presentation with `readTableFilterParams`. An explicit `area_id` takes priority over `area` and the legacy `board` query key. An empty Area explicitly shows all Areas. Only a URL that omits Area uses the browser's remembered Area. Presets and Search write the normalized `area` key.
+
+When moving Table to server paging, apply the same normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Reset `tp` for row-affecting changes and preserve it when toggling Columns. Keep the existing task projection, including project and deferral fields, and use a fresh response for Table row refreshes through ingress and the worker.
+
 ## Troubleshooting
+
+### Saved filters are unavailable
+
+If Presets offers **Activate update**, activate the compatible worker and retry. The list needs a fresh network response and stays unavailable offline. When a legacy preset cannot be read, use **Back to presets** and save a new view from the current Table. An unavailable Area leaves the Table empty until you choose a different Area or clear the filters.
+
+The browser and API clients use the canonical `/api/saved-filters` path. Home Assistant requests retain their ingress prefix. Responses are private and no-store. Encoded or trailing path aliases return 404.
 
 ### Row clicks stop opening task detail
 

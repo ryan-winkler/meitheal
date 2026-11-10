@@ -2,6 +2,7 @@ import { AreaRepository } from "@domains/tasks/persistence/area-repository"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { TaskRepository, type TaskCatalogRow } from "@domains/tasks/persistence/task-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
 import {
   SETTINGS_SECTIONS,
   searchSettingsRegistry,
@@ -41,44 +42,6 @@ function buildTaskSearchItem(row: TaskCatalogRow): SearchResultItem {
       deferred: row.deferred_at != null,
     },
   }
-}
-
-function buildSavedFilterHref(raw: unknown): string {
-  const params = new URLSearchParams()
-
-  let parsed: Record<string, unknown> = {}
-  if (typeof raw === "string" && raw.trim()) {
-    try {
-      parsed = JSON.parse(raw) as Record<string, unknown>
-    } catch {
-      parsed = {}
-    }
-  }
-
-  const mappings: Array<[string, string]> = [
-    ["status", "status"],
-    ["priority", "priority"],
-    ["search", "search"],
-    ["rice", "rice"],
-    ["sort", "sort"],
-    ["groupBy", "groupBy"],
-    ["subGroupBy", "subGroupBy"],
-  ]
-
-  for (const [source, target] of mappings) {
-    const value = parsed[source]
-    if (value == null) continue
-    params.set(target, String(value))
-  }
-
-  if (parsed.area_id) params.set("area", String(parsed.area_id))
-  if (parsed.task_type) params.set("types", String(parsed.task_type))
-  if (Array.isArray(parsed.labels) && parsed.labels.length > 0) {
-    params.set("labels", parsed.labels.map((value) => String(value)).join(","))
-  }
-
-  const suffix = params.toString()
-  return `/table${suffix ? `?${suffix}` : ""}`
 }
 
 function filterByQuery<T extends SearchResultItem>(items: T[], query: string): T[] {
@@ -152,17 +115,22 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
 
     const filters = await settingsRepo.listFilters()
     const savedFilterItems = filterByQuery(
-      filters.map((row) => ({
-        id: String((row as Record<string, unknown>).id ?? ""),
-        kind: "saved_filter" as const,
-        title: String((row as Record<string, unknown>).name ?? "Saved filter"),
-        subtitle: "Open smart view",
-        description: String((row as Record<string, unknown>).icon ?? "🔍"),
-        href: buildSavedFilterHref((row as Record<string, unknown>).query_json),
-        icon: typeof (row as Record<string, unknown>).icon === "string"
-          ? String((row as Record<string, unknown>).icon)
-          : "🔍",
-      })),
+      filters.flatMap((row) => {
+        const state = normalizeSavedFilter(row.query_json)
+        if (!state) return []
+        const params = new URLSearchParams()
+        writeTableFilterParams(params, state)
+        const icon = typeof row.icon === "string" ? row.icon : "🔍"
+        return [{
+          id: String(row.id ?? ""),
+          kind: "saved_filter" as const,
+          title: String(row.name ?? "Saved filter"),
+          subtitle: "Open smart view",
+          description: icon,
+          href: `/table?${params}`,
+          icon,
+        }]
+      }),
       options.query,
     ).slice(0, Math.min(6, options.limit))
 

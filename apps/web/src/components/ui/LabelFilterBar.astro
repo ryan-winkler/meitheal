@@ -1,161 +1,114 @@
 ---
-/**
- * LabelFilterBar — Interactive label filter component
- *
- * @domain labels
- * @bounded-context labels
- *
- * Renders a row of toggleable label chips that filter tasks by label.
- * Fetches available labels from /api/labels on first interaction.
- * Emits 'meitheal:label-filter' custom events when selection changes.
- *
- * Uses existing `.label-filter` CSS classes from `_labels.css`.
- *
- * @prop activeLabels - Currently active label filter names
- * @prop id - Element ID for targeting
- */
 interface Props {
   activeLabels?: string[]
   id?: string
+  view?: string
 }
-
-const {
-  activeLabels = [],
-  id = "label-filter-bar",
-} = Astro.props
+const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
 ---
 
-<div class="label-filter" id={id} data-active={JSON.stringify(activeLabels)}>
-  <span
-    class={`label-filter__chip ${activeLabels.length === 0 ? "label-filter__chip--active" : ""}`}
-    data-label="__all__"
-    role="button"
-    tabindex="0"
-    aria-pressed={activeLabels.length === 0 ? "true" : "false"}
-  >
-    Clear
-  </span>
-  {/* Dynamic label chips populated by client JS */}
-</div>
+<details class="label-filter-panel" id={id} data-active={JSON.stringify(activeLabels)} data-view={view}>
+  <summary class="filter-pill"><span data-label-summary>Labels</span></summary>
+  <div class="label-filter" aria-label="Filter by label">
+    <button type="button" class="label-filter__chip" data-clear-labels>Clear labels</button>
+    <span class="text-sm text-text-muted" data-label-status role="status"></span>
+  </div>
+</details>
 
 <script>
-  type LabelData = { id: number; title: string; hex_color: string }
+  import { loadTableFilterState } from "@lib/filter-state"
+  import { pageLifecycle } from "@lib/page-lifecycle"
 
-  document.querySelectorAll<HTMLElement>(".label-filter").forEach((bar) => {
-    let allLabels: LabelData[] = []
-    let activeLabels: string[] = JSON.parse(bar.dataset.active || "[]")
-    let loaded = false
+  type Label = { title: string; hex_color?: string }
 
-    async function loadLabels() {
-      if (loaded) return
-      try {
-        const res = await fetch("/api/labels")
-        if (res.ok) {
-          const data = await res.json()
-          allLabels = Array.isArray(data) ? data : data.labels || []
+  pageLifecycle.onPageLoad(signal => {
+    document.querySelectorAll<HTMLDetailsElement>(".label-filter-panel").forEach(panel => {
+      const bar = panel.querySelector<HTMLElement>(".label-filter")
+      const summary = panel.querySelector<HTMLElement>("[data-label-summary]")
+      const status = panel.querySelector<HTMLElement>("[data-label-status]")
+      const clear = panel.querySelector<HTMLButtonElement>("[data-clear-labels]")
+      if (!bar || !summary || !status || !clear || panel.dataset.ready) return
+      panel.dataset.ready = "true"
+      signal.addEventListener("abort", () => { delete panel.dataset.ready }, { once: true })
+
+      const view = panel.dataset.view
+      let active = new Set<string>(view === "table" ? loadTableFilterState().labels : JSON.parse(panel.dataset.active ?? "[]"))
+      const labels = new Map<string, Label>()
+      const buttons = new Map<string, HTMLButtonElement>()
+      let loaded = false
+      let loading = false
+
+      function render() {
+        const available = new Set([...labels.keys(), ...active])
+        for (const [name, button] of buttons) {
+          if (available.has(name)) continue
+          if (document.activeElement === button) clear!.focus()
+          button.remove()
+          buttons.delete(name)
+        }
+
+        for (const name of available) {
+          let button = buttons.get(name)
+          if (!button) {
+            button = document.createElement("button")
+            button.type = "button"
+            button.className = "label-filter__chip max-w-full break-all"
+            button.dataset.label = name
+            buttons.set(name, button)
+            bar!.append(button)
+          }
+          const label = labels.get(name)
+          const text = loaded && !label ? `${name} (unavailable)` : name
+          if (button.textContent !== text) button.textContent = text
+          button.classList.toggle("label-filter__chip--active", active.has(name))
+          button.setAttribute("aria-pressed", String(active.has(name)))
+        }
+        clear!.classList.toggle("label-filter__chip--active", !active.size)
+        summary!.textContent = active.size ? `Labels (${active.size})` : "Labels"
+      }
+
+      async function loadLabels() {
+        if (loaded || loading) return
+        loading = true
+        status!.textContent = "Loading labels…"
+        try {
+          const response = await fetch("/api/labels", { signal })
+          if (!response.ok) throw new Error("Labels unavailable")
+          const data = await response.json()
+          if (signal.aborted) return
+          const entries: Label[] = Array.isArray(data) ? data : data.labels ?? []
+          for (const entry of entries) if (typeof entry.title === "string") labels.set(entry.title, entry)
           loaded = true
-
-          // Unhide the border container if there are labels to show
-          const container = bar.closest('.w-full')
-          if (allLabels.length > 0) {
-            container?.classList.remove('hidden')
-            container?.classList.add('mt-2', 'pt-2', 'border-t', 'border-border/40')
-            renderChips()
-          } else {
-            container?.classList.add('hidden')
-          }
-        }
-      } catch { /* offline fallback */ }
-    }
-
-    function renderChips() {
-      // Keep "All" chip, add label chips
-      const allChip = bar.querySelector<HTMLElement>("[data-label='__all__']")
-      // Remove existing dynamic chips
-      bar.querySelectorAll<HTMLElement>("[data-label]:not([data-label='__all__'])").forEach((c) => c.remove())
-
-      for (const label of allLabels) {
-        const chip = document.createElement("span")
-        chip.className = `label-filter__chip${activeLabels.includes(label.title) ? " label-filter__chip--active" : ""}`
-        chip.dataset.label = label.title
-        chip.setAttribute("role", "button")
-        chip.setAttribute("tabindex", "0")
-        chip.setAttribute("aria-pressed", activeLabels.includes(label.title) ? "true" : "false")
-
-        // Color dot
-        const dot = document.createElement("span")
-        dot.className = "label-picker__dot"
-        dot.style.background = label.hex_color.startsWith("#") ? label.hex_color : `#${label.hex_color}`
-        chip.appendChild(dot)
-
-        chip.appendChild(document.createTextNode(label.title))
-        bar.appendChild(chip)
-
-        chip.addEventListener("click", () => toggleLabel(label.title))
-        chip.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault()
-            toggleLabel(label.title)
-          }
-        })
-      }
-
-      // Update "All" chip state
-      if (allChip) {
-        const isAll = activeLabels.length === 0
-        allChip.classList.toggle("label-filter__chip--active", isAll)
-        allChip.setAttribute("aria-pressed", String(isAll))
-      }
-    }
-
-    function toggleLabel(name: string) {
-      if (name === "__all__") {
-        activeLabels = []
-      } else {
-        const idx = activeLabels.indexOf(name)
-        if (idx >= 0) {
-          activeLabels.splice(idx, 1)
-        } else {
-          activeLabels.push(name)
+          status!.textContent = labels.size ? "" : "No labels yet"
+          render()
+        } catch {
+          if (!signal.aborted) status!.textContent = "Labels unavailable. Reopen to retry."
+        } finally {
+          loading = false
         }
       }
 
-      renderChips()
-      emitFilterEvent()
-    }
-
-    function emitFilterEvent() {
-      document.dispatchEvent(
-        new CustomEvent("meitheal:label-filter", {
-          detail: { labels: [...activeLabels] },
-        }),
-      )
-    }
-
-    // "All" chip click handler
-    const allChip = bar.querySelector<HTMLElement>("[data-label='__all__']")
-    allChip?.addEventListener("click", () => toggleLabel("__all__"))
-    allChip?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault()
-        toggleLabel("__all__")
+      panel.addEventListener("toggle", () => {
+        if (panel.open) void loadLabels()
+      }, { signal })
+      bar.addEventListener("click", event => {
+        const button = (event.target as Element).closest<HTMLButtonElement>("button")
+        if (!button) return
+        const name = button.dataset.label
+        if (button === clear) active.clear()
+        else if (name && !active.delete(name)) active.add(name)
+        render()
+        document.dispatchEvent(new CustomEvent("meitheal:label-filter", {
+          detail: { labels: [...active], view },
+        }))
+      }, { signal })
+      if (view === "table") {
+        document.addEventListener("meitheal:table-labels-reset", () => {
+          active = new Set()
+          render()
+        }, { signal })
       }
+      render()
     })
-
-    // Load labels on interaction or immediately if visible
-    if (typeof IntersectionObserver !== "undefined") {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting) {
-            loadLabels()
-            observer.disconnect()
-          }
-        },
-        { threshold: 0.1 },
-      )
-      observer.observe(bar)
-    } else {
-      loadLabels()
-    }
   })
 </script>

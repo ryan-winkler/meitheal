@@ -9,84 +9,42 @@
  * and filter state persistence.
  */
 
-import {
-  saveFilterState,
-  DEFAULT_SORT,
-  type FilterState,
-} from "@lib/filter-state"
+type SortDirection = "asc" | "desc"
 
-// ── Types ─────────────────────────────────────────────────────────────────
-
-interface SortDeps {
-  currentFilterState: Partial<FilterState>
-  currentGroupBy: string
-  setupInlineEditing: () => void
-}
-
-// ── Public API ────────────────────────────────────────────────────────────
-
-export function setupSortableHeaders(deps: SortDeps): void {
-  let currentSortCol = ""
-  let currentSortDir: "asc" | "desc" = "asc"
-
-  // Restore sort from filter state
-  const savedSort = deps.currentFilterState.sort ?? DEFAULT_SORT
-  if (savedSort && savedSort !== DEFAULT_SORT) {
-    const parts = savedSort.split("-")
-    currentSortCol = parts[0] ?? ""
-    currentSortDir = (parts[1] as "asc" | "desc") ?? "asc"
-
-    // Mark the sorted header
-    const header = document.querySelector<HTMLElement>(`th[data-col="${currentSortCol}"]`)
-    if (header) {
-      const indicator = header.querySelector<HTMLElement>(".sort-indicator")
-      if (indicator) indicator.textContent = currentSortDir === "asc" ? "▲" : "▼"
-    }
-  }
-
-  document.querySelectorAll<HTMLElement>("th.sortable").forEach((th) => {
-    th.addEventListener("click", () => {
-      const col = th.dataset.col ?? ""
-      const isNumeric = th.dataset.numeric === "true"
-
-      if (currentSortCol === col) {
-        currentSortDir = currentSortDir === "asc" ? "desc" : "asc"
-      } else {
-        currentSortCol = col
-        currentSortDir = "asc"
-      }
-
-      // Update indicators
-      document.querySelectorAll<HTMLElement>(".sort-indicator").forEach((si) => {
-        si.textContent = ""
-      })
-      const indicator = th.querySelector<HTMLElement>(".sort-indicator")
-      if (indicator) indicator.textContent = currentSortDir === "asc" ? "▲" : "▼"
-
-      // Save sort state
-      deps.currentFilterState.sort = `${col}-${currentSortDir}`
-      saveFilterState(deps.currentFilterState)
-
-      // Sort rows (within groups if grouped, global if not)
-      sortTableRows(col, currentSortDir, isNumeric, deps)
-    })
+export function setupSortableHeaders(
+  signal: AbortSignal,
+  onSort: (column: string, direction: SortDirection) => void,
+  getSort: () => string | undefined,
+): void {
+  document.querySelectorAll<HTMLElement>("#task-table th[data-col]").forEach(header => {
+    header.addEventListener("click", () => {
+      const column = header.dataset.col!
+      onSort(column, getSort() === `${column}-asc` ? "desc" : "asc")
+    }, { signal })
   })
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────
-
-function sortTableRows(col: string, dir: "asc" | "desc", isNumeric: boolean, deps: SortDeps): void {
+export function applyTableSort(sort: string | undefined, grouped: boolean): void {
+  if (!sort) return
+  const [column, direction] = sort.split("-")
+  if (direction !== "asc" && direction !== "desc") return
+  const headers = Array.from(document.querySelectorAll<HTMLElement>("#task-table th[data-col]"))
+  const selected = headers.find(header => header.dataset.col === column)
   const tbody = document.querySelector<HTMLElement>("#task-table tbody")
-  if (!tbody) return
+  if (!selected || !tbody) return
 
-  if (deps.currentGroupBy !== "none") {
-    sortRowsWithinGroups(tbody, col, dir, isNumeric)
-  } else {
-    sortRowsGlobally(tbody, col, dir, isNumeric, deps)
+  for (const header of headers) {
+    const indicator = header.querySelector(".sort-indicator")
+    if (indicator) indicator.textContent = header === selected ? (direction === "asc" ? "▲" : "▼") : ""
+    if (header === selected) header.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending")
+    else header.removeAttribute("aria-sort")
   }
+  const compare = (a: HTMLElement, b: HTMLElement) => compareRows(a, b, column!, direction)
+  if (grouped) sortRowsWithinGroups(tbody, compare)
+  else sortRowsGlobally(tbody, compare)
 }
 
-function sortRowsGlobally(tbody: HTMLElement, col: string, dir: "asc" | "desc", isNumeric: boolean, deps: SortDeps): void {
+function sortRowsGlobally(tbody: HTMLElement, compare: (a: HTMLElement, b: HTMLElement) => number): void {
   const rows = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row"))
   const noResults = tbody.querySelector<HTMLElement>(".no-results-row")
 
@@ -97,17 +55,13 @@ function sortRowsGlobally(tbody: HTMLElement, col: string, dir: "asc" | "desc", 
   // Build child map
   rows.forEach((row) => {
     const parentId = row.dataset.parentId
-    if (parentId) {
+    if (parentId && Number(row.dataset.depth) > 0) {
       if (!childMap.has(parentId)) childMap.set(parentId, [])
       childMap.get(parentId)!.push(row)
     }
   })
 
-  rootRows.sort((a, b) => {
-    const aVal = getCellSortValue(a, col, isNumeric)
-    const bVal = getCellSortValue(b, col, isNumeric)
-    return compareSortValues(aVal, bVal, dir, isNumeric)
-  })
+  rootRows.sort(compare)
 
   // Rebuild with children following parents
   const fragment = document.createDocumentFragment()
@@ -122,29 +76,19 @@ function sortRowsGlobally(tbody: HTMLElement, col: string, dir: "asc" | "desc", 
   tbody.replaceChildren()
   tbody.appendChild(fragment)
 
-  // Re-setup inline editing
-  deps.setupInlineEditing()
 }
 
-function sortRowsWithinGroups(tbody: HTMLElement, col: string, dir: "asc" | "desc", isNumeric: boolean): void {
+function sortRowsWithinGroups(tbody: HTMLElement, compare: (a: HTMLElement, b: HTMLElement) => number): void {
   const headers = Array.from(tbody.querySelectorAll<HTMLElement>(".group-header-row"))
   headers.forEach((header) => {
     const groupRows: HTMLElement[] = []
     let sibling = header.nextElementSibling
-    while (sibling && !sibling.classList.contains("group-header-row") && !sibling.classList.contains("no-results-row")) {
-      if (sibling.classList.contains("table-row")) {
-        groupRows.push(sibling as HTMLElement)
-      }
+    while (sibling instanceof HTMLElement && sibling.classList.contains("table-row")) {
+      groupRows.push(sibling)
       sibling = sibling.nextElementSibling
     }
-
     if (groupRows.length <= 1) return
-
-    groupRows.sort((a, b) => {
-      const aVal = getCellSortValue(a, col, isNumeric)
-      const bVal = getCellSortValue(b, col, isNumeric)
-      return compareSortValues(aVal, bVal, dir, isNumeric)
-    })
+    groupRows.sort(compare)
 
     // Re-insert sorted rows after header
     groupRows.forEach((row) => {
@@ -153,7 +97,7 @@ function sortRowsWithinGroups(tbody: HTMLElement, col: string, dir: "asc" | "des
   })
 }
 
-function getCellSortValue(row: HTMLElement, col: string, isNumeric: boolean): string | number {
+function getCellSortValue(row: HTMLElement, col: string): string | number | null {
   switch (col) {
     case "title":
       return row.dataset.title ?? ""
@@ -168,10 +112,8 @@ function getCellSortValue(row: HTMLElement, col: string, isNumeric: boolean): st
     case "priority":
       return Number(row.dataset.priority ?? 3)
     case "due_date": {
-      const cell = row.querySelector<HTMLElement>(".td-due")
-      const text = cell?.textContent?.trim() ?? ""
-      if (text === "—") return "zzz"
-      return text
+      const timestamp = Date.parse(row.dataset.dueDate ?? "")
+      return Number.isFinite(timestamp) ? timestamp : null
     }
     case "rice":
       return Number(row.dataset.rice ?? -1)
@@ -180,12 +122,12 @@ function getCellSortValue(row: HTMLElement, col: string, isNumeric: boolean): st
   }
 }
 
-function compareSortValues(aVal: string | number, bVal: string | number, dir: "asc" | "desc", isNumeric: boolean): number {
-  let cmp = 0
-  if (isNumeric || typeof aVal === "number") {
-    cmp = (Number(aVal) || 0) - (Number(bVal) || 0)
-  } else {
-    cmp = String(aVal).localeCompare(String(bVal))
-  }
-  return dir === "asc" ? cmp : -cmp
+function compareRows(a: HTMLElement, b: HTMLElement, col: string, direction: SortDirection): number {
+  const aValue = getCellSortValue(a, col)
+  const bValue = getCellSortValue(b, col)
+  if (aValue === null || bValue === null) return Number(aValue === null) - Number(bValue === null)
+  const result = typeof aValue === "number" && typeof bValue === "number"
+    ? aValue - bValue
+    : String(aValue).localeCompare(String(bValue))
+  return direction === "asc" ? result : -result
 }

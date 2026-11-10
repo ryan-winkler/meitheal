@@ -63,7 +63,7 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 
 1. Apply the Kanban filters you need.
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
-3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it.
+3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
 On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
 

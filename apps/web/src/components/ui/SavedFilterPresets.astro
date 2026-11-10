@@ -50,7 +50,7 @@ const { class: className } = Astro.props
     </ul>
 
     <div class="saved-presets__footer">
-      <button type="button" class="saved-presets__save-btn" id="saved-presets-save">
+      <button type="button" class="saved-presets__save-btn" id="saved-presets-save" disabled>
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         Save Current Filters
       </button>
@@ -59,187 +59,329 @@ const { class: className } = Astro.props
 </div>
 
 <script>
+  import { getRememberedAreaId } from "@lib/area-selector-controller"
   import { confirmDialog } from "@lib/confirm-dialog"
+  import { loadTableFilterState, normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
+  import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
+  import { pageLifecycle } from "@lib/page-lifecycle"
   import { promptDialog } from "@lib/prompt-dialog"
-  import { createClientLogger } from "@lib/client-logger"
+  import { loadTableColumnPreferences } from "@lib/table-registry"
 
-  const log = createClientLogger("tasks", "saved-presets")
+  const endpoint = "api/saved-filters"
+  const activeCapability = "MEITHEAL_PRESETS_NETWORK_ONLY"
+  const waitingCapability = "MEITHEAL_PRESETS_WAITING_CAPABLE"
+  const focusKey = "meitheal:table-preset-focus"
 
-  interface SavedFilter {
+  interface Preset {
     id: string
     name: string
     icon: string
     query_json: string
-    position: number
   }
 
-  function initSavedPresets() {
-    const wrapper = document.querySelector(".saved-presets")
-    if (!wrapper || (wrapper as HTMLElement).dataset.initialized) return
-    ;(wrapper as HTMLElement).dataset.initialized = "true"
+  const scopeUrl = () => new URL((window.__ingress_path?.replace(/\/+$/, "") ?? "") + "/", location.origin)
 
-    const toggle = document.getElementById("saved-presets-toggle")
-    const panel = document.getElementById("saved-presets-panel")
-    const closeBtn = document.getElementById("saved-presets-close")
-    const saveBtn = document.getElementById("saved-presets-save")
-    const list = document.getElementById("saved-presets-list")
+  async function registrationFor(scope: URL) {
+    const registration = await navigator.serviceWorker?.getRegistration(scope.href)
+    return registration?.scope === scope.href ? registration : undefined
+  }
 
-    let presets: SavedFilter[] = []
+  async function presetRequest(scope: URL, signal: AbortSignal, init: RequestInit = {}, query = "") {
+    const route = endpoint + query
+    const response = await fetch("/" + route, {
+      ...init,
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
+    })
+    const policy = response.headers.get("cache-control")?.toLowerCase().split(",").map(token => token.trim()) ?? []
+    if (!response.ok || response.url !== new URL(route, scope).href ||
+        !policy.includes("private") || !policy.includes("no-store")) {
+      void response.body?.cancel()
+      throw new Error("Saved filter request failed")
+    }
+    return response.json()
+  }
 
-    async function fetchPresets() {
-      try {
-        const res = await fetch("/api/saved-filters")
-        const data = await res.json()
-        presets = data.filters ?? []
-        renderList()
-      } catch {
-        presets = []
-        renderList()
+  pageLifecycle.onPageLoad(signal => {
+    const wrapper = document.querySelector<HTMLElement>(".saved-presets")
+    const toggle = wrapper?.querySelector<HTMLButtonElement>("#saved-presets-toggle")
+    const panel = wrapper?.querySelector<HTMLElement>("#saved-presets-panel")
+    const list = wrapper?.querySelector<HTMLUListElement>("#saved-presets-list")
+    const save = wrapper?.querySelector<HTMLButtonElement>("#saved-presets-save")
+    if (!wrapper || !toggle || !panel || !list || !save || wrapper.dataset.ready) return
+    wrapper.dataset.ready = "true"
+    const trigger = toggle
+    const panelEl = panel
+    const listEl = list
+    const saveButton = save
+    let generation = 0
+    let read: AbortController | undefined
+    let action: AbortController | undefined
+    let presets: Preset[] = []
+    let receipt: ReturnType<typeof snapshot> | undefined
+    const expanded = () => trigger.getAttribute("aria-expanded") === "true"
+
+    try {
+      const marker = Number(sessionStorage.getItem(focusKey))
+      sessionStorage.removeItem(focusKey)
+      if (location.hash === "#table" && new URLSearchParams(location.search).get("view") === "table" &&
+          Date.now() - marker >= 0 && Date.now() - marker < 15_000) trigger.focus()
+    } catch { /* storage unavailable */ }
+
+    function status(message: string, label?: string, command?: () => void) {
+      const item = document.createElement("li")
+      item.className = "saved-presets__empty"
+      const text = document.createElement("span")
+      text.setAttribute("role", "status")
+      text.textContent = message
+      item.append(text)
+      if (label && command) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.className = "saved-presets__load"
+        button.textContent = label
+        button.addEventListener("click", command, { signal, once: true })
+        item.append(button)
       }
+      listEl.replaceChildren(item)
     }
 
-    function renderList() {
-      if (!list) return
-      list.innerHTML = ""
+    function invalidate() {
+      generation++
+      read?.abort()
+      action?.abort()
+      action = undefined
+      presets = []
+      receipt = undefined
+      saveButton.disabled = true
+      listEl.replaceChildren()
+    }
 
-      if (presets.length === 0) {
-        const li = document.createElement("li")
-        li.className = "saved-presets__empty"
-        li.textContent = "No saved presets yet"
-        list.appendChild(li)
+    function snapshot() {
+      const scope = scopeUrl()
+      const worker = navigator.serviceWorker?.controller ?? null
+      const version = generation
+      const current = () => !signal.aborted && expanded() && version === generation && navigator.onLine &&
+        (navigator.serviceWorker?.controller ?? null) === worker && scopeUrl().href === scope.href
+      return { scope, worker, current }
+    }
+
+    async function refresh() {
+      if (!expanded()) return
+      read?.abort()
+      const request = new AbortController()
+      read = request
+      const nextReceipt = snapshot()
+      const { scope, worker, current } = nextReceipt
+      const fresh = () => current() && read === request && !request.signal.aborted
+      presets = []
+      receipt = undefined
+      saveButton.disabled = true
+      if (!navigator.onLine) {
+        status("Saved filters are unavailable offline.")
         return
       }
-
-      presets.forEach((preset) => {
-        const li = document.createElement("li")
-        li.className = "saved-presets__item"
-
-        const loadBtn = document.createElement("button")
-        loadBtn.type = "button"
-        loadBtn.className = "saved-presets__load"
-        loadBtn.innerHTML = `<span class="saved-presets__icon">${preset.icon}</span> ${escapeHtml(preset.name)}`
-        loadBtn.addEventListener("click", () => loadPreset(preset))
-
-        const deleteBtn = document.createElement("button")
-        deleteBtn.type = "button"
-        deleteBtn.className = "saved-presets__delete"
-        deleteBtn.title = "Delete preset"
-        deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`
-        deleteBtn.addEventListener("click", (e) => {
-          e.stopPropagation()
-          deletePreset(preset.id)
-        })
-
-        li.append(loadBtn, deleteBtn)
-        list.appendChild(li)
-      })
-    }
-
-    function loadPreset(preset: SavedFilter) {
+      status("Loading saved filters…")
       try {
-        const query = JSON.parse(preset.query_json || "{}")
-        // Apply all filter values from the preset via URL params
-        const url = new URL(window.location.href)
-        // Clear existing filter params
-        const filterKeys = ["search", "status", "priority", "rice", "user", "area", "types", "labels", "groupBy", "subGroupBy", "sort", "advancedFilter", "columns"]
-        filterKeys.forEach((k) => url.searchParams.delete(k))
-
-        // Set params from preset
-        for (const [key, value] of Object.entries(query)) {
-          if (value !== null && value !== undefined && value !== "") {
-            if (typeof value === "object") {
-              url.searchParams.set(key, JSON.stringify(value))
+        if (worker) {
+          const registration = await registrationFor(scope)
+          if (!fresh()) return
+          const script = new URL("sw.js", scope).href
+          if (registration?.active !== worker || worker.scriptURL !== script ||
+              !await workerAllowsNetworkOnly(worker, activeCapability)) {
+            const waiting = registration?.waiting
+            const compatible = waiting?.scriptURL === script && await workerAllowsNetworkOnly(waiting, waitingCapability)
+            if (!fresh()) return
+            if (compatible) {
+              status("Activate the update to open saved filters.", "Activate update", () => {
+                void registrationFor(scope).then(latest => {
+                  if (!fresh()) return
+                  if (latest?.waiting !== waiting) {
+                    void refresh()
+                    return
+                  }
+                  trigger.focus()
+                  status("Activating update…", "Retry", () => void refresh())
+                  waiting?.postMessage({ type: "SKIP_WAITING" })
+                }).catch(() => { if (fresh()) void refresh() })
+              })
             } else {
-              url.searchParams.set(key, String(value))
+              status("Saved filters are unavailable until the app updates.", "Retry", () => {
+                void registrationFor(scope).then(latest => latest?.update()).catch(() => {})
+                void refresh()
+              })
             }
+            return
           }
         }
-
-        window.history.replaceState({}, "", url.toString())
-        // Reload to apply all preset filters
-        document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "filter-preset" } }))
+        if (!fresh()) return
+        const data = await presetRequest(scope, request.signal)
+        if (!fresh()) return
+        if (!Array.isArray(data.filters)) throw new Error("Invalid saved filters")
+        presets = data.filters.filter((preset: Preset) => preset && typeof preset.id === "string" && typeof preset.name === "string")
+        receipt = nextReceipt
+        saveButton.disabled = false
+        render()
       } catch {
-        log.error("Failed to load preset", preset.name)
+        if (fresh()) status("Saved filters are unavailable right now.", "Retry", () => void refresh())
       }
     }
 
-    async function saveCurrentFilters() {
-      const name = await promptDialog({ title: "Save Filter Preset", placeholder: "Preset name", required: true })
-      if (!name) return
+    function render() {
+      if (!presets.length) {
+        status("No saved presets yet.")
+        return
+      }
+      listEl.replaceChildren(...presets.map(preset => {
+        const item = document.createElement("li")
+        item.className = "saved-presets__item"
+        const apply = document.createElement("button")
+        apply.type = "button"
+        apply.className = "saved-presets__load"
+        apply.dataset.applyPreset = preset.id
+        apply.setAttribute("aria-label", `Apply ${preset.name}`)
+        const icon = document.createElement("span")
+        icon.className = "saved-presets__icon"
+        icon.setAttribute("aria-hidden", "true")
+        icon.textContent = typeof preset.icon === "string" ? preset.icon : "🔍"
+        const title = document.createElement("span")
+        title.className = "saved-presets__name"
+        title.textContent = preset.name
+        apply.append(icon, title)
+        const remove = document.createElement("button")
+        remove.type = "button"
+        remove.className = "saved-presets__delete"
+        remove.dataset.deletePreset = preset.id
+        remove.textContent = "×"
+        remove.setAttribute("aria-label", `Delete ${preset.name}`)
+        item.append(apply, remove)
+        return item
+      }))
+    }
 
-      // Gather current filter state from URL
-      const params = new URLSearchParams(window.location.search)
-      const query: Record<string, unknown> = {}
-      params.forEach((value, key) => {
-        try {
-          query[key] = JSON.parse(value)
-        } catch {
-          query[key] = value
-        }
-      })
+    function applyPreset(preset: Preset) {
+      const state = normalizeSavedFilter(preset.query_json)
+      if (!state) {
+        trigger.focus()
+        status("This preset is unavailable. Its saved filters could not be read.", "Back to presets", render)
+        return
+      }
+      const url = new URL(location.href)
+      writeTableFilterParams(url.searchParams, state)
+      url.searchParams.set("view", "table")
+      for (const key of ["open", "comment", "tp"]) url.searchParams.delete(key)
+      for (const key of [...url.searchParams.keys()]) {
+        if (key.startsWith("kp.")) url.searchParams.delete(key)
+      }
+      url.hash = "table"
+      try { sessionStorage.setItem(focusKey, String(Date.now())) } catch { /* storage unavailable */ }
+      history.replaceState(history.state, "", url)
+      location.reload()
+    }
 
+    async function editPreset(preset?: Preset) {
+      if (action || !receipt) return
+      const { scope, current } = receipt
+      if (!current()) return
+      const dialog = new AbortController()
+      action = dialog
+      const state = loadTableFilterState()
+      state.area ??= getRememberedAreaId()
+      state.columns ??= loadTableColumnPreferences()
       try {
-        const res = await fetch("/api/saved-filters", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), query_json: query, icon: "📌" }),
-        })
-        if (res.ok) {
-          await fetchPresets()
+        const name = preset
+          ? await confirmDialog({ message: "Delete this preset?", confirmText: "Delete", variant: "danger", signal: dialog.signal })
+          : await promptDialog({
+              title: "Save Filter Preset", placeholder: "Preset name", required: true, signal: dialog.signal,
+              validate: value => value.length > 100 ? "Use 100 characters or fewer." : "",
+            })
+        if (!name || !current() || dialog.signal.aborted || (preset && !presets.includes(preset))) return
+        if (preset) {
+          await presetRequest(scope, dialog.signal, {
+            method: "DELETE", headers: { "content-type": "application/json" },
+          }, "?" + new URLSearchParams({ id: preset.id }))
+        } else {
+          await presetRequest(scope, dialog.signal, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name, query_json: state, icon: "📌" }),
+          })
         }
+        if (!current()) return
+        await refresh()
+        if (preset && current()) (saveButton.disabled ? trigger : saveButton).focus()
       } catch {
-        log.error("Failed to save preset")
+        if (!current()) return
+        invalidate()
+        trigger.focus()
+        status("Could not update saved filters.", "Retry", () => void refresh())
+      } finally {
+        if (action === dialog) action = undefined
       }
     }
 
-    async function deletePreset(id: string) {
-      const confirmed = await confirmDialog({ message: "Delete this preset?", confirmText: "Delete" })
-      if (!confirmed) return
-      try {
-        await fetch(`/api/saved-filters?id=${id}`, { method: "DELETE" })
-        await fetchPresets()
-      } catch {
-        log.error("Failed to delete preset")
-      }
+    function close(focus = false) {
+      trigger.setAttribute("aria-expanded", "false")
+      if (typeof panelEl.hidePopover === "function" && panelEl.matches(":popover-open")) panelEl.hidePopover()
+      panelEl.removeAttribute("popover")
+      panelEl.classList.add("hidden")
+      invalidate()
+      if (focus) trigger.focus()
     }
 
-    function escapeHtml(str: string): string {
-      const div = document.createElement("div")
-      div.textContent = str
-      return div.innerHTML
-    }
-
-    // Toggle panel
-    toggle?.addEventListener("click", () => {
-      const expanded = toggle.getAttribute("aria-expanded") === "true"
-      toggle.setAttribute("aria-expanded", String(!expanded))
-      panel?.classList.toggle("hidden")
-      if (!expanded) fetchPresets()
-    })
-
-    closeBtn?.addEventListener("click", () => {
-      toggle?.setAttribute("aria-expanded", "false")
-      panel?.classList.add("hidden")
-    })
-
-    saveBtn?.addEventListener("click", () => saveCurrentFilters())
-
-    // Click outside to close
-    document.addEventListener("click", (e) => {
-      if (!panel?.classList.contains("hidden") && toggle && panel) {
-        if (!panel.contains(e.target as Node) && !toggle.contains(e.target as Node)) {
-          toggle.setAttribute("aria-expanded", "false")
-          panel.classList.add("hidden")
-        }
+    trigger.addEventListener("click", () => {
+      if (expanded()) {
+        close(true)
+        return
       }
-    })
-  }
-
-  document.addEventListener("DOMContentLoaded", initSavedPresets)
-  document.addEventListener("astro:page-load", initSavedPresets)
+      trigger.setAttribute("aria-expanded", "true")
+      panelEl.classList.remove("hidden")
+      if (matchMedia("(max-width: 540px)").matches && typeof panelEl.showPopover === "function") {
+        panelEl.setAttribute("popover", "manual")
+        panelEl.showPopover()
+      }
+      void refresh()
+    }, { signal })
+    wrapper.querySelector("#saved-presets-close")?.addEventListener("click", () => close(true), { signal })
+    saveButton.addEventListener("click", () => void editPreset(), { signal })
+    listEl.addEventListener("click", event => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("button")
+      if (!button || action || !receipt?.current()) return
+      const preset = presets.find(item => item.id === (button.dataset.applyPreset ?? button.dataset.deletePreset))
+      if (!preset) return
+      if (button.dataset.applyPreset) applyPreset(preset)
+      else void editPreset(preset)
+    }, { signal })
+    wrapper.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !expanded()) return
+      event.preventDefault()
+      event.stopPropagation()
+      close(true)
+    }, { signal })
+    document.addEventListener("click", event => {
+      const target = event.target as Element
+      if (expanded() && !wrapper.contains(target) && !target.closest?.("#meitheal-prompt-overlay, #meitheal-confirm-overlay")) close()
+    }, { signal })
+    const reconnect = () => {
+      if (!expanded()) return
+      const hadDialog = action !== undefined
+      const focus = hadDialog || wrapper.contains(document.activeElement)
+      invalidate()
+      if (focus) trigger.focus()
+      void refresh()
+    }
+    navigator.serviceWorker?.addEventListener("controllerchange", reconnect, { signal })
+    window.addEventListener("offline", reconnect, { signal })
+    window.addEventListener("online", reconnect, { signal })
+    signal.addEventListener("abort", () => {
+      invalidate()
+      delete wrapper.dataset.ready
+    }, { once: true })
+  })
 </script>
 
-<style>
+<style is:global>
   .saved-presets {
     position: relative;
     display: inline-flex;
@@ -280,8 +422,9 @@ const { class: className } = Astro.props
     position: absolute;
     top: 100%;
     right: 0;
-    width: 280px;
-    max-height: 400px;
+    width: min(280px, calc(100vw - 24px));
+    max-height: min(400px, calc(100dvh - 96px));
+    box-sizing: border-box;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
@@ -321,6 +464,7 @@ const { class: className } = Astro.props
     flex-direction: column;
     gap: 2px;
     overflow-y: auto;
+    min-height: 0;
     max-height: 250px;
   }
 
@@ -340,6 +484,8 @@ const { class: className } = Astro.props
 
   .saved-presets__load {
     flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
     background: transparent;
     border: none;
     color: var(--text-primary);
@@ -358,11 +504,21 @@ const { class: className } = Astro.props
     background: var(--bg-hover);
   }
 
+  .saved-presets__name {
+    min-width: 0;
+  }
+
   .saved-presets__icon {
     font-size: 14px;
+    max-width: 35%;
+    overflow-wrap: anywhere;
   }
 
   .saved-presets__delete {
+    flex: 0 0 32px;
+    min-height: 32px;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -402,5 +558,13 @@ const { class: className } = Astro.props
     color: var(--accent);
     border-color: var(--accent);
     background: rgba(99, 102, 241, 0.05);
+  }
+  @media (max-width: 540px) {
+    .saved-presets__panel {
+      position: fixed;
+      inset: auto 12px calc(64px + env(safe-area-inset-bottom)) 12px;
+      width: auto;
+      margin: 0;
+    }
   }
 </style>

@@ -8,7 +8,7 @@ const SUPERVISOR_ADDRESS = "172.30.32.2"
 const supervisorToken = process.env.SUPERVISOR_TOKEN
 const configuredPath = process.env.INGRESS_PATH
 const databaseExportPath = "/api/export/database.sqlite"
-const searchPath = "/api/search"
+const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
 const pinApiPath = "/api/task-pins"
 const pinnedPagePath = "/pinned"
 
@@ -80,12 +80,12 @@ const server = http.createServer((req, res) => {
     const normalizedPath = path.replace(/\/+/g, "/")
     const canonical = privateRoutePath(normalizedPath)
     const isPins = canonical === pinApiPath || canonical === pinnedPagePath
-    const isSearch = canonical === searchPath
-    if ((isPins || isSearch || canonical === databaseExportPath) && path !== canonical) {
+    const isOnlineRead = onlineReadPaths.has(canonical)
+    if ((isPins || isOnlineRead || canonical === databaseExportPath) && path !== canonical) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
       return
     }
-    if (isPins || isSearch) res.setHeader("cache-control", "private, no-store")
+    if (isPins || isOnlineRead) res.setHeader("cache-control", "private, no-store")
     if (canonical === pinApiPath && query !== -1) {
       res.writeHead(400).end()
       return

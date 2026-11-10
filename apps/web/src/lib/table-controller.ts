@@ -22,18 +22,18 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { TABLE_SECTIONS } from "@lib/table-registry"
+import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
+import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
-  saveFilterState,
-  loadFilterState,
-  clearFilterState,
+  saveTableFilterState,
+  loadTableFilterState,
+  normalizeTableColumns,
   isTaskVisible,
   getGroupKey,
   getGroupDisplay,
-  DEFAULT_SORT,
   type FilterState,
 } from "@lib/filter-state"
-import { setupSortableHeaders } from "@lib/controllers/table-sorting"
+import { applyTableSort, setupSortableHeaders } from "@lib/controllers/table-sorting"
 import { setupBulkActions, updateBulkBar } from "@lib/controllers/table-bulk-actions"
 import { reconcileTableDeferral } from "@lib/controllers/table-deferral"
 
@@ -56,13 +56,17 @@ let currentGroupBy = "none"
 let currentSubGroupBy = "none"
 let areaMap: Record<string, AreaInfo> = {}
 let currentFilterState: Partial<FilterState> = {}
-const __signal = pageLifecycle.signal
 
 // =============================================================================
 // Initialization
 // =============================================================================
 
-function init() {
+function init(signal: AbortSignal) {
+  const shell = document.getElementById("table-shell")
+  if (!shell || shell.dataset.tableReady === "true") return
+  shell.dataset.tableReady = "true"
+  signal.addEventListener("abort", () => { delete shell.dataset.tableReady }, { once: true })
+  areaMap = Object.create(null)
   if (document.getElementById("table-bar")) {
     initPageShellNavigation({
       barId: "table-bar",
@@ -76,29 +80,33 @@ function init() {
   }
 
   const table = document.getElementById("task-table") as HTMLTableElement | null
-  if (!table) return
-
-  // Load persisted filter state
-  currentFilterState = loadFilterState()
+  currentFilterState = loadTableFilterState()
+  currentFilterState.area ??= getRememberedAreaId()
+  currentFilterState.columns ??= loadTableColumnPreferences()
   currentGroupBy = currentFilterState.groupBy ?? "none"
   currentSubGroupBy = currentFilterState.subGroupBy ?? "none"
-  restoreFilterControls()
 
-  // Table-specific features
-  setupSubtaskToggles()
-  setupInlineEditing()
-  setupRowClicks(table)
-  setupBulkActions({ signal: __signal, applyAllFilters, updateGroupCounts })
-  setupSortableHeaders({ currentFilterState, currentGroupBy, setupInlineEditing })
-  setupTableOverflow()
-  loadAreas() // Still needed for grouping header labels + bulk board selector
+  if (table) {
+    applyColumns()
+    setupSubtaskToggles(signal)
+    setupInlineEditing(signal)
+    setupRowClicks(table)
+    setupBulkActions({ signal, applyAllFilters, updateGroupCounts })
+    setupSortableHeaders(signal, (column, direction) => {
+      currentFilterState.sort = `${column}-${direction}`
+      saveTableFilterState(currentFilterState)
+      applyTableSort(currentFilterState.sort, currentGroupBy !== "none")
+    }, () => currentFilterState.sort)
+    setupTableOverflow()
+    void loadAreas(signal)
+  }
 
-  // Listen for unified filter events from FilterToolbar
-  document.addEventListener("meitheal:filter-change", ((e: CustomEvent) => {
-    const detail = e.detail ?? {}
-    if (detail.view && detail.view !== "table") return // Ignore kanban events
-
-    // Update controller state from FilterToolbar event
+  document.addEventListener("meitheal:filter-change", event => {
+    const detail = (event as CustomEvent<Partial<FilterState> & { view: string; clear?: boolean }>).detail
+    if (detail?.view !== "table") return
+    const newGroup = detail.groupBy ?? "none"
+    const newSubGroup = detail.subGroupBy ?? "none"
+    const groupChanged = newGroup !== currentGroupBy || newSubGroup !== currentSubGroupBy
     currentFilterState = {
       ...currentFilterState,
       search: detail.search ?? "",
@@ -106,51 +114,79 @@ function init() {
       priority: detail.priority ?? "",
       rice: detail.rice ?? "",
       user: detail.user ?? "",
-      area: detail.area ?? "",
+      task_type: detail.task_type ?? "",
       types: detail.types ?? [],
+      labels: detail.labels ?? currentFilterState.labels ?? [],
       advancedFilter: detail.advancedFilter ?? null,
+      groupBy: newGroup,
+      subGroupBy: newSubGroup,
     }
-
-    // Handle groupBy + subGroupBy changes
-    const newGroupBy = detail.groupBy ?? "none"
-    const newSubGroupBy = detail.subGroupBy ?? "none"
-    const groupChanged = newGroupBy !== currentGroupBy || newSubGroupBy !== currentSubGroupBy
-    if (groupChanged) {
-      currentGroupBy = newGroupBy
-      currentSubGroupBy = newSubGroupBy
-      currentFilterState.groupBy = currentGroupBy
-      currentFilterState.subGroupBy = currentSubGroupBy
-      applyGrouping(currentGroupBy, currentSubGroupBy)
+    if (detail.clear) {
+      currentFilterState.area = ""
+      document.dispatchEvent(new Event("meitheal:table-area-reset"))
     }
-
-    saveFilterState(currentFilterState)
+    currentGroupBy = newGroup
+    currentSubGroupBy = newSubGroup
+    saveTableFilterState(currentFilterState)
+    if (groupChanged) applyGrouping(currentGroupBy, currentSubGroupBy)
     applyAllFilters()
-  }) as EventListener, { signal: __signal })
+    if (groupChanged) applyTableSort(currentFilterState.sort, currentGroupBy !== "none")
+  }, { signal })
 
-  // Listen for label filter events (from LabelFilterBar inside FilterToolbar)
-  document.addEventListener("meitheal:label-filter", ((e: CustomEvent) => {
-    currentFilterState.labels = e.detail?.labels ?? []
-    saveFilterState(currentFilterState)
+  document.addEventListener("meitheal:label-filter", event => {
+    const detail = (event as CustomEvent<{ labels: string[]; view?: string }>).detail
+    if (detail?.view !== "table") return
+    currentFilterState.labels = detail.labels
+    saveTableFilterState(currentFilterState)
     applyAllFilters()
-  }) as EventListener, { signal: __signal })
+  }, { signal })
 
-  // Apply grouping first (creates group headers before filtering)
-  if (currentGroupBy !== "none") {
-    applyGrouping(currentGroupBy, currentSubGroupBy)
-  }
+  document.addEventListener("meitheal:area-changed", event => {
+    const { areaId } = (event as CustomEvent<{ areaId: string }>).detail
+    currentFilterState.area = areaId
+    saveTableFilterState(currentFilterState)
+    applyAllFilters()
+  }, { signal })
 
+  document.addEventListener("meitheal:columns-change", event => {
+    const { visible } = (event as CustomEvent<{ visible: string[] }>).detail
+    const columns = normalizeTableColumns(visible)
+    if (!columns) return
+    currentFilterState.columns = columns
+    saveTableFilterState(currentFilterState)
+    applyColumns()
+  }, { signal })
+
+  if (currentGroupBy !== "none") applyGrouping(currentGroupBy, currentSubGroupBy)
   applyAllFilters()
+  applyTableSort(currentFilterState.sort, currentGroupBy !== "none")
+}
+
+function visibleColumnCount() {
+  return (currentFilterState.columns ?? TABLE_COLUMNS).length + 2
+}
+
+function applyColumns() {
+  const table = document.getElementById("task-table")
+  if (!table) return
+  for (const column of TABLE_COLUMNS) {
+    table.classList.toggle(`hide-col-${column.id}`, !currentFilterState.columns?.includes(column.id))
+  }
+  table.querySelectorAll<HTMLTableCellElement>("tbody td[colspan]").forEach(cell => {
+    cell.colSpan = visibleColumnCount()
+  })
 }
 
 // =============================================================================
 // Area Data Loading
 // =============================================================================
 
-async function loadAreas() {
+async function loadAreas(signal: AbortSignal) {
   try {
-    const res = await fetch("/api/areas", { signal: __signal })
+    const res = await fetch("/api/areas", { signal })
     if (!res.ok) return
     const data = await res.json()
+    if (signal.aborted) return
     const boards: AreaInfo[] = data.areas || []
 
     boards.forEach((b) => {
@@ -176,175 +212,9 @@ async function loadAreas() {
       updateGroupHeaderLabels()
     }
 
-    // Populate user filter from data attributes on rows
-    populateUserFilter()
   } catch {
     /* offline fallback — board filter stays as-is */
   }
-}
-
-function populateUserFilter() {
-  const userFilter = document.getElementById("table-filter-user") as HTMLSelectElement | null
-  if (!userFilter) return
-
-  const rows = document.querySelectorAll<HTMLElement>(".table-row")
-  const userSet = new Set<string>()
-  rows.forEach((row) => {
-    const assigned = row.dataset.assigned
-    if (assigned) userSet.add(assigned)
-  })
-
-  Array.from(userSet)
-    .sort()
-    .forEach((user) => {
-      // Avoid duplicates
-      if (userFilter.querySelector(`option[value="${user}"]`)) return
-      const opt = document.createElement("option")
-      opt.value = user
-      opt.textContent = user.replace(/^(ha_|custom_)/, "")
-      userFilter.appendChild(opt)
-    })
-
-  // Restore saved user filter
-  if (currentFilterState.user) {
-    userFilter.value = currentFilterState.user
-  }
-}
-
-// =============================================================================
-// Filter State Restore
-// =============================================================================
-
-function restoreFilterControls() {
-  const s = currentFilterState
-  const setVal = (id: string, val: string | undefined) => {
-    const el = document.getElementById(id) as HTMLSelectElement | HTMLInputElement | null
-    if (el && val) el.value = val
-  }
-
-  setVal("table-search", s.search)
-  setVal("table-filter-status", s.status)
-  setVal("table-filter-priority", s.priority)
-  setVal("table-filter-rice", s.rice)
-  setVal("table-filter-user", s.user)
-  setVal("table-filter-area", s.area)
-  setVal("table-group-by", s.groupBy ?? "none")
-
-  if (s.search || s.status || s.priority || s.rice || s.user || s.area || s.types?.length || s.labels?.length || s.advancedFilter) {
-    document.getElementById("table-clear-filters")?.classList.remove("hidden")
-  }
-
-  // Restore type toggles
-  if (s.types && s.types.length > 0) {
-    document.querySelectorAll<HTMLButtonElement>("#table-filter-bar .filter-toolbar__type-btn").forEach((btn) => {
-      const type = btn.dataset.type ?? ""
-      const isActive = s.types!.includes(type)
-      btn.classList.toggle("active", isActive)
-      btn.setAttribute("aria-pressed", String(isActive))
-    })
-  }
-}
-
-// =============================================================================
-// Filter Listeners
-// =============================================================================
-
-function setupFilterListeners() {
-  const search = document.getElementById("table-search") as HTMLInputElement | null
-  const statusFilter = document.getElementById("table-filter-status") as HTMLSelectElement | null
-  const priorityFilter = document.getElementById("table-filter-priority") as HTMLSelectElement | null
-  const riceFilter = document.getElementById("table-filter-rice") as HTMLSelectElement | null
-  const userFilter = document.getElementById("table-filter-user") as HTMLSelectElement | null
-  const areaFilter = document.getElementById("table-filter-area") as HTMLSelectElement | null
-  const clearBtn = document.getElementById("clear-filters")
-
-  const onFilterChange = () => {
-    currentFilterState = {
-      ...currentFilterState,
-      search: search?.value ?? "",
-      status: statusFilter?.value ?? "",
-      priority: priorityFilter?.value ?? "",
-      rice: riceFilter?.value ?? "",
-      user: userFilter?.value ?? "",
-      area: areaFilter?.value ?? "",
-    }
-    saveFilterState(currentFilterState)
-    applyAllFilters()
-  }
-
-  search?.addEventListener("input", debounce(onFilterChange, 150), { signal: __signal })
-  statusFilter?.addEventListener("change", onFilterChange, { signal: __signal })
-  priorityFilter?.addEventListener("change", onFilterChange, { signal: __signal })
-  riceFilter?.addEventListener("change", onFilterChange, { signal: __signal })
-  userFilter?.addEventListener("change", onFilterChange, { signal: __signal })
-  areaFilter?.addEventListener("change", onFilterChange, { signal: __signal })
-
-  clearBtn?.addEventListener("click", () => {
-    clearFilterState()
-    currentFilterState = {}
-    if (search) search.value = ""
-    if (statusFilter) statusFilter.value = ""
-    if (priorityFilter) priorityFilter.value = ""
-    if (riceFilter) riceFilter.value = ""
-    if (userFilter) userFilter.value = ""
-    if (areaFilter) areaFilter.value = ""
-
-    // Reset type toggles to all active
-    document.querySelectorAll<HTMLButtonElement>(".type-toggle").forEach((btn) => {
-      btn.classList.add("active")
-      btn.setAttribute("aria-pressed", "true")
-    })
-
-    applyAllFilters()
-  }, { signal: __signal })
-
-  // Listen for label filter changes
-  document.addEventListener("meitheal:label-filter", ((e: CustomEvent) => {
-    currentFilterState.labels = e.detail?.labels ?? []
-    saveFilterState(currentFilterState)
-    applyAllFilters()
-  }) as EventListener, { signal: __signal })
-}
-
-// =============================================================================
-// Type Toggle Listeners
-// =============================================================================
-
-function setupTypeToggleListeners() {
-  document.querySelectorAll<HTMLButtonElement>(".type-toggle").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active")
-      const isActive = btn.classList.contains("active")
-      btn.setAttribute("aria-pressed", String(isActive))
-
-      // Collect active types
-      const activeTypes: string[] = []
-      document.querySelectorAll<HTMLButtonElement>(".type-toggle.active").forEach((b) => {
-        if (b.dataset.type) activeTypes.push(b.dataset.type)
-      })
-
-      // If all are active, store empty array (meaning "all")
-      const allTypes = document.querySelectorAll<HTMLButtonElement>(".type-toggle")
-      currentFilterState.types = activeTypes.length === allTypes.length ? [] : activeTypes
-      saveFilterState(currentFilterState)
-      applyAllFilters()
-    }, { signal: __signal })
-  })
-}
-
-// =============================================================================
-// Group-By Listener
-// =============================================================================
-
-function setupGroupByListener() {
-  const groupBySelect = document.getElementById("table-group-by") as HTMLSelectElement | null
-  groupBySelect?.addEventListener("change", () => {
-    currentGroupBy = groupBySelect.value
-    currentFilterState.groupBy = currentGroupBy
-    saveFilterState(currentFilterState)
-    applyGrouping(currentGroupBy)
-    applyAllFilters()
-  }, { signal: __signal })
 }
 
 // =============================================================================
@@ -432,7 +302,7 @@ function applyGrouping(groupBy: string, subGroupBy = "none") {
 
   // Build grouped DOM using DocumentFragment for performance
   const fragment = document.createDocumentFragment()
-  const colCount = document.querySelectorAll("#task-table thead th").length
+  const colCount = visibleColumnCount()
 
   // Load collapse states from sessionStorage
   const collapseKey = `meitheal-table-groups-${groupBy}`
@@ -549,9 +419,11 @@ function getGroupDisplayForKey(groupBy: string, key: string): { label: string, i
 }
 
 function setupGroupHeaderListeners() {
-  const tbody = document.querySelector("#task-table tbody")
-  if (!tbody || (tbody as HTMLElement).dataset.groupListenerBound) return
-  ;(tbody as HTMLElement).dataset.groupListenerBound = "true"
+  const tbody = document.querySelector<HTMLElement>("#task-table tbody")
+  if (!tbody || tbody.dataset.groupListenerBound) return
+  tbody.dataset.groupListenerBound = "true"
+  const signal = pageLifecycle.signal
+  signal.addEventListener("abort", () => { delete tbody.dataset.groupListenerBound }, { once: true })
 
   // Event delegation on tbody — handles all current and future group headers
   tbody.addEventListener("click", (e) => {
@@ -607,7 +479,7 @@ function setupGroupHeaderListeners() {
         sessionStorage.setItem(collapseKey, JSON.stringify(collapsed))
       } catch { /* ignore */ }
     }
-  })
+  }, { signal })
 
   // Group select-all checkbox delegation
   tbody.addEventListener("change", (e) => {
@@ -627,22 +499,21 @@ function setupGroupHeaderListeners() {
       sibling = sibling.nextElementSibling
     }
     updateBulkBar()
-  })
+  }, { signal })
 }
 
 function updateGroupCounts() {
   document.querySelectorAll<HTMLElement>(".group-header-row").forEach((header) => {
-    const groupKey = header.dataset.groupKey ?? ""
     const countEl = header.querySelector<HTMLElement>(".group-count")
     if (!countEl) return
 
-    // Count visible rows in this group
     let count = 0
     let sibling = header.nextElementSibling
-    while (sibling && !sibling.classList.contains("group-header-row") && !sibling.classList.contains("no-results-row")) {
-      if (!(sibling as HTMLElement).classList.contains("filtered-out")) {
-        count++
-      }
+    const subgroup = header.classList.contains("sub-group-header-row")
+    while (sibling && !sibling.classList.contains("no-results-row")) {
+      if (sibling.classList.contains("group-header-row") &&
+          (subgroup || !sibling.classList.contains("sub-group-header-row"))) break
+      if (sibling.classList.contains("table-row") && !sibling.classList.contains("filtered-out")) count++
       sibling = sibling.nextElementSibling
     }
     countEl.textContent = String(count)
@@ -670,7 +541,7 @@ function renderSummaryRows() {
   // Only render when grouping is active
   if (currentGroupBy === "none") return
 
-  const colCount = document.querySelectorAll("#task-table thead th").length
+  const colCount = visibleColumnCount()
   const headers = tbody.querySelectorAll<HTMLElement>(".group-header-row:not(.sub-group-header-row)")
 
   let grandTotalTasks = 0
@@ -686,7 +557,8 @@ function renderSummaryRows() {
     let lastRow: Element | null = null
 
     let sibling = header.nextElementSibling
-    while (sibling && (!sibling.classList.contains("group-header-row") || sibling.classList.contains("sub-group-header-row"))) {
+    while (sibling && !sibling.classList.contains("no-results-row") &&
+        (!sibling.classList.contains("group-header-row") || sibling.classList.contains("sub-group-header-row"))) {
       if (sibling.classList.contains("table-row") && !sibling.classList.contains("filtered-out")) {
         taskCount++
         const riceVal = Number((sibling as HTMLElement).dataset.rice ?? "")
@@ -764,7 +636,7 @@ function updateGroupHeaderLabels() {
 // Subtask Tree (mutually exclusive with grouping)
 // =============================================================================
 
-function setupSubtaskToggles() {
+function setupSubtaskToggles(signal: AbortSignal) {
   document.querySelectorAll<HTMLButtonElement>(".subtree-toggle").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation()
@@ -776,7 +648,7 @@ function setupSubtaskToggles() {
       btn.setAttribute("aria-expanded", String(isCollapsed))
 
       toggleChildRows(parentId, isCollapsed)
-    }, { signal: __signal })
+    }, { signal })
   })
 }
 
@@ -845,7 +717,7 @@ function enableSubtaskTree() {
 // Inline Editing
 // =============================================================================
 
-function setupInlineEditing() {
+function setupInlineEditing(signal: AbortSignal) {
   // Inline title editing
   document.querySelectorAll<HTMLElement>(".editable-cell").forEach((cell) => {
     cell.addEventListener("blur", async () => {
@@ -863,7 +735,7 @@ function setupInlineEditing() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: newVal }),
-          signal: __signal,
+          signal,
         })
         if (res.ok) {
           cell.dataset.original = newVal
@@ -876,7 +748,7 @@ function setupInlineEditing() {
         cell.textContent = original
         showToast("Network error", "error")
       }
-    })
+    }, { signal })
 
     cell.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -887,15 +759,15 @@ function setupInlineEditing() {
         cell.textContent = cell.dataset.original ?? ""
         cell.blur()
       }
-    })
+    }, { signal })
 
     // Stop click from opening task detail
-    cell.addEventListener("click", (e) => e.stopPropagation())
+    cell.addEventListener("click", (e) => e.stopPropagation(), { signal })
   })
 
   // Inline select changes (status, priority)
   document.querySelectorAll<HTMLSelectElement>(".inline-select").forEach((sel) => {
-    sel.addEventListener("click", (e) => e.stopPropagation())
+    sel.addEventListener("click", (e) => e.stopPropagation(), { signal })
     sel.addEventListener("change", async () => {
       const id = sel.dataset.id
       const field = sel.dataset.field
@@ -906,7 +778,7 @@ function setupInlineEditing() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [field]: field === "priority" ? Number(sel.value) : sel.value }),
-          signal: __signal,
+          signal,
         })
         if (res.ok) {
           showToast(`${field} updated`, "success")
@@ -915,7 +787,7 @@ function setupInlineEditing() {
           if (row && field === "status") {
             row.dataset.status = sel.value
             row.classList.toggle("row-done", sel.value === "complete")
-            void reconcileTableDeferral(row, sel.value, __signal)
+            void reconcileTableDeferral(row, sel.value, signal)
             // Gamification + confetti on completion
             if (sel.value === "complete") {
               const priority = Number(row?.dataset.priority ?? 3)
@@ -933,7 +805,7 @@ function setupInlineEditing() {
       } catch {
         showToast("Network error", "error")
       }
-    })
+    }, { signal })
   })
 }
 
@@ -986,6 +858,6 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
 // Boot
 // =============================================================================
 
-pageLifecycle.onPageLoad(() => {
-  try { init() } catch (e) { console.error("[Meitheal][table] Boot failed", e) }
+pageLifecycle.onPageLoad(signal => {
+  try { init(signal) } catch (e) { console.error("[Meitheal][table] Boot failed", e) }
 })

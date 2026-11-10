@@ -26,6 +26,8 @@ All three entry points open the same overlay.
 - `Settings`: section and field deep links powered by the shared settings registry
 - `Actions`: quick actions such as creating a task or opening Home Assistant Assist. Assist uses the App’s Home Assistant connection and requires a currently active Home Assistant administrator. From Today, **Ask AI** can prefill the Assist prompt for review before you send it. Custom provider links in Settings must use HTTP or HTTPS and omit embedded credentials.
 
+A saved filter result opens the same Table view as applying the preset from **Presets**. It carries the Area, task kinds, labels, rules, grouping, sort and visible columns. Malformed legacy presets are omitted so the rest of Views remains available.
+
 ## Task Search Fields
 
 Task search can match:

@@ -11,6 +11,8 @@
  *      without native browser dialogs.
  */
 
+import { mountDialogOverlay } from "./dialog-overlay"
+
 export interface PromptOptions {
   title?: string
   message?: string
@@ -22,9 +24,11 @@ export interface PromptOptions {
   validate?: (value: string) => string
   /** Set to true to require non-empty input */
   required?: boolean
+  signal?: AbortSignal
 }
 
 export function promptDialog(options: PromptOptions): Promise<string | null> {
+  if (options.signal?.aborted) return Promise.resolve(null)
   return new Promise((resolve) => {
     // Remove any existing prompt dialog
     document.getElementById("meitheal-prompt-overlay")?.remove()
@@ -101,9 +105,10 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     `
 
     overlay.appendChild(dialog)
-    document.body.appendChild(overlay)
+
 
     const previouslyFocused = document.activeElement as HTMLElement | null
+    mountDialogOverlay(overlay)
     const input = dialog.querySelector("#prompt-input") as HTMLInputElement
     const errorDiv = dialog.querySelector("#prompt-error") as HTMLElement
     const cancelBtn = dialog.querySelector("#prompt-cancel") as HTMLButtonElement
@@ -111,17 +116,28 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
 
     // Focus and select input text
     requestAnimationFrame(() => {
+      if (!input.isConnected || options.signal?.aborted) return
       input.focus()
       input.select()
     })
 
-    function cleanup(result: string | null) {
-      overlay.style.opacity = "0"
-      document.removeEventListener("keydown", onKey, true)
-      setTimeout(() => {
+    let settled = false
+    const abort = () => cleanup(null, true)
+    function cleanup(result: string | null, immediate = false) {
+      function remove() {
+        document.removeEventListener("keydown", onKey, true)
+        options.signal?.removeEventListener("abort", abort)
         overlay.remove()
-        previouslyFocused?.focus()
-      }, 100)
+        if (!options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
+      }
+      if (settled) {
+        if (immediate) remove()
+        return
+      }
+      settled = true
+      overlay.style.opacity = "0"
+      if (immediate) remove()
+      else setTimeout(remove, 100)
       resolve(result)
     }
 
@@ -163,11 +179,18 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     })
 
     function onKey(e: KeyboardEvent) {
+      if (settled) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return
+      }
       if (e.key === "Escape") {
         e.preventDefault()
         e.stopPropagation()
         cleanup(null)
-      } else if (e.key === "Enter") {
+      } else if (e.key === "Enter" && (document.activeElement === input || document.activeElement === okBtn)) {
         e.preventDefault()
         trySubmit()
       } else if (e.key === "Tab") {
@@ -184,6 +207,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
       }
     }
     document.addEventListener("keydown", onKey, true)
+    options.signal?.addEventListener("abort", abort, { once: true })
   })
 }
 

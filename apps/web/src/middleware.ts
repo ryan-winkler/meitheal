@@ -140,17 +140,17 @@ function isPinRoute(path: string) {
   return path === "/api/task-pins" || path === "/pinned"
 }
 
-const searchPath = "/api/search"
+const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
   const requestUrl = new URL(request.url)
   const requestPath = requestUrl.pathname
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
-  const searchRoute = routePattern === searchPath || url.pathname === searchPath
-  if (!pinRoute && !searchRoute) return handleRequest(context, next, requestUrl)
+  const onlineReadRoute = onlineReadPaths.has(routePattern) || onlineReadPaths.has(url.pathname)
+  if (!pinRoute && !onlineReadRoute) return handleRequest(context, next, requestUrl)
   // Astro matches decoded paths, while the agent guard checks the original request path.
-  if ((routePattern === searchPath && requestPath !== searchPath) ||
+  if ((onlineReadPaths.has(routePattern) && requestPath !== routePattern) ||
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
