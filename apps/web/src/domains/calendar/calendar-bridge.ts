@@ -54,6 +54,7 @@ export interface CalendarSyncCounts {
   updated: number
   total: number
   skipped?: string
+  failed?: string
 }
 
 export interface CalendarSyncConfig {
@@ -250,12 +251,13 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
 
 /**
  * Sync events FROM all configured HA calendars TO Meitheal.
- * Returns aggregated results across all entities.
+ * Manual retry resets failure backoff; background triggers retain it.
+ * Returns aggregated results across all entities, including committed partial work.
  */
 export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyncCounts> {
   // If a specific entity is requested, sync just that one
   if (overrideEntityId) {
-    return syncEntityFromHA(overrideEntityId);
+    return syncEntityFromHA(overrideEntityId, true);
   }
 
   // If no entities configured, return empty
@@ -269,24 +271,27 @@ export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyn
 
   // Sync ALL configured entities in parallel
   const results = await Promise.allSettled(
-    Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId)),
+    Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId, true)),
   );
 
-  const failure = results.find(result => result.status === "rejected")
-  if (failure?.status === "rejected") throw failure.reason
-  const aggregated = { created: 0, updated: 0, total: 0 };
+  const aggregated: CalendarSyncCounts = { created: 0, updated: 0, total: 0 };
+  let failures = 0
   for (const result of results) {
     if (result.status === "fulfilled") {
       aggregated.created += result.value.created;
       aggregated.updated += result.value.updated;
       aggregated.total += result.value.total;
+      if (result.value.failed || result.value.skipped) failures++
+    } else {
+      failures++
     }
   }
+  if (failures > 0) aggregated.failed = `${failures} calendar(s) failed or skipped`
 
-  logger.log("info", {
-    event: "calendar.sync.multi_complete", domain: "calendar", component: "calendar-bridge",
+  logger.log(failures > 0 ? "warn" : "info", {
+    event: failures > 0 ? "calendar.sync.multi_incomplete" : "calendar.sync.multi_complete", domain: "calendar", component: "calendar-bridge",
     request_id: SYS_REQ,
-    message: `Multi-calendar sync: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${activeSyncs.size} calendars`,
+    message: `Multi-calendar sync: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${activeSyncs.size} calendars; ${failures} failed or skipped`,
   });
 
   return aggregated;
@@ -297,7 +302,7 @@ export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyn
  * Merges calendar events into the tasks table with deduplication
  * via the calendar_confirmations table (keyed by provider_event_id).
  */
-async function syncEntityFromHA(entityId: string): Promise<CalendarSyncCounts> {
+async function syncEntityFromHA(entityId: string, manualRetry = false): Promise<CalendarSyncCounts> {
   // Mode guard — export-only calendars skip inbound sync
   const state = activeSyncs.get(entityId);
   if (state?.config.syncMode === "export") {
@@ -317,6 +322,7 @@ async function syncEntityFromHA(entityId: string): Promise<CalendarSyncCounts> {
     });
     return { created: 0, updated: 0, total: 0, skipped: "sync already running" };
   }
+  if (state && manualRetry) state.consecutiveFailures = 0
   syncingEntities.add(entityId);
   let timeout: ReturnType<typeof setTimeout> | undefined
 
@@ -328,6 +334,13 @@ async function syncEntityFromHA(entityId: string): Promise<CalendarSyncCounts> {
         timeout = setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
       ),
     ]);
+    // This wrapper is the single owner of failure accounting, including partial merges.
+    if (state && !result.skipped) {
+      state.lastSyncAt = Date.now()
+      state.lastSyncEventCount = result.total
+      state.lastSyncError = result.failed ?? null
+      state.consecutiveFailures = result.failed ? state.consecutiveFailures + 1 : 0
+    }
     return result;
   } catch (err) {
     // Timeout or unexpected error — still update state
@@ -371,12 +384,6 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       event: "calendar.sync.from_ha", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `No events to sync from ${entityId}`,
     });
-    if (state) {
-      state.lastSyncAt = Date.now();
-      state.lastSyncEventCount = 0;
-      state.lastSyncError = null;
-      state.consecutiveFailures = 0;
-    }
     return { created: 0, updated: 0, total: 0 };
   }
 
@@ -552,6 +559,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           }
         }
       } catch (staleErr) {
+        errors++
         logger.log("warn", {
           event: "calendar.sync.stale_check_failed", domain: "calendar", component: "calendar-bridge",
           request_id: SYS_REQ, message: `Stale event check failed for ${entityId}: ${staleErr}`,
@@ -559,13 +567,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       }
     }
 
-    if (errors > 0) throw new Error(`${errors} calendar event(s) failed to merge`)
-
-    if (state) {
-      state.lastSyncAt = Date.now();
-      state.lastSyncEventCount = events.length;
-      state.lastSyncError = errors > 0 ? `${errors} event(s) failed` : null;
-      state.consecutiveFailures = errors > 0 ? state.consecutiveFailures + 1 : 0;
+    if (errors > 0) {
+      return { created, updated, total: events.length, failed: `${errors} calendar merge or reconciliation operation(s) failed` }
     }
 
     logger.log("info", {
@@ -588,11 +591,6 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
 
     return { created, updated, total: events.length };
   } catch (err) {
-    if (state) {
-      state.lastSyncError = String(err);
-      state.lastSyncAt = Date.now();
-      state.consecutiveFailures++;
-    }
     logger.log("error", {
       event: "calendar.sync.merge_failed", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Failed to merge calendar events from ${entityId}: ${err}`,
