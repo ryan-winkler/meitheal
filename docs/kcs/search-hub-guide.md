@@ -43,6 +43,8 @@ Use the field toggles in the hub to narrow matching, then use:
 - `Archived` to include archived work
 - `Sort` to switch between relevance and recently updated
 
+Relevance puts an exact task ID or ticket such as `MTH-42` first in Tasks, followed by exact and prefix title matches. The selected fields determine which results match and which snippets appear. A Comments-only result shows a matching comment. Percent signs and underscores match literally. Clear the query to see recent tasks.
+
 ## Home Assistant Parity
 
 The Home Assistant custom component, LLM API tool, and MCP `searchTasks` tool now reuse the same upgraded task-search backend instead of maintaining a weaker local-only filter path.

@@ -17,10 +17,24 @@ import type { Client } from "@libsql/client";
 import type { InValue } from "@libsql/client";
 import { getStatusDef, normalizeStatus, STATUS } from "../../../lib/status-config";
 import { logApiError } from "../../../lib/api-logger";
+import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
+import { parseTicketKey } from "../../../lib/ticket-key"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
+
+export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "status" | "priority" | "deferred_at"> & {
+  score: number
+  id_hit?: number
+  exact_id?: number
+  title_at?: number
+  description_hit?: number
+  labels_hit?: number
+  custom_fields_hit?: number
+  comments_hit?: number
+  excerpt?: string | null
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -743,109 +757,120 @@ export class TaskRepository {
 
   /** Advanced catalog search used by the universal search hub and HA search bridges. */
   async searchCatalog(opts: {
-    query?: string;
-    status?: string;
-    priority?: number;
-    assignedTo?: string;
-    includeCompleted?: boolean;
-    includeArchived?: boolean;
-    fields?: readonly string[];
-    sort?: "relevance" | "updated";
-    limit?: number;
-  }): Promise<TaskRow[]> {
-    const query = (opts.query ?? "").trim().toLowerCase();
-    const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"]).map((field) => field.toLowerCase()));
-    const limit = Math.min(50, Math.max(1, opts.limit ?? 12));
-    const rawLimit = Math.min(150, limit * 3);
+    query?: string
+    status?: string
+    priority?: number
+    assignedTo?: string
+    includeCompleted?: boolean
+    includeArchived?: boolean
+    fields?: readonly string[]
+    sort?: "relevance" | "updated"
+    limit?: number
+  }): Promise<TaskCatalogRow[]> {
+    const query = (opts.query ?? "").trim().toLowerCase()
+    const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"])
+      .map(field => field.toLowerCase()))
+    const limit = Math.min(50, Math.max(1, opts.limit ?? 12))
+    const conditions: string[] = []
+    const args: InValue[] = []
 
-    const conditions: string[] = [];
-    const args: InValue[] = [];
-
-    const excludedStatuses: string[] = [];
-    if (opts.includeCompleted !== true) excludedStatuses.push(STATUS.COMPLETE);
-    if (opts.includeArchived !== true) excludedStatuses.push("archived");
-    if (excludedStatuses.length === 1) {
-      conditions.push("tasks.status != ?");
-      args.push(excludedStatuses[0]!);
-    } else if (excludedStatuses.length > 1) {
-      conditions.push(`tasks.status NOT IN (${excludedStatuses.map(() => "?").join(", ")})`);
-      args.push(...excludedStatuses);
+    const excludedStatuses: string[] = []
+    if (opts.includeCompleted !== true) excludedStatuses.push(STATUS.COMPLETE)
+    if (opts.includeArchived !== true) excludedStatuses.push("archived")
+    if (excludedStatuses.length > 0) {
+      conditions.push(`tasks.status NOT IN (${excludedStatuses.map(() => "?").join(", ")})`)
+      args.push(...excludedStatuses)
     }
-
     if (opts.status) {
-      conditions.push("tasks.status = ?");
-      args.push(normalizeStatus(opts.status));
+      conditions.push("tasks.status = ?")
+      args.push(normalizeStatus(opts.status))
     }
-
     if (opts.priority != null) {
-      conditions.push("tasks.priority = ?");
-      args.push(opts.priority);
+      conditions.push("tasks.priority = ?")
+      args.push(opts.priority)
     }
-
     if (opts.assignedTo) {
-      conditions.push("tasks.assigned_to = ?");
-      args.push(opts.assignedTo);
+      conditions.push("tasks.assigned_to = ?")
+      args.push(opts.assignedTo)
     }
 
-    if (query) {
-      const fieldClauses: string[] = [];
-
-      if (fields.has("id")) {
-        fieldClauses.push("LOWER(tasks.id) LIKE ?");
-        fieldClauses.push("LOWER(COALESCE('mth-' || CAST(tasks.ticket_number AS TEXT), '')) LIKE ?");
-        fieldClauses.push("CAST(COALESCE(tasks.ticket_number, '') AS TEXT) LIKE ?");
-        args.push(`%${query}%`, `%${query}%`, `%${query}%`);
-      }
-      if (fields.has("title")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.title, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("description")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.description, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("labels")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.labels, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("custom_fields")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.custom_fields, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("comments")) {
-        fieldClauses.push("LOWER(COALESCE(comment_index.comment_blob, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-
-      if (fieldClauses.length > 0) {
-        conditions.push(`(${fieldClauses.join(" OR ")})`);
-      }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+    const projection = "tasks.id, tasks.ticket_number, tasks.title, tasks.status, tasks.priority, tasks.deferred_at"
+    const updatedAt = taskTimestampMs("tasks.updated_at")
+    if (!query) {
+      const result = await this.client.execute({
+        sql: `SELECT ${projection}, 0 AS score
+              FROM tasks ${where}
+              ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
+              LIMIT ?`,
+        args: [...args, limit],
+      })
+      return result.rows as unknown as TaskCatalogRow[]
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const orderBy = opts.sort === "updated"
-      ? "tasks.updated_at DESC, tasks.priority ASC"
-      : "tasks.updated_at DESC";
+    const parsedTicket = parseTicketKey(query) ?? (/^[0-9]+$/.test(query) ? Number(query) : 0)
+    const ticket = Number.isSafeInteger(parsedTicket) && parsedTicket > 0 ? parsedTicket : null
+    const selected = (field: string, sql: string) => fields.has(field) ? sql : "0"
+    // INSTR treats percent, underscore and backslash literally. The needle and
+    // the stored field keep their existing JavaScript/SQLite case behavior.
+    const position = (column: string) => `instr(lower(coalesce(${column}, '')), needle.value)`
+    const commentMatch = `c.task_id = tasks.id AND ${position("c.content")} > 0`
+    const snippet = (column: string) => {
+      const start = `max(${position(column)} - 32, 1)`
+      return `(CASE WHEN ${start} > 1 THEN '...' ELSE '' END) ||
+              substr(${column}, ${start}, 174) ||
+              (CASE WHEN length(${column}) >= ${start} + 174 THEN '...' ELSE '' END)`
+    }
+    const snippets = [
+      fields.has("description") ? `WHEN page.description_hit THEN ${snippet("tasks.description")}` : "",
+      fields.has("comments") ? `WHEN page.comments_hit THEN (
+        SELECT ${snippet("c.content")} FROM comments c
+        WHERE ${commentMatch} ORDER BY c.created_at DESC, c.id DESC LIMIT 1
+      )` : "",
+      fields.has("custom_fields") ? `WHEN page.custom_fields_hit THEN ${snippet("tasks.custom_fields")}` : "",
+      fields.has("labels") ? `WHEN page.labels_hit THEN ${snippet("tasks.labels")}` : "",
+    ].filter(Boolean)
+    const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
+    const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
     const result = await this.client.execute({
-      sql: `SELECT tasks.id, tasks.ticket_number, tasks.title, tasks.description, tasks.status,
-                   tasks.priority, tasks.labels, tasks.custom_fields, tasks.area_id, tasks.task_type,
-                   tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date, tasks.deferred_at,
-                   comment_index.comment_blob
-            FROM tasks
-            LEFT JOIN (
-              SELECT task_id, GROUP_CONCAT(content, ' || ') AS comment_blob
-              FROM comments
-              GROUP BY task_id
-            ) AS comment_index
-              ON comment_index.task_id = tasks.id
-            ${where}
-            ORDER BY ${orderBy}
-            LIMIT ${rawLimit}`,
-      args,
-    });
+      sql: `WITH needle(value, ticket) AS (VALUES (?, ?)),
+            hits AS MATERIALIZED (
+              SELECT tasks.id, tasks.priority, ${updatedAt} AS updated_at_ms,
+                ${selected("id", `lower(tasks.id) = needle.value OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
+                ${selected("id", `${position("tasks.id")} > 0 OR
+                  ${position("'mth-' || cast(tasks.ticket_number AS TEXT)")} > 0 OR
+                  ${position("cast(tasks.ticket_number AS TEXT)")} > 0`)} AS id_hit,
+                ${selected("title", "lower(tasks.title) = needle.value")} AS exact_title,
+                ${selected("title", position("tasks.title"))} AS title_at,
+                ${selected("description", `${position("tasks.description")} > 0`)} AS description_hit,
+                ${selected("labels", `${position("tasks.labels")} > 0`)} AS labels_hit,
+                ${selected("custom_fields", `${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
+                ${selected("comments", `EXISTS (SELECT 1 FROM comments c WHERE ${commentMatch})`)} AS comments_hit,
+                (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
+              FROM tasks CROSS JOIN needle ${where}
+            ),
+            page AS (
+              SELECT hits.*,
+                CASE WHEN exact_id THEN ${EXACT_TASK_IDENTIFIER_SCORE}
+                     WHEN exact_title THEN 3000
+                     WHEN title_at = 1 THEN 2000
+                     ELSE 1000 END
+                + (title_at > 0) * 60 + description_hit * 25 + labels_hit * 18
+                + custom_fields_hit * 15 + comments_hit * 12 + open_boost AS score
+              FROM hits
+              WHERE exact_id OR id_hit OR title_at > 0 OR description_hit OR labels_hit OR custom_fields_hit OR comments_hit
+              ORDER BY ${orderBy}updated_at_ms DESC, priority ASC, id ASC
+              LIMIT ?
+            )
+            SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
+              page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
+            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`,
+      args: [query, ticket, ...args, limit],
+    })
 
-    return result.rows as unknown as TaskRow[];
+    return result.rows as unknown as TaskCatalogRow[]
   }
 
   /** Get the next sequential ticket number for MTH-N key assignment */

@@ -572,17 +572,81 @@ components:
       additionalProperties: false
     SearchResult:
       type: object
+      required:
+        - query
+        - sections
+        - meta
       properties:
-        results:
+        query:
+          type: string
+        sections:
           type: array
           items:
             type: object
-        total:
-          type: integer
-        scope:
-          type: string
-        query:
-          type: string
+            required:
+              - id
+              - label
+              - items
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              items:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - kind
+                    - title
+                  properties:
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                    title:
+                      type: string
+                    taskId:
+                      type: string
+                    actionId:
+                      type: string
+                    href:
+                      type: string
+                    subtitle:
+                      type: string
+                    description:
+                      type: string
+                    icon:
+                      type: string
+                    color:
+                      type:
+                        - string
+                        - "null"
+                    meta:
+                      type: object
+                  additionalProperties: false
+            additionalProperties: false
+        meta:
+          type: object
+          properties:
+            scope:
+              type: string
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 12
+            sort:
+              type: string
+            include_completed:
+              type: boolean
+            include_archived:
+              type: boolean
+            task_fields:
+              type: array
+              items:
+                type: string
+          additionalProperties: false
       additionalProperties: false
     AgentScope:
       type: string
@@ -2557,10 +2621,9 @@ paths:
       parameters:
         - name: q
           in: query
-          required: true
           schema:
             type: string
-          description: Search query text
+          description: Search text. Omit for recent tasks.
         - name: scope
           in: query
           schema:
@@ -2577,7 +2640,9 @@ paths:
           schema:
             type: integer
             default: 8
-            maximum: 12
+            minimum: 1
+            maximum: 9007199254740991
+          description: Positive decimal integer. The effective per-section limit is capped at 12.
         - name: sort
           in: query
           schema:
@@ -2618,6 +2683,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResult"
+        "400": *a10
+        "401":
+          description: Ingress or API credential required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Agent token lacks search:read
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
         "500": *a12
   /api/areas:
     get:

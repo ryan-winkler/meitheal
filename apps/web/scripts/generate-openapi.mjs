@@ -282,11 +282,29 @@ const schemas = {
   },
   SearchResult: {
     type: "object",
+    required: ["query", "sections", "meta"],
     properties: {
-      results: { type: "array", items: { type: "object" } },
-      total: { type: "integer" },
-      scope: { type: "string" },
       query: { type: "string" },
+      sections: { type: "array", items: {
+        type: "object", required: ["id", "label", "items"],
+        properties: {
+          id: { type: "string" }, label: { type: "string" },
+          items: { type: "array", items: {
+            type: "object", required: ["id", "kind", "title"],
+            properties: {
+              id: { type: "string" }, kind: { type: "string" }, title: { type: "string" },
+              taskId: { type: "string" }, actionId: { type: "string" },
+              href: { type: "string" }, subtitle: { type: "string" }, description: { type: "string" },
+              icon: { type: "string" }, color: { type: ["string", "null"] }, meta: { type: "object" },
+            },
+          } },
+        },
+      } },
+      meta: { type: "object", properties: {
+        scope: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 12 },
+        sort: { type: "string" }, include_completed: { type: "boolean" }, include_archived: { type: "boolean" },
+        task_fields: { type: "array", items: { type: "string" } },
+      } },
     },
   },
   AgentScope: {
@@ -1027,9 +1045,9 @@ const paths = {
       summary: "Universal search across tasks, views, settings, and actions",
       description: "The primary search endpoint for all Meitheal content. Supports scoped search (tasks, views, settings, actions), field selection, and sorting. Use scope=tasks for task-specific searches, or scope=all for universal discovery.",
       parameters: [
-        { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query text" },
+        { name: "q", in: "query", schema: { type: "string" }, description: "Search text. Omit for recent tasks." },
         { name: "scope", in: "query", schema: { type: "string", enum: ["all", "tasks", "views", "settings", "actions"], default: "all" } },
-        { name: "limit", in: "query", schema: { type: "integer", default: 8, maximum: 12 } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 8, minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, description: "Positive decimal integer. The effective per-section limit is capped at 12." },
         { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "updated"], default: "relevance" } },
         { name: "include_completed", in: "query", schema: { type: "boolean" } },
         { name: "include_archived", in: "query", schema: { type: "boolean" } },
@@ -1038,7 +1056,12 @@ const paths = {
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "task_fields", in: "query", schema: { type: "string" }, description: "Comma-separated: id,title,description,labels,custom_fields,comments" },
       ],
-      responses: { 200: jsonContent(ref("SearchResult"), "Search results"), 500: err500 },
+      responses: {
+        200: jsonContent(ref("SearchResult"), "Search results"), 400: err400,
+        401: problemContent("Ingress or API credential required"),
+        403: problemContent("Agent token lacks search:read"),
+        429: problemContent("Rate limit exceeded"), 500: err500,
+      },
     },
   },
 
