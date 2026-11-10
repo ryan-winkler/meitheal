@@ -1,13 +1,20 @@
 import { escapeHtml } from "@lib/safe-html"
+import { createChecklistItem } from "@lib/checklist-items"
 
 type Item = { id?: string; text: string; done: boolean }
 
 function parseChecklist(raw: string | null): Item[] | null {
   if (raw === null) return []
   try {
-    const items = JSON.parse(raw) as Item[]
-    return Array.isArray(items) && items.every(item =>
-      item && typeof item.text === "string" && typeof item.done === "boolean") ? items : null
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    const items: Item[] = []
+    for (const item of parsed) {
+      if (typeof item === "string") items.push({ text: item, done: false })
+      else if (item && typeof item.text === "string" && typeof item.done === "boolean") items.push(item)
+      else return null
+    }
+    return items
   } catch {
     return null
   }
@@ -229,10 +236,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
   }
 
   add.addEventListener("click", () => {
-    // Ingress can also be served over local HTTP, where randomUUID is unavailable.
-    const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
-      byte => byte.toString(16).padStart(2, "0")).join("")
-    items.push({ id, text: "New Item", done: false })
+    items.push(createChecklistItem("New Item"))
     render({ index: items.length - 1, selector: 'input[type="text"]' })
     if (document.activeElement instanceof HTMLInputElement) document.activeElement.select()
     void save()

@@ -88,4 +88,74 @@ test.describe("New Task Modal", () => {
     const titleInput = page.locator("#new-task-title-input")
     await expect(titleInput).toBeFocused()
   })
+
+  test("keeps draft IDs through retry and saves an editable multiline checklist", async ({ page, request }) => {
+    await page.getByRole("button", { name: "New Task", exact: true }).click()
+    await page.locator('[data-kind="checklist"]').click()
+    await page.locator("#new-task-title-input").fill("Checklist creation fixture")
+    const draft = page.locator("#nt-checklist-builder-input")
+    await draft.fill("First\nSecond\nFirst")
+    await page.locator("#nt-add-sub-item-btn").click()
+    await page.getByRole("button", { name: "Remove First", exact: true }).first().click()
+    await draft.fill("Third")
+    await draft.press("Shift+Enter")
+    await draft.pressSequentially("Fourth")
+    await expect(draft).toHaveValue("Third\nFourth")
+    await draft.press("Enter")
+    await draft.fill("Last")
+
+    const payloads: string[] = []
+    let createdId: string | undefined
+    await page.route("**/api/tasks", async route => {
+      if (route.request().method() !== "POST") return route.continue()
+      payloads.push(route.request().postDataJSON().checklists)
+      if (payloads.length === 1) return route.fulfill({ status: 503, body: "Fixture save failure" })
+      const response = await route.fetch()
+      if (response.status() === 201) createdId = (await response.json()).id
+      return route.fulfill({ response })
+    })
+
+    const submit = page.locator("#submit-new-task-btn")
+    const creationResponse = (status: number) => page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/tasks" && response.request().method() === "POST" && response.status() === status,
+    )
+    await Promise.all([creationResponse(503), submit.click()])
+    await expect(submit).toBeEnabled()
+    await expect(draft).toHaveValue("Last")
+    await Promise.all([creationResponse(201), submit.click()])
+    expect(payloads).toHaveLength(2)
+    const persistedChecklist = payloads[1]!
+    expect(payloads[0]).toBe(persistedChecklist)
+
+    const texts = ["Second", "First", "Third", "Fourth", "Last"]
+    const checklist = JSON.parse(persistedChecklist)
+    expect(checklist).toEqual(texts.map(text => ({ id: expect.any(String), text, done: false })))
+    expect(new Set(checklist.map((item: { id: string }) => item.id)).size).toBe(texts.length)
+    expect(createdId).toEqual(expect.any(String))
+    const id = encodeURIComponent(createdId!)
+    const taskPath = "/api/tasks/" + id
+    const getChecklist = async () => {
+      const response = await request.get(taskPath)
+      expect(response.status()).toBe(200)
+      return (await response.json()).checklists
+    }
+    expect(await getChecklist()).toBe(persistedChecklist)
+
+    const detailsPage = await page.context().newPage()
+    await detailsPage.goto("/tasks?open=" + id)
+    const detail = detailsPage.getByRole("dialog", { name: "Task detail: Checklist creation fixture" })
+    await expect(detail).toBeVisible()
+    await expect(detail.locator('#td-checklists input[type="text"]')).toHaveCount(texts.length)
+    const [saved] = await Promise.all([
+      detailsPage.waitForResponse(response =>
+        new URL(response.url()).pathname === taskPath && response.request().method() === "PUT",
+      ),
+      detail.getByRole("checkbox", { name: "Last", exact: true }).check(),
+    ])
+    expect(saved.status()).toBe(200)
+    expect(saved.request().postDataJSON()).toMatchObject({ expected_checklists: persistedChecklist })
+    expect(JSON.parse(await getChecklist())).toEqual(checklist.map((item: { text: string }) => ({
+      ...item, done: item.text === "Last",
+    })))
+  })
 })

@@ -177,11 +177,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div id="nt-contextual-checklist" class="hidden">
            <div class="form-group flex flex-col gap-2">
              <div class="flex items-center justify-between">
-               <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.sub_items_label", locale)}</label>
+               <label for="nt-checklist-builder-input" class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.sub_items_label", locale)}</label>
                <button type="button" class="text-xs text-accent hover:text-accent/80 font-medium" id="nt-add-sub-item-btn">+ {t("task_modal.add_sub_item", locale)}</button>
              </div>
              <div id="nt-checklist-items-container" class="space-y-1"></div>
-             <input type="text" id="nt-checklist-builder-input" class="form-input bg-transparent border-none border-b border-border-dim rounded-none px-0 py-1 text-sm focus:ring-0 focus:border-accent w-full placeholder:text-text-muted/50" placeholder={t("task_modal.sub_item_placeholder", locale)} />
+             <textarea id="nt-checklist-builder-input" rows="2" class="form-input w-full" placeholder={t("task_modal.sub_item_placeholder", locale)}></textarea>
            </div>
         </div>
 
@@ -363,6 +363,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <script>
   import { showToast } from "@lib/toast";
+  import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
   import { initGlassDropdowns } from "@lib/glass-dropdown";
@@ -418,6 +419,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   pageLifecycle.onPageLoad((signal) => {
     const overlay = document.getElementById("new-task-overlay");
+    if (!overlay || overlay.dataset.newTaskController === "ready") return
+    overlay.dataset.newTaskController = "ready"
+    signal.addEventListener("abort", () => { delete overlay.dataset.newTaskController }, { once: true })
+
     const closeBtn = document.getElementById("close-new-task-modal");
     const cancelBtn = document.getElementById("cancel-new-task");
     const form = document.getElementById("new-task-form") as HTMLFormElement | null;
@@ -501,56 +506,52 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }, { signal });
     });
 
-    // Checklist Item Builder
-    const builderInput = document.getElementById("nt-checklist-builder-input") as HTMLInputElement | null;
-    const itemsContainer = document.getElementById("nt-checklist-items-container");
-    const extractedChecklistItems: string[] = [];
+    const builderInput = document.querySelector<HTMLTextAreaElement>("#nt-checklist-builder-input")
+    const itemsContainer = document.getElementById("nt-checklist-items-container")
+    const checklistItems = new Map<HTMLElement, ReturnType<typeof createChecklistItem>>()
+    let draft: { value: string; items: ReturnType<typeof createChecklistItem>[] } | undefined
 
-    (window as any)._removeNTCItem = (val: string) => {
-       const idx = extractedChecklistItems.indexOf(val);
-       if (idx > -1) extractedChecklistItems.splice(idx, 1);
-    };
-
-    if (builderInput) {
-      builderInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault(); // stop form submit
-          const val = builderInput.value.trim();
-          if (val) {
-            extractedChecklistItems.push(val);
-            const pill = document.createElement("div");
-            pill.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1 px-2 rounded group";
-            // Build DOM safely — no innerHTML with user input
-            const iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-            iconSvg.setAttribute("width", "14")
-            iconSvg.setAttribute("height", "14")
-            iconSvg.setAttribute("viewBox", "0 0 24 24")
-            iconSvg.setAttribute("fill", "none")
-            iconSvg.setAttribute("stroke", "currentColor")
-            iconSvg.setAttribute("stroke-width", "2")
-            iconSvg.classList.add("text-text-muted")
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-            circle.setAttribute("cx", "12")
-            circle.setAttribute("cy", "12")
-            circle.setAttribute("r", "10")
-            iconSvg.appendChild(circle)
-            pill.appendChild(iconSvg)
-            const labelSpan = document.createElement("span")
-            labelSpan.className = "flex-1"
-            labelSpan.textContent = val
-            pill.appendChild(labelSpan)
-            const removeBtn = document.createElement("button")
-            removeBtn.type = "button"
-            removeBtn.className = "text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-            removeBtn.textContent = "✕"
-            removeBtn.addEventListener("click", () => { pill.remove(); (window as any)._removeNTCItem(val) }, { signal })
-            pill.appendChild(removeBtn)
-            itemsContainer?.appendChild(pill);
-            builderInput.value = "";
-          }
-        }
-      }, { signal });
+    function currentChecklistDraft() {
+      const value = builderInput?.value ?? ""
+      if (!draft || value !== draft.value) {
+        draft = { value, items: checklistLines(value).map(createChecklistItem) }
+      }
+      return draft.items
     }
+
+    function stageChecklistItems() {
+      if (!builderInput || !itemsContainer) return
+      for (const item of currentChecklistDraft()) {
+        const row = document.createElement("div")
+        row.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1 px-2 rounded"
+        const label = document.createElement("span")
+        label.className = "flex-1 min-w-0 break-words"
+        label.textContent = item.text
+        const remove = document.createElement("button")
+        remove.type = "button"
+        remove.className = "btn btn-ghost"
+        remove.textContent = "×"
+        remove.setAttribute("aria-label", `Remove ${item.text}`)
+        remove.addEventListener("click", () => {
+          checklistItems.delete(row)
+          row.remove()
+          builderInput.focus()
+        }, { signal })
+        row.append(label, remove)
+        checklistItems.set(row, item)
+        itemsContainer.append(row)
+      }
+      builderInput.value = ""
+      draft = undefined
+      builderInput.focus()
+    }
+
+    document.getElementById("nt-add-sub-item-btn")?.addEventListener("click", stageChecklistItems, { signal })
+    builderInput?.addEventListener("keydown", event => {
+      if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
+      event.preventDefault()
+      stageChecklistItems()
+    }, { signal })
 
     // Shopping Qty +/- buttons
     const qtyMinus = document.getElementById("nt-qty-minus");
@@ -727,7 +728,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelTask || "Create Task";
 
         // Reset contextual fields
-        extractedChecklistItems.length = 0;
+        checklistItems.clear();
+        draft = undefined
+        checklistDiv?.classList.add("hidden");
         if (itemsContainer) itemsContainer.replaceChildren();
         contextualDiv?.classList.add("hidden");
         const contextualDue = document.getElementById("nt-contextual-due") as HTMLInputElement;
@@ -1000,14 +1003,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
     }, { signal });
 
-    // Form Submission — nuclear guard against HMR-accumulated duplicate handlers:
-    // Clone the form element to strip ALL previously registered listeners, then re-attach.
+    // Preserve the form so its child controls keep their lifecycle-bound handlers.
     if (form) {
-      const freshForm = form.cloneNode(true) as HTMLFormElement;
-      form.replaceWith(freshForm);
-      // Re-bind reference for the rest of this scope
-      const activeForm = freshForm;
-      activeForm.addEventListener("submit", async (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
         if ((window as any).__ntFormSubmitting) return;
         (window as any).__ntFormSubmitting = true;
@@ -1101,8 +1099,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
           const finalDue = explicitDue ? new Date(explicitDue).toISOString() : extractedDue;
 
-          const contextualChecklists = extractedChecklistItems.length > 0 ? JSON.stringify(extractedChecklistItems) : undefined;
-
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
           const prioritySelectEl = document.getElementById("new-task-priority") as HTMLInputElement | null;
@@ -1125,8 +1121,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           const recurrenceVal = recurrenceSelectEl?.value;
           if (recurrenceVal) body.recurrence_rule = recurrenceVal;
 
-          if (contextualChecklists) {
-            body.checklists = contextualChecklists;
+          if (body.task_kind === "checklist") {
+            body.checklists = JSON.stringify([...checklistItems.values(), ...currentChecklistDraft()])
           }
 
           // Routine flag
@@ -1150,7 +1146,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             });
             // Also store as checklists for display in detail view
             if (items.length > 0) {
-              body.checklists = JSON.stringify(items.map((i: { name: string }) => i.name));
+              body.checklists = JSON.stringify(items.map((i: { name: string }) => createChecklistItem(i.name)));
             }
           }
 
@@ -1235,7 +1231,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     // ── Memory cleanup on signal abort (page navigation) ──
     signal.addEventListener('abort', () => {
-      delete (window as any)._removeNTCItem;
       delete (window as any).__ntShoppingItems;
       delete (window as any).__meitheal_users;
       delete (window as any).__ntDatePickers;

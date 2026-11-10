@@ -27,9 +27,15 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Create a Checklist
+
+Choose **Checklist** in the task form and enter one item per line. Use **Add Item** or Enter to stage the lines. Shift+Enter starts a new line. Creating the task includes any text still in the item field. If saving fails, the form keeps the staged items and draft for retry.
+
 ### Edit a Checklist in Two Sessions
 
 Task detail saves checklist changes against the version it loaded. Independent changes to different identified steps and new steps can be combined automatically. If a newer save changes the same step differently or the editor cannot identify the changed steps safely, it keeps your draft visible. Choose **Load latest checklist** to review the saved version alongside your draft, then make any remaining edits.
+
+Older text-only items open unchecked. If a concurrent edit conflicts on a step without an ID, Meitheal keeps your draft for review.
 
 A task API client can use the same protection by sending `expected_checklists` with `checklists` in `PUT /api/tasks/{id}`. Pass the exact previous checklist value from the GET response. Use JSON `null` if the task has a historical null checklist. A stale comparison returns `409` with `code: "checklist_conflict"` and the current checklist value. The rejected update leaves all task fields untouched. Existing API callers can keep using the checklist string without a comparison.
 

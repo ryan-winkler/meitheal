@@ -97,7 +97,7 @@ test("a stale checklist guard rejects the entire update and keeps the legacy API
 
 test("a conflict on a legacy checklist step preserves the text draft and lets the user reload", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
-  const original = JSON.stringify([{ text: "Check the lock", done: false }])
+  const original = '[ "Check the lock" ]'
   const created = await request.post("/api/tasks", {
     data: { title: "Recover checklist draft", checklists: original },
   })
@@ -108,6 +108,17 @@ test("a conflict on a legacy checklist step preserves the text draft and lets th
   const first = page.getByRole("textbox", { name: "Checklist item 1", exact: true })
   await expect(page.locator("#td-checklist-recover")).toBeHidden()
   await expect(first).toHaveValue("Check the lock")
+  const [savedLegacy] = await Promise.all([
+    page.waitForResponse(response =>
+      new URL(response.url()).pathname === taskPath && response.request().method() === "PUT",
+    ),
+    page.getByRole("checkbox", { name: "Check the lock", exact: true }).check(),
+  ])
+  expect(savedLegacy.status()).toBe(200)
+  expect(savedLegacy.request().postDataJSON()).toMatchObject({
+    expected_checklists: original,
+    checklists: JSON.stringify([{ text: "Check the lock", done: true }]),
+  })
   const newer = JSON.stringify([{ text: "Other session", done: false }])
   const update = await request.put(taskPath, { data: { checklists: newer } })
   expect(update.status()).toBe(200)
@@ -195,6 +206,7 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
     PATH: process.env.PATH,
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+    MEITHEAL_INGRESS_FIXTURE_PORT: process.env.MEITHEAL_INGRESS_FIXTURE_PORT,
   }
   const id = "legacy-null-checklist"
   let server: ReturnType<typeof fork> | undefined
