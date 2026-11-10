@@ -245,52 +245,36 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Theme init — runs before paint to prevent flash -->
+    <!-- Restore appearance before a full load or an Astro document swap. -->
     <script is:inline>
       (function () {
-        var t = localStorage.getItem("meitheal-theme") || "dark";
-        // Always set data-theme explicitly for all states (including dark)
-        // Previous code relied on :root fallthrough for dark, which caused
-        // theme inconsistency when components used [data-theme="dark"] selector
-        if (t === "custom") {
-          document.documentElement.setAttribute("data-theme", "dark");
-          var css = localStorage.getItem("meitheal-custom-theme-css");
-          if (css) {
-            var s = document.createElement("style");
-            s.id = "meitheal-custom-theme";
-            s.textContent = css;
-            document.head.appendChild(s);
+        function restoreAppearance(doc) {
+          var theme = localStorage.getItem("meitheal-theme");
+          var root = doc.documentElement;
+          root.dataset.theme = ["light", "auto"].includes(theme) ? theme : "dark";
+          var accent = localStorage.getItem("meitheal-accent-color");
+          if (/^#[0-9a-f]{6}$/i.test(accent || "")) {
+            root.style.setProperty("--personal-accent", accent);
           }
-        } else {
-          document.documentElement.setAttribute("data-theme", t);
+          var css = theme === "custom" && localStorage.getItem("meitheal-custom-theme-css");
+          if (css) {
+            var style = doc.getElementById("meitheal-custom-theme");
+            if (!style) {
+              style = doc.createElement("style");
+              style.id = "meitheal-custom-theme";
+              doc.head.appendChild(style);
+            }
+            style.textContent = css;
+          }
         }
-      })();
-    </script>
 
-    <!-- User accent color: restore from localStorage before paint -->
-    <script is:inline>
-      (function () {
-        var accent = localStorage.getItem("meitheal-accent-color");
-        if (!accent) return;
-        var root = document.documentElement.style;
-        root.setProperty("--accent", accent);
-        // P3-3: Set fallback values first (for WebViews without color-mix support)
-        root.setProperty("--accent-hover", accent);
-        root.setProperty("--accent-light", accent);
-        // Compute hover (darken 10%) — overrides fallback on supporting browsers
-        try {
-          root.setProperty(
-            "--accent-hover",
-            "color-mix(in srgb, " + accent + " 85%, #000)",
-          );
-          root.setProperty(
-            "--accent-light",
-            "color-mix(in srgb, " + accent + " 12%, transparent)",
-          );
-        } catch (e) {
-          // Older WebViews — fallback values already set above
-        }
-        root.setProperty("--border-focus", accent);
+        restoreAppearance(document);
+        window.__meithealAppearanceEvents?.abort();
+        var events = new AbortController();
+        window.__meithealAppearanceEvents = events;
+        document.addEventListener("astro:before-swap", function (event) {
+          restoreAppearance(event.newDocument);
+        }, { signal: events.signal });
       })();
     </script>
 

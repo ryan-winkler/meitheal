@@ -170,9 +170,9 @@
 
 /* Keyboard focus ring (accessibility) */
 .kanban-card:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
-  border-color: var(--accent);
+  border-color: var(--border-focus);
 }
 
 .kanban-column.drag-over {

@@ -98,8 +98,9 @@
 /* ═══════ Focus Ring Animation ═══════ */
 .form-input:focus-visible,
 .form-select:focus-visible {
-  outline: none;
-  border-color: var(--accent);
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+  border-color: var(--border-focus);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
   transition:
     border-color 200ms ease,

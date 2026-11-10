@@ -53,7 +53,7 @@
 
   /* Focus-visible: keyboard accessibility (R-504) */
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
@@ -67,7 +67,7 @@
         .btn-secondary:focus-visible,
         .btn-ghost:focus-visible,
         .btn-icon:focus-visible {
-          outline: 2px solid var(--accent);
+          outline: 2px solid var(--border-focus);
           outline-offset: 2px;
           box-shadow: 0 0 0 4px var(--accent-light);
         }

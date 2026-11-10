@@ -5,6 +5,7 @@
  * locale, timezone, week start, and date format preferences.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { DEFAULT_ACCENT } from "@lib/design-tokens"
 import { showToast } from "@lib/toast"
 import {
   setTheme as importedSetTheme,
@@ -40,7 +41,49 @@ function updateCustomThemeDisplay(filename: string | null): void {
 
 // ───── Init ─────
 
+const ACCENT_KEY = "meitheal-accent-color"
+
+function initAccentSettings(): void {
+  const swatches = document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
+  const picker = document.querySelector<HTMLInputElement>("#accent-color-custom")
+  const reset = document.getElementById("accent-reset")
+  const root = document.documentElement.style
+
+  function updateSelection(color: string): void {
+    const normalized = color.toLowerCase()
+    for (const swatch of swatches) {
+      const selected = swatch.dataset.color?.toLowerCase() === normalized
+      swatch.classList.toggle("active", selected)
+      swatch.setAttribute("aria-pressed", String(selected))
+    }
+    if (picker) picker.value = normalized
+  }
+
+  function setAccent(color: string): void {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return
+    root.setProperty("--personal-accent", color)
+    localStorage.setItem(ACCENT_KEY, color)
+    updateSelection(color)
+  }
+
+  const stored = localStorage.getItem(ACCENT_KEY)
+  updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : DEFAULT_ACCENT)
+  for (const swatch of swatches) {
+    pageLifecycle.on(swatch, "click", () => setAccent(swatch.dataset.color ?? ""))
+  }
+  if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
+  if (reset) {
+    pageLifecycle.on(reset, "click", () => {
+      root.removeProperty("--personal-accent")
+      localStorage.removeItem(ACCENT_KEY)
+      updateSelection(DEFAULT_ACCENT)
+    })
+  }
+}
+
 export function initThemeSettings(): void {
+  initAccentSettings()
+
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
   if (themeSelect) {
