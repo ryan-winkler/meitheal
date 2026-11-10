@@ -1,0 +1,97 @@
+blueprint:
+  name: "Meitheal: Task Notification with Actions"
+  description: >-
+    Send an actionable notification to your phone when a Meitheal task event
+    occurs (created, overdue, etc.). The notification includes deep-link actions
+    to view or complete the task directly from the companion app.
+
+    Compatible with Android (haptic feedback, deep-links) and iOS.
+  domain: automation
+  author: "Coolock Village"
+  source_url: "https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_task_notification.yaml"
+  input:
+    notify_device:
+      name: "Notification Device"
+      description: "The mobile device to send notifications to"
+      selector:
+        device:
+          integration: mobile_app
+    event_type:
+      name: "Task Event"
+      description: "Which Meitheal event triggers the notification"
+      default: "meitheal_task_created"
+      selector:
+        select:
+          options:
+            - label: "Task Created"
+              value: "meitheal_task_created"
+            - label: "Task Completed"
+              value: "meitheal_task_completed"
+            - label: "Task Overdue"
+              value: "meitheal_task_overdue"
+            - label: "Task Updated"
+              value: "meitheal_task_updated"
+            - label: "Board Changed"
+              value: "meitheal_board_updated"
+    ingress_path:
+      name: "Meitheal Ingress Path"
+      description: >-
+        The ingress path for your Meitheal addon. Find this in
+        Settings → Add-ons → Meitheal → Info (e.g. /api/hassio_ingress/TOKEN/)
+      default: "/api/hassio_ingress/"
+      selector:
+        text:
+          type: url
+
+trigger:
+  - platform: event
+    event_type: !input event_type
+    event_data:
+      domain: meitheal
+
+variables:
+  task_title: "{{ trigger.event.data.title | default('Task') }}"
+  task_id: "{{ trigger.event.data.task_id | default('') }}"
+  event_name: >-
+    {% set types = {
+      'meitheal_task_created': 'New Task',
+      'meitheal_task_completed': 'Task Done',
+      'meitheal_task_overdue': 'Overdue',
+      'meitheal_task_updated': 'Task Updated',
+      'meitheal_board_updated': 'Board Changed'
+    } %}
+    {{ types.get(trigger.event.event_type, 'Meitheal') }}
+  ingress_path: !input ingress_path
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "{{ event_name }} — Meitheal"
+    message: "{{ task_title }}"
+    data:
+      # Android: vibration pattern for haptic feedback
+      vibrationPattern: "100, 200, 100, 200"
+      # Android: notification channel for grouping
+      channel: "meitheal_tasks"
+      # Android: high importance for heads-up display
+      importance: high
+      # Android: notification group
+      group: "meitheal"
+      # Android: clickAction opens Meitheal ingress
+      clickAction: "{{ ingress_path }}"
+      # Android/iOS: notification tag for deduplication
+      tag: "meitheal_{{ task_id }}"
+      # Actionable notification buttons
+      actions:
+        - action: "URI"
+          title: "📋 View Task"
+          uri: "{{ ingress_path }}"
+        - action: "MEITHEAL_COMPLETE_{{ task_id }}"
+          title: "✅ Complete"
+        - action: "URI"
+          title: "📊 Dashboard"
+          uri: "{{ ingress_path }}"
+
+mode: queued
+max_queued: 5

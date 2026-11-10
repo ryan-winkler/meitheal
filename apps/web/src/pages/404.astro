@@ -1,0 +1,36 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { t } from "../i18n/translations";
+import type { Locale } from "../lib/locale";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+---
+
+<Layout title={`Meitheal — ${t("errors.page_not_found", locale)}`}>
+  <span slot="page-title">404</span>
+
+  <div
+    class="flex flex-col items-center justify-center min-h-[50vh]"
+  >
+    <div class="error-icon">🧭</div>
+    <h1 class="text-2xl font-bold text-text-primary mb-2">
+      {t("errors.page_not_found", locale)}
+    </h1>
+    <p class="text-text-muted text-sm mb-6">
+      {t("errors.page_not_found_desc", locale)}
+    </p>
+    <div class="flex gap-3">
+      <a href="/" class="btn btn-primary">{t("errors.go_home", locale)}</a>
+      <a href="/tasks" class="btn btn-ghost">{t("errors.view_tasks", locale)}</a
+      >
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .error-icon {
+    font-size: 72px;
+    margin-bottom: 16px;
+  }
+</style>

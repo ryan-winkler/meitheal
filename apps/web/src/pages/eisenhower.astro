@@ -1,0 +1,1439 @@
+---
+/**
+ * Eisenhower Matrix — Schema-driven urgency × importance prioritisation view
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Quadrant assignment is derived from schema columns:
+ *   urgency (0-5), importance (0-5), threshold = 3
+ *
+ *   Q1 — Do First   → urgency ≥ 3 AND importance ≥ 3
+ *   Q2 — Schedule    → importance ≥ 3, urgency < 3
+ *   Q3 — Delegate    → urgency ≥ 3, importance < 3
+ *   Q4 — Not Now     → both < 3
+ *
+ * Drag-and-drop between quadrants updates urgency/importance via PATCH.
+ * eisenhower_override = 1 flags manually placed tasks (📌 indicator).
+ *
+ * @kcs Phase 06: replaces old heuristic derivation (priority + due date)
+ */
+import Layout from "../layouts/Layout.astro"
+
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
+import TaskListItem from "../components/tasks/TaskListItem.astro"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
+import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+const { tasks } = await getTasksForView()
+const openTasks = tasks.filter((t) => !t.is_done)
+
+// ── Schema-driven quadrant partitioning ────────────────────────
+const q1: TaskViewItem[] = [] // Do First  — urgent + important
+const q2: TaskViewItem[] = [] // Schedule  — important, not urgent
+const q3: TaskViewItem[] = [] // Delegate  — urgent, not important
+const q4: TaskViewItem[] = [] // Not Now   — neither
+
+for (const t of openTasks) {
+  switch (t.eisenhower_quadrant) {
+    case "do-first": q1.push(t); break
+    case "schedule": q2.push(t); break
+    case "delegate": q3.push(t); break
+    case "not-now": q4.push(t); break
+    default: q4.push(t) // unclassified (urgency=0, importance=0)
+  }
+}
+
+// Tasks with both urgency=0 and importance=0 need triage
+const unclassifiedCount = openTasks.filter((t) => t.urgency === 0 && t.importance === 0).length
+
+// Completed today count (for dopamine feedback)
+const todayStr = new Date().toISOString().slice(0, 10)
+const completedToday = tasks.filter((t) => t.is_done && t.updated_at?.startsWith(todayStr)).length
+
+// WIP limit threshold for Q1 (Dan Ariely / Kelly McGonigal audit)
+const Q1_WIP_LIMIT = 5
+
+interface Quadrant {
+  id: string
+  label: string
+  desc: string
+  colorToken: string
+  emoji: string
+  tasks: TaskViewItem[]
+  effortLabel: string
+}
+
+function computeEffortLabel(tasks: TaskViewItem[]): string {
+  const total = tasks.reduce((sum, t) => sum + (t.effort_minutes ?? 0), 0)
+  if (total <= 0) return ""
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  if (h === 0) return `~${m}m`
+  if (m === 0) return `~${h}h`
+  return `~${h}h ${m}m`
+}
+
+const quadrants: Quadrant[] = [
+  { id: "do-first",  label: t("eisenhower.do_first", locale),  desc: t("eisenhower.do_first_desc", locale),  colorToken: "var(--danger)", emoji: "🔥", tasks: q1, effortLabel: computeEffortLabel(q1) },
+  { id: "schedule",  label: t("eisenhower.schedule", locale),   desc: t("eisenhower.schedule_desc", locale),  colorToken: "var(--info)", emoji: "📅", tasks: q2, effortLabel: computeEffortLabel(q2) },
+  { id: "delegate",  label: t("eisenhower.delegate", locale),   desc: t("eisenhower.delegate_desc", locale),  colorToken: "var(--warning)", emoji: "👥", tasks: q3, effortLabel: computeEffortLabel(q3) },
+  { id: "not-now",   label: t("eisenhower.not_now", locale),    desc: t("eisenhower.not_now_desc", locale),   colorToken: "var(--text-muted)", emoji: "📦", tasks: q4, effortLabel: computeEffortLabel(q4) },
+]
+
+// Badge helpers (avoid <= in JSX which esbuild parses as HTML)
+function effortClass(m: number): string {
+  if (m <= 15) return "effort--quick"
+  if (m <= 60) return "effort--medium"
+  return "effort--long"
+}
+function effortEmoji(m: number): string {
+  if (m <= 15) return "⚡"
+  if (m <= 60) return "⏱️"
+  return "🏋️"
+}
+function effortLabelText(m: number): string {
+  if (m <= 60) return `${m}m`
+  return `${Math.round(m / 60)}h`
+}
+function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
+  if (typeof fp === "string") try { return JSON.parse(fp) } catch { return {} }
+  if (typeof fp === "object" && fp !== null) return fp as Record<string, unknown>
+  return {}
+}
+---
+
+<Layout title="Eisenhower Matrix">
+
+  <UnifiedBar
+    title="Eisenhower"
+    titleIcon="🎯"
+    tabs={EISENHOWER_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="eisenhower-bar"
+    slot="custom-header"
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="unified-bar__new-task-btn eisenhower__review-btn-bar"
+      data-action="start-review"
+      title={t("eisenhower.review_title", locale)}
+      aria-label={t("eisenhower.review_title", locale)}
+    >
+      <span class="unified-bar__new-task-label">🔍 {t("eisenhower.review_cta", locale)}</span>
+    </button>
+  </UnifiedBar>
+
+  <main id="eisenhower-shell" class="eisenhower">
+    <section
+      id="eisenhower-overview"
+      class="eisenhower__overview-section"
+      data-eisenhower-section
+    >
+      <div class="eisenhower__overview-row">
+        {completedToday > 0 && (
+          <div class="eisenhower__completed-today" title={t("eisenhower.completed_today", locale)}>
+            <span class="completed-today__icon">🏆</span>
+            <span class="completed-today__count">{completedToday}</span>
+            <span class="completed-today__label">{t("eisenhower.completed_today", locale)}</span>
+          </div>
+        )}
+        <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
+      </div>
+    </section>
+
+    {/* ── Mobile tab bar (visible < 768px) ── */}
+    <nav class="eisenhower__mobile-tabs" role="tablist" aria-label="Quadrant tabs">
+      {quadrants.map((q, i) => (
+        <button
+          class={`mobile-tab ${i === 0 ? "mobile-tab--active" : ""}`}
+          data-tab-quadrant={q.id}
+          role="tab"
+          aria-selected={i === 0 ? "true" : "false"}
+          style={`--tab-color: ${q.colorToken}`}
+        >
+          <span class="mobile-tab__emoji">{q.emoji}</span>
+          <span class="mobile-tab__label">{q.label}</span>
+          <span class="mobile-tab__count">{q.tasks.length}</span>
+        </button>
+      ))}
+    </nav>
+
+    {/* ── Triage banner — nudge for unclassified tasks ── */}
+    {unclassifiedCount > 0 && (
+      <div class="eisenhower__triage-banner" role="status">
+        <span class="triage-banner__icon">📋</span>
+        <span class="triage-banner__text">
+          <strong>{unclassifiedCount}</strong> {unclassifiedCount === 1 ? t("eisenhower.triage_single", locale) : t("eisenhower.triage_plural", locale)}
+        </span>
+        <button
+          class="triage-banner__btn"
+          data-action="start-triage"
+          title={t("eisenhower.start_triage_title", locale)}
+        >
+          {t("eisenhower.start_triage", locale)}
+        </button>
+      </div>
+    )}
+
+    {/* ── Triage overlay (one-at-a-time classification) ── */}
+    <div id="triage-overlay" class="triage-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Task triage">
+      <div class="triage-card">
+        <header class="triage-card__header">
+          <h2 class="triage-card__title">{t("eisenhower.triage_title", locale)}</h2>
+          <span class="triage-card__progress" id="triage-progress">1 / {unclassifiedCount}</span>
+          <button class="triage-card__close" data-action="close-triage" aria-label="Close triage">✕</button>
+        </header>
+
+        <div class="triage-card__task" id="triage-task-name">
+          {/* Populated by JS */}
+        </div>
+
+        <div class="triage-card__controls">
+          <div class="triage-control">
+            <label class="triage-control__label">⚡ {t("eisenhower.triage_urgency", locale)}</label>
+            <div class="triage-control__slider-row">
+              <input type="range" id="triage-urgency" min="0" max="5" value="0" class="triage-control__slider" />
+              <span class="triage-control__value" id="triage-urgency-val">0</span>
+            </div>
+            <div class="triage-control__labels">
+              <span>{t("eisenhower.triage_not_urgent", locale)}</span>
+              <span>{t("eisenhower.triage_critical", locale)}</span>
+            </div>
+          </div>
+
+          <div class="triage-control">
+            <label class="triage-control__label">⭐ {t("eisenhower.triage_importance", locale)}</label>
+            <div class="triage-control__slider-row">
+              <input type="range" id="triage-importance" min="0" max="5" value="0" class="triage-control__slider" />
+              <span class="triage-control__value" id="triage-importance-val">0</span>
+            </div>
+            <div class="triage-control__labels">
+              <span>{t("eisenhower.triage_not_important", locale)}</span>
+              <span>{t("eisenhower.triage_critical", locale)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="triage-card__quadrant-preview" id="triage-quadrant-preview">
+          {/* Shows which quadrant the task will land in based on slider values */}
+        </div>
+
+        {/* ── Extended details (progressive disclosure) ── */}
+        <details class="triage-card__details">
+          <summary class="triage-card__expand-btn">📊 {t("eisenhower.triage_add_details", locale)}</summary>
+          <div class="triage-card__extended">
+            <div class="triage-control">
+              <label class="triage-control__label">⏱️ {t("eisenhower.triage_effort", locale)}</label>
+              <select id="triage-effort" class="triage-control__select">
+                <option value="">{t("eisenhower.triage_effort_none", locale)}</option>
+                <option value="5">⚡ 5m</option>
+                <option value="15">⚡ 15m</option>
+                <option value="30">⏱️ 30m</option>
+                <option value="60">⏱️ 1h</option>
+                <option value="120">🏋️ 2h</option>
+                <option value="240">🏋️ 4h</option>
+              </select>
+            </div>
+            <div class="triage-control">
+              <label class="triage-control__label">🧠 {t("eisenhower.triage_effort_type", locale)}</label>
+              <div class="triage-control__radio-row">
+                <label><input type="radio" name="triage-effort-type" value="" checked /> —</label>
+                <label><input type="radio" name="triage-effort-type" value="deep" /> 🧘 {t("eisenhower.effort_deep", locale)}</label>
+                <label><input type="radio" name="triage-effort-type" value="shallow" /> 💬 {t("eisenhower.effort_shallow", locale)}</label>
+                <label><input type="radio" name="triage-effort-type" value="admin" /> 📋 {t("eisenhower.effort_admin", locale)}</label>
+              </div>
+            </div>
+            <div class="triage-control">
+              <label class="triage-control__label">⚠️ {t("eisenhower.triage_delay_impact", locale)}</label>
+              <select id="triage-delay-impact" class="triage-control__select">
+                <option value="none">{t("eisenhower.delay_none", locale)}</option>
+                <option value="inconvenient">{t("eisenhower.delay_inconvenient", locale)}</option>
+                <option value="costly">{t("eisenhower.delay_costly", locale)}</option>
+                <option value="critical">{t("eisenhower.delay_critical", locale)}</option>
+              </select>
+            </div>
+            <div class="triage-control">
+              <label class="triage-control__label">💡 {t("eisenhower.triage_interest", locale)}</label>
+              <div class="triage-control__radio-row">
+                <label><input type="radio" name="triage-interest" value="" checked /> —</label>
+                <label><input type="radio" name="triage-interest" value="engaging" /> 🤩 {t("eisenhower.interest_engaging", locale)}</label>
+                <label><input type="radio" name="triage-interest" value="neutral" /> 😐 {t("eisenhower.interest_neutral", locale)}</label>
+                <label><input type="radio" name="triage-interest" value="dreaded" /> 😬 {t("eisenhower.interest_dreaded", locale)}</label>
+                <label><input type="radio" name="triage-interest" value="quick-win" /> ⚡ {t("eisenhower.interest_quickwin", locale)}</label>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <footer class="triage-card__footer">
+          <button class="triage-card__skip" data-action="triage-skip">
+            {t("eisenhower.triage_skip", locale)} →
+          </button>
+          <button class="triage-card__save" data-action="triage-save">
+            {t("eisenhower.triage_classify", locale)} ✓
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    {/* ── Weekly Review overlay ── */}
+    <div id="review-overlay" class="review-overlay triage-overlay--hidden" role="dialog" aria-modal="true" aria-label="Weekly review">
+      <div class="review-card">
+        <header class="triage-card__header">
+          <h2 class="triage-card__title">{t("eisenhower.review_title", locale)}</h2>
+          <span class="triage-card__progress" id="review-progress">1 / ?</span>
+          <button class="triage-card__close" data-action="close-review" aria-label="Close review">✕</button>
+        </header>
+
+        <div class="review-card__source" id="review-source">
+          {/* Shows which quadrant the task came from */}
+        </div>
+
+        <div class="triage-card__task" id="review-task-name">
+          {/* Populated by JS */}
+        </div>
+
+        <footer class="review-card__actions">
+          <button class="review-action review-action--promote" data-action="review-promote" title={t("eisenhower.review_promote_title", locale)}>
+            ⬆️ {t("eisenhower.review_promote", locale)}
+          </button>
+          <button class="review-action review-action--archive" data-action="review-archive" title={t("eisenhower.review_archive_title", locale)}>
+            📥 {t("eisenhower.review_archive", locale)}
+          </button>
+          <button class="review-action review-action--delete" data-action="review-delete" title={t("eisenhower.review_delete_title", locale)}>
+            🗑️ {t("eisenhower.review_delete", locale)}
+          </button>
+          <button class="review-action review-action--skip" data-action="review-skip">
+            {t("eisenhower.review_skip", locale)} →
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <section id="eisenhower-matrix" data-eisenhower-section>
+    <div class="eisenhower__grid">
+      {quadrants.map((q) => (
+        <section
+          class={`eisenhower__quadrant ${q.id === "schedule" ? "quadrant--growth-zone" : ""}`}
+          data-quadrant={q.id}
+          style={`--q-color: ${q.colorToken}`}
+        >
+          <header class="quadrant__header">
+            <span class="quadrant__badge">{q.emoji}</span>
+            <div class="quadrant__heading">
+              <h2 class="quadrant__title">{q.label}</h2>
+              <span class="quadrant__desc">{q.desc}</span>
+              {q.id === "schedule" && (
+                <span class="quadrant__sublabel">🌱 {t("eisenhower.growth_zone", locale)}</span>
+              )}
+            </div>
+            <span class="quadrant__effort-total" data-effort-quadrant={q.id}>
+              {q.effortLabel}
+            </span>
+            <span class="quadrant__count">{q.tasks.length}</span>
+            <button
+              class="quadrant__focus-btn"
+              data-focus-quadrant={q.id}
+              title={t("eisenhower.focus_mode", locale)}
+              aria-label={`Focus on ${q.label}`}
+            >
+              ⛶
+            </button>
+          </header>
+
+          {/* ── Q1 "Commit to Today" bridge ── */}
+          {q.id === "do-first" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--primary"
+                data-action="commit-q1"
+                title={t("eisenhower.commit_q1_title", locale)}
+              >
+                🎯 {t("eisenhower.commit_q1", locale)}
+              </button>
+            </div>
+          )}
+
+          {/* ── Q1 WIP limit warning ── */}
+          {q.id === "do-first" && q.tasks.length > Q1_WIP_LIMIT && (
+            <div class="quadrant__wip-warning" role="alert">
+              ⚠️ {t("eisenhower.wip_warning", locale).replace("{count}", String(q.tasks.length)).replace("{limit}", String(Q1_WIP_LIMIT))}
+            </div>
+          )}
+
+          {/* ── Q2 "Schedule This Week" action ── */}
+          {q.id === "schedule" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--primary"
+                data-action="schedule-q2"
+                title={t("eisenhower.schedule_q2_title", locale)}
+              >
+                📅 {t("eisenhower.schedule_q2", locale)}
+              </button>
+            </div>
+          )}
+
+          {/* ── Q3 quick-assign action ── */}
+          {q.id === "delegate" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--muted"
+                data-action="assign-q3"
+                title={t("eisenhower.assign_q3_title", locale)}
+              >
+                👤 {t("eisenhower.assign_q3", locale)}
+              </button>
+            </div>
+          )}
+
+          {/* ── Q4 action row ── */}
+          {q.id === "not-now" && q.tasks.length > 0 && (
+            <div class="quadrant__action-bar">
+              <button
+                class="quadrant__action-btn quadrant__action-btn--muted"
+                data-action="defer-q4"
+                title={t("eisenhower.defer_q4_title", locale)}
+              >
+                📥 {t("eisenhower.defer_q4", locale)}
+              </button>
+              <button
+                class="quadrant__action-btn quadrant__action-btn--danger"
+                data-action="complete-q4"
+                title={t("eisenhower.complete_q4_title", locale)}
+              >
+                ✅ {t("eisenhower.complete_q4", locale)}
+              </button>
+            </div>
+          )}
+
+          <div class="quadrant__tasks" data-drop-zone={q.id} role="list">
+            {q.tasks.length === 0 ? (
+              <div class="quadrant__empty">
+                {t("eisenhower.empty_quadrant", locale)}
+              </div>
+            ) : (
+              q.tasks.map((task, idx) => (
+                <div
+                  class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
+                  data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
+                  data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
+                >
+                  <TaskListItem task={task} compact={true} />
+                  <div class="eisenhower__task-meta">
+                    {task.eisenhower_override && (
+                      <span class="tli__pin" title="Manually placed">📌</span>
+                    )}
+                    {task.effort_minutes != null && task.effort_minutes > 0 && (
+                      <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
+                        title={`Estimated effort: ${task.effort_minutes}m`}>
+                        {effortEmoji(task.effort_minutes)}
+                        <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
+                      </span>
+                    )}
+                    {task.blocked_by && (
+                      <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
+                    )}
+                    {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
+                      <span class="tli__recurring" title="Recurring task">🔁</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* ── Quick-capture input per quadrant ── */}
+          <div class="quadrant__quick-capture">
+            <input
+              type="text"
+              class="quick-capture__input"
+              data-quadrant-capture={q.id}
+              placeholder={t("eisenhower.quick_add_placeholder", locale)}
+              autocomplete="off"
+            />
+          </div>
+        </section>
+      ))}
+    </div>
+
+    <p class="eisenhower__hint">
+      {t("eisenhower.drag_hint", locale)}
+    </p>
+    </section>
+
+    <section id="eisenhower-flow" class="eisenhower__flow-section" data-eisenhower-section>
+      <h2 class="eisenhower__flow-heading">Flow</h2>
+      <div class="eisenhower__flow-grid">
+        <a href="/today" class="eisenhower__flow-card">
+          <span class="flow-card__icon">☀️</span>
+          <span class="flow-card__label">Today</span>
+          <span class="flow-card__desc">Committed daily work surface</span>
+        </a>
+        <a href="/upcoming" class="eisenhower__flow-card">
+          <span class="flow-card__icon">📅</span>
+          <span class="flow-card__label">Upcoming</span>
+          <span class="flow-card__desc">Next 7 days at a glance</span>
+        </a>
+        <a href="/kanban" class="eisenhower__flow-card">
+          <span class="flow-card__icon">📋</span>
+          <span class="flow-card__label">Kanban</span>
+          <span class="flow-card__desc">Workflow board by status</span>
+        </a>
+        <a href="/calendar" class="eisenhower__flow-card">
+          <span class="flow-card__icon">🗓️</span>
+          <span class="flow-card__label">Calendar</span>
+          <span class="flow-card__desc">Monthly timeline view</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    import { initEisenhowerPage } from "@lib/eisenhower-controller"
+    import { pageLifecycle } from "@lib/page-lifecycle"
+
+    pageLifecycle.onPageLoad((signal) => initEisenhowerPage({ signal }))
+  </script>
+</Layout>
+
+<style>
+  .eisenhower {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    min-height: 100vh;
+  }
+
+  /* ── Overview section ── */
+  .eisenhower__overview-section {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+    margin-bottom: 16px;
+  }
+  .eisenhower__overview-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .eisenhower__subtitle {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  /* ── Completed today counter ── */
+  .eisenhower__completed-today {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(var(--success-rgb, 34, 197, 94), 0.08);
+    border: 1px solid rgba(var(--success-rgb, 34, 197, 94), 0.2);
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .completed-today__icon {
+    font-size: 1rem;
+  }
+  .completed-today__count {
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: var(--success, #22c55e);
+  }
+  .completed-today__label {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  /* ── Top-task spotlight (first task in Q1) ── */
+  .task-wrapper--top-task {
+    position: relative;
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(var(--accent-rgb), 0.04);
+    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.08);
+  }
+  .task-wrapper--top-task::before {
+    content: "👑";
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    font-size: 0.75rem;
+    z-index: 1;
+  }
+
+  /* ── 2×2 Grid ── */
+  #eisenhower-matrix {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+  }
+  .eisenhower__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 16px;
+    min-height: calc(100vh - 180px);
+  }
+
+  @media (max-width: 768px) {
+    .eisenhower__grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+      min-height: unset;
+    }
+    /* On mobile, hide all quadrants except the active tab */
+    .eisenhower__quadrant {
+      display: none;
+    }
+    .eisenhower__quadrant.quadrant--tab-active {
+      display: flex;
+    }
+  }
+
+  /* ── Mobile tab bar ── */
+  .eisenhower__mobile-tabs {
+    display: none;
+    gap: 4px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 2px 0;
+  }
+  .eisenhower__mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  @media (max-width: 768px) {
+    .eisenhower__mobile-tabs {
+      display: flex;
+    }
+  }
+  .mobile-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms, color 150ms;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .mobile-tab:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+  }
+  .mobile-tab--active {
+    border-color: var(--tab-color);
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  .mobile-tab__emoji {
+    font-size: 0.875rem;
+  }
+  .mobile-tab__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-tab__count {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+    font-size: 0.625rem;
+    padding: 1px 5px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+  }
+
+  /* ── Focus mode (desktop: expand one quadrant full-width) ── */
+  .eisenhower__grid.grid--focused {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .eisenhower__grid.grid--focused .eisenhower__quadrant {
+    display: none;
+  }
+  .eisenhower__grid.grid--focused .eisenhower__quadrant.quadrant--focused {
+    display: flex;
+    min-height: calc(100vh - 240px);
+  }
+  .quadrant__focus-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: background 150ms, color 150ms, border-color 150ms;
+    opacity: 0.6;
+  }
+  .quadrant__focus-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--border);
+    color: var(--text-primary);
+    opacity: 1;
+  }
+  .quadrant--focused .quadrant__focus-btn {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    opacity: 1;
+  }
+
+  /* ── Quadrant ── */
+  .eisenhower__quadrant {
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--q-color);
+    border-radius: var(--radius-md, 10px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 200ms, border-color 200ms;
+  }
+  .eisenhower__quadrant.quadrant--drag-over {
+    border-color: var(--q-color);
+    box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.15);
+  }
+
+  /* ── Quadrant header ── */
+  .quadrant__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .quadrant__badge {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+  .quadrant__heading {
+    flex: 1;
+    min-width: 0;
+  }
+  .quadrant__title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .quadrant__desc {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 1px;
+  }
+  .quadrant__count {
+    flex-shrink: 0;
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    min-width: 24px;
+    text-align: center;
+  }
+
+  /* ── Task list inside quadrant ── */
+  .quadrant__tasks {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 80px;
+  }
+
+  .quadrant__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 80px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+    opacity: 0.7;
+  }
+
+  /* ── Task wrapper (task + pin indicator) ── */
+  .eisenhower__task-wrapper {
+    position: relative;
+  }
+  .tli__pin {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.6875rem;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  /* ── WIP warning ── */
+  .quadrant__wip-warning {
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.1);
+    color: var(--warning);
+    font-size: 0.75rem;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.15);
+  }
+
+  /* ── Triage banner ── */
+  .eisenhower__triage-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
+    border: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    border-radius: var(--radius-md, 10px);
+    padding: 10px 16px;
+    margin-bottom: 16px;
+  }
+  .triage-banner__icon {
+    font-size: 1.125rem;
+    flex-shrink: 0;
+  }
+  .triage-banner__text {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+  }
+  .triage-banner__btn {
+    margin-left: auto;
+    padding: 6px 14px;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(var(--accent-rgb), 0.08);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms;
+    white-space: nowrap;
+  }
+  .triage-banner__btn:hover {
+    background: rgba(var(--accent-rgb), 0.15);
+    border-color: var(--accent);
+  }
+
+  /* ── Task meta overlay (pin, badges) ── */
+  .eisenhower__task-meta {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    pointer-events: none;
+  }
+
+  /* ── Unclassified task highlight ── */
+  .eisenhower__task-wrapper[data-unclassified] {
+    border-left: 2px dashed rgba(var(--warning-rgb, 245, 158, 11), 0.4);
+    border-radius: 4px;
+    padding-left: 4px;
+  }
+
+  /* ── Quadrant action bars (Q1 Commit, Q4 Defer/Complete) ── */
+  .quadrant__action-bar {
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .quadrant__action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms, color 150ms;
+  }
+  .quadrant__action-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+  }
+  .quadrant__action-btn--primary {
+    border-color: rgba(var(--accent-rgb), 0.3);
+    color: var(--accent);
+  }
+  .quadrant__action-btn--primary:hover {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent);
+  }
+  .quadrant__action-btn--muted {
+    color: var(--text-muted);
+  }
+  .quadrant__action-btn--danger {
+    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.2);
+    color: var(--text-muted);
+  }
+  .quadrant__action-btn--danger:hover {
+    background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
+    color: var(--danger, #ef4444);
+    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+  }
+
+  /* ── WIP limit warning (Q1 > threshold) ── */
+  .quadrant__wip-warning {
+    padding: 6px 12px;
+    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
+    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    color: var(--warning, #f59e0b);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-align: center;
+    animation: wip-pulse 3s ease-in-out infinite;
+  }
+  @keyframes wip-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* ── Quick-capture inputs ── */
+  .quadrant__quick-capture {
+    padding: 6px 12px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    margin-top: auto;
+  }
+  .quick-capture__input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    outline: none;
+    transition: border-color 150ms, background 150ms;
+  }
+  .quick-capture__input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+  .quick-capture__input:focus {
+    border-color: var(--q-color);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Triage overlay styles are in <style is:global> below */
+
+  /* ── Hint ── */
+  .eisenhower__hint {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 16px;
+    opacity: 0.6;
+  }
+
+  /* ── Flow section ── */
+  .eisenhower__flow-section {
+    scroll-margin-top: var(--unified-bar-height, 88px);
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .eisenhower__flow-heading {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 16px;
+  }
+  .eisenhower__flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .eisenhower__flow-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: border-color 150ms, background 150ms;
+  }
+  .eisenhower__flow-card:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+  .flow-card__icon { font-size: 1.25rem; }
+  .flow-card__label { font-size: 0.875rem; font-weight: 600; }
+  .flow-card__desc { font-size: 0.75rem; color: var(--text-muted); }
+
+  /* ── Reduced Motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .eisenhower__quadrant {
+      transition: none;
+    }
+    .eisenhower__flow-card {
+      transition: none;
+    }
+    .quadrant__wip-warning {
+      animation: none;
+    }
+  }
+</style>
+
+<style is:global>
+  /* ── Drag feedback (global — class added by JS) ── */
+  .tli--dragging {
+    opacity: 0.5;
+    transform: rotate(2deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tli--dragging {
+      transform: none;
+    }
+  }
+
+  /* ── Triage overlay (global to ensure position:fixed works) ── */
+  .triage-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: triage-fade-in 200ms ease-out;
+  }
+  @keyframes triage-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .triage-overlay--hidden {
+    display: none !important;
+  }
+  .triage-card {
+    width: 90%;
+    max-width: 480px;
+    background: var(--bg-card, #1e1e2e);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: triage-card-in 250ms ease-out;
+  }
+  @keyframes triage-card-in {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .triage-card__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .triage-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    flex: 1;
+  }
+  .triage-card__progress {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 10px;
+    border-radius: 10px;
+  }
+  .triage-card__close {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background 150ms, color 150ms;
+  }
+  .triage-card__close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+  }
+  .triage-card__task {
+    padding: 20px;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-height: 48px;
+    line-height: 1.4;
+  }
+  .triage-card__controls {
+    padding: 0 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .triage-control__label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .triage-control__slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .triage-control__slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .triage-control__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-card, #1e1e2e);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transition: transform 150ms;
+  }
+  .triage-control__slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+  .triage-control__slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-card, #1e1e2e);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+  }
+  .triage-control__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 24px;
+    text-align: center;
+  }
+  .triage-control__labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .triage-card__quadrant-preview {
+    padding: 0 20px 16px;
+    text-align: center;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .triage-card__footer {
+    display: flex;
+    border-top: 1px solid var(--border);
+  }
+  .triage-card__skip,
+  .triage-card__save {
+    flex: 1;
+    padding: 14px;
+    border: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms, color 150ms;
+  }
+  .triage-card__skip {
+    background: transparent;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+  }
+  .triage-card__skip:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+  }
+  .triage-card__save {
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+  .triage-card__save:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+  }
+
+  /* ── Extended triage details (progressive disclosure) ── */
+  .triage-card__details {
+    padding: 0 20px;
+    margin-bottom: 8px;
+  }
+  .triage-card__expand-btn {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px 0;
+    user-select: none;
+    transition: color 150ms;
+  }
+  .triage-card__expand-btn:hover {
+    color: var(--accent);
+  }
+  .triage-card__extended {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0 4px;
+  }
+  .triage-control__select {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .triage-control__select:focus {
+    border-color: var(--accent);
+  }
+  .triage-control__radio-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+  .triage-control__radio-row label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid transparent;
+    transition: background 150ms, border-color 150ms;
+  }
+  .triage-control__radio-row label:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--border);
+  }
+  .triage-control__radio-row input[type="radio"] {
+    accent-color: var(--accent);
+    margin: 0;
+  }
+
+  /* ── Task card badges (effort, blocked, recurring) ── */
+  .tli__effort {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .effort--quick { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .effort--short { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
+  .effort--medium { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .effort--long { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .tli__effort-label { font-size: 0.5625rem; }
+  .tli__blocked {
+    font-size: 0.625rem;
+    opacity: 0.75;
+    cursor: help;
+  }
+  .tli__recurring {
+    font-size: 0.625rem;
+    opacity: 0.6;
+    cursor: help;
+  }
+
+  /* ── Q2 Growth Zone accent ── */
+  .quadrant--growth-zone {
+    border-left: 4px solid rgba(34, 197, 94, 0.4);
+  }
+  .quadrant__sublabel {
+    font-size: 0.5625rem;
+    color: #22c55e;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    opacity: 0.8;
+  }
+
+  /* ── Effort total in quadrant header ── */
+  .quadrant__effort-total {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 8px;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .quadrant__effort-total:empty { display: none; }
+
+  /* ── Review CTA button ── */
+  .eisenhower__review-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.1);
+    color: #818cf8;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .eisenhower__review-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  /* ── Review overlay ── */
+  .review-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+  }
+  .review-card {
+    background: var(--card-bg, #1e1e2e);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 340px;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .review-card__source {
+    margin: 12px 0 8px;
+  }
+  .review-source__badge {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+  }
+  .review-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .review-action {
+    flex: 1 1 auto;
+    min-width: 110px;
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .review-action:hover { transform: translateY(-1px); }
+  .review-action--promote {
+    background: rgba(34, 197, 94, 0.12);
+    color: #22c55e;
+    border-color: rgba(34, 197, 94, 0.2);
+  }
+  .review-action--promote:hover { background: rgba(34, 197, 94, 0.25); }
+  .review-action--archive {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+  .review-action--archive:hover { background: rgba(59, 130, 246, 0.2); }
+  .review-action--delete {
+    background: rgba(239, 68, 68, 0.08);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.15);
+  }
+  .review-action--delete:hover { background: rgba(239, 68, 68, 0.2); }
+  .review-action--skip {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+  }
+  .review-action--skip:hover { background: rgba(255, 255, 255, 0.08); }
+
+  /* ── Accessibility: reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .triage-overlay { animation: none; }
+    .triage-card { animation: none; }
+    .review-overlay { animation: none; }
+    .review-action:hover { transform: none; }
+    .triage-control__slider::-webkit-slider-thumb { transition: none; }
+  }
+</style>

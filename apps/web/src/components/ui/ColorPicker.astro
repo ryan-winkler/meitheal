@@ -1,0 +1,299 @@
+---
+/**
+ * ColorPicker — shared swatch grid + custom hex input component
+ *
+ * Self-contained: renders a clickable trigger/preview and its dropdown panel.
+ * The dropdown uses DropdownController for viewport-safe positioning.
+ *
+ * Features:
+ * - Clickable trigger showing current color swatch
+ * - 10 curated default swatches from COLOR_SWATCHES
+ * - Custom hex input with live preview
+ * - Persisted custom colors (up to 10)
+ * - Works inside modals (z-index 10002)
+ *
+ * @domain shared/ui
+ * @phase 17C — Shared Pickers
+ */
+import { COLOR_SWATCHES } from "../../lib/design-tokens"
+import { t, getClientLocale } from "../../lib/i18n"
+
+export interface Props {
+  /** Unique id for this picker instance */
+  id: string
+  /** Current color value (hex string) */
+  value?: string
+  /** Locale for i18n */
+  locale?: "en" | "ga"
+}
+
+const { id, value = "#6366F1", locale = "en" } = Astro.props
+---
+
+<!-- Trigger / Preview button -->
+<div class="color-picker-wrapper" id={`${id}-wrapper`}>
+  <button
+    type="button"
+    class="color-picker__trigger"
+    id={`${id}-trigger`}
+    aria-haspopup="dialog"
+    aria-expanded="false"
+    title={t("picker.choose_color", locale)}
+    aria-label={t("picker.choose_color", locale)}
+  >
+    <span class="color-picker__preview-swatch" style={`background: ${value}`}></span>
+    <span class="color-picker__preview-hex">{value}</span>
+  </button>
+
+  <!-- Dropdown Panel (hidden, positioned via DropdownController) -->
+  <div class="color-picker" id={id} hidden>
+    <div class="color-picker__section">
+      <label class="color-picker__label">{t("picker.color_label", locale)}</label>
+      <div class="color-picker__swatches">
+        {COLOR_SWATCHES.map((c) => (
+          <button
+            type="button"
+            class={`picker-swatch ${c === value ? "selected" : ""}`}
+            data-swatch-color={c}
+            style={`background: ${c}`}
+            title={c}
+            aria-label={`Color ${c}`}
+          ></button>
+        ))}
+      </div>
+    </div>
+
+    <div class="color-picker__section">
+      <label class="color-picker__label">{t("picker.custom_colors", locale)}</label>
+      <div class="color-picker__custom" data-custom-colors></div>
+    </div>
+
+    <div class="color-picker__section">
+      <label class="color-picker__label">{t("picker.custom_hex", locale)}</label>
+      <div class="color-picker__hex-row">
+        <span
+          class="color-picker__hex-preview"
+          data-color-hex-preview
+          style={`background: ${value}`}
+        ></span>
+        <span
+          class="color-picker__preview-dot"
+          data-color-preview-dot
+          style={`background: ${value}`}
+        ></span>
+        <input
+          type="text"
+          class="color-picker__hex-input"
+          data-color-hex-input
+          value={value}
+          placeholder="#6366F1"
+          maxlength="7"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label={t("picker.hex_input_label", locale)}
+        />
+        <button
+          type="button"
+          class="color-picker__add-btn"
+          data-color-add-custom
+          title={t("picker.save_color", locale)}
+          aria-label={t("picker.save_color", locale)}
+        >+</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Trigger button — inline preview of current color */
+  .color-picker-wrapper {
+    position: relative;
+    display: inline-block;
+  }
+
+  .color-picker__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.625rem;
+    background: var(--bg-input, rgba(var(--border-rgb), 0.08));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    transition: border-color 150ms;
+    min-height: 2.75rem;
+  }
+  .color-picker__trigger:hover {
+    border-color: var(--accent);
+  }
+  .color-picker__trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .color-picker__preview-swatch {
+    display: inline-block;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+    transition: transform 150ms;
+  }
+  .color-picker__trigger:hover .color-picker__preview-swatch {
+    transform: scale(1.1);
+  }
+
+  .color-picker__preview-hex {
+    font-size: 0.8125rem;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-muted);
+  }
+
+  /* Dropdown panel — positioned by DropdownController */
+  .color-picker {
+    position: fixed;
+    z-index: 10002;
+    min-width: 220px;
+    max-width: 280px;
+    background: var(--bg-surface, #1e1e2e);
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: color-picker-in 120ms ease-out;
+  }
+  .color-picker[hidden] { display: none; }
+
+  @keyframes color-picker-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .color-picker__section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .color-picker__label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+  }
+
+  .color-picker__swatches,
+  .color-picker__custom {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Empty custom colors section */
+  .color-picker__custom:empty {
+    display: none;
+  }
+  .color-picker__custom:empty + .color-picker__section .color-picker__label {
+    display: none;
+  }
+
+  /* Shared swatch button style (used by both default and custom) */
+  :global(.picker-swatch) {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 120ms, transform 120ms, box-shadow 120ms;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  :global(.picker-swatch:hover) {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 2px rgba(var(--border-rgb), 0.3);
+  }
+  :global(.picker-swatch.selected) {
+    border-color: var(--text-primary);
+    transform: scale(1.15);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.3);
+  }
+
+  .color-picker__hex-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .color-picker__hex-preview {
+    display: none; /* Hidden, preview-dot is the visible one */
+  }
+
+  .color-picker__preview-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid rgba(var(--border-rgb), 0.3);
+    flex-shrink: 0;
+    transition: background 150ms;
+  }
+
+  .color-picker__hex-input {
+    flex: 1;
+    background: rgba(var(--border-rgb), 0.12);
+    border: 1px solid rgba(var(--border-rgb), 0.3);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: var(--font-mono, monospace);
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color 150ms;
+    min-width: 0;
+  }
+  .color-picker__hex-input:focus {
+    border-color: var(--accent);
+  }
+  .color-picker__hex-input.invalid {
+    border-color: var(--danger, #EF4444);
+  }
+
+  .color-picker__add-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--accent-rgb), 0.1);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 400;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms;
+    flex-shrink: 0;
+  }
+  .color-picker__add-btn:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+    border-color: rgba(var(--accent-rgb), 0.4);
+  }
+
+  /* Focus rings */
+  :global(.picker-swatch:focus-visible),
+  .color-picker__hex-input:focus-visible,
+  .color-picker__add-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .color-picker { animation: none; }
+    :global(.picker-swatch:hover) { transform: none; }
+  }
+</style>

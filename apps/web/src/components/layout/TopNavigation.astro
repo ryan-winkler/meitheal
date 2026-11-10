@@ -1,0 +1,143 @@
+---
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import Icon from "../ui/Icon.astro";
+
+interface Props {
+  locale: Locale;
+  /** Suppress the legacy #global-search input when a page has its own search surface (UnifiedBar/ParentPageShell) */
+  hideGlobalSearch?: boolean;
+}
+
+const { locale, hideGlobalSearch = false } = Astro.props;
+---
+
+<header
+  class="topbar sticky top-0 z-30 flex flex-wrap items-center justify-between px-6 py-4 bg-bg-primary/80 backdrop-blur-md border-b border-border/50"
+>
+  <div class="flex items-center gap-4">
+    <button
+      class="menu-toggle flex md:hidden p-2 rounded-md hover:bg-bg-hover text-text-secondary transition-colors"
+      id="menu-toggle"
+      aria-label={t("topbar.toggle_menu", locale)}
+    >
+      <Icon name="menu" size={20} />
+    </button>
+    <h1
+      class="page-title text-xl font-semibold tracking-tight text-text-primary m-0 truncate max-w-[200px] sm:max-w-none"
+    >
+      <slot name="page-title" />
+    </h1>
+  </div>
+
+  {!hideGlobalSearch && (
+    <div
+      class="search-container flex-1 max-w-md mx-4 relative"
+      id="search-container"
+    >
+      <div class="relative group">
+        <div
+          class="search-input-leading-icon absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted group-focus-within:text-accent transition-colors"
+        >
+          <Icon name="search" size={16} />
+        </div>
+        <input
+          type="search"
+          class="search-input w-full bg-bg-secondary/50 border border-border rounded-lg py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-bg-primary transition-[background,border-color,box-shadow] placeholder:text-text-muted"
+          id="global-search"
+          placeholder={t("topbar.search_placeholder", locale)}
+          aria-label={t("topbar.search_placeholder", locale)}
+          autocomplete="off"
+          readonly
+          aria-haspopup="dialog"
+          aria-controls="search-hub-overlay"
+        />
+        <div
+          class="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"
+        >
+          <kbd
+            class="hidden sm:inline-block border border-border bg-bg-primary text-text-muted rounded px-1.5 text-[10px] font-mono font-medium"
+            >Cmd K</kbd
+          >
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div class="topbar-actions flex items-center gap-2">
+    <button
+      type="button"
+      class="btn-icon text-text-muted hover:text-accent transition-colors"
+      id="ask-ha-btn"
+      title="Ask Home Assistant"
+      aria-label="Ask Home Assistant"
+    >
+      <Icon name="sparkles" size={20} />
+    </button>
+    <slot name="actions" />
+  </div>
+</header>
+
+<script>
+  // Mobile menu toggle
+  const menuBtn = document.getElementById("menu-toggle");
+  const sidebar = document.getElementById("sidebar");
+  let savedScrollY = 0;
+
+  function toggleSidebar() {
+    const isOpening = !sidebar?.classList.contains("open");
+    sidebar?.classList.toggle("open");
+    document.body.classList.toggle("sidebar-open");
+
+    // Lock/unlock body scroll on mobile
+    if (isOpening) {
+      savedScrollY = window.scrollY;
+    } else {
+      // Restore scroll position after body position:fixed is removed
+      requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
+    }
+  }
+
+  function closeSidebar() {
+    if (sidebar?.classList.contains("open")) {
+      toggleSidebar();
+    }
+  }
+
+  menuBtn?.addEventListener("click", toggleSidebar);
+
+  // Close sidebar when clicking the dark overlay area
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (
+      sidebar?.classList.contains("open") &&
+      !sidebar.contains(target) &&
+      target !== menuBtn &&
+      !menuBtn?.contains(target)
+    ) {
+      closeSidebar();
+    }
+  });
+
+  // Auto-close sidebar when a nav link is clicked on mobile
+  sidebar?.addEventListener("click", (e) => {
+    const link = (e.target as HTMLElement)?.closest("a.nav-link");
+    if (link && !link.classList.contains("nav-link--external") && window.innerWidth <= 768) {
+      closeSidebar();
+    }
+  });
+
+  // Global search and CMD+K/Escape handled by layout-controller.ts
+  // (with proper AbortSignal lifecycle management)
+
+  // Sidebar-specific Escape binding (close sidebar on Escape)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (sidebar?.classList.contains("open")) {
+        sidebar.classList.remove("open");
+        document.body.classList.remove("sidebar-open");
+        requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
+      }
+    }
+  });
+</script>

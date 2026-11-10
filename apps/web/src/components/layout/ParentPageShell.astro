@@ -1,0 +1,123 @@
+---
+/**
+ * ParentPageShell — Reusable shell for parent pages (Tasks, Progress & Growth, Planning)
+ *
+ * Wraps UnifiedBar + hash-based section routing in a single component.
+ * Sections should be provided as children with `data-parent-section` attributes.
+ *
+ * Usage:
+ *   <ParentPageShell pageId="tasks">
+ *     <section data-parent-section="kanban" id="tasks-section-kanban">
+ *       ...kanban content...
+ *     </section>
+ *     <section data-parent-section="calendar" id="tasks-section-calendar">
+ *       ...calendar content...
+ *     </section>
+ *   </ParentPageShell>
+ *
+ * @domain navigation
+ * @phase 15 — Hierarchy Architecture Overhaul
+ */
+
+import UnifiedBar from "./UnifiedBar.astro"
+import { PARENT_PAGES, type ParentPageId } from "@lib/parent-page-registry"
+
+interface Props {
+  pageId: ParentPageId
+}
+
+const { pageId } = Astro.props
+
+const page = PARENT_PAGES.find((p) => p.id === pageId)
+if (!page) throw new Error(`Unknown parent page: ${pageId}`)
+
+const shellId = `${pageId}-shell`
+const barId = `${pageId}-bar`
+
+const tabs = page.subViews.map((sv) => ({
+  id: sv.hash,
+  label: sv.label,
+  icon: sv.icon,
+}))
+---
+
+<div
+  class="parent-page-shell"
+  id={shellId}
+  data-page-id={pageId}
+  data-parent-config={JSON.stringify({
+    shellId,
+    barId,
+    sectionIds: page.subViews.map((sv) => sv.hash),
+    defaultSectionId: page.defaultHash,
+  })}
+>
+  <UnifiedBar
+    title={page.label}
+    titleIcon={page.icon}
+    tabs={tabs}
+    barId={barId}
+    searchPlaceholder={`Search ${page.label.toLowerCase()}…`}
+    searchScope={pageId}
+  />
+
+  <main class="parent-page-shell__content">
+    <slot />
+  </main>
+</div>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { initParentPageController } from "@lib/parent-page-controller"
+
+  pageLifecycle.onPageLoad(() => {
+    document.querySelectorAll<HTMLElement>("[data-parent-config]").forEach((shell) => {
+      if (shell.dataset.parentPageBooted === "true") return
+      const raw = shell.dataset.parentConfig
+      if (!raw) return
+      try {
+        const config = JSON.parse(raw)
+        initParentPageController(config)
+      } catch {
+        // malformed config — skip
+      }
+    })
+  })
+</script>
+
+<style>
+  .parent-page-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  .parent-page-shell__content {
+    flex: 1 1 auto;
+    position: relative;
+  }
+
+  /* Sections are toggled by the controller — hidden by default except active */
+  .parent-page-shell__content :global([data-parent-section]) {
+    width: 100%;
+  }
+
+  .parent-page-shell__content :global([data-parent-section][hidden]) {
+    display: none !important;
+  }
+
+  .parent-page-shell__content :global([data-parent-section].is-active) {
+    animation: parent-section-fade-in 200ms ease-out;
+  }
+
+  @keyframes parent-section-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .parent-page-shell__content :global([data-parent-section].is-active) {
+      animation: none;
+    }
+  }
+</style>

@@ -1,0 +1,84 @@
+{
+  "name": "Meitheal — HA Addon Dev",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "ha-devcontainer",
+  "workspaceFolder": "/workspaces/meitheal",
+  "postStartCommand": "bash devcontainer_bootstrap",
+  "postCreateCommand": "bash /workspaces/meitheal/scripts/devcontainer-setup.sh",
+  "runArgs": [
+    "-e",
+    "GIT_EDITOR=code --wait",
+    "--privileged"
+  ],
+  "containerEnv": {
+    "WORKSPACE_DIRECTORY": "/workspaces/meitheal",
+    "GROCY_URL": "http://grocy:80",
+    "NODERED_URL": "http://nodered:1880"
+  },
+  "forwardPorts": [
+    7123,
+    7357,
+    9192,
+    1880
+  ],
+  "portsAttributes": {
+    "7123": {
+      "label": "Home Assistant",
+      "onAutoForward": "notify"
+    },
+    "7357": {
+      "label": "HA Supervisor API",
+      "onAutoForward": "silent"
+    },
+    "9192": {
+      "label": "Grocy",
+      "onAutoForward": "notify"
+    },
+    "1880": {
+      "label": "Node-RED",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "timonwong.shellcheck",
+        "esbenp.prettier-vscode",
+        "ms-python.python",
+        "astro-build.astro-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/usr/bin/zsh"
+          }
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnPaste": false,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true,
+        "files.trimTrailingWhitespace": true
+      }
+    },
+    "antigravity": {
+      "extensions": [
+        "timonwong.shellcheck",
+        "esbenp.prettier-vscode",
+        "ms-python.python",
+        "astro-build.astro-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/usr/bin/zsh"
+          }
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnPaste": false,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true,
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  }
+}

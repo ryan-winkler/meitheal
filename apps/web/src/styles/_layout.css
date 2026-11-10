@@ -1,0 +1,402 @@
+/* =============================================
+ * _layout.css — Sidebar, main-content, topbar, stats, HA ingress compact
+ *
+ * Domain: Layout bounded context
+ * Owns: .sidebar, .main-content, .topbar, .stat-card, .page-header, .content-area
+ * Does NOT own: cards (_cards.css), tasks (_tasks.css), modals (_modal.css)
+ * ============================================= */
+/* --- Layout --- */
+.sidebar {
+  @apply bg-bg-secondary/90 backdrop-blur-md flex flex-col border-r border-border fixed h-screen z-40;
+  width: var(--sidebar-width, 240px);
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  }
+
+  /* Collapsed sidebar: icon-only — NOT off-screen */
+  body.sidebar-collapsed .sidebar {
+    width: 60px; /* Make sidebar slightly wider than just 48px to look like a proper rail */
+    overflow: visible !important; /* Prevent tooltips from clipping */
+  }
+
+
+
+.sidebar-header {
+  @apply p-5 border-b border-border;
+}
+
+.sidebar-header h1 {
+  @apply text-lg font-bold text-accent;
+}
+
+.sidebar-nav {
+  @apply flex-1 py-3;
+}
+
+.nav-link {
+  @apply flex items-center gap-3 px-5 py-2.5 text-sm text-text-secondary transition-colors rounded-none;
+}
+
+.nav-link:hover {
+  @apply bg-bg-hover text-text-primary;
+}
+
+.nav-link.active {
+  @apply bg-accent/10 text-accent border-r-2 border-accent;
+}
+
+.nav-badge {
+  @apply ml-auto text-xs bg-accent/20 text-accent px-2 py-0.5 rounded-[10px] min-w-[20px] text-center;
+}
+
+.sidebar-footer {
+  @apply py-4 border-t border-border;
+}
+
+.board-switcher {
+  @apply px-5 py-3 border-t border-border;
+}
+
+.board-switcher-label {
+  @apply text-[10px] uppercase tracking-wide text-text-muted mb-1.5 font-semibold;
+}
+
+.board-select {
+  @apply bg-bg-input border border-border rounded-sm text-text-primary text-[13px] px-2 py-1.5 cursor-pointer w-[calc(100%-32px)];
+}
+
+.board-select option {
+  @apply bg-bg-card text-text-primary;
+}
+
+.board-select:focus {
+  @apply outline-none border-accent;
+}
+
+.board-add-btn {
+  @apply w-[26px] h-[26px] border border-dashed border-border rounded-full bg-transparent text-text-muted cursor-pointer text-base leading-none ml-1 align-middle transition-all;
+}
+
+.board-add-btn:hover {
+  @apply border-accent text-accent;
+}
+
+/* --- Main content area --- */
+.main-content {
+  margin-left: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh; /* Changed from 100vh for accurate mobile/HA Companion App sizing */
+  min-width: 0;
+  /* Clip horizontal overflow without creating a scroll container.
+     IMPORTANT: overflow-x:hidden was changed to overflow-x:clip because
+     per CSS spec, setting overflow-x to 'hidden' forces overflow-y to
+     compute as 'auto' (not 'visible'), creating an implicit scroll
+     container that breaks position:sticky on descendant elements
+     (e.g. the settings tab bar). overflow-x:clip clips content visually
+     without this side effect. */
+  overflow-x: clip;
+  /* NO overflow-y here — body handles natural scrolling.
+     Previous height:100vh + overflow-y:auto created a nested scroll
+     context that blocked mouse wheel events on initial page load. */
+  /* P0-2: Enable native touch scrolling in HA WebView iframe */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  transition: margin-left 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* P0-3: Style containment only — `contain: layout` was removed because
+     it creates an independent formatting context that blocks wheel-event
+     scroll propagation to the body scroll container. With layout containment,
+     wheel events over .main-content couldn't reach body's overflow-y:auto,
+     so scrolling only worked when the cursor was directly on the scrollbar.
+     `contain: style` is safe (isolates counters/quotes, no layout side-effects). */
+  contain: style;
+}
+
+/* Desktop: offset main content by sidebar width (md+ only, mobile has no sidebar) */
+@media (min-width: 769px) {
+  .main-content {
+    margin-left: var(--sidebar-width, 240px);
+  }
+}
+
+  /* When sidebar is collapsed, shrink main content offset */
+  body.sidebar-collapsed .main-content {
+    margin-left: 60px;
+  }
+
+  /* — Collapsed sidebar: hide text, center icons — */
+  body.sidebar-collapsed .sidebar-header {
+    justify-content: center;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  
+  body.sidebar-collapsed .sidebar-header .sidebar-brand-group {
+    display: none !important;
+  }
+
+  body.sidebar-collapsed .sidebar-header .sidebar-toggle-top {
+    margin: 0 auto;
+  }
+
+  body.sidebar-collapsed .sidebar-header .sidebar-toggle-top .sidebar-icon-expanded {
+    display: none !important;
+  }
+  
+  body.sidebar-collapsed .sidebar-header .sidebar-toggle-top .sidebar-icon-collapsed {
+    display: block !important;
+  }
+
+  /* Nav links: icon-only, centered */
+  body.sidebar-collapsed .nav-link {
+    justify-content: center !important;
+    padding: 0.75rem 0 !important;
+    gap: 0 !important;
+    width: 100% !important;
+  }
+  body.sidebar-collapsed .nav-link .nav-icon {
+    margin-right: 0 !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+  body.sidebar-collapsed .nav-link span:not(.nav-icon):not(.nav-badge),
+  body.sidebar-collapsed .nav-badge {
+    display: none;
+  }
+  /* Active indicator: bottom border instead of right border */
+  body.sidebar-collapsed .nav-link.active {
+    border-right: none;
+    background: rgba(var(--accent-rgb), 0.15);
+  }
+  /* Hide board switcher, hierarchy tree, streak badge, and footer text when collapsed */
+  body.sidebar-collapsed .board-switcher,
+  body.sidebar-collapsed .area-switcher,
+  body.sidebar-collapsed .hierarchy-tree,
+  body.sidebar-collapsed .sidebar-footer a > span:not(.nav-icon),
+  body.sidebar-collapsed .sidebar-footer .status-indicator,
+  body.sidebar-collapsed .sidebar-gamification-wrapper {
+    display: none !important;
+  }
+  body.sidebar-collapsed .sidebar-footer a {
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-scroll {
+    padding-top: 4px;
+    overflow: visible; /* Prevent clipping of nav tooltips */
+  }
+
+  /* Collapsed nav tooltip — appears on hover for icon-only items */
+  body.sidebar-collapsed .nav-link {
+    position: relative;
+  }
+  body.sidebar-collapsed .nav-link::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  body.sidebar-collapsed .nav-link:hover::after {
+    opacity: 1;
+  }
+
+.page-header {
+  @apply flex items-center justify-between px-6 py-4 bg-bg-secondary/50 border-b border-border;
+}
+
+  /* --- Stats / Dashboard ---
+   * Restored from pre-split global.css (commit b0e2f1b^).
+   * These rules were lost during Phase 58 CSS split into domain partials. */
+  .stats-grid {
+    @apply grid grid-cols-2 md:grid-cols-4 gap-4 mb-6;
+  }
+
+  .stat-card {
+    @apply bg-bg-card/80 backdrop-blur-md border border-border rounded-xl p-5 flex items-center shadow-sm;
+    gap: 14px;
+    min-height: 88px;
+    transition:
+      transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+      box-shadow 0.2s ease,
+      border-color 0.2s ease,
+      background-color 0.2s ease;
+    cursor: default;
+  }
+
+      /* Clickable stat cards — navigational links to filtered views */
+      a.stat-card-link {
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+      }
+  .stat-card:hover {
+    @apply bg-bg-card/95;
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:
+      0 4px 20px rgba(99, 102, 241, 0.12),
+      var(--shadow-md);
+    border-color: var(--accent);
+  }
+
+  .stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: var(--bg-hover);
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+  /* --- Empty State --- */
+  .empty-state {
+    @apply flex flex-col items-center justify-center p-14 text-center rounded-2xl border border-dashed border-border/60 my-8 mx-auto w-full max-w-2xl relative overflow-hidden;
+    background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(99, 102, 241, 0.03) 100%);
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.05);
+    animation: fade-in-up 0.4s ease-out forwards;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .empty-state:hover {
+    @apply border-accent/30;
+    transform: translateY(-1px);
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.05), 0 8px 24px -8px rgba(99, 102, 241, 0.1);
+  }
+
+  /* Decorative glow orb behind empty state */
+  .empty-state::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: 50%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .empty-state-icon {
+    @apply mb-5 flex items-center justify-center relative z-10;
+    filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.2));
+    animation: icon-float 3s ease-in-out infinite;
+  }
+
+  @keyframes icon-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .empty-state-title {
+    @apply text-xl font-bold text-text-primary mb-2 tracking-tight relative z-10;
+  }
+
+  .empty-state-desc {
+    @apply text-sm text-text-secondary max-w-md mx-auto mb-6 relative z-10;
+    line-height: 1.6;
+  }
+
+  .empty-state-actions {
+    @apply flex items-center justify-center gap-3 mt-2;
+  }
+
+      .empty-state-actions .btn-primary {
+        @apply shadow-md;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+      }
+.content-area {
+  @apply flex-1 p-6;
+}
+
+/* --- Topbar actions --- */
+.topbar-actions {
+  @apply flex items-center gap-2;
+}
+
+.status-text {
+  @apply text-xs;
+}
+
+/* --- Search --- */
+.search-container {
+  @apply relative flex-1 max-w-sm mx-6;
+}
+
+.search-input {
+  @apply w-full bg-bg-input border border-border rounded-md py-2 pl-10 pr-16 text-sm text-text-primary outline-none transition-colors;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.search-input::-webkit-search-decoration,
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-results-button,
+.search-input::-webkit-search-results-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+  display: none;
+}
+
+.search-input::placeholder {
+  @apply text-text-muted;
+}
+
+.search-input:focus {
+  @apply border-accent ring-2 ring-accent/15;
+}
+
+.search-results {
+  @apply absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50;
+}
+
+.search-item {
+  @apply flex flex-col gap-0.5 px-4 py-2.5 text-sm text-text-primary no-underline transition-colors;
+}
+
+/* HA Ingress compact mode — restored from pre-split global.css */
+body.ha-ingress .top-navigation .hamburger-btn {
+  display: none !important;
+}
+
+/* Priority indicator dot — uses background-color, not text color */
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}

@@ -1,0 +1,17 @@
+---
+/**
+ * /kanban — Legacy redirect to /tasks (canonical kanban route).
+ *
+ * Phase 16.1: Kanban board now lives at /tasks.
+ * This redirect maintains backward compatibility for bookmarks and links.
+ *
+ * @domain navigation
+ * @phase 16.1 — Route consolidation
+ */
+
+const { ingressPath } = Astro.locals
+const qs = new URL(Astro.request.url).searchParams.toString()
+const q = qs ? `?${qs}` : ''
+return Astro.redirect(`${ingressPath || ""}/tasks${q}#kanban`, 301)
+---
+

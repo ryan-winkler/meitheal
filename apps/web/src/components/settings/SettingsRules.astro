@@ -1,0 +1,629 @@
+---
+/**
+ * SettingsRules.astro — Task Context Rules & Frameworks configuration
+ *
+ * Renders inside the Workflow settings section.
+ * - Per-type lens assignment table (epic / story / task)
+ * - AI scope toggles per task type
+ * - Quick-apply presets (Strategic / UX-Focused / Simple)
+ * - Framework config editor (weights, descriptions)
+ * - Restore defaults with confirmation
+ *
+ * @domain strategy
+ */
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsDisclosure from "./SettingsDisclosure.astro"
+import FrameworkWizard from "./FrameworkWizard.astro"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const frameworks = [
+  { id: "rice", label: "RICE", description: t("settings.frameworks.rice_desc", locale), icon: "📊" },
+  { id: "drice", label: "DRICE", description: t("settings.frameworks.drice_desc", locale), icon: "🎯" },
+  { id: "heart", label: "HEART", description: t("settings.frameworks.heart_desc", locale), icon: "❤️" },
+  { id: "ddd", label: "DDD", description: t("settings.frameworks.ddd_desc", locale), icon: "🏗️" },
+  { id: "kcs", label: "KCS", description: t("settings.frameworks.kcs_desc", locale), icon: "📚" },
+  { id: "wsjf", label: "WSJF", description: t("settings.frameworks.wsjf_desc", locale), icon: "⚖️" },
+  { id: "moscow", label: "MoSCoW", description: t("settings.frameworks.moscow_desc", locale), icon: "🏷️" },
+  { id: "ice", label: "ICE", description: t("settings.frameworks.ice_desc", locale), icon: "🧊" },
+]
+
+const taskTypes = [
+  { id: "epic", label: t("settings.task_types.epic", locale), icon: "⚡" },
+  { id: "story", label: t("settings.task_types.story", locale), icon: "📖" },
+  { id: "task", label: t("settings.task_types.task", locale), icon: "✅" },
+  { id: "documentation", label: t("settings.task_types.documentation", locale), icon: "📝" },
+]
+
+const aiCapabilities = [
+  { key: "canAutoScore", label: t("settings.ai_cap.autoscore", locale), description: t("settings.ai_cap.autoscore_desc", locale) },
+  { key: "canAutoClose", label: t("settings.ai_cap.autoclose", locale), description: t("settings.ai_cap.autoclose_desc", locale) },
+  { key: "canChangePriority", label: t("settings.ai_cap.priority", locale), description: t("settings.ai_cap.priority_desc", locale) },
+  { key: "canSuggestLabels", label: t("settings.ai_cap.labels", locale), description: t("settings.ai_cap.labels_desc", locale) },
+]
+
+const presets = [
+  { id: "strategic", label: t("settings.presets.strategic", locale), description: t("settings.presets.strategic_desc", locale), icon: "🎯" },
+  { id: "ux-focused", label: t("settings.presets.ux", locale), description: t("settings.presets.ux_desc", locale), icon: "❤️" },
+  { id: "agile-delivery", label: t("settings.presets.agile", locale), description: t("settings.presets.agile_desc", locale), icon: "🚀" },
+  { id: "balanced", label: t("settings.presets.balanced", locale), description: t("settings.presets.balanced_desc", locale), icon: "⚖️" },
+  { id: "simple", label: t("settings.presets.simple", locale), description: t("settings.presets.simple_desc", locale), icon: "⚡" },
+]
+---
+
+<div id="rules-lenses-settings">
+  <!-- Preset Quick-Apply -->
+  <SettingsPanelCard title={t("settings.rules_presets_title", locale)} subtitle={t("settings.rules_presets_subtitle", locale)}>
+    <div class="rules-presets" id="rules-presets">
+      {presets.map((preset) => (
+        <button
+          class="rules-preset-btn"
+          data-preset={preset.id}
+          type="button"
+          title={preset.description}
+          aria-pressed="false"
+        >
+          <span class="rules-preset-icon">{preset.icon}</span>
+          <span class="rules-preset-label">{preset.label}</span>
+          <span class="rules-preset-desc">{preset.description}</span>
+        </button>
+      ))}
+    </div>
+    <div class="rules-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn btn-ghost btn-sm" id="rules-restore-defaults" type="button" title="Reset all rules to default presets">
+        {t("settings.rules_restore_defaults", locale)}
+      </button>
+      <button class="btn btn-ghost btn-sm" id="rules-export-btn" type="button" title="Export rules and framework configs as JSON">
+        {t("settings.rules_export", locale)}
+      </button>
+      <label class="btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
+        {t("settings.rules_import", locale)}
+        <input type="file" id="rules-import-input" accept=".json" hidden />
+      </label>
+      <button class="btn btn-accent btn-sm" id="fw-create-btn" type="button" title="Create a custom evaluation framework">
+        {t("settings.rules_create_framework", locale)}
+      </button>
+      <button class="btn btn-ghost btn-sm" id="fw-import-btn" type="button" title="Import a framework from YAML">
+        {t("settings.rules_import_yaml", locale)}
+      </button>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Per-Type Framework Assignment -->
+  <SettingsPanelCard title={t("settings.rules_assignment_title", locale)} subtitle={t("settings.rules_assignment_subtitle", locale)}>
+    <div class="rules-assignment-grid" id="rules-assignment-grid">
+      {taskTypes.map((type) => (
+        <div class="rules-assignment-row" data-task-type={type.id}>
+          <div class="rules-assignment-type">
+            <span class="rules-assignment-type-icon">{type.icon}</span>
+            <span class="rules-assignment-type-label">{type.label}</span>
+          </div>
+          <div class="rules-assignment-frameworks">
+            {frameworks.map((fw) => (
+              <label class="rules-framework-toggle" title={fw.description}>
+                <input
+                  type="checkbox"
+                  class="rules-fw-check"
+                  data-task-type={type.id}
+                  data-framework={fw.id}
+                />
+                <span class="rules-fw-pill">
+                  <span class="rules-fw-pill-icon">{fw.icon}</span>
+                  {fw.label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsPanelCard>
+
+  <!-- AI Scope Configuration -->
+  <SettingsDisclosure title={t("settings.rules_ai_scope_title", locale)} subtitle={t("settings.rules_ai_scope_subtitle", locale)} id="ai-scope-disclosure">
+    <div class="rules-ai-scope" id="rules-ai-scope">
+      {taskTypes.map((type) => (
+        <div class="rules-ai-type-block" data-task-type={type.id}>
+          <h4 class="rules-ai-type-header">
+            <span>{type.icon}</span>
+            {type.label}
+          </h4>
+          <div class="rules-ai-toggles">
+            {aiCapabilities.map((cap) => (
+              <label class="rules-ai-toggle" title={cap.description}>
+                <span class="rules-ai-toggle-text">
+                  <strong>{cap.label}</strong>
+                  <small>{cap.description}</small>
+                </span>
+                <label class="toggle-label">
+                  <input
+                    type="checkbox"
+                    class="rules-ai-check"
+                    data-task-type={type.id}
+                    data-capability={cap.key}
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </label>
+            ))}
+          </div>
+          <div class="rules-ai-instructions">
+            <label class="form-label" for={`ai-instructions-${type.id}`}>
+              {t("settings.rules_ai_custom_instructions", locale)}
+            </label>
+            <textarea
+              class="form-input rules-ai-textarea"
+              id={`ai-instructions-${type.id}`}
+              data-task-type={type.id}
+              placeholder={t("settings.rules_ai_instructions_placeholder", locale).replace("{type}", type.label.toLowerCase())}
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsDisclosure>
+
+  <!-- Framework Config Editor -->
+  <SettingsDisclosure title={t("settings.rules_fw_config_title", locale)} subtitle={t("settings.rules_fw_config_subtitle", locale)} id="framework-config-disclosure">
+    <div class="rules-framework-configs" id="rules-framework-configs">
+      {frameworks.map((fw) => (
+        <div class="rules-fw-config" data-framework={fw.id}>
+          <div class="rules-fw-config-header">
+            <span class="rules-fw-config-icon">{fw.icon}</span>
+            <div>
+              <strong>{fw.label}</strong>
+              <small>{fw.description}</small>
+            </div>
+            <button
+              class="btn btn-ghost btn-sm rules-fw-reset"
+              data-framework={fw.id}
+              type="button"
+              title={t("settings.rules_fw_reset_title", locale).replace("{label}", fw.label)}
+            >
+              {t("settings.rules_fw_reset", locale)}
+            </button>
+          </div>
+          <div class="rules-fw-config-fields" data-framework={fw.id}>
+            <p class="text-muted" style="font-size: 12px; margin: 4px 0;">
+              {t("settings.rules_fw_loading", locale).replace("{label}", fw.label)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </SettingsDisclosure>
+
+  <!-- Framework Reference -->
+  <SettingsDisclosure title={t("settings.rules_fw_ref_title", locale)} subtitle={t("settings.rules_fw_ref_subtitle", locale)} id="framework-ref-disclosure">
+    <div class="rules-fw-reference">
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>📊 RICE</strong>
+          <a href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Intercom Blog →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_rice_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🎯 DRICE</strong>
+          <a href="https://www.lennysnewsletter.com/p/introducing-drice-a-modern-prioritization" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Lenny's Newsletter →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_drice_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🏗️ DDD</strong>
+          <a href="https://martinfowler.com/bliki/DomainDrivenDesign.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Fowler →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_ddd_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>❤️ HEART</strong>
+          <a href="https://www.heartframework.com/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">heartframework.com →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_heart_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>📚 KCS</strong>
+          <a href="https://library.serviceinnovation.org/KCS" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Service Innovation →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_kcs_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>⚖️ WSJF</strong>
+          <a href="https://www.scaledagileframework.com/wsjf/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">SAFe Docs →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_wsjf_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🏷️ MoSCoW</strong>
+          <a href="https://www.agilebusiness.org/dsdm-project-framework/moscow-prioririsation.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">DSDM Docs →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_moscow_desc", locale)} />
+      </div>
+      <div class="rules-fw-ref-item">
+        <div class="rules-fw-ref-header">
+          <strong>🧊 ICE</strong>
+          <a href="https://growthmethod.com/growth-scoring/ice/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Growth Method →</a>
+        </div>
+        <p set:html={t("settings.rules_fw_ref_ice_desc", locale)} />
+      </div>
+    </div>
+  </SettingsDisclosure>
+
+  <!-- Framework Creation Wizard -->
+  <FrameworkWizard />
+
+  <!-- YAML Import Dialog -->
+  <dialog id="fw-import-dialog" class="fw-wizard-dialog">
+    <div class="fw-wizard-content" style="max-width: 520px;">
+      <header class="fw-wizard-header">
+        <h3 class="fw-wizard-title">{t("settings.rules_import_dialog_title", locale)}</h3>
+        <button class="fw-wizard-close" id="fw-import-close" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div style="padding: 20px;">
+        <div class="fw-field-group">
+          <label class="form-label" for="fw-import-yaml">{t("settings.rules_import_dialog_label", locale)}</label>
+          <textarea
+            class="form-input"
+            id="fw-import-yaml"
+            rows="12"
+            placeholder="name: My Framework&#10;version: 1.0.0&#10;archetype: formula&#10;formula: &quot;(field_a * field_b) / field_c&quot;&#10;fields:&#10;  - key: field_a&#10;    label: Field A&#10;    type: number&#10;    ..."
+            style="font-family: 'JetBrains Mono', monospace; font-size: 12px;"
+          ></textarea>
+        </div>
+        <div id="fw-import-errors" class="fw-wizard-errors" hidden></div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+          <button class="btn btn-ghost" id="fw-import-cancel" type="button">{t("settings.rules_cancel", locale)}</button>
+          <button class="btn btn-accent" id="fw-import-submit" type="button">{t("settings.rules_import_submit", locale)}</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+</div>
+
+<style>
+  /* Presets */
+  .rules-presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+  }
+  .rules-preset-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 200ms ease, background 200ms ease, transform 150ms ease;
+  }
+  .rules-preset-btn:hover,
+  .rules-preset-btn.is-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--bg-card) 90%, var(--accent) 8%);
+    transform: translateY(-1px);
+  }
+  .rules-preset-btn.is-active {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .rules-preset-icon {
+    font-size: 22px;
+  }
+  .rules-preset-label {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .rules-preset-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  /* Assignment grid */
+  .rules-assignment-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rules-assignment-row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+  }
+  .rules-assignment-type {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .rules-assignment-type-icon {
+    font-size: 16px;
+  }
+  .rules-assignment-frameworks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .rules-framework-toggle {
+    cursor: pointer;
+  }
+  .rules-framework-toggle input {
+    display: none;
+  }
+  .rules-fw-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    transition: background 200ms ease, color 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 200ms ease;
+    user-select: none;
+  }
+  .rules-fw-pill-icon {
+    font-size: 13px;
+  }
+  .rules-framework-toggle input:checked + .rules-fw-pill {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+
+  /* AI Scope */
+  .rules-ai-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rules-ai-type-block {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+  }
+  .rules-ai-type-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font-size: 14px;
+  }
+  .rules-ai-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rules-ai-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .rules-ai-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rules-ai-toggle-text strong {
+    font-size: 13px;
+  }
+  .rules-ai-toggle-text small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-ai-instructions {
+    margin-top: 10px;
+  }
+  .rules-ai-textarea {
+    resize: vertical;
+    min-height: 48px;
+    font-size: 13px;
+  }
+
+  /* Framework configs */
+  .rules-framework-configs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rules-fw-config {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+  }
+  .rules-fw-config-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .rules-fw-config-icon {
+    font-size: 20px;
+  }
+  .rules-fw-config-header > div {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rules-fw-config-header small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-fw-config-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rules-fw-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    padding: 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-primary) 50%, transparent);
+  }
+  .rules-fw-field-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .rules-fw-field-header label {
+    font-weight: 500;
+  }
+  .fw-field-type,
+  .fw-field-range {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rules-fw-field-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rules-fw-field-controls .form-input {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .rules-fw-field .weight-display {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-text);
+    min-width: 36px;
+    text-align: right;
+  }
+  .fw-field-help {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  /* Actions */
+  .rules-actions .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .rules-presets {
+      grid-template-columns: 1fr;
+    }
+    .rules-assignment-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .rules-fw-field {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+  }
+
+  /* Focus-visible for keyboard nav */
+  .rules-preset-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 14px;
+  }
+  .rules-fw-pill:focus-visible,
+  .rules-framework-toggle:focus-visible .rules-fw-pill {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .rules-fw-reset:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rules-preset-btn {
+      transition: none;
+    }
+    .rules-preset-btn:hover {
+      transform: none;
+    }
+    .rules-fw-pill {
+      transition: none;
+    }
+  }
+
+  /* 320px small screen pill wrap */
+  @media (max-width: 320px) {
+    .rules-pill-group {
+      flex-direction: column;
+    }
+    .rules-fw-pill {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  /* Framework Reference */
+  .rules-fw-reference {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rules-fw-ref-item {
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .rules-fw-ref-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .rules-fw-ref-header strong {
+    font-size: 13px;
+  }
+  .rules-fw-ref-link {
+    font-size: 11px;
+    color: var(--accent-text);
+    text-decoration: none;
+  }
+  .rules-fw-ref-link:hover {
+    text-decoration: underline;
+  }
+  .rules-fw-ref-item p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+</style>

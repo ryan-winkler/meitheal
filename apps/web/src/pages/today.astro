@@ -1,0 +1,1333 @@
+---
+/**
+ * Today Page — Smart Daily Cockpit
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Single-pane-of-glass daily view with sections:
+ * 1. Daily Stats
+ * 2. Quick Add (NL-aware + defaults due_date = today)
+ * 3. Filter Bar (search, status, priority, RICE, sort)
+ * 4. Carried Forward (overdue tasks with triage / snooze)
+ * 5. Pinned / MITs (favorited tasks)
+ * 6. Due Today (hard landscape)
+ * 7. Unscheduled (no due date)
+ * 8. Suggested (smart picks)
+ *
+ * @kcs This page uses the shared TaskListItem component for all task rendering.
+ * The inline script is replaced by today-controller.ts module.
+ */
+import Layout from "../layouts/Layout.astro"
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
+import EmptyState from "../components/ui/EmptyState.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
+import TaskListItem from "../components/tasks/TaskListItem.astro"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
+import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
+import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
+import { isFeatureEnabled } from "../lib/feature-flags"
+import { TODAY_SECTIONS } from "../lib/today-registry"
+import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
+
+let carriedForwardTasks: TaskViewItem[] = []
+let pinnedTasks: TaskViewItem[] = []
+let todayTasks: TaskViewItem[] = []
+let noDueTasks: TaskViewItem[] = []
+let suggestedTasks: TaskViewItem[] = []
+let focusStackTasks: TaskViewItem[] = []
+let completedTodayCount = 0
+let unscheduledCount = 0
+let totalOpenCount = 0
+let currentStreak = 0
+let todayXP = 0
+let habits: HabitWithStats[] = []
+let habitsEnabled = false
+
+try {
+  const today = new Date()
+  const todayStr = today.toISOString().split("T")[0] ?? ""
+  const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
+  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled)
+  completedTodayCount = completed
+  today.setHours(0, 0, 0, 0)
+
+  // Partition tasks into sections
+  for (const task of tasks) {
+    // Pinned / MITs (favorited and not in another section)
+    if (task.is_favorite) {
+      pinnedTasks.push(task)
+    }
+
+    if (task.due_date) {
+      const section = todayDueSection(task.due_date, todayStr, today)
+
+      if (section === "carried") {
+        // Carried forward (overdue)
+        carriedForwardTasks.push(task)
+      } else if (section === "due") {
+        // Due today
+        todayTasks.push(task)
+      }
+      // Future dates go to suggested if high priority
+    } else if (includeUnscheduled) {
+      // No due date → unscheduled
+      noDueTasks.push(task)
+    }
+  }
+
+  // Suggested: high-priority tasks due within 3 days + top-RICE unscheduled
+  const threeDaysOut = new Date(today)
+  threeDaysOut.setDate(threeDaysOut.getDate() + 3)
+  const threeDaysStr = threeDaysOut.toISOString().split("T")[0]!
+
+  suggestedTasks = tasks.filter(t => {
+    if (t.is_done) return false
+    // Already in today or carried forward
+    if (t.due_date === todayStr) return false
+    if (t.is_overdue) return false
+    // High priority due within 3 days
+    if (t.due_date && t.due_date <= threeDaysStr && t.priority <= 2) return true
+    // Top RICE unscheduled (not already in unscheduled section to avoid double)
+    if (!t.due_date && t.rice !== null && t.rice >= 15) return true
+    return false
+  }).slice(0, 8)
+
+  // Remove suggested from noDueTasks to avoid double-showing
+  const suggestedIds = new Set(suggestedTasks.filter(task => !task.due_date).map(task => task.id))
+  noDueTasks = noDueTasks.filter(t => !suggestedIds.has(t.id))
+
+  // Focus Stack — top 3 actionable tasks ranked by urgency for ADHD decision support
+  // Ranking: overdue first → highest priority → nearest due date
+  const focusCandidates = tasks
+    .filter(t => !t.is_done && (t.due_date === todayStr || (t.due_date && new Date(t.due_date) < today)))
+    .sort((a, b) => {
+      const aOverdue = a.due_date && a.due_date < todayStr ? 1 : 0
+      const bOverdue = b.due_date && b.due_date < todayStr ? 1 : 0
+      if (aOverdue !== bOverdue) return bOverdue - aOverdue
+      const aPri = Number(a.priority ?? 3)
+      const bPri = Number(b.priority ?? 3)
+      if (aPri !== bPri) return aPri - bPri
+      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
+      return 0
+    })
+  focusStackTasks = focusCandidates.slice(0, 3)
+
+  const unscheduledAfterSuggestions = openUnscheduledCount - suggestedIds.size
+  totalOpenCount = carriedForwardTasks.length + todayTasks.length + unscheduledAfterSuggestions
+  unscheduledCount = unscheduledAfterSuggestions - pinnedTasks.filter(task => !task.due_date && !suggestedIds.has(task.id)).length
+
+  // G36: Fetch gamification stats for streak/XP display
+  try {
+    const { getStats, getWeeklyData } = await import("@domains/gamification")
+    const stats = await getStats()
+    currentStreak = stats.currentStreak ?? 0
+    // Get today's points from weekly data
+    const weekly = await getWeeklyData()
+    const todayRecord = weekly[weekly.length - 1]
+    todayXP = todayRecord?.points ?? 0
+  } catch { /* gamification may not be initialized */ }
+
+  // G38: Fetch habits for Today section
+  try {
+    habitsEnabled = await isFeatureEnabled("habits")
+    if (habitsEnabled) {
+      const repo = new TemplateRepository(getPersistenceClient())
+      habits = await repo.getHabitsWithStats()
+    }
+  } catch { /* habits may not be available */ }
+} catch {
+  /* DB not available */
+}
+
+// Remove pinned duplicates from other sections (keep in Pinned section)
+const pinnedIds = new Set(pinnedTasks.map(t => t.id))
+carriedForwardTasks = carriedForwardTasks.filter(t => !pinnedIds.has(t.id))
+todayTasks = todayTasks.filter(t => !pinnedIds.has(t.id))
+noDueTasks = noDueTasks.filter(t => !pinnedIds.has(t.id))
+
+const unscheduled = getUnscheduledPage(noDueTasks, Astro.url.searchParams)
+if (unscheduled) Astro.response.headers.set("Cache-Control", "private, no-store")
+function unscheduledLink(page: number): string {
+  const url = setUnscheduledPage(new URL(Astro.url), page)
+  return `${url.pathname}${url.search}#today-work`
+}
+
+const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
+const todayHeroSignal =
+  carriedForwardTasks.length > 0
+    ? `${carriedForwardTasks.length} carried forward needs triage`
+    : todayTasks.length > 0
+      ? `${todayTasks.length} tasks due today`
+      : "Today is under control"
+const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
+---
+
+<Layout title="Meitheal — Today">
+  <UnifiedBar
+    title="Today"
+    titleIcon="☀️"
+    tabs={TODAY_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="today-bar"
+    slot="custom-header"
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="unified-bar__new-task-btn today-shell__clear-btn"
+      id="clear-completed-btn"
+      title="Clear completed tasks"
+      aria-label="Clear completed tasks"
+    >
+      <span class="unified-bar__new-task-label">Clear Done</span>
+    </button>
+  </UnifiedBar>
+
+  <div id="page-shell" class="page-shell">
+    <section
+      id="today-overview"
+      class="page-shell__section page-shell__section--overview"
+      data-today-section
+    >
+      <div class="page-hero">
+        <div class="page-hero__eyebrow">Home Assistant Native Daily Cockpit</div>
+        <div class="page-hero__title-row">
+          <div class="page-hero__copy">
+            <h1 class="page-hero__title">A calmer command surface for today</h1>
+            <p class="page-hero__description">
+              Capture quickly, see what is truly due, and keep habits, calendar context,
+              and task flow aligned inside the same local-first execution surface.
+            </p>
+          </div>
+
+          <div class="page-hero__chips" aria-label="Today quick jumps">
+            <a href="#today-focus" class="page-hero__chip" data-today-section-link>
+              Focus
+            </a>
+            <a href="#today-triage" class="page-hero__chip" data-today-section-link>
+              Triage
+            </a>
+            <a href="#today-work" class="page-hero__chip" data-today-section-link>
+              Work
+            </a>
+            <a href="#today-habits" class="page-hero__chip" data-today-section-link>
+              Habits
+            </a>
+          </div>
+        </div>
+
+        <div class="page-hero__status">
+          <span class="page-hero__status-label">Current signal</span>
+          <strong id="today-signal-summary">{todayHeroSignal}</strong>
+        </div>
+      </div>
+
+      <div class="daily-stats-container" id="daily-stats-container">
+        <div class="daily-stats" id="daily-stats">
+          <a href="#today-work" class="stat-item" data-today-section-link>
+            <span class="stat-value" data-today-count="dueToday">{todayTasks.length}</span>
+            <span class="stat-label">Due Today</span>
+          </a>
+          <div class="stat-item">
+            <span class="stat-value" data-today-count="completedToday">{completedTodayCount}</span>
+            <span class="stat-label">Completed</span>
+          </div>
+          <a href="#today-triage" class="stat-item" data-today-section-link>
+            <span class="stat-value" data-today-count="carriedForward">{carriedForwardTasks.length}</span>
+            <span class="stat-label stat-danger">Carried Fwd</span>
+          </a>
+          <div class="stat-item">
+            <span class="stat-value" data-today-count="remaining">{remainingCount}</span>
+            <span class="stat-label">Remaining</span>
+          </div>
+          {currentStreak > 0 && (
+            <div class="stat-item stat-streak">
+              <span class="stat-value">🔥{currentStreak}</span>
+              <span class="stat-label">Streak</span>
+            </div>
+          )}
+          {todayXP > 0 && (
+            <div class="stat-item stat-xp">
+              <span class="stat-value" style="color: var(--accent);">+{todayXP}</span>
+              <span class="stat-label">XP Today</span>
+            </div>
+          )}
+        </div>
+        <div class="daily-stats-progress-bar">
+          <div
+            class="daily-stats-progress-fill"
+            style={`width: ${completionPercent}%`}
+          ></div>
+        </div>
+      </div>
+
+      <div class="card today-shell__capture-card">
+        <form id="quick-add-form" class="quick-add-form">
+          <input
+            type="text"
+            id="quick-add-input"
+            class="form-input flex-1 quick-add-input"
+            placeholder="Add a task... (try 'shopping: milk, eggs' or 'call dentist tomorrow')"
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-primary quick-add-submit">
+            Add
+          </button>
+        </form>
+        <div
+          id="quick-add-feedback"
+          style="display: none; font-size: 11px; color: var(--text-muted); margin-top: 4px; padding-left: 2px;"
+        ></div>
+      </div>
+    </section>
+
+    <section id="today-focus" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Focus</div>
+          <h2 class="page-shell__title">See the next best move before the long list</h2>
+          <p class="page-shell__description">
+            The focus stack and filters work together here so triage feels deliberate
+            instead of reactive.
+          </p>
+        </div>
+      </div>
+
+      {focusStackTasks.length > 0 ? (
+        <div class="focus-stack" id="section-focus-stack">
+          <div class="focus-stack__header">
+            <span class="focus-stack__title">🧠 Focus Stack</span>
+            <span class="focus-stack__subtitle">
+              Your top {focusStackTasks.length} — just do these
+            </span>
+          </div>
+          <div class="focus-stack__cards">
+            {focusStackTasks.map((task, i) => (
+              <div
+                class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
+                data-id={task.id}
+                data-focus-index={i}
+              >
+                <span class="focus-card__step">{i + 1}</span>
+                <div class="focus-card__body">
+                  <span class="focus-card__title">{task.title}</span>
+                  <div class="focus-card__meta">
+                    {task.priority && task.priority <= 2 && (
+                      <span class="focus-card__priority" data-pri={task.priority}>
+                        {task.priority === 1 ? "▲ Critical" : "↑ High"}
+                      </span>
+                    )}
+                    {task.due_date && (
+                      <span
+                        class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}
+                      >
+                        {task.is_overdue ? `⚠ Overdue` : `📅 ${task.due_date}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="focus-card__complete btn btn-sm"
+                  data-id={task.id}
+                  title="Complete this task"
+                >
+                  ✓
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div class="today-shell__empty card">
+          No urgent focus items are competing for attention right now.
+        </div>
+      )}
+
+      <div class="today-filter-bar" id="today-filter-bar">
+        <input
+          type="text"
+          id="today-search"
+          class="form-input"
+          placeholder="Search tasks..."
+          autocomplete="off"
+        />
+        <select id="today-filter-status" class="form-select">
+          <option value="">All Status</option>
+          <option value="pending">Todo</option>
+          <option value="active">Active</option>
+          <option value="complete">Done</option>
+          <option value="overdue">Overdue</option>
+        </select>
+        <select id="today-filter-priority" class="form-select">
+          <option value="">All Priority</option>
+          <option value="1">▲ Critical</option>
+          <option value="2">↑ High</option>
+          <option value="3">→ Medium</option>
+          <option value="4">↓ Low</option>
+          <option value="5">· Minimal</option>
+        </select>
+        <select id="today-filter-rice" class="form-select">
+          <option value="">All RICE</option>
+          <option value="high">High (≥15)</option>
+          <option value="medium">Medium (8-14)</option>
+          <option value="low">Low (&lt;8)</option>
+        </select>
+        <select id="today-sort" class="form-select">
+          <option value="priority-asc">Priority ↑</option>
+          <option value="priority-desc">Priority ↓</option>
+          <option value="rice-desc">RICE ↓</option>
+          <option value="rice-asc">RICE ↑</option>
+          <option value="due_date-asc">Due Soonest</option>
+          <option value="due_date-desc">Due Latest</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+        </select>
+        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
+          ✕
+        </button>
+      </div>
+    </section>
+
+    <section id="today-triage" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Triage</div>
+          <h2 class="page-shell__title">Reduce carry-over before it crowds out today</h2>
+          <p class="page-shell__description">
+            Overdue work and suggestions belong together so the page helps you make
+            cleanup choices first.
+          </p>
+        </div>
+      </div>
+
+      <div id="migration-prompt" class="today-section" style="display: none;"></div>
+
+      {carriedForwardTasks.length > 0 ? (
+        <div class="today-section" id="section-carried">
+          <div class="today-section__header">
+            <button type="button" class="today-section__toggle" aria-label="Toggle Carried Forward section">
+              <span class="today-section__icon">▶</span>
+            </button>
+            <span class="today-section__title" style="color: var(--warning);">
+              🔄 Carried Forward
+            </span>
+            <span class="today-section__count">{carriedForwardTasks.length}</span>
+          </div>
+          <div class="today-section__list">
+            {carriedForwardTasks.map(task => (
+              <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div class="today-shell__empty card">No carried-forward work is waiting on you.</div>
+      )}
+
+      {suggestedTasks.length > 0 && (
+        <div class="today-section" id="section-suggested">
+          <div class="today-section__header">
+            <button type="button" class="today-section__toggle" aria-label="Toggle Suggested section">
+              <span class="today-section__icon">▶</span>
+            </button>
+            <span class="today-section__title" style="color: var(--accent);">
+              💡 Suggested
+            </span>
+            <span class="today-section__count">{suggestedTasks.length}</span>
+          </div>
+          <div class="today-section__list">
+            {suggestedTasks.map(task => (
+              <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+
+    <section id="today-work" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Work</div>
+          <h2 class="page-shell__title">Run the actual queue without losing context</h2>
+          <p class="page-shell__description">
+            Pinned work, today’s commitments, calendar context, and unscheduled tasks
+            stay together as the main operating surface.
+          </p>
+        </div>
+      </div>
+
+      <div class="today-section" id="section-calendar-events" style="display: none;">
+        <div class="today-section__header">
+          <button type="button" class="today-section__toggle" aria-label="Toggle Calendar Events section">
+            <span class="today-section__icon">▶</span>
+          </button>
+          <span class="today-section__title" style="color: var(--info, #60a5fa);">
+            📅 Calendar Events
+          </span>
+          <span class="today-section__count" id="calendar-events-count">0</span>
+        </div>
+        <div class="today-section__list" id="calendar-events-list">
+          <div class="skeleton-line" style="width: 70%;"></div>
+          <div class="skeleton-line" style="width: 55%;"></div>
+          <div class="skeleton-line" style="width: 65%;"></div>
+        </div>
+      </div>
+
+      {pinnedTasks.length > 0 && (
+        <div class="today-section" id="section-pinned">
+          <div class="today-section__header">
+            <button type="button" class="today-section__toggle" aria-label="Toggle Pinned section">
+              <span class="today-section__icon">▶</span>
+            </button>
+            <span class="today-section__title">
+              ⭐ Pinned / MITs
+            </span>
+            <span class="today-section__count">{pinnedTasks.length}</span>
+          </div>
+          <div class="today-section__list">
+            {pinnedTasks.map(task => (
+              <TaskListItem task={task} showSnooze showActions section="Pinned" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div class="today-section" id="section-today">
+        <div class="today-section__header">
+          <button type="button" class="today-section__toggle" aria-label="Toggle Due Today section">
+            <span class="today-section__icon">▶</span>
+          </button>
+          <span class="today-section__title">
+            ☀️ Due Today
+          </span>
+          <span class="today-section__count">{todayTasks.length}</span>
+        </div>
+        <div class="today-section__list">
+          {todayTasks.length === 0 ? (
+            <EmptyState
+              title="Nothing due today"
+              description="You're on top of things! 🎉"
+            />
+          ) : (
+            todayTasks.map(task => (
+              <TaskListItem task={task} showSnooze showActions section="Due Today" />
+            ))
+          )}
+        </div>
+      </div>
+
+      {(unscheduledCount > 0 || unscheduled) && (
+        <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled">
+          <div class="today-section__header">
+            <button type="button" class="today-section__toggle" aria-label="Toggle Unscheduled section" aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
+              <span class="today-section__icon">▶</span>
+            </button>
+            <span class="today-section__title">
+              📌 Unscheduled
+            </span>
+            <span class="today-section__count">{unscheduledCount}</span>
+          </div>
+          <div class="today-section__list" id="today-unscheduled-list" hidden={!unscheduled}>
+            <div id="today-unscheduled-page" data-page={unscheduled?.number ?? 0}>
+              {unscheduled && (
+                <>
+                  <p class="today-unscheduled-pagination" role="status" tabindex="-1" data-unscheduled-range>
+                    {unscheduled.total ? `Showing ${unscheduled.first}–${unscheduled.last} of ${unscheduled.total}` : "No unscheduled tasks match these filters"}
+                  </p>
+                  {unscheduled.items.map(task => (
+                    <TaskListItem task={task} showActions section="Unscheduled" />
+                  ))}
+                  {unscheduled.pages > 1 && <nav class="today-unscheduled-pagination" aria-label="Unscheduled tasks pages">
+                    {unscheduled.number > 1 && (
+                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number - 1)} data-unscheduled-page={unscheduled.number - 1}>Previous</a>
+                    )}
+                    {unscheduled.number < unscheduled.pages && (
+                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number + 1)} data-unscheduled-page={unscheduled.number + 1}>Next</a>
+                    )}
+                  </nav>}
+                </>
+              )}
+            </div>
+            <p role="status" id="today-unscheduled-status" hidden></p>
+            <button type="button" class="btn btn-sm" id="today-unscheduled-retry" hidden>Retry</button>
+          </div>
+        </div>
+      )}
+    </section>
+
+    <section id="today-habits" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Habits</div>
+          <h2 class="page-shell__title">Keep routines attached to real work</h2>
+          <p class="page-shell__description">
+            Habits stay visible here as execution support, not as a separate tracking
+            world detached from the rest of Meitheal.
+          </p>
+        </div>
+      </div>
+
+      <div class="today-section" id="section-habits">
+        <div class="today-section__header">
+          <button type="button" class="today-section__toggle" aria-label="Toggle Habits section">
+            <span class="today-section__icon">▶</span>
+          </button>
+          <span class="today-section__title" style="color: var(--accent);">
+            🔄 Habits / Routines
+          </span>
+          <span class="today-section__count">{habits.length}</span>
+        </div>
+        <div class="today-section__list">
+          {habitsEnabled && habits.length > 0 ? (
+            habits.map(habit => (
+              <div
+                class={`habit-card ${habit.todayCompleted ? "habit-card--done" : ""}`}
+                data-habit-id={habit.id}
+                data-today-task-id={habit.todayTaskId ?? ""}
+              >
+                <span class="habit-card__icon">{habit.icon}</span>
+                <div class="habit-card__info">
+                  <span class="habit-card__name">{habit.name}</span>
+                  <span class="habit-card__meta">
+                    {habit.currentStreak > 0 && <span class="habit-card__streak">🔥{habit.currentStreak}</span>}
+                    <span class="habit-card__total">{habit.totalCompletions} total</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="habit-card__complete btn btn-sm"
+                  disabled={habit.todayCompleted}
+                >
+                  {habit.todayCompleted ? "✅ Done" : "Complete"}
+                </button>
+              </div>
+            ))
+          ) : (
+            <div class="today-shell__empty card">
+              {habitsEnabled
+                ? "No active habits are feeding into Today yet."
+                : "Habits are currently disabled for this workspace."}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section id="today-flow" class="page-shell__section" data-today-section>
+      <div class="page-shell__intro">
+        <div>
+          <div class="page-shell__eyebrow">Flow</div>
+          <h2 class="page-shell__title">Shift context when today narrows or broadens</h2>
+          <p class="page-shell__description">
+            Today is the execution cockpit. When work needs a wider horizon or a different lens, these handoffs keep context intact.
+          </p>
+        </div>
+      </div>
+
+      <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="🧭" variant="tip">
+        <p>These links connect your daily cockpit to the wider system. <strong>Tasks Hub</strong> shows all views (Kanban, Calendar, Table, Timeline). <strong>Planning</strong> helps prioritise. <strong>Progress</strong> tracks routines and goals.</p>
+      </InlineHelper>
+
+      <div class="page-flow-grid">
+        <a class="card page-flow-card" href="/upcoming">
+          <strong>📅 Upcoming</strong>
+          <p>Move into the next-week view when today's queue dries up.</p>
+        </a>
+        <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
+          <strong>🗓️ Calendar</strong>
+          <p>See the full month horizon and plan around events.</p>
+        </a>
+        <a class="card page-flow-card" href="/planning#eisenhower">
+          <strong>⚡ Eisenhower</strong>
+          <p>Sort by urgency × importance when the queue feels overwhelming.</p>
+        </a>
+        <a class="card page-flow-card" href="/tasks#kanban">
+          <strong>📊 Kanban</strong>
+          <p>Track status across lanes when work moves in stages.</p>
+        </a>
+        <a class="card page-flow-card" href="/progress#routines">
+          <strong>🏆 Progress</strong>
+          <p>Track routines, goals, and achievements in one place.</p>
+        </a>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  /* Shared shell/hero/flow CSS is in _page-shell.css */
+
+  .today-shell__capture-card {
+    margin-bottom: 0;
+    padding: 12px 16px;
+  }
+  .quick-add-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .quick-add-input {
+    font-size: 14px;
+  }
+  .quick-add-submit {
+    padding: 8px 16px;
+    white-space: nowrap;
+  }
+
+  .today-shell__clear-btn {
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    color: var(--text-primary);
+  }
+
+  .today-shell__clear-btn:hover {
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+    border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+  }
+
+  .today-shell__empty {
+    padding: 16px 18px;
+    color: var(--text-muted);
+  }
+
+
+  /* ── Filter Bar ──────────────────────────────────────────────── */
+  .today-filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .today-filter-bar .form-input {
+    flex: 1;
+    min-width: 120px;
+    font-size: 13px;
+    padding: 6px 10px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .today-filter-bar .form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
+  }
+  .today-filter-bar .form-select {
+    font-size: 12px;
+    padding: 6px 6px;
+    background: var(--bg-card, #1e1e2e);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 130px;
+    transition: border-color 0.2s ease;
+  }
+  .today-filter-bar .form-select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
+  .today-filter-bar .btn-sm {
+    padding: 5px 8px;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  @media (max-width: 640px) {
+    .today-filter-bar {
+      flex-wrap: wrap;
+    }
+    .today-filter-bar .form-select {
+      max-width: none;
+      flex: 1;
+      min-width: 100px;
+    }
+  }
+
+  /* ── Sections ────────────────────────────────────────────────── */
+  .today-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .today-section:hover {
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent, #6366f1) 30%);
+  }
+
+  .today-section__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+    transition: background 0.15s ease;
+  }
+  .today-section__header:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .today-section__toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+  .today-section__icon {
+    font-size: 10px;
+    transform: rotate(90deg);
+    display: inline-block;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .today-section--collapsed .today-section__icon {
+    transform: rotate(0deg);
+  }
+
+  .today-section__title {
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+    letter-spacing: -0.01em;
+  }
+
+  .today-section__count {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .today-section__list {
+    transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+    overflow: hidden;
+  }
+  .today-section--collapsed .today-section__list {
+    max-height: 0;
+    opacity: 0;
+  }
+  .today-section--collapsed .today-section__header {
+    border-bottom: none;
+  }
+
+  .today-unscheduled-pagination {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  /* ── Filtered-out items ──────────────────────────────────────── */
+  .filtered-out {
+    display: none !important;
+  }
+
+  /* ── Daily Stats — Glassmorphism ─────────────────────────────── */
+  .daily-stats-container {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+    background: var(--bg-card);
+    background-image: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.04) 0%,
+      rgba(99, 102, 241, 0.06) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+  }
+  .daily-stats-container::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      transparent 40%
+    );
+    pointer-events: none;
+  }
+  .daily-stats {
+    display: flex;
+    gap: 2px;
+    position: relative;
+  }
+  .daily-stats-progress-bar {
+    height: 4px;
+    width: 100%;
+    background: var(--bg-hover);
+    position: relative;
+  }
+  .daily-stats-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent, #6366f1) 70%, #a78bfa));
+    transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent, #6366f1) 50%, transparent);
+    border-radius: 0 2px 2px 0;
+  }
+  .stat-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 14px 8px;
+    gap: 4px;
+    position: relative;
+    transition: background 0.15s ease;
+  }
+  .stat-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .stat-item:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+  .stat-value {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .stat-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .stat-danger {
+    color: var(--danger);
+    font-weight: 700;
+  }
+
+  /* ── Snooze popover ──────────────────────────────────────────── */
+  :global(.snooze-option) {
+    padding: 6px 12px;
+    font-size: 13px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: var(--radius-sm, 4px);
+    transition: background 0.15s;
+  }
+  :global(.snooze-option:hover) {
+    background: var(--bg-hover);
+  }
+
+  /* ── G30: Batch mode ────────────────────────────────── */
+  :global(.batch-toggle-btn.active) {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  :global(.batch-mode .tli) {
+    padding-left: 8px;
+  }
+
+  /* ── G31: Drag reorder — premium drag feedback ──────── */
+  :global(.tli[draggable="true"]) {
+    cursor: grab;
+  }
+  :global(.tli--dragging) {
+    opacity: 0.4;
+    cursor: grabbing;
+    transform: scale(0.98);
+  }
+  :global(.tli--drag-over) {
+    border-top: 2px solid var(--accent);
+    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* ── G36: Gamification stat items ───────────────────── */
+  .stat-streak .stat-value,
+  .stat-xp .stat-value {
+    font-size: 1rem;
+  }
+  .stat-streak .stat-value {
+    color: var(--warning, #f59e0b);
+  }
+
+  /* ── G38: Habit Cards — Premium (match habits.astro) ── */
+  :global(.habit-card) {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease, transform 0.15s ease;
+    position: relative;
+  }
+  :global(.habit-card::after) {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--accent, #6366f1);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  :global(.habit-card:hover) {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  :global(.habit-card:hover::after) {
+    opacity: 1;
+  }
+  :global(.habit-card--done) {
+    opacity: 0.6;
+  }
+  :global(.habit-card--done::after) {
+    background: var(--success, #22c55e);
+    opacity: 1;
+  }
+  :global(.habit-card__icon) {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+  }
+  :global(.habit-card__info) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  :global(.habit-card__name) {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  :global(.habit-card__meta) {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  :global(.habit-card__streak) {
+    color: var(--warning, #f59e0b);
+    font-weight: 700;
+    background: color-mix(in srgb, var(--warning, #f59e0b) 10%, transparent);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+  }
+  :global(.habit-card__complete) {
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  :global(.habit-card__complete:hover:not(:disabled)) {
+    transform: scale(1.05);
+  }
+  :global(.habit-card__complete:disabled) {
+    opacity: 0.7;
+    cursor: default;
+  }
+
+  /* ── G28: Calendar Event Cards — polished ────────────── */
+  :global(.cal-event-card) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease;
+  }
+  :global(.cal-event-card:hover) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  :global(.cal-event-card__time) {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 64px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  :global(.cal-event-card__summary) {
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+    font-weight: 500;
+  }
+  :global(.cal-event-card__source) {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+
+  /* ── W2: Loading skeleton shimmer ────────────────────── */
+  :global(.skeleton-line) {
+    height: 14px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.04) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.04) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    margin: 8px 16px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ── G27: Migration Prompt ────────────────────────────── */
+  :global(.migration-banner) {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  :global(.migration-banner__text) {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text);
+  }
+  :global(.migration-banner__action) {
+    flex-shrink: 0;
+  }
+
+  /* ── G29: Context Group Headers ──────────────────────── */
+  :global(.context-group-header) {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding: 8px 16px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  /* ── Focus Stack (PRA-02) ────────────────────────────────── */
+  .focus-stack {
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb), 0.02));
+    border: 1px solid rgba(var(--accent-rgb), 0.18);
+    border-radius: var(--radius-md, 10px);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .focus-stack::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f59e0b));
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .focus-stack__header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .focus-stack__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .focus-stack__subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .focus-stack__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .focus-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    transition: border-color 200ms, box-shadow 200ms, opacity 200ms, transform 200ms;
+    cursor: pointer;
+  }
+  .focus-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.12);
+    transform: translateX(2px);
+  }
+  .focus-card--overdue {
+    border-left: 3px solid var(--error, #ef4444);
+  }
+  .focus-card--completing {
+    opacity: 0;
+    transform: translateX(40px) scale(0.95);
+    transition: opacity 300ms ease, transform 300ms ease;
+  }
+
+  .focus-card__step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #f59e0b));
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.3);
+  }
+
+  .focus-card__body {
+    flex: 1;
+    min-width: 0;
+  }
+  .focus-card__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .focus-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+  .focus-card__priority[data-pri="1"] {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .focus-card__priority[data-pri="2"] {
+    color: var(--warning);
+    font-weight: 600;
+  }
+  .focus-card__due--overdue {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  .focus-card__complete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color var(--transition), color var(--transition), background var(--transition), box-shadow var(--transition);
+    padding: 0;
+  }
+  .focus-card__complete:hover {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(var(--success-rgb), 0.1);
+    box-shadow: 0 0 8px rgba(var(--success-rgb), 0.2);
+  }
+
+  .focus-stack--cleared {
+    text-align: center;
+    padding: 24px 16px;
+  }
+  .focus-stack--cleared .focus-stack__cleared-msg {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 4px;
+  }
+  .focus-stack--cleared .focus-stack__cleared-sub {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── Reduced Motion ──────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .daily-stats-progress-fill,
+    .today-section__list,
+    .today-section__icon,
+    .today-section,
+    .today-filter-bar .form-input {
+      transition: none !important;
+    }
+    :global(.tli--dragging) {
+      transform: none !important;
+    }
+    :global(.tli--drag-over) {
+      box-shadow: none !important;
+    }
+    :global(.skeleton-line) {
+      animation: none !important;
+    }
+    :global(.habit-card),
+    :global(.habit-card__complete),
+    :global(.cal-event-card) {
+      transition: none !important;
+    }
+  }
+</style>
+
+<script>
+  import { initTodayPage } from "../lib/today-controller"
+  import { pageLifecycle } from "../lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(() => {
+    initTodayPage()
+  })
+</script>

@@ -1,0 +1,103 @@
+# Meitheal — Devcontainer Compose Stack
+# Boots HA Supervisor + integration sidecar services for full-stack testing.
+#
+# Services:
+#   ha-devcontainer  — HA Supervisor + addon dev environment (primary)
+#   grocy            — Real Grocy API for stock/shopping list integration testing
+#   nodered          — Node-RED with HA WebSocket palette for flow testing
+#
+# Usage: Opened automatically by VS Code devcontainer. Manual: docker compose up -d
+#
+# Ports:
+#   7123 → HA (8123)     UI + API
+#   7357 → HA (4357)     Supervisor API
+#   9192 → Grocy (80)    Grocy web UI + API
+#   1880 → Node-RED      Node-RED editor
+
+services:
+  ha-devcontainer:
+    image: ghcr.io/home-assistant/devcontainer:2-addons
+    privileged: true
+    command: /sbin/init
+    ports:
+      - "${HA_UI_PORT:-7123}:8123"
+      - "${HA_SUPERVISOR_PORT:-7357}:4357"
+    environment:
+      GIT_EDITOR: "code --wait"
+      WORKSPACE_DIRECTORY: "/workspaces/meitheal"
+      # Integration service URLs (available inside HA + Meitheal addon)
+      GROCY_URL: "http://grocy:80"
+      NODERED_URL: "http://nodered:1880"
+    volumes:
+      - ha-docker-data:/var/lib/docker
+      - ha-containerd-data:/var/lib/containerd
+      - ha-supervisor-data:/mnt/supervisor
+      - ..:/workspaces/meitheal
+    networks:
+      - meitheal-dev
+    depends_on:
+      grocy:
+        condition: service_healthy
+      nodered:
+        condition: service_healthy
+
+  grocy:
+    # Standalone Grocy image (not HA addon — runs independently)
+    image: lscr.io/linuxserver/grocy:latest
+    restart: unless-stopped
+    ports:
+      - "${GROCY_HOST_PORT:-9192}:80"
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TZ:-Europe/Dublin}
+    volumes:
+      - grocy-data:/config
+    networks:
+      - meitheal-dev
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://127.0.0.1:80/" ]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  nodered:
+    image: docker.io/nodered/node-red:latest
+    restart: unless-stopped
+    ports:
+      - "${NODERED_HOST_PORT:-1880}:1880"
+    environment:
+      TZ: ${TZ:-Europe/Dublin}
+      NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:-dev-secret}
+    # Settings mounted to /opt/nodered/ to avoid Podman named-volume overlay conflict
+    entrypoint: ["/bin/sh", "-c", "cp /opt/nodered/package.json /data/package.json 2>/dev/null; exec node-red --settings /opt/nodered/settings.js"]
+    volumes:
+      - nodered-data:/data
+      - ./nodered/settings.js:/opt/nodered/settings.js:ro,Z
+      - ./nodered/package.json:/opt/nodered/package.json:ro,Z
+    networks:
+      - meitheal-dev
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://127.0.0.1:1880/" ]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+volumes:
+  ha-docker-data:
+    name: meitheal-dev-docker
+  ha-containerd-data:
+    name: meitheal-dev-containerd
+  ha-supervisor-data:
+    name: meitheal-dev-supervisor
+  grocy-data:
+    name: meitheal-dev-grocy
+  nodered-data:
+    name: meitheal-dev-nodered
+
+networks:
+  meitheal-dev:
+    name: meitheal-dev
+    driver: bridge

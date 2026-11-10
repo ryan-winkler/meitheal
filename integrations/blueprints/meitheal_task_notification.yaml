@@ -1,0 +1,77 @@
+blueprint:
+  name: Meitheal Task Notification
+  description: >-
+    Send a notification when a Meitheal task event occurs (created, completed, overdue, etc.).
+    Requires the Meitheal addon to be installed and running.
+  domain: automation
+  author: Coolock Village
+  source_url: https://github.com/ryan-winkler/meitheal/blob/main/integrations/blueprints/meitheal_task_notification.yaml
+  input:
+    event_type:
+      name: Event Type
+      description: Which Meitheal event should trigger the notification
+      default: meitheal_task_created
+      selector:
+        select:
+          options:
+            - label: Task Created
+              value: meitheal_task_created
+            - label: Task Completed
+              value: meitheal_task_completed
+            - label: Task Overdue
+              value: meitheal_task_overdue
+            - label: Task Updated
+              value: meitheal_task_updated
+            - label: Task Deleted
+              value: meitheal_task_deleted
+    notify_service:
+      name: Notification Service
+      description: The notification service to use (e.g. notify.mobile_app_iphone)
+      default: notify.persistent_notification
+      selector:
+        text:
+    priority_filter:
+      name: Minimum Priority (optional)
+      description: >-
+        Only notify for tasks at or above this priority level (1=Urgent, 5=Low).
+        Leave at 5 to notify for all tasks.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+
+trigger:
+  - platform: event
+    event_type: !input event_type
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.priority | default(3) | int <= priority_filter | int }}
+
+variables:
+  priority_filter: !input priority_filter
+  task_title: "{{ trigger.event.data.title | default('Untitled') }}"
+  task_priority: "{{ trigger.event.data.priority | default('3') }}"
+  task_due: "{{ trigger.event.data.due_date | default('No due date') }}"
+  task_status: "{{ trigger.event.data.status | default('unknown') }}"
+  task_ticket: "{{ trigger.event.data.ticket_key | default('') }}"
+  event_name: >-
+    {% set emap = {
+      'meitheal_task_created': 'New Task',
+      'meitheal_task_completed': 'Task Completed',
+      'meitheal_task_overdue': 'Task Overdue',
+      'meitheal_task_updated': 'Task Updated',
+      'meitheal_task_deleted': 'Task Deleted'
+    } %}
+    {{ emap.get(trigger.event.event_type, 'Task Event') }}
+
+action:
+  - service: !input notify_service
+    data:
+      title: "{{ event_name }}: {{ task_title }}"
+      message: >-
+        {% if task_ticket %}{{ task_ticket }} — {% endif %}{{ task_title }}
+        Priority: {{ task_priority }} | Due: {{ task_due }} | Status: {{ task_status }}

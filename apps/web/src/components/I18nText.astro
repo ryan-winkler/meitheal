@@ -1,0 +1,106 @@
+---
+/**
+ * I18nText — Astro-native localisation component
+ *
+ * Server-renders the translated text based on the current locale cookie.
+ * Client-side <i18n-text> custom element handles dynamic locale switching
+ * without page reload via the meitheal:locale-changed event.
+ *
+ * Zero JS when user stays on default locale (English).
+ *
+ * Bounded Context: Infrastructure (i18n)
+ */
+
+interface Props {
+  /** Dot-notation translation key, e.g. "nav.dashboard" */
+  key: string;
+  /** Fallback text if key not found */
+  fallback?: string;
+}
+
+import { t } from "../i18n/translations";
+import type { Locale } from "../lib/locale";
+
+const { key, fallback } = Astro.props;
+
+// Resolve locale from cookie for SSR
+const cookieValue = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieValue === "ga" ? "ga" : "en";
+const translated = t(key, locale);
+const displayText = translated !== key ? translated : fallback || key;
+---
+
+<i18n-text data-key={key}>{displayText}</i18n-text>
+
+<script>
+  import { getStoredLocale, isValidLocale, STORAGE_KEY } from "@lib/locale";
+  import { t } from "@i18n/translations";
+
+  class I18nTextElement extends HTMLElement {
+    private originalText: string;
+    private key: string;
+    private i18nObserver: (e: Event) => void;
+    private storageObserver: (e: StorageEvent) => void;
+
+    constructor() {
+      super();
+      this.originalText = this.textContent || "";
+      this.key = this.getAttribute("data-key") || "";
+
+      this.i18nObserver = this.handleLocaleChange.bind(this);
+      this.storageObserver = this.handleStorageChange.bind(this);
+    }
+
+    connectedCallback() {
+      // Apply initial translation based on current locale
+      const currentLocale = getStoredLocale();
+      if (currentLocale !== "en" && this.key) {
+        this.updateText(currentLocale);
+      }
+
+      // Listen for locale changes
+      window.addEventListener("meitheal:locale-changed", this.i18nObserver);
+      window.addEventListener("storage", this.storageObserver);
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener("meitheal:locale-changed", this.i18nObserver);
+      window.removeEventListener("storage", this.storageObserver);
+    }
+
+    private handleLocaleChange(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.locale && isValidLocale(detail.locale)) {
+        this.updateText(detail.locale);
+      }
+    }
+
+    private handleStorageChange(e: StorageEvent) {
+      if (e.key === STORAGE_KEY && e.newValue && isValidLocale(e.newValue)) {
+        this.updateText(e.newValue);
+      }
+    }
+
+    private updateText(locale: string) {
+      if (!this.key) return;
+
+      if (locale === "en") {
+        // Optimization: restore original SSR text for English
+        this.textContent = this.originalText;
+        return;
+      }
+
+      const translated = t(this.key, locale as "en" | "ga");
+      if (translated !== this.key) {
+        this.textContent = translated;
+      } else {
+        this.textContent = this.originalText;
+      }
+    }
+  }
+
+  // Register the custom element if it hasn't been already
+  if (!customElements.get("i18n-text")) {
+    customElements.define("i18n-text", I18nTextElement);
+  }
+</script>

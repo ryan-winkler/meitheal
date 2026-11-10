@@ -1,0 +1,17 @@
+---
+/**
+ * /calendar — Legacy redirect to /tasks#calendar.
+ *
+ * Phase 16.1: Calendar view now lives at /tasks#calendar.
+ * This redirect maintains backward compatibility for bookmarks and links.
+ *
+ * @domain navigation
+ * @phase 16.1 — Route consolidation
+ */
+
+const { ingressPath } = Astro.locals
+const qs = new URL(Astro.request.url).searchParams
+qs.set("view", "calendar")
+return Astro.redirect(`${ingressPath || ""}/tasks?${qs}#calendar`, 301)
+---
+

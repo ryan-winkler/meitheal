@@ -1,0 +1,32 @@
+{
+  "name": "meitheal-monorepo",
+  "private": true,
+  "version": "0.1.80",
+  "description": "Home Assistant-native household and homelab execution hub for tasks, routines, planning, and AI-assisted coordination.",
+  "homepage": "https://github.com/ryan-winkler/meitheal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryan-winkler/meitheal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ryan-winkler/meitheal/issues"
+  },
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "check": "pnpm -r --if-present check",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm -r --if-present lint"
+  },
+  "pnpm": {
+    "overrides": {
+      "lodash": ">=4.17.23",
+      "svgo": "^4.1.0",
+      "undici@>=7.0.0 <7.30.2": "7.30.2",
+      "devalue": "^5.9.3",
+      "source-map-js@1": "^1.2.2",
+      "fast-uri@3": "^3.1.9",
+      "esbuild@<0.28.2": "0.28.2",
+      "h3": ">=1.15.6"
+    }
+  }
+}

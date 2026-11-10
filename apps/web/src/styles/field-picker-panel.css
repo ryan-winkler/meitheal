@@ -1,0 +1,232 @@
+/**
+ * FieldPickerPanel — ClickUp-style field visibility panel styles.
+ *
+ * Dark-themed, glassmorphism card with toggle switches.
+ * Uses CSS custom properties from the Meitheal design system.
+ *
+ * @domain tasks (shared view-layer component)
+ * @phase 20 — Field Picker Panel
+ */
+
+/* ── Panel Container ────────────────────────────────────────────────────── */
+
+.field-picker-panel {
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  width: 280px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fieldPickerFadeIn 150ms ease-out;
+}
+
+@keyframes fieldPickerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.field-picker-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+
+.field-picker-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #e0e0e0);
+  letter-spacing: 0.01em;
+}
+
+.field-picker-panel__close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 150ms, background 150ms;
+}
+
+.field-picker-panel__close:hover {
+  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+}
+
+/* ── Search ─────────────────────────────────────────────────────────────── */
+
+.field-picker-panel__search-wrap {
+  padding: 0 10px 8px;
+}
+
+.field-picker-panel__search {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-sm, 6px);
+  outline: none;
+  transition: border-color 150ms;
+}
+
+.field-picker-panel__search::placeholder {
+  color: var(--text-muted, #666);
+}
+
+.field-picker-panel__search:focus {
+  border-color: var(--accent, #6366f1);
+}
+
+/* ── Field List ─────────────────────────────────────────────────────────── */
+
+.field-picker-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/* ── Section ────────────────────────────────────────────────────────────── */
+
+.field-picker-panel__section {
+  padding: 0 4px;
+}
+
+.field-picker-panel__section + .field-picker-panel__section {
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.field-picker-panel__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 2px;
+}
+
+.field-picker-panel__section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field-picker-panel__hide-all {
+  background: none;
+  border: none;
+  color: var(--text-muted, #666);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 150ms;
+}
+
+.field-picker-panel__hide-all:hover {
+  color: var(--accent, #6366f1);
+}
+
+/* ── Field Row ──────────────────────────────────────────────────────────── */
+
+.field-picker-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm, 6px);
+  transition: background 100ms;
+  cursor: default;
+}
+
+.field-picker-panel__row:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+}
+
+.field-picker-panel__icon {
+  font-size: 13px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.field-picker-panel__label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary, #e0e0e0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Toggle Switch ──────────────────────────────────────────────────────── */
+
+.field-picker-panel__toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.field-picker-panel__toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  transition: background 200ms ease;
+}
+
+.field-picker-panel__toggle--on .field-picker-panel__toggle-track {
+  background: var(--accent, #6366f1);
+}
+
+.field-picker-panel__toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-primary, #e0e0e0);
+  border-radius: 50%;
+  transition: transform 200ms ease, background 200ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.field-picker-panel__toggle--on .field-picker-panel__toggle-knob {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.field-picker-panel__empty {
+  padding: 16px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted, #666);
+}

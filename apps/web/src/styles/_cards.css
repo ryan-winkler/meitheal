@@ -1,0 +1,132 @@
+/* =============================================
+ * _cards.css — Cards, badges, status indicators
+ *
+ * Domain: Card bounded context
+ * Owns: .card, .card-title, .card-subtitle, .badge, .status-dot
+ * Does NOT own: kanban cards (_kanban.css), task items (_tasks.css)
+ * ============================================= */
+/* --- Cards --- */
+.card {
+  @apply bg-bg-card/80 backdrop-blur-md border border-border rounded-lg p-5 shadow-sm transition-all;
+}
+
+.card:hover {
+  @apply shadow-md border-border-focus/50;
+  transform: translateY(-2px);
+  }
+  
+  .card:focus-within {
+    @apply shadow-md border-border-focus/60;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--accent-light, rgba(99, 102, 241, 0.1));
+}
+
+.card-header {
+  @apply text-base font-semibold mb-4 flex items-center gap-2;
+}
+
+/* --- Status indicators --- */
+.status-indicator {
+  @apply flex items-center gap-2 text-xs text-text-muted;
+}
+
+.status-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-dot.online {
+  @apply bg-accent;
+}
+
+/* --- Badges --- */
+.task-badge {
+  @apply text-xs font-semibold px-2.5 py-1 rounded-md border;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.badge-pending {
+  @apply bg-info/10 text-blue-400 border-info/20;
+}
+
+  .badge-backlog {
+    @apply bg-gray-500/10 text-gray-400 border-gray-500/20;
+  }
+.badge-active,
+.badge-in_progress {
+  @apply bg-warning/10 text-amber-400 border-warning/30;
+}
+
+.badge-done,
+.badge-complete {
+  @apply bg-accent/10 text-accent border-accent/20;
+}
+
+  .badge-cancelled {
+    @apply bg-danger/10 text-red-400 border-danger/20;
+  }
+/* --- Filter bar --- */
+.filter-bar {
+  @apply flex gap-3 items-center flex-wrap mb-4;
+}
+
+.card-title {
+  @apply text-base font-semibold text-text-primary;
+}
+
+.card-subtitle {
+  @apply text-xs text-text-muted mt-0.5;
+}
+
+/* Card enter animation */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card {
+  animation: card-enter 0.25s ease-out both;
+}
+
+.card:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.card:nth-child(3) {
+  animation-delay: 0.1s;
+}
+.card:nth-child(4) {
+  animation-delay: 0.15s;
+}
+.card:nth-child(5) {
+  animation-delay: 0.2s;
+}
+/* Bento card board badge + hover actions
+ * Restored from pre-split global.css */
+.bento-board-badge {
+font-size: 10px;
+font-weight: 500;
+padding: 1px 6px;
+border-radius: var(--radius-xs);
+border: 1px solid;
+white-space: nowrap;
+}
+
+.bento-card-actions {
+position: absolute;
+top: 6px;
+right: 6px;
+display: flex;
+gap: 2px;
+opacity: 0;
+transition: opacity 0.2s ease;
+}
+
+.bento-card:hover .bento-card-actions,
+.bento-card:focus-within .bento-card-actions,
+.bento-card:active .bento-card-actions {
+opacity: 1;
+}

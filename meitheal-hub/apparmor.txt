@@ -1,0 +1,72 @@
+#include <tunables/global>
+
+profile meitheal flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # ── Capabilities ──
+  capability chown,
+  capability dac_override,
+  capability setuid,
+  capability setgid,
+  capability net_bind_service,
+
+  # ── File + signal access ──
+  file,
+  signal (send) set=(kill,term,int,hup,cont),
+
+  # ── Network ──
+  network inet tcp,
+  network inet udp,
+  network inet6 tcp,
+  network inet6 udp,
+  deny network raw,
+  deny network packet,
+
+  # ── S6-Overlay (init system) ──
+  /init ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /run/{s6,s6-rc*,service}/** ix,
+  /package/** ix,
+  /command/** ix,
+  /etc/services.d/** rwix,
+  /etc/cont-init.d/** rwix,
+  /etc/cont-finish.d/** rwix,
+  /run/{,**} rwk,
+  /dev/tty rw,
+
+  # ── Bashio ──
+  /usr/lib/bashio/** ix,
+  /tmp/** rwk,
+
+  # ── Node.js runtime ──
+  /usr/bin/node ix,
+  /usr/local/bin/node ix,
+  /usr/local/bin/pnpm ix,
+  /usr/local/bin/npm ix,
+  /usr/local/lib/node_modules/** r,
+
+  # ── Application files ──
+  /opt/meitheal/** r,
+  /opt/meitheal/node_modules/.pnpm/**/node_modules/** r,
+  /opt/meitheal/apps/web/scripts/** ix,
+
+  # ── Entrypoints ──
+  /run.sh ix,
+  /run-local.sh ix,
+
+  # ── Persistent data (read/write) ──
+  /data/ r,
+  /data/** rwk,
+
+  # ── Deny mount ──
+  deny mount,
+
+  # ── Proc/sys restrictions ──
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/mem rwklx,
+  deny @{PROC}/kmem rwklx,
+  deny @{PROC}/kcore rwklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+}

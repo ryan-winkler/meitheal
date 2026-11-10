@@ -1,0 +1,621 @@
+/* =============================================
+ * _responsive.css — Mobile, print, touch, table column hiding
+ *
+ * Domain: Cross-cutting responsive overrides
+ * Owns: @media queries for mobile, print, touch, high-contrast
+ * Does NOT own: base component styles — only responsive overrides of them
+ * ============================================= */
+
+/* ===== Settings tab-pane CSS fallback =====
+ * Prevents all tab panes from showing simultaneously if JS hasn't initialised
+ * (race condition on slow mobile connections / HA companion app WebView).
+ * JS still manages .active class — this CSS ensures the default hidden state. */
+.tab-pane {
+  display: none;
+}
+.tab-pane.active {
+  display: block;
+}
+
+/* Mobile breakpoint */
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  /* Lock body scroll when sidebar is open on mobile */
+  body.sidebar-open {
+    overflow: hidden !important;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    /* P0-2: Block all touch gestures when sidebar overlay is open */
+    touch-action: none;
+  }
+  /* Mobile: sidebar off-screen but rendered (not display:none) */
+  .sidebar {
+    display: flex !important;
+      /* override 'hidden' from HTML class */
+      position: fixed;
+      z-index: 50;
+      transform: translateX(-100%) !important;
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 250ms ease;
+  }
+
+                /* Mobile: slide sidebar in when .open is toggled */
+  .sidebar.open {
+    transform: translateX(0) !important;
+      visibility: visible;
+      pointer-events: auto;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+    /* Mobile: dark overlay behind open sidebar — full-screen, under sidebar z-index */
+    .sidebar.open::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: -1;
+  }
+
+  .main-content {
+    width: 100%;
+  }
+
+  .menu-toggle {
+    @apply inline-flex items-center justify-center w-9 h-9 bg-transparent border border-border rounded-md text-text-secondary cursor-pointer text-lg;
+  }
+
+  .kanban-board {
+    flex-direction: column;
+    overflow-x: visible;
+    gap: 8px;
+    padding: 0 4px;
+  }
+
+  .kanban-column {
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  /* Mobile: kanban card actions always visible (no hover on touch) */
+  .kanban-card-actions {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
+  }
+
+  /* Mobile: empty state compact */
+  .empty-state {
+    padding: 2rem 1rem !important;
+  }
+
+  /* Mobile: checklist items — proper touch targets */
+  .form-checkbox {
+    min-width: 22px;
+    min-height: 22px;
+  }
+
+  /* Mobile: task detail title input — proper mobile sizing */
+  #td-title {
+    font-size: 1.25rem !important;
+    padding: 6px 8px !important;
+  }
+
+  /* Mobile: task detail header — allow close button to wrap */
+  #task-detail-panel .flex.items-center.justify-between {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Mobile: task detail header — don't push close button off-screen */
+  #task-detail-panel .flex.items-center.gap-4.w-full {
+    margin-right: 0 !important;
+  }
+
+  /* Mobile: stack stats grid 2x2 */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+                /* Mobile: bento grid single column */
+                .bento-grid {
+                  grid-template-columns: 1fr !important;
+                  gap: 10px !important;
+                }
+
+                /* Mobile: constrain content area */
+                .content-area,
+                .content,
+                main {
+                  max-width: 100vw;
+                  overflow-x: hidden;
+                  /* P0-2: Enable native touch scroll in HA WebView iframe */
+                  -webkit-overflow-scrolling: touch;
+                  touch-action: pan-y;
+                }
+
+                /* Mobile: reduce content padding */
+                .content {
+                  padding: 0 12px 16px !important;
+                }
+
+                /* Mobile: card full width */
+                .card {
+                  max-width: 100%;
+                  overflow: hidden;
+                  word-wrap: break-word;
+                }
+  /* Mobile: stack filter bar vertically */
+  .filter-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .filter-bar .form-input,
+  .filter-bar .form-select {
+    max-width: 100% !important;
+  }
+
+  /* Mobile: task actions wrap below content */
+  .task-item {
+    flex-wrap: wrap;
+  }
+
+                                /* Mobile: enhance touch targets (44px min-height per WCAG) */
+                                button,
+                                .btn,
+                                .btn-primary,
+                                .btn-secondary,
+                                .btn-ghost,
+                                .form-input,
+                                .form-select,
+                                .nav-link,
+                                .kanban-card,
+                                .task-item {
+                                  min-height: 44px;
+                                }
+  .task-badge {
+    margin-left: auto;
+  }
+
+  .task-delete,
+  .task-duplicate,
+  .task-ask-ai {
+    display: none !important;
+  }
+
+  .task-item:active .task-delete,
+  .task-item:active .task-duplicate,
+  .task-item:active .task-ask-ai {
+    display: inline-flex !important;
+  }
+
+    /* Mobile: compact search input */
+    .search-input {
+    font-size: 13px;
+  }
+
+  /* Mobile: compact header */
+  .page-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .page-title {
+    font-size: 16px !important;
+  }
+/* Mobile: compact topbar — allow wrapping */
+.topbar {
+  padding: 8px 12px !important;
+  gap: 8px;
+  flex-wrap: wrap;
+  }
+
+  /* Mobile: action buttons wrap to next row */
+  .topbar-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Mobile: hide secondary calendar nav actions (Today/Upcoming/Sync) — only keep + New Task */
+  .topbar-actions .btn-ghost {
+    display: none !important;
+}
+
+/* Mobile: shrink search container */
+.search-container {
+  margin-left: 4px !important;
+  margin-right: 4px !important;
+  max-width: none;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Mobile: search results — full-width overlay with safe scrolling */
+.search-results {
+  max-height: 70dvh !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Mobile: search items — bigger touch targets */
+.search-item {
+  min-height: 48px;
+  padding: 12px 16px !important;
+}
+
+/* Mobile: settings tabs scroll hint */
+.settings-tabs {
+  gap: 16px;
+  padding-bottom: 2px;
+  margin-left: -12px;
+  margin-right: -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* Mobile: stat-card compact */
+.stat-card {
+  padding: 10px 12px !important;
+  min-height: 72px !important;
+  gap: 10px !important;
+}
+
+.stat-icon {
+  width: 36px !important;
+  height: 36px !important;
+  font-size: 1rem !important;
+}
+
+.stat-value {
+  font-size: 1.25rem !important;
+}
+
+.stat-label {
+  font-size: 0.65rem !important;
+}
+
+/* Mobile: sidebar toggle hidden — use hamburger menu instead */
+.sidebar-toggle {
+  display: none !important;
+}
+
+/* Mobile: hide top task-view-tabs when bottom tab bar provides the same navigation */
+.task-view-tabs {
+  display: none !important;
+}
+
+  /* Mobile: safe-area-inset padding for iOS notch / dynamic island */
+  .topbar {
+    padding-top: max(8px, env(safe-area-inset-top)) !important;
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+  }
+
+  .sidebar {
+    padding-top: max(16px, env(safe-area-inset-top)) !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom)) !important;
+    padding-left: max(16px, env(safe-area-inset-left)) !important;
+  }
+
+  .content {
+    padding-bottom: max(72px, calc(var(--mobile-tab-bar-height) + env(safe-area-inset-bottom))) !important;
+  }
+
+  /* Raise toast notifications above the mobile tab bar */
+  .fixed.bottom-4 {
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* ===== PRA-16: Mobile Bottom Tab Bar ===== */
+/* Hidden on desktop, shown on mobile — thumb-zone nav for HA Companion App */
+.mobile-tab-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --floating-action-bottom: calc(var(--mobile-tab-bar-height) + 16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    background: var(--bg-card, #1e1e2e);
+    border-top: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    justify-content: space-around;
+    align-items: center;
+    height: calc(var(--mobile-tab-bar-height) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-tab-bar__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    min-height: 44px;
+    padding: 6px 4px;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 150ms, opacity 150ms;
+  }
+
+  .mobile-tab-bar__item:active {
+    opacity: 0.7;
+  }
+
+  .mobile-tab-bar__item.active {
+    color: var(--accent-text);
+  }
+
+  .mobile-tab-bar__icon {
+    font-size: 18px;
+    line-height: 1;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+  }
+
+  .mobile-tab-bar__label {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+}
+
+/* Print stylesheet */
+/* ===== Print Stylesheet (#37) ===== */
+@media print {
+
+  /* Hide non-content elements */
+  .sidebar,
+  .sidebar-overlay,
+  .header-bar,
+  .filter-bar,
+  .filter-summary-bar,
+  .bulk-bar,
+  .task-actions,
+  .task-action-btn,
+  .task-fav-btn,
+  .btn,
+  .toast-container,
+  .shortcut-modal-overlay,
+  .task-view-tabs,
+  nav,
+  footer {
+    display: none !important;
+  }
+
+  /* Full width content */
+  .main-content,
+  .content-area {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* Clean task items */
+  .task-item {
+    break-inside: avoid;
+    border: 1px solid #ccc !important;
+    margin-bottom: 8px !important;
+    padding: 8px 12px !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  .task-item .task-checkbox {
+    appearance: auto !important;
+  }
+
+  /* Clean table */
+  .data-table {
+    font-size: 11px !important;
+    border-collapse: collapse !important;
+  }
+
+  .data-table th,
+  .data-table td {
+    border: 1px solid #ccc !important;
+    padding: 4px 8px !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  .inline-select {
+    appearance: none !important;
+    border: none !important;
+    background: none !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+
+  /* Page title */
+  body::before {
+    content: "Meitheal — Task List";
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+}
+
+/* Touch-friendly targets */
+/* ===== Touch-Friendly Targets (Wave 10) ===== */
+@media (pointer: coarse) {
+
+  .task-checkbox,
+  .row-check {
+    width: 22px;
+    height: 22px;
+    min-width: 44px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+
+  .task-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .card-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-icon,
+  .delete-row {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .inline-select {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  .filter-bar {
+    gap: 8px;
+  }
+
+  .filter-bar .form-input,
+  .filter-bar .form-select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+/* P2-5: On touch devices, show kanban card actions always (no hover) */
+.kanban-card-actions {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translateY(0) !important;
+}
+
+/* P3-2: Prevent accidental nav clicks while scrolling sidebar */
+.sidebar-scroll {
+  touch-action: pan-y;
+}
+
+/* P2-4: GPU compositing only during active drag (permanent will-change removed
+   to prevent GPU memory leak with many cards — see _kanban.css .kanban-card.dragging) */
+.kanban-card.dragging {
+  will-change: transform;
+}
+}
+
+/* High contrast mode */
+/* ===== High Contrast Mode (Wave 12) ===== */
+@media (forced-colors: active) {
+  .task-item {
+    border: 1px solid ButtonText;
+  }
+
+  .task-fav-btn.is-fav {
+    color: Highlight;
+  }
+
+  .overdue-tag {
+    background: Mark;
+    color: MarkText;
+  }
+
+  .task-progress-fill {
+    background: Highlight;
+  }
+
+  /* P3: Expanded high-contrast coverage */
+  .kanban-card {
+    border: 1px solid ButtonText;
+  }
+
+  .kanban-column {
+    border: 1px solid ButtonText;
+  }
+
+  .card-action-btn,
+  .btn,
+  button {
+    border: 1px solid ButtonText;
+  }
+
+  input,
+  select,
+  textarea {
+    border: 1px solid ButtonText;
+  }
+
+  .sidebar a.active,
+  .sidebar a:focus {
+    outline: 2px solid Highlight;
+  }
+
+  .modal-inner,
+  .lane-mgmt-inner {
+    border: 2px solid ButtonText;
+  }
+
+  .badge,
+  .kanban-count {
+    border: 1px solid ButtonText;
+  }
+}
+
+/* ===== Tablet breakpoint (768px-1024px) ===== */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .kanban-column {
+    min-width: 220px;
+    max-width: 260px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .sidebar {
+    width: 200px;
+  }
+
+  .main-content {
+    margin-left: 200px;
+  }
+
+  body.sidebar-collapsed .main-content {
+    margin-left: 48px;
+  }
+}
+
+/* ===== HA Ingress iframe: touch scroll compatibility (P0-2) ===== */
+/* HA Companion App WebView (both iOS and Android) embeds add-ons in
+   an iframe. Touch scroll events need explicit CSS hints to work
+   correctly in this nested browsing context. */
+body.ha-ingress {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+body.ha-ingress .main-content,
+body.ha-ingress .content,
+body.ha-ingress main {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}

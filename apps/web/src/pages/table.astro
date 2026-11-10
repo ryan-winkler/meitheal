@@ -1,0 +1,17 @@
+---
+/**
+ * /table — Legacy redirect to /tasks#table.
+ *
+ * Phase 16.1: Table view now lives at /tasks#table.
+ * This redirect maintains backward compatibility for bookmarks and links.
+ *
+ * @domain navigation
+ * @phase 16.1 — Route consolidation
+ */
+
+const { ingressPath } = Astro.locals
+const qs = new URL(Astro.request.url).searchParams
+qs.set("view", "table")
+return Astro.redirect(`${ingressPath || ""}/tasks?${qs}#table`, 301)
+---
+

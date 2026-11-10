@@ -1,0 +1,1136 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+---
+
+<div class="settings-shell-panel">
+  <div class="settings-grid">
+    <!-- Sidebar Config -->
+    <SettingsPanelCard
+      title="Sidebar Configuration"
+      subtitle="Configure visibility, order, and custom labels for navigation items."
+    >
+      <div>
+        <div
+          id="sidebar-item-list"
+          class="settings-stack--sm"
+        >
+          <!-- Populated by JS -->
+        </div>
+        <div class="settings-section-divider--spaced">
+          <div style="margin-bottom: 8px; font-weight: 500;">Custom Links</div>
+          <div
+            id="custom-links-list"
+            style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"
+          >
+          </div>
+          <button type="button" class="btn btn-ghost" id="add-custom-link-btn"
+            >+ Add Custom Link</button
+          >
+        </div>
+        <SettingsActionRow class="mt-4">
+          <button
+            type="button"
+            class="btn btn-primary settings-text-sm"
+            id="save-sidebar"
+            >Save Sidebar Config</button
+          >
+          <button
+            type="button"
+            class="btn btn-ghost settings-text-sm"
+            id="reset-sidebar"
+            >Reset to Default</button
+          >
+        </SettingsActionRow>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Custom Fields -->
+    <SettingsPanelCard
+      title={t("settings.custom_fields_title", locale)}
+      subtitle={t("settings.custom_fields_subtitle", locale)}
+      padded={false}
+    >
+      <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
+        >+ Add Field</button
+      >
+      <div id="custom-fields-list">
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder="Field name"
+            value="sprint"
+            disabled
+          />
+          <select class="form-select" aria-label="Sprint field type" disabled>
+            <option value="text" selected>Text</option>
+            <option value="number">Number</option>
+            <option value="select">Select</option>
+            <option value="date">Date</option>
+            <option value="checkbox">Checkbox</option>
+          </select>
+          <span class="settings-text-xs text-muted"
+            >Built-in</span
+          >
+        </div>
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder="Field name"
+            value="story_points"
+            disabled
+          />
+          <select class="form-select" aria-label="Story points field type" disabled>
+            <option value="number" selected>Number</option>
+          </select>
+          <span class="settings-text-xs text-muted"
+            >Built-in</span
+          >
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+
+
+    <!-- Users & Assignment -->
+    <SettingsPanelCard
+      title="👤 Users & Assignment"
+      subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
+    >
+      <div class="settings-stack">
+        <!-- Default Assignee -->
+        <div>
+          <label
+            for="default-assignee-select"
+            class="settings-label"
+            >Default Assignee</label
+          >
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select
+              id="default-assignee-select"
+              class="form-select settings-input-narrow"
+              aria-label="Default task assignee"
+            >
+              <option value="">None (unassigned)</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-default-assignee"
+              >Save</button
+            >
+          </div>
+          <p class="settings-hint">
+            New tasks will be assigned to this user by default.
+          </p>
+        </div>
+
+        <!-- Discovered Users -->
+        <div>
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+            Discovered Users
+          </div>
+          <div
+            id="discovered-users-list"
+            class="settings-stack--xs"
+          >
+            <span class="settings-description">Loading…</span>
+          </div>
+        </div>
+
+        <!-- Custom Users -->
+        <div class="settings-section-divider">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"
+          >
+            <div style="font-weight: 600; font-size: 13px;">Custom Users</div>
+          </div>
+          <div
+            id="custom-users-list"
+            style="display: flex; flex-direction: column; gap: 6px;"
+          >
+          </div>
+          <SettingsActionRow style="margin-top: 10px;">
+            <input
+              type="text"
+              id="new-custom-user-name"
+              class="form-input"
+              placeholder="Name (e.g. Emma)"
+              style="flex: 1; max-width: 200px;"
+              aria-label="New custom user name"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost settings-text-sm"
+              id="add-custom-user-btn"
+              >+ Add User</button
+            >
+          </SettingsActionRow>
+        </div>
+      </div>
+    </SettingsPanelCard>
+  </div>
+
+  <!-- Kanban Area -->
+  <SettingsPanelCard
+    title="📊 Kanban Area"
+    subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
+  >
+    <div class="settings-stack">
+      <!-- Backlog Mode -->
+      <div>
+        <label
+          for="backlog-mode-select"
+          class="settings-label"
+          >Backlog lane</label
+        >
+        <SettingsActionRow>
+          <select
+            id="backlog-mode-select"
+            class="form-select settings-input-narrow"
+            aria-label="Backlog lane mode"
+          >
+            <option value="visible">📥 Visible (default)</option>
+            <option value="hidden">🙈 Hidden from Kanban</option>
+            <option value="disabled">🚫 Disabled</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-primary settings-text-sm"
+            id="save-backlog-mode"
+            >Save</button
+          >
+        </SettingsActionRow>
+        <div
+          id="backlog-mode-help"
+          class="settings-hint"
+        >
+          Backlog lane is shown on the Kanban board. Tasks can be placed in
+          Backlog.
+        </div>
+      </div>
+
+      <div class="settings-section-divider">
+      </div>
+
+      <div>
+        <label
+          for="completed-retention-select"
+          class="settings-label"
+          >Completed task retention</label
+        >
+        <SettingsActionRow>
+          <select
+            id="completed-retention-select"
+            class="form-select settings-input-narrow"
+            aria-label="Completed task retention period"
+          >
+            <option value="7">7 days</option>
+            <option value="14">14 days</option>
+            <option value="30" selected>30 days</option>
+            <option value="0">Never hide</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-primary settings-text-sm"
+            id="save-completed-retention"
+            >Save</button
+          >
+        </SettingsActionRow>
+        <p class="settings-hint">
+          Done tasks older than this will be hidden from the Kanban board but
+          remain in Table view.
+        </p>
+      </div>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Notifications -->
+  <SettingsPanelCard
+    title="🔔 Notifications"
+    subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
+  >
+    <div class="settings-stack">
+      <!-- Global toggle -->
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <label class="toggle-switch shrink-0">
+          <input type="checkbox" id="notif-global-toggle" aria-labelledby="notif-global-toggle-label" checked />
+          <span class="toggle-slider"></span>
+        </label>
+        <div>
+          <div id="notif-global-toggle-label" style="font-weight: 600; font-size: 13px;">
+            Enable notifications
+          </div>
+          <div class="settings-hint--sm">
+            Task assignments, urgent escalations, and due-date reminders trigger
+            notifications.
+          </div>
+        </div>
+      </div>
+
+      <!-- Notification Channels -->
+      <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+          Notification channels
+        </div>
+        <div class="settings-stack--sm">
+          <!-- Sidebar Bell -->
+          <div class="settings-row">
+            <label class="toggle-switch shrink-0">
+              <input type="checkbox" id="notif-channel-sidebar" aria-labelledby="notif-channel-sidebar-label" checked />
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="flex-1">
+              <div id="notif-channel-sidebar-label" class="settings-label--inline">
+                🔔 HA Sidebar Bell
+              </div>
+              <div class="settings-hint--sm">
+                Appears in the Home Assistant notification bell. Silent — no
+                sound or vibration.
+              </div>
+            </div>
+          </div>
+          <!-- Mobile Push -->
+          <div class="settings-row">
+            <label class="toggle-switch shrink-0">
+              <input type="checkbox" id="notif-channel-mobile" aria-labelledby="notif-channel-mobile-label" />
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="flex-1">
+              <div id="notif-channel-mobile-label" class="settings-label--inline">
+                📱 Mobile Push
+              </div>
+              <div class="settings-hint--sm">
+                Push notification to HA Companion App with sound and vibration.
+              </div>
+            </div>
+          </div>
+          <!-- Mobile push target selector (shown when mobile push enabled) -->
+          <div
+            id="notif-mobile-targets"
+            style="display: none; padding: 8px 12px 12px 48px;"
+          >
+            <div
+              style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;"
+            >
+              Select which devices receive push notifications:
+            </div>
+            <div
+              id="notif-mobile-target-list"
+              class="settings-stack--xs"
+            >
+              <span class="settings-description">Discovering devices…</span>
+            </div>
+          </div>
+          <!-- Due-Date Reminders toggle (F12) -->
+          <div class="settings-row">
+            <label class="toggle-switch shrink-0">
+              <input type="checkbox" id="notif-channel-reminders" aria-labelledby="notif-channel-reminders-label" checked />
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="flex-1">
+              <div id="notif-channel-reminders-label" class="settings-label--inline">
+                ⏰ Due-Date Reminders
+              </div>
+              <div class="settings-hint--sm">
+                Sends reminder notifications for tasks due within the configured
+                window.
+              </div>
+            </div>
+          </div>
+          <!-- Reminder window config -->
+          <div id="reminder-window-config" style="padding: 4px 12px 4px 48px;">
+            <label
+              style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;"
+            >
+              Remind
+              <input
+                type="number"
+                id="notif-reminder-minutes"
+                min="5"
+                max="1440"
+                value="60"
+                style="width: 60px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg-primary);"
+              />
+              minutes before due
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-user toggles (populated by JS) -->
+      <div
+        id="notif-user-toggles"
+        style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px;"
+      >
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+          Per-user overrides
+        </div>
+        <span class="settings-description">Loading users…</span>
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-primary"
+        id="save-notif-prefs"
+        style="font-size: 13px; align-self: flex-start; min-width: 200px;"
+      >
+        Save notification preferences
+      </button>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Optional Features -->
+  <SettingsPanelCard
+    title="⚡ Optional Features"
+    subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
+  >
+    <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
+      <span class="settings-description">Loading features…</span>
+    </div>
+  </SettingsPanelCard>
+</div>
+
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+
+    /** Create a styled element without innerHTML */
+    function makeEl(tag, styles, text) {
+      var el = document.createElement(tag);
+      if (styles) el.style.cssText = styles;
+      if (text !== undefined) el.textContent = text;
+      return el;
+    }
+
+    /** Build an avatar initials badge (safe — textContent only) */
+    function makeAvatar(name, bg) {
+      var initials = (name || "??").slice(0, 2).toUpperCase();
+      var el = makeEl(
+        "span",
+        "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; background: " +
+          (bg || "var(--accent)"),
+        initials,
+      );
+      return el;
+    }
+
+    function initUsersCard() {
+      var select = document.getElementById("default-assignee-select");
+      var discoveredList = document.getElementById("discovered-users-list");
+      var customList = document.getElementById("custom-users-list");
+      if (!select) return;
+
+      Promise.all([
+        fetch(bp + "/api/users").then(function (r) {
+          return r.ok ? r.json() : { users: [] };
+        }),
+        fetch(bp + "/api/users/default")
+          .then(function (r) {
+            return r.ok ? r.json() : {};
+          })
+          .catch(function () {
+            return {};
+          }),
+        fetch(bp + "/api/users/custom")
+          .then(function (r) {
+            return r.ok ? r.json() : { users: [] };
+          })
+          .catch(function () {
+            return { users: [] };
+          }),
+      ])
+        .then(function (results) {
+          var allUsers = results[0].users || [];
+          var defaultData = results[1];
+          var customUsers = results[2].users || [];
+
+          // Populate default-assignee dropdown (safe: option textContent)
+          select.innerHTML = "";
+          var noneOpt = document.createElement("option");
+          noneOpt.value = "";
+          noneOpt.textContent = "None (unassigned)";
+          select.appendChild(noneOpt);
+
+          allUsers.forEach(function (u) {
+            var opt = document.createElement("option");
+            opt.value = u.id;
+            opt.textContent =
+              (u.display_name || u.name || u.id) +
+              (u.source === "ha" ? " (HA)" : " (Custom)");
+            select.appendChild(opt);
+          });
+          if (defaultData.default_assignee) {
+            select.value = defaultData.default_assignee;
+          }
+
+          // Discovered (HA) users list — safe DOM only
+          var haUsers = allUsers.filter(function (u) {
+            return u.source === "home_assistant";
+          });
+          if (discoveredList) {
+            discoveredList.innerHTML = "";
+            if (haUsers.length === 0) {
+              discoveredList.appendChild(
+                makeEl(
+                  "span",
+                  "color: var(--text-muted); font-size: 12px; font-style: italic;",
+                  "No HA users found (standalone mode?)",
+                ),
+              );
+            } else {
+              haUsers.forEach(function (u) {
+                var row = makeEl(
+                  "div",
+                  "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
+                );
+                row.appendChild(
+                  makeAvatar(u.display_name || u.name, "var(--accent)"),
+                );
+                row.appendChild(
+                  makeEl(
+                    "span",
+                    "font-size: 13px; font-weight: 500;",
+                    u.display_name || u.name || u.id,
+                  ),
+                );
+                row.appendChild(
+                  makeEl(
+                    "span",
+                    "font-size: 11px; color: var(--text-muted); font-family: monospace;",
+                    u.id,
+                  ),
+                );
+                discoveredList.appendChild(row);
+              });
+            }
+          }
+
+          renderCustomUsers(customUsers);
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Users load error:", err);
+          if (discoveredList) {
+            discoveredList.innerHTML = "";
+            discoveredList.appendChild(
+              makeEl(
+                "span",
+                "color: var(--danger); font-size: 12px;",
+                "Failed to load users",
+              ),
+            );
+          }
+        });
+
+      function renderCustomUsers(users) {
+        if (!customList) return;
+        customList.innerHTML = "";
+        if (users.length === 0) {
+          customList.appendChild(
+            makeEl(
+              "span",
+              "color: var(--text-muted); font-size: 12px; font-style: italic;",
+              "No custom users added yet",
+            ),
+          );
+          return;
+        }
+        users.forEach(function (u) {
+          var row = makeEl(
+            "div",
+            "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
+          );
+          row.appendChild(
+            makeAvatar(u.display_name || u.name, "var(--warning, #f59e0b)"),
+          );
+          row.appendChild(
+            makeEl(
+              "span",
+              "font-size: 13px; font-weight: 500; flex: 1;",
+              u.display_name || u.name || u.id,
+            ),
+          );
+
+          var delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn-icon text-danger";
+          delBtn.style.cssText = "font-size: 16px; cursor: pointer;";
+          delBtn.textContent = "×";
+          delBtn.title = "Remove user";
+          delBtn.setAttribute(
+            "aria-label",
+            "Remove " + (u.display_name || u.name || "user"),
+          );
+          delBtn.setAttribute("data-user-id", u.id);
+          delBtn.addEventListener("click", function () {
+            fetch(bp + "/api/users/custom?id=" + encodeURIComponent(u.id), {
+              method: "DELETE",
+            })
+              .then(function () {
+                initUsersCard();
+              })
+              .catch(function (err) {
+                ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Delete custom user error:", err);
+              });
+          });
+          row.appendChild(delBtn);
+
+          customList.appendChild(row);
+        });
+      }
+
+      // Save default assignee
+      document
+        .getElementById("save-default-assignee")
+        ?.addEventListener("click", function () {
+          var val = select.value;
+          fetch(bp + "/api/users/default", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ user_id: val || null }),
+          })
+            .then(function () {
+              if (typeof window.showToast === "function")
+                window.showToast("Default assignee saved");
+            })
+            .catch(function (err) {
+              ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save default assignee error:", err);
+            });
+        });
+
+      // Add custom user
+      document
+        .getElementById("add-custom-user-btn")
+        ?.addEventListener("click", function () {
+          var input = document.getElementById("new-custom-user-name");
+          var name = (input?.value || "").trim();
+          if (!name) {
+            input?.focus();
+            return;
+          }
+          fetch(bp + "/api/users/custom", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: name }),
+          })
+            .then(function (res) {
+              if (res.ok) {
+                input.value = "";
+                initUsersCard();
+              }
+            })
+            .catch(function (err) {
+              ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Add custom user error:", err);
+            });
+        });
+    }
+
+    initUsersCard();
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("backlog-mode-select");
+    var saveBtn = document.getElementById("save-backlog-mode");
+    var helpDiv = document.getElementById("backlog-mode-help");
+    if (!select) return;
+
+    var helpTexts = {
+      visible:
+        "Backlog lane is shown on the Kanban board. Tasks can be placed in Backlog.",
+      hidden:
+        "Backlog lane is hidden from the Kanban board. Backlog tasks are only visible in Table view.",
+      disabled:
+        "Backlog is fully disabled. The status option is removed from all dropdowns. Use Todo for everything.",
+    };
+
+    function updateHelp() {
+      if (helpDiv) helpDiv.textContent = helpTexts[select.value] || "";
+    }
+    select.addEventListener("change", updateHelp);
+
+    // Load current value
+    fetch(bp + "/api/settings?key=backlog_mode")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+          updateHelp();
+        }
+        // Expose globally for other components
+        window.__backlog_mode = select.value;
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    // Save
+    saveBtn?.addEventListener("click", function () {
+      var val = select.value;
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "backlog_mode", value: val }),
+      })
+        .then(function () {
+          window.__backlog_mode = val;
+          if (typeof window.showToast === "function")
+            window.showToast("Backlog mode saved — reload Kanban to apply");
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save backlog mode error:", err);
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("completed-retention-select");
+    var saveBtn = document.getElementById("save-completed-retention");
+    if (!select) return;
+
+    // Load current value
+    fetch(bp + "/api/settings?key=completed_auto_hide_days")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+        }
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    // Save
+    saveBtn?.addEventListener("click", function () {
+      var val = Number(select.value);
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "completed_auto_hide_days", value: val }),
+      })
+        .then(function () {
+          if (typeof window.showToast === "function")
+            window.showToast(
+              "Retention setting saved — reload Kanban to apply",
+            );
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save retention error:", err);
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var globalToggle = document.getElementById("notif-global-toggle");
+    var sidebarCb = document.getElementById("notif-channel-sidebar");
+    var mobileCb = document.getElementById("notif-channel-mobile");
+    var remindersCb = document.getElementById("notif-channel-reminders");
+    var reminderMinutesInput = document.getElementById(
+      "notif-reminder-minutes",
+    );
+    var reminderWindowConfig = document.getElementById(
+      "reminder-window-config",
+    );
+    var mobileTargetsPanel = document.getElementById("notif-mobile-targets");
+    var mobileTargetList = document.getElementById("notif-mobile-target-list");
+    var userTogglesContainer = document.getElementById("notif-user-toggles");
+    var saveBtn = document.getElementById("save-notif-prefs");
+    if (!globalToggle || !userTogglesContainer) return;
+
+    var prefs = {
+      enabled: true,
+      disabled_users: [],
+      channels: { sidebar: true, mobile_push: false },
+      mobile_targets: [],
+      due_date_reminders: true,
+      reminder_window_minutes: 60,
+    };
+
+    // Toggle mobile target panel visibility
+    function updateMobilePanel() {
+      if (mobileTargetsPanel) {
+        mobileTargetsPanel.style.display =
+          mobileCb && mobileCb.checked ? "block" : "none";
+      }
+    }
+    if (mobileCb) mobileCb.addEventListener("change", updateMobilePanel);
+
+    // Toggle reminder window config visibility
+    function updateReminderPanel() {
+      if (reminderWindowConfig) {
+        reminderWindowConfig.style.display =
+          remindersCb && remindersCb.checked ? "block" : "none";
+      }
+    }
+    if (remindersCb)
+      remindersCb.addEventListener("change", updateReminderPanel);
+
+    // Discover notify.mobile_app_* services from HA
+    function discoverMobileTargets(savedTargets) {
+      if (!mobileTargetList) return;
+      fetch(bp + "/api/ha/services")
+        .then(function (r) {
+          return r.ok ? r.json() : { services: [] };
+        })
+        .catch(function () {
+          return { services: [] };
+        })
+        .then(function (data) {
+          var services = data.services || data || [];
+          var mobileServices = [];
+          // HA services API returns array of { domain, services: { ... } }
+          if (Array.isArray(services)) {
+            services.forEach(function (domainObj) {
+              if (domainObj.domain === "notify") {
+                var svcNames = Object.keys(domainObj.services || {});
+                svcNames.forEach(function (name) {
+                  if (name.startsWith("mobile_app_")) {
+                    var friendlyName = name
+                      .replace("mobile_app_", "")
+                      .replace(/_/g, " ");
+                    mobileServices.push({
+                      service: "notify." + name,
+                      name: friendlyName,
+                    });
+                  }
+                });
+              }
+            });
+          }
+
+          mobileTargetList.innerHTML = "";
+          if (mobileServices.length === 0) {
+            var empty = document.createElement("span");
+            empty.style.cssText =
+              "color: var(--text-muted); font-size: 12px; font-style: italic;";
+            empty.textContent =
+              "No HA Companion App devices found. Install the HA Companion App on your phone to enable mobile push.";
+            mobileTargetList.appendChild(empty);
+            return;
+          }
+
+          var savedSet = new Set(savedTargets || []);
+          mobileServices.forEach(function (svc) {
+            var row = document.createElement("div");
+            row.style.cssText =
+              "display: flex; align-items: center; gap: 8px; padding: 4px 0;";
+
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = savedTargets.length === 0 || savedSet.has(svc.service);
+            cb.dataset.mobileTarget = svc.service;
+            cb.style.cssText = "accent-color: var(--accent);";
+            row.appendChild(cb);
+
+            var label = document.createElement("span");
+            label.style.cssText = "font-size: 13px;";
+            label.textContent = "📱 " + svc.name;
+            row.appendChild(label);
+
+            var svcLabel = document.createElement("span");
+            svcLabel.style.cssText =
+              "font-size: 11px; color: var(--text-muted); font-family: monospace;";
+            svcLabel.textContent = svc.service;
+            row.appendChild(svcLabel);
+
+            mobileTargetList.appendChild(row);
+          });
+        });
+    }
+
+    // Load saved prefs + users in parallel
+    Promise.all([
+      fetch(bp + "/api/settings?key=notification_preferences")
+        .then(function (r) {
+          return r.ok ? r.json() : {};
+        })
+        .catch(function () {
+          return {};
+        }),
+      fetch(bp + "/api/users")
+        .then(function (r) {
+          return r.ok ? r.json() : { users: [] };
+        })
+        .catch(function () {
+          return { users: [] };
+        }),
+    ]).then(function (results) {
+      var savedPrefs = results[0];
+      var usersData = results[1];
+
+      if (savedPrefs.value && typeof savedPrefs.value === "object") {
+        prefs = savedPrefs.value;
+      }
+
+      globalToggle.checked = prefs.enabled !== false;
+
+      // Restore channel toggles
+      var channels = prefs.channels || { sidebar: true, mobile_push: false };
+      if (sidebarCb) sidebarCb.checked = channels.sidebar !== false;
+      if (mobileCb) mobileCb.checked = channels.mobile_push === true;
+      updateMobilePanel();
+
+      // Restore due-date reminder settings (F12)
+      if (remindersCb) remindersCb.checked = prefs.due_date_reminders !== false;
+      if (reminderMinutesInput)
+        reminderMinutesInput.value = prefs.reminder_window_minutes || 60;
+      updateReminderPanel();
+
+      // Discover mobile targets and restore saved selections
+      discoverMobileTargets(prefs.mobile_targets || []);
+
+      var users = usersData.users || [];
+      var disabledSet = new Set(prefs.disabled_users || []);
+
+      // Render per-user toggles
+      userTogglesContainer.innerHTML = "";
+      var heading = document.createElement("div");
+      heading.style.cssText =
+        "font-weight: 600; font-size: 13px; margin-bottom: 4px;";
+      heading.textContent = "Per-user overrides";
+      userTogglesContainer.appendChild(heading);
+
+      if (users.length === 0) {
+        var empty = document.createElement("span");
+        empty.style.cssText =
+          "color: var(--text-muted); font-size: 12px; font-style: italic;";
+        empty.textContent =
+          "No users found — notifications will apply globally.";
+        userTogglesContainer.appendChild(empty);
+        return;
+      }
+
+      users.forEach(function (u) {
+        var row = document.createElement("div");
+        row.style.cssText =
+          "display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;";
+
+        var avatar = document.createElement("span");
+        avatar.style.cssText =
+          "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; background: " +
+          (u.source === "home_assistant"
+            ? "var(--accent)"
+            : "var(--warning, #f59e0b)");
+        avatar.textContent = (u.display_name || u.name || "?")
+          .slice(0, 2)
+          .toUpperCase();
+        row.appendChild(avatar);
+
+        var nameEl = document.createElement("span");
+        nameEl.style.cssText = "font-size: 13px; font-weight: 500; flex: 1;";
+        nameEl.textContent =
+          (u.display_name || u.name || u.id) +
+          (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+        row.appendChild(nameEl);
+
+        var label = document.createElement("label");
+        label.className = "toggle-switch";
+        label.style.cssText = "flex-shrink: 0;";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = !disabledSet.has(u.id);
+        checkbox.dataset.userId = u.id;
+
+        var slider = document.createElement("span");
+        slider.className = "toggle-slider";
+
+        label.appendChild(checkbox);
+        label.appendChild(slider);
+        row.appendChild(label);
+
+        userTogglesContainer.appendChild(row);
+      });
+    });
+
+    // Save with loading state (F10)
+    saveBtn?.addEventListener("click", function () {
+      var disabled = [];
+      userTogglesContainer
+        .querySelectorAll("input[data-user-id]")
+        .forEach(function (cb) {
+          if (!cb.checked) disabled.push(cb.dataset.userId);
+        });
+      var mobileTargets = [];
+      if (mobileTargetList) {
+        mobileTargetList
+          .querySelectorAll("input[data-mobile-target]")
+          .forEach(function (cb) {
+            if (cb.checked) mobileTargets.push(cb.dataset.mobileTarget);
+          });
+      }
+      var payload = {
+        enabled: globalToggle.checked,
+        disabled_users: disabled,
+        channels: {
+          sidebar: sidebarCb ? sidebarCb.checked : true,
+          mobile_push: mobileCb ? mobileCb.checked : false,
+        },
+        mobile_targets: mobileTargets,
+        due_date_reminders: remindersCb ? remindersCb.checked : true,
+        // P10.2: Clamp reminder window to valid range (5-1440 min)
+        reminder_window_minutes: reminderMinutesInput
+          ? Math.max(
+              5,
+              Math.min(1440, parseInt(reminderMinutesInput.value, 10) || 60),
+            )
+          : 60,
+      };
+
+      // F10: Show loading state
+      var origText = saveBtn.textContent;
+      saveBtn.textContent = "Saving…";
+      saveBtn.disabled = true;
+      saveBtn.style.opacity = "0.7";
+
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          key: "notification_preferences",
+          value: payload,
+        }),
+      })
+        .then(function () {
+          saveBtn.textContent = "✓ Saved";
+          if (typeof window.showToast === "function")
+            window.showToast("Notification preferences saved");
+          setTimeout(function () {
+            saveBtn.textContent = origText;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = "1";
+          }, 1500);
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save notification prefs error:", err);
+          saveBtn.textContent = "✗ Failed";
+          setTimeout(function () {
+            saveBtn.textContent = origText;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = "1";
+          }, 2000);
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  // Feature toggles
+  (function () {
+    const container = document.getElementById("feature-toggles-container");
+    if (!container) return;
+
+    const CATEGORIES = {
+      productivity: { label: "Productivity", icon: "🎯" },
+      integrations: { label: "Integrations", icon: "🔌" },
+      visual: { label: "Visual", icon: "✨" },
+    };
+
+    fetch((window.__ingress_path || "") + "/api/features")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.features) return;
+        container.innerHTML = "";
+
+        // Group by category
+        var grouped = {};
+        data.features.forEach(function (f) {
+          if (!grouped[f.category]) grouped[f.category] = [];
+          grouped[f.category].push(f);
+        });
+
+        Object.keys(CATEGORIES).forEach(function (cat) {
+          var features = grouped[cat];
+          if (!features || features.length === 0) return;
+
+          var catInfo = CATEGORIES[cat];
+          var section = document.createElement("div");
+          section.style.cssText = "margin-bottom: 8px;";
+
+          var heading = document.createElement("div");
+          heading.style.cssText = "font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px; padding-top: 4px;";
+          heading.textContent = catInfo.icon + " " + catInfo.label;
+          section.appendChild(heading);
+
+          features.forEach(function (f) {
+            var row = document.createElement("div");
+            row.style.cssText = "display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;";
+
+            row.innerHTML =
+              '<label class="toggle-switch" style="flex-shrink: 0;">' +
+              '<input type="checkbox" id="feature-toggle-' + f.name + '" data-feature="' + f.name + '" ' + (f.enabled ? 'checked' : '') + ' />' +
+              '<span class="toggle-slider"></span>' +
+              '</label>' +
+              '<div style="flex: 1;">' +
+              '<div style="font-weight: 500; font-size: 13px;">' + f.icon + ' ' + f.label + '</div>' +
+              '<div style="font-size: 11px; color: var(--text-muted);">' + f.description + '</div>' +
+              '</div>';
+
+            var checkbox = row.querySelector('input[type="checkbox"]');
+            checkbox.setAttribute("aria-label", f.label);
+            checkbox.addEventListener("change", function () {
+              var featureName = this.dataset.feature;
+              var enabled = this.checked;
+
+              fetch((window.__ingress_path || "") + "/api/features", {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ feature: featureName, enabled: enabled }),
+              })
+                .then(function (r) { return r.json(); })
+                .then(function () {
+                  if (typeof window.showToast === "function") {
+                    window.showToast((enabled ? "Enabled" : "Disabled") + ": " + f.label);
+                  }
+                  // Update client-side flags
+                  if (window.__featureFlags) {
+                    window.__featureFlags[featureName] = enabled;
+                  }
+                })
+                .catch(function () {
+                  if (typeof window.showToast === "function") {
+                    window.showToast("Failed to update feature", "error");
+                  }
+                });
+            });
+
+            section.appendChild(row);
+          });
+
+          container.appendChild(section);
+        });
+
+        // Reload hint
+        var hint = document.createElement("div");
+        hint.style.cssText = "font-size: 11px; color: var(--text-muted); margin-top: 4px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px dashed var(--border);";
+        hint.innerHTML = '💡 <strong>Note:</strong> Some changes take effect on the next page load.';
+        container.appendChild(hint);
+      })
+      .catch(function () {
+        container.innerHTML = '<span style="color: var(--danger); font-size: 12px;">Failed to load features</span>';
+      });
+  })();
+</script>
+

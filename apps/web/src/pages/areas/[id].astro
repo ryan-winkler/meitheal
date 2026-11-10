@@ -1,0 +1,740 @@
+---
+/**
+ * Area Detail — shows area metadata + tabbed sections for Goals, Projects, Settings.
+ * Uses hash-based sub-menu tabs matching the parent page shell pattern.
+ * @page /areas/[id]
+ * @phase 15 — Wave 4.5
+ */
+import Layout from "../../layouts/Layout.astro";
+import Icon from "../../components/ui/Icon.astro";
+import ProgressRing from "../../components/ui/ProgressRing.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+const areaId = Astro.params.id;
+if (!areaId) {
+  return Astro.redirect("/areas");
+}
+
+let area: Record<string, unknown> | null = null;
+let goals: any[] = [];
+let projects: any[] = [];
+let taskCountByProject = new Map<string, { total: number; completed: number }>();
+
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new HierarchyRepository(client);
+  const taskRepo = new TaskRepository(client);
+
+  area = await repo.findAreaById(areaId) as Record<string, unknown> | null;
+  if (!area) {
+    return Astro.redirect("/areas");
+  }
+
+  goals = await repo.findAllGoals({ area_id: areaId });
+  const allProjects = await repo.findAllProjects({});
+
+  // Get projects linked to goals in this area
+  const goalIds = new Set(goals.map((g) => String(g.id)));
+  projects = allProjects.filter((p) => p.goal_id && goalIds.has(String(p.goal_id)));
+
+  // Count tasks per project
+  for (const proj of projects) {
+    const tasks = await taskRepo.findByProjectId(String(proj.id));
+    const completed = tasks.filter((t) => String(t.status) === "complete").length;
+    taskCountByProject.set(String(proj.id), { total: tasks.length, completed });
+  }
+} catch {
+  return Astro.redirect("/areas");
+}
+
+const areaName = String(area?.name ?? "Area");
+const areaDesc = area?.description ? String(area.description) : null;
+const areaIcon = String(area?.icon ?? "🏠");
+const areaColor = String(area?.color ?? "#6366F1");
+
+const tabs = [
+  { id: "overview", label: "Overview", icon: "📊" },
+  { id: "goals", label: "Goals", icon: "🎯" },
+  { id: "projects", label: "Projects", icon: "📋" },
+  { id: "settings", label: "Settings", icon: "⚙️" },
+];
+---
+
+<Layout title={`Meitheal — ${areaName}`}>
+  <span slot="page-title">
+    <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
+    {areaName}
+  </span>
+  <div slot="actions" class="flex gap-2">
+    <a href="/areas" class="btn btn-ghost">← Areas</a>
+  </div>
+
+  {/* Sub-menu tab bar */}
+  <nav class="area-tabs" role="tablist" aria-label="Area sections">
+    {tabs.map((tab) => (
+      <a
+        href={`#${tab.id}`}
+        class={`area-tab ${tab.id === "overview" ? "active" : ""}`}
+        role="tab"
+        data-tab={tab.id}
+        aria-selected={tab.id === "overview" ? "true" : "false"}
+      >
+        <span class="tab-icon">{tab.icon}</span>
+        {tab.label}
+      </a>
+    ))}
+  </nav>
+
+  {/* Overview Section */}
+  <section id="section-overview" class="area-section active" data-section="overview">
+    <div class="area-header-card" style={`--area-accent: ${areaColor};`}>
+      <div class="area-header-top">
+        <div class="area-header-info">
+          {areaDesc && <p class="area-desc">{areaDesc}</p>}
+          {!areaDesc && <p class="area-desc area-desc-empty">No description set.</p>}
+        </div>
+        <div class="area-header-stats">
+          <div class="stat-block">
+            <div class="stat-value">{goals.length}</div>
+            <div class="stat-label">Goals</div>
+          </div>
+          <div class="stat-block">
+            <div class="stat-value">{projects.length}</div>
+            <div class="stat-label">Projects</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Quick summary cards */}
+    {goals.length > 0 && (
+      <div class="overview-section">
+        <h3 class="overview-heading">Recent Goals</h3>
+        <div class="overview-goal-list">
+          {goals.slice(0, 5).map((goal) => (
+            <div class="overview-goal-item">
+              <span class="overview-goal-icon">
+                {String(goal.status) === "completed" ? "✅" : "🎯"}
+              </span>
+              <span class="overview-goal-title">{String(goal.title)}</span>
+              <span class={`overview-goal-status status-${String(goal.status ?? "active")}`}>
+                {String(goal.status ?? "active")}
+              </span>
+            </div>
+          ))}
+        </div>
+        {goals.length > 5 && (
+          <a href="#goals" class="overview-more" data-tab-link="goals">
+            View all {goals.length} goals →
+          </a>
+        )}
+      </div>
+    )}
+  </section>
+
+  {/* Goals Section */}
+  <section id="section-goals" class="area-section" data-section="goals">
+    <div class="section-header">
+      <h2 class="section-title">Goals</h2>
+      <span class="section-count">{goals.length} total</span>
+    </div>
+
+    {goals.length === 0 ? (
+      <div class="section-empty">
+        <p>No goals in this area yet. Create one from the Goals page.</p>
+        <a href="/progress#goals" class="btn btn-primary btn-sm">Go to Goals</a>
+      </div>
+    ) : (
+      <div class="goal-list">
+        {goals.map((goal) => {
+          const status = String(goal.status ?? "active");
+          const goalProjects = projects.filter((p) => String(p.goal_id) === String(goal.id));
+          return (
+            <div class="goal-card">
+              <div class="goal-card-header">
+                <span class="goal-card-icon">
+                  {status === "completed" ? "✅" : status === "archived" ? "📦" : "🎯"}
+                </span>
+                <div class="goal-card-info">
+                  <h3 class="goal-card-title">{String(goal.title)}</h3>
+                  {goal.description && <p class="goal-card-desc">{String(goal.description)}</p>}
+                </div>
+                <span class={`goal-status-badge status-${status}`}>{status}</span>
+              </div>
+              {goalProjects.length > 0 && (
+                <div class="goal-projects">
+                  <span class="goal-projects-label">{goalProjects.length} project{goalProjects.length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </section>
+
+  {/* Projects Section */}
+  <section id="section-projects" class="area-section" data-section="projects">
+    <div class="section-header">
+      <h2 class="section-title">Projects</h2>
+      <span class="section-count">{projects.length} total</span>
+    </div>
+
+    {projects.length === 0 ? (
+      <div class="section-empty">
+        <p>No projects linked to goals in this area.</p>
+      </div>
+    ) : (
+      <div class="project-grid">
+        {projects.map((proj) => {
+          const counts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 };
+          const progress = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
+          const projColor = String(proj.color ?? "#6366F1");
+          const projIcon = String(proj.icon ?? "📋");
+          return (
+            <a href={`/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
+              <div class="project-card-header">
+                <span class="project-card-icon">{projIcon}</span>
+                <h4 class="project-card-name">{String(proj.title)}</h4>
+              </div>
+              <div class="project-card-progress">
+                <div class="project-progress-bar-bg">
+                  <div class="project-progress-bar-fill" style={`width: ${progress}%;`} />
+                </div>
+                <span class="project-progress-text">{progress}%</span>
+              </div>
+              <div class="project-card-meta">
+                <span>{counts.total} tasks</span>
+                <span>{counts.completed} done</span>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    )}
+  </section>
+
+  {/* Settings Section */}
+  <section id="section-settings" class="area-section" data-section="settings">
+    <div class="section-header">
+      <h2 class="section-title">Area Settings</h2>
+    </div>
+
+    <div class="settings-card">
+      <div class="form-group">
+        <label for="edit-area-name">Name</label>
+        <input type="text" id="edit-area-name" value={areaName} maxlength="100" />
+      </div>
+      <div class="form-group">
+        <label for="edit-area-desc">Description</label>
+        <textarea id="edit-area-desc" rows="3" maxlength="500">{areaDesc ?? ""}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group form-group-sm">
+          <label for="edit-area-icon">Icon</label>
+          <input type="text" id="edit-area-icon" value={areaIcon} maxlength="4" class="icon-input" />
+        </div>
+        <div class="form-group form-group-sm">
+          <label for="edit-area-color">Color</label>
+          <input type="color" id="edit-area-color" value={areaColor} class="color-input" />
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button type="button" class="btn btn-primary" id="save-area-btn">Save Changes</button>
+      </div>
+    </div>
+
+    <div class="danger-zone">
+      <h3 class="danger-title">Danger Zone</h3>
+      <p class="danger-desc">Deleting this area will unlink all goals. Goals and projects will remain but become uncategorised.</p>
+      <button type="button" class="btn btn-danger" id="delete-area-btn">Delete Area</button>
+    </div>
+  </section>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  ></div>
+</Layout>
+
+<style>
+  @reference "../../styles/global.css";
+
+  /* Tab bar */
+  .area-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .area-tabs::-webkit-scrollbar { display: none; }
+
+  .area-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.625rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 150ms, border-color 150ms;
+  }
+  .area-tab:hover { color: var(--text-primary); }
+  .area-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-icon { font-size: 0.875rem; }
+
+  /* Sections */
+  .area-section { display: none; }
+  .area-section.active { display: block; }
+
+  /* Header card */
+  .area-header-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .area-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--area-accent);
+  }
+  .area-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+  .area-header-info { flex: 1; }
+  .area-desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .area-desc-empty { font-style: italic; color: var(--text-muted); }
+
+  .area-header-stats { display: flex; gap: 1.5rem; }
+  .stat-block { text-align: center; }
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Overview */
+  .overview-section { margin-top: 1.5rem; }
+  .overview-heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .overview-goal-list {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .overview-goal-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
+    font-size: 0.875rem;
+  }
+  .overview-goal-item:last-child { border-bottom: none; }
+  .overview-goal-icon { font-size: 0.875rem; }
+  .overview-goal-title { flex: 1; color: var(--text-primary); }
+  .overview-goal-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+  }
+  .status-active { background: rgba(var(--success-rgb), 0.1); color: var(--success); }
+  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+  .status-archived { background: rgba(var(--text-muted-rgb), 0.1); color: var(--text-muted); }
+
+  .overview-more {
+    display: inline-block;
+    margin-top: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .overview-more:hover { text-decoration: underline; }
+
+  /* Section header */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  .section-count {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .section-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  /* Goal cards */
+  .goal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .goal-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+  }
+  .goal-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .goal-card-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 2px; }
+  .goal-card-info { flex: 1; min-width: 0; }
+  .goal-card-title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .goal-card-desc {
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+  .goal-status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+    flex-shrink: 0;
+  }
+  .goal-projects {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(var(--border-rgb), 0.3);
+  }
+  .goal-projects-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Project grid */
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+  }
+  .project-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 200ms, box-shadow 200ms;
+    position: relative;
+    overflow: hidden;
+  }
+  .project-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--project-accent);
+  }
+  .project-card:hover {
+    border-color: var(--project-accent);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  }
+  .project-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0.75rem;
+  }
+  .project-card-icon { font-size: 1.25rem; }
+  .project-card-name {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .project-card-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0.5rem;
+  }
+  .project-progress-bar-bg {
+    flex: 1;
+    height: 5px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .project-progress-bar-fill {
+    height: 100%;
+    background: var(--project-accent, var(--accent));
+    border-radius: 3px;
+    transition: width 300ms ease;
+  }
+  .project-progress-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 28px;
+    text-align: right;
+  }
+  .project-card-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Settings */
+  .settings-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .form-group input[type="text"],
+  .form-group textarea {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    font-family: inherit;
+    transition: border-color 150ms;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .form-row { display: flex; gap: 1rem; }
+  .form-group-sm { flex: 0 0 80px; }
+  .icon-input { text-align: center; font-size: 1.25rem !important; padding: 0.25rem !important; }
+  .color-input {
+    width: 100%;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    padding: 2px;
+    background: var(--bg-primary);
+  }
+  .settings-actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .danger-zone {
+    background: var(--bg-card);
+    border: 1px solid var(--danger, #ef4444);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+  }
+  .danger-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--danger, #ef4444);
+  }
+  .danger-desc {
+    margin: 0 0 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .btn-danger {
+    background: var(--danger, #ef4444);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    transition: opacity 150ms;
+  }
+  .btn-danger:hover { opacity: 0.9; }
+
+  @media (max-width: 640px) {
+    .area-header-top { flex-direction: column; }
+    .area-header-stats { justify-content: space-around; }
+    .project-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script define:vars={{ areaId }}>
+  // --- Tab switching ---
+  const areaTabEls = Array.from(document.querySelectorAll(".area-tab"));
+  const areaSectionEls = Array.from(document.querySelectorAll(".area-section"));
+
+  function switchTab(hash) {
+    const tabId = hash.replace("#", "") || "overview";
+    areaTabEls.forEach((t) => {
+      const isActive = t.dataset.tab === tabId;
+      t.classList.toggle("active", isActive);
+      t.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    areaSectionEls.forEach((s) => {
+      s.classList.toggle("active", s.dataset.section === tabId);
+    });
+  }
+
+  // Initial state from hash
+  if (window.location.hash) switchTab(window.location.hash);
+  window.addEventListener("hashchange", () => switchTab(window.location.hash));
+
+  // Tab link clicks within content (e.g. "View all goals →")
+  document.querySelectorAll("[data-tab-link]").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const target = /** @type {HTMLElement} */ (link).dataset.tabLink;
+      window.location.hash = target || "";
+    });
+  });
+
+  // --- Settings: Save ---
+  const saveBtn = document.getElementById("save-area-btn");
+  saveBtn?.addEventListener("click", async () => {
+    const nameInput = document.getElementById("edit-area-name");
+    const descInput = document.getElementById("edit-area-desc");
+    const iconInput = document.getElementById("edit-area-icon");
+    const colorInput = document.getElementById("edit-area-color");
+
+    const name = nameInput?.value?.trim();
+    if (!name) {
+      nameInput?.focus();
+      return;
+    }
+
+    saveBtn.textContent = "Saving…";
+    saveBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/areas/${areaId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          description: descInput?.value?.trim() || null,
+          icon: iconInput?.value?.trim() || "🏠",
+          color: colorInput?.value || "#6366F1",
+        }),
+      });
+
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        window.showToast?.(data.error || "Failed to save", "error");
+        saveBtn.textContent = "Save Changes";
+        saveBtn.disabled = false;
+      }
+    } catch {
+      saveBtn.textContent = "Save Changes";
+      saveBtn.disabled = false;
+    }
+  });
+
+  // --- Settings: Delete ---
+  const deleteBtn = document.getElementById("delete-area-btn");
+  deleteBtn?.addEventListener("click", async () => {
+    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-area-name")?.value || "this area"}"? Goals and projects will become uncategorised.`);
+    if (!confirmed) return;
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = "Deleting…";
+
+    try {
+      const res = await fetch(`/api/areas/${areaId}`, { method: "DELETE" });
+      if (res.ok) {
+        window.location.href = "/areas";
+      } else {
+        const data = await res.json().catch(() => ({}));
+        window.showToast?.(data.error || "Failed to delete", "error");
+        deleteBtn.textContent = "Delete Area";
+        deleteBtn.disabled = false;
+      }
+    } catch {
+      deleteBtn.textContent = "Delete Area";
+      deleteBtn.disabled = false;
+    }
+  });
+</script>

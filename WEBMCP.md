@@ -1,0 +1,24 @@
+# Meitheal automation protocols
+
+Meitheal exposes a scoped MCP endpoint for external clients. The optional Home Assistant Core integration exposes a separate LLM API for Assist.
+
+| Interface | How to use it |
+| --- | --- |
+| App MCP | Send JSON-RPC to `POST /api/mcp` with a Meitheal bearer token. Run `tools/list` to see which tools the token can call. |
+| Core LLM API | Install the Core integration, then select **Meitheal Tasks** in the Home Assistant conversation agent’s LLM API settings. |
+| A2A | The agent card and protocol endpoints are experimental. They provide discovery and response stubs. |
+| WebMCP | Browser-side registration remains experimental. |
+
+## App MCP
+
+Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. For example, reading a task also requires `tasks:read`. Title-based completion requires `search:read` and `tasks:write`.
+
+Send an `Authorization: Bearer` header with `initialize`, `tools/list` and `tools/call`. The App serves discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller.
+
+## Home Assistant Core
+
+Core calls the Meitheal API using the token enrolled in its integration entry. The Python integration contains an MCP adapter for development, while the App MCP endpoint is the published MCP interface.
+
+- [API setup and scopes](docs/kcs/agent-automation-guide.md)
+- [Core credential enrollment](docs/kcs/home-assistant-core-credentials.md)
+- [A2A route status](docs/kcs/webmcp-a2a-setup.md)

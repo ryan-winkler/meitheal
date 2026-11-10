@@ -1,0 +1,63 @@
+# Bug & Issue Types
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or improvement
+- name: documentation
+  color: "0075ca"
+  description: Documentation improvements
+- name: question
+  color: "d876e3"
+  description: Needs more information or clarification
+
+# Contributor Experience
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+
+# Domain Contexts (DDD)
+- name: "domain: auth"
+  color: "fbca04"
+  description: Authentication, ingress, passkeys
+- name: "domain: tasks"
+  color: "1d76db"
+  description: Task management, boards, kanban
+- name: "domain: strategy"
+  color: "0e8a16"
+  description: Frameworks, scoring, strategic evaluation
+- name: "domain: observability"
+  color: "e4e669"
+  description: Logging, audit trail, metrics
+- name: "domain: integrations"
+  color: "c5def5"
+  description: Calendar sync, webhooks, Grocy, n8n
+
+# Infrastructure
+- name: ci
+  color: "bfd4f2"
+  description: CI/CD pipeline and GitHub Actions
+- name: ha-addon
+  color: "18bee6"
+  description: Home Assistant add-on (meitheal-hub)
+- name: security
+  color: "b60205"
+  description: Security vulnerability or hardening
+- name: performance
+  color: "f9d0c4"
+  description: Performance budgets and optimization
+
+# Workflow
+- name: stale
+  color: "ffffff"
+  description: No recent activity
+- name: pinned
+  color: "006b75"
+  description: Exempt from stale bot
+- name: blocked
+  color: "e11d48"
+  description: Blocked by external dependency

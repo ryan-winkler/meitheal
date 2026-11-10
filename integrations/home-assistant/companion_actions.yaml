@@ -1,0 +1,194 @@
+# Meitheal Companion App Actions
+#
+# Add this to your Home Assistant configuration.yaml to register
+# Meitheal quick actions in the companion app.
+#
+# These actions appear in:
+# - Android: Home screen shortcuts, widgets, quick settings tiles
+# - iOS: Shortcuts app, Siri, Today widget, Apple Watch, CarPlay
+#
+# After adding, restart HA and open Companion App → Settings → Actions
+# to sync the actions to your device.
+#
+# Usage in configuration.yaml:
+#   homeassistant:
+#     packages:
+#       meitheal: !include integrations/home-assistant/companion_actions.yaml
+
+
+# ── Scripts for Companion App Actions ─────────────────────────────────
+# These scripts wrap Meitheal services and can be triggered by:
+# - Companion app Actions
+# - Siri Shortcuts (iOS)
+# - Android shortcuts
+# - Google Assistant routines
+# - Automation triggers
+
+script:
+  meitheal_quick_task:
+    alias: "Meitheal: Quick Add Task"
+    description: "Create a new task in Meitheal — for companion app shortcuts and Siri"
+    icon: mdi:plus-circle
+    mode: single
+    fields:
+      title:
+        description: "Task title"
+        required: true
+        example: "Buy groceries"
+        selector:
+          text:
+    sequence:
+      - service: meitheal.create_task
+        data:
+          title: "{{ title }}"
+
+  meitheal_check_overdue:
+    alias: "Meitheal: Show Overdue Tasks"
+    description: "Push overdue task notification — for companion app shortcuts and Siri"
+    icon: mdi:alarm-light
+    mode: single
+    sequence:
+      - service: meitheal.notify_overdue
+        data: {}
+
+  meitheal_sync_now:
+    alias: "Meitheal: Sync Tasks"
+    description: "Force a task data refresh — for companion app shortcuts and Siri"
+    icon: mdi:sync
+    mode: single
+    sequence:
+      - service: meitheal.sync_todo
+        data: {}
+
+  meitheal_daily_summary:
+    alias: "Meitheal: Daily Summary"
+    description: "Get a summary of active and overdue tasks as a persistent notification"
+    icon: mdi:clipboard-text
+    mode: single
+    sequence:
+      - service: meitheal.search_tasks
+        data:
+          query: ""
+          status: "todo"
+        response_variable: "todo_result"
+      - service: meitheal.get_overdue_tasks
+        data: {}
+        response_variable: "overdue_result"
+      - service: persistent_notification.create
+        data:
+          title: >-
+            📋 Meitheal Daily Summary
+          message: >-
+            **Active tasks:** {{ todo_result.tasks | length }}
+            **Overdue:** {{ overdue_result.tasks | length }}
+            {% if overdue_result.tasks | length > 0 %}
+
+            ⏰ **Overdue tasks:**
+            {% for task in overdue_result.tasks[:5] %}
+            - {{ task.title }}{% if task.due_date %} (due {{ task.due_date }}){% endif %}
+            {% endfor %}
+            {% if overdue_result.tasks | length > 5 %}
+            _... and {{ overdue_result.tasks | length - 5 }} more_
+            {% endif %}
+            {% endif %}
+          notification_id: "meitheal_daily_summary"
+
+
+# ── iOS Actions (Siri, shortcuts, Apple Watch) ───────────────────────
+# These register as actions in the companion app automatically.
+# Available via Siri: "Hey Siri, [action name]"
+
+ios:
+  actions:
+    - name: "MEITHEAL_ADD_TASK"
+      background_color: "#1a73e8"
+      label:
+        text: "Add Task"
+        color: "#ffffff"
+      icon:
+        icon: "plus-circle"
+        color: "#ffffff"
+      show_in_carplay: false
+      show_in_watch: true
+      use_custom_colors: true
+
+    - name: "MEITHEAL_SHOW_OVERDUE"
+      background_color: "#ea4335"
+      label:
+        text: "Overdue"
+        color: "#ffffff"
+      icon:
+        icon: "alarm-light"
+        color: "#ffffff"
+      show_in_carplay: false
+      show_in_watch: true
+      use_custom_colors: true
+
+    - name: "MEITHEAL_SYNC"
+      background_color: "#34a853"
+      label:
+        text: "Sync Tasks"
+        color: "#ffffff"
+      icon:
+        icon: "sync"
+        color: "#ffffff"
+      show_in_carplay: false
+      show_in_watch: false
+      use_custom_colors: true
+
+    - name: "MEITHEAL_DAILY_SUMMARY"
+      background_color: "#9334e6"
+      label:
+        text: "Summary"
+        color: "#ffffff"
+      icon:
+        icon: "clipboard-text"
+        color: "#ffffff"
+      show_in_carplay: true
+      show_in_watch: true
+      use_custom_colors: true
+
+
+# ── Automation for iOS Actions ───────────────────────────────────────
+# Maps iOS companion app actions to Meitheal scripts.
+
+automation:
+  - alias: "Meitheal: Handle iOS Add Task Action"
+    trigger:
+      - platform: event
+        event_type: ios.action_fired
+        event_data:
+          actionName: "MEITHEAL_ADD_TASK"
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "📝 Add Task"
+          message: "Use voice assistant or notification reply to add a task"
+          notification_id: "meitheal_add_prompt"
+
+  - alias: "Meitheal: Handle iOS Show Overdue Action"
+    trigger:
+      - platform: event
+        event_type: ios.action_fired
+        event_data:
+          actionName: "MEITHEAL_SHOW_OVERDUE"
+    action:
+      - service: script.meitheal_check_overdue
+
+  - alias: "Meitheal: Handle iOS Sync Action"
+    trigger:
+      - platform: event
+        event_type: ios.action_fired
+        event_data:
+          actionName: "MEITHEAL_SYNC"
+    action:
+      - service: script.meitheal_sync_now
+
+  - alias: "Meitheal: Handle iOS Daily Summary Action"
+    trigger:
+      - platform: event
+        event_type: ios.action_fired
+        event_data:
+          actionName: "MEITHEAL_DAILY_SUMMARY"
+    action:
+      - service: script.meitheal_daily_summary

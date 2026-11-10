@@ -1,0 +1,32 @@
+node_modules
+.pnpm-store
+.env
+.env.*
+dist
+coverage
+playwright-report
+test-results
+.DS_Store
+apps/web/.astro
+apps/web/.data
+.dev.vars
+.data/
+
+# Devcontainer environment overrides are local
+!.devcontainer/.env.example
+
+# Generated workspace files and local notes
+/.astro/
+/.playwright-cli/
+/data.db
+/.agents/
+/.gemini/
+/.planning/
+/.skills/
+/.zeroclaw/
+
+# License signing keys (private key — NEVER commit)
+.keys/
+
+# Local Archive
+meitheal-archive/

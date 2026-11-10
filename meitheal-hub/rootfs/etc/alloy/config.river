@@ -1,0 +1,55 @@
+loki.source.journal "meitheal_journal" {
+  labels = {
+    service = "meitheal",
+    addon = "meitheal",
+    env = "ha"
+  }
+  forward_to = [loki.process.meitheal.receiver]
+}
+
+loki.process "meitheal" {
+  stage.json {
+    expressions = {
+      level = "level",
+      domain = "domain",
+      component = "component",
+      message = "message",
+      request_id = "request_id",
+      event = "event",
+      actor_type = "actor_type",
+      entity_type = "entity_type"
+    }
+  }
+
+  stage.labels {
+    values = {
+      level = "level",
+      domain = "domain",
+      actor_type = "actor_type",
+      service = "service",
+      addon = "addon",
+      env = "env"
+    }
+  }
+
+  stage.output {
+    source = "message"
+  }
+
+  // Retention hints: audit events kept 365d, errors 90d, debug 14d
+  stage.label_allow {
+    values = ["level", "domain", "actor_type", "service", "addon", "env"]
+  }
+
+  stage.tenant {
+    value = "meitheal"
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+}

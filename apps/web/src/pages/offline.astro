@@ -1,0 +1,87 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// Ingress-aware link prefix
+// The middleware rewrites root-relative links for verified ingress requests.
+const dashboardUrl = "/";
+---
+
+<Layout title="Offline — Meitheal">
+  <div
+    class="main-content offline-wrapper"
+  >
+    <div
+      class="card offline-card"
+      role="alert"
+      aria-live="assertive"
+    >
+      <div class="offline-icon">📡</div>
+      <h1 class="page-title offline-title">You're Offline</h1>
+      <p class="offline-desc">
+        Meitheal works best with an internet connection. Your local data is safe
+        — any changes made offline will sync automatically when you reconnect.
+      </p>
+      <div class="offline-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          onclick="window.location.reload()"
+        >
+          🔄 Try Again
+        </button>
+        <a
+          href={dashboardUrl}
+          class="btn btn-ghost"
+        >
+          🏠 Dashboard
+        </a>
+      </div>
+      <div class="offline-tip">
+        <small>
+          Tip: Tasks you've visited before are cached and may still be
+          accessible.
+        </small>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .offline-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+  }
+  .offline-card {
+    max-width: 480px;
+    text-align: center;
+    padding: 48px 32px;
+  }
+  .offline-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+  }
+  .offline-title {
+    margin-bottom: 12px;
+  }
+  .offline-desc {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+  .offline-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .offline-tip {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+</style>

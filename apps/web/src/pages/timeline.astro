@@ -1,0 +1,17 @@
+---
+/**
+ * /timeline — Legacy redirect to /tasks#timeline.
+ *
+ * Phase 16.1: Timeline view now lives at /tasks#timeline.
+ * This redirect maintains backward compatibility for bookmarks and links.
+ *
+ * @domain navigation
+ * @phase 16.1 — Route consolidation
+ */
+
+const { ingressPath } = Astro.locals
+const qs = new URL(Astro.request.url).searchParams
+qs.set("view", "timeline")
+return Astro.redirect(`${ingressPath || ""}/tasks?${qs}#timeline`, 301)
+---
+

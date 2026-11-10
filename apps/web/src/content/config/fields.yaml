@@ -1,0 +1,5 @@
+framework_defaults:
+  enabled:
+    - RICE
+    - HEART
+  storage: "tasks.framework_payload"

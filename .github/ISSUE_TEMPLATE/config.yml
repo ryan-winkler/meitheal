@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Public support and installation
+    url: https://github.com/ryan-winkler/meitheal-ha-addon/issues
+    about: Report a failed install or check existing reports.
+  - name: Report a security problem privately
+    url: https://github.com/ryan-winkler/meitheal/blob/main/SECURITY.md
+    about: Use email for a suspected vulnerability.

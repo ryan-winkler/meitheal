@@ -1,0 +1,7 @@
+{
+  "name": "meitheal-dev-nodered",
+  "description": "Node-RED with HA WebSocket palette pre-installed for Meitheal dev",
+  "dependencies": {
+    "node-red-contrib-home-assistant-websocket": "^0.73.2"
+  }
+}

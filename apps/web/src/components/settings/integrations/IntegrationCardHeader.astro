@@ -1,0 +1,33 @@
+---
+interface Props {
+  integration: string
+  icon: string
+  title: string
+  description: string
+  helpLabel: string
+}
+
+const { integration, icon, title, description, helpLabel } = Astro.props
+---
+
+<div class="integration-card__heading">
+  <button
+    type="button"
+    class="integration-card__header"
+    aria-expanded="false"
+    aria-controls={`integration-${integration}-body`}
+  >
+    <span class="integration-card__title-row">
+      <span class="integration-card__icon" aria-hidden="true">{icon}</span>
+      <span class="integration-card__title-info">
+        <strong>{title}</strong>
+        <span class="integration-card__desc">{description}</span>
+      </span>
+    </span>
+    <span class="integration-card__header-right">
+      <slot />
+      <span class="integration-card__chevron" aria-hidden="true">▸</span>
+    </span>
+  </button>
+  <button type="button" class="info-btn" data-explainer={integration} aria-label={helpLabel}>ℹ️</button>
+</div>

@@ -1,0 +1,502 @@
+---
+/**
+ * PomodoroTimer — Floating pomodoro timer widget
+ *
+ * @domain pomodoro
+ * @bounded-context pomodoro
+ *
+ * Provides a compact floating timer that:
+ * 1. Shows circular countdown during focus/break phases
+ * 2. Start/stop/skip controls
+ * 3. Session counter (focus sessions completed)
+ * 4. Collapsible to a minimal floating pill
+ *
+ * @kcs This component is rendered in Layout.astro so it's always available.
+ * All interactions are client-side via fetch to /api/pomodoro.
+ * Timer display updates every second via setInterval polling of local countdown.
+ */
+
+interface Props {
+  /** When false, renders nothing (feature flag off) */
+  enabled?: boolean
+}
+
+const { enabled = true } = Astro.props
+---
+
+<div id="pomodoro-wrapper" style="display: contents" {...(!enabled ? { hidden: true } : {})}>
+<button
+  type="button"
+  id="pomodoro-pill"
+  class="pomodoro-pill pomodoro-hidden"
+  aria-label="Expand Pomodoro timer"
+  title="Pomodoro Timer"
+>
+  <span id="pomodoro-pill-icon">🍅</span>
+  <span id="pomodoro-pill-time" class="pomodoro-pill__time">25:00</span>
+</button>
+
+<!-- Expanded timer panel -->
+<div id="pomodoro-panel" class="pomodoro-panel pomodoro-hidden" role="dialog" aria-label="Pomodoro Timer">
+  <div class="pomodoro-panel__header">
+    <span class="pomodoro-panel__title">🍅 Pomodoro</span>
+    <button type="button" id="pomodoro-collapse" class="pomodoro-panel__close" aria-label="Collapse timer">—</button>
+  </div>
+
+  <!-- Timer ring -->
+  <div class="pomodoro-ring-wrapper">
+    <svg viewBox="0 0 120 120" class="pomodoro-ring" aria-hidden="true">
+      <circle cx="60" cy="60" r="52" class="pomodoro-ring__bg" />
+      <circle cx="60" cy="60" r="52" id="pomodoro-ring-fill" class="pomodoro-ring__fill" />
+    </svg>
+    <div class="pomodoro-ring__content">
+      <span id="pomodoro-time" class="pomodoro-time">25:00</span>
+      <span id="pomodoro-phase" class="pomodoro-phase">Ready</span>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="pomodoro-controls">
+    <button type="button" id="pomodoro-start" class="pomodoro-btn pomodoro-btn--primary">▶ Start Focus</button>
+    <button type="button" id="pomodoro-skip" class="pomodoro-btn pomodoro-btn--secondary pomodoro-hidden">⏭ Skip</button>
+    <button type="button" id="pomodoro-cancel" class="pomodoro-btn pomodoro-btn--danger pomodoro-hidden">✕ Cancel</button>
+  </div>
+
+  <!-- Session counter -->
+  <div class="pomodoro-sessions">
+    <span id="pomodoro-focus-count">0</span> focus sessions
+    <span class="pomodoro-sessions__sep">·</span>
+    <span id="pomodoro-today-minutes">0</span> min today
+  </div>
+</div>
+</div>
+
+<style>
+  .pomodoro-hidden {
+    display: none !important;
+  }
+
+  /* Floating pill */
+  .pomodoro-pill {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-card, #1a1a2e);
+    border: 1px solid var(--border, #334155);
+    border-radius: 24px;
+    color: var(--text-primary, #e0e0e0);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s, box-shadow 0.15s;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pomodoro-pill:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .pomodoro-pill--active {
+    border-color: var(--accent, #6366f1);
+    animation: pomodoro-pulse 2s ease-in-out infinite;
+  }
+
+  .pomodoro-pill--break {
+    border-color: #10b981;
+  }
+
+  @keyframes pomodoro-pulse {
+    0%, 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+    50% { box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3); }
+  }
+
+  /* Panel */
+  .pomodoro-panel {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1001;
+    width: 240px;
+    background: var(--bg-card, #1a1a2e);
+    border: 1px solid var(--border, #334155);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pomodoro-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .pomodoro-panel__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary, #e0e0e0);
+  }
+
+  .pomodoro-panel__close {
+    background: none;
+    border: none;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+
+  .pomodoro-panel__close:hover {
+    background: var(--bg-hover, #1e293b);
+  }
+
+  /* Timer ring */
+  .pomodoro-ring-wrapper {
+    position: relative;
+    width: 140px;
+    height: 140px;
+  }
+
+  .pomodoro-ring {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .pomodoro-ring__bg {
+    fill: none;
+    stroke: var(--border, #334155);
+    stroke-width: 5;
+  }
+
+  .pomodoro-ring__fill {
+    fill: none;
+    stroke: var(--accent, #6366f1);
+    stroke-width: 5;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.5s ease;
+    filter: drop-shadow(0 0 4px var(--accent, #6366f1));
+  }
+
+  .pomodoro-ring__content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    line-height: 1;
+  }
+
+  .pomodoro-time {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary, #e0e0e0);
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+
+  .pomodoro-phase {
+    font-size: 0.6875rem;
+    color: var(--text-muted, #888);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+  }
+
+  /* Controls */
+  .pomodoro-controls {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .pomodoro-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border, #334155);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+
+  .pomodoro-btn--primary {
+    background: var(--accent, #6366f1);
+    color: white;
+    border-color: var(--accent, #6366f1);
+  }
+
+  .pomodoro-btn--primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .pomodoro-btn--secondary {
+    background: var(--bg-hover, #1e293b);
+    color: var(--text-primary, #e0e0e0);
+  }
+
+  .pomodoro-btn--secondary:hover {
+    background: var(--bg-input, #2a2a4a);
+  }
+
+  .pomodoro-btn--danger {
+    background: transparent;
+    color: var(--text-muted, #888);
+    border-color: transparent;
+  }
+
+  .pomodoro-btn--danger:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+  }
+
+  /* Sessions */
+  .pomodoro-sessions {
+    font-size: 0.6875rem;
+    color: var(--text-muted, #888);
+    text-align: center;
+  }
+
+  .pomodoro-sessions__sep {
+    margin: 0 4px;
+    opacity: 0.5;
+  }
+
+  /* HA ingress: adjust positioning */
+  :global(body.ha-ingress) .pomodoro-pill,
+  :global(body.ha-ingress) .pomodoro-panel {
+    bottom: 16px;
+    right: 16px;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .pomodoro-pill--active {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  // Pomodoro Timer Client Controller
+  const CIRCUMFERENCE = 2 * Math.PI * 52
+
+  // Elements
+  const pill = document.getElementById("pomodoro-pill") as HTMLButtonElement | null
+  const pillTime = document.getElementById("pomodoro-pill-time")
+  const pillIcon = document.getElementById("pomodoro-pill-icon")
+  const panel = document.getElementById("pomodoro-panel")
+  const collapseBtn = document.getElementById("pomodoro-collapse")
+  const timeDisplay = document.getElementById("pomodoro-time")
+  const phaseDisplay = document.getElementById("pomodoro-phase")
+  const ringFill = document.getElementById("pomodoro-ring-fill")
+  const startBtn = document.getElementById("pomodoro-start") as HTMLButtonElement | null
+  const skipBtn = document.getElementById("pomodoro-skip") as HTMLButtonElement | null
+  const cancelBtn = document.getElementById("pomodoro-cancel") as HTMLButtonElement | null
+  const focusCountEl = document.getElementById("pomodoro-focus-count")
+  const todayMinutesEl = document.getElementById("pomodoro-today-minutes")
+
+  let expanded = false
+  let localRemaining = 0
+  let localTotal = 0
+  let localPhase = "idle"
+  let tickInterval: ReturnType<typeof setInterval> | null = null
+
+  function formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${m}:${s.toString().padStart(2, "0")}`
+  }
+
+  function updateDisplay() {
+    const timeStr = formatTime(localRemaining)
+    if (timeDisplay) timeDisplay.textContent = timeStr
+    if (pillTime) pillTime.textContent = timeStr
+
+    const phaseLabels: Record<string, string> = {
+      focus: "Focus",
+      short_break: "Short Break",
+      long_break: "Long Break",
+      idle: "Ready",
+    }
+    if (phaseDisplay) phaseDisplay.textContent = phaseLabels[localPhase] || "Ready"
+
+    // Ring progress
+    if (ringFill && localTotal > 0) {
+      const progress = 1 - localRemaining / localTotal
+      const offset = CIRCUMFERENCE * (1 - progress)
+      ringFill.style.strokeDasharray = String(CIRCUMFERENCE)
+      ringFill.style.strokeDashoffset = String(offset)
+
+      // Change color for breaks
+      if (localPhase === "short_break" || localPhase === "long_break") {
+        ringFill.style.stroke = "#10b981"
+        ringFill.style.filter = "drop-shadow(0 0 4px #10b981)"
+      } else {
+        ringFill.style.stroke = ""
+        ringFill.style.filter = ""
+      }
+    }
+
+    // Pill state
+    if (pill) {
+      pill.classList.toggle("pomodoro-pill--active", localPhase === "focus")
+      pill.classList.toggle("pomodoro-pill--break", localPhase.includes("break"))
+      if (pillIcon) {
+        pillIcon.textContent = localPhase === "focus" ? "🍅" : localPhase.includes("break") ? "☕" : "🍅"
+      }
+    }
+
+    // Button visibility
+    if (startBtn && skipBtn && cancelBtn) {
+      if (localPhase === "idle") {
+        startBtn.classList.remove("pomodoro-hidden")
+        startBtn.textContent = "▶ Start Focus"
+        skipBtn.classList.add("pomodoro-hidden")
+        cancelBtn.classList.add("pomodoro-hidden")
+      } else if (localPhase === "focus") {
+        startBtn.classList.add("pomodoro-hidden")
+        skipBtn.classList.remove("pomodoro-hidden")
+        skipBtn.textContent = "⏭ Break"
+        cancelBtn.classList.remove("pomodoro-hidden")
+      } else {
+        startBtn.classList.add("pomodoro-hidden")
+        skipBtn.classList.remove("pomodoro-hidden")
+        skipBtn.textContent = "⏭ Focus"
+        cancelBtn.classList.remove("pomodoro-hidden")
+      }
+    }
+  }
+
+  function startLocalTick() {
+    stopLocalTick()
+    tickInterval = setInterval(() => {
+      if (localRemaining > 0) {
+        localRemaining--
+        updateDisplay()
+      } else {
+        // Phase ended — fetch fresh state from server
+        stopLocalTick()
+        fetchState()
+      }
+    }, 1000)
+  }
+
+  function stopLocalTick() {
+    if (tickInterval) {
+      clearInterval(tickInterval)
+      tickInterval = null
+    }
+  }
+
+  async function fetchState() {
+    try {
+      const res = await fetch("/api/pomodoro")
+      if (!res.ok) return
+      const data = await res.json()
+      const state = data.state
+
+      localRemaining = state.remaining || 0
+      localTotal = state.total || 0
+      localPhase = state.phase || "idle"
+
+      if (focusCountEl) focusCountEl.textContent = String(state.focusCount || 0)
+      if (todayMinutesEl) todayMinutesEl.textContent = String(data.today?.totalFocusMinutes || 0)
+
+      updateDisplay()
+
+      // Start ticking if active
+      if (localPhase !== "idle") {
+        startLocalTick()
+        // Show pill if panel is collapsed
+        if (pill && !expanded) pill.classList.remove("pomodoro-hidden")
+      } else {
+        stopLocalTick()
+        // Hide pill when idle and collapsed
+        if (pill && !expanded) pill.classList.add("pomodoro-hidden")
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  async function doAction(action: string, taskId?: string) {
+    try {
+      const body: Record<string, string> = { action }
+      if (taskId) body.taskId = taskId
+      const res = await fetch("/api/pomodoro", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const state = data.state
+
+      localRemaining = state.remaining || 0
+      localTotal = state.total || 0
+      localPhase = state.phase || "idle"
+
+      updateDisplay()
+
+      if (localPhase !== "idle") {
+        startLocalTick()
+        if (pill && !expanded) pill.classList.remove("pomodoro-hidden")
+      } else {
+        stopLocalTick()
+        if (pill && !expanded) pill.classList.add("pomodoro-hidden")
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  function togglePanel(show: boolean) {
+    expanded = show
+    if (panel) panel.classList.toggle("pomodoro-hidden", !show)
+    if (pill) pill?.classList.toggle("pomodoro-hidden", show || localPhase === "idle")
+  }
+
+  // Event listeners
+  pill?.addEventListener("click", () => togglePanel(true))
+  collapseBtn?.addEventListener("click", () => togglePanel(false))
+  startBtn?.addEventListener("click", () => doAction("start"))
+  skipBtn?.addEventListener("click", () => {
+    if (localPhase === "focus") doAction("skip_to_break")
+    else doAction("skip_break")
+  })
+  cancelBtn?.addEventListener("click", () => doAction("cancel"))
+
+  // Keyboard shortcut: Alt+P toggles panel
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey && e.key === "p") {
+      e.preventDefault()
+      if (expanded) togglePanel(false)
+      else togglePanel(true)
+    }
+  })
+
+  // Expose global function for other pages to start pomodoro with a task
+  ;window.startPomodoro = (taskId?: string) => {
+    togglePanel(true)
+    doAction("start", taskId)
+  }
+
+  // Initial state fetch
+  fetchState()
+</script>

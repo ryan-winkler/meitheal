@@ -1,0 +1,40 @@
+name: ICE
+version: 1.0.0
+archetype: formula
+description: "ICE scoring — Impact × Confidence × Ease. A simpler alternative to RICE for rapid prioritization."
+formula: "impact * confidence * ease"
+badge_thresholds:
+  - min: 700
+    label: "Quick Win (High Value)"
+    color: "danger"
+  - min: 300
+    label: "Worth Doing (Medium)"
+    color: "accent"
+  - min: 0
+    label: "Reconsider (Low)"
+    color: "bg-secondary"
+fields:
+  - key: impact
+    label: Impact
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How much will this move the needle? Revenue, users, satisfaction. (1 = negligible, 10 = game-changing)"
+  - key: confidence
+    label: Confidence
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How confident are you in the impact estimate? Data-backed vs gut feel. (1 = pure guess, 10 = validated with data)"
+  - key: ease
+    label: Ease
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How easy is this to implement? Time, resources, complexity. (1 = massive effort, 10 = trivial to ship)"

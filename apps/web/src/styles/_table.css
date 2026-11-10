@@ -1,0 +1,551 @@
+/* =============================================
+ * _table.css — Data table, inline-select, editable cells, sticky columns
+ *
+ * Domain: Table view bounded context
+ * Owns: data-table, inline-select, editable-cell, table-filter, row-check, sticky column
+ * Does NOT own: kanban board (_kanban.css), task items (_tasks.css), empty states (_feedback.css)
+ * ============================================= */
+/* --- Secondary toolbar row (presets, column customizer) --- */
+.table-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.toolbar-separator {
+  color: var(--border);
+  font-size: 14px;
+  user-select: none;
+}
+
+/* --- Table view --- */
+.table-container {
+  @apply overflow-x-auto;
+  position: relative;
+}
+
+/* Scroll shadow indicator for table overflow */
+.table-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(
+    to left,
+    var(--bg-primary) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+
+.table-container.has-scroll::after {
+  opacity: 1;
+}
+
+.data-table {
+  @apply w-full border-collapse text-sm;
+}
+
+.data-table th {
+  @apply text-left text-[11px] text-text-muted font-bold px-3 py-3 bg-bg-secondary/50 border-b border-border;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    /* B8: Sticky header with backdrop blur */
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+}
+
+.data-table td {
+  @apply px-3 py-2.5 border-b border-border/50 text-text-primary;
+}
+
+.data-table tr:hover td {
+  @apply bg-bg-hover/50;
+}
+
+.data-table .sortable {
+  @apply cursor-pointer select-none;
+}
+
+.data-table .sortable:hover {
+  @apply text-accent;
+}
+
+.inline-select {
+  @apply bg-bg-card border border-border rounded text-xs px-2 py-1 text-text-primary cursor-pointer;
+  appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 0.65em auto;
+    padding-right: 1.5rem;
+}
+
+.inline-select option {
+  @apply bg-bg-card text-text-primary;
+}
+
+.inline-select:focus {
+  @apply outline-none border-accent;
+}
+
+
+.editable-cell {
+  @apply outline-none rounded px-1 py-0.5 transition-colors min-h-[1.5em] text-text-primary;
+}
+
+.editable-cell:focus {
+  @apply bg-accent/10 ring-2 ring-accent/30;
+}
+
+/* --- Table extras --- */
+.table-filter-bar {
+  @apply flex gap-3 items-center flex-wrap px-4 py-3;
+}
+
+.row-check {
+  @apply w-4 h-4 rounded border-2 border-border bg-transparent cursor-pointer appearance-none transition-all;
+}
+
+.row-check:checked {
+  @apply bg-accent border-accent;
+}
+
+.delete-row {
+  @apply bg-transparent border-none cursor-pointer text-text-muted text-sm p-1 rounded transition-colors;
+  min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.delete-row:hover {
+  @apply text-danger bg-danger/10;
+}
+
+
+/* Table row hover */
+/* ===== Table Row Hover Transitions (Wave 9) ===== */
+.data-table tbody tr {
+  transition: background 150ms ease;
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.data-table tbody tr.row-done {
+  opacity: 0.55;
+}
+
+.data-table tbody tr.row-done td {
+  text-decoration: line-through;
+}
+
+/* Sticky first column */
+/* ===== Sticky First Column (Wave 9) ===== */
+.data-table th:first-child,
+.data-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
+}
+
+.data-table td:first-child {
+  background: var(--bg-primary);
+}
+
+.data-table tr:hover td:first-child {
+  background: var(--bg-hover);
+}
+
+/* Alternating rows with theme awareness */
+.data-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.data-table tbody tr:nth-child(even):hover td {
+  background: var(--bg-hover);
+}
+
+.data-table tbody tr:nth-child(even) td:first-child {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.data-table tbody tr:nth-child(even):hover td:first-child {
+  background: var(--bg-hover);
+}
+
+/* Light theme alternating rows */
+[data-theme="light"] .data-table tbody tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .data-table td:first-child {
+  background: var(--bg-primary);
+}
+
+/* =============================================================================
+ * Row Grouping / Swimlane Styles (Phase 7: List View Overhaul)
+ * ============================================================================= */
+
+/* Unified filtered visibility class — replaces inline style.display = "none" */
+.filtered-out {
+  display: none !important;
+}
+
+/* Group header row */
+.group-header-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header-row td {
+  background: var(--bg-secondary) !important;
+  border-bottom: 2px solid var(--border);
+  padding: 8px 12px !important;
+}
+
+.group-header-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.group-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, transform 0.2s;
+}
+
+.group-toggle:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.group-toggle-arrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.group-header-row.collapsed .group-toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+.group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.group-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.group-label {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+  letter-spacing: 0.02em;
+}
+
+.group-checkbox-wrapper {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* =============================================================================
+ * Sub-Group Header Styles (secondary grouping dimension)
+ * ============================================================================= */
+
+/* Sub-group rows are visually lighter and indented */
+tr.sub-group-header-row td {
+  background: var(--bg-primary);
+}
+
+.sub-group-header-cell {
+  padding-left: 36px !important; /* Indented relative to primary group */
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.sub-group-header-cell .group-toggle {
+  width: 18px;
+  height: 18px;
+}
+
+.sub-group-header-cell .group-toggle-arrow {
+  font-size: 10px;
+}
+
+.sub-group-header-cell .group-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.sub-group-header-cell .group-label {
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+
+/* Sub-group count badge — neutral, smaller than primary */
+.sub-group-header-cell .group-count {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 0 5px;
+}
+
+
+.group-select-all {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* =============================================================================
+ * Group Summary / Subtotal Rows
+ * ============================================================================= */
+
+.group-summary-row td {
+  background: var(--bg-primary);
+  border-top: 1px dashed var(--border);
+  padding: 4px 12px;
+}
+
+.group-summary-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.summary-separator {
+  opacity: 0.4;
+}
+
+.summary-rice {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Grand total at bottom */
+.grand-total-row td {
+  background: var(--bg-secondary);
+  border-top: 2px solid var(--border);
+  padding: 6px 12px;
+}
+
+.grand-total-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.grand-total-cell .summary-rice {
+  color: var(--accent, #6366f1);
+}
+
+/* Collapsed group rows are hidden — !important needed to override table-row display */
+tr.group-collapsed-row {
+  display: none !important;
+}
+
+/* Collapsed group header arrow rotation */
+.group-header-row .group-toggle-arrow {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.group-header-row.collapsed .group-toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+/* Clickable group header */
+.group-header-cell {
+  cursor: pointer;
+}
+
+/* Empty groups auto-hide */
+.group-empty {
+  display: none;
+}
+
+/* Color-coded group header borders (based on group-dot color) */
+.group-header-row td {
+  border-left: 3px solid transparent;
+}
+
+/* =============================================================================
+ * Type Toggle Styles
+ * ============================================================================= */
+
+.type-toggles {
+  display: flex;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  padding: 2px;
+  background: var(--bg-secondary);
+}
+
+.type-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.type-toggle.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.type-toggle:not(.active) {
+  opacity: 0.5;
+}
+
+.type-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+/* =============================================================================
+ * Enhanced Bulk Bar Styles
+ * ============================================================================= */
+
+.bulk-divider {
+  color: var(--border);
+  font-size: 14px;
+}
+
+.bulk-close-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  margin-left: auto;
+}
+
+.bulk-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* =============================================================================
+ * Responsive Filter Bar
+ * ============================================================================= */
+
+@container (max-width: 600px) {
+  .type-toggles {
+    display: none;
+  }
+}
+
+/* Fallback for small screens without container query support */
+@media (max-width: 640px) {
+  .filter-bar {
+    gap: 6px;
+  }
+  .filter-select {
+    max-width: 120px;
+    font-size: 12px;
+  }
+  .type-toggles {
+    order: 10;
+    width: 100%;
+  }
+}
+
+/* =============================================================================
+ * Critical Overrides — Outside @layer for cascade precedence
+ * 
+ * Rules inside @layer have lower cascade priority than unlayered rules.
+ * The browser's default `display: table-row` for <tr> elements is unlayered,
+ * so these must also be unlayered to override it.
+ * ============================================================================= */
+
+/* Group collapse — hide rows when their group is collapsed */
+tr.group-collapsed-row {
+  display: none !important;
+}
+
+/* Filtered-out rows */
+tr.filtered-out {
+  display: none !important;
+}

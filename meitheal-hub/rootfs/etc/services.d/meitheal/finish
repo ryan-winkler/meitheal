@@ -1,0 +1,11 @@
+#!/usr/bin/with-contenv bashio
+# s6 finish script — clean shutdown for Meitheal service
+# Called when the service exits. Exit code 0 = don't restart.
+# Any other code = s6 will restart the service.
+
+echo "{\"event\":\"addon.shutdown\",\"exit_code\":\"${1:-unknown}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+
+# If exit was clean (0), signal s6 to bring down the container
+if [ "${1:-1}" -eq 0 ]; then
+  exec s6-svscanctl -t /var/run/s6/services 2>/dev/null || true
+fi

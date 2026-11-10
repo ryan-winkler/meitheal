@@ -1,0 +1,37 @@
+---
+interface Props {
+  style?: string
+  class?: string
+}
+
+const { style, class: className } = Astro.props
+---
+
+<div class:list={["settings-action-row", className]} style={style}>
+  <slot />
+</div>
+
+<style>
+  .settings-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .settings-action-row :global(.btn),
+  .settings-action-row :global(label.btn) {
+    justify-content: center;
+  }
+
+  @media (max-width: 560px) {
+    .settings-action-row {
+      align-items: stretch;
+    }
+
+    .settings-action-row :global(.btn),
+    .settings-action-row :global(label.btn) {
+      width: 100%;
+    }
+  }
+</style>

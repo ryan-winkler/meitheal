@@ -1,0 +1,1255 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import SettingsCallout from "./SettingsCallout.astro"
+import IntegrationHA from "./integrations/IntegrationHA.astro"
+import IntegrationCalendar from "./integrations/IntegrationCalendar.astro"
+import IntegrationTodo from "./integrations/IntegrationTodo.astro"
+import IntegrationGrocy from "./integrations/IntegrationGrocy.astro"
+import IntegrationN8n from "./integrations/IntegrationN8n.astro"
+import IntegrationWebhooks from "./integrations/IntegrationWebhooks.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+---
+
+<div class="settings-shell-panel">
+  <div class="integrations-layout">
+    <div class="integrations-header">
+      <div>
+        <h2 class="integrations-title">
+          {t("settings.integrations_title", locale)}
+        </h2>
+        <p class="integrations-subtitle">
+          {t("settings.integrations_subtitle", locale)}
+        </p>
+      </div>
+    </div>
+
+    <SettingsCallout title={t("settings.integrations_recommended_title", locale)} icon="🔌">
+      {t("settings.integrations_recommended_desc", locale)}
+    </SettingsCallout>
+
+    <IntegrationHA />
+    <IntegrationCalendar />
+    <IntegrationTodo />
+    <IntegrationGrocy />
+    <IntegrationN8n />
+    <IntegrationWebhooks />
+  </div>
+
+  <!-- ═══════ Integration Explainer Dialog ═══════ -->
+  <dialog
+    id="integration-explainer-dialog"
+    class="explainer-dialog"
+    aria-modal="true"
+    aria-labelledby="explainer-title"
+  >
+    <div class="explainer-dialog__content">
+      <div class="explainer-dialog__header">
+        <h3 class="explainer-dialog__title" id="explainer-title"></h3>
+        <button type="button" class="explainer-dialog__close" aria-label="Close"
+          >&times;</button
+        >
+      </div>
+      <div class="explainer-dialog__body" id="explainer-body"></div>
+    </div>
+  </dialog>
+</div>
+
+<style is:global>
+  /* ═══════ Integrations Layout ═══════ */
+  .integrations-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .integrations-header {
+    margin-bottom: 8px;
+  }
+
+  .integrations-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .integrations-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+  }
+
+  /* ═══════ Integration Card ═══════ */
+  .integration-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-primary);
+    transition: border-color 200ms ease;
+  }
+
+  .integration-card:hover {
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent));
+  }
+
+  .integration-card__heading {
+    display: flex;
+    align-items: center;
+    background: var(--bg-secondary);
+  }
+
+  .integration-card__heading > .info-btn {
+    margin-inline: 0 14px;
+  }
+
+  .integration-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+    padding: 14px 10px 14px 18px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    transition: background 150ms ease;
+  }
+
+  .integration-card__header:hover {
+    background: var(--bg-hover);
+  }
+
+  .integration-card__header:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .integration-card__title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .integration-card__icon {
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .integration-card__title-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .integration-card__title-info strong {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .integration-card__desc {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .integration-card__header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .integration-card__chevron {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform 200ms ease;
+    width: 16px;
+    text-align: center;
+  }
+
+  .integration-card__header[aria-expanded="true"] .integration-card__chevron {
+    transform: rotate(90deg);
+  }
+
+  /* ═══════ Card Body ═══════ */
+  .integration-card__body {
+    max-height: 0;
+    overflow: hidden;
+    transition:
+      max-height 250ms ease,
+      padding 250ms ease;
+    padding: 0 18px;
+  }
+
+  .integration-card__body:not([inert]) {
+    max-height: 1200px;
+    padding: 16px 18px;
+    border-top: 1px solid var(--border);
+    overflow-y: auto;
+  }
+
+  .integration-card__config {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .integration-card__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-top: 4px;
+  }
+
+  .integration-card__result {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ═══════ Form Label Row (with tooltip) ═══════ */
+  .form-label-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .form-label-row .form-label {
+    margin-bottom: 0;
+  }
+
+  /* ═══════ Callouts ═══════ */
+  .integration-callout {
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+
+  .integration-callout--success {
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: var(--text-secondary);
+  }
+
+  .integration-callout strong {
+    color: var(--accent);
+  }
+
+  .integration-callout__detail {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .mono-text {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 6px;
+  }
+
+  /* ═══════ Entity List ═══════ */
+  .entity-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* ═══════ Calendar Toggle Cards ═══════ */
+  .cal-toggle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .cal-toggle-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition:
+      border-color 200ms ease,
+      background 200ms ease,
+      box-shadow 200ms ease;
+  }
+
+  .cal-toggle-card:hover {
+    border-color: color-mix(in srgb, var(--border) 50%, var(--accent));
+    background: color-mix(in srgb, var(--bg-secondary) 95%, var(--accent));
+  }
+
+  .cal-toggle-card--active {
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .cal-toggle-card__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .cal-toggle-card__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .cal-toggle-card__entity {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Per-card sync direction selector */
+  .cal-toggle-card__direction {
+    margin-top: 4px;
+  }
+
+  .cal-direction-select {
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 150ms ease;
+    max-width: 200px;
+  }
+
+  .cal-direction-select:hover {
+    border-color: color-mix(in srgb, var(--border) 50%, var(--accent));
+  }
+
+  .cal-direction-select:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+
+  .cal-toggle-card__state {
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0.8;
+  }
+
+  /* Calendar entities header — title + bulk actions */
+  .cal-entities-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .cal-count-badge {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 1px 8px;
+    border-radius: 10px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .cal-bulk-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .btn-xs {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    min-height: unset !important;
+    border-radius: 6px;
+  }
+  .cal-empty-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px;
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .cal-empty-icon {
+    font-size: 20px;
+  }
+
+  /* ═══════ Event Checkboxes ═══════ */
+  .event-checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px 16px;
+  }
+
+  .event-checkbox {
+    font-size: 13px;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 4px 0;
+  }
+
+  .event-checkbox input[type="checkbox"] {
+    accent-color: var(--accent);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .event-checkbox small {
+    font-size: 11px;
+  }
+
+  .event-count-summary {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  /* Badges: now in _settings-shared.css */
+
+  /* ═══════ Responsive ═══════ */
+  @media (max-width: 768px) {
+    .integration-card__header {
+      padding: 12px 14px;
+    }
+    .integration-card__body:not([inert]) {
+      padding: 12px 14px;
+    }
+    .integration-card__desc {
+      display: none;
+    }
+    .integration-card__icon {
+      width: 28px;
+      height: 28px;
+      font-size: 16px;
+    }
+    .badge {
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .integration-card__actions {
+      flex-direction: column;
+    }
+    .integration-card__actions .btn {
+      width: 100%;
+    }
+    .event-checkbox-grid {
+      grid-template-columns: 1fr;
+    }
+    .integration-card__actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .integration-card__actions .btn {
+      width: 100%;
+    }
+  }
+
+  /* Form validation: now in _settings-shared.css */
+
+  /* ═══════ Micro-Animations ═══════ */
+  .integration-card__icon {
+    transition:
+      transform 200ms ease,
+      box-shadow 200ms ease;
+  }
+
+  .integration-card__header:hover .integration-card__icon {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .integration-card__header:active {
+    transform: scale(0.995);
+    transition: transform 100ms ease;
+  }
+
+  .btn {
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  /* btn--saving, saving-pulse, focus ring: now in _settings-shared.css */
+
+  /* ═══════ HA Connection Card ═══════ */
+  .ha-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .ha-status-row__left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ha-status-indicator {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+  }
+
+  .ha-status-indicator__dot {
+    display: block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition:
+      background 300ms ease,
+      box-shadow 300ms ease;
+  }
+
+  .ha-status-indicator--connected .ha-status-indicator__dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+  }
+
+  .ha-status-indicator--checking .ha-status-indicator__dot {
+    animation: status-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes status-pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .ha-status-row__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ha-status-row__mode {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .ha-status-row__detail {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .ha-info-panel {
+    margin-bottom: 8px;
+  }
+
+  .ha-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .ha-info-item__label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+
+  .ha-info-item__value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .ha-test-result {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-top: 8px;
+  }
+
+  .ha-test-result small {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .ha-advanced-section {
+    margin-top: 12px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .ha-advanced-toggle {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    list-style: none;
+  }
+
+  .ha-advanced-toggle::-webkit-details-marker {
+    display: none;
+  }
+
+  .ha-advanced-toggle small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .ha-advanced-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  @media (max-width: 768px) {
+    .ha-info-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Info button: now in _settings-shared.css */
+
+  /* ═══════ Info Callout (blue) ═══════ */
+  .integration-callout--info {
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    color: var(--text-secondary);
+  }
+
+  .integration-callout--info strong {
+    color: var(--info);
+  }
+
+  .callout-link {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .callout-link:hover {
+    opacity: 0.8;
+  }
+
+  /* ═══════ CalDAV Section ═══════ */
+  .caldav-section {
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+
+  .caldav-toggle {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    list-style: none;
+  }
+
+  .caldav-toggle::-webkit-details-marker {
+    display: none;
+  }
+
+  .caldav-toggle small {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ═══════ Mode Tabs ═══════ */
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 8px 14px;
+    background: var(--bg-secondary);
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+    font-family: inherit;
+  }
+
+  .mode-tab:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+
+  .mode-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .mode-tab--active {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  /* ═══════ Explainer Dialog ═══════ */
+  .explainer-dialog {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    max-width: 480px;
+    width: 90vw;
+    padding: 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .explainer-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+  }
+
+  .explainer-dialog__content {
+    padding: 20px 24px;
+  }
+
+  .explainer-dialog__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .explainer-dialog__title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .explainer-dialog__close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 6px;
+    line-height: 1;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+  }
+
+  .explainer-dialog__close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .explainer-dialog__body {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .explainer-dialog__body p {
+    margin: 0 0 8px;
+  }
+
+  .explainer-dialog__body p:last-child {
+    margin-bottom: 0;
+  }
+
+  .explainer-dialog__body code {
+    background: var(--bg-secondary);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: "JetBrains Mono", monospace;
+  }
+</style>
+
+<script>
+  import { createClientLogger } from "@lib/client-logger"
+
+  const log = createClientLogger("settings", "integrations")
+
+  /**
+   * HA Connection Status Detection
+   *
+   * Auto-detects HA connection on page load. Updates status indicator,
+   * info panel, and badge. Auto-expands the HA card when connected.
+   *
+   * Bounded context: integrations / ha-connection
+   */
+  async function initHAConnectionStatus() {
+    const indicator = document.getElementById("ha-indicator");
+    const modeLabel = document.getElementById("ha-mode-label");
+    const detailLabel = document.getElementById("ha-detail-label");
+    const badge = document.getElementById("ha-connection-badge");
+    const infoPanel = document.getElementById("ha-info-panel");
+    if (!indicator || !modeLabel || !badge) return;
+    if (indicator.dataset.haInit) return;
+    indicator.dataset.haInit = "true";
+
+    try {
+      const res = await fetch(
+        (window.__ingress_path || "") + "/api/ha/connection",
+      );
+      const data = (await res.json()) as Record<string, unknown>;
+
+      if (data.connected) {
+        indicator.className =
+          "ha-status-indicator ha-status-indicator--connected";
+        modeLabel!.textContent = `✓ Connected as HA Addon`;
+        if (detailLabel) detailLabel.textContent = `HA ${data.version}`;
+        badge!.textContent = "Connected";
+        badge!.className = "badge badge-active";
+
+        if (infoPanel) {
+          infoPanel.style.display = "block";
+          const setVal = (id: string, val: unknown) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = String(val ?? "—");
+          };
+          setVal("ha-info-version", data.version);
+          setVal("ha-info-location", data.location_name);
+          setVal("ha-info-timezone", data.time_zone);
+          setVal("ha-info-mode", data.mode);
+        }
+
+        // Auto-expand HA card when connected
+        if (window.expandIntegrationCard) {
+          window.expandIntegrationCard("integration-ha-body");
+        }
+      } else {
+        indicator.className = "ha-status-indicator";
+        modeLabel!.textContent = "Not connected";
+        if (detailLabel)
+          detailLabel.textContent = String(data.mode ?? "Standalone");
+        badge!.textContent = "Disconnected";
+        badge!.className = "badge badge-pending";
+      }
+    } catch {
+      indicator.className = "ha-status-indicator";
+      modeLabel!.textContent = "Connection check failed";
+      badge!.textContent = "Error";
+      badge!.className = "badge badge-error";
+    }
+  }
+  /**
+   * Integration Explainer Dialog
+   *
+   * Opens a native <dialog> with explainer content for each integration.
+   * Content is defined inline to keep it colocated with the component.
+   */
+  const EXPLAINER_CONTENT: Record<string, { title: string; body: string }> = {
+    ha: {
+      title: "🏠 Home Assistant",
+      body: `<p>Meitheal connects to Home Assistant via <strong>WebSocket</strong>, allowing it to consume and provide data automatically.</p>
+             <p>When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token.</p>
+             <p>For standalone installs, enter your HA URL and a Long-Lived Access Token in the Advanced section.</p>`,
+    },
+    calendar: {
+      title: "📅 Calendar Sync",
+      body: `<p>Directional sync between Meitheal tasks and HA calendar events. Choose per calendar:</p>
+             <p><strong>↔ Bidirectional</strong> — tasks ↔ events flow both ways. Duplicates prevented via confirmation tracking.<br>
+             <strong>↓ Import only</strong> — HA calendar events create Meitheal tasks. No write-back.<br>
+             <strong>↑ Export only</strong> — Meitheal tasks with due dates appear as calendar events. No inbound sync.</p>
+             <p>Select calendars from the toggle cards — Meitheal auto-detects available HA calendars. For external servers (Nextcloud, Radicale, Baikal), expand the CalDAV section.</p>
+             <p>Sync window: past 7 days → next 30 days.</p>`,
+    },
+    todo: {
+      title: "✅ Todo Sync",
+      body: `<p>Bridges Home Assistant's built-in todo lists (<code>todo.*</code> entities) with Meitheal.</p>
+             <p>This ensures your HA dashboards, automations, and voice assistants that use <code>todo.*</code> entities stay in sync with tasks managed here.</p>
+             <p>Enable only for lists you actively use — disabled by default to save power.</p>`,
+    },
+    grocy: {
+      title: "🛒 Grocy",
+      body: `<p>Grocy is a household inventory and chore management system. This integration syncs Grocy chores and products with Meitheal tasks.</p>
+             <p>When Grocy is running as an HA addon, Meitheal auto-detects it and fills in the URL automatically. For standalone Grocy servers, enter the URL and API key manually.</p>
+             <p>Generate an API key in Grocy → Settings → API Keys.</p>`,
+    },
+    n8n: {
+      title: "⚙ n8n / Node-RED",
+      body: `<p>Trigger automation workflows when task events occur (created, updated, completed, deleted).</p>
+             <p><strong>HA Addon mode:</strong> Node-RED and n8n addons communicate automatically through the HA WebSocket — no webhook URL needed.</p>
+             <p><strong>Standalone mode:</strong> Enter the webhook URL from your n8n/Node-RED flow, plus optional API key and signing secret for authentication.</p>`,
+    },
+    webhooks: {
+      title: "🔔 Webhooks",
+      body: `<p>Generic outgoing HTTP webhooks that send task event payloads to any URL you specify (e.g., Zapier, IFTTT, custom APIs).</p>
+             <p>Each event is POSTed as JSON with an optional HMAC-SHA256 signature for verification.</p>
+             <p><strong>Not the same as Agents & AI</strong> — webhooks are for data pipelines and automations. For AI agent protocols (A2A, MCP, WebMCP), use the Agents & AI tab.</p>`,
+    },
+  };
+
+  function initExplainerDialog() {
+    const dialog = document.getElementById(
+      "integration-explainer-dialog",
+    ) as HTMLDialogElement | null;
+    const titleEl = document.getElementById("explainer-title");
+    const bodyEl = document.getElementById("explainer-body");
+    const closeBtn = dialog?.querySelector(".explainer-dialog__close");
+    if (!dialog || !titleEl || !bodyEl) return;
+    if (dialog.dataset.explainerInit) return;
+    dialog.dataset.explainerInit = "true";
+
+    // Open on info button click
+    document.querySelectorAll(".info-btn[data-explainer]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const key = (btn as HTMLElement).dataset.explainer || "";
+        const content = EXPLAINER_CONTENT[key];
+        if (!content) return;
+        titleEl.textContent = content.title;
+        bodyEl.innerHTML = content.body;
+        dialog.showModal();
+      });
+    });
+
+    // Close button
+    closeBtn?.addEventListener("click", () => dialog.close());
+
+    // Close on backdrop click
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+  }
+  /**
+   * n8n / Node-RED Mode Toggle
+   *
+   * Switches between HA Addon (auto) and Standalone modes.
+   */
+  function initN8nModeToggle() {
+    const autoBtn = document.getElementById("n8n-mode-auto");
+    const standaloneBtn = document.getElementById("n8n-mode-standalone");
+    const autoContent = document.getElementById("n8n-auto-content");
+    const standaloneContent = document.getElementById("n8n-standalone-content");
+    if (!autoBtn || !standaloneBtn || !autoContent || !standaloneContent)
+      return;
+    if (autoBtn.dataset.modeInit) return;
+    autoBtn.dataset.modeInit = "true";
+
+    function setMode(mode: string) {
+      if (mode === "auto") {
+        autoBtn!.classList.add("mode-tab--active");
+        standaloneBtn!.classList.remove("mode-tab--active");
+        autoContent!.style.display = "";
+        standaloneContent!.style.display = "none";
+      } else {
+        standaloneBtn!.classList.add("mode-tab--active");
+        autoBtn!.classList.remove("mode-tab--active");
+        autoContent!.style.display = "none";
+        standaloneContent!.style.display = "";
+      }
+      try {
+        localStorage.setItem("meitheal:n8n-mode", mode);
+      } catch { /* non-fatal */ }
+    }
+
+    // Restore persisted mode
+    try {
+      const saved = localStorage.getItem("meitheal:n8n-mode");
+      if (saved === "standalone") setMode("standalone");
+    } catch { /* non-fatal */ }
+
+    autoBtn.addEventListener("click", () => setMode("auto"));
+    standaloneBtn.addEventListener("click", () => setMode("standalone"));
+  }
+  /**
+   * Calendar Entity Dropdown Population
+   *
+   * Populates the cal-entity <select> with detected HA calendar entities.
+   * Adds a "Custom entity…" option that reveals the manual input.
+   */
+  function initCalendarDropdown() {
+    const select = document.getElementById(
+      "cal-entity",
+    ) as HTMLSelectElement | null;
+    const manual = document.getElementById(
+      "cal-entity-manual",
+    ) as HTMLInputElement | null;
+    if (!select || !manual) return;
+    if (select.dataset.calInit) return;
+    select.dataset.calInit = "true";
+
+    // When select changes, show/hide manual input
+    select.addEventListener("change", () => {
+      if (select.value === "__custom__") {
+        manual.style.display = "";
+        manual.focus();
+      } else {
+        manual.style.display = "none";
+        manual.value = "";
+      }
+    });
+
+    // Populate from API
+    (async () => {
+      try {
+        const res = await fetch(
+          (window.__ingress_path || "") + "/api/ha/calendars",
+        );
+        if (!res.ok) throw new Error("API error");
+        const data = (await res.json()) as {
+          calendars?: { entity_id: string; friendly_name: string }[];
+          sync?: { entityId: string | null };
+        };
+
+        const calendars = data.calendars ?? [];
+        const activeEntity = data.sync?.entityId ?? "";
+
+        // Clear loading option
+        select.innerHTML = "";
+
+        if (calendars.length === 0) {
+          select.innerHTML =
+            '<option value="" disabled selected>No calendars detected</option>';
+        } else {
+          // Default option
+          select.innerHTML =
+            '<option value="" disabled>Select a calendar…</option>';
+          for (const cal of calendars) {
+            const opt = document.createElement("option");
+            opt.value = cal.entity_id;
+            opt.textContent = `${cal.friendly_name} (${cal.entity_id})`;
+            if (cal.entity_id === activeEntity) opt.selected = true;
+            select.appendChild(opt);
+          }
+          // Auto-select if only one and nothing pre-selected
+          if (calendars.length === 1 && !activeEntity) {
+            select.selectedIndex = 1;
+          }
+        }
+
+        // Add custom option
+        const customOpt = document.createElement("option");
+        customOpt.value = "__custom__";
+        customOpt.textContent = "Custom entity…";
+        select.appendChild(customOpt);
+      } catch {
+        select.innerHTML =
+          '<option value="" disabled selected>Could not load calendars</option>';
+        // Add custom option as fallback
+        const customOpt = document.createElement("option");
+        customOpt.value = "__custom__";
+        customOpt.textContent = "Custom entity…";
+        select.appendChild(customOpt);
+        manual.style.display = "";
+      }
+    })();
+  }
+  /**
+   * Grocy Auto-Detection
+   *
+   * Checks if Grocy addon is available via HA Supervisor API.
+   * Auto-fills URL when detected, hides manual fields.
+   * Addon slug: a0d7b954_grocy (hassio-addons repository)
+   */
+  async function initGrocyAutoDetect() {
+    const autoInfo = document.getElementById("grocy-auto-info");
+    const urlGroup = document.getElementById("grocy-url-group");
+    const keyGroup = document.getElementById("grocy-key-group");
+    const urlInput = document.getElementById(
+      "grocy-url",
+    ) as HTMLInputElement | null;
+    const customToggle = document.getElementById("grocy-custom-toggle");
+    const statusEl = document.getElementById("grocy-status");
+    if (!autoInfo || !urlGroup || !keyGroup || !urlInput) return;
+    if (autoInfo.dataset.grocyInit) return;
+    autoInfo.dataset.grocyInit = "true";
+
+    try {
+      // Check HA connection first
+      const haRes = await fetch(
+        (window.__ingress_path || "") + "/api/ha/connection",
+      );
+      const haData = (await haRes.json()) as { connected?: boolean };
+      if (!haData.connected) return; // Not connected to HA, skip auto-detect
+
+      // Check if Grocy addon is installed via addons API
+      const addonsRes = await fetch(
+        (window.__ingress_path || "") + "/api/ha/addons",
+      );
+      if (!addonsRes.ok) return;
+      const addonsData = (await addonsRes.json()) as {
+        addons?: {
+          slug: string;
+          name: string;
+          state: string;
+          ingress_url?: string;
+        }[];
+      };
+
+      const grocy = addonsData.addons?.find((a) => a.slug.includes("grocy"));
+      if (grocy) {
+        // Auto-detected!
+        autoInfo.style.display = "block";
+        urlGroup.style.display = "none";
+        keyGroup.style.display = "none";
+        if (customToggle) customToggle.style.display = "";
+
+        // Auto-fill URL from ingress
+        if (grocy.ingress_url) {
+          urlInput.value = grocy.ingress_url;
+        }
+
+        // Update badge
+        if (statusEl) {
+          statusEl.textContent = "Auto-detected";
+          statusEl.className = "badge badge-active";
+        }
+
+        // Custom toggle handler
+        customToggle?.addEventListener("click", () => {
+          urlGroup.style.display = "";
+          keyGroup.style.display = "";
+          customToggle.style.display = "none";
+        });
+      }
+    } catch {
+      log.warn("Grocy auto-detect failed");
+    }
+  }
+  /**
+   * Node-RED Auto-Detection
+   *
+   * Checks if Node-RED addon is available via HA Supervisor API.
+   * Addon slug: a0d7b954_nodered (hassio-addons repository)
+   * Reference: https://github.com/hassio-addons/app-node-red
+   */
+  async function initNodeRedAutoDetect() {
+    const callout = document.getElementById("n8n-auto-detect-info");
+    const statusEl = document.getElementById("n8n-status");
+    if (!callout) return;
+    if (callout.dataset.nrInit) return;
+    callout.dataset.nrInit = "true";
+
+    try {
+      const haRes = await fetch(
+        (window.__ingress_path || "") + "/api/ha/connection",
+      );
+      const haData = (await haRes.json()) as { connected?: boolean };
+      if (!haData.connected) return;
+
+      const addonsRes = await fetch(
+        (window.__ingress_path || "") + "/api/ha/addons",
+      );
+      if (!addonsRes.ok) return;
+      const addonsData = (await addonsRes.json()) as {
+        addons?: { slug: string; name: string; state: string }[];
+      };
+
+      const nodeRed = addonsData.addons?.find(
+        (a) =>
+          a.slug.includes("nodered") ||
+          a.slug.includes("node_red") ||
+          a.slug.includes("node-red"),
+      );
+      const n8n = addonsData.addons?.find((a) => a.slug.includes("n8n"));
+
+      if (nodeRed || n8n) {
+        callout.style.display = "block";
+        const name = nodeRed ? "Node-RED" : "n8n";
+        const strongEl = callout.querySelector("strong");
+        const detailEl = callout.querySelector(".integration-callout__detail");
+        if (strongEl) strongEl.textContent = `✓ ${name} detected via HA`;
+        if (detailEl)
+          detailEl.textContent = `${name} addon found and connected automatically.`;
+
+        if (statusEl) {
+          statusEl.textContent = "Auto-detected";
+          statusEl.className = "badge badge-active";
+        }
+      }
+    } catch {
+      log.warn("Node-RED/n8n auto-detect failed");
+    }
+  }
+  initExplainerDialog();
+  initN8nModeToggle();
+
+  function bootIntegrationsDiagnostics() {
+    initHAConnectionStatus();
+    initCalendarDropdown();
+    initGrocyAutoDetect();
+    initNodeRedAutoDetect();
+  }
+
+  const integrationsSection = document.getElementById("integrations-settings");
+  if (!integrationsSection) {
+    bootIntegrationsDiagnostics();
+  } else {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        bootIntegrationsDiagnostics();
+      },
+      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
+    );
+
+    observer.observe(integrationsSection);
+  }
+</script>

@@ -1,0 +1,60 @@
+name: MoSCoW
+version: 1.0.0
+archetype: taxonomy
+description: "MoSCoW prioritization — categorize requirements into Must, Should, Could, and Won't. Used for scope negotiation and release planning."
+badge_thresholds:
+  - min: 4
+    label: "Must Have"
+    color: "danger"
+  - min: 3
+    label: "Should Have"
+    color: "accent"
+  - min: 2
+    label: "Could Have"
+    color: "bg-secondary"
+  - min: 0
+    label: "Won't Have"
+    color: "bg-primary"
+fields:
+  - key: category
+    label: Priority Category
+    type: select
+    ui_type: radio
+    weight: 1
+    help_text: "Must = non-negotiable for this release. Should = important but not vital. Could = desirable if time permits. Won't = explicitly out of scope."
+    options:
+      - value: 4
+        label: "Must Have"
+      - value: 3
+        label: "Should Have"
+      - value: 2
+        label: "Could Have"
+      - value: 1
+        label: "Won't Have (this time)"
+  - key: confidence
+    label: Categorization Confidence
+    type: number
+    ui_type: slider
+    min: 0
+    max: 100
+    weight: 0
+    help_text: "How confident are you in this categorization? May change after stakeholder review. (0% = uncertain, 100% = definite)"
+  - key: rationale
+    label: Rationale
+    type: select
+    ui_type: select
+    weight: 0
+    help_text: "Why was this category chosen? Helps future reviewers understand the decision."
+    options:
+      - value: stakeholder
+        label: "Stakeholder requirement"
+      - value: technical
+        label: "Technical dependency"
+      - value: user-research
+        label: "User research finding"
+      - value: compliance
+        label: "Regulatory / compliance"
+      - value: strategic
+        label: "Strategic alignment"
+      - value: other
+        label: "Other"

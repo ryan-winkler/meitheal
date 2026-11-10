@@ -1,0 +1,314 @@
+---
+/**
+ * SettingsLabels — Label management panel in Settings
+ *
+ * @domain labels
+ * @bounded-context labels
+ *
+ * Lists all labels with inline edit/delete, plus create-new form.
+ * All operations use /api/labels and /api/labels/[id] endpoints.
+ */
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+
+interface Props {
+  locale: Locale
+}
+
+const { locale } = Astro.props
+---
+
+<div class="settings-shell-panel">
+  <SettingsPanelCard
+    title="🏷️ Manage Labels"
+    subtitle="Create, edit, and remove labels used to categorize tasks"
+  >
+    {/* Create new label form */}
+    <div class="labels-create-row">
+      <form id="create-label-form" class="labels-create-form">
+        <input
+          type="text"
+          id="new-label-title"
+          class="form-input"
+          placeholder="Label name"
+          maxlength="100"
+          required
+          style="flex: 1; font-size: 13px;"
+        />
+        <input
+          type="color"
+          id="new-label-color"
+          value="#6366f1"
+          title="Label color"
+          class="labels-color-picker"
+        />
+        <button type="submit" class="btn btn-primary" style="font-size: 13px; white-space: nowrap;">
+          + Create
+        </button>
+      </form>
+    </div>
+
+    {/* Label list */}
+    <div id="labels-list" class="labels-list">
+      <div class="labels-empty">
+        Loading labels...
+      </div>
+    </div>
+  </SettingsPanelCard>
+</div>
+
+<style>
+  .labels-create-row {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+
+  .labels-create-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .labels-color-picker {
+    width: 36px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .labels-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+</style>
+
+<script>
+  import { confirmDialog } from "@lib/confirm-dialog"
+  import { showToast } from "@lib/toast"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  type LabelData = { id: number; title: string; hex_color: string }
+
+  const listEl = document.getElementById("labels-list")
+  const form = document.getElementById("create-label-form") as HTMLFormElement
+  const titleInput = document.getElementById("new-label-title") as HTMLInputElement
+  const colorInput = document.getElementById("new-label-color") as HTMLInputElement
+  const submitBtn = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+  const ingressBase = (window as any).__ingress_path || ""
+
+  let labels: LabelData[] = []
+
+  /** Escape user strings for safe innerHTML insertion */
+  function escapeHtml(str: string): string {
+    const el = document.createElement("span")
+    el.textContent = str
+    return el.innerHTML
+  }
+  // ── T7: Error state with retry ──
+  function showListError() {
+    if (!listEl) return
+    listEl.innerHTML = `
+      <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
+        Failed to load labels.
+        <button type="button" class="btn btn-ghost btn-sm" id="labels-retry" style="margin-left: 8px;">Retry</button>
+      </div>
+    `
+    const retryBtn = document.getElementById("labels-retry")
+    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadLabels())
+  }
+
+  async function loadLabels() {
+    if (listEl) listEl.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">Loading labels…</div>`
+    try {
+      const res = await fetch(ingressBase + "/api/labels")
+      if (res.ok) {
+        const data = await res.json()
+        labels = Array.isArray(data) ? data : data.labels || []
+        renderLabels()
+      } else {
+        showListError()
+      }
+    } catch {
+      showListError()
+    }
+  }
+
+  function renderLabels() {
+    if (!listEl) return
+
+    if (labels.length === 0) {
+      listEl.innerHTML = `
+        <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          No labels yet. Create one above!
+        </div>
+      `
+      return
+    }
+
+    listEl.innerHTML = labels
+      .map(
+        (l) => `
+      <div class="label-settings-row" data-id="${l.id}" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border);">
+        <input
+          type="color"
+          class="label-color-edit"
+          data-id="${l.id}"
+          value="${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}"
+          title="Change color"
+          style="width: 28px; height: 28px; padding: 1px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;"
+        />
+        <span
+          class="label-badge"
+          data-badge-id="${l.id}"
+          style="background: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}20; color: ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}; border: 1px solid ${l.hex_color.startsWith('#') ? l.hex_color : '#' + l.hex_color}40; flex-shrink: 0;"
+        >
+          ${escapeHtml(l.title)}
+        </span>
+        <input
+          type="text"
+          class="form-input label-title-edit"
+          data-id="${l.id}"
+          value="${escapeHtml(l.title)}"
+          maxlength="100"
+          style="flex: 1; font-size: 13px; max-width: 240px;"
+        />
+        <button
+          type="button"
+          class="btn btn-ghost label-delete-btn"
+          data-id="${l.id}"
+          title="Delete label"
+          style="color: var(--danger); font-size: 16px; padding: 4px 8px;"
+        >×</button>
+      </div>
+    `,
+      )
+      .join("")
+
+    bindRowHandlers()
+  }
+
+  function bindRowHandlers() {
+    if (!listEl) return
+
+    // T1: Use pageLifecycle.on for auto-cleanup
+    // T3: Title edit — update only the badge text, NOT full re-render
+    listEl.querySelectorAll<HTMLInputElement>(".label-title-edit").forEach(
+      (input) => {
+        let timeout: ReturnType<typeof setTimeout> | null = null
+        pageLifecycle.on(input, "input", () => {
+          if (timeout) clearTimeout(timeout)
+          timeout = setTimeout(async () => {
+            const id = input.dataset.id
+            const title = input.value.trim()
+            if (!id || !title) return
+            try {
+              await fetch(ingressBase + `/api/labels/${id}`, {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ title }),
+              })
+              const label = labels.find((l) => l.id === Number(id))
+              if (label) label.title = title
+              // T3: Update only the preview badge, not the full list
+              const badge = listEl!.querySelector<HTMLElement>(`[data-badge-id="${id}"]`)
+              if (badge) badge.textContent = title
+            } catch { /* silent */ }
+          }, 500)
+        })
+      },
+    )
+
+    listEl.querySelectorAll<HTMLInputElement>(".label-color-edit").forEach(
+      (input) => {
+        pageLifecycle.on(input, "change", async () => {
+          const id = input.dataset.id
+          const hexColor = input.value
+          if (!id) return
+          try {
+            await fetch(ingressBase + `/api/labels/${id}`, {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ hex_color: hexColor }),
+            })
+            const label = labels.find((l) => l.id === Number(id))
+            if (label) label.hex_color = hexColor
+            renderLabels()
+          } catch { /* silent */ }
+        })
+      },
+    )
+
+    listEl.querySelectorAll<HTMLButtonElement>(".label-delete-btn").forEach(
+      (btn) => {
+        pageLifecycle.on(btn, "click", async () => {
+          const id = btn.dataset.id
+          if (!id) return
+          const confirmed = await confirmDialog({ message: "Delete label? This will remove it from all tasks.", variant: "danger", confirmText: "Delete" })
+          if (!confirmed) return
+          try {
+            const res = await fetch(ingressBase + `/api/labels/${id}`, { method: "DELETE" })
+            if (res.ok) {
+              labels = labels.filter((l) => l.id !== Number(id))
+              renderLabels()
+              showToast("Label deleted", "success")
+            } else {
+              showToast("Failed to delete label", "error")
+            }
+          } catch {
+            showToast("Network error", "error")
+          }
+        })
+      },
+    )
+  }
+
+  // T4: Disable submit during API call to prevent double-submit
+  if (form) {
+    pageLifecycle.on(form, "submit", async (e: Event) => {
+      e.preventDefault()
+      const title = titleInput.value.trim()
+      const hexColor = colorInput.value
+      if (!title) return
+
+      if (submitBtn) {
+        submitBtn.disabled = true
+        submitBtn.textContent = "Creating…"
+      }
+
+      try {
+        const res = await fetch(ingressBase + "/api/labels", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title, hex_color: hexColor }),
+        })
+        if (res.ok) {
+          const label = await res.json()
+          labels.push(label)
+          renderLabels()
+          titleInput.value = ""
+          showToast("Label created", "success")
+        } else {
+          const err = await res.json().catch(() => ({}))
+          showToast(err.error || "Failed to create label", "error")
+        }
+      } catch {
+        showToast("Network error", "error")
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false
+          submitBtn.textContent = "+ Create"
+        }
+      }
+    })
+  }
+
+  if (labels.length === 0) {
+    loadLabels()
+  }
+</script>

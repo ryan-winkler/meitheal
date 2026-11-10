@@ -1,0 +1,569 @@
+---
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale"
+import SettingsPanelCard from "./SettingsPanelCard.astro";
+
+/**
+ * SettingsAgents — AI provider and agent protocol configuration.
+ *
+ * Phase 58: Added HA Conversation Agent picker at top.
+ *
+ * @domain settings
+ * @bounded-context agents
+ */
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+---
+
+<div class="settings-shell-panel">
+  <div class="settings-grid">
+    <SettingsPanelCard
+      title={t("settings.agents_title", locale)}
+      subtitle={t("settings.agents_subtitle", locale)}
+    >
+
+      <!-- HA Conversation Agent (PRIMARY — top of page) -->
+      <div class="integration-section">
+        <div class="integration-header">
+          <div>
+            <strong>{t("settings.ha_agent_title", locale)}</strong>
+            <div class="integration-desc">
+              {t("settings.ha_agent_desc", locale)}
+            </div>
+          </div>
+          <span class="badge badge-active" id="ha-agent-status">{t("settings.default", locale)}</span>
+        </div>
+        <div class="integration-config">
+          <div class="form-group">
+            <label class="form-label" for="ha-agent-select-settings"
+              >{t("settings.ha_agent_label", locale)}</label
+            >
+            <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)}>
+              <option value="" selected>{t("settings.ha_agent_default", locale)}</option>
+            </select>
+            <small class="settings-hint" style="display: block;">
+              {t("settings.ha_agent_help", locale)}
+            </small>
+          </div>
+          <div
+            class="form-group"
+            style="display: flex; gap: 8px; align-items: center;"
+          >
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-ha-agent"
+              data-text-saved={t("settings.agent_setting_saved", locale)}
+              data-text-failed={t("settings.agent_setting_failed", locale)}>{t("settings.save_ha_agent", locale)}</button>
+            <button
+              type="button"
+              class="btn btn-ghost settings-text-sm"
+              id="test-ha-agent"
+              data-text-testing={t("settings.testing", locale)}
+              data-text-unavailable={t("settings.agent_unavailable", locale)}
+              data-text-failed={t("settings.connection_failed", locale)}>{t("settings.test", locale)}</button>
+            <span
+              id="ha-agent-test-result"
+              style="font-size: 12px; color: var(--text-muted);"></span>
+          </div>
+        </div>
+      </div>
+
+      <hr style="border-color: var(--border); margin: 16px 0;" />
+
+      <!-- External AI Provider (secondary) -->
+      <div class="integration-section">
+        <div class="integration-header">
+          <div>
+            <strong>{t("settings.ext_ai_title", locale)}</strong>
+            <div class="integration-desc">
+              {t("settings.ext_ai_desc", locale)}
+            </div>
+          </div>
+          <span class="badge badge-active" id="ext-ai-badge">ChatGPT</span>
+        </div>
+        <div class="integration-config">
+          <div class="form-group">
+            <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
+            <select class="form-select" id="ai-provider"
+              data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
+              data-name-claude={t("settings.ext_ai_claude", locale)}
+              data-name-gemini={t("settings.ext_ai_gemini", locale)}
+              data-name-ollama={t("settings.ext_ai_ollama", locale)}
+              data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
+              data-name-custom={t("settings.ext_ai_custom", locale)}
+            >
+              <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
+              <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
+              <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
+              <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
+              <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
+              <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
+            </select>
+          </div>
+          <div
+            class="form-group"
+            id="ai-custom-url-group"
+            style="display: none;"
+          >
+            <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
+            <input
+              type="url"
+              class="form-input"
+              id="ai-custom-url"
+              placeholder="http://localhost:11434/api/chat"
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-primary settings-text-sm"
+            id="save-ai">{t("settings.save_ai_settings", locale)}</button>
+        </div>
+      </div>
+
+      <hr style="border-color: var(--border); margin: 16px 0;" />
+
+      <!-- Agent Protocols -->
+      <div class="integration-section">
+        <div class="integration-header">
+          <div>
+            <strong>{t("settings.agent_protocols_title", locale)}</strong>
+            <div class="integration-desc">
+              {t("settings.agent_protocols_desc", locale)}
+            </div>
+          </div>
+          <span class="badge badge-active" id="agent-protocols-status"
+            >{t("settings.active", locale)}</span
+          >
+        </div>
+        <div class="integration-config">
+          <!-- A2A -->
+          <div
+            class="form-group"
+            style="padding-bottom: 16px; border-bottom: 1px solid var(--border);"
+          >
+            <div
+              class="settings-row--simple"
+            >
+              <label class="toggle-label">
+                <input type="checkbox" id="agent-a2a-enabled" aria-labelledby="agent-a2a-enabled-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="agent-a2a-enabled-label" class="settings-text-sm">{t("settings.a2a_title", locale)}</strong>
+                <div
+                  class="settings-caption"
+                >
+                  <span set:html={t("settings.a2a_desc", locale)} />
+                  <a
+                    href="/api/a2a/agent-card"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="protocol-link"
+                    data-path="/api/a2a/agent-card"
+                  >
+                    {t("settings.view_agent_card", locale)}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- WebMCP -->
+          <div
+            class="form-group"
+            style="padding-top: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);"
+          >
+            <div
+              class="settings-row--simple"
+            >
+              <label class="toggle-label">
+                <input type="checkbox" id="agent-webmcp-enabled" aria-labelledby="agent-webmcp-enabled-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="agent-webmcp-enabled-label" class="settings-text-sm">{t("settings.webmcp_title", locale)}</strong>
+                <span class="badge badge-active protocol-stage">{t("settings.experimental", locale)}</span>
+                <div
+                  class="settings-caption"
+                >
+                  {t("settings.webmcp_desc", locale)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP Discovery -->
+          <div class="form-group" style="padding-top: 16px;">
+            <div
+              class="settings-row--simple"
+            >
+              <label class="toggle-label">
+                <input type="checkbox" id="agent-mcp-enabled" aria-labelledby="agent-mcp-enabled-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="agent-mcp-enabled-label" class="settings-text-sm">{t("settings.mcp_discovery_title", locale)}</strong>
+                <div
+                  class="settings-caption"
+                >
+                  <span set:html={t("settings.mcp_discovery_desc", locale)} />
+                  <a
+                    href="/.well-known/mcp.json"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="protocol-link"
+                    data-path="/.well-known/mcp.json"
+                  >
+                    {t("settings.view_mcp_manifest", locale)}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-primary settings-text-sm"
+            id="save-agent-protocols">{t("settings.save_protocol_settings", locale)}</button
+          >
+        </div>
+      </div>
+    </SettingsPanelCard>
+  </div>
+  <!-- /settings-grid (agents) -->
+
+  <!-- Bot Handoff Settings (T29 — Persona #46 Settings Integration) -->
+  <div class="settings-grid mt-4">
+    <SettingsPanelCard
+      title={t("settings.bot_handoff_title", locale)}
+      subtitle={t("settings.bot_handoff_subtitle", locale)}
+    >
+
+      <div class="integration-config">
+        <!-- Allow bot proposals -->
+        <div class="form-group" style="display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
+          <label class="toggle-label">
+            <input type="checkbox" id="bot-allow-proposals" aria-labelledby="bot-allow-proposals-label" checked />
+            <span class="toggle-slider"></span>
+          </label>
+          <div>
+            <strong id="bot-allow-proposals-label" class="settings-text-sm">{t("settings.bot_allow_proposals", locale)}</strong>
+            <div class="settings-caption">
+              {t("settings.bot_allow_proposals_desc", locale)}
+            </div>
+          </div>
+        </div>
+
+        <!-- Auto-accept safe changes -->
+        <div class="form-group" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);">
+          <label class="toggle-label">
+            <input type="checkbox" id="bot-auto-accept" aria-labelledby="bot-auto-accept-label" />
+            <span class="toggle-slider"></span>
+          </label>
+          <div>
+            <strong id="bot-auto-accept-label" class="settings-text-sm">{t("settings.bot_auto_accept", locale)}</strong>
+            <div class="settings-caption">
+              {t("settings.bot_auto_accept_desc", locale)}
+            </div>
+          </div>
+        </div>
+
+        <!-- Lock timeout -->
+        <div class="form-group" style="padding-top: 12px;">
+          <label class="form-label" for="bot-lock-timeout">{t("settings.bot_lock_timeout", locale)}</label>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <input
+              type="number"
+              class="form-input"
+              id="bot-lock-timeout"
+              min="1"
+              max="60"
+              value="5"
+              style="width: 80px;"
+            />
+            <span style="color: var(--text-muted); font-size: 12px;">
+              {t("settings.bot_lock_timeout_desc", locale)}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="save-bot-settings"
+          style="font-size: 13px; margin-top: 12px;"
+          data-text-saved={t("settings.bot_settings_saved", locale)}
+          data-text-failed={t("settings.bot_settings_failed", locale)}
+        >
+          {t("settings.save_bot_settings", locale)}
+        </button>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</div>
+
+<style is:inline>
+  /* ── Agents & AI — integration section styling ── */
+  .integration-section {
+    padding: 16px 0;
+  }
+  .integration-section + hr + .integration-section {
+    /* already separated by hr */
+  }
+  .integration-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .integration-header strong {
+    font-size: 15px;
+    color: var(--text-primary);
+  }
+  .integration-desc {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 4px;
+    max-width: 600px;
+  }
+  .integration-config {
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 8px);
+  }
+  .settings-caption .protocol-link {
+    color: var(--accent-text);
+    text-decoration: underline;
+  }
+  .protocol-stage {
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .integration-config .form-group + .form-group {
+    margin-top: 12px;
+  }
+</style>
+
+<script>
+  import { showToast } from "@lib/toast";
+  import { pageLifecycle } from "@lib/page-lifecycle";
+
+  // ── HA Conversation Agent picker ──
+  const haAgentSelect = document.getElementById(
+    "ha-agent-select-settings",
+  ) as HTMLSelectElement;
+  const haAgentStatus = document.getElementById("ha-agent-status");
+  const saveHaAgentBtn = document.getElementById("save-ha-agent");
+  const testHaAgentBtn = document.getElementById("test-ha-agent");
+  const testResult = document.getElementById("ha-agent-test-result");
+
+  // Load agents on tab show
+  async function loadHAAgents() {
+    try {
+      const res = await fetch((window.__ingress_path || "") + "/api/ha/agents");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.agents?.length > 0) {
+          haAgentSelect.innerHTML =
+            '<option value="">Default (built-in Assist)</option>';
+          for (const agent of data.agents) {
+            const opt = document.createElement("option");
+            opt.value = agent.id;
+            opt.textContent = agent.name;
+            haAgentSelect.appendChild(opt);
+          }
+        }
+      }
+    } catch {
+      // HA not connected — keep default
+    }
+
+    // Restore saved preference
+    try {
+      const res = await fetch((window.__ingress_path || "") + "/api/settings?key=ha-assist-agent");
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.value) {
+          haAgentSelect.value = data.value;
+          updateAgentBadge();
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function updateAgentBadge() {
+    if (haAgentStatus) {
+      const selected = haAgentSelect.options[haAgentSelect.selectedIndex];
+      haAgentStatus.textContent = selected?.text || haAgentSelect.dataset.default || "Default";
+    }
+  }
+
+  pageLifecycle.on(haAgentSelect, "change", updateAgentBadge);
+
+  if (saveHaAgentBtn) pageLifecycle.on(saveHaAgentBtn, "click", async () => {
+    try {
+      await fetch((window.__ingress_path || "") + "/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "ha-assist-agent",
+          value: haAgentSelect.value,
+        }),
+      });
+      showToast(saveHaAgentBtn?.dataset.textSaved || "Agent setting saved.", "success");
+      updateAgentBadge();
+    } catch {
+      showToast(saveHaAgentBtn?.dataset.textFailed || "Failed to save agent setting.", "error");
+    }
+  });
+
+  if (testHaAgentBtn) pageLifecycle.on(testHaAgentBtn, "click", async () => {
+    // T10: Clear previous result on next test click
+    if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textTesting || "Testing…";
+    try {
+      const body: Record<string, string> = { text: "Hello" };
+      if (haAgentSelect.value) body.agent_id = haAgentSelect.value;
+
+      const res = await fetch((window.__ingress_path || "") + "/api/ha/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (testResult) testResult.textContent = `✅ "${data.speech}"`;
+      } else {
+        if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textUnavailable || "❌ Agent unavailable";
+      }
+    } catch {
+      if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textFailed || "❌ Connection failed";
+    }
+    // T10: Result persists until next user interaction (test or save)
+    // No auto-clear timer — ADHD-friendly
+  });
+
+  // ── External AI Provider — UI reactivity only ──
+  // Save/restore is handled by settings.astro's restoreIntegrationSettings()
+  const extBadge = document.getElementById("ext-ai-badge");
+  const aiProvider = document.getElementById(
+    "ai-provider",
+  ) as HTMLSelectElement;
+  const customUrlGroup = document.getElementById("ai-custom-url-group");
+
+  function updateExtAiBadge() {
+    if (extBadge && aiProvider) {
+      const AI_NAMES: Record<string, string> = {
+        chatgpt: aiProvider.dataset.nameChatgpt || "ChatGPT",
+        claude: aiProvider.dataset.nameClaude || "Claude",
+        gemini: aiProvider.dataset.nameGemini || "Gemini",
+        ollama: aiProvider.dataset.nameOllama || "Ollama",
+        ha_llm: aiProvider.dataset.nameHaLlm || "HA LLM",
+        custom: aiProvider.dataset.nameCustom || "Custom",
+      };
+      extBadge.textContent = AI_NAMES[aiProvider.value] || aiProvider.value;
+    }
+  }
+
+  if (aiProvider) pageLifecycle.on(aiProvider, "change", () => {
+    if (customUrlGroup) {
+      customUrlGroup.style.display =
+        aiProvider.value === "custom" || aiProvider.value === "ollama"
+          ? ""
+          : "none";
+    }
+    updateExtAiBadge();
+  });
+
+  // ── Fix ingress-aware links ──
+  // Agent Card + MCP manifest links need the ingress base path prepended
+  function fixProtocolLinks() {
+    const base = window.__meitheal_base || "";
+    document.querySelectorAll(".protocol-link[data-path]").forEach((el) => {
+      const path = (el as HTMLAnchorElement).dataset.path;
+      if (path) (el as HTMLAnchorElement).href = base + path;
+    });
+  }
+
+  function bootAgentsPanel() {
+    loadHAAgents();
+    fixProtocolLinks();
+    updateExtAiBadge();
+    loadBotSettings();
+  }
+
+  // ── Bot Handoff Settings (T29) ──
+  const botAllowProposals = document.getElementById("bot-allow-proposals") as HTMLInputElement | null;
+  const botAutoAccept = document.getElementById("bot-auto-accept") as HTMLInputElement | null;
+  const botLockTimeout = document.getElementById("bot-lock-timeout") as HTMLInputElement | null;
+  const saveBotBtn = document.getElementById("save-bot-settings");
+
+  async function loadBotSettings() {
+    try {
+      const keys = ["bot_allow_proposals", "bot_auto_accept", "bot_lock_timeout"];
+      const promises = keys.map((key) =>
+        fetch((window.__ingress_path || "") + `/api/settings?key=${key}`).then((r) => r.ok ? r.json() : null)
+      );
+      const [allowRes, autoRes, timeoutRes] = await Promise.all(promises);
+      if (botAllowProposals && allowRes?.value !== undefined) {
+        botAllowProposals.checked = allowRes.value !== "false";
+      }
+      if (botAutoAccept && autoRes?.value !== undefined) {
+        botAutoAccept.checked = autoRes.value === "true";
+      }
+      if (botLockTimeout && timeoutRes?.value !== undefined) {
+        botLockTimeout.value = String(timeoutRes.value);
+      }
+    } catch { /* defaults are fine */ }
+  }
+
+  if (saveBotBtn) pageLifecycle.on(saveBotBtn, "click", async () => {
+    try {
+      // T5: Parallel save instead of sequential
+      await Promise.all([
+        fetch((window.__ingress_path || "") + "/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "bot_allow_proposals", value: String(botAllowProposals?.checked ?? true) }),
+        }),
+        fetch((window.__ingress_path || "") + "/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "bot_auto_accept", value: String(botAutoAccept?.checked ?? false) }),
+        }),
+        fetch((window.__ingress_path || "") + "/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "bot_lock_timeout", value: String(botLockTimeout?.value ?? "5") }),
+        }),
+      ]);
+      showToast(saveBotBtn?.dataset.textSaved || "Bot settings saved.", "success");
+    } catch {
+      showToast(saveBotBtn?.dataset.textFailed || "Failed to save bot settings.", "error");
+    }
+  });
+
+  const section = document.getElementById("automation-ai-settings");
+  if (!section) {
+    bootAgentsPanel();
+  } else {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        bootAgentsPanel();
+      },
+      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
+    );
+
+    observer.observe(section);
+  }
+</script>

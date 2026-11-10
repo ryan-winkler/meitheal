@@ -1,0 +1,642 @@
+---
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import Icon from "../ui/Icon.astro";
+
+/**
+ * AskAssistModal — HA Conversation API chat modal.
+ *
+ * Phase 58: Multi-turn, agent selection, typing indicator,
+ * response type icons, accessibility, and task context injection.
+ *
+ * @domain ai
+ * @bounded-context ha-assist
+ * @see https://developers.home-assistant.io/docs/intent_conversation_api
+ */
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+---
+
+<div
+  id="ask-ha-overlay"
+  class="modal-overlay z-200"
+>
+  <div class="modal-content max-w-lg w-full p-0 ask-modal">
+    <!-- Header -->
+    <div
+      class="modal-header flex items-center justify-between px-5 py-3 border-b border-border"
+    >
+      <h2
+        class="text-base font-semibold flex items-center gap-2 text-text-primary m-0"
+        id="ask-ha-title"
+      >
+        <Icon name="sparkles" size={20} class="text-accent" />
+        <span>Ask Home Assistant</span>
+      </h2>
+      <div class="flex items-center gap-2">
+        <!-- Agent selector -->
+        <select
+          id="ask-ha-agent-select"
+          class="ask-agent-select"
+          aria-label="Conversation agent"
+          title="Select conversation agent"
+        >
+          <option value="">Default Agent</option>
+        </select>
+        <button
+          type="button"
+          class="btn-icon text-lg text-text-muted hover:text-text-primary transition-colors"
+          id="close-ask-ha-modal"
+          aria-label="Close">✕</button
+        >
+      </div>
+    </div>
+
+    <!-- Chat history -->
+    <div
+      id="ask-ha-chat"
+      class="ask-chat-container"
+      role="log"
+      aria-live="polite"
+      aria-label="Conversation history"
+    >
+      <!-- Welcome message -->
+      <div class="ask-welcome" id="ask-ha-welcome">
+        <Icon name="sparkles" size={32} class="text-accent" />
+        <p class="ask-welcome__text">
+          Ask about your tasks, create new ones, or check what's overdue.
+        </p>
+        <div class="ask-welcome__hints">
+          <button
+            type="button"
+            class="ask-hint"
+            data-hint="What tasks are overdue?">📋 Overdue tasks</button
+          >
+          <button
+            type="button"
+            class="ask-hint"
+            data-hint="Create a task to review the weekly plan"
+            >✏️ Create a task</button
+          >
+          <button
+            type="button"
+            class="ask-hint"
+            data-hint="How many active tasks do I have?">📊 Task summary</button
+          >
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <form id="ask-ha-form" class="ask-input-area">
+      <div class="ask-input-row">
+        <label for="ask-ha-input" class="sr-only">Your command</label>
+        <input
+          type="text"
+          class="ask-input"
+          id="ask-ha-input"
+          placeholder="Ask anything…"
+          autocomplete="off"
+          required
+        />
+        <button
+          type="submit"
+          class="ask-send-btn"
+          id="submit-ask-ha-btn"
+          aria-label="Send"
+          disabled
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  import { createClientLogger } from "@lib/client-logger";
+
+  const log = createClientLogger("ai", "assist-modal");
+  // Toast import removed — errors shown inline in chat bubbles
+
+  const overlay = document.getElementById("ask-ha-overlay");
+  const closeBtn = document.getElementById("close-ask-ha-modal");
+  const form = document.getElementById("ask-ha-form") as HTMLFormElement;
+  const input = document.getElementById("ask-ha-input") as HTMLInputElement;
+  const submitBtn = document.getElementById(
+    "submit-ask-ha-btn",
+  ) as HTMLButtonElement;
+  const chatContainer = document.getElementById("ask-ha-chat");
+  const welcomeEl = document.getElementById("ask-ha-welcome");
+  const agentSelect = document.getElementById(
+    "ask-ha-agent-select",
+  ) as HTMLSelectElement;
+
+  let isModalOpen = false;
+  let conversationId: string | null = null;
+
+  // Enable/disable send button based on input
+  input?.addEventListener("input", () => {
+    submitBtn.disabled = !input.value.trim();
+  });
+
+  // Load available agents
+  async function loadAgents() {
+    try {
+      const res = await fetch((window.__ingress_path || "") + "/api/ha/agents");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.agents && data.agents.length > 0) {
+          // Preserve "Default Agent" option
+          agentSelect.innerHTML = '<option value="">Default Agent</option>';
+          for (const agent of data.agents) {
+            const opt = document.createElement("option");
+            opt.value = agent.id;
+            opt.textContent = agent.name;
+            agentSelect.appendChild(opt);
+          }
+          // Restore last-used agent
+          const saved = sessionStorage.getItem("meitheal:assist-agent");
+          if (saved) agentSelect.value = saved;
+        }
+      }
+    } catch {
+      // Silently fail — keep default option
+    }
+  }
+
+  agentSelect?.addEventListener("change", () => {
+    sessionStorage.setItem("meitheal:assist-agent", agentSelect.value);
+    // Reset conversation on agent change
+    conversationId = null;
+  });
+
+  function closeAskHaModal() {
+    isModalOpen = false;
+    if (!overlay || !overlay.classList.contains("active")) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const finishClose = () => {
+      overlay.classList.remove("active", "closing");
+      form?.reset();
+      input.value = "";
+      submitBtn.disabled = true;
+      conversationId = null;
+      if (chatContainer) {
+        chatContainer.innerHTML = "";
+        if (welcomeEl) {
+          chatContainer.appendChild(welcomeEl.cloneNode(true));
+          initHints();
+        }
+      }
+      document.getElementById("ask-ha-btn")?.focus();
+    };
+    if (reducedMotion) { finishClose(); return; }
+    overlay.classList.add("closing");
+    const content = overlay.querySelector(".modal-content");
+    if (content) {
+      const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
+      content.addEventListener("animationend", onEnd, { once: true });
+      setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
+    } else {
+      finishClose();
+    }
+  }
+
+  /** Response type icon mapping */
+  function getResponseIcon(type: string | null): string {
+    switch (type) {
+      case "action_done":
+        return "✅";
+      case "query_answer":
+        return "💬";
+      case "error":
+        return "❌";
+      default:
+        return "🤖";
+    }
+  }
+
+  function appendChat(
+    message: string,
+    isUser: boolean,
+    responseType?: string | null,
+  ) {
+    if (!chatContainer) return;
+    // Hide welcome on first message
+    const welcome = chatContainer.querySelector(".ask-welcome");
+    if (welcome) welcome.remove();
+
+    const bubble = document.createElement("div");
+    bubble.className = `ask-bubble ${isUser ? "ask-bubble--user" : "ask-bubble--assistant"}`;
+
+    if (!isUser && responseType === "error") {
+      bubble.classList.add("ask-bubble--error");
+    }
+
+    if (!isUser && responseType) {
+      const icon = document.createElement("span");
+      icon.className = "ask-bubble__icon";
+      icon.textContent = getResponseIcon(responseType);
+      icon.setAttribute("aria-hidden", "true");
+      bubble.appendChild(icon);
+    }
+
+    const text = document.createElement("span");
+    text.className = "ask-bubble__text";
+    text.textContent = message;
+    bubble.appendChild(text);
+
+    chatContainer.appendChild(bubble);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function showTyping(): HTMLElement {
+    if (!chatContainer) return document.createElement("div");
+    const typing = document.createElement("div");
+    typing.className = "ask-typing";
+    typing.id = "ask-typing-indicator";
+    typing.setAttribute("aria-label", "Assistant is thinking");
+    typing.innerHTML = `
+      <span class="ask-typing__dot"></span>
+      <span class="ask-typing__dot"></span>
+      <span class="ask-typing__dot"></span>
+    `;
+    chatContainer.appendChild(typing);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return typing;
+  }
+
+  function hideTyping() {
+    document.getElementById("ask-typing-indicator")?.remove();
+  }
+
+  function initHints() {
+    chatContainer?.querySelectorAll(".ask-hint").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const hint = (btn as HTMLElement).dataset.hint;
+        if (hint) {
+          input.value = hint;
+          submitBtn.disabled = false;
+          form?.dispatchEvent(new Event("submit", { cancelable: true }));
+        }
+      });
+    });
+  }
+
+  closeBtn?.addEventListener("click", closeAskHaModal);
+
+  overlay?.addEventListener("click", (e) => {
+    if (e.target === overlay) closeAskHaModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!isModalOpen) return;
+
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeAskHaModal();
+      return;
+    }
+
+    // Focus trap
+    if (e.key === "Tab") {
+      if (!overlay) return;
+      const focusable = overlay.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ) as NodeListOf<HTMLElement>;
+      if (!focusable || focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    }
+  });
+
+  // Export globally for TopNavigation to trigger
+  window.openAskHaModal = () => {
+    isModalOpen = true;
+    overlay?.classList.add("active");
+    loadAgents();
+    initHints();
+    setTimeout(() => input?.focus(), 50);
+  };
+
+  document.body.addEventListener("click", (e) => {
+    const target = (e.target as HTMLElement).closest("#ask-ha-btn");
+    if (target) {
+      e.preventDefault();
+      window.openAskHaModal?.();
+    }
+  });
+
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    appendChat(text, true);
+    input.value = "";
+    submitBtn.disabled = true;
+
+    const typingEl = showTyping();
+
+    try {
+      const body: Record<string, string> = { text };
+      if (agentSelect?.value) body.agent_id = agentSelect.value;
+      if (conversationId) body.conversation_id = conversationId;
+
+      const res = await fetch(
+        (window.__ingress_path || "") + "/api/ha/assist",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+
+      hideTyping();
+
+      if (res.ok) {
+        const data = await res.json();
+        // Track conversation for multi-turn
+        if (data.conversation_id) {
+          conversationId = data.conversation_id;
+        }
+        appendChat(data.speech || "Done.", false, data.response_type);
+      } else if (res.status === 429) {
+        appendChat(
+          "Rate limited — please wait a moment before trying again.",
+          false,
+          "error",
+        );
+      } else {
+        appendChat(
+          "Home Assistant isn't reachable right now. Check that the addon is connected.",
+          false,
+          "error",
+        );
+      }
+    } catch (err) {
+      hideTyping();
+      log.error("Assist network error", err);
+      appendChat(
+        "Network error — check your connection and try again.",
+        false,
+        "error",
+      );
+    } finally {
+      submitBtn.disabled = false;
+      input.focus();
+    }
+  });
+</script>
+
+<style>
+  /* Modal content override for Assist */
+  .ask-modal {
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+  }
+
+  /* Agent selector */
+  .ask-agent-select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 3px 8px;
+    max-width: 140px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .ask-agent-select:hover,
+  .ask-agent-select:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  /* Chat container */
+  .ask-chat-container {
+    flex: 1;
+    min-height: 200px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scroll-behavior: smooth;
+  }
+
+  /* Welcome state */
+  .ask-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    flex: 1;
+  }
+  .ask-welcome__text {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 0;
+    max-width: 280px;
+    line-height: 1.5;
+  }
+  .ask-welcome__hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  .ask-hint {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
+    white-space: nowrap;
+  }
+  .ask-hint:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  /* Chat bubbles */
+  .ask-bubble {
+    max-width: 85%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    animation: bubble-in 0.2s ease-out;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .ask-bubble--user {
+    background: var(--accent);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+  }
+  .ask-bubble--assistant {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+  }
+  .ask-bubble--assistant.ask-bubble--error {
+    background: color-mix(in srgb, var(--bg-primary) 92%, #ef4444);
+    border-color: color-mix(in srgb, var(--border) 70%, #ef4444);
+  }
+  .ask-bubble__icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .ask-bubble__text {
+    word-break: break-word;
+  }
+
+  @keyframes bubble-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Typing indicator */
+  .ask-typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 12px 4px;
+    align-self: flex-start;
+    animation: bubble-in 0.2s ease-out;
+  }
+  .ask-typing__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: typing-bounce 1.4s ease-in-out infinite both;
+  }
+  .ask-typing__dot:nth-child(1) {
+    animation-delay: 0s;
+  }
+  .ask-typing__dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .ask-typing__dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes typing-bounce {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.4;
+    }
+    30% {
+      transform: translateY(-4px);
+      opacity: 1;
+    }
+  }
+
+  /* Input area */
+  .ask-input-area {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+  }
+  .ask-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 4px 4px 4px 14px;
+    transition: border-color 0.2s;
+  }
+  .ask-input-row:focus-within {
+    border-color: var(--accent);
+  }
+  .ask-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 6px 0;
+    outline: none;
+  }
+  .ask-input::placeholder {
+    color: var(--text-muted);
+  }
+  .ask-send-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
+    flex-shrink: 0;
+  }
+  .ask-send-btn:disabled {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    cursor: default;
+  }
+  .ask-send-btn:not(:disabled):hover {
+    filter: brightness(1.1);
+    transform: scale(1.05);
+  }
+</style>

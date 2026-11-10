@@ -1,0 +1,163 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { serializeForScript } from "../../lib/safe-html"
+
+interface Props {
+  locale: Locale
+}
+
+const { locale } = Astro.props
+
+const staticConfig = {
+  pages: [
+    {
+      id: "page-dashboard",
+      kind: "page",
+      title: t("nav.dashboard", locale),
+      subtitle: "Overview and recent work",
+      href: "/",
+    },
+    {
+      id: "page-today",
+      kind: "page",
+      title: t("nav.today", locale),
+      subtitle: "Focus for today",
+      href: "/today",
+    },
+    {
+      id: "page-tasks",
+      kind: "page",
+      title: t("nav.kanban", locale),
+      subtitle: "Task board views",
+      href: "/tasks",
+    },
+    {
+      id: "page-table",
+      kind: "page",
+      title: t("nav.table", locale),
+      subtitle: "Table and saved views",
+      href: "/tasks?view=table#table",
+    },
+    {
+      id: "page-calendar",
+      kind: "page",
+      title: t("nav.calendar", locale),
+      subtitle: "Calendar planning",
+      href: "/tasks?view=calendar#calendar",
+    },
+    {
+      id: "page-settings",
+      kind: "page",
+      title: t("nav.settings", locale),
+      subtitle: "Configuration and integrations",
+      href: "/settings",
+    },
+  ],
+  actions: [
+    {
+      id: "action-new-task",
+      kind: "action",
+      title: t("tasks.new_task", locale).replace("+ ", "").trim(),
+      subtitle: "Create a task from anywhere",
+      actionId: "new-task",
+    },
+    {
+      id: "action-ask-ha",
+      kind: "action",
+      title: "Ask Home Assistant",
+      subtitle: "Open the Assist panel inside Meitheal",
+      actionId: "ask-home-assistant",
+    },
+  ],
+  settings: SETTINGS_SECTIONS.map((section) => ({
+    id: section.id,
+    label: section.label,
+    subtitle: section.description,
+    href: `/settings#${section.id}`,
+  })),
+}
+
+const staticConfigJson = serializeForScript(staticConfig)
+---
+
+<div
+  id="search-hub-overlay"
+  class="search-hub-overlay hidden"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="search-hub-title"
+>
+  <div class="search-hub-shell">
+    <div class="search-hub-panel">
+      <div class="search-hub-header">
+        <div class="search-hub-input-wrap">
+          <span class="search-hub-input-icon" aria-hidden="true">⌕</span>
+          <input
+            id="search-hub-input"
+            class="search-hub-input"
+            type="search"
+            placeholder={t("topbar.search_placeholder", locale)}
+            aria-label="Search tasks, views, settings, and actions"
+            autocomplete="off"
+          />
+          <button
+            id="search-hub-close"
+            class="search-hub-close"
+            type="button"
+            aria-label="Close search"
+          >
+            Esc
+          </button>
+        </div>
+        <div class="search-hub-heading">
+          <h2 id="search-hub-title">Universal Search</h2>
+          <p>Tasks, views, settings, and Home Assistant-aware actions in one place.</p>
+        </div>
+      </div>
+
+      <div class="search-hub-toolbar">
+        <div class="search-hub-scopes" role="tablist" aria-label="Search scope">
+          <button class="search-hub-scope is-active" type="button" role="tab" aria-selected="true" data-scope="all">All</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="tasks">Tasks</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="views">Views</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="settings">Settings</button>
+          <button class="search-hub-scope" type="button" role="tab" aria-selected="false" data-scope="actions">Actions</button>
+        </div>
+
+        <div id="search-task-options" class="search-hub-task-options">
+          <div class="search-hub-field-group" aria-label="Task search fields">
+            <label><input type="checkbox" data-task-field="id" checked /> IDs</label>
+            <label><input type="checkbox" data-task-field="title" checked /> Titles</label>
+            <label><input type="checkbox" data-task-field="description" checked /> Descriptions</label>
+            <label><input type="checkbox" data-task-field="labels" checked /> Labels</label>
+            <label><input type="checkbox" data-task-field="custom_fields" checked /> Custom fields</label>
+            <label><input type="checkbox" data-task-field="comments" checked /> Comments</label>
+          </div>
+
+          <div class="search-hub-toggle-row">
+            <label><input id="search-include-completed" type="checkbox" /> Completed</label>
+            <label><input id="search-include-archived" type="checkbox" /> Archived</label>
+            <label class="search-hub-sort">
+              Sort
+              <select id="search-sort" aria-label="Sort search results">
+                <option value="relevance">Relevance</option>
+                <option value="updated">Recently updated</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="search-hub-results" class="search-hub-results" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<script
+  type="application/json"
+  id="search-hub-static"
+  is:inline
+  set:html={staticConfigJson}
+></script>

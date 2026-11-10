@@ -1,0 +1,46 @@
+blueprint:
+  name: "Meitheal: Complete Task via NFC Tag"
+  description: >
+    Scan an NFC tag to mark a linked Meitheal task as complete.
+    Assign the NFC tag ID to a task in Meitheal's task detail panel,
+    then scan the physical tag to complete it.
+
+    Perfect for chore charts, daily routines, and physical task boards.
+  domain: automation
+  author: Coolock Village
+  source_url: https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/nfc-tag-complete.yaml
+  input:
+    tag_id:
+      name: NFC Tag ID
+      description: >
+        The NFC tag identifier. Find this in Home Assistant under
+        Settings → Tags, or scan a new tag to register it.
+      selector:
+        text:
+    notification_enabled:
+      name: Send Notification
+      description: Show a persistent notification when the task is completed
+      default: true
+      selector:
+        boolean:
+
+trigger:
+  - platform: tag
+    tag_id: !input tag_id
+
+action:
+  - service: meitheal.complete_task_by_tag
+    data:
+      tag_id: !input tag_id
+
+  - if:
+      - condition: template
+        value_template: "{{ notification_enabled }}"
+    then:
+      - service: persistent_notification.create
+        data:
+          title: "✅ Task Completed"
+          message: "A Meitheal task was completed via NFC scan."
+          notification_id: "meitheal_nfc_{{ now().strftime('%Y%m%d%H%M%S') }}"
+
+mode: single

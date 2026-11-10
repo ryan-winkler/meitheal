@@ -1,0 +1,116 @@
+---
+/**
+ * Grocy integration card sub-component.
+ * @domain integrations/grocy
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+import IntegrationCardHeader from "./IntegrationCardHeader.astro"
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
+---
+
+<div class="integration-card" id="integration-grocy">
+  <IntegrationCardHeader
+    integration="grocy"
+    icon="🛒"
+    title={t("settings.grocy_title", locale)}
+    description={t("settings.grocy_desc", locale)}
+    helpLabel={t("settings.grocy_explainer", locale)}
+  >
+    <span class="badge badge-disabled" id="grocy-status">{t("settings.status_not_configured", locale)}</span>
+  </IntegrationCardHeader>
+
+  <div class="integration-card__body" id="integration-grocy-body" inert>
+    <!-- Grocy auto-detect callout -->
+    <div id="grocy-auto-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
+      <strong>{t("settings.grocy_detected", locale)}</strong>
+      <div class="integration-callout__detail">
+        {t("settings.grocy_detected_desc", locale)}
+      </div>
+    </div>
+
+    <!-- Grocy test result callout -->
+    <div id="grocy-test-result" class="integration-callout" style="display: none;" aria-live="polite"></div>
+
+    <div class="integration-card__config">
+      <div class="form-group" id="grocy-url-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-url">{t("settings.grocy_url_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.grocy_url_help", locale)}
+            id="help-grocy-url"
+          />
+        </div>
+        <input type="url" class="form-input" id="grocy-url" placeholder="http://homeassistant.local:9192" />
+      </div>
+      <div class="form-group" id="grocy-key-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-key">{t("settings.grocy_key_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.grocy_key_help", locale)}
+            id="help-grocy-key"
+          />
+        </div>
+        <div class="flex gap-2 items-center">
+          <input type="password" class="form-input flex-1" id="grocy-key" placeholder="••••••••" />
+          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title={t("settings.grocy_auto_key_title", locale)}>{t("settings.grocy_auto_key", locale)}</button>
+        </div>
+      </div>
+      <!-- Custom config toggle for auto-detected installs -->
+      <button type="button" class="btn btn-ghost" id="grocy-custom-toggle" style="display: none; font-size: 12px; padding: 4px 8px; align-self: flex-start;">
+        {t("settings.grocy_custom_config", locale)}
+      </button>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-sync-mode">{t("settings.grocy_sync_mode_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.grocy_sync_help", locale)}
+            id="help-grocy-sync"
+          />
+        </div>
+        <select class="form-select" id="grocy-sync-mode">
+          <option value="import">{t("settings.grocy_sync_import", locale)}</option>
+          <option value="export">{t("settings.grocy_sync_export", locale)}</option>
+          <option value="bidirectional" selected>{t("settings.grocy_sync_bidir", locale)}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="grocy-sync-interval">{t("settings.grocy_sync_interval_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.grocy_interval_help", locale)}
+            id="help-grocy-interval"
+          />
+        </div>
+        <select class="form-select" id="grocy-sync-interval">
+          <option value="60000">{t("settings.grocy_int_1m", locale)}</option>
+          <option value="300000">{t("settings.grocy_int_5m", locale)}</option>
+          <option value="900000" selected>{t("settings.grocy_int_15m", locale)}</option>
+          <option value="1800000">{t("settings.grocy_int_30m", locale)}</option>
+          <option value="3600000">{t("settings.grocy_int_1h", locale)}</option>
+          <option value="0">{t("settings.grocy_int_manual", locale)}</option>
+        </select>
+      </div>
+
+      <!-- Last synced info -->
+      <div class="form-group" id="grocy-sync-info" style="display: none;">
+        <div class="integration-callout integration-callout--info m-0">
+          <span id="grocy-last-synced">{t("settings.grocy_never_synced", locale)}</span>
+          <span id="grocy-item-count" style="margin-left: auto; font-size: 12px; opacity: 0.7;"></span>
+        </div>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-outline" id="test-grocy">{t("settings.test_connection", locale)}</button>
+        <button type="button" class="btn btn-outline" id="sync-grocy-now" style="display: none;">{t("settings.sync_now_btn", locale)}</button>
+        <a href="#" class="btn btn-ghost" id="open-grocy-link" target="_blank" rel="noopener" style="display: none; font-size: 12px;" title={t("settings.grocy_open_title", locale)}>{t("settings.grocy_open_link", locale)}</a>
+        <button type="button" class="btn btn-primary" id="save-grocy">{t("settings.save_grocy_settings", locale)}</button>
+      </div>
+    </div>
+  </div>
+</div>

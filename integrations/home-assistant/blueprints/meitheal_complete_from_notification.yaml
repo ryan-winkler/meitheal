@@ -1,0 +1,51 @@
+blueprint:
+  name: "Meitheal: Complete Task from Notification"
+  description: >-
+    Handles the "Complete" action from Meitheal task notifications.
+    When a user taps "Complete" on a task notification, this automation
+    marks the task as done and sends a confirmation notification.
+
+    Works with the "Task Notification with Actions" blueprint.
+  domain: automation
+  author: "Coolock Village"
+  source_url: "https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml"
+  input:
+    notify_device:
+      name: "Notification Device"
+      description: "The mobile device that receives notifications"
+      selector:
+        device:
+          integration: mobile_app
+
+trigger:
+  - platform: event
+    event_type: mobile_app_notification_action
+    event_data: {}
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.action is defined and
+         trigger.event.data.action.startswith('MEITHEAL_COMPLETE_') }}
+
+variables:
+  task_id: >-
+    {{ trigger.event.data.action | replace('MEITHEAL_COMPLETE_', '') }}
+
+action:
+  - service: meitheal.complete_task
+    data:
+      task_id: "{{ task_id }}"
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "✅ Task Completed"
+    message: "Task marked as done in Meitheal"
+    data:
+      vibrationPattern: "50, 100"
+      channel: "meitheal_tasks"
+      tag: "meitheal_{{ task_id }}"
+      timeout: 5
+
+mode: queued
+max_queued: 3

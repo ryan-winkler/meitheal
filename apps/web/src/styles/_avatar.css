@@ -1,0 +1,59 @@
+/* ──────────────────────────────────────────────────────────────────
+ * Avatar / Assignee Badge — Shared Styles
+ * Used by: kanban, table, today, upcoming, settings, detail panel
+ * ────────────────────────────────────────────────────────────────── */
+
+:root {
+  --avatar-size-sm: 18px;
+  --avatar-size-md: 22px;
+  --avatar-size-lg: 28px;
+  --avatar-bg-ha: var(--accent);
+  --avatar-bg-custom: var(--warning-dark, #b45309);
+  --avatar-text: #fff;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--avatar-bg-ha);
+  color: var(--avatar-text);
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1;
+  user-select: none;
+}
+
+.avatar--sm {
+  width: var(--avatar-size-sm);
+  height: var(--avatar-size-sm);
+  font-size: 8px;
+}
+
+.avatar--md {
+  width: var(--avatar-size-md);
+  height: var(--avatar-size-md);
+  font-size: 9px;
+}
+
+.avatar--lg {
+  width: var(--avatar-size-lg);
+  height: var(--avatar-size-lg);
+  font-size: 11px;
+}
+
+.avatar--custom {
+  background: var(--avatar-bg-custom);
+}
+
+/* Focus ring for parent interactive elements */
+.avatar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Tooltip on hover — relies on title attribute */
+.avatar[title] {
+  cursor: default;
+}

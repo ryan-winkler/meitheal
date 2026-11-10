@@ -1,0 +1,17 @@
+name: Build and publish canary images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.repository == 'ryan-winkler/meitheal' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/publish-app.yml
+    with:
+      channel: canary
+    permissions:
+      contents: read
+      packages: write

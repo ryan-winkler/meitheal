@@ -1,0 +1,47 @@
+name: ✨ Feature Request
+description: Suggest an idea or improvement for Meitheal
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What did you try to do?
+      description: Describe the last time you did the work and the step where you got stuck.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What did you do next?
+      description: Describe how you finished the work or why you stopped.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      description: Which part of Meitheal does this relate to?
+      options:
+        - Dashboard
+        - Kanban Board
+        - Task List / Table
+        - Calendar / Today / Upcoming
+        - Settings
+        - Home Assistant Integration
+        - Sidebar / Navigation
+        - Search / Command Palette
+        - API
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Use sample tasks. Remove private details from screenshots.
+    validations:
+      required: false

@@ -1,0 +1,46 @@
+name: Build and smoke-test an App image
+
+on:
+  workflow_call:
+    inputs:
+      architecture:
+        required: true
+        type: string
+      channel:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    outputs:
+      image:
+        value: ${{ jobs.image.outputs.image }}
+      digest:
+        value: ${{ jobs.image.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    if: github.repository == 'ryan-winkler/meitheal'
+    runs-on: ${{ inputs.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: build
+        name: Build, smoke-test and publish the versioned image
+        env:
+          ARCHITECTURE: ${{ inputs.architecture }}
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/build-app-release-image.sh

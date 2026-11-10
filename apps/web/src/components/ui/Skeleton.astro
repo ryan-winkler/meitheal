@@ -1,0 +1,113 @@
+---
+/**
+ * Skeleton — Pulsing placeholder for loading states
+ *
+ * @bounded-context ui (shared components)
+ * @kcs Used in Dashboard stat cards and task lists during SSR
+ *       when data is unavailable or still loading.
+ *
+ * Usage:
+ *   <Skeleton width="80px" height="24px" />
+ *   <Skeleton variant="card" />
+ *   <Skeleton variant="text" lines={3} />
+ */
+
+interface Props {
+  /** Skeleton display variant */
+  variant?: "inline" | "card" | "text";
+  /** Width (CSS value) — defaults by variant */
+  width?: string;
+  /** Height (CSS value) — defaults by variant */
+  height?: string;
+  /** Number of text lines (only for variant="text") */
+  lines?: number;
+  /** Border radius override */
+  radius?: string;
+}
+
+const {
+  variant = "inline",
+  width,
+  height,
+  lines = 2,
+  radius,
+} = Astro.props;
+---
+
+{
+  variant === "card" ? (
+    <div
+      class="skeleton skeleton-card"
+      style={`${width ? `width: ${width};` : ""} ${height ? `height: ${height};` : ""} ${radius ? `border-radius: ${radius};` : ""}`}
+      aria-hidden="true"
+    >
+      <div class="skeleton-line" style="width: 60%; height: 12px; margin-bottom: 8px;" />
+      <div class="skeleton-line" style="width: 40%; height: 20px; margin-bottom: 8px;" />
+      <div class="skeleton-line" style="width: 80%; height: 10px;" />
+    </div>
+  ) : variant === "text" ? (
+    <div class="skeleton skeleton-text" aria-hidden="true">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div
+          class="skeleton-line"
+          style={`width: ${i === lines - 1 ? "60%" : "100%"}; height: 12px; margin-bottom: 6px;`}
+        />
+      ))}
+    </div>
+  ) : (
+    <span
+      class="skeleton skeleton-inline"
+      style={`width: ${width || "60px"}; height: ${height || "16px"}; ${radius ? `border-radius: ${radius};` : ""}`}
+      aria-hidden="true"
+    />
+  )
+}
+
+<style>
+  .skeleton {
+    display: block;
+  }
+
+  .skeleton-card {
+    padding: 16px;
+    background: var(--bg-card, #1e293b);
+    border: 1px solid var(--border, #334155);
+    border-radius: var(--radius-md, 12px);
+  }
+
+  .skeleton-line {
+    background: linear-gradient(
+      90deg,
+      rgba(107, 114, 128, 0.1) 25%,
+      rgba(107, 114, 128, 0.2) 50%,
+      rgba(107, 114, 128, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    display: block;
+  }
+
+  .skeleton-inline {
+    display: inline-block;
+    background: linear-gradient(
+      90deg,
+      rgba(107, 114, 128, 0.1) 25%,
+      rgba(107, 114, 128, 0.2) 50%,
+      rgba(107, 114, 128, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+
+  @keyframes skeleton-pulse {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+</style>

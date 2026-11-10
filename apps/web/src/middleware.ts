@@ -1,0 +1,411 @@
+import type { MiddlewareHandler } from "astro";
+import { apiProblem, apiRateLimited } from "./lib/api-response";
+import { resolveIngressContext } from "@domains/auth/ingress";
+import { getIngressTransport } from "../scripts/ingress-transport.mjs";
+import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { getPersistenceClient, ensureSchema } from "@domains/tasks/persistence/store";
+import { initHAIntegrations } from "@domains/ha";
+import type { DateFormat } from "./lib/date";
+import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
+import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
+import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
+
+const logger = createLogger({
+  service: "meitheal-web",
+  env: process.env.NODE_ENV ?? "development",
+  minLevel: "info",
+  enabledCategories: ["tasks", "audit", "observability"],
+  redactPatterns: defaultRedactionPatterns,
+  auditEnabled: true,
+});
+
+
+// ── Known automation source identifiers (validated against for log safety) ──
+const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+
+// ── W3C Traceparent Parsing (OTel-compatible, zero-dep) ──
+// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+// Example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+const TRACEPARENT_RE = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/
+
+function parseTraceparent(header: string | null): { traceId: string, spanId: string, traceFlags: string } {
+  if (header) {
+    const match = header.trim().match(TRACEPARENT_RE)
+    if (match) {
+      return { traceId: match[2]!, spanId: match[3]!, traceFlags: match[4]! }
+    }
+  }
+  // Generate new trace context when no valid traceparent header.
+  // crypto.randomUUID() is faster than Uint8Array + hex conversion.
+  const uuid1 = crypto.randomUUID().replace(/-/g, "") // 32 hex → traceId
+  const uuid2 = crypto.randomUUID().replace(/-/g, "") // 32 hex → take first 16 for spanId
+  return {
+    traceId: uuid1,
+    spanId: uuid2.slice(0, 16),
+    traceFlags: "01", // sampled by default
+  }
+}
+
+// ── In-memory rate limiter (R-107) ──
+// Capped at MAX_ENTRIES to prevent OOM under DDoS. Oldest entries evicted
+// when the cap is reached via FIFO iteration order of Map.
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 300; // requests per window
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const MAX_RATE_ENTRIES = 10_000; // memory cap (~800KB at peak)
+
+function getRateLimit(ip: string): { remaining: number; resetAt: number; exceeded: boolean } {
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    // Evict oldest entries if we've hit the cap (FIFO via Map insertion order)
+    if (rateLimitMap.size >= MAX_RATE_ENTRIES) {
+      const firstKey = rateLimitMap.keys().next().value;
+      if (firstKey !== undefined) rateLimitMap.delete(firstKey);
+    }
+    entry = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  const remaining = Math.max(0, RATE_LIMIT - entry.count);
+  return { remaining, resetAt: entry.resetAt, exceeded: entry.count > RATE_LIMIT };
+}
+
+// Periodic cleanup (every 5 min). unref() so the timer doesn't
+// prevent the Node process from exiting on shutdown.
+const _rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now >= entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 5 * 60_000);
+if (typeof _rateLimitCleanup?.unref === "function") _rateLimitCleanup.unref();
+
+// ── Bot-specific rate limiter (PRA-08) ──
+// Stricter 60/min limit for bot mutation endpoints to prevent runaway agents
+// from overwhelming the DB with proposals/claims.
+const botRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const BOT_RATE_LIMIT = 60;
+const BOT_RATE_WINDOW_MS = 60_000;
+const BOT_PATH_PATTERNS = ["/accept-proposal", "/api/mcp"];
+
+function isBotEndpoint(pathname: string): boolean {
+  // Use segment-boundary matching to avoid false positives
+  // e.g. /api/mcp should not match /api/mcp-unrelated
+  return BOT_PATH_PATTERNS.some(p => {
+    const idx = pathname.indexOf(p)
+    if (idx === -1) return false
+    const afterIdx = idx + p.length
+    // Must be at end of path or followed by / or ?
+    return afterIdx >= pathname.length || pathname[afterIdx] === "/" || pathname[afterIdx] === "?"
+  })
+}
+
+function getBotRateLimit(ip: string): { remaining: number; resetAt: number; exceeded: boolean } {
+  const now = Date.now();
+  let entry = botRateLimitMap.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    if (botRateLimitMap.size >= 1_000) {
+      const firstKey = botRateLimitMap.keys().next().value;
+      if (firstKey !== undefined) botRateLimitMap.delete(firstKey);
+    }
+    entry = { count: 0, resetAt: now + BOT_RATE_WINDOW_MS };
+    botRateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  const remaining = Math.max(0, BOT_RATE_LIMIT - entry.count);
+  return { remaining, resetAt: entry.resetAt, exceeded: entry.count > BOT_RATE_LIMIT };
+}
+
+// ── Settings cache (avoids DB query on every request) ──
+// TTL: 60s — settings change rarely, no need to hit SQLite every request.
+let _settingsCache: { timezone: string; weekStart: string; dateFormat: string } | null = null;
+let _settingsCacheExpiry = 0;
+const SETTINGS_CACHE_TTL_MS = 60_000;
+
+function applyRateLimitHeaders(response: Response, remaining: number, resetAt: number, limit: number = RATE_LIMIT, windowSec: number = RATE_WINDOW_MS / 1000): void {
+  const resetSeconds = Math.max(0, Math.ceil((resetAt - Date.now()) / 1000))
+  // Legacy headers (backward compat — used by existing n8n/custom scripts)
+  response.headers.set("x-ratelimit-limit", String(limit))
+  response.headers.set("x-ratelimit-remaining", String(remaining))
+  response.headers.set("x-ratelimit-reset", String(Math.ceil(resetAt / 1000)))
+  // IETF standard headers (draft-ietf-httpapi-ratelimit-headers-10)
+  response.headers.set("RateLimit", `limit=${limit}, remaining=${remaining}, reset=${resetSeconds}`)
+  response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
+}
+
+/**
+ * Rewrite absolute paths in HTML responses when behind HA ingress.
+ * The ingress proxy maps /{ingressPath}/* → http://addon:port/*
+ * but if the HTML contains absolute paths like href="/tasks" or src="/_astro/page.js",
+ * the browser resolves them against the HA root, bypassing ingress → 404.
+ *
+ * This rewrites ALL href="/...", src="/...", and action="/..." attributes
+ * to include the ingress path prefix.
+ */
+async function rewriteIngressPaths(response: Response, ingressPath: string): Promise<Response> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  // NOTE: CSS url() paths are rewritten at BUILD TIME by the
+  // fontsource-relative-paths Vite plugin in astro.config.mjs.
+  // No runtime CSS rewriting needed.
+
+  if (!contentType.includes("text/html")) return response;
+
+  // Guard: skip rewriting excessively large responses (>5MB) to prevent OOM.
+  // Normal pages are <500KB; anything larger is likely a data export or error.
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > 5 * 1024 * 1024) return response;
+
+  const html = await response.text();
+
+  // Double-check size after reading (content-length may be absent/wrong)
+  if (html.length > 5 * 1024 * 1024) {
+    return new Response(html, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+
+  // Inject runtime ingress path for client-side JS (must come before any scripts)
+  const ingressScript = `<script>window.__ingress_path="${ingressPath}";</script>`;
+
+  // Rewrite absolute paths in HTML attributes: href="/...", src="/...", action="/..."
+  // Matches: href="/path", src="/path", action="/path" (with double or single quotes)
+  // Does NOT match: href="//cdn.example.com" (protocol-relative), href="http://..." (absolute URL)
+  const rewritten = html
+    .replace("<head>", `<head>${ingressScript}`)
+    .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`);
+
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+export const onRequest: MiddlewareHandler = async ({ request, locals }, next) => {
+  const startTime = Date.now();
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
+  const transport = getIngressTransport();
+  const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
+  const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  const isHealthCheck = url.pathname === "/api/health" && (method === "GET" || method === "HEAD");
+
+  locals.ingressPath = ingressPath;
+  locals.behindIngress = behindIngress;
+  locals.hassUserId = hassUserId;
+  locals.hassIsAdmin = hassIsAdmin;
+
+  // ── Agent/Automation source identification ──
+  // n8n, Node-RED, and AI agents should send these headers to identify themselves.
+  // Validate against known sources to prevent log injection.
+  const rawSource = request.headers.get("x-automation-source")?.toLowerCase().replace(/[^a-z0-9_-]/g, "") ?? "browser"
+  const automationSource = KNOWN_AUTOMATION_SOURCES.has(rawSource) ? rawSource : "unknown"
+  const agentId = (request.headers.get("x-agent-id") ?? "").slice(0, 128).replace(/[^\w.-]/g, "")
+  locals.automationSource = automationSource
+  locals.agentId = agentId
+
+  // ── W3C Traceparent — distributed trace context ──
+  const traceCtx = parseTraceparent(request.headers.get("traceparent"))
+  locals.traceId = traceCtx.traceId
+  locals.spanId = traceCtx.spanId
+  locals.traceFlags = traceCtx.traceFlags
+
+  // Rate limit by the trusted identity or actual transport peer. Caller-supplied
+  // forwarded addresses must not create new rate-limit buckets.
+  const ip = hassUserId ? `ha:${hassUserId}` : transport?.peer || "127.0.0.1";
+  const rateInfo = url.pathname.startsWith("/api/") ? getRateLimit(ip) : null
+
+  if (rateInfo?.exceeded) {
+    const retryAfter = Math.ceil((rateInfo.resetAt - Date.now()) / 1000)
+    return apiRateLimited(retryAfter, `Rate limit exceeded (${RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
+      "x-ratelimit-limit": String(RATE_LIMIT),
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-reset": String(Math.ceil(rateInfo.resetAt / 1000)),
+      "RateLimit": `limit=${RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
+      "RateLimit-Policy": `${RATE_LIMIT};w=${RATE_WINDOW_MS / 1000}`,
+    })
+  }
+
+  // Bot-specific rate limiting (PRA-08) — stricter 60/min for bot mutation endpoints
+  if (rateInfo && isBotEndpoint(url.pathname)) {
+    const botRate = getBotRateLimit(ip);
+    if (botRate.exceeded) {
+      logger.log("warn", {
+        event: "http.bot_rate_limited",
+        domain: "security",
+        component: "middleware",
+        request_id: requestId,
+        message: `Bot rate limit exceeded: ${request.method} ${url.pathname} from ${ip}`,
+      });
+      const retryAfter = Math.ceil((botRate.resetAt - Date.now()) / 1000)
+      return apiRateLimited(retryAfter, `Bot rate limit exceeded (${BOT_RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
+        "x-ratelimit-limit": String(BOT_RATE_LIMIT),
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(Math.ceil(botRate.resetAt / 1000)),
+        "RateLimit": `limit=${BOT_RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
+        "RateLimit-Policy": `${BOT_RATE_LIMIT};w=${BOT_RATE_WINDOW_MS / 1000}`,
+      })
+    }
+  }
+
+  let resolvedAgent: ResolvedAgent | null = null
+  if (url.pathname.startsWith("/api/") && !isHealthCheck) {
+    try {
+      resolvedAgent = await resolveAgentAuth(request)
+    } catch (error) {
+      if (error instanceof Response) return error
+      throw error
+    }
+
+    if (resolvedAgent) {
+      const scope = resolveAgentRouteScope(url.pathname, method)
+      if (!scope || !hasScope(resolvedAgent.scopes, scope)) {
+        return apiProblem({
+          status: 403,
+          detail: scope ? `This operation requires the ${scope} scope.` : "This operation is unavailable to agent credentials.",
+          type: "https://meitheal.local/problems/insufficient-scope",
+        })
+      }
+    }
+  }
+
+  // Attach agent info to locals for downstream route access
+  locals.agentToken = resolvedAgent ?? undefined
+
+  const authenticatedTransport = behindIngress || trustedLocalCaller || resolvedAgent !== null;
+  if (supervisorMode && !authenticatedTransport && !isHealthCheck) {
+    return apiProblem({
+      status: url.pathname.startsWith("/api/") ? 401 : 403,
+      title: "Ingress or API credential required",
+      detail: "Open Meitheal through Home Assistant or use an authorized API credential.",
+      type: "https://meitheal.local/problems/ingress-required",
+      extraHeaders: url.pathname.startsWith("/api/") ? { "WWW-Authenticate": "Bearer" } : undefined,
+    });
+  }
+
+  // Lazy-init only after accepting the caller. Do not block on the HA connection.
+  initHAIntegrations().catch(() => {});
+  // Browser requests without verified transport still require same-origin proof.
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && url.pathname.startsWith("/api/")) {
+    const origin = request.headers.get("origin");
+    const referer = request.headers.get("referer");
+    const host = request.headers.get("host") ?? url.host;
+    const isDev = import.meta.env.DEV;
+
+    if (!authenticatedTransport && !isCsrfAllowed({ behindIngress, isDev, origin, referer, host })) {
+      logger.log("warn", {
+        event: "http.csrf_blocked",
+        domain: "security",
+        component: "middleware",
+        request_id: requestId,
+        message: `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
+      });
+      return new Response(
+        JSON.stringify({ error: "CSRF origin mismatch" }),
+        { status: 403, headers: { "content-type": "application/json" } }
+      );
+    }
+  }
+
+  // Load regional settings for SSR (cached for 60s to avoid DB per-request)
+  locals.timezone = "Europe/Dublin";
+  locals.weekStart = "monday";
+  locals.dateFormat = "relative";
+  const now = Date.now();
+  if (_settingsCache && now < _settingsCacheExpiry) {
+    locals.timezone = _settingsCache.timezone;
+    locals.weekStart = _settingsCache.weekStart;
+    locals.dateFormat = _settingsCache.dateFormat as DateFormat;
+  } else {
+    try {
+      await ensureSchema();
+      const db = getPersistenceClient();
+      const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
+      for (const row of res.rows) {
+        if (row.key === "timezone" && typeof row.value === "string") locals.timezone = row.value;
+        if (row.key === "week_start" && typeof row.value === "string") locals.weekStart = row.value;
+        if (row.key === "date_format" && typeof row.value === "string") locals.dateFormat = row.value as DateFormat;
+      }
+      _settingsCache = { timezone: locals.timezone, weekStart: locals.weekStart, dateFormat: locals.dateFormat };
+      _settingsCacheExpiry = now + SETTINGS_CACHE_TTL_MS;
+    } catch {
+      /* ignore db errors, defaults used */
+    }
+  }
+
+  const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
+    hassUserId ? `ha:${hassUserId}` : undefined
+  const retryKey = await taskRetryKey(request, url, principal)
+  if (retryKey instanceof Response) return retryKey
+  locals.taskRetryKey = retryKey
+
+  const securityHeaders = buildSecurityHeaders(behindIngress, import.meta.env.DEV);
+  let response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+
+  // Rewrite HTML paths when behind HA ingress
+  if (ingressPath) {
+    response = await rewriteIngressPaths(response, ingressPath);
+    // Echo ingress path as response header so client-side JS can read it
+    // without relying solely on window.__ingress_path injection.
+    response.headers.set("x-ingress-path", ingressPath);
+  }
+
+  // Service-Worker-Allowed: let SW claim scope broader than its script path.
+  // Required for ingress: SW at /api/hassio_ingress/{token}/sw.js needs to
+  // control scope /api/hassio_ingress/{token}/. Without this header, browsers
+  // restrict SW scope to the script's directory.
+  response.headers.set("Service-Worker-Allowed", "/");
+
+  // Inject security + observability headers on all responses
+  for (const [key, value] of Object.entries(securityHeaders)) {
+    response.headers.set(key, value);
+  }
+  response.headers.set("x-request-id", requestId);
+  response.headers.set("x-response-time", `${Date.now() - startTime}ms`);
+  if (rateInfo) {
+    applyRateLimitHeaders(response, rateInfo.remaining, rateInfo.resetAt);
+    const elapsed = Date.now() - startTime;
+
+    // ── Structured API request log (Grafana/Loki compatible) ──
+    // Log all API requests for agent traceability and observability.
+    // Only log at "info" level for non-health endpoints to avoid noise.
+    const isHealth = url.pathname === "/api/health"
+    if (!isHealth) {
+      logger.log(elapsed > 1000 ? "warn" : "info", {
+        event: elapsed > 1000 ? "http.slow_request" : "http.api_request",
+        domain: "observability",
+        component: "middleware",
+        request_id: requestId,
+        trace_id: locals.traceId,
+        span_id: locals.spanId,
+        message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
+        metadata: {
+          method: request.method,
+          path: url.pathname,
+          status: response.status,
+          latency_ms: elapsed,
+          automation_source: automationSource,
+          ...(agentId ? { agent_id: agentId } : {}),
+          ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+        },
+      })
+    } else if (elapsed > 1000) {
+      // Still log slow health checks
+      logger.log("warn", {
+        event: "http.slow_request",
+        domain: "observability",
+        component: "middleware",
+        request_id: requestId,
+        message: `Slow health check: ${elapsed}ms`,
+      })
+    }
+  }
+  return response;
+};

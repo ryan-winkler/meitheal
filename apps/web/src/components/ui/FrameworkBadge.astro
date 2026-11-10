@@ -1,0 +1,97 @@
+---
+/**
+ * FrameworkBadge — generalized scoring badge for any framework
+ *
+ * Replaces the original RiceBadge with support for any numeric score.
+ * Badge color is based on configurable thresholds, with RICE-compatible
+ * defaults for backward compatibility.
+ *
+ * @domain strategy
+ */
+interface Props {
+  /** Numeric score to display */
+  score: number | null | undefined
+  /** Framework name for label (optional, defaults to "Score") */
+  framework?: string | undefined
+  /** High threshold (default: 15) */
+  high?: number | undefined
+  /** Medium threshold (default: 8) */
+  med?: number | undefined
+}
+
+const { score, framework, high = 15, med = 8 } = Astro.props
+
+if (score === null || score === undefined || isNaN(score)) {
+  return
+}
+
+const badgeClass =
+  score >= high ? "framework-badge--high" : score >= med ? "framework-badge--med" : "framework-badge--low"
+
+const label = framework ? `${framework}: ${score}` : String(score)
+---
+
+<span class={`framework-badge ${badgeClass}`} title={framework ? `${framework} score` : "Score"}>
+  {label}
+</span>
+
+<style>
+  .framework-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    transition: transform 150ms ease;
+  }
+
+  .framework-badge:hover {
+    transform: scale(1.05);
+  }
+
+  .framework-badge--high {
+    background: color-mix(in srgb, var(--color-success, #22c55e) 15%, transparent);
+    color: var(--color-success, #22c55e);
+    border: 1px solid color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent);
+  }
+
+  .framework-badge--med {
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 15%, transparent);
+    color: var(--color-warning, #f59e0b);
+    border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 25%, transparent);
+  }
+
+  .framework-badge--low {
+    background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
+    color: var(--color-danger, #ef4444);
+    border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 25%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .framework-badge {
+      transition: none;
+    }
+    .framework-badge:hover {
+      transform: none;
+    }
+  }
+
+  /* Backward-compatible aliases for existing CSS targeting .rice-badge */
+  :global(.rice-badge) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+</style>

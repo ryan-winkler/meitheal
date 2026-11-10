@@ -1,0 +1,12 @@
+integrations:
+  grocy:
+    enabled: true
+  calendar:
+    enabled: true
+    entity_id: calendar.home
+    default_duration_minutes: 30
+    timezone: Europe/Dublin
+  node_red:
+    enabled: true
+  n8n:
+    enabled: true

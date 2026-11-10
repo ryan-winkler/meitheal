@@ -1,0 +1,552 @@
+/**
+ * Timeline GANTT — Native SVG Chart Styles
+ * @domain Task Visualization
+ *
+ * Styles for the native SVG GANTT renderer.
+ * Uses Meitheal CSS variables for automatic dark/light mode support.
+ * No external dependencies — fully Astro-native and HA-native.
+ */
+
+/* ── Toast Notifications ────────────────────────────────────────────────── */
+
+.gantt-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 10px 20px;
+  border-radius: var(--radius-md, 8px);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 10000;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+
+.gantt-toast--success {
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+}
+
+.gantt-toast--error {
+  background: var(--accent-danger, #ef4444);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+.gantt-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── B7: ClickUp-style Controls Bar (above sidebar/chart) ────────────── */
+
+.timeline-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 12px;
+}
+
+.timeline-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.timeline-ctrl-btn:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+  color: var(--text-primary);
+}
+
+/* ── Column Toggle Dropdown ───────────────────────────────── */
+
+.timeline-col-toggle {
+  position: relative;
+}
+.timeline-col-toggle-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
+  padding: 8px 0;
+  min-width: 160px;
+  z-index: 50;
+}
+.timeline-col-toggle-title {
+  padding: 4px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.timeline-col-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.timeline-col-toggle-item:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+}
+.timeline-col-toggle-item input[type="checkbox"] {
+  accent-color: var(--accent, #7c3aed);
+}
+
+/* ── Zoom Dropdown (ClickUp-style with "Time period" title) ─ */
+
+.timeline-zoom-dropdown {
+  position: relative;
+}
+.timeline-zoom-dropdown summary {
+  list-style: none;
+}
+.timeline-zoom-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+.timeline-zoom-trigger {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.timeline-zoom-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
+  padding: 6px 0;
+  min-width: 150px;
+  z-index: 50;
+}
+.timeline-zoom-panel-title {
+  padding: 4px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.timeline-zoom-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 0.1s;
+}
+.timeline-zoom-option:hover {
+  background: var(--bg-secondary, rgba(255,255,255,0.06));
+}
+.timeline-zoom-option--active {
+  font-weight: 600;
+  color: var(--accent, #7c3aed);
+}
+.timeline-zoom-option svg {
+  opacity: 0;
+}
+.timeline-zoom-option--active svg {
+  opacity: 1;
+  color: var(--accent, #7c3aed);
+}
+
+.timeline-ctrl-btn::-webkit-details-marker {
+  display: none;
+}
+
+/* Legacy .timeline-toolbar — kept for backward compat */
+.timeline-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.timeline-zoom-select {
+  appearance: none;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 24px 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  transition: border-color 0.15s;
+}
+
+.timeline-zoom-select:hover {
+  border-color: var(--accent, #7c3aed);
+}
+
+.timeline-zoom-select:focus {
+  border-color: var(--accent, #7c3aed);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+/* ── T7: Priority Legend ─────────────────────────────────────────────── */
+
+.timeline-legend {
+  position: relative;
+}
+
+.timeline-legend-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  transition: border-color 0.15s;
+}
+
+.timeline-legend-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-legend-trigger:hover {
+  border-color: var(--accent, #7c3aed);
+  color: var(--text-primary);
+}
+
+.timeline-legend-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px 16px;
+  min-width: 200px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
+  z-index: 100;
+  font-size: 12px;
+}
+
+.legend-section {
+  margin-bottom: 10px;
+}
+
+.legend-section:last-child {
+  margin-bottom: 0;
+}
+
+.legend-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--text-muted);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-diamond {
+  font-size: 10px;
+  color: var(--accent, #6366f1);
+  width: 8px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Skeleton ───────────────────────────────────────────────────────────── */
+
+.timeline-skeleton {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.skel-label {
+  width: 120px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  animation: shimmer 1.5s infinite;
+}
+
+.skel-bar {
+  flex: 1;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  animation: shimmer 1.5s infinite;
+  animation-delay: 0.1s;
+}
+
+@keyframes shimmer {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+
+/* O3: Respect prefers-reduced-motion for toast and skeleton animations */
+@media (prefers-reduced-motion: reduce) {
+  .gantt-toast {
+    transition: none;
+    transform: translateX(-50%);
+  }
+  .gantt-toast--visible {
+    transform: translateX(-50%);
+  }
+  .skel-label,
+  .skel-bar {
+    animation: none;
+  }
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.timeline-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  min-height: 300px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.7;
+}
+
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+/* ── Native SVG GANTT ───────────────────────────────────────────────────── */
+
+/* Viewport containment — chart fills available space, never overflows page */
+.gantt-chart-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.gantt-chart-wrapper .gantt-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The tasks-view-container needs to be a flex column that fills height */
+#tasks-view-timeline.tasks-view-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px); /* Account for main nav + view tabs */
+  min-height: 400px;
+  overflow: hidden;
+}
+
+/* Signal bar and controls should not flex-grow */
+#tasks-view-timeline .signal-bar,
+#tasks-view-timeline .timeline-controls-bar {
+  flex-shrink: 0;
+}
+
+/* Sidebar overdue row accent */
+.gantt-sidebar-row--overdue {
+  border-left: 3px solid var(--accent-danger, #ef4444) !important;
+}
+
+/* Sidebar completed row */
+.gantt-sidebar-row--complete {
+  opacity: 0.6;
+}
+
+/* Sidebar row hover */
+.gantt-sidebar-row:hover {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
+}
+
+.gantt-sidebar-row:focus-visible {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: -2px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
+}
+
+/* SVG text rendering */
+.gantt-native text {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Bar hover effect */
+.gantt-bar:hover rect:first-of-type,
+.gantt-bar:focus rect:first-of-type {
+  filter: brightness(1.15);
+}
+
+.gantt-bar:focus {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Milestone hover */
+.gantt-milestone:hover polygon,
+.gantt-milestone:focus polygon {
+  filter: brightness(1.2);
+}
+
+.gantt-milestone:focus {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
+
+/* Today FAB */
+.gantt-today-fab:hover {
+  border-color: var(--accent, #7c3aed);
+}
+
+.gantt-today-fab:focus-visible {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
+
+/* ── M2: Row Cross-Highlighting ────────────────────────────────────────── */
+
+.gantt-row-highlight {
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* ── M8: Export Button ─────────────────────────────────────────────────── */
+
+.timeline-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.timeline-export-btn:hover {
+  border-color: var(--accent, #7c3aed);
+  color: var(--text-primary);
+}
+
+.timeline-export-btn:focus-visible {
+  outline: 2px solid var(--accent, #7c3aed);
+  outline-offset: 2px;
+}
+
+/* ── §5: Unscheduled / Click-to-Schedule ───────────────────────────────── */
+
+.gantt-sidebar-row--unscheduled {
+  opacity: 0.7;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.gantt-sidebar-row--unscheduled:hover {
+  opacity: 1 !important;
+}
+
+.gantt-unscheduled-divider {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* SVG hint text for click-to-schedule */
+.gantt-schedule-hint {
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gantt-schedule-hint {
+    transition: none;
+  }
+  .gantt-sidebar-row--unscheduled {
+    transition: none;
+  }
+}

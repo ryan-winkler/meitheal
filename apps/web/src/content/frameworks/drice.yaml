@@ -1,0 +1,55 @@
+name: DRICE
+version: 1.0.0
+archetype: formula
+formula: "(reach * impact * confidence) / (effort * dependencies)"
+badge_thresholds:
+  - min: 80
+    label: "Do Now (High Value)"
+    color: "danger"
+  - min: 50
+    label: "Schedule (Medium)"
+    color: "accent"
+  - min: 0
+    label: "Backlog (Low)"
+    color: "bg-secondary"
+fields:
+  - key: reach
+    label: Reach
+    type: number
+    ui_type: slider
+    min: 0
+    max: 1000000
+    weight: 1
+    help_text: "How many people will this impact in a given period?"
+  - key: impact
+    label: Impact
+    type: number
+    ui_type: slider
+    min: 0
+    max: 5
+    weight: 1
+    help_text: "How much will this increase conversion/satisfaction? (3 = Massive, 2 = High, 1 = Med, 0.5 = Low, 0.25 = Minimal)"
+  - key: confidence
+    label: Confidence
+    type: number
+    ui_type: slider
+    min: 0
+    max: 100
+    weight: 1
+    help_text: "How confident are you in these estimates? 100% (High), 80% (Medium), 50% (Low)"
+  - key: effort
+    label: Effort
+    type: number
+    ui_type: slider
+    min: 1
+    max: 1000
+    weight: 1
+    help_text: "How many person-months will this take?"
+  - key: dependencies
+    label: Dependencies
+    type: number
+    ui_type: slider
+    min: 1
+    max: 10
+    weight: 1
+    help_text: "How many external dependencies or blocked teams are required? (1 = None, 2+ = Multiple blocks)"

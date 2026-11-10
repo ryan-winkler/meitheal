@@ -1,0 +1,513 @@
+---
+import { getCollection } from "astro:content";
+const frameworks = await getCollection("frameworks");
+
+// Map mapping from task type -> framework ID
+// In a full implementation, this could be read from settings.
+const defaultMapping: Record<string, string> = {
+  story: "rice",
+  epic: "ddd",
+  task: "heart",
+};
+---
+
+<div
+  id="strategic-evaluator-inline"
+  class="hidden flex-col gap-4 mt-3 bg-bg-card border border-border rounded-lg p-4 shadow-sm relative animate-fade-in"
+>
+  <div class="flex justify-between items-start mb-2">
+    <div>
+      <div class="flex items-center gap-2">
+        <h3 id="se-title" class="font-bold text-sm m-0">Strategic Lens</h3>
+        <span
+          id="se-archetype-badge"
+          class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-bg-hover text-text-muted"
+        ></span>
+      </div>
+      <p id="se-desc" class="text-[10px] text-text-muted mt-1 leading-tight">
+        Evaluate task against active framework.
+      </p>
+    </div>
+    <button
+      id="se-close"
+      class="text-text-muted hover:text-text-primary p-1 text-lg leading-none"
+      >&times;</button
+    >
+  </div>
+
+  <div id="se-content" class="overflow-y-auto max-h-[50vh] space-y-4 pr-1">
+    <!-- Dynamic inputs mapped from YAML schema will be injected here -->
+  </div>
+
+  <div class="flex flex-col gap-3 pt-3 border-t border-border mt-2">
+    <div
+      id="se-live-result"
+      class="text-xs font-bold w-full bg-bg-input rounded p-2 border border-border/50 empty:hidden"
+    >
+    </div>
+    <div class="flex items-center justify-between gap-2">
+      <button
+        id="se-ask-ai"
+        class="btn btn-ghost text-xs text-accent flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-accent/10 transition-colors"
+      >
+        <span>🤖</span> Auto-Score
+      </button>
+      <button type="button" id="se-save" class="btn-primary px-3 py-1.5 text-xs shadow-sm"
+        >Save</button
+      >
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ frameworks, defaultMapping }}>
+  // HTML-escape utility (inline — define:vars scripts cannot use ES imports)
+  function escapeHtml(str) {
+    const s = String(str ?? "")
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+  }
+
+  // 1. Core State
+  let currentTaskId = null;
+  let currentTaskType = null;
+  let currentActiveFrameworks = [];
+  let currentPayload = {};
+
+  const modal = document.getElementById("strategic-evaluator-inline");
+  const closeBtn = document.getElementById("se-close");
+  const contentEl = document.getElementById("se-content");
+  const titleEl = document.getElementById("se-title");
+  const archetypeBadge = document.getElementById("se-archetype-badge");
+  const liveResult = document.getElementById("se-live-result");
+  const saveBtn = document.getElementById("se-save");
+  const askAiBtn = document.getElementById("se-ask-ai");
+  const evalTriggerBtn = document.getElementById("td-evaluate-btn");
+  const badgeContainer = document.getElementById("td-strategic-badge");
+  const activeFrameworkNameLabel = document.getElementById(
+    "td-active-framework-name",
+  );
+
+  // Format Helper
+  function safeMathEval(formula, variables) {
+    try {
+      let calc = formula;
+      for (const [k, v] of Object.entries(variables)) {
+        calc = calc.replace(new RegExp(`\\b${k}\\b`, "gi"), v || 0);
+      }
+      return new Function(`return ${calc}`)();
+    } catch {
+      return 0;
+    }
+  }
+
+  function getBadgeForScore(framework, score) {
+    if (
+      !framework.data.badge_thresholds ||
+      framework.data.badge_thresholds.length === 0
+    )
+      return null;
+    // Sort thresholds descending
+    const sorted = [...framework.data.badge_thresholds].sort(
+      (a, b) => b.min - a.min,
+    );
+    for (const t of sorted) {
+      if (score >= t.min) return t;
+    }
+    return sorted[sorted.length - 1]; // return lowest
+  }
+
+  // Generate UI Component from Schema
+  function renderField(field, value, frameworkId) {
+    const val = value !== undefined ? value : field.min || 0;
+    const idPrefix = `${frameworkId}-${field.key}`;
+    const safeLabel = escapeHtml(field.label);
+    const safeHelp = escapeHtml(field.help_text || field.description);
+    let html = `<div class="se-field" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}">
+      <div class="flex justify-between items-center mb-1 mt-2">
+        <label class="text-xs font-semibold text-text-primary flex items-center gap-1 group relative">
+          ${safeLabel}
+          ${
+            field.help_text || field.description
+              ? `<span class="cursor-help text-text-muted hover:text-accent opacity-70">ⓘ</span>
+          <div class="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute left-0 bottom-full mb-1 w-56 bg-bg-secondary text-text-primary text-[11px] p-2.5 rounded shadow-xl border border-border z-20 font-normal leading-relaxed">${safeHelp}</div>`
+              : ""
+          }
+        </label>
+        <span class="text-[10px] font-mono text-accent se-field-val-display bg-accent/10 px-1.5 py-0.5 rounded" id="val-display-${escapeHtml(idPrefix)}">${escapeHtml(val)}</span>
+      </div>
+    `;
+
+    if (field.ui_type === "slider" || field.type === "number") {
+      html += `<input type="range" class="w-full accent-accent se-input focus:outline-none focus:ring-2 focus:ring-accent/50 rounded-lg h-1.5 bg-bg-input appearance-none" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" min="${field.min || 0}" max="${field.max || 100}" value="${escapeHtml(val)}" step="${field.type === "number" && field.max > 10 ? 1 : 0.1}" />`;
+    } else if (field.ui_type === "radio" && field.options) {
+      html += `<div class="flex flex-col gap-1.5 mt-1.5">`;
+      for (const opt of field.options) {
+        const isChecked = String(val) === String(opt.value) ? "checked" : "";
+        html += `<label class="flex items-center gap-2 cursor-pointer text-xs bg-bg-input border border-border/50 px-2.5 py-1.5 rounded hover:border-accent transition-colors">
+          <input type="radio" name="se-radio-${escapeHtml(idPrefix)}" class="accent-accent se-input focus:ring-2 focus:ring-accent/50" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" value="${escapeHtml(opt.value)}" ${isChecked}>
+          <span>${escapeHtml(opt.label)}</span>
+        </label>`;
+      }
+      html += `</div>`;
+    } else if (field.ui_type === "select" && field.options) {
+      html += `<select class="form-input w-full text-xs py-1.5 se-input bg-bg-input" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}">`;
+      for (const opt of field.options) {
+        const isSel = String(val) === String(opt.value) ? "selected" : "";
+        html += `<option value="${escapeHtml(opt.value)}" ${isSel}>${escapeHtml(opt.label)}</option>`;
+      }
+      html += `</select>`;
+    } else if (field.ui_type === "checkbox" || field.type === "boolean") {
+      const isChecked = val === true || val === 1 || val === "true" || val === "1" ? "checked" : "";
+      html += `<label class="flex items-center gap-2 cursor-pointer text-xs bg-bg-input border border-border/50 px-2.5 py-1.5 rounded hover:border-accent transition-colors mt-1">
+        <input type="checkbox" class="accent-accent w-3.5 h-3.5 se-input se-checkbox" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" ${isChecked}>
+        <span class="text-text-secondary">${safeHelp || "Enabled"}</span>
+      </label>`;
+    } else {
+      html += `<input type="text" class="form-input w-full text-xs py-1.5 bg-bg-input se-input" data-key="${escapeHtml(field.key)}" data-framework="${escapeHtml(frameworkId)}" value="${escapeHtml(val)}" />`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  function updateLiveResult() {
+    if (currentActiveFrameworks.length === 0) return;
+
+    // ... gathering code ...
+    const varsPerFw = {};
+    document.querySelectorAll(".se-input").forEach((el) => {
+      const k = el.getAttribute("data-key");
+      const fw = el.getAttribute("data-framework");
+      let v;
+      if (el.type === "checkbox") {
+        v = el.checked;
+      } else if (el.type === "radio") {
+        v = el.checked ? el.value : null;
+      } else {
+        v = el.value;
+      }
+
+      if (!varsPerFw[fw]) varsPerFw[fw] = {};
+      if (v !== null) varsPerFw[fw][k] = typeof v === "boolean" ? v : (isNaN(Number(v)) ? v : Number(v));
+
+      const display = document.getElementById(`val-display-${fw}-${k}`);
+      if (display && el.type !== "radio" && el.type !== "checkbox") display.textContent = v;
+    });
+
+    Object.keys(varsPerFw).forEach((fw) => {
+      if (!currentPayload[fw]) currentPayload[fw] = {};
+      Object.assign(currentPayload[fw], varsPerFw[fw]);
+    });
+
+    let overallHtml = "";
+
+    currentActiveFrameworks.forEach((fw) => {
+      if (fw.data.archetype === "formula" && fw.data.formula) {
+        const score = Math.round(
+          safeMathEval(fw.data.formula, currentPayload[fw.id]),
+        );
+        currentPayload[fw.id].score = score;
+        const badge = getBadgeForScore(fw, score);
+        if (badge) {
+          overallHtml += `<div class="flex items-center justify-between"><span class="text-[10px] text-text-muted uppercase">${escapeHtml(fw.data.name)}: <span class="font-bold text-text-primary ml-1">${escapeHtml(score)}</span></span> <span class="px-1.5 py-0.5 text-[9px] rounded bg-${badge.color}/10 text-${badge.color} border border-${badge.color}/20">${escapeHtml(badge.label)}</span></div>`;
+        } else {
+          overallHtml += `<div class="flex items-center justify-between"><span class="text-[10px] text-text-muted uppercase">${escapeHtml(fw.data.name)}: <span class="font-bold text-text-primary ml-1">${escapeHtml(score)}</span></span></div>`;
+        }
+      }
+    });
+
+    if (!overallHtml) {
+      overallHtml = `<span class="text-text-muted text-[10px] italic">Evaluating...</span>`;
+    }
+
+    liveResult.innerHTML = `<div class="flex flex-col gap-1 w-full">${overallHtml}</div>`;
+  }
+
+  // 3. Open/Close Modal
+  function openEvaluator() {
+    if (currentActiveFrameworks.length === 0) return;
+
+    if (modal.classList.contains("flex")) {
+      closeEvaluator();
+      return;
+    }
+
+    titleEl.textContent = currentActiveFrameworks
+      .map((f) => f.data.name)
+      .join(" + ");
+    archetypeBadge.textContent = "COMBO";
+
+    let html = "";
+    currentActiveFrameworks.forEach((fw) => {
+      html += `<div class="mb-4"><h4 class="font-bold text-xs text-text-primary mb-2 pb-1 border-b border-border/50 flex items-center gap-2">${escapeHtml(fw.data.name)} <span class="bg-bg-hover text-text-muted px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">${escapeHtml(fw.data.archetype)}</span></h4>`;
+
+      const payloadContext = currentPayload[fw.id] || {};
+
+      html += fw.data.fields
+        .map((f) => renderField(f, payloadContext[f.key], fw.id))
+        .join("");
+      html += `</div>`;
+    });
+
+    contentEl.innerHTML = html;
+
+    contentEl.querySelectorAll(".se-input").forEach((el) => {
+      el.addEventListener("input", updateLiveResult);
+      el.addEventListener("change", updateLiveResult);
+    });
+
+    updateLiveResult();
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  function closeEvaluator() {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+
+  closeBtn?.addEventListener("click", closeEvaluator);
+  modal?.addEventListener("click", (e) => {
+    if (e.target === modal) closeEvaluator();
+  });
+
+  // 4. Save Logic
+  saveBtn?.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+
+    currentActiveFrameworks.forEach((fw) => {
+      if (!currentPayload[fw.id]) currentPayload[fw.id] = {};
+      currentPayload[fw.id]._evaluatedAt = new Date().toISOString();
+    });
+
+    try {
+      const res = await fetch(
+        `${window.__ingress_path || ""}/api/tasks/${currentTaskId}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            framework_payload: JSON.stringify(currentPayload),
+          }),
+        },
+      );
+
+      if (res.ok) {
+        renderSidebarBadge();
+        closeEvaluator();
+        // Optional global event notification
+        window.dispatchEvent(
+          new CustomEvent("meitheal-sync", {
+            detail: { type: "framework-saved" },
+          }),
+        );
+      }
+    } catch (e) {
+      ;(window.__mLog ? window.__mLog("strategy", "evaluator") : console).error("Failed to save evaluation", e);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Accept & Save";
+    }
+  });
+
+  // 5. Sidebar Integrator — uses rule resolver API for framework selection
+  window.attachStrategicLens = async function (
+    taskId,
+    taskType,
+    frameworkPayloadStr,
+    _cachedSettings,
+  ) {
+    currentTaskId = taskId;
+    currentTaskType = taskType || "task";
+
+    // Try to parse existing payload
+    try {
+      currentPayload = JSON.parse(frameworkPayloadStr || "{}");
+    } catch {
+      currentPayload = {};
+    }
+
+    // ── Rule-driven framework selection via /api/rules/resolve ──
+    let fwIds = null;
+    try {
+      const resolveRes = await fetch(
+        (window.__ingress_path || "") + `/api/rules/resolve?taskType=${encodeURIComponent(currentTaskType)}`,
+      );
+      if (resolveRes.ok) {
+        const resolveData = await resolveRes.json();
+        if (resolveData.data && Array.isArray(resolveData.data.applicableLensIds) && resolveData.data.applicableLensIds.length > 0) {
+          fwIds = resolveData.data.applicableLensIds;
+        }
+      }
+    } catch {
+      /* fall through to defaults */
+    }
+
+    // Fallback to defaultMapping if rules didn't resolve anything
+    if (!fwIds) {
+      fwIds = defaultMapping[currentTaskType];
+      if (typeof fwIds === "string") fwIds = [fwIds];
+    }
+    if (!fwIds || !Array.isArray(fwIds)) fwIds = ["heart"]; // Ultimate fallback
+
+    currentActiveFrameworks = frameworks.filter((f) => fwIds.includes(f.id));
+
+    if (currentActiveFrameworks.length > 0) {
+      if (activeFrameworkNameLabel) {
+        activeFrameworkNameLabel.textContent = currentActiveFrameworks
+          .map((f) => f.data.name)
+          .join(" + ");
+        activeFrameworkNameLabel.classList.remove("hidden");
+      }
+      renderSidebarBadge();
+    }
+  };
+
+  function renderSidebarBadge() {
+    if (!badgeContainer || currentActiveFrameworks.length === 0) return;
+
+    let html = "";
+    let hasValues = false;
+
+    currentActiveFrameworks.forEach((fw) => {
+      const p = currentPayload[fw.id];
+      if (!p) return;
+      hasValues = true;
+
+      if (fw.data.archetype === "formula" && p.score !== undefined) {
+        const badge = getBadgeForScore(fw, p.score);
+        if (badge) {
+          html += `<div class="px-3 py-2 rounded-md bg-${badge.color}/10 border border-${badge.color}/20 flex items-center justify-between mb-1">
+            <span class="text-xs font-bold text-${badge.color} uppercase tracking-wider">${escapeHtml(fw.data.name)}: ${escapeHtml(badge.label)}</span>
+            <span class="font-mono font-bold text-${badge.color}">${escapeHtml(p.score)}</span>
+          </div>`;
+        } else {
+          html += `<div class="px-3 py-2 rounded-md bg-bg-hover flex justify-between items-center mb-1"><span class="text-xs text-text-muted">${escapeHtml(fw.data.name)} Score</span><span class="font-mono text-sm">${escapeHtml(p.score)}</span></div>`;
+        }
+      } else if (fw.data.archetype === "checklist") {
+        // KCS-style checklist — show completed/total
+        const total = fw.data.fields ? fw.data.fields.length : 0;
+        const completed = Object.values(p).filter((v) => v === true).length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+        const color = pct >= 80 ? "success" : pct >= 50 ? "warning" : "danger";
+        html += `<div class="px-3 py-2 rounded-md bg-${color}/10 border border-${color}/20 flex items-center justify-between mb-1">
+          <span class="text-xs font-bold text-${color} uppercase tracking-wider">${escapeHtml(fw.data.name)}: ${completed}/${total}</span>
+          <span class="font-mono font-bold text-${color}">${pct}%</span>
+        </div>`;
+      } else if (p._evaluatedAt) {
+        html += `<div class="px-3 py-2 rounded-md bg-bg-hover border border-border flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">${escapeHtml(fw.data.name)} Evaluated</span>
+          <span class="text-sm">✅</span>
+        </div>`;
+      }
+    });
+
+    if (hasValues && html.length > 0) {
+      badgeContainer.innerHTML = html;
+      badgeContainer.classList.remove("hidden");
+    } else {
+      badgeContainer.classList.add("hidden");
+    }
+  }
+
+  evalTriggerBtn?.addEventListener("click", openEvaluator);
+
+  // 6. AI Auto-Score — uses HA Assist for real scoring
+  askAiBtn?.addEventListener("click", async () => {
+    askAiBtn.textContent = "⚙️ Scoring…";
+    askAiBtn.disabled = true;
+
+    // Remove any previous justification
+    document.getElementById("se-ai-justification")?.remove();
+
+    // Build framework descriptors for the AI
+    const fwDescriptors = currentActiveFrameworks.map((fw) => ({
+      id: fw.id,
+      name: fw.data.name,
+      archetype: fw.data.archetype,
+      fields: fw.data.fields.map((f) => ({
+        key: f.key,
+        label: f.label,
+        help_text: f.help_text || f.description || "",
+        min: f.min,
+        max: f.max,
+        options: f.options,
+      })),
+    }));
+
+    try {
+      // Dynamic import to keep the strategic evaluator lean
+      const { autoScoreTask } = await import("@domains/ai/ai-context-service");
+      const result = await autoScoreTask(currentTaskId, fwDescriptors);
+
+      if (
+        result.source === "ha-assist" &&
+        Object.keys(result.scores).length > 0
+      ) {
+        // Apply AI scores to the UI inputs
+        for (const [fwId, fieldValues] of Object.entries(result.scores)) {
+          for (const [fieldKey, value] of Object.entries(fieldValues)) {
+            const inputs = contentEl.querySelectorAll(
+              `.se-input[data-framework="${fwId}"][data-key="${fieldKey}"]`,
+            );
+            inputs.forEach((el) => {
+              if (el.type === "radio") {
+                if (String(el.value) === String(value)) el.checked = true;
+              } else {
+                el.value = value;
+              }
+            });
+          }
+        }
+        updateLiveResult();
+
+        // Show justification
+        const just = document.createElement("div");
+        just.id = "se-ai-justification";
+        just.className =
+          "mt-4 p-3 bg-accent/10 border border-accent/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
+        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Evaluation</strong>${escapeHtml(result.justification)}`;
+        contentEl.prepend(just);
+
+        askAiBtn.innerHTML = `<span>✨</span> Scored via Assist`;
+      } else if (result.source === "clipboard-fallback") {
+        // HA not connected — show fallback message
+        const just = document.createElement("div");
+        just.id = "se-ai-justification";
+        just.className =
+          "mt-4 p-3 bg-warning/10 border border-warning/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
+        just.innerHTML = `<strong class="text-warning block mb-1">⚠ HA Assist Unavailable</strong>${escapeHtml(result.justification)}`;
+        contentEl.prepend(just);
+        askAiBtn.innerHTML = `<span>📋</span> Prompt Copied`;
+      } else {
+        // Assist responded but couldn't parse structured scores
+        const just = document.createElement("div");
+        just.id = "se-ai-justification";
+        just.className =
+          "mt-4 p-3 bg-accent/10 border border-accent/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
+        just.innerHTML = `<strong class="text-accent block mb-1">✨ AI Response</strong>${escapeHtml(result.justification)}<br/><span class="text-text-muted mt-1 block">Adjust sliders manually based on AI feedback above.</span>`;
+        contentEl.prepend(just);
+        askAiBtn.innerHTML = `<span>✨</span> AI Responded`;
+      }
+    } catch (err) {
+      ;(window.__mLog ? window.__mLog("strategy", "evaluator") : console).error("Auto-score failed:", err);
+      const just = document.createElement("div");
+      just.id = "se-ai-justification";
+      just.className =
+        "mt-4 p-3 bg-danger/10 border border-danger/20 rounded-md text-[11px] text-text-secondary leading-relaxed";
+      just.innerHTML = `<strong class="text-danger block mb-1">Error</strong>Failed to score: ${escapeHtml(err.message || "Unknown error")}`;
+      contentEl.prepend(just);
+      askAiBtn.innerHTML = `<span>❌</span> Failed`;
+    }
+
+    setTimeout(() => {
+      askAiBtn.disabled = false;
+      askAiBtn.innerHTML = `<span>🤖</span> Auto-Score`;
+    }, 4000);
+  });
+</script>

@@ -1,0 +1,31 @@
+configuration:
+  log_level:
+    name: Log Level
+    description: >-
+      Verbosity of application logging. Use "debug" for troubleshooting,
+      "info" for normal operation, "warn" or "error" for quieter output.
+  log_categories:
+    name: Log Categories
+    description: >-
+      Categories to include in log output (e.g. auth, tasks, integrations,
+      observability). Only events matching these categories are emitted.
+  log_redaction:
+    name: Log Redaction
+    description: >-
+      When enabled, tokens, passwords, and PII are redacted from log output
+      before it leaves the add-on.
+  audit_enabled:
+    name: Audit Logging
+    description: >-
+      Emit structured audit trail records for security-sensitive operations
+      such as login, data export, and configuration changes.
+  loki_url:
+    name: Loki Push URL
+    description: >-
+      Full URL of a Grafana Loki push endpoint for the observability pipeline.
+      Leave default if using the Grafana stack add-on.
+  license_key:
+    name: License Key
+    description: >-
+      Optional license key for Meitheal. Paste a valid license JWT here,
+      or leave empty for personal/homelab use.

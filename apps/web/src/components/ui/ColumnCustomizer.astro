@@ -1,0 +1,325 @@
+---
+/**
+ * ColumnCustomizer — Column visibility and ordering control for table view
+ *
+ * @domain tasks
+ * @bounded-context tasks/ui
+ *
+ * Renders a dropdown panel with:
+ * - Checkbox list of available columns
+ * - Drag-to-reorder (future enhancement)
+ * - Reset to defaults button
+ * - Persists preferences to localStorage
+ *
+ * Emits `meitheal:columns-change` CustomEvent when column visibility changes.
+ */
+interface Props {
+  class?: string
+}
+const { class: className } = Astro.props
+---
+
+<div class={`column-customizer ${className ?? ''}`}>
+  <button
+    type="button"
+    class="column-customizer__toggle"
+    id="column-customizer-toggle"
+    title="Customize Columns"
+    aria-label="Customize visible columns"
+    aria-expanded="false"
+    aria-controls="column-customizer-panel"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-columns-3"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+    <span class="column-customizer__label">Columns</span>
+  </button>
+
+  <div class="column-customizer__panel hidden" id="column-customizer-panel" role="region" aria-label="Column Visibility">
+    <div class="column-customizer__header">
+      <h4>Visible Columns</h4>
+      <button type="button" class="btn-icon" id="column-customizer-close" aria-label="Close panel">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+
+    <ul class="column-customizer__list" id="column-customizer-list">
+      <!-- Populated by JS from the actual table columns -->
+    </ul>
+
+    <div class="column-customizer__footer">
+      <button type="button" class="btn text-xs" id="column-customizer-reset">
+        Reset to Defaults
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const COLUMN_PREFS_KEY = "meitheal-column-preferences"
+
+  /** Column definitions — id must match the CSS class on <th> */
+  const ALL_COLUMNS = [
+    { id: "key", label: "Key", alwaysVisible: false, defaultVisible: true },
+    { id: "title", label: "Title", alwaysVisible: true, defaultVisible: true },
+    { id: "type", label: "Type", alwaysVisible: false, defaultVisible: true },
+    { id: "status", label: "Status", alwaysVisible: false, defaultVisible: true },
+    { id: "priority", label: "Priority", alwaysVisible: false, defaultVisible: true },
+    { id: "due-date", label: "Due Date", alwaysVisible: false, defaultVisible: true },
+    { id: "rice", label: "RICE", alwaysVisible: false, defaultVisible: true },
+    { id: "calendar", label: "Calendar", alwaysVisible: false, defaultVisible: true },
+    { id: "custom-fields", label: "Custom Fields", alwaysVisible: false, defaultVisible: true },
+    { id: "assigned", label: "Assigned", alwaysVisible: false, defaultVisible: true },
+    { id: "labels", label: "Labels", alwaysVisible: false, defaultVisible: true },
+  ]
+
+  function loadPrefs(): Record<string, boolean> {
+    try {
+      return JSON.parse(localStorage.getItem(COLUMN_PREFS_KEY) ?? "{}")
+    } catch {
+      return {}
+    }
+  }
+
+  function savePrefs(prefs: Record<string, boolean>) {
+    localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(prefs))
+  }
+
+  function getVisibleColumns(): string[] {
+    const prefs = loadPrefs()
+    return ALL_COLUMNS.filter(col => {
+      if (col.alwaysVisible) return true
+      return prefs[col.id] !== undefined ? prefs[col.id] : col.defaultVisible
+    }).map(c => c.id)
+  }
+
+  function applyColumnVisibility(visible: string[]) {
+    const table = document.getElementById("task-table")
+    if (!table) return
+
+    ALL_COLUMNS.forEach(col => {
+      const isVisible = visible.includes(col.id)
+      // Hide/show all cells with the matching class
+      const cells = table.querySelectorAll(`.col-${col.id}`)
+      cells.forEach(cell => {
+        ;(cell as HTMLElement).style.display = isVisible ? "" : "none"
+      })
+    })
+
+    document.dispatchEvent(new CustomEvent("meitheal:columns-change", {
+      detail: { visible }
+    }))
+  }
+
+  function renderColumnList() {
+    const list = document.getElementById("column-customizer-list")
+    if (!list) return
+    list.innerHTML = ""
+
+    const prefs = loadPrefs()
+
+    ALL_COLUMNS.forEach(col => {
+      const li = document.createElement("li")
+      li.className = "column-customizer__item"
+
+      const label = document.createElement("label")
+      label.className = "column-customizer__label"
+
+      const checkbox = document.createElement("input")
+      checkbox.type = "checkbox"
+      checkbox.dataset.colId = col.id
+      checkbox.checked = col.alwaysVisible || (prefs[col.id] !== undefined ? Boolean(prefs[col.id]) : col.defaultVisible)
+      checkbox.disabled = col.alwaysVisible
+
+      const span = document.createElement("span")
+      span.textContent = col.label
+      if (col.alwaysVisible) {
+        span.classList.add("text-text-muted")
+      }
+
+      checkbox.addEventListener("change", () => {
+        const currentPrefs = loadPrefs()
+        currentPrefs[col.id] = checkbox.checked
+        savePrefs(currentPrefs)
+        applyColumnVisibility(getVisibleColumns())
+      })
+
+      label.append(checkbox, span)
+      li.appendChild(label)
+      list.appendChild(li)
+    })
+  }
+
+  function initColumnCustomizer() {
+    const wrapper = document.querySelector(".column-customizer")
+    if (!wrapper || (wrapper as HTMLElement).dataset.initialized) return
+    ;(wrapper as HTMLElement).dataset.initialized = "true"
+
+    const toggle = document.getElementById("column-customizer-toggle")
+    const panel = document.getElementById("column-customizer-panel")
+    const closeBtn = document.getElementById("column-customizer-close")
+    const resetBtn = document.getElementById("column-customizer-reset")
+
+    toggle?.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true"
+      toggle.setAttribute("aria-expanded", String(!expanded))
+      panel?.classList.toggle("hidden")
+      if (!expanded) renderColumnList()
+    })
+
+    closeBtn?.addEventListener("click", () => {
+      toggle?.setAttribute("aria-expanded", "false")
+      panel?.classList.add("hidden")
+    })
+
+    resetBtn?.addEventListener("click", () => {
+      localStorage.removeItem(COLUMN_PREFS_KEY)
+      renderColumnList()
+      applyColumnVisibility(getVisibleColumns())
+    })
+
+    // Click outside to close
+    document.addEventListener("click", (e) => {
+      if (!panel?.classList.contains("hidden") && toggle && panel) {
+        if (!panel.contains(e.target as Node) && !toggle.contains(e.target as Node)) {
+          toggle.setAttribute("aria-expanded", "false")
+          panel.classList.add("hidden")
+        }
+      }
+    })
+
+    // Apply saved preferences on load
+    applyColumnVisibility(getVisibleColumns())
+  }
+
+  document.addEventListener("DOMContentLoaded", initColumnCustomizer)
+  document.addEventListener("astro:page-load", initColumnCustomizer)
+</script>
+
+<style>
+  .column-customizer {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .column-customizer__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .column-customizer__toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-color: var(--text-muted);
+  }
+
+  .column-customizer__toggle[aria-expanded="true"] {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .column-customizer__label {
+    font-weight: 500;
+  }
+
+  .column-customizer__panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 240px;
+    max-height: 400px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 50;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .column-customizer__panel.hidden {
+    display: none;
+  }
+
+  .column-customizer__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+
+  .column-customizer__header h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .column-customizer__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    max-height: 280px;
+  }
+
+  .column-customizer__item {
+    padding: 0;
+  }
+
+  .column-customizer__label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .column-customizer__label:hover {
+    background: var(--bg-hover);
+  }
+
+  .column-customizer__label input[type="checkbox"] {
+    accent-color: var(--accent);
+  }
+
+  .column-customizer__footer {
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .column-customizer__footer .btn {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 2px 6px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+  }
+
+  .column-customizer__footer .btn:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+  }
+</style>

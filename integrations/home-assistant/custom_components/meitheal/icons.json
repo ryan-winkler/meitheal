@@ -1,0 +1,43 @@
+{
+  "entity": {
+    "todo": {
+      "task_list": {
+        "default": "mdi:clipboard-check-multiple-outline"
+      }
+    },
+    "sensor": {
+      "active_tasks": {
+        "default": "mdi:checkbox-marked-circle-outline"
+      },
+      "overdue_tasks": {
+        "default": "mdi:clock-alert-outline",
+        "state": {
+          "0": "mdi:clock-check-outline"
+        }
+      },
+      "total_tasks": {
+        "default": "mdi:format-list-checks"
+      }
+    }
+  },
+  "services": {
+    "create_task": {
+      "service": "mdi:plus-circle-outline"
+    },
+    "complete_task": {
+      "service": "mdi:check-circle-outline"
+    },
+    "sync_todo": {
+      "service": "mdi:sync"
+    },
+    "search_tasks": {
+      "service": "mdi:magnify"
+    },
+    "get_overdue_tasks": {
+      "service": "mdi:clock-alert-outline"
+    },
+    "notify_overdue": {
+      "service": "mdi:bell-alert-outline"
+    }
+  }
+}

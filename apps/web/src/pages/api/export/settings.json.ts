@@ -1,0 +1,60 @@
+import type { APIRoute } from "astro"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { findAllRules } from "@domains/strategy/rule-repository"
+import { getAllOverrides } from "@domains/strategy/framework-repository"
+import { exportFilename } from "../../../lib/export-filename"
+import { logApiError } from "../../../lib/api-logger"
+import { apiProblem } from "../../../lib/api-response"
+import { isSecretSetting } from "../../../lib/settings-security"
+
+export const GET: APIRoute = async ({ locals }) => {
+    if (!locals.hassIsAdmin || locals.agentToken) {
+        return apiProblem({ status: 403, title: "Admin Required", detail: "Settings export requires admin access" })
+    }
+    try {
+        await ensureSchema()
+        const repo = new SettingsRepository(getPersistenceClient())
+        await repo.ensureSettingsTable()
+
+        const rows = await repo.getAll()
+
+        // Convert array of rows into a key-value object, excluding secrets
+        const settingsObject: Record<string, string> = Object.create(null)
+        for (const row of rows) {
+            if (row.key && row.value !== null && !isSecretSetting(row.key as string)) {
+                settingsObject[row.key as string] = row.value as string
+            }
+        }
+
+        // Include rules and framework configs for complete backup
+        const rules = await findAllRules()
+        const frameworkOverrides = await getAllOverrides()
+
+        const exportPayload = {
+            _version: 2,
+            _exportedAt: new Date().toISOString(),
+            settings: settingsObject,
+            rules,
+            frameworkOverrides,
+        }
+
+        const dataStr = JSON.stringify(exportPayload, null, 2)
+
+        return new Response(dataStr, {
+            status: 200,
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": "no-store",
+                "Content-Disposition": `attachment; filename="${exportFilename("Settings", "json")}"`,
+            },
+        })
+    } catch (error) {
+        logApiError("export-settings", "Failed to export settings as JSON", error)
+        return new Response(JSON.stringify({ error: "Settings Export failed" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+        })
+    }
+}
+

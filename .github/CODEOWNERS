@@ -1,0 +1,20 @@
+# Meitheal CODEOWNERS
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all changes require review from maintainer
+* @ryan-winkler
+
+# HA Custom Component (Python) — extra care
+integrations/home-assistant/ @ryan-winkler
+
+# Addon runtime — Docker, startup, Supervisor API
+meitheal-hub/ @ryan-winkler
+
+# Security-sensitive files
+SECURITY.md @ryan-winkler
+apps/web/src/domains/auth/ @ryan-winkler
+apps/web/src/middleware.ts @ryan-winkler
+apps/web/src/lib/rate-limit.ts @ryan-winkler
+
+# CI/CD and GitHub config
+.github/ @ryan-winkler

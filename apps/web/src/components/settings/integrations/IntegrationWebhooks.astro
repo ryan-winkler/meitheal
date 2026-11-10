@@ -1,0 +1,70 @@
+---
+/**
+ * Webhooks integration card sub-component.
+ * @domain integrations/webhooks
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+import IntegrationCardHeader from "./IntegrationCardHeader.astro"
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
+---
+
+<div class="integration-card" id="integration-webhooks">
+  <IntegrationCardHeader
+    integration="webhooks"
+    icon="🔔"
+    title={t("settings.webhooks_title", locale)}
+    description={t("settings.webhooks_desc", locale)}
+    helpLabel={t("settings.webhooks_explainer", locale)}
+  >
+    <span class="badge badge-disabled" id="webhook-status">{t("settings.status_not_configured", locale)}</span>
+  </IntegrationCardHeader>
+
+  <div class="integration-card__body" id="integration-webhooks-body" inert>
+    <!-- Differentiation callout -->
+    <div class="integration-callout integration-callout--info mb-3">
+      <strong>{t("settings.webhooks_vs_ai", locale)}</strong>
+      <div class="integration-callout__detail">
+        <span set:html={t("settings.webhooks_vs_ai_desc", locale)} />
+      </div>
+    </div>
+    <div class="integration-card__config">
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="webhook-endpoint">{t("settings.webhooks_endpoint", locale)}</label>
+          <HelpTooltip
+            text={t("settings.webhooks_endpoint_help", locale)}
+            id="help-webhook-endpoint"
+          />
+        </div>
+        <input type="url" class="form-input" id="webhook-endpoint" placeholder="https://your-service.com/webhook" />
+      </div>
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="webhook-secret">{t("settings.n8n_secret", locale)}</label>
+          <HelpTooltip
+            text={t("settings.webhooks_secret_help", locale)}
+            id="help-webhook-secret"
+          />
+        </div>
+        <input type="password" class="form-input" id="webhook-secret" placeholder="••••••••" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="webhook-format">{t("settings.webhooks_format", locale)}</label>
+        <select class="form-select" id="webhook-format">
+          <option value="json" selected>{t("settings.webhooks_format_json", locale)}</option>
+          <option value="form">{t("settings.webhooks_format_form", locale)}</option>
+        </select>
+      </div>
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-webhook">{t("settings.save_webhook", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook">{t("settings.send_webhook_test", locale)}</button>
+      </div>
+    </div>
+  </div>
+</div>

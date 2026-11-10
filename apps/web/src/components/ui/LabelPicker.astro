@@ -1,0 +1,219 @@
+---
+/**
+ * LabelPicker — Typeahead label selector component
+ *
+ * @domain labels
+ * @bounded-context labels
+ *
+ * Renders an input with autocomplete dropdown for selecting labels.
+ * Fetches available labels from /api/labels and supports creating new ones.
+ * Uses existing `.label-picker` CSS classes from `_labels.css`.
+ *
+ * @prop selected - Currently selected label names
+ * @prop name - Form input name attribute
+ * @prop id - Element ID (for form targeting)
+ */
+interface Props {
+  selected?: string[]
+  name?: string
+  id?: string
+}
+
+const {
+  selected = [],
+  name = "labels",
+  id = "label-picker",
+} = Astro.props
+---
+
+<div class="label-picker" id={id} data-name={name}>
+  {/* Selected labels */}
+  <div class="label-badges" id={`${id}-selected`}>
+    {selected.map((label) => (
+      <span class="label-badge label-badge--default" data-label={label}>
+        {label}
+        <button
+          type="button"
+          class="label-badge__remove"
+          aria-label={`Remove ${label}`}
+          data-remove={label}
+        >
+          ×
+        </button>
+      </span>
+    ))}
+  </div>
+
+  {/* Typeahead input */}
+  <input
+    type="text"
+    class="label-picker__input"
+    placeholder="Add label..."
+    autocomplete="off"
+    aria-label="Search or create labels"
+    id={`${id}-input`}
+  />
+
+  {/* Hidden input for form submission */}
+  <input
+    type="hidden"
+    name={name}
+    id={`${id}-value`}
+    value={JSON.stringify(selected)}
+  />
+
+  {/* Dropdown */}
+  <div class="label-picker__dropdown" id={`${id}-dropdown`}>
+    {/* Options populated by client JS */}
+  </div>
+</div>
+
+<script>
+  import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+  /**
+   * LabelPicker client-side controller
+   * Fetches labels from /api/labels, renders typeahead, handles add/remove
+   */
+  type LabelData = { id: number; title: string; hex_color: string }
+
+  document.querySelectorAll<HTMLElement>(".label-picker").forEach((picker) => {
+    const inputEl = picker.querySelector<HTMLInputElement>(".label-picker__input")!
+    const dropdownEl = picker.querySelector<HTMLElement>(".label-picker__dropdown")!
+    const selectedEl = picker.querySelector<HTMLElement>("[id$='-selected']")!
+    const hiddenEl = picker.querySelector<HTMLInputElement>("[id$='-value']")!
+
+    let allLabels: LabelData[] = []
+    let selectedLabels: string[] = JSON.parse(hiddenEl.value || "[]")
+
+    // Fetch available labels
+    async function loadLabels() {
+      try {
+        const res = await fetch("/api/labels")
+        if (res.ok) {
+          const data = await res.json()
+          allLabels = Array.isArray(data) ? data : data.labels || []
+        }
+      } catch { /* offline fallback — use empty */ }
+    }
+
+    function updateHidden() {
+      hiddenEl.value = JSON.stringify(selectedLabels)
+      // Dispatch change event for form integration
+      hiddenEl.dispatchEvent(new Event("change", { bubbles: true }))
+    }
+
+    function renderSelected() {
+      selectedEl.innerHTML = selectedLabels
+        .map(
+          (label) => `
+        <span class="label-badge label-badge--default" data-label="${escapeHtml(label)}">
+          ${escapeHtml(label)}
+          <button type="button" class="label-badge__remove" data-remove="${escapeHtml(label)}" aria-label="Remove ${escapeHtml(label)}">×</button>
+        </span>
+      `,
+        )
+        .join("")
+
+      // Bind remove buttons
+      selectedEl.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation()
+          const name = btn.dataset.remove!
+          selectedLabels = selectedLabels.filter((l) => l !== name)
+          renderSelected()
+          updateHidden()
+        })
+      })
+    }
+
+    function renderDropdown(query: string) {
+      const q = query.toLowerCase().trim()
+      const filtered = allLabels.filter(
+        (l) => l.title.toLowerCase().includes(q) && !selectedLabels.includes(l.title),
+      )
+
+      let html = filtered
+        .map(
+          (l) => `
+        <div class="label-picker__option" data-title="${escapeHtml(l.title)}" data-color="${escapeHtml(l.hex_color)}">
+          <span class="label-picker__dot" style="background: ${sanitizeCssColor(l.hex_color)}"></span>
+          ${escapeHtml(l.title)}
+        </div>
+      `,
+        )
+        .join("")
+
+      // Show "create" option if query doesn't match existing
+      if (q && !allLabels.some((l) => l.title.toLowerCase() === q) && !selectedLabels.includes(q)) {
+        html += `
+          <div class="label-picker__option label-picker__option--create" data-create="${escapeHtml(q)}">
+            + Create "${escapeHtml(q)}"
+          </div>
+        `
+      }
+
+      dropdownEl.innerHTML = html || '<div class="label-picker__option" style="opacity:0.5">No labels found</div>'
+      dropdownEl.classList.add("label-picker__dropdown--open")
+
+      // Bind option clicks
+      dropdownEl.querySelectorAll<HTMLElement>("[data-title]").forEach((opt) => {
+        opt.addEventListener("click", () => {
+          selectedLabels.push(opt.dataset.title!)
+          renderSelected()
+          updateHidden()
+          inputEl.value = ""
+          dropdownEl.classList.remove("label-picker__dropdown--open")
+        })
+      })
+
+      dropdownEl.querySelectorAll<HTMLElement>("[data-create]").forEach((opt) => {
+        opt.addEventListener("click", async () => {
+          const name = opt.dataset.create!
+          selectedLabels.push(name)
+          renderSelected()
+          updateHidden()
+          inputEl.value = ""
+          dropdownEl.classList.remove("label-picker__dropdown--open")
+
+          // Create label in background
+          try {
+            await fetch("/api/labels", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ title: name }),
+            })
+          } catch { /* non-fatal */ }
+        })
+      })
+    }
+
+    // Event handlers
+    inputEl.addEventListener("focus", async () => {
+      if (allLabels.length === 0) await loadLabels()
+      renderDropdown(inputEl.value)
+    })
+
+    inputEl.addEventListener("input", () => {
+      renderDropdown(inputEl.value)
+    })
+
+    // Close on outside click
+    document.addEventListener("click", (e) => {
+      if (!picker.contains(e.target as Node)) {
+        dropdownEl.classList.remove("label-picker__dropdown--open")
+      }
+    })
+
+    // Keyboard navigation
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        dropdownEl.classList.remove("label-picker__dropdown--open")
+      }
+      if (e.key === "Backspace" && !inputEl.value && selectedLabels.length > 0) {
+        selectedLabels.pop()
+        renderSelected()
+        updateHidden()
+      }
+    })
+  })
+</script>

@@ -1,0 +1,116 @@
+/* =============================================
+ * _forms.css — Form inputs, selects, labels, groups
+ *
+ * Domain: Form bounded context
+ * Owns: .form-input, .form-select, .form-label, .form-group, settings-tab
+ * Does NOT own: inline table selects (_table.css), buttons (_buttons.css)
+ * ============================================= */
+/* --- Forms --- */
+.form-input,
+.form-select {
+  @apply w-full bg-bg-input/60 backdrop-blur-sm border border-border rounded-md px-3 py-2.5 text-text-primary text-sm transition-all;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+  .form-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 0.65em auto;
+    padding-right: 2rem;
+    cursor: pointer;
+  }
+
+  .form-select option {
+    @apply bg-bg-card text-text-primary;
+  }
+.form-input:focus,
+.form-select:focus {
+  @apply outline-none border-accent ring-2 ring-accent/20 bg-bg-input/80;
+  box-shadow: 0 0 0 3px var(--accent-light, rgba(99, 102, 241, 0.1));
+}
+
+.form-input::placeholder {
+  @apply text-text-muted;
+  transition: opacity 0.15s ease;
+  }
+  
+  /* B3: Hide placeholder on focus for cleaner typing experience */
+  .form-input:focus::placeholder {
+    opacity: 0.4;
+  }
+  
+  /* B3: Textarea auto-resize (modern browsers) */
+  textarea.form-input {
+    field-sizing: content;
+    min-height: 80px;
+    max-height: 300px;
+    resize: vertical;
+}
+
+      .form-input:disabled,
+      .form-select:disabled,
+      .form-input[readonly],
+      .form-select[readonly] {
+        @apply bg-bg-secondary/50 text-text-muted cursor-not-allowed opacity-75;
+      }
+
+.form-group {
+  @apply mb-4;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-text-secondary mb-1.5;
+}
+/* --- Settings Tabs ---
+ * Restored from inline styles (commit 2e3602f).
+ * Removed during Phase 58 QA without CSS migration. */
+.settings-tabs {
+display: flex;
+gap: 24px;
+border-bottom: 1px solid var(--border);
+margin-bottom: 24px;
+overflow-x: auto;
+-webkit-overflow-scrolling: touch;
+scrollbar-width: none;
+/* Scroll fade indicator — right edge gradient hints more content */
+mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+-webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+
+.settings-tabs::-webkit-scrollbar {
+display: none;
+}
+
+.settings-tab {
+padding: 8px 0 12px;
+border-bottom: 2px solid transparent;
+color: var(--text-muted);
+font-weight: 500;
+font-size: 0.875rem;
+cursor: pointer;
+background: transparent;
+border-top: none;
+border-left: none;
+border-right: none;
+white-space: nowrap;
+transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-tab:hover {
+color: var(--text-primary);
+}
+
+.settings-tab.active {
+color: var(--text-primary);
+border-bottom-color: var(--accent);
+}
+
+/* Settings grid — restored from pre-split global.css */
+.settings-grid {
+@apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4;
+}

@@ -1,0 +1,406 @@
+---
+/**
+ * SavedFilterPresets — Save and load named filter combinations
+ *
+ * @domain tasks
+ * @bounded-context tasks/ui
+ *
+ * Renders a dropdown with:
+ * - List of saved filter presets
+ * - "Save current" flow to capture active filters
+ * - Rename and delete actions per preset
+ * - Applies preset by emitting meitheal:filter-change
+ *
+ * Persists via /api/saved-filters (SQLite-backed).
+ */
+interface Props {
+  class?: string
+}
+const { class: className } = Astro.props
+---
+
+<div class={`saved-presets ${className ?? ''}`}>
+  <button
+    type="button"
+    class="saved-presets__toggle"
+    id="saved-presets-toggle"
+    title="Saved filter presets"
+    aria-label="Saved filter presets"
+    aria-expanded="false"
+    aria-controls="saved-presets-panel"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/>
+      <polyline points="7 3 7 8 15 8"/>
+    </svg>
+    <span class="saved-presets__label">Presets</span>
+  </button>
+
+  <div class="saved-presets__panel hidden" id="saved-presets-panel" role="region" aria-label="Saved Filter Presets">
+    <div class="saved-presets__header">
+      <h4>Saved Filters</h4>
+      <button type="button" class="btn-icon" id="saved-presets-close" aria-label="Close panel">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+
+    <ul class="saved-presets__list" id="saved-presets-list">
+      <li class="saved-presets__empty">No saved presets yet</li>
+    </ul>
+
+    <div class="saved-presets__footer">
+      <button type="button" class="saved-presets__save-btn" id="saved-presets-save">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Save Current Filters
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { confirmDialog } from "@lib/confirm-dialog"
+  import { promptDialog } from "@lib/prompt-dialog"
+  import { createClientLogger } from "@lib/client-logger"
+
+  const log = createClientLogger("tasks", "saved-presets")
+
+  interface SavedFilter {
+    id: string
+    name: string
+    icon: string
+    query_json: string
+    position: number
+  }
+
+  function initSavedPresets() {
+    const wrapper = document.querySelector(".saved-presets")
+    if (!wrapper || (wrapper as HTMLElement).dataset.initialized) return
+    ;(wrapper as HTMLElement).dataset.initialized = "true"
+
+    const toggle = document.getElementById("saved-presets-toggle")
+    const panel = document.getElementById("saved-presets-panel")
+    const closeBtn = document.getElementById("saved-presets-close")
+    const saveBtn = document.getElementById("saved-presets-save")
+    const list = document.getElementById("saved-presets-list")
+
+    let presets: SavedFilter[] = []
+
+    async function fetchPresets() {
+      try {
+        const res = await fetch("/api/saved-filters")
+        const data = await res.json()
+        presets = data.filters ?? []
+        renderList()
+      } catch {
+        presets = []
+        renderList()
+      }
+    }
+
+    function renderList() {
+      if (!list) return
+      list.innerHTML = ""
+
+      if (presets.length === 0) {
+        const li = document.createElement("li")
+        li.className = "saved-presets__empty"
+        li.textContent = "No saved presets yet"
+        list.appendChild(li)
+        return
+      }
+
+      presets.forEach((preset) => {
+        const li = document.createElement("li")
+        li.className = "saved-presets__item"
+
+        const loadBtn = document.createElement("button")
+        loadBtn.type = "button"
+        loadBtn.className = "saved-presets__load"
+        loadBtn.innerHTML = `<span class="saved-presets__icon">${preset.icon}</span> ${escapeHtml(preset.name)}`
+        loadBtn.addEventListener("click", () => loadPreset(preset))
+
+        const deleteBtn = document.createElement("button")
+        deleteBtn.type = "button"
+        deleteBtn.className = "saved-presets__delete"
+        deleteBtn.title = "Delete preset"
+        deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation()
+          deletePreset(preset.id)
+        })
+
+        li.append(loadBtn, deleteBtn)
+        list.appendChild(li)
+      })
+    }
+
+    function loadPreset(preset: SavedFilter) {
+      try {
+        const query = JSON.parse(preset.query_json || "{}")
+        // Apply all filter values from the preset via URL params
+        const url = new URL(window.location.href)
+        // Clear existing filter params
+        const filterKeys = ["search", "status", "priority", "rice", "user", "area", "types", "labels", "groupBy", "subGroupBy", "sort", "advancedFilter", "columns"]
+        filterKeys.forEach((k) => url.searchParams.delete(k))
+
+        // Set params from preset
+        for (const [key, value] of Object.entries(query)) {
+          if (value !== null && value !== undefined && value !== "") {
+            if (typeof value === "object") {
+              url.searchParams.set(key, JSON.stringify(value))
+            } else {
+              url.searchParams.set(key, String(value))
+            }
+          }
+        }
+
+        window.history.replaceState({}, "", url.toString())
+        // Reload to apply all preset filters
+        document.dispatchEvent(new CustomEvent("meitheal:navigation-changed", { detail: { action: "filter-preset" } }))
+      } catch {
+        log.error("Failed to load preset", preset.name)
+      }
+    }
+
+    async function saveCurrentFilters() {
+      const name = await promptDialog({ title: "Save Filter Preset", placeholder: "Preset name", required: true })
+      if (!name) return
+
+      // Gather current filter state from URL
+      const params = new URLSearchParams(window.location.search)
+      const query: Record<string, unknown> = {}
+      params.forEach((value, key) => {
+        try {
+          query[key] = JSON.parse(value)
+        } catch {
+          query[key] = value
+        }
+      })
+
+      try {
+        const res = await fetch("/api/saved-filters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), query_json: query, icon: "📌" }),
+        })
+        if (res.ok) {
+          await fetchPresets()
+        }
+      } catch {
+        log.error("Failed to save preset")
+      }
+    }
+
+    async function deletePreset(id: string) {
+      const confirmed = await confirmDialog({ message: "Delete this preset?", confirmText: "Delete" })
+      if (!confirmed) return
+      try {
+        await fetch(`/api/saved-filters?id=${id}`, { method: "DELETE" })
+        await fetchPresets()
+      } catch {
+        log.error("Failed to delete preset")
+      }
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div")
+      div.textContent = str
+      return div.innerHTML
+    }
+
+    // Toggle panel
+    toggle?.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true"
+      toggle.setAttribute("aria-expanded", String(!expanded))
+      panel?.classList.toggle("hidden")
+      if (!expanded) fetchPresets()
+    })
+
+    closeBtn?.addEventListener("click", () => {
+      toggle?.setAttribute("aria-expanded", "false")
+      panel?.classList.add("hidden")
+    })
+
+    saveBtn?.addEventListener("click", () => saveCurrentFilters())
+
+    // Click outside to close
+    document.addEventListener("click", (e) => {
+      if (!panel?.classList.contains("hidden") && toggle && panel) {
+        if (!panel.contains(e.target as Node) && !toggle.contains(e.target as Node)) {
+          toggle.setAttribute("aria-expanded", "false")
+          panel.classList.add("hidden")
+        }
+      }
+    })
+  }
+
+  document.addEventListener("DOMContentLoaded", initSavedPresets)
+  document.addEventListener("astro:page-load", initSavedPresets)
+</script>
+
+<style>
+  .saved-presets {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .saved-presets__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .saved-presets__toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-color: var(--text-muted);
+  }
+
+  .saved-presets__toggle[aria-expanded="true"] {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .saved-presets__label {
+    font-weight: 500;
+  }
+
+  .saved-presets__panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 280px;
+    max-height: 400px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 50;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .saved-presets__panel.hidden {
+    display: none;
+  }
+
+  .saved-presets__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+
+  .saved-presets__header h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .saved-presets__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    max-height: 250px;
+  }
+
+  .saved-presets__empty {
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 12px;
+    padding: 12px 0;
+    font-style: italic;
+  }
+
+  .saved-presets__item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .saved-presets__load {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .saved-presets__load:hover {
+    background: var(--bg-hover);
+  }
+
+  .saved-presets__icon {
+    font-size: 14px;
+  }
+
+  .saved-presets__delete {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 0.1s, background 0.1s;
+    display: flex;
+  }
+
+  .saved-presets__delete:hover {
+    color: var(--status-closed);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .saved-presets__footer {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+
+  .saved-presets__save-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+    padding: 6px 8px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
+  }
+
+  .saved-presets__save-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(99, 102, 241, 0.05);
+  }
+</style>

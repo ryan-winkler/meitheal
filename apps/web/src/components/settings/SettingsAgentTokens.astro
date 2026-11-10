@@ -1,0 +1,540 @@
+---
+import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import SettingsPanelCard from "./SettingsPanelCard.astro";
+
+/**
+ * SettingsAgentTokens — Manage scoped agent API tokens.
+ *
+ * Shows existing tokens with scope badges, lets admins create
+ * new tokens (show-once plaintext), revoke, and delete.
+ *
+ * @domain settings
+ * @bounded-context agent-authorization
+ * @kcs Agent tokens enable zero-trust API access for n8n, Node-RED, and LLM agents.
+ */
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+
+const scopeGroups = [
+  { label: "Tasks", category: "tasks" },
+  { label: "Projects", category: "projects" },
+  { label: "Search", category: "search" },
+  { label: "Protocols", category: "protocols" },
+] as const
+
+---
+
+<div class="settings-grid mt-4">
+  <SettingsPanelCard
+    id="agent-tokens-card"
+    title="🔑 Agent Tokens"
+    subtitle="Issue scoped API tokens for n8n, Node-RED, LLM agents, and automations. Tokens use zero-trust principles — each gets only the permissions it needs."
+  >
+    <button
+      slot="actions"
+      type="button"
+      class="btn btn-primary"
+      id="agent-token-create-btn"
+      style="font-size: 13px; white-space: nowrap;"
+    >+ New Token</button>
+
+    <!-- Token List -->
+    <div id="agent-tokens-list" class="agent-tokens__list">
+      <div class="agent-tokens__empty" id="agent-tokens-empty">
+        <span style="font-size: 24px;">🔒</span>
+        <p>No agent tokens yet</p>
+        <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
+      </div>
+    </div>
+
+    <!-- Create Token Form (hidden by default) -->
+    <div id="agent-token-form" class="agent-tokens__form" hidden>
+      <div class="agent-tokens__form-header">
+        <strong>Create New Token</strong>
+        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-form-cancel">Cancel</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="agent-token-name">Token Name</label>
+        <input
+          type="text"
+          class="form-input"
+          id="agent-token-name"
+          placeholder="e.g., n8n-prod, nodered-home, claude-agent"
+          maxlength="100"
+          autocomplete="off"
+          data-lpignore="true"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Scopes</label>
+        <div class="agent-tokens__scope-grid">
+          {scopeGroups.map((group) => (
+            <div class="agent-tokens__scope-group">
+              <div class="agent-tokens__scope-group-label">{group.label}</div>
+              {AVAILABLE_SCOPES.filter(scope => scope.category === group.category).map((scope) => (
+                <label class="agent-tokens__scope-item" title={scope.description}>
+                  <input type="checkbox" name="agent-token-scopes" value={scope.scope} />
+                  <code>{scope.scope}</code>
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="agent-token-expires">Expiry (optional)</label>
+        <select class="form-select" id="agent-token-expires">
+          <option value="">No expiry</option>
+          <option value="7d">7 days</option>
+          <option value="30d">30 days</option>
+          <option value="90d">90 days</option>
+          <option value="1y">1 year</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="agent-token-save">
+        Create Token
+      </button>
+    </div>
+
+    <!-- Show-Once Token Display (hidden by default) -->
+    <div id="agent-token-reveal" class="agent-tokens__reveal" hidden>
+      <div class="agent-tokens__reveal-warning">
+        ⚠️ Copy this token now — it will not be shown again.
+      </div>
+      <div class="agent-tokens__reveal-token">
+        <code id="agent-token-plaintext"></code>
+        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">📋 Copy</button>
+      </div>
+      <button type="button" class="btn btn-primary" id="agent-token-reveal-done">Done</button>
+    </div>
+  </SettingsPanelCard>
+</div>
+
+<style>
+  .agent-tokens__list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--border);
+    border-top: 1px solid var(--border);
+  }
+  .agent-tokens__list:empty,
+  .agent-tokens__list:has(> #agent-tokens-empty:only-child) {
+    background: transparent;
+    border-top: none;
+  }
+  .agent-tokens__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    background: var(--bg-card);
+  }
+  .agent-tokens__empty-hint {
+    font-size: 12px;
+  }
+  .agent-tokens__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    font-size: 13px;
+  }
+  .agent-tokens__row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .agent-tokens__row-name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .agent-tokens__row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .agent-tokens__scope-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-size: 10px;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .agent-tokens__row-prefix {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.7;
+  }
+  .agent-tokens__row-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .agent-tokens__form {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .agent-tokens__form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .agent-tokens__scope-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+  }
+  .agent-tokens__scope-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .agent-tokens__scope-group-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .agent-tokens__scope-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .agent-tokens__scope-item code {
+    font-size: 11px;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .agent-tokens__reveal {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .agent-tokens__reveal-warning {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--warning, #f59e0b);
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent);
+  }
+  .agent-tokens__reveal-token {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .agent-tokens__reveal-token code {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-primary);
+  }
+  .agent-tokens__revoked {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+</style>
+
+<script>
+  import { confirmDialog } from "@lib/confirm-dialog"
+  import { showToast } from "@lib/toast"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  const listEl = document.getElementById("agent-tokens-list")!
+  const emptyEl = document.getElementById("agent-tokens-empty")!
+  const createBtn = document.getElementById("agent-token-create-btn")!
+  const formEl = document.getElementById("agent-token-form")!
+  const cancelBtn = document.getElementById("agent-token-form-cancel")!
+  const saveBtn = document.getElementById("agent-token-save")!
+  const revealEl = document.getElementById("agent-token-reveal")!
+  const plaintextEl = document.getElementById("agent-token-plaintext")!
+  const copyBtn = document.getElementById("agent-token-copy")!
+  const doneBtn = document.getElementById("agent-token-reveal-done")!
+  const nameInput = document.getElementById("agent-token-name") as HTMLInputElement
+  const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement
+
+  interface TokenInfo {
+    id: string
+    name: string
+    tokenPrefix: string
+    scopes: string[]
+    createdAt: string
+    expiresAt: string | null
+    lastUsedAt?: string | null
+    revoked?: boolean
+  }
+
+  // ── T7: Error state with retry ──
+  function showTokenError() {
+    listEl.innerHTML = `
+      <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+        Failed to load tokens.
+        <button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>
+      </div>
+    `
+    emptyEl.hidden = true
+    const retryBtn = document.getElementById("tokens-retry")
+    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadTokens())
+  }
+
+  // ── Load tokens ──
+  async function loadTokens() {
+    try {
+      const res = await fetch("/api/agent-tokens")
+      if (!res.ok) {
+        showTokenError()
+        return
+      }
+      const tokens: TokenInfo[] = await res.json()
+      renderTokens(tokens)
+    } catch {
+      showTokenError()
+    }
+  }
+
+  function renderTokens(tokens: TokenInfo[]) {
+    // Remove old rows (keep empty placeholder)
+    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
+
+    if (tokens.length === 0) {
+      emptyEl.hidden = false
+      return
+    }
+
+    emptyEl.hidden = true
+
+    for (const token of tokens) {
+      const row = document.createElement("div")
+      row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
+      row.dataset.tokenId = token.id
+
+      // T2: Escape scope strings to prevent XSS
+      const scopeBadges = token.scopes
+        .map(s => `<span class="agent-tokens__scope-badge">${escapeHtml(s)}</span>`)
+        .join("")
+
+      const created = new Date(token.createdAt).toLocaleDateString()
+      const expires = token.expiresAt
+        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
+        : "No expiry"
+
+      row.innerHTML = `
+        <div class="agent-tokens__row-info">
+          <div class="agent-tokens__row-name">${escapeHtml(token.name)}</div>
+          <div class="agent-tokens__row-meta">
+            <span class="agent-tokens__row-prefix">${escapeHtml(token.tokenPrefix)}…</span>
+            ${scopeBadges}
+            <span>Created ${created}</span>
+            <span>· ${expires}</span>
+          </div>
+        </div>
+        <div class="agent-tokens__row-actions">
+          ${token.revoked
+            ? '<span class="badge badge-pending">Revoked</span>'
+            : `<button type="button" class="btn btn-ghost btn-sm" data-revoke="${escapeHtml(token.id)}" title="Revoke">🚫</button>`
+          }
+          <button type="button" class="btn btn-ghost btn-sm" data-delete="${escapeHtml(token.id)}" title="Delete permanently">🗑</button>
+        </div>
+      `
+      listEl.appendChild(row)
+    }
+
+    // T1: Bind action buttons with pageLifecycle for auto-cleanup
+    listEl.querySelectorAll("[data-revoke]").forEach(btn => {
+      pageLifecycle.on(btn, "click", () => revokeToken(btn.getAttribute("data-revoke")!))
+    })
+    listEl.querySelectorAll("[data-delete]").forEach(btn => {
+      pageLifecycle.on(btn, "click", () => deleteToken(btn.getAttribute("data-delete")!))
+    })
+  }
+
+  // ── Create flow ──
+  pageLifecycle.on(createBtn, "click", () => {
+    formEl.hidden = false
+    revealEl.hidden = true
+    nameInput.value = ""
+    nameInput.focus()
+    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')
+      .forEach(cb => { cb.checked = false })
+    expiresSelect.value = ""
+  })
+
+  pageLifecycle.on(cancelBtn, "click", () => {
+    formEl.hidden = true
+  })
+
+  pageLifecycle.on(saveBtn, "click", async () => {
+    const name = nameInput.value.trim()
+    if (!name) {
+      showToast("Token name is required", "error")
+      nameInput.focus()
+      return
+    }
+
+    const scopes: string[] = []
+    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')
+      .forEach(cb => scopes.push(cb.value))
+
+    if (scopes.length === 0) {
+      showToast("Select at least one scope", "error")
+      return
+    }
+
+    // Calculate expiry
+    let expiresAt: string | null = null
+    const exp = expiresSelect.value
+    if (exp) {
+      const now = Date.now()
+      const ms = exp === "7d" ? 7*86400000 : exp === "30d" ? 30*86400000
+        : exp === "90d" ? 90*86400000 : exp === "1y" ? 365*86400000 : 0
+      if (ms) expiresAt = new Date(now + ms).toISOString()
+    }
+
+    saveBtn.setAttribute("disabled", "true")
+    saveBtn.textContent = "Creating…"
+
+    try {
+      const res = await fetch("/api/agent-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, scopes, expiresAt }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.detail || "Failed to create token", "error")
+        return
+      }
+
+      const data = await res.json()
+
+      // Show plaintext token (one time only)
+      formEl.hidden = true
+      revealEl.hidden = false
+      plaintextEl.textContent = data.token
+
+      showToast("Token created — copy it now!", "success")
+      loadTokens()
+    } catch {
+      showToast("Failed to create token", "error")
+    } finally {
+      saveBtn.removeAttribute("disabled")
+      saveBtn.textContent = "Create Token"
+    }
+  })
+
+  // ── Copy token ──
+  pageLifecycle.on(copyBtn, "click", async () => {
+    try {
+      await navigator.clipboard.writeText(plaintextEl.textContent || "")
+      showToast("Token copied to clipboard", "success")
+      copyBtn.textContent = "✅ Copied"
+      setTimeout(() => { copyBtn.textContent = "📋 Copy" }, 2000)
+    } catch {
+      showToast("Failed to copy — select and copy manually", "error")
+    }
+  })
+
+  pageLifecycle.on(doneBtn, "click", () => {
+    revealEl.hidden = true
+    plaintextEl.textContent = ""
+  })
+
+  // ── Revoke & Delete ──
+  async function revokeToken(id: string) {
+    const confirmed = await confirmDialog({ message: "Revoke this token? It will immediately stop working.", variant: "warning", confirmText: "Revoke" })
+    if (!confirmed) return
+    try {
+      const res = await fetch("/api/agent-tokens", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+      if (res.ok) {
+        showToast("Token revoked", "success")
+        loadTokens()
+      } else {
+        showToast("Failed to revoke token", "error")
+      }
+    } catch {
+      showToast("Failed to revoke token", "error")
+    }
+  }
+
+  async function deleteToken(id: string) {
+    const deleteConfirmed = await confirmDialog({ message: "Permanently delete this token? This cannot be undone.", variant: "danger", confirmText: "Delete" })
+    if (!deleteConfirmed) return
+    try {
+      const res = await fetch("/api/agent-tokens", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, hard: true }),
+      })
+      if (res.ok) {
+        showToast("Token deleted", "success")
+        loadTokens()
+      } else {
+        showToast("Failed to delete token", "error")
+      }
+    } catch {
+      showToast("Failed to delete token", "error")
+    }
+  }
+
+  function escapeHtml(str: string): string {
+    const el = document.createElement("span")
+    el.textContent = str
+    return el.innerHTML
+  }
+
+  // ── Boot on section visibility ──
+  const section = document.getElementById("automation-ai-settings")
+  if (!section) {
+    loadTokens()
+  } else {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some(e => e.isIntersecting)) return
+        observer.disconnect()
+        loadTokens()
+      },
+      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
+    )
+    observer.observe(section)
+  }
+</script>

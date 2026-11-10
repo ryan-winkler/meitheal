@@ -1,0 +1,271 @@
+---
+/**
+ * PWA Install Banner — Dismissible bottom banner
+ *
+ * Appears when `beforeinstallprompt` fires (secure context only).
+ * Dismissal persists permanently to localStorage.
+ * Does not render server-side — all logic is client-only.
+ *
+ * Bounded context: pwa / offline domain
+ *
+ * @kcs PWA install requires HTTPS. Behind HA ingress over HTTP,
+ * this banner never appears (graceful degradation).
+ */
+---
+
+<div
+  id="pwa-install-banner"
+  class="pwa-banner"
+  role="complementary"
+  aria-label="Install app"
+  aria-live="polite"
+  data-no-scroll-lock="true"
+  style="display: none;"
+>
+  <div class="pwa-banner__content">
+    <div class="pwa-banner__icon">📲</div>
+    <div class="pwa-banner__text">
+      <strong>Install Meitheal</strong>
+      <span>Get offline access, quick launch, and push notifications</span>
+    </div>
+  </div>
+  <div class="pwa-banner__actions">
+    <button type="button" id="pwa-install-btn" class="pwa-banner__install">
+      Install
+    </button>
+    <button
+      type="button"
+      id="pwa-dismiss-btn"
+      class="pwa-banner__dismiss"
+      aria-label="Dismiss install banner"
+    >
+      ✕
+    </button>
+  </div>
+</div>
+
+<style>
+  .pwa-banner {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    left: auto;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    transform: translateY(-120%);
+    opacity: 0;
+    transition:
+      transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 420px;
+  }
+
+  .pwa-banner--visible {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .pwa-banner__content {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pwa-banner__icon {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+
+  .pwa-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .pwa-banner__text strong {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary, #f1f5f9);
+  }
+
+  .pwa-banner__text span {
+    font-size: 12px;
+    color: var(--text-secondary, #94a3b8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pwa-banner__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .pwa-banner__install {
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent, #6366F1);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition:
+      background 0.15s,
+      transform 0.1s;
+    white-space: nowrap;
+  }
+
+  .pwa-banner__install:hover {
+    background: var(--accent-hover, #059669);
+    transform: scale(1.02);
+  }
+
+  .pwa-banner__install:active {
+    transform: scale(0.98);
+  }
+
+  .pwa-banner__dismiss {
+    padding: 6px 8px;
+    font-size: 14px;
+    color: var(--text-muted, #64748b);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition:
+      color 0.15s,
+      background 0.15s;
+    line-height: 1;
+  }
+
+  .pwa-banner__dismiss:hover {
+    color: var(--text-primary, #f1f5f9);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* HA ingress: account for sidebar */
+  :global(body.ha-ingress) .pwa-banner {
+    left: 0;
+  }
+
+  /* Mobile: full width toast */
+  @media (max-width: 480px) {
+    .pwa-banner {
+      left: 12px;
+      right: 12px;
+      max-width: none;
+    }
+  }
+</style>
+
+<script>
+  const DISMISS_KEY = "meitheal-pwa-dismissed";
+
+  function isDismissed(): boolean {
+    return localStorage.getItem(DISMISS_KEY) !== null;
+  }
+
+  function showBanner() {
+    const banner = document.getElementById("pwa-install-banner");
+    if (!banner || isDismissed()) return;
+    banner.style.display = "flex";
+    void banner.offsetHeight;
+    banner.classList.add("pwa-banner--visible");
+    // Auto-dismiss permanently after 10s
+    setTimeout(() => {
+      if (banner.classList.contains("pwa-banner--visible")) {
+        dismissBanner();
+      }
+    }, 10000);
+  }
+
+  function hideBanner() {
+    const banner = document.getElementById("pwa-install-banner");
+    if (!banner) return;
+    banner.classList.remove("pwa-banner--visible");
+    // P0: Clear any scroll lock that may have been applied while banner was visible
+    // (editor heuristics or modal systems may lock body scroll on fixed overlays)
+    document.body.style.overflow = "";
+    document.body.classList.remove("antigravity-scroll-lock");
+    setTimeout(() => {
+      banner.style.display = "none";
+    }, 350);
+  }
+
+  function dismissBanner() {
+    localStorage.setItem(DISMISS_KEY, "permanent");
+    hideBanner();
+  }
+
+  // Bind DOM event listeners — re-runs after each ClientRouter swap
+  function bindBannerListeners() {
+    const banner = document.getElementById("pwa-install-banner");
+    if (!banner) return;
+    // Guard: prevent duplicate listener accumulation on ClientRouter
+    if ((banner as HTMLElement).dataset.bannerBound) return;
+    (banner as HTMLElement).dataset.bannerBound = "true";
+
+    // Install button
+    document
+      .getElementById("pwa-install-btn")
+      ?.addEventListener("click", async () => {
+        const prompt = window.__pwa_install_prompt;
+        if (!prompt) return;
+        try {
+          await prompt.prompt();
+          const result = await prompt.userChoice;
+          if (result.outcome === "accepted") {
+            dismissBanner();
+          }
+        } catch {
+          // prompt() can only be called once
+        }
+        window.__pwa_install_prompt = null;
+      });
+
+    // Dismiss button — permanent dismiss
+    document
+      .getElementById("pwa-dismiss-btn")
+      ?.addEventListener("click", dismissBanner);
+
+    // If prompt already captured, show banner
+    if (window.__pwa_install_prompt && !isDismissed()) {
+      showBanner();
+    }
+  }
+
+  // Window-level listeners — guarded to prevent accumulation across ClientRouter
+  if (!window.__pwaBannerListenersBound) {
+    window.__pwaBannerListenersBound = true;
+
+    // Listen for installable event (fires from Layout.astro)
+    window.addEventListener("meitheal-pwa-installable", () => {
+      showBanner();
+    });
+
+    // Listen for installed event — hide permanently
+    window.addEventListener("meitheal-pwa-installed", () => {
+      dismissBanner();
+    });
+  }
+
+  // Initial bind + re-bind after ClientRouter page swap
+  bindBannerListeners();
+  document.addEventListener("astro:page-load", bindBannerListeners);
+</script>

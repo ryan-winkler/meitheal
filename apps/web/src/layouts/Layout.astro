@@ -1,0 +1,635 @@
+---
+import "../styles/global.css";
+import Confetti from "../components/gamification/Confetti.astro";
+import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
+import { getFeatureFlags } from "../lib/feature-flags";
+import { ClientRouter } from "astro:transitions";
+import { clientTranslationJson, t } from "../i18n/translations";
+import type { Locale } from "../lib/locale";
+import Sidebar from "../components/layout/Sidebar.astro";
+import SearchHub from "../components/layout/SearchHub.astro";
+import TopNavigation from "../components/layout/TopNavigation.astro";
+
+import NewTaskModal from "../components/tasks/NewTaskModal.astro";
+import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
+import AskAssistModal from "../components/ha/AskAssistModal.astro";
+import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
+import JsonLd from "../components/seo/JsonLd.astro";
+
+import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
+import outfit700Woff2 from '@fontsource/outfit/files/outfit-latin-700-normal.woff2?url';
+
+// i18n: resolve locale from cookie for SSR
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+// Feature flags — read from settings DB (SSR)
+const featureFlags = await getFeatureFlags();
+const featureFlagsJson = JSON.stringify(featureFlags);
+const showConfetti = !!featureFlags.confetti;
+const showPomodoro = !!featureFlags.pomodoro;
+
+const {
+  timezone = "Europe/Dublin",
+  weekStart = "monday",
+  dateFormat = "relative",
+  ingressPath,
+  behindIngress = false,
+} = Astro.locals;
+
+export interface Props {
+  title?: string;
+  description?: string;
+  hideSearchHub?: boolean;
+  hideGlobalSearch?: boolean;
+  /** Optional JSON-LD schema for page-level structured data */
+  jsonLd?: Record<string, unknown>;
+}
+
+const {
+  title = "Meitheal",
+  description = "The cooperative task and life engine for your home.",
+  hideSearchHub = false,
+  hideGlobalSearch = false,
+  jsonLd,
+} = Astro.props;
+
+// OA-607: Sidebar task count badges (SSR)
+let taskCounts = { total: 0, active: 0, pending: 0 };
+try {
+  const { ensureSchema, getPersistenceClient } =
+    await import("@domains/tasks/persistence/store");
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const result = await client.execute(
+    "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status",
+  );
+  for (const row of result.rows) {
+    const r = row as Record<string, unknown>;
+    const s = String(r.status);
+    const c = Number(r.cnt);
+    taskCounts.total += c;
+    if (s === "active") taskCounts.active += c;
+    if (s === "pending" || s === "backlog") taskCounts.pending += c;
+  }
+} catch {
+  /* DB not available */
+}
+
+// Security headers are set by middleware.ts — no duplicates here.
+// IMPORTANT: Do NOT set Strict-Transport-Security or upgrade-insecure-requests
+// in HA ingress environments — the addon serves HTTP internally.
+Astro.response.headers.set("X-Content-Type-Options", "nosniff");
+---
+
+<!doctype html>
+<html lang={locale} dir="ltr">
+  <head>
+    <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
+    <script is:inline>
+      (function () {
+        // Meitheal modals that legitimately lock scroll set data-scroll-lock="true"
+        function isRealModalOpen() {
+          var overlay = document.getElementById("task-detail-overlay");
+          if (overlay && !overlay.classList.contains("hidden")) return true;
+          var ntModal = document.getElementById("new-task-modal");
+          if (ntModal && ntModal.classList.contains("active")) return true;
+          var confirmOverlay = document.getElementById("confirm-dialog-overlay");
+          if (confirmOverlay && !confirmOverlay.classList.contains("hidden")) return true;
+          // Mobile sidebar open is legitimate
+          if (document.body.classList.contains("sidebar-open") && window.innerWidth <= 768) return true;
+          return false;
+        }
+        // MutationObserver: undo external overflow:hidden on body when no modal is open
+        var observer = new MutationObserver(function (mutations) {
+          for (var i = 0; i < mutations.length; i++) {
+            var m = mutations[i];
+            if (m.attributeName === "style" || m.attributeName === "class") {
+              var body = document.body;
+              var hasHidden = body.style.overflow === "hidden" || body.classList.contains("antigravity-scroll-lock");
+              if (hasHidden && !isRealModalOpen()) {
+                body.style.overflow = "";
+                body.classList.remove("antigravity-scroll-lock");
+                // P0-2: Reset position/touch-action if leaked from sidebar-open
+                if (body.style.position === "fixed") body.style.position = "";
+                if (body.style.touchAction === "none") body.style.touchAction = "";
+              }
+            }
+          }
+        });
+        // Start observing once body exists
+        if (document.body) {
+          observer.observe(document.body, { attributes: true, attributeFilter: ["style", "class"] });
+        } else {
+          document.addEventListener("DOMContentLoaded", function () {
+            observer.observe(document.body, { attributes: true, attributeFilter: ["style", "class"] });
+          });
+        }
+      })();
+    </script>
+    <!-- Ingress-aware fetch: prefix /api/ paths with HA ingress path -->
+    <script is:inline>
+      (function () {
+        var ip = window.__ingress_path;
+        var _f = window.fetch;
+        window.fetch = function (input, init) {
+          // Ensure ingress session cookie is always sent
+          if (!init) init = {};
+          if (ip) {
+            if (!init.credentials) init.credentials = "include";
+            if (typeof input === "string" && input.startsWith("/")) {
+              // Guard: don't prefix if URL already contains the ingress path
+              if (!input.startsWith(ip + "/") && input !== ip) {
+                input = ip + input;
+              }
+            } else if (input instanceof Request && input.url) {
+              var u = new URL(input.url);
+              if (u.pathname.startsWith("/") && u.origin === location.origin) {
+                // Guard: don't prefix if path already contains the ingress path
+                if (!u.pathname.startsWith(ip + "/") && u.pathname !== ip) {
+                  input = new Request(ip + u.pathname + u.search, input);
+                }
+              }
+            }
+          }
+          return _f.call(this, input, init).then(function (response) {
+            // Supervisor can return 403 for a stale ingress session. Keep the
+            // current page and form state when Meitheal denies an operation.
+            var resultUrl = response.url && new URL(response.url);
+            var ingressResponse = ip && resultUrl && resultUrl.origin === location.origin
+              && resultUrl.pathname.startsWith(ip + "/");
+            var appResponse = response.headers.has("x-ingress-path")
+              || response.headers.get("content-type")?.startsWith("application/problem+json");
+            if (response.status === 403 && ingressResponse && !appResponse) {
+              var reloadKey = "meitheal-ingress-reload";
+              var lastReload = sessionStorage.getItem(reloadKey);
+              var now = Date.now();
+              // Guard: don't reload more than once per 10 seconds
+              if (!lastReload || now - Number(lastReload) > 10000) {
+                sessionStorage.setItem(reloadKey, String(now));
+                var tc = document.querySelector(".toast-container");
+                if (tc) {
+                  var t = document.createElement("div");
+                  t.className = "toast warning";
+                  t.textContent = "🔄 Session expired. Reloading...";
+                  t.setAttribute("role", "alert");
+                  tc.appendChild(t);
+                }
+                setTimeout(function () {
+                  window.location.reload();
+                }, 800);
+              }
+            }
+            // Conflict detection (Persona #14): show toast on 409
+            if (response.status === 409) {
+              var tc = document.querySelector(".toast-container");
+              if (tc) {
+                var toast = document.createElement("div");
+                toast.className = "toast warning";
+                toast.textContent =
+                  "⚠ Task was modified by another session. Refresh to see latest.";
+                toast.setAttribute("role", "alert");
+                tc.appendChild(toast);
+                setTimeout(function () {
+                  toast.remove();
+                }, 6000);
+              }
+              // Announce for screen readers via aria-live
+              var live = document.getElementById("sync-announcer");
+              if (live)
+                live.textContent =
+                  "Conflict detected: task was modified elsewhere.";
+            }
+            return response;
+          });
+        };
+      })();
+    </script>
+
+    <!-- Ingress state persistence: restore last route after iframe recreation -->
+    <!-- Runs pre-paint so the user never sees a flash of the wrong page -->
+    <script is:inline>
+      (function () {
+        if (!window.__ingress_path) return;
+        if (window.location.pathname !== "/") return;
+        try {
+          var raw = sessionStorage.getItem("meitheal-navigation-state");
+          if (!raw) return;
+          var state = JSON.parse(raw);
+          if (
+            typeof state.path !== "string" ||
+            typeof state.timestamp !== "number"
+          )
+            return;
+          // Only restore if saved within the last 60 seconds
+          if (Date.now() - state.timestamp > 60000) {
+            sessionStorage.removeItem("meitheal-navigation-state");
+            return;
+          }
+          // Don't redirect to root (no-op)
+          if (state.path === "/") return;
+          // Redirect to saved path — prepend ingress path for proper routing
+          var target = window.__ingress_path + state.path;
+          // Save scroll position to restore after redirect
+          if (state.scrollY) {
+            sessionStorage.setItem(
+              "meitheal-restore-scroll",
+              String(state.scrollY),
+            );
+          }
+          window.location.replace(target);
+        } catch (e) {
+          // sessionStorage unavailable or parse error — silently continue
+        }
+      })();
+    </script>
+
+    <!-- Theme init — runs before paint to prevent flash -->
+    <script is:inline>
+      (function () {
+        var t = localStorage.getItem("meitheal-theme") || "dark";
+        // Always set data-theme explicitly for all states (including dark)
+        // Previous code relied on :root fallthrough for dark, which caused
+        // theme inconsistency when components used [data-theme="dark"] selector
+        if (t === "custom") {
+          document.documentElement.setAttribute("data-theme", "dark");
+          var css = localStorage.getItem("meitheal-custom-theme-css");
+          if (css) {
+            var s = document.createElement("style");
+            s.id = "meitheal-custom-theme";
+            s.textContent = css;
+            document.head.appendChild(s);
+          }
+        } else {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      })();
+    </script>
+
+    <!-- User accent color: restore from localStorage before paint -->
+    <script is:inline>
+      (function () {
+        var accent = localStorage.getItem("meitheal-accent-color");
+        if (!accent) return;
+        var root = document.documentElement.style;
+        root.setProperty("--accent", accent);
+        // P3-3: Set fallback values first (for WebViews without color-mix support)
+        root.setProperty("--accent-hover", accent);
+        root.setProperty("--accent-light", accent);
+        // Compute hover (darken 10%) — overrides fallback on supporting browsers
+        try {
+          root.setProperty(
+            "--accent-hover",
+            "color-mix(in srgb, " + accent + " 85%, #000)",
+          );
+          root.setProperty(
+            "--accent-light",
+            "color-mix(in srgb, " + accent + " 12%, transparent)",
+          );
+        } catch (e) {
+          // Older WebViews — fallback values already set above
+        }
+        root.setProperty("--border-focus", accent);
+      })();
+    </script>
+
+    <!-- Page transition loading indicator (CSS-only) -->
+    <style is:inline>
+      @keyframes meitheal-loading-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        50% {
+          transform: translateX(0%);
+        }
+        100% {
+          transform: translateX(100%);
+        }
+      }
+      .meitheal-loading-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        z-index: 9999;
+        background: var(--accent, #6366f1);
+        transform: translateX(-100%);
+        animation: meitheal-loading-slide 1.2s ease-in-out infinite;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      html.is-loading .meitheal-loading-bar {
+        opacity: 1;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .meitheal-loading-bar {
+          animation: none;
+          transform: translateX(0);
+          width: 100%;
+        }
+      }
+    </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={Astro.url.href} />
+    <link
+      rel="manifest"
+      href="/manifest.webmanifest"
+      crossorigin="use-credentials"
+    />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    
+    <!-- Resource Hints: Preload critical fonts to prevent layout shift -->
+    <link rel="preload" href={geistWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={outfit600Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={outfit700Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
+    
+    <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
+    {!behindIngress && <ClientRouter fallback="swap" />}
+    <JsonLd schema={jsonLd ?? {
+      "@type": "SoftwareApplication",
+      name: "Meitheal",
+      description,
+      applicationCategory: "ProductivityApplication",
+      operatingSystem: "Home Assistant",
+      url: Astro.url.href,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${Astro.url.origin}/api/search?q={query}`,
+        "query-input": "required name=query",
+      },
+    }} />
+    <!-- Send only the current locale and keep client translation available during parsing. -->
+    <script type="application/json" id="meitheal-client-translations" set:html={clientTranslationJson[locale]} />
+    <script
+      is:inline
+      define:vars={{ locale, timezone, weekStart, dateFormat }}
+    >
+      const dict = JSON.parse(document.getElementById("meitheal-client-translations").textContent);
+      window.mSettings = { timezone, weekStart, dateFormat };
+      window.mI18n = {
+        locale,
+        get: function (key) {
+          const parts = key.split(".");
+          let val = dict;
+          for (const p of parts) {
+            if (!val || typeof val !== "object") return key;
+            val = val[p];
+          }
+          return typeof val === "string" ? val : key;
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <!-- Page transition loading indicator -->
+    <div class="meitheal-loading-bar" aria-hidden="true" data-no-scroll-lock="true"></div>
+
+    <!-- Wire Astro view transitions to loading bar -->
+    <script is:inline>
+      function showLoading() { document.documentElement.classList.add("is-loading"); }
+      function hideLoading() { document.documentElement.classList.remove("is-loading"); }
+
+      document.addEventListener("astro:before-preparation", showLoading);
+      document.addEventListener("astro:after-swap", hideLoading);
+      document.addEventListener("astro:page-load", hideLoading);
+
+      // Fallback: show loading bar for standard browser navigation (like in HA ingress without ViewTransitions)
+      window.addEventListener("beforeunload", showLoading);
+
+      // Clear loading state if page is restored from bfcache
+      window.addEventListener("pageshow", function(e) {
+        if (e.persisted) hideLoading();
+      });
+    </script>
+
+    <!-- Sidebar collapse: restore state immediately to avoid FOUC -->
+    <script is:inline>
+      (function () {
+        // HA ingress detection
+        if (window.__ingress_path && document.body) {
+          document.body.classList.add("ha-ingress");
+        }
+        // Restore sidebar collapsed state from localStorage
+        if (localStorage.getItem("meitheal_sidebar_collapsed") === "true") {
+          document.body.classList.add("sidebar-collapsed");
+        }
+      })();
+    </script>
+    <!-- Ingress URL sync: DISABLED — removed to prevent potential HA panel routing interference -->
+
+    <a href="#main-content" class="skip-to-content"
+      >{t("nav.skip_to_content", locale)}</a
+    >
+    <div transition:persist="sidebar">
+      <Sidebar locale={locale} taskCounts={taskCounts} />
+    </div>
+
+    <div class="main-content">
+      {Astro.slots.has('custom-header') ? (
+        <slot name="custom-header" />
+      ) : (
+        <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch}>
+          <Fragment slot="page-title"><slot name="page-title" /></Fragment>
+          <Fragment slot="actions"><slot name="actions" /></Fragment>
+        </TopNavigation>
+      )}
+      <main
+        class="content"
+        role="main"
+        id="main-content"
+        style="padding: 0 24px 24px;"
+      >
+        <slot />
+      </main>
+    </div>
+
+    <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
+    <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
+      <a href="/" class="mobile-tab-bar__item" data-page="dashboard">
+        <span class="mobile-tab-bar__icon">⌂</span>
+        <span class="mobile-tab-bar__label">Home</span>
+      </a>
+      <a href="/today" class="mobile-tab-bar__item" data-page="today">
+        <span class="mobile-tab-bar__icon">☀️</span>
+        <span class="mobile-tab-bar__label">Today</span>
+      </a>
+      <a href="/tasks" class="mobile-tab-bar__item" data-page="tasks">
+        <span class="mobile-tab-bar__icon">📋</span>
+        <span class="mobile-tab-bar__label">Tasks</span>
+      </a>
+      <a href="/tasks?view=calendar#calendar" data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
+        <span class="mobile-tab-bar__icon">📅</span>
+        <span class="mobile-tab-bar__label">Calendar</span>
+      </a>
+      <a href="/settings" class="mobile-tab-bar__item" data-page="settings">
+        <span class="mobile-tab-bar__icon">⚙️</span>
+        <span class="mobile-tab-bar__label">Settings</span>
+      </a>
+    </nav>
+
+    <!-- Mobile tab bar: highlight active page -->
+    <script is:inline>
+      (function() {
+        window.__meithealUpdateMobileTabBar = function() {
+          var bar = document.getElementById("mobile-tab-bar");
+          if (!bar) return;
+          var path = window.location.pathname;
+          // Strip ingress prefix if present
+          var ip = window.__ingress_path || "";
+          if (ip && path.startsWith(ip)) path = path.slice(ip.length);
+          // Match page name from path
+          var page = path.replace(/^\//, "").split("/")[0] || "dashboard";
+          if (page === "" || page === "index") page = "dashboard";
+          if (page === "kanban" || page === "table" || page === "timeline") page = "tasks";
+          if (page === "tasks" && document.querySelector('[data-task-view="calendar"]')) page = "calendar";
+          var items = bar.querySelectorAll(".mobile-tab-bar__item");
+          for (var i = 0; i < items.length; i++) {
+            var isActive = items[i].getAttribute("data-page") === page;
+            items[i].classList.toggle("active", isActive);
+            if (isActive) {
+              items[i].setAttribute("aria-current", "page");
+            } else {
+              items[i].removeAttribute("aria-current");
+            }
+          }
+        };
+        if (!window.__meithealMobileTabBarBound) {
+          window.__meithealMobileTabBarBound = true;
+          window.addEventListener("hashchange", function() {
+            window.__meithealUpdateMobileTabBar && window.__meithealUpdateMobileTabBar();
+          });
+          document.addEventListener("astro:page-load", function() {
+            window.__meithealUpdateMobileTabBar && window.__meithealUpdateMobileTabBar();
+          });
+        }
+        window.__meithealUpdateMobileTabBar();
+      })();
+    </script>
+
+    <!-- Sidebar toggle logic: click + keyboard shortcut -->
+    <script is:inline>
+      (function () {
+        var btn = document.getElementById("sidebar-toggle-btn");
+        function toggleSidebar() {
+          var collapsed = document.body.classList.toggle("sidebar-collapsed");
+          localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed));
+          // Rotate chevron: points left when expanded (to collapse), right when collapsed (to expand)
+          if (btn) {
+            btn.querySelector("svg").style.transform = collapsed
+              ? "rotate(180deg)"
+              : "";
+          }
+        }
+        // Initialise chevron rotation on load
+        if (btn && document.body.classList.contains("sidebar-collapsed")) {
+          btn.querySelector("svg").style.transform = "rotate(180deg)";
+        }
+        // Click handler
+        if (btn) btn.addEventListener("click", toggleSidebar);
+        // Keyboard shortcut: Ctrl+B / Cmd+B
+        document.addEventListener("keydown", function (e) {
+          if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+            // Don't hijack Ctrl+B (bold) when user is editing text
+            var tag = (e.target || {}).tagName || "";
+            var editable = (e.target || {}).contentEditable === "true";
+            if (["INPUT", "TEXTAREA", "SELECT"].indexOf(tag) !== -1 || editable) return;
+            e.preventDefault();
+            toggleSidebar();
+          }
+        });
+      })();
+    </script>
+
+    <!-- Toast notifications are handled by the shared showToast() system (see @lib/toast) -->
+
+    <script>
+      import "@lib/layout-controller";
+      import { initHAThemeBridge } from "@lib/ha-theme-bridge";
+      import { initGlobalErrorHandler } from "@lib/global-error-handler";
+      initHAThemeBridge();
+      initGlobalErrorHandler();
+    </script>
+
+    <script>
+      import "@lib/search-hub-controller";
+    </script>
+
+    <script>
+      import "@lib/layout-body-controller";
+    </script>
+
+    <NewTaskModal />
+    <TaskDetailModal />
+    <AskAssistModal />
+    {!hideSearchHub && <SearchHub locale={locale} />}
+    <!-- Sync status announcer for screen readers (Persona #25) -->
+    <div
+      id="sync-announcer"
+      aria-live="polite"
+      aria-atomic="true"
+      class="sr-only"
+      role="status"
+    >
+    </div>
+    <!-- PWA Install Banner -->
+    <PwaInstallBanner />
+    <!-- PWA: Service Worker Registration + Install Prompt + Update Handler -->
+    <script>
+      import "@lib/layout-pwa-controller";
+    </script>
+    {showConfetti && <Confetti />}
+    <PomodoroTimer enabled={showPomodoro} />
+    <script define:vars={{ featureFlagsJson }}>
+      window.__featureFlags = JSON.parse(featureFlagsJson);
+    </script>
+    <!-- Keyboard Shortcuts Modal (must be outside task-detail-overlay for visibility) -->
+    <div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div class="shortcut-modal-content" onclick="arguments[0].stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;color:var(--accent);">⌨ Keyboard Shortcuts</h3>
+          <button id="shortcut-modal-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 8px;" aria-label="Close shortcuts">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px;">
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">/</kbd><span>Focus search</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">n</kbd><span>New task</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">d</kbd><span>Dashboard</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">k</kbd><span>Kanban board</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">t</kbd><span>Table view</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">⌘K</kbd><span>Command palette</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">?</kbd><span>This help</span>
+          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">Esc</kbd><span>Close modal / blur</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      import "@lib/layout-shortcuts-controller";
+    </script>
+
+    <!-- Graceful fallback when JavaScript is disabled -->
+    <noscript>
+      <div style="position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f0f23);color:var(--text-primary,#e2e8f0);display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;">
+        <div>
+          <h1 style="font-size:1.5rem;margin-bottom:1rem;">JavaScript Required</h1>
+          <p>Meitheal requires JavaScript to function. Please enable JavaScript in your browser settings and reload this page.</p>
+        </div>
+      </div>
+    </noscript>
+  </body>
+</html>

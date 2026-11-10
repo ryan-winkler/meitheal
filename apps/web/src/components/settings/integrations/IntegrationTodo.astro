@@ -1,0 +1,126 @@
+---
+/**
+ * Todo Sync integration card sub-component.
+ * @domain integrations/todo
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+import IntegrationCardHeader from "./IntegrationCardHeader.astro"
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
+---
+
+<div class="integration-card" id="integration-todo">
+  <IntegrationCardHeader
+    integration="todo"
+    icon="✅"
+    title={t("settings.todo_title", locale)}
+    description={t("settings.todo_desc", locale)}
+    helpLabel={t("settings.todo_explainer", locale)}
+  >
+    <span class="badge badge-pending" id="todo-status">{t("settings.status_disabled", locale)}</span>
+  </IntegrationCardHeader>
+
+  <div class="integration-card__body" id="integration-todo-body" inert>
+    <!-- Bridge purpose explainer -->
+    <div class="integration-callout integration-callout--info mb-3">
+      <strong>{t("settings.todo_bridge_title", locale)}</strong>
+      <div class="integration-callout__detail">
+        <span set:html={t("settings.todo_bridge_desc", locale)} />
+      </div>
+    </div>
+    <!-- HA auto-detect callout -->
+    <div id="todo-auto-info" class="integration-callout integration-callout--success" style="display: none;">
+      <strong>{t("settings.todo_detected", locale)}</strong>
+      <div id="todo-auto-entities" class="integration-callout__detail"></div>
+    </div>
+
+    <!-- Detected HA todo entities — interactive toggle cards -->
+    <div id="todo-entities-list" style="display: none; margin-bottom: 12px;">
+      <div class="cal-entities-header">
+        <div>
+          <label class="form-label settings-text-xs" style="margin-bottom: 0;">{t("settings.todo_your_lists", locale)}</label>
+          <span id="todo-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
+        </div>
+        <div class="cal-bulk-actions">
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-enable-all" title={t("settings.todo_enable_all", locale)}>{t("settings.todo_enable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-disable-all" title={t("settings.todo_disable_all", locale)}>{t("settings.todo_disable_all", locale)}</button>
+        </div>
+      </div>
+      <p class="integration-hint">
+        {t("settings.todo_toggle_desc", locale)}
+      </p>
+      <div id="todo-entities-container" class="cal-toggle-list"></div>
+      <div id="todo-no-entities" class="cal-empty-state" style="display: none;">
+        <span class="cal-empty-icon">📭</span>
+        <span>{t("settings.todo_no_entities", locale)}</span>
+      </div>
+    </div>
+
+    <!-- Manual entity input for advanced users -->
+    <details class="caldav-section" style="margin-bottom: 10px;">
+      <summary class="caldav-toggle">
+        <span>{t("settings.todo_manual_title", locale)}</span>
+        <small>{t("settings.todo_manual_desc", locale)}</small>
+      </summary>
+      <div class="form-group form-group--spaced">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-entity-manual">{t("settings.todo_entity_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.todo_entity_help", locale)}
+            id="help-todo-entity-manual"
+          />
+        </div>
+        <input type="text" class="form-input" id="todo-entity-manual" placeholder="todo.shopping_list" />
+        <button type="button" class="btn btn-ghost settings-btn-sm" id="todo-add-manual">
+          {t("settings.todo_add_manual", locale)}
+        </button>
+      </div>
+    </details>
+
+    <div class="integration-card__config">
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-enabled">{t("settings.todo_enable_sync", locale)}</label>
+          <HelpTooltip
+            text={t("settings.todo_enable_sync_help", locale)}
+            id="help-todo-enabled"
+          />
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label class="toggle-label">
+            <input type="checkbox" id="todo-enabled" aria-label={t("settings.todo_enable_sync", locale)} />
+            <span class="toggle-slider"></span>
+          </label>
+          <span id="todo-enabled-label" class="settings-text-sm" style="color: var(--text-secondary);">{t("settings.todo_sync_off", locale)}</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="form-label-row">
+          <label class="form-label" for="todo-sync-direction">{t("settings.todo_sync_dir_label", locale)}</label>
+          <HelpTooltip
+            text={t("settings.todo_sync_dir_help", locale)}
+            id="help-todo-direction"
+          />
+        </div>
+        <select class="form-select" id="todo-sync-direction">
+          <option value="inbound">{t("settings.todo_sync_inbound", locale)}</option>
+          <option value="outbound">{t("settings.todo_sync_outbound", locale)}</option>
+          <option value="bidirectional" selected>{t("settings.todo_sync_bidir", locale)}</option>
+        </select>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-todo">{t("settings.save_todo_settings", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="sync-todo">{t("settings.sync_now_btn", locale)}</button>
+        <span id="todo-sync-result" class="integration-card__result" data-text-success={t("settings.sync_success", locale || "en")} data-text-failed={t("settings.sync_failed", locale || "en")}></span>
+        <span id="todo-last-synced" class="integration-card__last-synced integration-last-synced"></span>
+      </div>
+    </div>
+  </div>
+</div>

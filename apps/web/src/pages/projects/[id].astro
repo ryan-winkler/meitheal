@@ -1,0 +1,805 @@
+---
+/**
+ * Project Detail — shows project metadata + tabbed sections for Tasks, Fields, Settings.
+ * Uses hash-based sub-menu tabs matching the parent page shell pattern.
+ * @page /projects/[id]
+ * @phase 15 — Wave 4.5
+ */
+import Layout from "../../layouts/Layout.astro";
+import StatusBadge from "../../components/ui/StatusBadge.astro";
+import BotBadge from "../../components/ui/BotBadge.astro";
+import LabelBadges from "../../components/ui/LabelBadges.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import { formatRegionalDate } from "../../lib/date";
+import { formatTicketKey } from "../../lib/ticket-key";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
+import { STATUS_LABELS } from "../../lib/status-config";
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+const projectId = Astro.params.id;
+if (!projectId) {
+  return Astro.redirect("/projects");
+}
+
+let project: Record<string, unknown> | null = null;
+let goal: Record<string, unknown> | null = null;
+let area: Record<string, unknown> | null = null;
+let tasks: Record<string, unknown>[] = [];
+let goals: GoalRow[] = []
+
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new HierarchyRepository(client);
+  const taskRepo = new TaskRepository(client);
+
+  project = await repo.findProjectById(projectId) as Record<string, unknown> | null;
+
+  if (!project) {
+    return Astro.redirect("/projects");
+  }
+
+  if (project.goal_id) {
+    goal = await repo.findGoalById(project.goal_id as string) as Record<string, unknown> | null;
+    if (goal?.area_id) {
+      area = await repo.findAreaById(goal.area_id as string) as Record<string, unknown> | null;
+    }
+  }
+
+  tasks = await taskRepo.findByProjectId(projectId);
+  goals = await repo.findAllGoals({});
+} catch {
+  return Astro.redirect("/projects");
+}
+
+const projTitle = String(project?.title ?? "Project");
+const projDesc = project?.description ? String(project.description) : null;
+const projIcon = String(project?.icon ?? "📋");
+const projColor = String(project?.color ?? "#6366F1");
+const projStatus = String(project?.status ?? "active");
+
+const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
+const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+
+const { timezone, dateFormat } = Astro.locals;
+
+const tabs = [
+  { id: "overview", label: "Overview", icon: "📊" },
+  { id: "tasks", label: "Tasks", icon: "✅" },
+  { id: "fields", label: "Fields", icon: "🏷️" },
+  { id: "settings", label: "Settings", icon: "⚙️" },
+];
+---
+
+<Layout title={`Meitheal — ${projTitle}`}>
+  <span slot="page-title">
+    <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
+    {projTitle}
+  </span>
+  <div slot="actions" class="flex gap-2">
+    <a href="/projects" class="btn btn-ghost">← Projects</a>
+    <button type="button" class="btn btn-primary" id="add-task-to-project-btn">
+      + Add Task
+    </button>
+  </div>
+
+  {/* Sub-menu tab bar */}
+  <nav class="project-tabs" role="tablist" aria-label="Project sections">
+    {tabs.map((tab) => (
+      <a
+        href={`#${tab.id}`}
+        class={`project-tab ${tab.id === "overview" ? "active" : ""}`}
+        role="tab"
+        data-tab={tab.id}
+        aria-selected={tab.id === "overview" ? "true" : "false"}
+      >
+        <span class="tab-icon">{tab.icon}</span>
+        {tab.label}
+      </a>
+    ))}
+  </nav>
+
+  {/* ── Overview Section ── */}
+  <section id="section-overview" class="project-section active" data-section="overview">
+    {/* Breadcrumb */}
+    <nav class="project-breadcrumb" aria-label="Project breadcrumb">
+      <a href="/projects">Projects</a>
+      {area && <><span class="bc-sep">›</span><a href={`/areas/${String(area.id)}`}>{String(area.name)}</a></>}
+      {goal && <><span class="bc-sep">›</span><span>🎯 {String(goal.title)}</span></>}
+      <span class="bc-sep">›</span>
+      <span class="bc-current">{projIcon} {projTitle}</span>
+    </nav>
+
+    {/* Project header card */}
+    <div class="project-header-card" style={`--project-accent: ${projColor};`}>
+      <div class="project-header-top">
+        <div class="project-header-info">
+          <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
+          {projDesc && <p class="project-desc">{projDesc}</p>}
+        </div>
+        <div class="project-header-stats">
+          <div class="stat-block">
+            <div class="stat-value">{tasks.length}</div>
+            <div class="stat-label">Tasks</div>
+          </div>
+          <div class="stat-block">
+            <div class="stat-value">{completedCount}</div>
+            <div class="stat-label">Done</div>
+          </div>
+          <div class="stat-block">
+            <div class={`stat-value ${progress === 100 ? "stat-complete" : ""}`}>{progress}%</div>
+            <div class="stat-label">Progress</div>
+          </div>
+        </div>
+      </div>
+      <div class="project-progress-full">
+        <div class="project-progress-bar" style={`width: ${progress}%`} />
+      </div>
+    </div>
+  </section>
+
+  {/* ── Tasks Section ── */}
+  <section id="section-tasks" class="project-section" data-section="tasks">
+    <div class="section-header">
+      <h2 class="section-title">Tasks</h2>
+      <span class="text-sm text-text-muted">{tasks.length} total</span>
+    </div>
+
+    {/* Inline task creation form */}
+    <div class="task-create-form" id="task-create-inline" style="display:none">
+      <input
+        type="text"
+        id="task-create-input"
+        class="task-create-input"
+        placeholder="Task title…"
+        maxlength="200"
+        autocomplete="off"
+        aria-label="New task title"
+      />
+      <div class="task-create-actions">
+        <button type="button" id="task-create-submit" class="btn btn-primary btn-sm">Add</button>
+        <button type="button" id="task-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+      </div>
+    </div>
+
+    {tasks.length === 0 ? (
+      <div class="project-tasks-empty">
+        <p>No tasks in this project yet. Add one to get started.</p>
+      </div>
+    ) : (
+      <div class="project-task-list">
+        {tasks.map((task) => {
+          const p = Number(task.priority ?? 3);
+          const status = String(task.status ?? "pending");
+          const isDone = status === "complete";
+          const ticketKey = task.ticket_number ? formatTicketKey(Number(task.ticket_number)) : null;
+
+          return (
+            <div
+              class={`project-task-item ${isDone ? "task-done" : ""}`}
+              data-id={String(task.id)}
+              data-task-id={String(task.id)}
+              role="button"
+              tabindex="0"
+            >
+              <div class="task-item-left">
+                <span
+                  class="priority-dot"
+                  style={`background: ${PRIORITY_COLORS[p] ?? "#6b7280"}`}
+                  title={`Priority ${p}`}
+                />
+                {ticketKey && <span class="task-ticket-key">{ticketKey}</span>}
+                <span class={`task-title-text ${isDone ? "done" : ""}`}>{String(task.title)}</span>
+                <BotBadge owner={String(task.owner ?? "")} handoffState={String(task.handoff_state ?? "")} />
+              </div>
+              <div class="task-item-right">
+                {task.labels && String(task.labels) !== "[]" && (
+                  <LabelBadges labels={String(task.labels)} compact max={2} />
+                )}
+                <StatusBadge status={status} />
+                {task.due_date && (
+                  <span class="task-due-date">
+                    {formatRegionalDate(new Date(String(task.due_date)), { format: dateFormat, timezone })}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </section>
+
+  {/* ── Fields Section ── */}
+  <section id="section-fields" class="project-section" data-section="fields">
+    <div class="section-header">
+      <h2 class="section-title">Custom Fields</h2>
+    </div>
+
+    <div class="fields-placeholder">
+      <div class="fields-placeholder-icon">🏷️</div>
+      <h3 class="fields-placeholder-title">Custom Fields</h3>
+      <p class="fields-placeholder-desc">
+        Configure custom fields for tasks in this project. Custom fields allow you to add structured metadata like estimates, categories, or priorities specific to this project.
+      </p>
+      <p class="fields-placeholder-coming">Coming soon in Phase 15.</p>
+    </div>
+  </section>
+
+  {/* ── Settings Section ── */}
+  <section id="section-settings" class="project-section" data-section="settings">
+    <div class="section-header">
+      <h2 class="section-title">Project Settings</h2>
+    </div>
+
+    <div class="settings-card">
+      <div class="form-group">
+        <label for="edit-proj-title">Title</label>
+        <input type="text" id="edit-proj-title" value={projTitle} maxlength="200" />
+      </div>
+      <div class="form-group">
+        <label for="edit-proj-desc">Description</label>
+        <textarea id="edit-proj-desc" rows="3" maxlength="500">{projDesc ?? ""}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group form-group-sm">
+          <label for="edit-proj-icon">Icon</label>
+          <input type="text" id="edit-proj-icon" value={projIcon} maxlength="4" class="icon-input" />
+        </div>
+        <div class="form-group form-group-sm">
+          <label for="edit-proj-color">Color</label>
+          <input type="color" id="edit-proj-color" value={projColor} class="color-input" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="edit-proj-status">Status</label>
+        <select id="edit-proj-status" class="form-select">
+          <option value="active" selected={projStatus === "active"}>Active</option>
+          <option value="paused" selected={projStatus === "paused"}>Paused</option>
+          <option value="completed" selected={projStatus === "completed"}>Completed</option>
+          <option value="archived" selected={projStatus === "archived"}>Archived</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="edit-proj-goal">Goal</label>
+        <select id="edit-proj-goal" class="form-select">
+          <option value="">No goal</option>
+          {goals.map((g) => (
+            <option
+              value={String(g.id)}
+              selected={String(project?.goal_id ?? "") === g.id}
+            >
+              🎯 {String(g.title)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div class="settings-actions">
+        <button type="button" class="btn btn-primary" id="save-proj-btn">Save Changes</button>
+      </div>
+    </div>
+
+    <div class="danger-zone">
+      <h3 class="danger-title">Danger Zone</h3>
+      <p class="danger-desc">Deleting this project will unlink all associated tasks. Tasks will remain but become unassigned.</p>
+      <button type="button" class="btn btn-danger" id="delete-proj-btn">Delete Project</button>
+    </div>
+  </section>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  ></div>
+</Layout>
+
+<style>
+  @reference "../../styles/global.css";
+
+  /* Tab bar */
+  .project-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .project-tabs::-webkit-scrollbar { display: none; }
+
+  .project-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.625rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 150ms, border-color 150ms;
+  }
+  .project-tab:hover { color: var(--text-primary); }
+  .project-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-icon { font-size: 0.875rem; }
+
+  /* Sections */
+  .project-section { display: none; }
+  .project-section.active { display: block; }
+
+  /* Section header */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  /* Breadcrumb */
+  .project-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+  .project-breadcrumb a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 150ms;
+  }
+  .project-breadcrumb a:hover { color: var(--accent); }
+  .bc-sep { opacity: 0.5; }
+  .bc-current { color: var(--text-primary); font-weight: 500; }
+
+  /* Project header card */
+  .project-header-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .project-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--project-accent);
+  }
+  .project-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .project-header-info { flex: 1; }
+  .project-desc {
+    margin: 0.75rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .project-status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    text-transform: capitalize;
+  }
+  .status-active { background: rgba(var(--success-rgb), 0.1); color: var(--success); }
+  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+  .status-paused { background: rgba(var(--warning-rgb), 0.1); color: var(--warning); }
+  .status-archived { background: rgba(var(--text-muted-rgb), 0.1); color: var(--text-muted); }
+
+  .project-header-stats { display: flex; gap: 1.5rem; }
+  .stat-block { text-align: center; }
+  .stat-block .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+  .stat-block .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-complete { color: var(--success) !important; }
+
+  .project-progress-full {
+    height: 6px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .project-progress-bar {
+    height: 100%;
+    background: var(--project-accent, var(--accent));
+    border-radius: 3px;
+    transition: width 300ms ease;
+  }
+
+  /* Task list */
+  .project-tasks-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+  .project-task-list { display: flex; flex-direction: column; }
+  .project-task-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
+    cursor: pointer;
+    transition: background 150ms;
+    gap: 0.75rem;
+    background: var(--bg-card);
+  }
+  .project-task-item:first-child { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+  .project-task-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+  .project-task-item:only-child { border-radius: var(--radius-md); }
+  .project-task-item:hover { background: var(--bg-hover); }
+  .project-task-item.task-done { opacity: 0.6; }
+
+  .task-item-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .task-ticket-key { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .task-title-text {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-title-text.done { text-decoration: line-through; opacity: 0.7; }
+
+  .task-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .task-due-date { font-size: 11px; color: var(--text-muted); }
+
+  /* Fields placeholder */
+  .fields-placeholder {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .fields-placeholder-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+  .fields-placeholder-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .fields-placeholder-desc {
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin-inline: auto;
+    line-height: 1.5;
+  }
+  .fields-placeholder-coming {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* Settings */
+  .settings-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .form-group input[type="text"],
+  .form-group textarea {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    font-family: inherit;
+    transition: border-color 150ms;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .form-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    cursor: pointer;
+    appearance: auto;
+    transition: border-color 150ms;
+  }
+  .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .form-row { display: flex; gap: 1rem; }
+  .form-group-sm { flex: 0 0 80px; }
+  .icon-input { text-align: center; font-size: 1.25rem !important; padding: 0.25rem !important; }
+  .color-input {
+    width: 100%;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    padding: 2px;
+    background: var(--bg-primary);
+  }
+  .settings-actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .danger-zone {
+    background: var(--bg-card);
+    border: 1px solid var(--danger, #ef4444);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+  }
+  .danger-title { margin: 0 0 0.5rem; font-size: 0.9375rem; font-weight: 600; color: var(--danger, #ef4444); }
+  .danger-desc { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; }
+  .btn-danger {
+    background: var(--danger, #ef4444);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    transition: opacity 150ms;
+  }
+  .btn-danger:hover { opacity: 0.9; }
+
+  /* Task create form */
+  .task-create-form {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(var(--accent-rgb), 0.03);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.75rem;
+    animation: task-form-in 200ms ease;
+  }
+  @keyframes task-form-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .task-create-input {
+    flex: 1;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .task-create-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  }
+  .task-create-input::placeholder { color: var(--text-muted); }
+  .task-create-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
+  .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+
+  @media (max-width: 640px) {
+    .project-header-top { flex-direction: column; }
+    .project-header-stats { justify-content: space-around; }
+    .task-item-right { display: none; }
+  }
+</style>
+
+<script define:vars={{ projectId }}>
+  // --- Tab switching ---
+  const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
+  const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
+
+  function switchTab(hash) {
+    const tabId = hash.replace("#", "") || "overview";
+    projTabEls.forEach((t) => {
+      const isActive = t.dataset.tab === tabId;
+      t.classList.toggle("active", isActive);
+      t.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    projSectionEls.forEach((s) => {
+      s.classList.toggle("active", s.dataset.section === tabId);
+    });
+  }
+
+  if (window.location.hash) switchTab(window.location.hash);
+  window.addEventListener("hashchange", () => switchTab(window.location.hash));
+
+  // --- Inline task creation ---
+  const addBtn = document.getElementById("add-task-to-project-btn");
+  const createForm = document.getElementById("task-create-inline");
+  const createInput = document.getElementById("task-create-input");
+  const submitBtn = document.getElementById("task-create-submit");
+  const cancelBtn = document.getElementById("task-create-cancel");
+  let taskFormVisible = false;
+
+  function showTaskForm() {
+    // Auto switch to tasks tab
+    if (window.location.hash !== "#tasks") window.location.hash = "tasks";
+    createForm.style.display = "flex";
+    taskFormVisible = true;
+    requestAnimationFrame(() => createInput?.focus());
+  }
+
+  function hideTaskForm() {
+    createForm.style.display = "none";
+    createInput.value = "";
+    taskFormVisible = false;
+  }
+
+  function submitTask() {
+    const title = createInput?.value?.trim();
+    if (!title) {
+      createInput?.focus();
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Adding…";
+
+    fetch("/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title,
+        project_id: projectId,
+      }),
+    })
+      .then((r) => {
+        if (r.ok) {
+          window.location.reload();
+        } else {
+          throw new Error("Failed");
+        }
+      })
+      .catch(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Add";
+        createInput?.focus();
+      });
+  }
+
+  addBtn?.addEventListener("click", () => taskFormVisible ? hideTaskForm() : showTaskForm());
+  submitBtn?.addEventListener("click", submitTask);
+  cancelBtn?.addEventListener("click", hideTaskForm);
+  createInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitTask();
+    if (e.key === "Escape") hideTaskForm();
+  });
+
+  // Click task to open edit modal
+  document.querySelectorAll(".project-task-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const taskId = item.dataset.id;
+      if (taskId) {
+        document.dispatchEvent(
+          new CustomEvent("meitheal:open-task", { detail: { taskId } })
+        );
+      }
+    });
+  });
+
+  // --- Settings: Save ---
+  const saveProjectBtn = document.getElementById("save-proj-btn");
+  saveProjectBtn?.addEventListener("click", async () => {
+    const titleInput = document.getElementById("edit-proj-title");
+    const descInput = document.getElementById("edit-proj-desc");
+    const iconInput = document.getElementById("edit-proj-icon");
+    const colorInput = document.getElementById("edit-proj-color");
+    const statusSelect = document.getElementById("edit-proj-status");
+    const goalSelect = document.getElementById("edit-proj-goal");
+
+    const title = titleInput?.value?.trim();
+    if (!title) {
+      titleInput?.focus();
+      return;
+    }
+
+    saveProjectBtn.textContent = "Saving…";
+    saveProjectBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description: descInput?.value?.trim() || null,
+          icon: iconInput?.value?.trim() || "📋",
+          color: colorInput?.value || "#6366F1",
+          status: statusSelect?.value || "active",
+          goal_id: goalSelect?.value || null,
+        }),
+      });
+
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        window.showToast?.(data.error || "Failed to save", "error");
+        saveProjectBtn.textContent = "Save Changes";
+        saveProjectBtn.disabled = false;
+      }
+    } catch {
+      saveProjectBtn.textContent = "Save Changes";
+      saveProjectBtn.disabled = false;
+    }
+  });
+
+  // --- Settings: Delete ---
+  const deleteProjectBtn = document.getElementById("delete-proj-btn");
+  deleteProjectBtn?.addEventListener("click", async () => {
+    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.`);
+    if (!confirmed) return;
+
+    deleteProjectBtn.disabled = true;
+    deleteProjectBtn.textContent = "Deleting…";
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      if (res.ok) {
+        window.location.href = "/projects";
+      } else {
+        const data = await res.json().catch(() => ({}));
+        window.showToast?.(data.error || "Failed to delete", "error");
+        deleteProjectBtn.textContent = "Delete Project";
+        deleteProjectBtn.disabled = false;
+      }
+    } catch {
+      deleteProjectBtn.textContent = "Delete Project";
+      deleteProjectBtn.disabled = false;
+    }
+  });
+</script>

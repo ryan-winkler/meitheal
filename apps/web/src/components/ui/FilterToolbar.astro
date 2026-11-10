@@ -1,0 +1,858 @@
+---
+/**
+ * FilterToolbar — Shared filter bar for Table, Kanban, and Timeline
+ *
+ * @domain tasks
+ * @bounded-context tasks/ui
+ *
+ * Renders a configurable filter toolbar with:
+ * - Type toggle buttons (Epic/Story/Task)
+ * - Area filter selector (populated client-side from /api/areas)
+ * - Group-by selector
+ * - Status, Priority, RICE, User select filters (opt-in per view)
+ * - Label filter bar (lazy-loaded)
+ * - Clear all button
+ *
+ * Emits `meitheal:filter-change` CustomEvent whenever any filter changes.
+ * Each view's controller (table-controller.ts, kanban inline script) listens
+ * for this event to apply filtering.
+ *
+ * Usage:
+ *   <FilterToolbar view="table" showSearch showGroupBy showStatusFilter showPriorityFilter showRICEFilter showUserFilter />
+ *   <FilterToolbar view="kanban" showGroupBy />
+ */
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import LabelFilterBar from "./LabelFilterBar.astro"
+import TaskTypeIcon from "./TaskTypeIcon.astro"
+
+interface Props {
+  /** View context — controls ID prefixing and default visibility */
+  view: "table" | "kanban" | "timeline"
+  /** Show search input */
+  showSearch?: boolean
+  /** Show group-by selector */
+  showGroupBy?: boolean
+  /** Show status filter select */
+  showStatusFilter?: boolean
+  /** Show priority filter select */
+  showPriorityFilter?: boolean
+  /** Show RICE filter select */
+  showRICEFilter?: boolean
+  /** Show user filter select */
+  showUserFilter?: boolean
+  /** Show user filter pills (kanban-style) */
+  showUserPills?: boolean
+  /** Show Sort By selector */
+  showSortBy?: boolean
+  /** Group-by options override */
+  groupByOptions?: { value: string; label: string }[]
+  /** Hide area select (use with AreaSelector component) */
+  hideAreaSelect?: boolean
+  /** Additional CSS class */
+  class?: string
+}
+
+const {
+  view,
+  showSearch = view === "table",
+  showGroupBy = true,
+  showStatusFilter = view === "table",
+  showPriorityFilter = view === "table",
+  showRICEFilter = view === "table",
+  showUserFilter = view === "table",
+  showUserPills = view === "kanban",
+  showSortBy = true,
+  groupByOptions,
+  hideAreaSelect = false,
+  class: className,
+} = Astro.props
+
+// Resolve locale from cookie (same pattern as pages)
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+const prefix = view
+
+const defaultGroupByOptions = view === "table"
+  ? [
+      { value: "none", label: "No Grouping" },
+      { value: "type", label: "Type" },
+      { value: "priority", label: "Priority" },
+      { value: "area", label: "Area" },
+      { value: "project", label: "Project" },
+      { value: "assignee", label: "Assignee" },
+      { value: "status", label: "Status" },
+      { value: "rice", label: "RICE" },
+    ]
+  : [
+      { value: "none", label: t("kanban.group_none", locale) },
+      { value: "type", label: t("kanban.group_type", locale) },
+      { value: "area", label: t("kanban.group_area", locale) },
+      { value: "project", label: t("kanban.group_project", locale) },
+      { value: "priority", label: t("kanban.group_priority", locale) },
+      { value: view === "kanban" ? "assigned" : "assignee", label: t("kanban.group_assignee", locale) },
+      { value: "status", label: t("kanban.group_status", locale) },
+      ...(view === "kanban" ? [{ value: "rice", label: t("kanban.group_rice", locale) }] : []),
+    ]
+
+const groupOptions = groupByOptions ?? defaultGroupByOptions
+---
+
+<div
+  class:list={["filter-toolbar", `filter-toolbar--${view}`, className]}
+  id={`${prefix}-filter-bar`}
+  role="toolbar"
+  aria-label="Filter tasks"
+>
+  {/* Search input (table only by default) */}
+  {showSearch && (
+    <input
+      type="text"
+      class="form-input filter-toolbar__search"
+      id={`${prefix}-search`}
+      placeholder={t("table.filter_placeholder", locale)}
+      aria-label="Filter by text"
+    />
+  )}
+
+  {view === "timeline" && <>
+    <select class="form-select" id="timeline-filter-status" aria-label="Filter by status">
+      <option value="">{t("tasks.all_statuses", locale)}</option>
+      {["pending", "active", "complete"].map(status => (
+        <option value={status}>{t(`task_status.${status}`, locale)}</option>
+      ))}
+      <option value="overdue">{t("dashboard.overdue_label", locale)}</option>
+    </select>
+    <select class="form-select" id="timeline-filter-priority" aria-label="Filter by priority">
+      <option value="">{t("tasks.all_priorities", locale)}</option>
+      {["critical", "high", "medium", "low", "minimal"].map((priority, index) => (
+        <option value={index + 1}>{t(`priority.${priority}`, locale)}</option>
+      ))}
+    </select>
+  </>}
+
+  {/* Type toggle buttons — TaskKind behavioral classification */}
+  <div class="filter-toolbar__type-toggles" id={`${prefix}-type-toggles`}>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="standard_action"
+      aria-pressed="true"
+      title="Toggle Standard Tasks"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Task
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="shopping_item"
+      aria-pressed="true"
+      title="Toggle Shopping Items"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Shopping
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="checklist"
+      aria-pressed="true"
+      title="Toggle Checklists"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Checklist
+    </button>
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="routine_instance"
+      aria-pressed="true"
+      title="Toggle Routines"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Routine
+    </button>
+  </div>
+
+  {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
+  {/* Replaced by Unified Filter Builder */}
+
+  {/* Group-by selector */}
+  {showGroupBy && (
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-group-by-dropdown`} aria-label="Group tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-group-by-label`}>
+        <span class="filter-dropdown__value">{groupOptions?.[0]?.label || "Group by"}</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Group by</div>
+        {groupOptions.map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-group-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
+  )}
+  {showGroupBy && <input type="hidden" id={`${prefix}-group-by`} value="none" />}
+
+  {/* Sub-group-by selector — only for table view with groupBy active */}
+  {showGroupBy && view === "table" && (
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sub-group-by-dropdown`} aria-label="Sub-group tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sub-group-by-label`}>
+        <span class="filter-dropdown__value">No sub-group</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Then group by</div>
+        {[
+          { value: "none", label: "No sub-group" },
+          { value: "status", label: "Then by Status" },
+          { value: "priority", label: "Then by Priority" },
+          { value: "type", label: "Then by Type" },
+          { value: "area", label: "Then by Area" },
+          { value: "rice", label: "Then by RICE" }
+        ].map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sub-group-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
+  )}
+  {showGroupBy && view === "table" && <input type="hidden" id={`${prefix}-sub-group-by`} value="none" />}
+
+  {/* Sort-by selector */}
+  {showSortBy && (
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sort-by-dropdown`} aria-label="Sort tasks by">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sort-by-label`}>
+        <span class="filter-dropdown__value">Default Sort</span>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </summary>
+      <div class="timeline-zoom-panel mt-1 w-max font-normal">
+        <div class="timeline-zoom-panel-title">Sort by</div>
+        {[
+          { value: "none", label: "Default Sort" },
+          { value: "due_asc", label: "Due Date (Earliest)" },
+          { value: "due_desc", label: "Due Date (Latest)" },
+          { value: "priority_desc", label: "Priority (High to Low)" },
+          { value: "created_desc", label: "Recently Created" },
+          { value: "rice_desc", label: "RICE Score (High to Low)" }
+        ].map((opt, i) => (
+          <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sort-by`} data-value={opt.value}>
+            <span class="truncate pr-4">{opt.label}</span>
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        ))}
+      </div>
+    </details>
+  )}
+  {showSortBy && <input type="hidden" id={`${prefix}-sort-by`} value="none" />}
+
+  {/* Clear all button */}
+  <button
+    type="button"
+    class="filter-toolbar__clear-btn hidden"
+    id={`${prefix}-clear-filters`}
+    title="Clear all filters"
+    aria-label="Clear all active filters"
+  >
+    {t("tasks.clear_filters", locale)}
+  </button>
+
+  {view !== "timeline" && <>
+  {/* Unified Filter Builder Toggle */}
+  <button
+    type="button"
+    class="filter-pill filter-toolbar__advanced-toggle"
+    id={`${prefix}-advanced-toggle`}
+    title="Add custom filters"
+    aria-label="Toggle filter builder"
+    aria-expanded="false"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-filter"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    <span class="filter-pill__label font-medium">Filter</span>
+  </button>
+
+  {/* Unified Filter Builder Dropdown (Hidden by default) */}
+  <div class="filter-toolbar__advanced-panel hidden absolute left-0 top-full mt-2 z-50 w-[calc(100vw-32px)] sm:w-full max-w-[800px] rounded-lg border border-border bg-bg-card shadow-2xl" id={`${prefix}-advanced-panel`} role="region" aria-label="Custom Filter Builder">
+    <div class="advanced-panel__header px-4 py-3 border-b border-border flex justify-between items-center bg-bg-secondary rounded-t-lg">
+      <h4 class="text-sm font-semibold text-text-primary flex items-center gap-1.5">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-text-muted"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        Filters
+      </h4>
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn-icon p-1 rounded-md hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors" id={`${prefix}-advanced-close`} aria-label="Close custom filters">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    
+    <div class="advanced-panel__body p-3 max-h-[300px] overflow-y-auto custom-scrollbar" id={`${prefix}-advanced-conditions-container`}>
+      <!-- Conditions rendered here by JS -->
+      <div class="advanced-panel__empty-state text-sm text-text-muted italic py-4 text-center">
+        No filters applied.<br/>Add a condition to filter tasks.
+      </div>
+    </div>
+
+    <div class="advanced-panel__footer px-4 py-3 bg-bg-secondary border-t border-border flex justify-between items-center gap-2 rounded-b-lg">
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-outline text-xs px-2.5 py-1 min-h-[28px] border-border hover:border-border-focus bg-bg-primary hover:bg-bg-hover text-text-primary" id={`${prefix}-advanced-add-condition`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1 inline"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+          Condition
+        </button>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" class="btn text-xs px-2.5 py-1 min-h-[28px] text-text-muted hover:text-text-primary hover:bg-bg-hover bg-transparent border-transparent transition-colors" id={`${prefix}-advanced-clear`}>
+          Clear Rules
+        </button>
+        <button type="button" class="btn btn-primary text-xs px-3 py-1 min-h-[28px] shadow-sm" id={`${prefix}-advanced-apply`}>
+          Apply Rules
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {/* Label filter bar — separate row below main toolbar */}
+  <div class="w-full hidden" id={`${prefix}-label-filter-container`}>
+    <LabelFilterBar id={`${prefix}-label-filter`} />
+  </div>
+  </>}
+</div>
+
+<script>
+  // Expose global for inline views (kanban)
+  import { isTaskVisible, loadFilterState } from "../../lib/filter-state"
+  import { readKanbanFilters, storedKanbanGroup } from "../../lib/kanban-query"
+  declare global {
+    interface Window {
+      __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
+    }
+  }
+  ;window.__isTaskVisible = isTaskVisible as any
+
+  /**
+   * FilterToolbar client-side controller
+   *
+   * Binds all filter controls and emits a unified `meitheal:filter-change`
+   * CustomEvent whenever any filter value changes. Views listen for this event.
+   */
+  function initFilterToolbar(toolbar: HTMLElement) {
+    const prefix = toolbar.id.replace(/-filter-bar$/, "")
+
+    // Gather all controls
+    const search = toolbar.querySelector<HTMLInputElement>(`#${prefix}-search`)
+    const statusSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-status`)
+    const prioritySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-filter-priority`)
+    const riceSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-rice-filter`)
+    const userSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-user-filter`)
+    const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-area-filter`)
+    const groupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-group-by`)
+    const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
+    const sortBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sort-by`)
+    const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
+    const typeToggles = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__type-btn")
+
+    // Advanced Filter controls
+    const advToggleBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-toggle`)
+    const advPanel = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-panel`)
+    const advCloseBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-close`)
+    const advAddCondBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-condition`)
+    const advAddGroupBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-group`)
+    const advClearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-clear`)
+    const advApplyBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-apply`)
+    const advContainer = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-conditions-container`)
+
+    const params = new URLSearchParams(location.search)
+    const initial = prefix === "kanban" ? readKanbanFilters(params)
+      : prefix === "timeline" ? loadFilterState() : {}
+    if (prefix === "kanban" && !params.has("groupBy")) initial.groupBy = storedKanbanGroup()
+    if (prefix === "timeline" && initial.groupBy === "assigned") initial.groupBy = "assignee"
+    // Internal state for advanced filters
+    let advancedFilterState = prefix === "kanban" ? initial.advancedFilter ?? null : null
+    let { status = "", priority = "" } = initial
+    let { rice = "", user = "", labels = [] } = prefix === "kanban" ? initial : {}
+    if (prefix === "timeline") {
+      if (statusSel) statusSel.value = status
+      if (prioritySel) prioritySel.value = priority
+    }
+    if (prefix === "kanban" || prefix === "timeline") {
+      if (search) search.value = initial.search ?? ""
+      if (groupBySel) groupBySel.value = initial.groupBy ?? "none"
+      typeToggles.forEach(btn => {
+        const active = !initial.types?.length || initial.types.includes(btn.dataset.type ?? "")
+        btn.classList.toggle("active", active)
+        btn.setAttribute("aria-pressed", String(active))
+      })
+    }
+
+    // Field definition for dropdowns
+    const fields = [
+      { id: "title", label: "Task Title" },
+      { id: "status", label: "Status" },
+      { id: "priority", label: "Priority" },
+      { id: "rice", label: "RICE Score" },
+      { id: "type", label: "Task Type" },
+      { id: "assigned", label: "Assignee" },
+      { id: "labels", label: "Labels" },
+      { id: "area", label: "Area ID" },
+    ]
+
+    const operators = [
+      { id: "equals", label: "Equals" },
+      { id: "notEquals", label: "Does not equal" },
+      { id: "contains", label: "Contains" },
+      { id: "notContains", label: "Does not contain" },
+      { id: "greaterThan", label: "Greater than" },
+      { id: "lessThan", label: "Less than" },
+      { id: "isEmpty", label: "Is empty" },
+      { id: "isNotEmpty", label: "Is not empty" },
+    ]
+
+    function renderAdvancedConditionRow() {
+      const row = document.createElement("div")
+      row.className = "advanced-filter-row flex gap-2 items-center mb-2"
+      row.dataset.type = "condition"
+
+      const hasRows = advContainer && advContainer.querySelectorAll(".advanced-filter-row").length > 0
+      
+      if (hasRows) {
+        const logicBtn = document.createElement("button")
+        logicBtn.type = "button"
+        logicBtn.className = "adv-logic text-[10px] font-bold px-2 py-1 min-h-[30px] bg-bg-primary border border-border hover:bg-bg-hover hover:border-border-focus text-accent rounded transition-colors break-keep whitespace-nowrap"
+        logicBtn.textContent = "AND"
+        logicBtn.dataset.logic = "AND"
+        logicBtn.addEventListener("click", () => {
+          const isAnd = logicBtn.dataset.logic === "AND"
+          logicBtn.dataset.logic = isAnd ? "OR" : "AND"
+          logicBtn.textContent = isAnd ? "OR" : "AND"
+          // Toggle styling for visual distinction
+          if (isAnd) {
+            logicBtn.classList.remove("text-accent")
+            logicBtn.classList.add("text-indigo-400")
+          } else {
+            logicBtn.classList.add("text-accent")
+            logicBtn.classList.remove("text-indigo-400")
+          }
+        })
+        row.appendChild(logicBtn)
+      }
+
+      const fieldSel = document.createElement("select")
+      fieldSel.className = "adv-field form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
+      fields.forEach(f => {
+        const opt = document.createElement("option")
+        opt.value = f.id
+        opt.textContent = f.label
+        fieldSel.appendChild(opt)
+      })
+
+      const opSel = document.createElement("select")
+      opSel.className = "adv-op form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
+      operators.forEach(o => {
+        const opt = document.createElement("option")
+        opt.value = o.id
+        opt.textContent = o.label
+        opSel.appendChild(opt)
+      })
+
+      const valInput = document.createElement("input")
+      valInput.className = "adv-val form-input flex-1 text-xs py-1.5 min-h-[30px] px-2 bg-bg-primary border border-border focus:border-border-focus rounded"
+      valInput.type = "text"
+      valInput.placeholder = "Value..."
+
+      // Hide value input for empty/not-empty operators
+      opSel.addEventListener("change", () => {
+        if (opSel.value === "isEmpty" || opSel.value === "isNotEmpty") {
+          valInput.style.display = "none"
+        } else {
+          valInput.style.display = ""
+        }
+      })
+
+      const removeBtn = document.createElement("button")
+      removeBtn.type = "button"
+      removeBtn.className = "btn-icon p-1.5 ml-1 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded"
+      removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`
+      removeBtn.addEventListener("click", () => {
+        row.remove()
+        
+        // Ensure first remaining row doesn't have a logic button
+        if (advContainer) {
+          const firstRow = advContainer.querySelector(".advanced-filter-row")
+          if (firstRow) {
+            const firstLogicBtn = firstRow.querySelector(".adv-logic")
+            if (firstLogicBtn) firstLogicBtn.remove()
+          }
+        }
+        
+        checkEmptyState()
+        updateClearVisibility()
+      })
+
+      row.append(fieldSel, opSel, valInput, removeBtn)
+      return row
+    }
+
+    function checkEmptyState() {
+      if (!advContainer) return
+      const emptyState = advContainer.querySelector(".advanced-panel__empty-state")
+      const hasRows = advContainer.querySelectorAll(".advanced-filter-row").length > 0
+      if (emptyState) {
+        (emptyState as HTMLElement).style.display = hasRows ? "none" : "block"
+      }
+    }
+
+    // Toggle Advanced Panel
+    advToggleBtn?.addEventListener("click", () => {
+      const isExpanded = advToggleBtn.getAttribute("aria-expanded") === "true"
+      advToggleBtn.setAttribute("aria-expanded", String(!isExpanded))
+      advPanel?.classList.toggle("hidden")
+    })
+
+    advCloseBtn?.addEventListener("click", () => {
+      advToggleBtn?.setAttribute("aria-expanded", "false")
+      advPanel?.classList.add("hidden")
+    })
+
+    // Click outside to close advanced panel
+    document.addEventListener("click", (e) => {
+      if (!advPanel?.classList.contains("hidden") && advToggleBtn && advPanel) {
+        if (!advPanel.contains(e.target as Node) && !advToggleBtn.contains(e.target as Node)) {
+          advToggleBtn.setAttribute("aria-expanded", "false")
+          advPanel.classList.add("hidden")
+        }
+      }
+    })
+
+    // Advanced Panel Actions
+    advAddCondBtn?.addEventListener("click", () => {
+      if (!advContainer) return
+      const emptyState = advContainer.querySelector(".advanced-panel__empty-state")
+      if (emptyState) (emptyState as HTMLElement).style.display = "none"
+      
+      const row = renderAdvancedConditionRow()
+      advContainer.appendChild(row)
+      updateClearVisibility()
+    })
+
+    // Logic Toggle Actions (Removed from header)
+    // advClearBtn logic
+    advClearBtn?.addEventListener("click", () => {
+      if (!advContainer) return
+      const rows = advContainer.querySelectorAll(".advanced-filter-row")
+      rows.forEach(r => r.remove())
+      checkEmptyState()
+      advancedFilterState = null
+      advToggleBtn?.classList.remove("filter-pill--active")
+      emitChange()
+    })
+
+    advApplyBtn?.addEventListener("click", () => {
+      if (!advContainer) return
+      const rows = advContainer.querySelectorAll(".advanced-filter-row")
+      if (rows.length === 0) {
+        advancedFilterState = null
+      } else {
+        // Build the root filter group
+        const conditions = Array.from(rows).map((row, index) => {
+          const logic: "AND" | "OR" = index > 0 && row.querySelector<HTMLButtonElement>(".adv-logic")?.dataset.logic === "OR" ? "OR" : "AND"
+          const field = row.querySelector<HTMLSelectElement>(".adv-field")?.value ?? ""
+          const operator = (row.querySelector<HTMLSelectElement>(".adv-op")?.value ?? "equals") as import("../../lib/filter-engine").FilterOperator
+          const value = row.querySelector<HTMLInputElement>(".adv-val")?.value ?? ""
+          return { id: Math.random().toString(36).substring(7), logic, field, operator, value }
+        })
+        advancedFilterState = {
+          id: "root",
+          logic: "AND", // Master logic is AND
+          conditions
+        }
+      }
+      
+      // Visual feedback on toggle button
+      if (advancedFilterState && advancedFilterState.conditions.length > 0) {
+        advToggleBtn?.classList.add("filter-pill--active")
+      } else {
+        advToggleBtn?.classList.remove("filter-pill--active")
+      }
+
+      advToggleBtn?.setAttribute("aria-expanded", "false")
+      advPanel?.classList.add("hidden")
+      emitChange()
+    })
+
+    // Internal state mapping
+    const state = {
+      status: "",
+      priority: "",
+      rice: "",
+      user: "",
+      area: "",
+      groupBy: "none",
+      subGroupBy: "none",
+      sortBy: "none"
+    }
+
+    function gatherState() {
+      // Collect active types
+      const activeTypes: string[] = []
+      typeToggles.forEach((btn) => {
+        if (btn.classList.contains("active") && btn.dataset.type) {
+          activeTypes.push(btn.dataset.type)
+        }
+      })
+
+      // Collect active users
+      const activeUser = userSel?.value ?? user
+
+      return {
+        search: search?.value ?? "",
+        status: statusSel?.value ?? status,
+        priority: prioritySel?.value ?? priority,
+        rice,
+        user: activeUser,
+        labels,
+        area: "",
+        groupBy: groupBySel?.value ?? "none",
+        subGroupBy: subGroupBySel?.value ?? "none",
+        sortBy: sortBySel?.value ?? "none",
+        types: activeTypes.length === typeToggles.length ? [] : activeTypes,
+        advancedFilter: advancedFilterState,
+      }
+    }
+
+    function updateClearVisibility() {
+      if (!clearBtn) return
+      const hasAdvanced = advancedFilterState && advancedFilterState.conditions && advancedFilterState.conditions.length > 0
+      const hasSearch = search && search.value.trim().length > 0
+      const hasTypes = document.querySelectorAll(".filter-toolbar__type-btn:not(.active)").length > 0
+      // Check if group/sort have non-default values
+      const hasGroup = groupBySel && groupBySel.value !== "none"
+      const hasSort = sortBySel && sortBySel.value !== "none"
+      
+      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || (statusSel?.value ?? status) ||
+          (prioritySel?.value ?? priority) || rice || user || labels.length) {
+        clearBtn.classList.remove("hidden")
+      } else {
+        clearBtn.classList.add("hidden")
+      }
+    }
+
+    function emitChange() {
+      const state = gatherState()
+      document.dispatchEvent(
+        new CustomEvent("meitheal:filter-change", {
+          detail: { ...state, view: prefix },
+        })
+      )
+      updateClearVisibility()
+    }
+
+    // Debounce for search
+    let searchTimer: ReturnType<typeof setTimeout>
+    search?.addEventListener("input", () => {
+      clearTimeout(searchTimer)
+      searchTimer = setTimeout(emitChange, 150)
+    })
+
+    // Select change listeners (for remaining native selects)
+    ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
+      sel?.addEventListener("change", emitChange)
+    })
+
+    // Custom dropdown listeners
+    const dropdowns = toolbar.querySelectorAll<HTMLDetailsElement>(".filter-dropdown")
+    dropdowns.forEach((details) => {
+      details.addEventListener("click", () => {
+        // Close other dropdowns when one is clicked
+        dropdowns.forEach(d => {
+          if (d !== details) d.removeAttribute("open")
+        })
+      })
+      
+      const options = details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
+      const summaryValue = details.querySelector(".filter-dropdown__value")
+      
+      options.forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          
+          options.forEach(b => b.classList.remove("timeline-zoom-option--active"))
+          btn.classList.add("timeline-zoom-option--active")
+          
+          if (summaryValue) {
+            summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
+          }
+          
+          const hiddenInputId = btn.dataset.select
+          if (hiddenInputId) {
+            const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
+            if (hiddenInput && hiddenInput.value !== btn.dataset.value) {
+              hiddenInput.value = btn.dataset.value || ""
+              emitChange()
+            }
+          }
+          
+          details.removeAttribute("open")
+        })
+      })
+    })
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener("click", (e) => {
+      const target = e.target as Node
+      dropdowns.forEach(d => {
+        if (!d.contains(target)) d.removeAttribute("open")
+      })
+    })
+
+    // Type toggle listeners
+    typeToggles.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        btn.classList.toggle("active")
+        btn.setAttribute("aria-pressed", String(btn.classList.contains("active")))
+        emitChange()
+      })
+    })
+
+    // Clear all button
+    clearBtn?.addEventListener("click", () => {
+      if (search) search.value = ""
+      status = priority = rice = user = ""
+      labels = []
+      ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
+        if (sel) sel.value = ""
+      })
+      if (groupBySel) groupBySel.value = "none"
+      if (subGroupBySel) subGroupBySel.value = "none"
+      if (sortBySel) sortBySel.value = "none"
+      
+      // Update custom dropdowns visually
+      dropdowns.forEach(d => {
+        const firstOpt = d.querySelector<HTMLButtonElement>(".filter-dropdown__option")
+        if (!firstOpt) return
+        const hiddenInputId = firstOpt.dataset.select
+        if (hiddenInputId) {
+          const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
+          const val = hiddenInput ? hiddenInput.value : "none"
+          
+          const options = d.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
+          options.forEach(btn => {
+            if (btn.dataset.value === val) {
+              btn.classList.add("timeline-zoom-option--active")
+              const summaryValue = d.querySelector(".filter-dropdown__value")
+              if (summaryValue) summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
+            } else {
+              btn.classList.remove("timeline-zoom-option--active")
+            }
+          })
+        }
+      })
+      
+      typeToggles.forEach((btn) => {
+        btn.classList.add("active")
+        btn.setAttribute("aria-pressed", "true")
+      })
+      
+      // Clear advanced filters too
+      if (advContainer) {
+        const rows = advContainer.querySelectorAll(".advanced-filter-row")
+        rows.forEach(r => r.remove())
+        checkEmptyState()
+      }
+      advancedFilterState = null
+      advToggleBtn?.classList.remove("filter-pill--active")
+
+      emitChange()
+      clearBtn.classList.add("hidden") // Immediate visual feedback
+    })
+    
+    // Add Escape key handler to clear filters if they are active
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && clearBtn && !clearBtn.classList.contains("hidden")) {
+        // Only trigger if not typing in an input or textarea
+        const tag = document.activeElement?.tagName?.toLowerCase()
+        if (tag === "input" || tag === "textarea") return
+        e.preventDefault()
+        clearBtn.click()
+      }
+    })
+
+    // Load boards into board selector (idempotent via DOM attribute)
+    async function loadAreas() {
+      if (!areaSel || areaSel.dataset.populated) return
+      areaSel.dataset.populated = "true"
+      
+      try {
+        const res = await fetch("/api/areas")
+        if (!res.ok) return
+        const data = await res.json()
+        const boards: { id: string; name: string; icon?: string }[] = data.areas || []
+        
+        boards.forEach((b) => {
+          const opt = document.createElement("option")
+          opt.value = b.id
+          opt.textContent = `${b.icon ?? "📋"} ${b.name}`
+          areaSel.appendChild(opt)
+        })
+      } catch { /* offline fallback */ }
+    }
+
+    if (prefix === "kanban" || prefix === "timeline") {
+      if (groupBySel && initial.groupBy && initial.groupBy !== "none") {
+        const option = Array.from(toolbar.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option"))
+          .find(item => item.dataset.select === groupBySel.id && item.dataset.value === initial.groupBy)
+        const label = option?.closest("details")?.querySelector(".filter-dropdown__value")
+        if (option && label) {
+          option.closest("details")?.querySelector(".timeline-zoom-option--active")?.classList.remove("timeline-zoom-option--active")
+          option.classList.add("timeline-zoom-option--active")
+          label.textContent = option.textContent?.trim() ?? initial.groupBy
+        } else if (prefix === "timeline") {
+          groupBySel.value = "none"
+        }
+      }
+      if (advContainer && advancedFilterState?.conditions.length) {
+        for (const condition of advancedFilterState.conditions) {
+          if ("conditions" in condition) continue
+          const row = renderAdvancedConditionRow()
+          const field = row.querySelector<HTMLSelectElement>(".adv-field")
+          const op = row.querySelector<HTMLSelectElement>(".adv-op")
+          const value = row.querySelector<HTMLInputElement>(".adv-val")
+          const logic = row.querySelector<HTMLButtonElement>(".adv-logic")
+          if (field) field.value = condition.field
+          if (op) {
+            op.value = condition.operator
+            op.dispatchEvent(new Event("change"))
+          }
+          if (value) value.value = String(condition.value)
+          if (logic && condition.logic === "OR") logic.click()
+          advContainer.append(row)
+        }
+        advToggleBtn?.classList.add("filter-pill--active")
+        checkEmptyState()
+      }
+      updateClearVisibility()
+    }
+    loadAreas()
+  }
+
+  // Initialize toolbars
+  function bootToolbars() {
+    document.querySelectorAll<HTMLElement>(".filter-toolbar").forEach((toolbar) => {
+      // Guard: don't re-initialize if already done
+      if (toolbar.dataset.initialized) return
+      toolbar.dataset.initialized = "true"
+      initFilterToolbar(toolbar)
+    })
+  }
+
+  // Use both events but rely on data-initialized + data-populated for idempotency
+  document.addEventListener("DOMContentLoaded", bootToolbars)
+  document.addEventListener("astro:page-load", bootToolbars)
+</script>
+

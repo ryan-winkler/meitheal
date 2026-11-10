@@ -1,0 +1,22 @@
+---
+import type { SettingsSectionDescriptor } from "../../lib/settings-registry"
+
+interface Props {
+  section: SettingsSectionDescriptor
+}
+
+const { section } = Astro.props
+---
+
+<a
+  class="settings-tab"
+  id={`settings-summary-${section.id}`}
+  href={`#${section.id}`}
+  data-settings-section-link
+  data-settings-summary={section.id}
+  role="tab"
+>
+  <span class="settings-tab__icon" aria-hidden="true">{section.icon}</span>
+  <span class="settings-tab__label">{section.label}</span>
+  <span class="settings-tab__status" aria-live="polite">{section.statusLabel}</span>
+</a>

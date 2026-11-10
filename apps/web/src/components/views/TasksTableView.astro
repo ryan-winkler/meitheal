@@ -1,0 +1,756 @@
+---
+
+import SignalBar from "../layout/SignalBar.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import TaskTypeIcon from "../ui/TaskTypeIcon.astro";
+import FrameworkBadge from "../ui/FrameworkBadge.astro";
+import LabelBadges from "../ui/LabelBadges.astro";
+import FilterToolbar from "../ui/FilterToolbar.astro";
+import ColumnCustomizer from "../ui/ColumnCustomizer.astro"
+import SavedFilterPresets from "../ui/SavedFilterPresets.astro";
+import { t } from "../../i18n/translations";
+import type { Locale } from "../../lib/locale";
+import { formatRegionalDate } from "../../lib/date";
+import { formatTicketKey } from "../../lib/ticket-key";
+import { getTasksForView } from "../../lib/task-queries";
+import { STATUS_CONFIG } from "../../lib/status-config";
+import { TABLE_SECTIONS } from "../../lib/table-registry";
+
+// i18n: resolve locale from cookie
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+
+const { timezone, dateFormat } = Astro.locals;
+
+const { tasks, counts } = await getTasksForView();
+
+const priorityClasses: Record<number, string> = {
+  1: "priority-critical",
+  2: "priority-high",
+  3: "priority-medium",
+  4: "priority-low",
+  5: "priority-minimal",
+};
+
+// --- Subtask Hierarchy: Build tree and flatten with depth ---
+type TaskWithDepth = (typeof tasks)[number] & { depth: number; hasChildren: boolean; childIds: string[] };
+
+function buildTreeRows(allTasks: typeof tasks): TaskWithDepth[] {
+  // Index by id
+  const byId = new Map(allTasks.map(t => [t.id, t]));
+  // Build children map
+  const childrenMap = new Map<string, typeof tasks>();
+  for (const t of allTasks) {
+    if (t.parent_id && byId.has(String(t.parent_id))) {
+      const pid = String(t.parent_id);
+      if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+      childrenMap.get(pid)!.push(t);
+    }
+  }
+  // Flatten tree with DFS
+  const result: TaskWithDepth[] = [];
+  const visited = new Set<string>();
+  function walk(task: (typeof tasks)[number], depth: number) {
+    if (visited.has(task.id)) return;
+    visited.add(task.id);
+    const kids = childrenMap.get(task.id) ?? [];
+    result.push({
+      ...task,
+      depth,
+      hasChildren: kids.length > 0,
+      childIds: kids.map(c => c.id),
+    });
+    for (const child of kids) walk(child, depth + 1);
+  }
+  // Start with root tasks (no parent or parent not in set)
+  for (const t of allTasks) {
+    if (!t.parent_id || !byId.has(String(t.parent_id))) {
+      walk(t, 0);
+    }
+  }
+  // Add any orphans not visited (circular refs etc.)
+  for (const t of allTasks) {
+    if (!visited.has(t.id)) {
+      result.push({ ...t, depth: 0, hasChildren: false, childIds: [] });
+    }
+  }
+  return result;
+}
+
+const treeRows = buildTreeRows(tasks);
+const tableSignal =
+  counts.total === 0
+    ? "No tasks are available in the table view right now"
+    : `${counts.total} tasks in view, ${counts.active} currently active`
+---
+
+<div id="tasks-view-table" class="tasks-view-container" data-task-view="table">
+  <div id="table-shell" class="page-shell">
+    <!-- Signal bar -->
+    <SignalBar>
+      <span id="task-summary">
+        <strong>{counts.total}</strong> tasks · <strong>{counts.active}</strong> active
+        {counts.overdue > 0 && (
+          <Fragment>
+            · <span class="summary-overdue">{counts.overdue} overdue</span>
+          </Fragment>
+        )}
+      </span>
+    </SignalBar>
+
+    {
+      tasks.length === 0 && (
+        <EmptyState
+          title={t("table.no_tasks", locale)}
+          description={t("table.no_tasks", locale)}
+          actionText={t("tasks.new_task", locale)}
+          actionEvent="meitheal:new-task"
+        />
+      )
+    }
+
+    {
+      tasks.length > 0 && (
+        <>
+          <!-- Filter toolbar (always visible, matches Kanban) -->
+          <div class="table-filter-bar">
+            <FilterToolbar
+              view="table"
+              showSearch
+              showGroupBy
+              showStatusFilter
+              showPriorityFilter
+              showRICEFilter
+              showUserFilter
+            />
+          </div>
+          <table class="data-table" id="task-table">
+            <thead>
+              <tr>
+                <th scope="col" class="col-checkbox">
+                  <input
+                    type="checkbox"
+                    id="select-all"
+                    aria-label="Select all tasks"
+                  />
+                </th>
+                <th scope="col" class="sortable col-key" data-col="key">
+                  {t("table.col_key", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th scope="col" class="sortable col-title" data-col="title">
+                  {t("table.col_title", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th scope="col" class="sortable col-type" data-col="type">
+                  {t("table.col_type", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th scope="col" class="sortable col-status" data-col="status">
+                  {t("table.col_status", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th
+                  scope="col"
+                  class="sortable col-priority"
+                  data-col="priority"
+                  data-numeric="true"
+                >
+                  {t("table.col_priority", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th
+                  scope="col"
+                  class="sortable col-due-date"
+                  data-col="due_date"
+                >
+                  {t("table.col_due_date", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th
+                  scope="col"
+                  class="sortable col-rice"
+                  data-col="rice"
+                  data-numeric="true"
+                >
+                  {t("table.col_rice", locale)}
+                  <span class="sort-indicator" />
+                </th>
+                <th
+                  scope="col"
+                  class="col-calendar"
+                  title={t("table.col_calendar", locale)}
+                >
+                  📅
+                </th>
+                <th scope="col" class="col-custom-fields">
+                  {t("table.col_custom_fields", locale)}
+                </th>
+                <th scope="col" class="col-assigned" title="Assigned To">
+                  👤
+                </th>
+                <th scope="col" class="col-labels">
+                  {t("table.col_labels", locale)}
+                </th>
+                <th scope="col" class="col-actions">
+                  {t("table.col_actions", locale)}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {treeRows.map((task) => {
+                const cfEntries = Object.entries(task.custom_fields).filter(
+                  ([, v]) => v !== null && v !== undefined && v !== "",
+                );
+                const searchText = [
+                  task.title,
+                  task.description ?? "",
+                  ...task.labels,
+                ]
+                  .join(" ")
+                  .toLowerCase();
+                const ticketKey = formatTicketKey(task.ticket_number ?? 0) ?? `#${task.id.slice(0, 8)}`
+                return (
+                  <tr
+                    data-id={task.id}
+                    data-rice={task.rice !== null ? String(task.rice) : ""}
+                    data-area={task.area_id}
+                    data-status={task.status}
+                    data-priority={String(task.priority)}
+                    data-assigned={String(task.assigned_to ?? "")}
+                    data-labels={JSON.stringify(task.labels ?? [])}
+                    data-title={task.title.toLowerCase()}
+                    data-search={searchText}
+                    data-task-type={task.task_type}
+                    data-task-kind={task.task_kind ?? "standard_action"}
+                    data-depth={String(task.depth)}
+                    data-parent-id={task.parent_id ? String(task.parent_id) : ""}
+                    data-has-children={task.hasChildren ? "true" : ""}
+                    data-child-ids={task.childIds.join(",")}
+                    data-overdue={task.is_overdue ? "true" : "false"}
+                    class={`table-row ${task.is_done ? "row-done" : ""} ${task.depth > 0 ? "subtask-row" : ""}`}
+                    style={task.depth > 0 ? `--subtask-depth: ${task.depth}` : undefined}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="row-check"
+                        data-id={task.id}
+                        aria-label={`Select task: ${task.title}`}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        class="ticket-key-badge"
+                        data-open-table-task
+                        aria-label={`${ticketKey} — ${task.title}`}
+                      >
+                        {ticketKey}
+                      </button>
+                    </td>
+                    <td>
+                      <div class="task-title-cell" style={task.depth > 0 ? `padding-left: ${task.depth * 20}px` : undefined}>
+                        {task.hasChildren && (
+                          <button
+                            type="button"
+                            class="subtree-toggle"
+                            data-parent-id={task.id}
+                            title="Toggle subtasks"
+                            aria-expanded="true"
+                          >▾</button>
+                        )}
+                        {task.depth > 0 && !task.hasChildren && (
+                          <span class="subtree-indent-marker">↳</span>
+                        )}
+                        <span
+                          class="editable-cell"
+                          contenteditable="true"
+                          spellcheck="false"
+                          role="textbox"
+                          data-field="title"
+                          data-id={task.id}
+                          data-original={task.title}
+                        >
+                          {task.title}
+                        </span>
+                      </div>
+                      {task.description && (
+                        <div class="cell-description" style={task.depth > 0 ? `margin-left: ${task.depth * 20}px` : undefined}>
+                          {task.description.slice(0, 60)}
+                        </div>
+                      )}
+                    </td>
+                    <td class="cell-center">
+                      <TaskTypeIcon type={task.task_type} />
+                    </td>
+                    <td>
+                      <select
+                        class="inline-select"
+                        data-field="status"
+                        data-id={task.id}
+                        aria-label={`Status for ${task.title}`}
+                      >
+                        {STATUS_CONFIG.map((s) => (
+                          <option
+                            value={s.canonical}
+                            selected={task.status === s.canonical || (s.canonical === "complete" && task.is_done)}
+                          >
+                            {t(s.i18nKey as any, locale)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        class={`inline-select ${priorityClasses[task.priority] ?? ""}`}
+                        data-field="priority"
+                        data-id={task.id}
+                        aria-label={`Priority for ${task.title}`}
+                      >
+                        <option
+                          value="1"
+                          selected={task.priority === 1}
+                          class="priority-critical"
+                        >
+                          {t("priority.critical", locale)}
+                        </option>
+                        <option
+                          value="2"
+                          selected={task.priority === 2}
+                          class="priority-high"
+                        >
+                          {t("priority.high", locale)}
+                        </option>
+                        <option
+                          value="3"
+                          selected={task.priority === 3}
+                          class="priority-medium"
+                        >
+                          {t("priority.medium", locale)}
+                        </option>
+                        <option
+                          value="4"
+                          selected={task.priority === 4}
+                          class="priority-low"
+                        >
+                          {t("priority.low", locale)}
+                        </option>
+                        <option
+                          value="5"
+                          selected={task.priority === 5}
+                          class="priority-minimal"
+                        >
+                          {t("priority.minimal", locale)}
+                        </option>
+                      </select>
+                    </td>
+                    <td
+                      class={`text-sm td-due ${task.is_overdue ? "overdue-date" : ""}`}
+                    >
+                      {task.due_date
+                        ? formatRegionalDate(task.due_date, {
+                            format: dateFormat,
+                            timezone,
+                          })
+                        : "—"}
+                      {task.is_overdue && (
+                        <span class="overdue-tag">
+                          {t("tasks.overdue", locale)}
+                        </span>
+                      )}
+                    </td>
+                    <td class="cell-center">
+                      {task.rice !== null ? (
+                        <FrameworkBadge score={task.rice} framework="RICE" />
+                      ) : (
+                        <span class="text-muted">—</span>
+                      )}
+                    </td>
+                    <td class="cell-center col-calendar">
+                      {task.calendar_sync_state === "confirmed" ? (
+                        <span title="Calendar synced" class="text-accent">
+                          ✅
+                        </span>
+                      ) : task.calendar_sync_state === "pending" ? (
+                        <span title="Sync pending" class="text-warning">
+                          ⏳
+                        </span>
+                      ) : (
+                        <span title="Not synced" class="text-muted">
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td class="col-custom-fields cell-cf">
+                      {cfEntries.length > 0
+                        ? cfEntries.map(([k, v]) => `${k}: ${v}`).join(", ")
+                        : "—"}
+                    </td>
+                    <td class="cell-center col-assigned">
+                      {task.assigned_to ? (
+                        <span
+                          class="table-assignee-badge"
+                          title={`Assigned: ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
+                          aria-label={`Assigned to ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
+                        >
+                          {String(task.assigned_to)
+                            .replace(/^(ha_|custom_)/, "")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </span>
+                      ) : (
+                        <span class="text-muted">—</span>
+                      )}
+                    </td>
+                    <td class="col-labels">
+                      <LabelBadges labels={task.labels as unknown as string} compact max={3} />
+                    </td>
+                    <td class="cell-center">
+                      <button
+                        type="button"
+                        class="task-action-btn danger delete-row"
+                        data-id={task.id}
+                        title={t("tasks.delete", locale)}
+                        aria-label={`Delete ${task.title}`}
+                      >
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* P4 T14: No-results row — shown when all rows filtered out */}
+              <tr class="no-results-row" style="display: none;">
+                <td colspan="13" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
+                  {t("table.no_results", locale)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )
+    }
+  </div>
+
+  <div class="bulk-bar" id="bulk-bar">
+    <span id="selected-count">0 selected</span>
+    <span class="bulk-divider">|</span>
+    <select class="form-select bulk-select" id="bulk-status">
+      <option value="">{t("table.change_status", locale)}</option>
+      {STATUS_CONFIG.map((s) => (
+        <option value={s.canonical}>{t(s.i18nKey as any, locale)}</option>
+      ))}
+    </select>
+    <select class="form-select bulk-select" id="bulk-priority">
+      <option value="">Priority</option>
+      <option value="1">{t("priority.critical", locale)}</option>
+      <option value="2">{t("priority.high", locale)}</option>
+      <option value="3">{t("priority.medium", locale)}</option>
+      <option value="4">{t("priority.low", locale)}</option>
+      <option value="5">{t("priority.minimal", locale)}</option>
+    </select>
+    <select class="form-select bulk-select" id="bulk-area">
+      <option value="">Area</option>
+    </select>
+    <button
+      type="button"
+      class="btn bulk-delete-btn"
+      id="bulk-delete">🗑 {t("table.delete_selected", locale)}</button
+    >
+    <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">✕</button>
+  </div>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  >
+  </div>
+
+  <script>
+    import "../../lib/table-controller"
+  </script>
+
+</div>
+
+<style>
+  /* Signal bar CSS now in SignalBar.astro */
+  .table-filter-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+  }
+
+  /* Subtask hierarchy styles (Phase 1: SUB-01) */
+  .task-title-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+  }
+  .subtask-row .task-title-cell::before {
+    content: '';
+    position: absolute;
+    left: calc(var(--subtask-depth, 1) * 20px - 14px);
+    top: 50%;
+    width: 10px;
+    height: 1px;
+    background: var(--border);
+  }
+  .subtree-toggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s, color 0.15s;
+    position: relative;
+    z-index: 1;
+  }
+  .subtree-toggle:hover {
+    background: var(--bg-input);
+    color: var(--text-primary);
+  }
+  .subtree-indent-marker {
+    color: var(--text-muted);
+    font-size: 11px;
+    width: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0.5;
+    position: relative;
+    z-index: 1;
+  }
+  .subtask-row {
+    border-left: 2px solid var(--accent);
+  }
+
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-search {
+    max-width: 200px;
+    flex: 1;
+    min-width: 150px;
+  }
+  .filter-select {
+    max-width: 150px;
+  }
+  .page-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .table-container {
+    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+  }
+  .table-row {
+    cursor: pointer;
+  }
+  .table-row:hover td {
+    background: var(--bg-hover);
+  }
+  .delete-row {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    transition: opacity 0.2s ease, visibility 0.2s ease, color 0.15s;
+  }
+  tr:hover .delete-row,
+  .delete-row:focus-visible {
+    visibility: visible !important;
+    opacity: 0.6 !important;
+  }
+  tr .delete-row:hover {
+    visibility: visible !important;
+    opacity: 1 !important;
+    color: var(--danger) !important;
+  }
+  .cell-center {
+    text-align: center;
+    vertical-align: middle;
+  }
+  .cell-description {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .cell-cf {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+  .text-accent {
+    color: var(--accent);
+  }
+  .text-warning {
+    color: var(--warning);
+  }
+  .col-checkbox {
+    width: 40px;
+  }
+  .col-key {
+    width: 90px;
+  }
+  .col-type {
+    width: 70px;
+    text-align: center;
+  }
+  .col-status {
+    width: 100px;
+  }
+  .col-priority {
+    width: 100px;
+  }
+  .col-due-date {
+    width: 120px;
+  }
+  .col-rice {
+    width: 80px;
+    text-align: center;
+  }
+  .col-calendar {
+    width: 70px;
+    text-align: center;
+  }
+  .col-custom-fields {
+    width: 100px;
+  }
+  .col-actions {
+    width: 80px;
+    text-align: center;
+  }
+  .bulk-bar {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px 20px;
+    display: none;
+    gap: 12px;
+    align-items: center;
+    box-shadow: var(--shadow-lg);
+    z-index: 50;
+  }
+  .bulk-select {
+    max-width: 140px;
+  }
+  .bulk-delete-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    opacity: 0.75;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .bulk-delete-btn:hover {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.1);
+  }
+  .ticket-key-badge {
+    display: inline-block;
+    min-height: 24px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: "JetBrains Mono", monospace;
+    color: var(--accent-text, var(--text-primary));
+    background: var(--bg-secondary);
+    text-decoration: underline;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ticket-key-badge:focus-visible {
+    outline: 2px solid var(--accent-text, var(--text-primary));
+    outline-offset: 2px;
+  }
+  .overdue-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--danger);
+    color: white;
+    margin-left: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .col-assigned {
+    width: 60px;
+    text-align: center;
+  }
+  .table-assignee-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent, #6366f1);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: default;
+  }
+  .sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+  .sortable:hover {
+    background: var(--bg-hover);
+  }
+  .sort-indicator {
+    font-size: 10px;
+    color: var(--accent);
+    margin-left: 2px;
+  }
+  /* P4 T15: Scroll shadow — visual cue for horizontal overflow */
+  .table-container.has-scroll {
+    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+  }
+  .table-container.has-scroll:hover {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  /* P3 T12: Disabled state for bulk bar during operations */
+  .bulk-bar button:disabled,
+  .bulk-bar select:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
+</style>

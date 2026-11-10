@@ -1,0 +1,291 @@
+---
+/**
+ * EntitySelector — Shared UI Component
+ *
+ * Dropdown selector for HA entities, populated client-side from WebSocket.
+ * Falls back to text input for custom entity IDs.
+ *
+ * @domain ui
+ * @bounded-context shared
+ *
+ * Usage:
+ *   <EntitySelector domain="calendar" id="cal-entity" placeholder="calendar.meitheal_tasks" />
+ *   <EntitySelector domain="todo" id="todo-entity" placeholder="todo.shopping_list" />
+ */
+interface Props {
+  /** HA entity domain to filter (calendar, todo, etc.) */
+  domain: string;
+  /** HTML id for the select/input element */
+  id: string;
+  /** Placeholder text */
+  placeholder?: string;
+  /** API endpoint to fetch entities from */
+  apiEndpoint?: string;
+  /** Label text */
+  label?: string;
+  /** Help text below the field */
+  helpText?: string;
+}
+
+const {
+  domain,
+  id,
+  placeholder = "",
+  apiEndpoint,
+  label,
+  helpText,
+} = Astro.props;
+
+// Default API endpoints by domain
+const defaultEndpoints: Record<string, string> = {
+  calendar: "/api/ha/calendars",
+  todo: "/api/todo",
+};
+const endpoint = apiEndpoint || defaultEndpoints[domain] || `/api/ha/${domain}`;
+---
+
+<div class="entity-selector" data-domain={domain} data-endpoint={endpoint} data-field-id={id}>
+  {label && <label class="form-label" for={id}>{label}</label>}
+
+  <!-- Loading skeleton shown while fetching -->
+  <div class="entity-selector__skeleton" id={`${id}-skeleton`}>
+    <div class="skeleton-line" style="width: 100%; height: 38px; border-radius: 6px;"></div>
+    <span class="entity-selector__loading-text">Scanning for {domain} entities…</span>
+  </div>
+
+  <!-- Select dropdown (shown when entities are detected) -->
+  <select
+    class="form-select entity-selector__select"
+    id={id}
+    style="display: none;"
+    aria-label={label || `Select ${domain} entity`}
+  >
+    <option value="">— Select {domain} entity —</option>
+  </select>
+
+  <!-- Text input fallback (shown when no entities detected or custom entry) -->
+  <input
+    type="text"
+    class="form-input entity-selector__input"
+    id={`${id}-manual`}
+    placeholder={placeholder}
+    style="display: none;"
+    aria-label={label || `Enter ${domain} entity ID`}
+  />
+
+  <!-- Toggle between dropdown and manual entry -->
+  <div class="entity-selector__toggle" id={`${id}-toggle`} style="display: none;">
+    <button type="button" class="entity-selector__toggle-btn" data-mode="select">
+      ↕ Switch to dropdown
+    </button>
+    <button type="button" class="entity-selector__toggle-btn" data-mode="manual">
+      ✏ Enter custom ID
+    </button>
+  </div>
+
+  {helpText && (
+    <small class="entity-selector__help">{helpText}</small>
+  )}
+</div>
+
+<style>
+  .entity-selector {
+    position: relative;
+  }
+
+  .entity-selector__skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .skeleton-line {
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-hover) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
+  }
+
+  @keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .entity-selector__loading-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .entity-selector__select {
+    width: 100%;
+  }
+
+  .entity-selector__select option {
+    padding: 4px 8px;
+  }
+
+  .entity-selector__toggle {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .entity-selector__toggle-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: background 150ms;
+  }
+
+  .entity-selector__toggle-btn:hover {
+    background: var(--bg-hover);
+  }
+
+  .entity-selector__toggle-btn[data-active="true"] {
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .entity-selector__help {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+</style>
+
+<script>
+  /**
+   * EntitySelector Client-Side Logic
+   *
+   * Fetches available HA entities from the API and populates the dropdown.
+   * Falls back to text input if no entities are detected.
+   */
+  function initEntitySelectors() {
+    document.querySelectorAll('.entity-selector').forEach(async (container) => {
+      const el = container as HTMLElement;
+      const fieldId = el.dataset.fieldId!;
+      const domain = el.dataset.domain!;
+      const endpoint = el.dataset.endpoint!;
+
+      // Prevent double-init
+      if (el.dataset.entityInit) return;
+      el.dataset.entityInit = 'true';
+
+      const skeleton = document.getElementById(`${fieldId}-skeleton`);
+      const selectEl = document.getElementById(fieldId) as HTMLSelectElement;
+      const inputEl = document.getElementById(`${fieldId}-manual`) as HTMLInputElement;
+      const toggleEl = document.getElementById(`${fieldId}-toggle`);
+
+      if (!selectEl || !inputEl) return;
+
+      // Keep values in sync between select and input
+      let currentValue = '';
+
+      function showSelect() {
+        selectEl.style.display = 'block';
+        inputEl.style.display = 'none';
+        if (toggleEl) {
+          const selectBtn = toggleEl.querySelector('[data-mode="select"]') as HTMLElement;
+          const manualBtn = toggleEl.querySelector('[data-mode="manual"]') as HTMLElement;
+          if (selectBtn) { selectBtn.style.display = 'none'; selectBtn.dataset.active = 'true'; }
+          if (manualBtn) { manualBtn.style.display = 'inline-block'; manualBtn.dataset.active = ''; }
+        }
+      }
+
+      function showManual() {
+        selectEl.style.display = 'none';
+        inputEl.style.display = 'block';
+        inputEl.value = currentValue;
+        if (toggleEl) {
+          const selectBtn = toggleEl.querySelector('[data-mode="select"]') as HTMLElement;
+          const manualBtn = toggleEl.querySelector('[data-mode="manual"]') as HTMLElement;
+          if (selectBtn) { selectBtn.style.display = 'inline-block'; selectBtn.dataset.active = ''; }
+          if (manualBtn) { manualBtn.style.display = 'none'; manualBtn.dataset.active = 'true'; }
+        }
+      }
+
+      // Sync values
+      selectEl.addEventListener('change', () => {
+        currentValue = selectEl.value;
+        inputEl.value = currentValue;
+      });
+      inputEl.addEventListener('input', () => {
+        currentValue = inputEl.value;
+      });
+
+      // Toggle buttons
+      if (toggleEl) {
+        toggleEl.querySelectorAll('.entity-selector__toggle-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.mode;
+            if (mode === 'select') showSelect();
+            else showManual();
+          });
+        });
+      }
+
+      try {
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error('API error');
+        const data = await res.json();
+
+        // Parse entities based on domain response shape
+        let entities: { entity_id: string; friendly_name: string; state: string }[] = [];
+
+        if (domain === 'calendar' && data.calendars) {
+          entities = data.calendars;
+        } else if (domain === 'todo' && data.entities) {
+          entities = data.entities.map((e: any) => ({
+            entity_id: e.entity_id,
+            friendly_name: e.friendly_name,
+            state: e.state,
+          }));
+        } else if (Array.isArray(data)) {
+          entities = data;
+        }
+
+        // Hide skeleton
+        if (skeleton) skeleton.style.display = 'none';
+
+        if (entities.length > 0) {
+          // Populate dropdown
+          entities.forEach((entity) => {
+            const opt = document.createElement('option');
+            opt.value = entity.entity_id;
+            opt.textContent = `${entity.friendly_name} (${entity.entity_id})`;
+            selectEl.appendChild(opt);
+          });
+
+          // Show dropdown + toggle
+          showSelect();
+          if (toggleEl) toggleEl.style.display = 'flex';
+
+          // Auto-select if only one entity
+          if (entities.length === 1) {
+            selectEl.value = entities[0]!.entity_id;
+            currentValue = entities[0]!.entity_id;
+            inputEl.value = currentValue;
+          }
+        } else {
+          // No entities — show manual input
+          showManual();
+        }
+      } catch {
+        // API failed — show manual input
+        if (skeleton) skeleton.style.display = 'none';
+        showManual();
+      }
+    });
+  }
+
+  initEntitySelectors();
+  document.addEventListener('astro:page-load', initEntitySelectors);
+</script>

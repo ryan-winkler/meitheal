@@ -1,0 +1,299 @@
+/* =============================================
+ * _buttons.css — Button variants (consolidated)
+ *
+ * Domain: Button bounded context
+ * Owns: .btn, .btn-ghost, .btn-danger, .btn-icon, .btn-sm, hover/focus states
+ * Does NOT own: form inputs (_forms.css), card actions (_cards.css)
+ *
+ * Tailwind v4: @layer components no longer supports @apply with custom classes.
+ * Each variant defines its own properties explicitly to avoid composition issues.
+ * ============================================= */
+
+/* --- Shared button base --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition: background 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid transparent;
+  transition: background 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  transition: background 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  transition: background 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.btn-icon {
+  padding: 0.5rem;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 200ms ease, color 200ms ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-icon:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.btn-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+
+.btn-danger:hover {
+  filter: brightness(0.9);
+}
+
+.btn-ghost-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-sm, 6px);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  transition: background 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+}
+
+.btn-ghost-accent:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* Button micro-interactions */
+/* ===== Button Press Micro-Interactions (Wave 7) ===== */
+.btn:active,
+.task-action-btn:active,
+.task-fav-btn:active {
+  transform: scale(0.96);
+}
+
+.btn:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+/* B1: Touch ripple effect for primary buttons */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.3) 0%, transparent 60%);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 0.5s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.btn-primary:active::before {
+  transform: scale(2.5);
+  opacity: 1;
+  transition: transform 0.15s ease-out, opacity 0s;
+}
+
+/* B1: Success/error flash feedback */
+@keyframes btn-success-flash {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-success);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes btn-error-flash {
+  0% {
+    box-shadow: 0 0 0 0 var(--danger);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.btn-flash-success {
+  animation: btn-success-flash 0.6s ease;
+}
+
+.btn-flash-error {
+  animation: btn-error-flash 0.6s ease;
+}
+/* Loading spinner for async ops */
+/* ===== Loading Spinner for Async Ops (Wave 7) ===== */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.btn-loading {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+}
+
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  top: 50%;
+  left: 50%;
+  margin: -7px 0 0 -7px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+}
+
+/* MT-01: WCAG 2.5.8 — 44px minimum touch targets on coarse pointer devices */
+@media (pointer: coarse) {
+  .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .toast-dismiss,
+  .toast-undo {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Ensure action buttons in task cards/rows are tappable */
+  .task-action-btn,
+  .task-fav-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

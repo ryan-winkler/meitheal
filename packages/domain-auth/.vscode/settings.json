@@ -1,0 +1,7 @@
+{
+  "files.autoSave": "onFocusChange",
+  "editor.unicodeHighlight.includeComments": true,
+  "editor.unicodeHighlight.nonBasicASCII": true,
+  "makefile.ignoreDirectoryCommands": false,
+  "explorer.fileNesting.enabled": true
+}

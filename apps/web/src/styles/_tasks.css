@@ -1,0 +1,533 @@
+/* _tasks.css — Task items, bento grid, checklist, task detail, priorities */
+/* --- Task list --- */
+/* --- Task list --- */
+.task-list {
+  @apply flex flex-col gap-2;
+}
+
+.task-item {
+  @apply flex items-center gap-3 bg-bg-card/60 backdrop-blur-[2px] border border-border rounded-lg px-4 py-1.5 transition-all cursor-pointer;
+}
+
+.task-item:hover {
+  @apply bg-bg-hover/80 border-border-focus shadow-md;
+  transform: translateX(2px);
+}
+
+.task-item.task-done {
+  @apply opacity-60;
+}
+
+.task-content {
+  @apply flex-1 min-w-0;
+}
+
+.task-title {
+  @apply font-medium text-text-primary truncate;
+}
+
+.task-title.done {
+  @apply line-through text-text-muted;
+}
+
+.task-meta {
+  @apply text-xs text-text-secondary mt-1 flex items-center gap-1;
+}
+
+.task-checkbox {
+  @apply w-[18px] h-[18px] rounded-full border-2 border-border bg-transparent cursor-pointer appearance-none flex-shrink-0 transition-all;
+}
+
+.task-checkbox:checked {
+  @apply bg-accent border-accent;
+}
+
+.task-labels {
+  @apply flex gap-1 flex-wrap mt-1.5;
+}
+
+.label-chip {
+  @apply text-[10px] px-2 py-0.5 rounded-[8px] bg-accent/10 text-accent border border-accent/20;
+}
+
+/* --- View switcher --- */
+/* --- View switcher --- */
+.view-switcher {
+  @apply flex bg-bg-card rounded-md overflow-hidden border border-border;
+}
+
+.view-btn {
+  @apply px-3 py-2 text-sm text-text-muted transition-colors no-underline;
+}
+
+.view-btn:hover {
+  @apply bg-bg-hover text-text-primary;
+}
+
+.view-btn.active {
+  @apply bg-accent/15 text-accent;
+}
+
+/* --- Task & Table UX Enhancements --- */
+  /* --- Task & Table UX Enhancements (Phase 55) --- */
+
+  /* Task count summary bar */
+  .filter-summary-bar {
+    @apply flex items-center gap-3 text-sm text-text-secondary py-2;
+  }
+
+  .filter-summary-bar .summary-count {
+    @apply font-semibold text-text-primary;
+  }
+
+  .filter-summary-bar .summary-overdue {
+    @apply font-semibold text-danger;
+  }
+
+  /* Hover-reveal action buttons on task list items */
+  .task-actions {
+    @apply flex items-center gap-1 opacity-0 transition-opacity;
+  }
+
+  .task-item:hover .task-actions,
+  .task-item:focus-within .task-actions {
+    @apply opacity-100;
+  }
+
+  .task-action-btn {
+    @apply bg-transparent border-none cursor-pointer text-text-muted p-1.5 rounded-md transition-colors text-sm leading-none;
+    min-width: 28px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .task-action-btn:hover {
+    @apply bg-bg-hover text-text-primary;
+  }
+
+  .task-action-btn.danger:hover {
+    @apply text-danger bg-danger/10;
+  }
+
+  /* Overdue date highlight */
+  .overdue-date {
+    @apply text-danger font-medium;
+  }
+
+  /* Filter clear button */
+  .filter-clear-btn {
+    @apply text-xs text-text-muted cursor-pointer bg-transparent border-none transition-colors px-2 py-1 rounded;
+  }
+
+  .filter-clear-btn:hover {
+    @apply text-accent bg-accent/10;
+  }
+
+  /* Priority CSS custom properties — replaces hardcoded hex in inline styles */
+  .priority-critical {
+    color: var(--danger);
+  }
+
+  .priority-high {
+    color: var(--warning);
+  }
+
+  .priority-medium {
+    color: var(--info);
+  }
+
+  .priority-low {
+    color: var(--accent);
+  }
+
+  .priority-minimal {
+    color: var(--text-muted);
+  }
+
+  /* --- Tasks Filter Row --- */
+  .tasks-filter-row {
+    @apply flex items-center justify-between w-full px-6 py-2 border-b border-border/50 bg-bg-card/40 backdrop-blur-md z-10 sticky top-[60px];
+    min-height: 48px;
+  }
+  
+  .kanban-toolbar-right {
+    @apply flex items-center gap-2;
+  }
+
+  /* Responsive table column hiding for HA panels */
+  @media (max-width: 768px) {
+
+    .data-table .col-calendar,
+    .data-table .col-custom-fields {
+      display: none;
+    }
+  }
+
+  @media (max-width: 600px) {
+
+    .data-table .col-rice,
+    .data-table .col-type {
+      display: none;
+    }
+  }
+
+  /* Filter result transitions */
+  .task-item,
+  .data-table tbody tr {
+    transition: opacity 200ms ease, max-height 200ms ease;
+  }
+
+  .task-item.filtered-out {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    border: none;
+  }
+
+/* --- Task Detail Panel Enhancements --- */
+/* --- Task Detail Panel Enhancements (Phase 26) --- */
+.td-priority-dot {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.td-progress-bar-container {
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.td-progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition:
+    width 0.4s ease,
+    background 0.3s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.td-due-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 24px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border);
+}
+
+
+                              /* --- Bento Grid (Dashboard) --- */
+
+@keyframes flash-success {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.25);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+
+.flash-success {
+  animation: flash-success 0.6s ease;
+}
+
+/* Curated danger: Ruby Red #F05D5E */
+.stat-card-danger {
+  border-color: var(--danger) !important;
+  background: rgba(240, 93, 94, 0.1) !important;
+  box-shadow:
+    0 0 16px rgba(240, 93, 94, 0.15),
+    var(--shadow-sm);
+  animation: pulse-danger 2s ease-in-out infinite;
+}
+
+@keyframes pulse-danger {
+  0%,
+  100% {
+    box-shadow: 0 0 16px rgba(240, 93, 94, 0.15);
+  }
+
+  50% {
+    box-shadow: 0 0 24px rgba(240, 93, 94, 0.25);
+  }
+}
+
+  /* Subtle fade-up entrance for stat cards with non-zero values */
+  .stat-card-entrance {
+    animation: stat-entrance 0.5s ease-out both;
+  }
+
+  @keyframes stat-entrance {
+    from {
+      opacity: 0.6;
+      transform: translateY(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  /* --- Bento Grid (Dashboard) --- */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+  }
+
+  .bento-empty-state {
+    grid-column: 1 / -1;
+  }
+
+  .bento-card {
+    position: relative;
+    display: flex;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    cursor: pointer;
+    min-height: 100px;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+      box-shadow 0.25s ease,
+      border-color 0.25s ease;
+  }
+
+  .bento-card:hover {
+    transform: translateY(-3px) scale(1.01);
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12),
+      0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .bento-card-done {
+    opacity: 0.55;
+  }
+
+  .bento-card-stripe {
+    width: 4px;
+    flex-shrink: 0;
+    border-radius: 10px 0 0 10px;
+  }
+
+  .bento-card-body {
+    flex: 1;
+    padding: 12px 14px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bento-card-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .bento-card-title.done {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+
+  .bento-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .bento-card-due {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .bento-card-labels {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+      .bento-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 6px;
+      }
+
+      .bento-ticket-key {
+        font-size: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--text-muted);
+        margin-right: 4px;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+
+
+/* --- Task action buttons --- */
+/* --- Forms --- */
+.form-group {
+  @apply mb-4;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-text-secondary mb-1.5;
+}
+
+/* --- Modal rules owned by _modal.css — removed from here to avoid conflicts --- */
+
+/* --- Empty state variants --- */
+.empty-icon {
+  @apply text-5xl mb-4 opacity-30;
+}
+
+.empty-text {
+  @apply text-lg font-medium text-text-secondary mb-2;
+}
+
+.empty-sub {
+  @apply text-sm text-text-muted mb-6;
+}
+
+/* --- Task action buttons --- */
+.task-delete,
+.task-duplicate,
+.task-ask-ai {
+  @apply bg-transparent border-none cursor-pointer text-text-muted text-sm p-1 rounded transition-colors opacity-0;
+}
+
+.task-item:hover .task-delete,
+.task-item:hover .task-duplicate,
+.task-item:hover .task-ask-ai {
+  @apply opacity-100;
+}
+
+.task-delete:hover {
+  @apply text-danger bg-danger/10;
+}
+
+.task-duplicate:hover {
+  @apply text-info bg-info/10;
+}
+
+.task-ask-ai:hover {
+  @apply text-accent bg-accent/10;
+}
+
+.task-custom-fields {
+  @apply flex gap-1.5 flex-wrap mt-1;
+}
+
+/* Checklist items in task detail */
+/* Checklist items in task detail */
+.checklist-item {
+  @apply flex items-center gap-2 py-1.5 text-sm;
+}
+
+.checklist-item input[type="checkbox"] {
+  @apply w-4 h-4 rounded border-2 border-border bg-transparent cursor-pointer appearance-none flex-shrink-0 transition-all;
+}
+
+.checklist-item input[type="checkbox"]:checked {
+  @apply bg-accent border-accent;
+}
+
+.checklist-item input[type="checkbox"]:checked + span {
+  @apply line-through text-text-muted;
+}
+
+/* Quick-add focus glow */
+#quick-add-input:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* Calendar today pulse */
+.cal-day-today {
+  animation: today-pulse 2s ease-in-out infinite;
+}
+
+@keyframes today-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+  }
+}
+
+/* Progress bar color thresholds */
+.progress-fill-low {
+  background: var(--danger);
+}
+
+.progress-fill-mid {
+  background: var(--warning);
+}
+
+.progress-fill-high {
+  background: var(--accent);
+}
+
+/* Task completion strike-through animation */
+@keyframes check-strike {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.task-completing {
+  position: relative;
+}
+
+.task-completing::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 1px;
+  background: var(--text-muted);
+  animation: check-strike 0.3s ease-out forwards;
+}
+
+/* Filter transitions */
+/* ===== Filter Transitions (#30) ===== */
+.task-item {
+  transition: opacity 200ms ease, transform 200ms ease, max-height 300ms ease;
+}
+
+.task-item.filtered-out {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+  overflow: hidden;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: none;
+}

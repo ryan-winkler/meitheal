@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bashio
+# s6 longrun service — Meitheal web server
+# s6-overlay discovers /etc/services.d/meitheal/ and expects this file.
+# We exec into the main run.sh entrypoint which handles:
+#   - env setup (SUPERVISOR_TOKEN, ingress path, discovery)
+#   - database migrations
+#   - Astro server startup
+#   - healthcheck loop
+exec /run.sh

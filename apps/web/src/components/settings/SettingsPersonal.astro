@@ -1,0 +1,449 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsCallout from "./SettingsCallout.astro"
+import SettingsDisclosure from "./SettingsDisclosure.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "personal-settings")!
+---
+
+<section
+  id="personal-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+>
+  <SettingsSectionIntro section={personalSection} />
+  <div class="settings-grid">
+  <!-- Language & Appearance -->
+  <SettingsPanelCard
+    title={t("settings.language_title", locale)}
+    subtitle={t("settings.language_subtitle", locale)}
+  >
+    <SettingsCallout title={t("settings.callout_personal_title", locale)} icon="🎨">
+      {t("settings.callout_personal_desc", locale)}
+    </SettingsCallout>
+    <div class="form-group mt-3">
+      <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
+      <select
+        class="form-select settings-input-compact"
+        id="locale-select"
+      >
+        <option value="en">{t("settings.language_en", locale)}</option>
+        <option value="ga">{t("settings.language_ga", locale)}</option>
+      </select>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
+      <select class="form-select settings-input-compact" id="theme-select">
+        <option value="dark">{t("settings.theme_dark", locale)}</option>
+        <option value="light">{t("settings.theme_light", locale)}</option>
+        <option value="auto">{t("settings.theme_auto", locale)}</option>
+        <option value="custom">{t("settings.theme_custom", locale)}</option>
+      </select>
+    </div>
+
+    <!-- Accent Color -->
+    <div class="form-group mt-3">
+      <label class="form-label">{t("settings.accent_title", locale)}</label>
+      <div
+        style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"
+      >
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#6366F1"
+          title={t("settings.accent_indigo", locale)}
+          style="background: #6366F1;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#14b8a6"
+          title={t("settings.accent_teal", locale)}
+          style="background: #14b8a6;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#3b82f6"
+          title={t("settings.accent_blue", locale)}
+          style="background: #3b82f6;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#8b5cf6"
+          title={t("settings.accent_violet", locale)}
+          style="background: #8b5cf6;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#ec4899"
+          title={t("settings.accent_pink", locale)}
+          style="background: #ec4899;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#f59e0b"
+          title={t("settings.accent_amber", locale)}
+          style="background: #f59e0b;"></button>
+        <button
+          type="button"
+          class="accent-swatch"
+          data-color="#ef4444"
+          title={t("settings.accent_red", locale)}
+          style="background: #ef4444;"></button>
+        <input
+          type="color"
+          id="accent-color-custom"
+          title={t("settings.accent_custom", locale)}
+          style="width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; padding: 0; cursor: pointer; background: transparent;"
+        />
+        <button
+          type="button"
+          id="accent-reset"
+          class="btn btn-ghost"
+          style="font-size: 11px; padding: 4px 8px;">{t("settings.accent_reset", locale)}</button
+        >
+      </div>
+      <small class="settings-hint" style="display: block;"
+        >{t("settings.accent_hint", locale)}</small
+      >
+    </div>
+    <div
+      id="custom-theme-section"
+      class="form-group"
+      style="margin-top: 12px; display: none;"
+    >
+      <div
+        id="custom-theme-empty"
+        style="display: flex; align-items: center; gap: 8px;"
+      >
+        <label
+          class="btn btn-secondary"
+          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
+        >
+          {t("settings.theme_import", locale)}
+          <input
+            type="file"
+            id="custom-theme-input"
+            accept=".css"
+            style="display: none;"
+          />
+        </label>
+        <small class="settings-hint--sm"
+          >{t("settings.theme_import_hint", locale)}</small
+        >
+      </div>
+      <div
+        id="custom-theme-loaded"
+        style="display: none; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm);"
+      >
+        <span style="font-size: 14px;">🎨</span>
+        <a
+          id="custom-theme-filename"
+          href="#"
+          style="flex: 1; font-size: 13px; font-weight: 500; color: var(--accent); cursor: pointer;"
+        ></a>
+        <button
+          type="button"
+          id="custom-theme-delete"
+          class="btn-icon"
+          style="color: var(--danger); font-size: 14px; padding: 2px 6px;"
+          title={t("settings.theme_remove", locale)}
+          aria-label={t("settings.theme_remove", locale)}>×</button
+        >
+      </div>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
+      <select
+        class="form-select settings-input-narrow"
+        id="timezone-select"
+      >
+        <option value="Europe/Dublin">Europe/Dublin</option>
+        <option value="Europe/London">Europe/London</option>
+        <option value="Europe/Berlin">Europe/Berlin</option>
+        <option value="Europe/Paris">Europe/Paris</option>
+        <option value="America/New_York">America/New_York</option>
+        <option value="America/Chicago">America/Chicago</option>
+        <option value="America/Denver">America/Denver</option>
+        <option value="America/Los_Angeles">America/Los_Angeles</option>
+        <option value="Asia/Tokyo">Asia/Tokyo</option>
+        <option value="Asia/Shanghai">Asia/Shanghai</option>
+        <option value="Australia/Sydney">Australia/Sydney</option>
+        <option value="UTC">UTC</option>
+      </select>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label" for="week-start-select">{t("settings.week_start_title", locale)}</label>
+      <select
+        class="form-select settings-input-compact"
+        id="week-start-select"
+      >
+        <option value="monday">{t("settings.week_start_monday", locale)}</option>
+        <option value="sunday">{t("settings.week_start_sunday", locale)}</option>
+        <option value="saturday">{t("settings.week_start_saturday", locale)}</option>
+      </select>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label" for="date-format-select"
+        >{t("settings.date_format_title", locale)}</label
+      >
+      <select
+        class="form-select settings-input-narrow"
+        id="date-format-select"
+      >
+        <option value="relative">{t("settings.date_format_relative", locale)}</option>
+        <option value="absolute-iso">{t("settings.date_format_absolute_iso", locale)}</option>
+        <option value="absolute-eu">{t("settings.date_format_absolute_eu", locale)}</option>
+        <option value="absolute-us">{t("settings.date_format_absolute_us", locale)}</option>
+      </select>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Keyboard Shortcuts -->
+  <SettingsPanelCard
+    title={t("settings.shortcuts_title", locale)}
+    subtitle={t("settings.shortcuts_subtitle", locale)}
+  >
+    <SettingsCallout title={t("settings.callout_shortcuts_title", locale)} icon="⌨">
+      {t("settings.callout_shortcuts_desc", locale)}
+    </SettingsCallout>
+    <div class="shortcut-grid" style="margin-top: 14px;">
+      <div class="shortcut-row">
+        <kbd>n</kbd><span>{t("settings.shortcut_new_task", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>/</kbd><span>{t("settings.shortcut_search", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>Ctrl</kbd> + <kbd>B</kbd><span>{t("settings.shortcut_toggle_sidebar", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>Ctrl</kbd> + <kbd>K</kbd><span>{t("settings.shortcut_cmd_palette", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>l</kbd><span>{t("settings.shortcut_list", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>k</kbd><span>{t("settings.shortcut_kanban", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>t</kbd><span>{t("settings.shortcut_table", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>y</kbd><span>{t("settings.shortcut_today", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>u</kbd><span>{t("settings.shortcut_upcoming", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>c</kbd><span>{t("settings.shortcut_calendar", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>Esc</kbd><span>{t("settings.shortcut_close", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>?</kbd><span>{t("settings.shortcut_help", locale)}</span>
+      </div>
+      <div class="shortcut-row">
+        <kbd>Home</kbd><span>{t("settings.shortcut_scroll_top", locale)}</span>
+      </div>
+    </div>
+  </SettingsPanelCard>
+
+  <!-- Help & Support -->
+  <SettingsPanelCard
+    title={t("settings.help_support_title", locale)}
+    subtitle={t("settings.help_support_subtitle", locale)}
+  >
+    <div
+      style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
+    >
+      <SettingsDisclosure title={t("settings.help_getting_started", locale)} open={true}>
+          <p style="margin: 0 0 8px 0;" set:html={t("settings.help_started_p1", locale)}></p>
+          <ul style="margin: 0; padding-left: 20px; line-height: 2;">
+            <li set:html={t("settings.help_started_li1", locale)}></li>
+            <li set:html={t("settings.help_started_li2", locale)}></li>
+            <li set:html={t("settings.help_started_li3", locale)}></li>
+            <li set:html={t("settings.help_started_li4", locale)}></li>
+            <li set:html={t("settings.help_started_li5", locale)}></li>
+          </ul>
+      </SettingsDisclosure>
+      <SettingsDisclosure title={t("settings.help_architecture", locale)}>
+          <p style="margin: 0 0 8px 0;" set:html={t("settings.help_arch_p1", locale)}></p>
+          <ul style="margin: 0; padding-left: 20px; line-height: 2;">
+            <li set:html={t("settings.help_arch_li1", locale)}></li>
+            <li set:html={t("settings.help_arch_li2", locale)}></li>
+            <li set:html={t("settings.help_arch_li3", locale)}></li>
+            <li set:html={t("settings.help_arch_li4", locale)}></li>
+            <li set:html={t("settings.help_arch_li5", locale)}></li>
+          </ul>
+      </SettingsDisclosure>
+    </div>
+    <SettingsActionRow
+      style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"
+    >
+      <a
+        href="https://github.com/ryan-winkler/meitheal#readme"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        >{t("settings.help_readme", locale)}</a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal/wiki"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        >{t("settings.help_wiki", locale)}</a
+      >
+      <a
+        href="https://github.com/ryan-winkler/meitheal/blob/main/CHANGELOG.md"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn btn-secondary settings-link"
+        >{t("settings.help_changelog", locale)}</a
+      >
+    </SettingsActionRow>
+  </SettingsPanelCard>
+
+  </div>
+</section>
+
+<style is:inline>
+  /* Keyboard Shortcuts */
+  .shortcut-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .shortcut-row:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .shortcut-row:last-child,
+  .shortcut-row:nth-last-child(2):nth-child(odd) {
+    border-bottom: none;
+  }
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+    white-space: nowrap;
+  }
+
+  /* Accent color swatches */
+  .accent-swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
+    padding: 0;
+  }
+  .accent-swatch:hover {
+    transform: scale(1.15);
+  }
+  .accent-swatch.active {
+    border-color: var(--text-primary);
+    box-shadow:
+      0 0 0 2px var(--bg-secondary),
+      0 0 0 4px currentColor;
+  }
+</style>
+
+<script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+
+  // Accent color picker
+  function initAccentColor() {
+    const swatches =
+      document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
+    const customPicker = document.getElementById(
+      "accent-color-custom",
+    ) as HTMLInputElement | null
+    const resetBtn = document.getElementById("accent-reset")
+    if (!swatches.length) return
+
+    const current = localStorage.getItem("meitheal-accent-color") || "#6366F1"
+
+    function applyAccent(color: string) {
+      const root = document.documentElement.style
+      root.setProperty("--accent", color)
+      root.setProperty(
+        "--accent-hover",
+        `color-mix(in srgb, ${color} 85%, #000)`,
+      )
+      root.setProperty(
+        "--accent-light",
+        `color-mix(in srgb, ${color} 12%, transparent)`,
+      )
+      root.setProperty("--border-focus", color)
+      localStorage.setItem("meitheal-accent-color", color)
+      highlightActive(color)
+    }
+
+    function highlightActive(color: string) {
+      swatches.forEach((s) => {
+        s.classList.toggle("active", s.dataset.color === color)
+      })
+      if (customPicker) customPicker.value = color
+    }
+
+    highlightActive(current)
+
+    swatches.forEach((s) => {
+      pageLifecycle.on(s, "click", () => {
+        if (s.dataset.color) applyAccent(s.dataset.color)
+      })
+    })
+
+    if (customPicker) {
+      pageLifecycle.on(customPicker, "input", (e: Event) => {
+        applyAccent((e.target as HTMLInputElement).value)
+      })
+    }
+
+    if (resetBtn) {
+      pageLifecycle.on(resetBtn, "click", () => {
+        localStorage.removeItem("meitheal-accent-color")
+        document.documentElement.style.removeProperty("--accent")
+        document.documentElement.style.removeProperty("--accent-hover")
+        document.documentElement.style.removeProperty("--accent-light")
+        document.documentElement.style.removeProperty("--border-focus")
+        highlightActive("#6366F1")
+      })
+    }
+  }
+
+  initAccentColor()
+</script>

@@ -1,0 +1,169 @@
+---
+/**
+ * Calendar Sync integration card sub-component.
+ * @domain integrations/calendar
+ */
+import HelpTooltip from "../../ui/HelpTooltip.astro";
+import IntegrationCardHeader from "./IntegrationCardHeader.astro"
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
+---
+
+<div class="integration-card" id="integration-calendar">
+  <IntegrationCardHeader
+    integration="calendar"
+    icon="📅"
+    title={t("settings.calendar_title", locale)}
+    description={t("settings.calendar_desc", locale)}
+    helpLabel={t("settings.calendar_explainer", locale)}
+  >
+    <span class="badge badge-pending" id="cal-status">{t("settings.status_checking", locale)}</span>
+  </IntegrationCardHeader>
+
+  <div class="integration-card__body" id="integration-calendar-body" inert>
+    <!-- HA auto-sync info callout -->
+    <div id="cal-auto-info" class="integration-callout integration-callout--success" style="display: none;">
+      <strong>{t("settings.cal_auto_sync_active", locale)}</strong>
+      <span id="cal-auto-entity" class="mono-text"></span>
+      <div class="integration-callout__detail">
+        {t("settings.cal_auto_sync_desc", locale)}
+      </div>
+    </div>
+
+    <!-- Detected HA calendar entities — interactive toggle cards -->
+    <div id="cal-entities-list" style="display: none; margin-bottom: 12px;">
+      <div class="cal-entities-header">
+        <div>
+          <label class="form-label settings-text-xs" style="margin-bottom: 0;">{t("settings.cal_your_calendars", locale)}</label>
+          <span id="cal-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
+        </div>
+        <div class="cal-bulk-actions">
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title={t("settings.cal_enable_all", locale)}>{t("settings.cal_enable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title={t("settings.cal_disable_all", locale)}>{t("settings.cal_disable_all", locale)}</button>
+        </div>
+      </div>
+      <p class="integration-hint">
+        {t("settings.cal_toggle_desc", locale)}
+      </p>
+      <div id="cal-entities-container" class="cal-toggle-list"></div>
+      <div id="cal-no-entities" class="cal-empty-state" style="display: none;">
+        <span class="cal-empty-icon">📭</span>
+        <span>{t("settings.cal_no_entities", locale)}</span>
+      </div>
+    </div>
+
+    <div class="integration-card__config">
+      <!-- Manual entity input for advanced users -->
+      <details class="caldav-section" style="margin-bottom: 10px;">
+        <summary class="caldav-toggle">
+          <span>{t("settings.cal_manual_entity_title", locale)}</span>
+          <small>{t("settings.cal_manual_entity_desc", locale)}</small>
+        </summary>
+        <div class="form-group form-group--spaced">
+          <div class="form-label-row">
+            <label class="form-label" for="cal-entity">{t("settings.cal_entity_id_label", locale)}</label>
+            <HelpTooltip
+              text={t("settings.cal_entity_id_help", locale)}
+              id="help-cal-entity"
+            />
+          </div>
+          <input type="text" class="form-input" id="cal-entity-manual" placeholder="calendar.my_calendar" />
+          <button type="button" class="btn btn-ghost settings-btn-sm" id="cal-add-manual">
+            {t("settings.cal_add_manual", locale)}
+          </button>
+        </div>
+      </details>
+
+      <!-- External CalDAV — collapsible -->
+      <details class="caldav-section" id="caldav-details">
+        <summary class="caldav-toggle">
+          <span>{t("settings.caldav_title", locale)}</span>
+          <small>{t("settings.caldav_desc", locale)}</small>
+        </summary>
+
+        <div class="form-group form-group--spaced">
+          <div class="form-label-row">
+            <label class="form-label" for="caldav-url">{t("settings.caldav_url_label", locale)}</label>
+            <HelpTooltip
+              text={t("settings.caldav_url_help", locale)}
+              id="help-caldav-url"
+            />
+          </div>
+          <input type="url" class="form-input" id="caldav-url" placeholder="https://your-server.com/dav/calendars/" />
+          <small class="form-hint mt-1" set:html={t("settings.caldav_url_hint", locale)}>
+          </small>
+        </div>
+
+        <div class="form-group form-group--spaced">
+          <label class="form-label" for="caldav-username">{t("settings.caldav_username", locale)}</label>
+          <input type="text" class="form-input" id="caldav-username" autocomplete="username" placeholder={t("settings.caldav_username_placeholder", locale)} />
+        </div>
+
+        <div class="form-group form-group--spaced">
+          <label class="form-label" for="caldav-password">{t("settings.caldav_password", locale)}</label>
+          <input type="password" class="form-input" id="caldav-password" autocomplete="current-password" placeholder={t("settings.caldav_password_placeholder", locale)} />
+        </div>
+
+        <div class="integration-action-row mt-3">
+          <button type="button" class="btn btn-secondary" id="caldav-test-btn" style="min-width: 120px;">
+            {t("settings.caldav_test_btn", locale)}
+          </button>
+          <span id="caldav-test-result" class="settings-text-sm"></span>
+        </div>
+
+        <div id="caldav-active-indicator" class="integration-callout integration-callout--success" style="display: none; margin-top: 12px;">
+          <strong>{t("settings.caldav_configured", locale)}</strong>
+          <div class="integration-callout__detail">
+            {t("settings.caldav_configured_desc", locale)}
+          </div>
+        </div>
+      </details>
+
+      <!-- Sync Direction (global default) -->
+      <div class="form-group form-group--spaced">
+        <label class="form-label" for="cal-sync-direction">{t("settings.cal_sync_direction_label", locale)}</label>
+        <select id="cal-sync-direction" class="form-select">
+          <option value="bidirectional" selected>{t("settings.cal_sync_bidirectional", locale)}</option>
+          <option value="import">{t("settings.cal_sync_import", locale)}</option>
+          <option value="export">{t("settings.cal_sync_export", locale)}</option>
+        </select>
+        <small class="form-hint">{t("settings.cal_sync_direction_hint", locale)}</small>
+      </div>
+
+      <!-- Write-back toggle -->
+      <div class="form-group form-group--spaced">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="cal-write-back" />
+          <span>{t("settings.cal_write_back_label", locale)}</span>
+        </label>
+        <small class="form-hint">{t("settings.cal_write_back_hint", locale)}</small>
+      </div>
+
+      <!-- Sync interval selector -->
+      <div class="form-group form-group--spaced">
+        <label class="form-label" for="cal-sync-interval">{t("settings.cal_sync_interval_label", locale)}</label>
+        <select id="cal-sync-interval" class="form-select">
+          <option value="60000">{t("settings.cal_sync_1m", locale)}</option>
+          <option value="300000" selected>{t("settings.cal_sync_5m", locale)}</option>
+          <option value="900000">{t("settings.cal_sync_15m", locale)}</option>
+          <option value="1800000">{t("settings.cal_sync_30m", locale)}</option>
+          <option value="3600000">{t("settings.cal_sync_1h", locale)}</option>
+          <option value="0">{t("settings.cal_sync_manual", locale)}</option>
+        </select>
+        <small class="form-hint">{t("settings.cal_sync_interval_hint", locale)}</small>
+      </div>
+
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-primary" id="save-cal">{t("settings.save_calendar_settings", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-cal">{t("settings.sync_now_btn", locale)}</button>
+        <span id="cal-sync-result" class="integration-card__result" data-text-success={t("settings.sync_success", locale || "en")} data-text-failed={t("settings.sync_failed", locale || "en")}></span>
+        <span id="cal-last-synced" class="integration-card__last-synced integration-last-synced"></span>
+      </div>
+    </div>
+  </div>
+</div>

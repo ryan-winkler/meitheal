@@ -1,0 +1,5 @@
+views:
+  task_list:
+    conditional_sections:
+      - when: "task.priority >= 8"
+        show: "risk_badge"

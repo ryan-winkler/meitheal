@@ -1,0 +1,94 @@
+---
+interface Props {
+  title: string
+  icon?: string
+  tone?: "info" | "success" | "warning" | "danger"
+}
+
+const {
+  title,
+  icon,
+  tone = "info",
+} = Astro.props
+---
+
+<div class:list={["settings-callout", `settings-callout--${tone}`]}>
+  <div class="settings-callout__title-row">
+    {icon && <span class="settings-callout__icon" aria-hidden="true">{icon}</span>}
+    <strong>{title}</strong>
+  </div>
+
+  <div class="settings-callout__body">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .settings-callout {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  }
+
+  .settings-callout__title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+
+  .settings-callout__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 10px;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    font-size: 14px;
+  }
+
+  .settings-callout__body {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .settings-callout__body :global(p) {
+    margin: 0;
+  }
+
+  .settings-callout__body :global(code) {
+    overflow-wrap: anywhere;
+  }
+
+  .settings-callout--info {
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent));
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent) 7%, transparent),
+        color-mix(in srgb, var(--bg-secondary) 92%, transparent)
+      );
+  }
+
+  .settings-callout--success {
+    border-color: color-mix(in srgb, #22c55e 45%, var(--border));
+    background: color-mix(in srgb, #22c55e 10%, var(--bg-secondary));
+  }
+
+  .settings-callout--warning {
+    border-color: color-mix(in srgb, #f59e0b 48%, var(--border));
+    background: color-mix(in srgb, #f59e0b 10%, var(--bg-secondary));
+  }
+
+  .settings-callout--danger {
+    border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+    background: color-mix(in srgb, var(--danger) 9%, var(--bg-secondary));
+  }
+</style>

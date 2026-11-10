@@ -1,0 +1,476 @@
+---
+/**
+ * PillarDetailModal — Full-screen overlay for viewing/editing a Pillar
+ *
+ * Mirrors the TaskDetailModal pattern: opens via CustomEvent, loads data
+ * from the DOM (server-rendered) or API, and supports inline Principle CRUD.
+ *
+ * Opened by: `open-pillar-detail` CustomEvent with `{ id, slug, name, ... }`
+ * Closed by: Escape, backdrop click, or close button
+ *
+ * @domain pillars
+ * @phase 20 — Pillars UX Optimization
+ * @kcs Popup replaces dedicated /pillars/[slug] page for cohesive UX
+ */
+---
+
+<div
+  id="pillar-detail-overlay"
+  class="modal-overlay z-200"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="pillar-detail-title"
+>
+  <div class="modal-content pillar-detail-modal">
+    <!-- Header -->
+    <div class="pillar-detail-modal__header" id="pillar-detail-header">
+      <div class="pillar-detail-modal__accent-bar" id="pillar-detail-accent"></div>
+      <div class="pillar-detail-modal__hero">
+        <span class="pillar-detail-modal__icon" id="pillar-detail-icon" aria-hidden="true">🏛️</span>
+        <div class="pillar-detail-modal__meta">
+          <h2 class="pillar-detail-modal__name" id="pillar-detail-title">Pillar</h2>
+          <div class="pillar-detail-modal__weight" id="pillar-detail-weight"></div>
+        </div>
+        <div class="pillar-detail-modal__actions">
+          <button type="button" class="pillar-detail-modal__action-btn" id="pillar-detail-edit-btn" aria-label="Edit Pillar" title="Edit Pillar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          </button>
+          <button type="button" class="pillar-detail-modal__action-btn pillar-detail-modal__action-btn--danger" id="pillar-detail-delete-btn" aria-label="Delete Pillar" title="Delete Pillar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+          <button type="button" class="pillar-detail-modal__close-btn" id="pillar-detail-close" aria-label="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manifesto -->
+    <div class="pillar-detail-modal__manifesto" id="pillar-detail-manifesto">
+      <blockquote class="pillar-detail-modal__manifesto-text" id="pillar-detail-manifesto-text"></blockquote>
+    </div>
+
+    <!-- Principles -->
+    <div class="pillar-detail-modal__section">
+      <div class="pillar-detail-modal__section-header">
+        <h4 class="pillar-detail-modal__section-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Principles
+        </h4>
+        <button type="button" class="pillar-detail-modal__add-principle-btn" id="pillar-detail-add-principle" aria-label="Add Principle">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <ul class="pillar-detail-modal__principles" id="pillar-detail-principles"></ul>
+      <div class="pillar-detail-modal__principle-form" id="pillar-detail-principle-form" hidden>
+        <input type="text" class="form-input bg-bg-input pillar-detail-modal__principle-input" id="pillar-detail-principle-input" placeholder="e.g. No screens after 9 PM" maxlength="500" />
+        <label class="pillar-detail-modal__nn-label">
+          <input type="checkbox" class="pillar-detail-modal__nn-check" id="pillar-detail-nn-check" />
+          Non-Negotiable
+        </label>
+        <div class="pillar-detail-modal__principle-form-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="pillar-detail-principle-save">Add</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="pillar-detail-principle-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Linked Goals -->
+    <div class="pillar-detail-modal__section" id="pillar-detail-goals-section" hidden>
+      <h4 class="pillar-detail-modal__section-title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Linked Goals
+      </h4>
+      <ul class="pillar-detail-modal__goals" id="pillar-detail-goals"></ul>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pillar-detail-modal {
+    max-width: 640px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .pillar-detail-modal__header {
+    overflow: hidden;
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+  }
+
+  .pillar-detail-modal__accent-bar {
+    height: 5px;
+    background: var(--pillar-accent, var(--accent));
+  }
+
+  .pillar-detail-modal__hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1.25rem 1.5rem 0.75rem;
+  }
+
+  .pillar-detail-modal__icon {
+    font-size: 2.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .pillar-detail-modal__meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pillar-detail-modal__name {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .pillar-detail-modal__weight {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 0.375rem;
+  }
+
+  .pillar-detail-modal__weight-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+
+  .pillar-detail-modal__weight-dot--filled {
+    background: var(--pillar-accent, var(--accent));
+  }
+
+  .pillar-detail-modal__weight-label {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .pillar-detail-modal__actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .pillar-detail-modal__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+  }
+
+  .pillar-detail-modal__action-btn:hover {
+    color: var(--text);
+    border-color: var(--pillar-accent, var(--accent));
+    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 10%, transparent);
+  }
+
+  .pillar-detail-modal__action-btn--danger:hover {
+    color: var(--danger, #ef4444);
+    border-color: var(--danger, #ef4444);
+    background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  }
+
+  .pillar-detail-modal__close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease;
+  }
+
+  .pillar-detail-modal__close-btn:hover {
+    color: var(--text);
+    background: var(--surface-raised, rgba(255,255,255,0.05));
+  }
+
+  /* Manifesto */
+  .pillar-detail-modal__manifesto {
+    padding: 0 1.5rem 1rem;
+  }
+
+  .pillar-detail-modal__manifesto-text {
+    margin: 0;
+    padding: 0.875rem 1.125rem;
+    border-left: 4px solid var(--pillar-accent, var(--accent));
+    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 6%, transparent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text);
+    font-style: italic;
+  }
+
+  .pillar-detail-modal__manifesto-empty {
+    padding: 0.875rem;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    font-style: italic;
+  }
+
+  /* Sections */
+  .pillar-detail-modal__section {
+    padding: 0 1.5rem 1.25rem;
+  }
+
+  .pillar-detail-modal__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .pillar-detail-modal__section-title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .pillar-detail-modal__add-principle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  }
+
+  .pillar-detail-modal__add-principle-btn:hover {
+    border-color: var(--pillar-accent, var(--accent));
+    color: var(--pillar-accent, var(--accent));
+    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 8%, transparent);
+  }
+
+  /* Principles list container — children rendered dynamically, styled in is:global below */
+  .pillar-detail-modal__principles {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  /* Add principle form — static Astro-rendered elements, scoped is fine */
+  .pillar-detail-modal__principle-form {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--pillar-accent, var(--accent));
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 4%, var(--surface));
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .pillar-detail-modal__principle-input {
+    width: 100%;
+    font-size: 0.875rem;
+  }
+
+  .pillar-detail-modal__nn-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .pillar-detail-modal__nn-check {
+    accent-color: var(--pillar-accent, var(--accent));
+  }
+
+  .pillar-detail-modal__principle-form-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  /* Goals */
+  .pillar-detail-modal__goals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .pillar-detail-modal__goal-item {
+    padding: 0.5rem 0.625rem;
+    background: var(--surface-raised, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+</style>
+
+<!-- Separate global styles for dynamically rendered content (innerHTML from controller) -->
+<!-- Scoped to #pillar-detail-overlay to avoid leaking into other components -->
+<style is:global>
+  /* ── Principle list items (rendered by pillar-detail-controller.ts) ── */
+  #pillar-detail-principles .pillar-detail-modal__principle-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    background: var(--surface-raised, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    transition: border-color 150ms ease;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item:hover {
+    border-color: color-mix(in srgb, var(--pillar-accent, var(--accent)) 50%, var(--border));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: var(--pillar-accent, var(--accent));
+    font-size: 0.75rem;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-text {
+    flex: 1;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item--nn .pillar-detail-modal__principle-text {
+    font-weight: 600;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    flex-shrink: 0;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-item:hover .pillar-detail-modal__principle-actions {
+    opacity: 1;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn:hover {
+    color: var(--text);
+    background: var(--surface-raised, rgba(255,255,255,0.05));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-action-btn--danger:hover {
+    color: var(--danger, #ef4444);
+  }
+
+  /* ── Non-Negotiable toggle ── */
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--border);
+    cursor: pointer;
+    transition: color 150ms ease;
+    padding: 0;
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle:hover {
+    color: var(--pillar-accent, var(--accent));
+  }
+
+  #pillar-detail-principles .pillar-detail-modal__principle-nn-toggle--active {
+    color: var(--pillar-accent, var(--accent));
+  }
+
+  /* ── Empty state ── */
+  #pillar-detail-principles .pillar-detail-modal__principles-empty {
+    margin: 0;
+    padding: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm, 6px);
+    text-align: center;
+    list-style: none;
+  }
+
+  /* ── Weight dots (rendered by renderWeight()) ── */
+  #pillar-detail-weight .pillar-detail-modal__weight-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+
+  #pillar-detail-weight .pillar-detail-modal__weight-dot--filled {
+    background: var(--pillar-accent, var(--accent));
+  }
+
+  #pillar-detail-weight .pillar-detail-modal__weight-label {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+</style>

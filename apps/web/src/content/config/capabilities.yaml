@@ -1,0 +1,10 @@
+capabilities:
+  logging:
+    level: info
+    categories:
+      - auth
+      - tasks
+      - integrations
+      - observability
+  cors:
+    enabled: false

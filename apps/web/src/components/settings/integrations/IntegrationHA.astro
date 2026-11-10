@@ -1,0 +1,113 @@
+---
+/**
+ * Home Assistant integration card sub-component.
+ * @domain integrations/ha
+ */
+
+import IntegrationCardHeader from "./IntegrationCardHeader.astro"
+import { t } from "../../../i18n/translations"
+import type { Locale } from "../../../lib/locale"
+
+interface Props {
+  locale?: Locale
+}
+const locale = Astro.props.locale || "en"
+---
+
+<div class="integration-card" id="integration-ha">
+  <IntegrationCardHeader
+    integration="ha"
+    icon="🏠"
+    title={t("settings.ha_title", locale)}
+    description={t("settings.ha_desc", locale)}
+    helpLabel={t("settings.ha_explainer", locale)}
+  >
+    <span class="badge badge-pending" id="ha-connection-badge">{t("settings.status_checking", locale)}</span>
+  </IntegrationCardHeader>
+
+  <div class="integration-card__body" id="integration-ha-body" inert>
+    <!-- Connection Status Display -->
+    <div id="ha-connection-status" class="ha-status-row">
+      <div class="ha-status-row__left">
+        <div class="ha-status-indicator ha-status-indicator--checking" id="ha-indicator">
+          <span class="ha-status-indicator__dot"></span>
+        </div>
+        <div class="ha-status-row__info">
+          <span class="ha-status-row__mode" id="ha-mode-label">{t("settings.ha_detecting", locale)}</span>
+          <span class="ha-status-row__detail" id="ha-detail-label"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HA Info Panel — shown when connected -->
+    <div id="ha-info-panel" class="ha-info-panel" style="display: none;">
+      <div class="ha-info-grid">
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">{t("settings.ha_version", locale)}</span>
+          <span class="ha-info-item__value" id="ha-info-version">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">{t("settings.ha_location", locale)}</span>
+          <span class="ha-info-item__value" id="ha-info-location">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">{t("settings.ha_timezone", locale)}</span>
+          <span class="ha-info-item__value" id="ha-info-timezone">—</span>
+        </div>
+        <div class="ha-info-item">
+          <span class="ha-info-item__label">{t("settings.ha_mode", locale)}</span>
+          <span class="ha-info-item__value" id="ha-info-mode">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Connection -->
+    <div class="integration-card__config form-group--spaced">
+      <div class="integration-card__actions">
+        <button type="button" class="btn btn-ghost" id="test-connection">
+          {t("settings.test_connection", locale)}
+        </button>
+      </div>
+      <div id="ha-status" class="ha-test-result"></div>
+    </div>
+
+    <!-- Advanced / Standalone Mode -->
+    <details class="ha-advanced-section" id="ha-advanced-section">
+      <summary class="ha-advanced-toggle">
+        <span>{t("settings.ha_advanced_title", locale)}</span>
+        <small>{t("settings.ha_advanced_desc", locale)}</small>
+      </summary>
+      <form id="ha-form" class="ha-advanced-form">
+        <div class="form-group">
+          <label class="form-label" for="ha-url">{t("settings.ha_url", locale)}</label>
+          <input
+            type="url"
+            class="form-input"
+            id="ha-url"
+            placeholder="http://homeassistant.local:8123"
+            pattern="https?://.*"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ha-token">
+            {t("settings.ha_token", locale)}
+          </label>
+          <input
+            type="password"
+            class="form-input"
+            id="ha-token"
+            placeholder="••••••••"
+          />
+          <small class="settings-hint">
+            {t("settings.ha_token_desc", locale)}
+          </small>
+        </div>
+        <div class="integration-action-row">
+          <button type="submit" class="btn btn-primary" id="save-ha">
+            💾 Save
+          </button>
+        </div>
+      </form>
+    </details>
+  </div>
+</div>

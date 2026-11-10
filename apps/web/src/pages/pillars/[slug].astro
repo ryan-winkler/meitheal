@@ -1,0 +1,13 @@
+---
+/**
+ * /pillars/[slug] — Redirect to /progress#pillars
+ *
+ * Slug-based pillar detail pages are now handled by the PillarDetailModal
+ * on the unified /progress page. Redirect all legacy pillar slug routes.
+ *
+ * @domain pillars → navigation
+ * @phase 19 — Pillars UX Polish
+ */
+---
+<script>window.location.replace("/progress#pillars")</script>
+<meta http-equiv="refresh" content="0;url=/progress#pillars" />

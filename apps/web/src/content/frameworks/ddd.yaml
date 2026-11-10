@@ -1,0 +1,43 @@
+name: DDD
+version: 1.0.0
+archetype: taxonomy
+fields:
+  - key: domain_type
+    label: Domain Type
+    type: select
+    ui_type: radio
+    weight: 1
+    options:
+      - value: "core"
+        label: "Core Domain"
+      - value: "supporting"
+        label: "Supporting Subdomain"
+      - value: "generic"
+        label: "Generic Subdomain"
+    help_text: "Core: Key differentiator. Supporting: Necessary but not differentiator. Generic: Off-the-shelf solution."
+  - key: complexity
+    label: Technical Complexity
+    type: select
+    ui_type: select
+    weight: 1
+    options:
+      - value: "high"
+        label: "High"
+      - value: "medium"
+        label: "Medium"
+      - value: "low"
+        label: "Low"
+    help_text: "How technically challenging is the implementation?"
+  - key: volatility
+    label: Volatility
+    type: select
+    ui_type: select
+    weight: 1
+    options:
+      - value: "high"
+        label: "High"
+      - value: "medium"
+        label: "Medium"
+      - value: "low"
+        label: "Low"
+    help_text: "How frequently do the business rules or requirements change?"

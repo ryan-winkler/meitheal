@@ -1,0 +1,14 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Meitheal API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/unfurl": {
+      "post": {
+        "summary": "Fetch and normalize rich link metadata"
+      }
+    }
+  }
+}

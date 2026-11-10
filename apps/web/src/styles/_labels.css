@@ -1,0 +1,278 @@
+/* =============================================
+ * Labels Domain — Badge, Picker, Filter Styles
+ * DDD bounded context: labels
+ * ============================================= */
+
+/* --- Label Badges --- */
+.label-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  cursor: default;
+}
+
+.label-badge:hover {
+  opacity: 0.85;
+  transform: scale(1.03);
+}
+
+/* Color variants — HSL-based for harmony */
+.label-badge--default {
+  background: hsl(220 14% 92%);
+  color: hsl(220 14% 35%);
+}
+
+.label-badge--blue {
+  background: hsl(217 91% 90%);
+  color: hsl(217 91% 30%);
+}
+
+.label-badge--green {
+  background: hsl(142 76% 88%);
+  color: hsl(142 76% 25%);
+}
+
+.label-badge--amber {
+  background: hsl(38 92% 88%);
+  color: hsl(38 92% 30%);
+}
+
+.label-badge--red {
+  background: hsl(0 72% 90%);
+  color: hsl(0 72% 30%);
+}
+
+.label-badge--purple {
+  background: hsl(270 76% 90%);
+  color: hsl(270 76% 30%);
+}
+
+.label-badge--teal {
+  background: hsl(175 77% 88%);
+  color: hsl(175 77% 25%);
+}
+
+.label-badge--pink {
+  background: hsl(330 81% 90%);
+  color: hsl(330 81% 30%);
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] .label-badge--default {
+  background: hsl(220 14% 22%);
+  color: hsl(220 14% 78%);
+}
+
+[data-theme="dark"] .label-badge--blue {
+  background: hsl(217 60% 22%);
+  color: hsl(217 80% 78%);
+}
+
+[data-theme="dark"] .label-badge--green {
+  background: hsl(142 50% 18%);
+  color: hsl(142 70% 72%);
+}
+
+[data-theme="dark"] .label-badge--amber {
+  background: hsl(38 60% 20%);
+  color: hsl(38 80% 75%);
+}
+
+[data-theme="dark"] .label-badge--red {
+  background: hsl(0 50% 20%);
+  color: hsl(0 70% 75%);
+}
+
+[data-theme="dark"] .label-badge--purple {
+  background: hsl(270 50% 20%);
+  color: hsl(270 70% 78%);
+}
+
+[data-theme="dark"] .label-badge--teal {
+  background: hsl(175 50% 18%);
+  color: hsl(175 70% 72%);
+}
+
+[data-theme="dark"] .label-badge--pink {
+  background: hsl(330 50% 20%);
+  color: hsl(330 70% 75%);
+}
+
+/* HA theme passthrough */
+:root {
+  --label-badge-bg: var(--ha-card-background, hsl(220 14% 92%));
+  --label-badge-text: var(--primary-text-color, hsl(220 14% 35%));
+}
+
+/* --- Label Badge Container --- */
+.label-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Compact mode for kanban cards */
+.label-badges--compact {
+  gap: 0.125rem;
+  max-height: 2.5rem;
+}
+
+.label-badges--compact .label-badge {
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.625rem;
+  max-width: 6rem;
+}
+
+/* --- Label Picker --- */
+.label-picker {
+  position: relative;
+  width: 100%;
+}
+
+.label-picker__input {
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border-color, hsl(220 13% 85%));
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  background: var(--input-bg, var(--ha-card-background, white));
+  color: var(--text-primary, var(--primary-text-color, hsl(220 14% 15%)));
+  transition: border-color 0.15s ease;
+}
+
+.label-picker__input:focus {
+  outline: none;
+  border-color: var(--accent-color, hsl(234 89% 63%));
+  box-shadow: 0 0 0 2px hsla(234 89% 63% / 0.15);
+}
+
+.label-picker__dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  background: var(--input-bg, var(--ha-card-background, white));
+  border: 1px solid var(--border-color, hsl(220 13% 85%));
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px hsla(0 0% 0% / 0.12);
+  z-index: 50;
+  display: none;
+}
+
+.label-picker__dropdown--open {
+  display: block;
+}
+
+.label-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.label-picker__option:hover,
+.label-picker__option--focused {
+  background: var(--hover-bg, hsl(220 14% 96%));
+}
+
+.label-picker__option--create {
+  font-style: italic;
+  color: var(--accent-color, hsl(234 89% 63%));
+}
+
+.label-picker__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* --- Label Remove Button --- */
+.label-badge__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 0.625rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  opacity: 0.6;
+  transition: opacity 0.1s ease, background 0.1s ease;
+  min-width: 0.875rem;
+  min-height: 0.875rem;
+}
+
+.label-badge__remove:hover {
+  opacity: 1;
+  background: hsla(0 0% 0% / 0.1);
+}
+
+/* --- Label Filter Bar --- */
+.label-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem 0;
+}
+
+.label-filter__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--border-color, hsl(220 13% 85%));
+  background: transparent;
+  color: var(--text-secondary, hsl(220 14% 50%));
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+.label-filter__chip:hover {
+  background: var(--hover-bg, hsl(220 14% 96%));
+}
+
+.label-filter__chip--active {
+  background: var(--accent-color, hsl(234 89% 63%));
+  color: white;
+  border-color: var(--accent-color, hsl(234 89% 63%));
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .label-badge,
+  .label-picker__input,
+  .label-picker__option,
+  .label-filter__chip,
+  .label-badge__remove {
+    transition: none;
+  }
+
+  .label-badge:hover {
+    transform: none;
+  }
+}

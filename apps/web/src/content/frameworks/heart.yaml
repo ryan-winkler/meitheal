@@ -1,0 +1,54 @@
+name: HEART
+version: 1.0.0
+archetype: matrix
+badge_thresholds:
+  - min: 20
+    label: "Exceptional UX"
+    color: "success"
+  - min: 10
+    label: "Standard UX"
+    color: "accent"
+  - min: 0
+    label: "Poor UX"
+    color: "danger"
+fields:
+  - key: happiness
+    label: Happiness
+    type: number
+    ui_type: slider
+    min: 1
+    max: 5
+    weight: 1
+    help_text: "Measure of user attitudes, often collected via survey (1=Poor, 5=Excellent)"
+  - key: engagement
+    label: Engagement
+    type: number
+    ui_type: slider
+    min: 1
+    max: 5
+    weight: 1
+    help_text: "Level of user involvement, frequency of use (1=Low, 5=High)"
+  - key: adoption
+    label: Adoption
+    type: number
+    ui_type: slider
+    min: 1
+    max: 5
+    weight: 1
+    help_text: "New users starting to use the feature (1=Low, 5=High)"
+  - key: retention
+    label: Retention
+    type: number
+    ui_type: slider
+    min: 1
+    max: 5
+    weight: 1
+    help_text: "Rate at which existing users are returning (1=Low, 5=High)"
+  - key: task_success
+    label: Task Success
+    type: number
+    ui_type: slider
+    min: 1
+    max: 5
+    weight: 1
+    help_text: "Effectiveness, efficiency, and error rate (1=Low, 5=High)"

@@ -1,0 +1,531 @@
+---
+// Task Detail Modal Component
+import StrategicEvaluator from "./StrategicEvaluator.astro";
+import { t } from "../../i18n/translations"
+
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+---
+    <!-- Task Detail Centered Panel -->
+    <div
+      id="task-detail-overlay"
+      class="modal-overlay z-200"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Task detail"
+    >
+      <div
+        id="task-detail-panel"
+        class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-primary/95 backdrop-blur-xl border border-white/5 shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
+      >
+        <!-- Sticky Header Bar -->
+        <header class="flex-none px-6 py-4 border-b border-white/5 bg-bg-card/40 backdrop-blur-md flex justify-between items-center z-20 sticky top-0">
+          <div id="td-task-heading" class="invisible flex items-center gap-3 w-full mr-4">
+            <span id="td-priority-dot" class="td-priority-dot text-lg" title="Priority">●</span>
+            <div class="flex flex-col flex-1 min-w-0">
+              <a href="#" id="td-parent" class="text-xs text-text-muted hidden hover:text-accent hover:underline mb-0.5 truncate"></a>
+              <div class="flex items-center gap-2 text-text-muted">
+                <span id="td-type-icon" class="flex items-center justify-center shrink-0" style="width:16px;height:16px"></span>
+                <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
+                <span id="td-created" class="text-[10px] hidden md:inline"></span>
+                <span class="text-border hidden md:inline">•</span>
+                <span id="td-updated" class="text-[10px] hidden md:inline"></span>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-2 items-center flex-none">
+            <div id="td-task-actions" hidden class="flex gap-2 items-center">
+              <button id="td-toggle-favorite" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" title="Favorite">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+              </button>
+              <button id="td-duplicate" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" title="Duplicate">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+              <button id="td-ask-ai" class="p-1.5 hover:bg-bg-hover hover:text-accent text-text-muted rounded transition-colors" title="Ask AI">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6a4 4 0 0 1 4-4z"></path><path d="M9 8v1a3 3 0 0 0 6 0V8"></path><path d="M6 12a6 6 0 0 0 12 0"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
+              </button>
+              <button id="td-delete" class="p-1.5 hover:bg-bg-hover hover:text-red-400 text-text-muted rounded transition-colors" title="Delete Task">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+              <div class="w-px h-5 bg-border mx-1"></div>
+            </div>
+            <button id="td-close" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-muted rounded transition-colors" aria-label="Close detail">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Progress bar -->
+        <div id="td-progress-bar-container" class="w-full h-1 bg-bg-input hidden">
+          <div id="td-progress-bar-fill" class="h-full bg-accent transition-[width] duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- Loading skeleton — shown while task data fetches -->
+        <div id="td-skeleton" class="flex flex-1 overflow-hidden flex-col md:flex-row">
+          <div class="flex-1 px-6 py-6 lg:px-10 space-y-6">
+            <div class="td-skeleton-line h-8 w-3/4 rounded-lg"></div>
+            <div class="td-skeleton-line h-4 w-full rounded"></div>
+            <div class="td-skeleton-line h-4 w-5/6 rounded"></div>
+            <div class="td-skeleton-line h-4 w-2/3 rounded"></div>
+            <div class="td-skeleton-line h-24 w-full rounded-lg mt-4"></div>
+            <div class="td-skeleton-line h-4 w-1/2 rounded mt-6"></div>
+            <div class="td-skeleton-line h-4 w-3/4 rounded"></div>
+          </div>
+          <div class="w-full md:w-[320px] border-t md:border-t-0 md:border-l border-border px-6 py-6 space-y-4">
+            <div class="td-skeleton-line h-10 w-full rounded-lg"></div>
+            <div class="td-skeleton-line h-4 w-1/3 rounded"></div>
+            <div class="td-skeleton-line h-8 w-full rounded"></div>
+            <div class="td-skeleton-line h-4 w-1/3 rounded"></div>
+            <div class="td-skeleton-line h-8 w-full rounded"></div>
+            <div class="td-skeleton-line h-4 w-1/3 rounded"></div>
+            <div class="td-skeleton-line h-8 w-full rounded"></div>
+          </div>
+        </div>
+
+        <p
+          id="td-load-error"
+          hidden
+          role="alert"
+          data-unavailable={t("task_modal.link_unavailable", locale)}
+          data-failed={t("task_modal.link_load_failed", locale)}
+          class="px-6 py-6 text-text-primary"
+        ></p>
+
+        <div id="td-loaded-content" class="flex-1 overflow-y-auto flex-col md:flex-row relative hidden">
+          
+          <!-- MAIN CONTENT COLUMN -->
+          <main class="flex-none w-full md:flex-1 md:w-auto overflow-visible px-6 py-6 lg:px-10 space-y-8 bg-transparent min-w-0">
+            
+            <!-- Title -->
+            <div class="relative group">
+              <textarea
+                id="td-title"
+                class="w-full bg-transparent border border-transparent hover:bg-bg-hover focus:bg-bg-input focus:border-border focus:ring-1 focus:ring-accent text-3xl font-bold py-2 px-3 -ml-3 rounded-lg transition-colors leading-tight resize-none text-text-primary overflow-hidden min-h-[56px]"
+                rows="1"
+                placeholder="Task title"
+                oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+              ></textarea>
+            </div>
+
+            <div class="space-y-2">
+              <button id="td-copy-link" type="button" class="min-h-11 rounded px-3 text-sm font-medium text-text-primary hover:bg-bg-hover">
+                {t("task_modal.copy_link", locale)}
+              </button>
+              <label id="td-copy-link-fallback" hidden class="space-y-2 text-sm text-text-primary">
+                <span class="block">{t("task_modal.copy_link_manually", locale)}</span>
+                <input type="url" id="td-copy-link-value" class="form-input w-full" readonly />
+              </label>
+            </div>
+
+            <!-- Properties Grid -->
+            <div class="flex flex-col gap-5 py-5 mb-8 border-y border-border/50 bg-bg-card/10 -mx-6 px-6 lg:-mx-10 lg:px-10">
+            <!-- Essential Properties -->
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
+              Properties
+            </h4>
+            <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-sm w-full">
+               
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Status</span>
+                 <select id="td-status" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="backlog">Backlog</option>
+                    <option value="pending">Pending</option>
+                    <option value="active">Active</option>
+                    <option value="complete">Complete</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Type</span>
+                 <select id="td-task-type" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="task">Task</option>
+                    <option value="story">Story</option>
+                    <option value="epic">Epic</option>
+                 </select>
+               </div>
+               
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Priority</span>
+                 <select id="td-priority" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="1">Urgent</option>
+                    <option value="2">High</option>
+                    <option value="3">Medium</option>
+                    <option value="4">Low</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
+                   <span title="Eisenhower Matrix dimension">⚡</span> Urgency
+                 </span>
+                 <select id="td-urgency" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="0">0 — Unset</option>
+                    <option value="1">1 — Low</option>
+                    <option value="2">2</option>
+                    <option value="3">3 — Medium</option>
+                    <option value="4">4</option>
+                    <option value="5">5 — Critical</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
+                   <span title="Eisenhower Matrix dimension">⭐</span> Importance
+                 </span>
+                 <select id="td-importance" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="0">0 — Unset</option>
+                    <option value="1">1 — Low</option>
+                    <option value="2">2</option>
+                    <option value="3">3 — Medium</option>
+                    <option value="4">4</option>
+                    <option value="5">5 — Critical</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Assignee</span>
+                 <select id="td-assigned-to" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                    <option value="">Unassigned</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Area</span>
+                 <select id="td-area" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full"></select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <label for="td-project" class="text-xs text-text-muted font-medium uppercase tracking-wide">Project</label>
+                 <select id="td-project" disabled class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                   <option value="">No project</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Pillar">🏛️</span> Pillar</span>
+                 <select id="td-pillar" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                   <option value="">No pillar</option>
+                 </select>
+               </div>
+
+               <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Principle">⚖️</span> Principle</span>
+                 <select id="td-principle" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
+                   <option value="">No principle</option>
+                 </select>
+               </div>
+
+            </div>
+
+             
+
+            <!-- Timing Properties -->
+            <div class="border-t border-border/30 pt-4 mt-1"></div>
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Scheduling
+            </h4>
+            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 text-sm w-full">
+               <div>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Dates & Metrics</span>
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-muted">Due</span>
+                    <input id="td-due-date" type="date" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full cursor-pointer" />
+                 </div>
+                 
+                 <!-- Hidden structural compat -->
+                 <input id="td-start-date" type="date" class="hidden" />
+                 <input id="td-end-date" type="date" class="hidden" />
+                 
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-muted">Progress</span>
+                    <div class="flex items-center gap-2 px-2 h-7 group-hover:bg-bg-hover rounded transition-colors border border-transparent group-hover:border-border">
+                        <input id="td-progress" type="range" min="0" max="100" class="flex-1 accent-accent h-1.5 bg-bg-input rounded-lg cursor-pointer appearance-none" />
+                        <span id="td-progress-value" class="text-xs font-mono text-text-primary w-8 text-right font-medium">0%</span>
+                    </div>
+                 </div>
+
+                 <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
+                    <span class="text-xs text-text-muted">Tracked (min)</span>
+                    <input id="td-time-tracked" type="number" min="0" step="1" class="form-input text-xs py-1.5 bg-transparent hover:bg-bg-hover border-transparent hover:border-border transition-colors w-full font-mono placeholder-text-muted" placeholder="0" />
+                 </div>
+               </div>
+
+               <div>
+                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Recurrence Pattern</span>
+                  <select id="td-recurrence" class="form-select text-xs py-1.5 px-2 bg-bg-input hover:border-border transition-colors w-full cursor-pointer font-medium">
+                    <option value="">None (One-time)</option>
+                    <option value="FREQ=DAILY">Every day</option>
+                    <option value="FREQ=WEEKLY">Every week</option>
+                    <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday</option>
+                    <option value="FREQ=MONTHLY">Every month</option>
+                    <option value="FREQ=YEARLY">Every year</option>
+                  </select>
+                  <span id="td-recurrence-desc" class="text-[10px] text-text-muted mt-1 hidden"></span>
+               </div>
+               
+               <div>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Reminder Time</span>
+                 <input id="td-reminder" type="datetime-local" class="form-input text-xs py-1.5 bg-bg-input hover:border-border transition-colors w-full cursor-pointer" />
+               </div>
+            </div>
+
+            
+
+            <!-- Context Properties -->
+            <div class="border-t border-border/30 pt-4 mt-1"></div>
+            <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+              Metadata
+            </h4>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
+              
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Labels</span>
+                    <input id="td-color" type="color" class="w-6 h-6 rounded cursor-pointer border border-border/50 bg-transparent p-0 tooltip" title="Task Color" />
+                </div>
+                <div id="td-labels" class="flex flex-wrap gap-1.5 mb-2 min-h-[24px]"></div>
+                <input id="td-label-input" class="form-input text-xs py-1.5 bg-bg-input hover:border-border w-full transition-colors" placeholder="Add label (press enter)..." autocomplete="off" />
+              </div>
+
+              <div>
+                <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-2 block">Custom Fields</span>
+                <div id="td-custom-fields" class="space-y-2 mb-2"></div>
+                <div class="relative">
+                  <button id="td-add-cf" type="button" class="text-xs text-text-secondary px-3 py-1.5 rounded bg-bg-input hover:bg-bg-hover border border-border outline-dashed outline-1 outline-transparent hover:outline-border transition-[background,outline-color] w-full text-left flex items-center gap-2">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      Add Field
+                  </button>
+                  <div id="td-add-cf-dropdown" class="absolute z-10 w-full mt-1 bg-bg-card border border-border rounded-md shadow-lg py-1" style="display:none;">
+                    <div class="px-2 py-1">
+                      <input id="td-add-cf-search" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
+                    </div>
+                    <div id="td-add-cf-options" class="max-h-32 overflow-y-auto mt-1"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+
+            </div>
+
+            <!-- Description -->
+            <div class="mb-4">
+              <button type="button" class="flex items-center gap-2 text-xs font-medium text-accent hover:text-accent-hover bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-lg transition-colors border border-accent/20">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="animate-pulse" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6a4 4 0 0 1 4-4z"></path><path d="M9 8v1a3 3 0 0 0 6 0V8"></path><path d="M6 12a6 6 0 0 0 12 0"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
+                Ask AI to write a description, generate subtasks, or find similar tasks...
+              </button>
+            </div>
+
+            <section class="mb-5">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider flex justify-between w-full pr-1">
+                    <span>Description</span>
+                    <span id="td-desc-saved" class="text-accent text-[10px] font-medium" style="display:none;">✓ Saved</span>
+                </h3>
+              </div>
+              <div class="group relative">
+                <div id="td-desc-preview-container" class="prose prose-sm dark:prose-invert max-w-none wrap-break-word p-3 -ml-3 rounded-lg hover:bg-bg-hover border border-transparent transition-colors cursor-text min-h-[60px] text-base group-hover:bg-bg-hover">
+                  <div id="td-desc-preview" class="empty:after:content-['Add_a_description...'] empty:after:text-text-muted empty:after:italic"></div>
+                </div>
+                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button id="td-desc-edit-btn-hover" class="bg-bg-primary border border-border shadow-sm text-text-secondary hover:text-text-primary px-2 py-1 rounded text-xs" type="button">Edit</button>
+                </div>
+              </div>
+              <div id="td-desc-edit-container" class="hidden">
+                <textarea
+                  id="td-description"
+                  class="form-input min-h-[160px] resize-y text-sm w-full focus:ring-1 focus:ring-accent font-mono leading-relaxed"
+                  placeholder="Add a detailed description (Markdown supported)..."
+                ></textarea>
+                <div class="flex justify-end mt-2 gap-2">
+                    <button id="td-desc-cancel-btn" class="btn text-xs px-3 py-1.5 border border-border text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors" type="button">Cancel</button>
+                    <button id="td-desc-save-btn" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm" type="button">Save</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Checklists -->
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Checklists</h3>
+                <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>Add Item</span>
+                </button>
+              </div>
+              <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
+                  <div class="w-full mr-3 h-1.5 bg-bg-card rounded-full overflow-hidden border border-border">
+                    <div id="td-checklist-progress-bar" class="h-full bg-accent transition-[width] duration-300" style="width:0%"></div>
+                  </div>
+                  <span class="whitespace-nowrap"><span id="td-checklist-done">0</span>/<span id="td-checklist-total">0</span></span>
+              </div>
+              <div id="td-checklists" class="space-y-1"></div>
+            </section>
+
+            <!-- Attachments -->
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider">Attachments</h3>
+                <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Image
+                  <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
+                </label>
+              </div>
+              <div id="td-attachments" class="flex flex-wrap gap-3 mt-2"></div>
+            </section>
+
+            <!-- Linking & Subtasks -->
+            <section class="border border-border rounded-xl p-5 bg-bg-card/50">
+              <h3 class="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                  Relationships
+              </h3>
+              <div class="space-y-5">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <!-- Parent -->
+                  <div>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Epic/Story</span>
+                    <div id="td-link-parent-display" class="flex items-center gap-1 mb-2">
+                      <span class="text-xs text-text-muted italic">None</span>
+                    </div>
+                    <div class="relative">
+                      <input id="td-link-parent-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
+                      <div id="td-link-parent-results" class="absolute z-10 left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
+                    </div>
+                  </div>
+                  <!-- Children -->
+                  <div>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Subtasks</span>
+                    <div id="td-link-children" class="space-y-1.5 mb-2"></div>
+                    <div id="td-subtask-progress" class="hidden mb-3">
+                      <div class="flex items-center justify-between text-[10px] text-text-muted mb-1">
+                        <span id="td-subtask-progress-label">0/0</span>
+                      </div>
+                      <div class="w-full h-1.5 bg-bg-input rounded-full overflow-hidden border border-border/50">
+                        <div id="td-subtask-progress-bar" class="h-full bg-accent transition-[width] duration-300 rounded-full" style="width:0%"></div>
+                      </div>
+                    </div>
+                    <div id="td-add-subtask">
+                      <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Add subtask
+                      </button>
+                      <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
+                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
+                        <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
+                        <button type="button" id="td-add-subtask-cancel" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5">✕</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="h-px bg-border w-full"></div>
+                
+                <!-- Related Links -->
+                <div>
+                  <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">
+                    <span>Related Links <span id="td-link-count" class="text-text-muted opacity-70 ml-1"></span></span>
+                  </span>
+                  <div id="td-related-links" class="space-y-1.5 mb-3">
+                    <div id="td-links-empty" class="text-xs text-text-muted italic py-1">No related links. Use the search to link tasks.</div>
+                  </div>
+                  <div id="td-link-live" aria-live="polite" class="sr-only"></div>
+                  <div class="flex flex-col gap-2">
+                    <select id="td-link-type-select" class="form-select text-sm py-1.5 bg-bg-input w-full shrink-0">
+                      <option value="related_to">Related to</option>
+                      <option value="blocked_by">Blocked by</option>
+                      <option value="blocks">Blocks</option>
+                      <option value="duplicates">Duplicates</option>
+                      <option value="duplicated_by">Duplicated by</option>
+                    </select>
+                    <div class="relative w-full">
+                      <input id="td-link-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
+                      <div id="td-link-search-results" class="absolute z-50 left-0 top-full mt-1 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+
+
+          </main>
+
+          <!-- SIDEBAR (PROPERTIES) COLUMN -->
+          <aside class="w-full md:w-[320px] bg-bg-card/30 backdrop-blur-md border-t md:border-t-0 md:border-l border-white/5 px-6 py-6 flex-none flex flex-col gap-6">
+            
+            <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-[background,transform] flex items-center justify-center gap-2 hover:-translate-y-0.5 td-done-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Mark as Done
+            </button>
+
+            <!-- Mobile sidebar toggle (hidden on desktop) -->
+            <button id="td-sidebar-toggle" class="md:hidden w-full flex items-center justify-between py-2.5 px-3 text-sm font-semibold text-text-primary bg-bg-input rounded-lg border border-border hover:bg-bg-hover transition-colors" type="button" aria-expanded="false" aria-controls="td-sidebar-props">
+              <span class="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
+                Details
+              </span>
+              <svg id="td-sidebar-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="transition-transform duration-200 text-text-muted"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+            <!-- Collapsible content (always visible on desktop, toggled on mobile) -->
+            <noscript></noscript>
+            <div id="td-sidebar-props" class="td-sidebar-props flex flex-col gap-6">
+
+            <!-- Comments -->
+            <section class="border-t border-border pt-8 mt-8">
+              <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider mb-5 flex items-center gap-2">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="text-text-muted" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path></svg>
+                 Comments
+              </h3>
+              <div id="td-comments" class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
+              <div class="flex gap-3 items-start relative mt-6">
+                <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
+                <div class="flex-1">
+                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error" maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
+                    <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden>{t("task_modal.comment_failed", locale)}</p>
+                    <div class="flex justify-end items-center gap-3 mt-2">
+                      <span class="text-[10px] text-text-muted hidden md:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
+                      <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>
+                    </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Activity Log -->
+            <details class="group border-t border-border pt-6 mt-6 pb-8">
+              <summary class="text-xs text-text-muted font-bold uppercase tracking-wider cursor-pointer hover:text-text-primary transition-colors flex items-center outline-none">
+                <svg class="w-4 h-4 mr-1 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                Activity Log
+              </summary>
+              <div id="td-activity" class="space-y-3 mt-5 ml-5 relative before:absolute before:inset-y-0 before:left-[-11px] before:w-px before:bg-border/50 text-xs text-text-secondary"></div>
+            </details>
+
+            <!-- Strategic Actions -->
+            <div class="mt-auto pt-6">
+                 <div id="td-strategic-badge" class="mb-3 hidden"></div>
+                 <button id="td-evaluate-btn" class="w-full text-left px-3 py-2.5 text-sm rounded-lg bg-bg-input hover:bg-bg-hover border border-border/50 hover:border-border transition-[background,border-color] flex justify-between items-center group shadow-sm text-text-primary">
+                   <div class="flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        <span class="font-medium">Strategic Lens</span>
+                   </div>
+                   <span id="td-active-framework-name" class="text-[9px] uppercase font-bold text-bg-primary px-1.5 py-0.5 rounded bg-accent hidden shadow-sm group-hover:scale-105 transition-transform"></span>
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-text-muted group-hover:text-text-primary transition-colors opacity-0 group-hover:opacity-100 hidden"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                 </button>
+                 <StrategicEvaluator />
+            </div>
+
+            </div> <!-- /td-sidebar-props -->
+
+          </aside>
+
+        </div>
+      </div>
+    </div>
+
+<script>
+  import "@lib/task-modal-controller";
+</script>

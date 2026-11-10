@@ -1,0 +1,42 @@
+/* =============================================
+ * Meitheal Design System — Domain-Scoped CSS
+ * =============================================
+ *
+ * Tailwind CSS v4 — CSS-first configuration.
+ * @import "tailwindcss" handles base/components/utilities.
+ * Design tokens defined via @theme in _tokens.css.
+ * ============================================= */
+
+/* Tailwind v4 — single import replaces @tailwind directives */
+@import "tailwindcss";
+
+/* 1. Design tokens: fonts, CSS vars, themes, @theme overrides */
+@import './_tokens.css';
+
+/* 2. Base layer: resets, typography, scrollbar */
+@import './_base.css';
+
+/* 3. Component partials (domain-scoped) */
+@import './_layout.css';
+@import './_forms.css';
+@import './_buttons.css';
+@import './_cards.css';
+@import './_page-shell.css';
+@import './_parent-page.css';
+@import './_tasks.css';
+@import './_kanban.css';
+@import './_table.css';
+@import './_filter-toolbar.css';
+@import './_feedback.css';
+@import './_avatar.css';
+@import './_search.css';
+@import './_search-hub.css';
+@import './_modal.css';
+@import './_labels.css';
+@import './_settings-shared.css';
+@import './settings-utilities.css';
+
+/* 4. Cross-cutting concerns */
+@import './_responsive.css';
+@import './_utilities.css';
+@import "./_glass-dropdown.css";

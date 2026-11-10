@@ -1,0 +1,13 @@
+/**
+ * HA Domain — Barrel Export
+ * @domain ha
+ * @bounded-context integration
+ */
+export { getHAConnection, getHAConnectionStatus, getHAConfig, closeHAConnection, getIngressEntry, onHAConnectionStatus } from "./ha-connection";
+export type { HAConnectionState } from "./ha-connection";
+export { initEntitySubscription, getAllEntities, getEntity, getEntitiesByDomain, getCalendarEntities, getTodoEntities, onEntityChange, stopEntitySubscription } from "./ha-entities";
+export { initHAIntegrations } from "./ha-startup";
+export { listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getCalendarEntityFeatures, CalendarFeature, addTodoItem, getTodoItems, updateTodoItem, removeTodoItem, removeTodoCompletedItems, moveTodoItem, subscribeTodoItems, sendNotification, callHAService } from "./ha-services";
+export type { CalendarEvent, TodoItem } from "./ha-services";
+export { fireHAEvent, emitTaskCreated, emitTaskUpdated, emitTaskCompleted, emitTaskDeleted, emitTaskOverdue, emitAreaUpdated, emitCalendarSynced, emitCalendarEventCreated } from "./ha-events";
+export type { MeithealEventType, MeithealTaskEventData, MeithealAreaEventData, MeithealCalendarEventData } from "./ha-events";

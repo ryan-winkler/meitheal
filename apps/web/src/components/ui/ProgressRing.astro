@@ -1,0 +1,100 @@
+---
+/**
+ * ProgressRing — SVG donut ring for completion percentage
+ *
+ * @domain tasks
+ * @bounded-context tasks (presentation)
+ *
+ * Renders a circular SVG progress indicator. Accepts:
+ *   - percent (0–100)
+ *   - size (px, default 48)
+ *   - strokeWidth (px, default 4)
+ *   - color (CSS color, default --accent)
+ *
+ * @kcs Uses stroke-dasharray / dashoffset for the fill arc.
+ * The ring animates on page load via CSS transition.
+ */
+export interface Props {
+  percent: number
+  size?: number
+  strokeWidth?: number
+  color?: string
+  label?: string
+}
+
+const {
+  percent = 0,
+  size = 48,
+  strokeWidth = 4,
+  color = "var(--accent)",
+  label,
+} = Astro.props
+
+const radius = (size - strokeWidth) / 2
+const circumference = 2 * Math.PI * radius
+const dashOffset = circumference - (Math.min(Math.max(percent, 0), 100) / 100) * circumference
+const center = size / 2
+---
+
+<div class="progress-ring" style={`width: ${size}px; height: ${size}px`} aria-label={label ?? `${Math.round(percent)}% complete`} role="progressbar" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
+  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <!-- Background track -->
+    <circle
+      cx={center}
+      cy={center}
+      r={radius}
+      fill="none"
+      stroke="rgba(255,255,255,0.06)"
+      stroke-width={strokeWidth}
+    />
+    <!-- Progress arc -->
+    <circle
+      class="progress-ring__arc"
+      cx={center}
+      cy={center}
+      r={radius}
+      fill="none"
+      stroke={color}
+      stroke-width={strokeWidth}
+      stroke-linecap="round"
+      stroke-dasharray={circumference}
+      stroke-dashoffset={dashOffset}
+      transform={`rotate(-90 ${center} ${center})`}
+    />
+  </svg>
+  <span class="progress-ring__label">{Math.round(percent)}%</span>
+</div>
+
+<style>
+  .progress-ring {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .progress-ring svg {
+    display: block;
+  }
+  .progress-ring__arc {
+    transition: stroke-dashoffset 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .progress-ring__label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    pointer-events: none;
+    line-height: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress-ring__arc {
+      transition: none;
+    }
+  }
+</style>

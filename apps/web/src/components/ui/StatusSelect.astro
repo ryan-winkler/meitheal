@@ -1,0 +1,36 @@
+---
+/**
+ * StatusSelect — Reusable task status dropdown
+ *
+ * @domain tasks
+ * @bounded-context shared-ui
+ *
+ * @kcs DDD — task status values follow ubiquitous language:
+ * backlog, pending (todo), active (in progress), complete (done).
+ * "pending" and "todo" are synonyms — this component uses "pending"
+ * as the canonical value but displays "To Do" for user friendliness.
+ */
+
+interface Props {
+  id?: string
+  name?: string
+  value?: string
+  class?: string
+  showBacklog?: boolean
+}
+
+const {
+  id,
+  name = "status",
+  value = "pending",
+  class: className = "",
+  showBacklog = true,
+} = Astro.props
+---
+
+<select id={id} name={name} class={`form-select ${className}`}>
+  {showBacklog && <option value="backlog" selected={value === "backlog"}>📋 Backlog</option>}
+  <option value="pending" selected={value === "pending"}>⏳ To Do</option>
+  <option value="active" selected={value === "active"}>🔄 In Progress</option>
+  <option value="complete" selected={value === "complete"}>✅ Complete</option>
+</select>

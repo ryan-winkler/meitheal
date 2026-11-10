@@ -1,0 +1,27 @@
+---
+/**
+ * PrioritySelect — Reusable priority dropdown with emoji indicators
+ *
+ * @domain tasks
+ * @bounded-context shared-ui
+ *
+ * @kcs DDD — "priority" follows ubiquitous language: 1=Urgent, 2=High, 3=Medium, 4=Low.
+ * Used in NewTaskModal, table inline edit, task detail panel.
+ */
+
+interface Props {
+  id?: string
+  name?: string
+  value?: number
+  class?: string
+}
+
+const { id, name = "priority", value = 3, class: className = "" } = Astro.props
+---
+
+<select id={id} name={name} class={`form-select ${className}`}>
+  <option value="1" selected={value === 1}>🔴 Urgent (1)</option>
+  <option value="2" selected={value === 2}>🟠 High (2)</option>
+  <option value="3" selected={value === 3}>🟡 Medium (3)</option>
+  <option value="4" selected={value === 4}>🟢 Low (4)</option>
+</select>

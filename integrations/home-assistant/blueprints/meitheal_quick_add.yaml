@@ -1,0 +1,61 @@
+blueprint:
+  name: "Meitheal: Quick Add Task from Notification"
+  description: >-
+    Reply to a notification to quickly create a new task in Meitheal.
+    Uses the companion app's text input feature for inline task creation
+    without opening the app.
+
+    Android: shows a text input field in the notification.
+    iOS: shows a text input prompt when tapping the action.
+  domain: automation
+  author: "Coolock Village"
+  source_url: "https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_quick_add.yaml"
+  input:
+    notify_device:
+      name: "Notification Device"
+      description: "The mobile device to send the quick-add prompt to"
+      selector:
+        device:
+          integration: mobile_app
+    trigger_time:
+      name: "Trigger Time"
+      description: "Time of day to send the daily planning prompt"
+      default: "08:00:00"
+      selector:
+        time:
+
+trigger:
+  - platform: time
+    at: !input trigger_time
+
+action:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "📝 Meitheal — Quick Add"
+    message: "What do you need to get done today?"
+    data:
+      # Android: haptic feedback
+      vibrationPattern: "100, 50"
+      channel: "meitheal_tasks"
+      importance: high
+      group: "meitheal"
+      tag: "meitheal_quick_add"
+      actions:
+        - action: "REPLY"
+          title: "✏️ Add Task"
+          behavior: "textInput"
+  # Handle the reply — create task via Meitheal service
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "REPLY"
+    timeout:
+      minutes: 30
+    continue_on_timeout: false
+  - service: meitheal.create_task
+    data:
+      title: "{{ wait.trigger.event.data.reply_text }}"
+
+mode: single

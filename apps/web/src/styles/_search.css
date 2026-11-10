@@ -1,0 +1,53 @@
+/* =============================================
+ * _search.css — Search container, input, results, items
+ *
+ * Domain: Search bounded context
+ * Owns: .search-container, .search-input, .search-results, .search-item
+ * Does NOT own: modal overlays (_modal.css), command palette logic
+ * ============================================= */
+/* --- Search --- */
+/* --- Topbar / Layout chrome --- */
+.topbar {
+  @apply flex items-center justify-between px-6 py-3 bg-bg-secondary/60 border-b border-border backdrop-blur-sm sticky top-0 z-30;
+}
+
+.logo {
+  @apply flex items-center gap-2;
+}
+
+.logo-icon {
+  @apply text-2xl;
+}
+
+.logo-text {
+  @apply text-lg font-bold text-accent;
+}
+
+.nav-links {
+  @apply flex-1 py-3 list-none p-0 m-0;
+}
+
+.nav-icon {
+  @apply mr-1 text-base;
+}
+
+.page-title {
+  @apply text-lg font-semibold text-text-primary m-0;
+}
+
+.menu-toggle {
+  @apply items-center justify-center w-9 h-9 bg-transparent border border-border rounded-md text-text-secondary cursor-pointer text-lg transition-colors;
+}
+
+.menu-toggle:hover {
+  @apply bg-bg-hover text-text-primary;
+}
+/* Search results metadata + empty state
+ * Restored from pre-split global.css */
+.search-meta {
+@apply text-xs text-text-muted;
+}
+
+.search-empty {
+@apply px-4 py-3 text-sm text-text-muted text-center;
+}

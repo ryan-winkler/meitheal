@@ -1,0 +1,58 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: en-US
+
+reviews:
+  profile: "assertive"
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  high_level_summary: true
+  review_status: true
+  poem: false
+
+  path_instructions:
+    - path: "packages/**"
+      instructions: "Treat bounded-context boundaries as strict; flag cross-domain leakage."
+    - path: "apps/web/src/content/**"
+      instructions: "Validate YAML/Zod schema drift and config backward compatibility."
+    - path: "apps/web/src/**"
+      instructions: |
+        Astro-first architecture. Components must use scoped CSS or domain partials from src/styles/.
+        No external CDN imports. Self-hosted fonts only (Outfit, Geist, JetBrains Mono).
+        ClientRouter + is:inline scripts for tab switching.
+        Flag any absolute /_astro/ paths in CSS as a P0 bug (breaks HA ingress).
+    - path: "integrations/home-assistant/**"
+      instructions: |
+        Preserve Home Assistant integration behavior. All coordinator access via ConfigEntry.runtime_data
+        (never hass.data[DOMAIN]). Translated exceptions only. PARALLEL_UPDATES = 1 on platforms.
+        Flag any use of hass.data[DOMAIN] as a P0 bug.
+        @see https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist
+    - path: "meitheal-hub/**"
+      instructions: |
+        Home Assistant add-on. Must follow HA Supervisor conventions. config.yaml is the source of
+        truth for addon metadata. Dockerfile must use ARG BUILD_FROM for multi-arch builds.
+    - path: "tests/**"
+      instructions: |
+        Playwright-based E2E and governance tests. Governance tests are regression gates that run
+        on every CI push. Do not weaken assertions without explicit approval.
+
+  labeling_instructions:
+    - label: "ddd"
+      instructions: "Apply when domain boundaries or ubiquitous language are violated."
+    - label: "kcs"
+      instructions: "Apply when docs/runbook updates are missing for behavior changes."
+    - label: "iqs-regression"
+      instructions: "Apply when changes break the Home Assistant integration or its runtime metadata."
+    - label: "security"
+      instructions: "Apply when security-sensitive code paths are modified."
+
+chat:
+  auto_reply: true
+
+tone_instructions: |
+  Be direct. No fluff. Focus on correctness, security, and HA compatibility.
+  Flag any use of hass.data[DOMAIN] as a P0 bug (must use runtime_data).
+  Flag any absolute /_astro/ paths in CSS as a P0 bug (breaks HA ingress).

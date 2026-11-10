@@ -1,0 +1,882 @@
+---
+import GamificationWidget from "../components/gamification/GamificationWidget.astro"
+import StreakBadge from "../components/gamification/StreakBadge.astro"
+import UnifiedBar from "../components/layout/UnifiedBar.astro"
+import EmptyState from "../components/ui/EmptyState.astro"
+import LabelBadges from "../components/ui/LabelBadges.astro"
+import Layout from "../layouts/Layout.astro"
+import { getStats as getGamificationStats, getWeeklyData as getGamificationWeekly, getLevel, getProgressToNextLevel } from "@domains/gamification"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+import { getPriorityColor } from "../lib/priority-config"
+import { STATUS_LABELS as statusLabels } from "../lib/status-config"
+import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+let tasks: Record<string, unknown>[] = []
+let favorites: Record<string, unknown>[] = []
+let openTasks: Record<string, unknown>[] = []
+let stats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 }
+let gamificationStats = {
+  currentStreak: 0,
+  todayCompleted: 0,
+  totalCompleted: 0,
+  longestStreak: 0,
+  totalPoints: 0,
+}
+let gamificationWeekly: Array<{
+  date: string
+  completedCount: number
+  streakCount: number
+  points: number
+}> = []
+let areaMap: Record<string, { name: string; color: string }> = {
+  default: { name: "Default", color: "#6366F1" },
+}
+
+try {
+  await ensureSchema()
+  const repo = new TaskRepository(getPersistenceClient())
+  tasks = await repo.getRecentTasks(10)
+  favorites = await repo.getFavoriteTasks(5)
+  openTasks = await repo.getOpenTasks(15)
+  stats = await repo.getStatusCounts()
+  stats.overdue = await repo.getOverdueCount()
+  const areas = await repo.getAreas()
+  areaMap = Object.fromEntries(
+    Object.entries(areas).map(([key, value]) => [
+      key,
+      { name: value.name, color: value.color },
+    ]),
+  )
+} catch {
+  // Database not available - render the empty state path.
+}
+
+try {
+  gamificationStats = await getGamificationStats()
+  gamificationWeekly = await getGamificationWeekly()
+} catch {
+  // Gamification is optional - keep the dashboard available without it.
+}
+
+const gamLevel = getLevel(gamificationStats.totalPoints)
+const gamProgress = getProgressToNextLevel(gamificationStats.totalPoints)
+
+const hour = new Date().getHours()
+const greeting =
+  hour < 12
+    ? t("dashboard.greeting_morning", locale)
+    : hour < 18
+      ? t("dashboard.greeting_afternoon", locale)
+      : t("dashboard.greeting_evening", locale)
+
+function relativeTime(dueDate: string): string {
+  const due = new Date(dueDate)
+  const now = new Date()
+  const diffMs = due.getTime() - now.getTime()
+  const absDiffMs = Math.abs(diffMs)
+  const hours = Math.round(absDiffMs / (1000 * 60 * 60))
+  const days = Math.round(absDiffMs / (1000 * 60 * 60 * 24))
+  const prefix = diffMs < 0 ? "Overdue by" : "Due in"
+
+  if (hours < 1) return diffMs < 0 ? "Overdue" : "Due soon"
+  if (hours < 24) return `${prefix} ${hours} hour${hours !== 1 ? "s" : ""}`
+  return `${prefix} ${days} day${days !== 1 ? "s" : ""}`
+}
+
+const heroHint =
+  stats.overdue > 0
+    ? `${stats.overdue} overdue`
+    : stats.active > 0
+      ? `${stats.active} in progress`
+      : "Everything is steady"
+const heroHintHref =
+  stats.overdue > 0
+    ? "/tasks?status=overdue"
+    : stats.active > 0
+      ? "/tasks?status=active"
+      : null
+---
+
+<Layout title={`Meitheal — ${greeting}!`}>
+  <UnifiedBar
+    title="Dashboard"
+    titleIcon="✦"
+    tabs={DASHBOARD_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+    }))}
+    searchPlaceholder="Search Meitheal…"
+    searchScope="all"
+    barId="dashboard-bar"
+    slot="custom-header"
+  />
+
+  <div id="dashboard-shell" class="dashboard-shell">
+    <section
+      id="dashboard-overview"
+      class="dashboard-shell__section dashboard-shell__section--overview"
+      data-dashboard-section
+    >
+      <div class="dashboard-hero">
+        <div class="dashboard-hero__eyebrow">Home Assistant Native Overview</div>
+        <div class="dashboard-hero__title-row">
+          <div class="dashboard-hero__copy">
+            <h1 class="dashboard-hero__title">{greeting}!</h1>
+            <p class="dashboard-hero__description">
+              Your local-first command surface for what matters next. Review workload, keep
+              momentum visible, capture new work fast, and dive back into the queue without
+              leaving Meitheal.
+            </p>
+          </div>
+
+          <div class="dashboard-hero__chips" aria-label="Dashboard quick jumps">
+            <a href="#dashboard-capture" class="dashboard-hero__chip" data-dashboard-section-link>
+              Capture
+            </a>
+            <a href="#dashboard-open" class="dashboard-hero__chip" data-dashboard-section-link>
+              Focus Queue
+            </a>
+            <a href="#dashboard-recent" class="dashboard-hero__chip" data-dashboard-section-link>
+              Recent Work
+            </a>
+          </div>
+        </div>
+
+        <div class="dashboard-hero__status">
+          <span class="dashboard-hero__status-label">Current signal</span>
+          {heroHintHref ? (
+            <a href={heroHintHref} class="dashboard-hero__status-link">
+              {heroHint}
+            </a>
+          ) : (
+            <strong>{heroHint}</strong>
+          )}
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        {gamificationStats.currentStreak > 0 && (
+          <div class="stat-card" title="Your current daily completion streak">
+            <StreakBadge streak={gamificationStats.currentStreak} />
+            <div>
+              <span class="stat-value">{gamificationStats.todayCompleted}</span>
+              <span class="stat-label">today</span>
+            </div>
+          </div>
+        )}
+
+        <a
+          href="/tasks"
+          class="stat-card stat-card-link"
+          title="Open tasks - not yet completed"
+        >
+          <span class="stat-icon">📋</span>
+          <div>
+            <div class="stat-value" id="dashboard-stat-open-count">{stats.open}</div>
+            <div class="stat-label">Open</div>
+          </div>
+        </a>
+
+        <a
+          href="/tasks?status=active"
+          class="stat-card stat-card-link stat-card-entrance"
+          id="stat-active"
+          title="Tasks currently in progress or active"
+        >
+          <span class="stat-icon">⚡</span>
+          <div>
+            <div class="stat-value">{stats.active}</div>
+            <div class="stat-label">{t("dashboard.active", locale)}</div>
+          </div>
+        </a>
+
+        <a
+          href="/tasks?status=complete"
+          class="stat-card stat-card-link"
+          title="Tasks marked as done"
+        >
+          <span class="stat-icon">✅</span>
+          <div>
+            <div class="stat-value">{stats.completed}</div>
+            <div class="stat-label">{t("dashboard.completed", locale)}</div>
+          </div>
+        </a>
+
+        <a
+          href="/tasks?status=overdue"
+          id="stat-overdue"
+          class={`stat-card stat-card-link stat-card-entrance ${stats.overdue > 0 ? "stat-card-danger" : ""}`}
+          title="Tasks past their due date across all areas"
+        >
+          <span class="stat-icon">⏰</span>
+          <div>
+            <div
+              class="stat-value"
+              style={stats.overdue > 0 ? "color: var(--danger)" : undefined}
+            >
+              {stats.overdue}
+            </div>
+            <div class="stat-label">{t("dashboard.overdue", locale)}</div>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section id="dashboard-momentum" class="dashboard-shell__section" data-dashboard-section>
+      <div class="dashboard-section__intro">
+        <div>
+          <div class="dashboard-section__eyebrow">Momentum</div>
+          <h2 class="dashboard-section__title">Keep streaks and pinned work in view</h2>
+          <p class="dashboard-section__description">
+            This section keeps motivation and continuity visible so the dashboard still feels
+            alive even when you are jumping between Home Assistant and day planning.
+          </p>
+        </div>
+      </div>
+
+      <div class="dashboard-shell__stack">
+        <div class="card dashboard-card dashboard-card--flush">
+          <GamificationWidget
+            stats={gamificationStats}
+            weekly={gamificationWeekly}
+            level={gamLevel}
+            progressToNext={gamProgress}
+          />
+        </div>
+
+        {
+          favorites.length > 0 && (
+            <div class="card dashboard-card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Pinned Work</div>
+                  <div class="card-subtitle">
+                    {favorites.length}{" "}
+                    {favorites.length !== 1
+                      ? t("dashboard.pinned_tasks_plural", locale, {
+                          count: String(favorites.length),
+                        })
+                      : t("dashboard.pinned_tasks", locale, {
+                          count: String(favorites.length),
+                        })}
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-list">
+                {favorites.map((favorite) => {
+                  const priority = Number(favorite.priority ?? 3)
+                  const priorityColor = getPriorityColor(priority)
+                  const ticketNumber = favorite.ticket_number
+                    ? `MTH-${String(favorite.ticket_number).padStart(3, "0")}`
+                    : null
+                  const statusLabel =
+                    statusLabels[String(favorite.status)] ?? String(favorite.status)
+
+                  return (
+                    <div class="task-item cursor-pointer" data-id={String(favorite.id)}>
+                      <div class="task-title">
+                        <span
+                          class="priority-dot"
+                          style={`background: ${priorityColor}`}
+                        />
+                        {ticketNumber && (
+                          <span class="dashboard-ticket-key">{ticketNumber}</span>
+                        )}
+                        {String(favorite.title)}
+                      </div>
+                      <div class="dashboard-task-meta">
+                        <span class={`task-badge badge-${String(favorite.status)}`}>
+                          {statusLabel}
+                        </span>
+                        {favorite.due_date && (
+                          <span class="text-xs text-text-muted">
+                            {relativeTime(String(favorite.due_date))}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        }
+      </div>
+    </section>
+
+    <section id="dashboard-capture" class="dashboard-shell__section" data-dashboard-section>
+      <div class="dashboard-section__intro">
+        <div>
+          <div class="dashboard-section__eyebrow">Capture</div>
+          <h2 class="dashboard-section__title">{t("dashboard.quick_add", locale)}</h2>
+          <p class="dashboard-section__description">
+            Keep a low-friction capture lane inside the dashboard so new work can land before
+            context slips away.
+          </p>
+        </div>
+      </div>
+
+      <div class="card dashboard-card dashboard-card--capture">
+        <div class="card-header dashboard-card__header">
+          <div>
+            <div class="card-title">{t("dashboard.quick_add", locale)}</div>
+            <div class="card-subtitle">{t("dashboard.quick_add_subtitle", locale)}</div>
+          </div>
+        </div>
+
+        <form id="quick-add-form" class="dashboard-quick-add-form">
+          <input
+            type="text"
+            class="form-input dashboard-quick-add-input"
+            id="quick-title"
+            placeholder={t("dashboard.quick_add_placeholder", locale)}
+            autocomplete="off"
+            autofocus
+            required
+            minlength="2"
+            maxlength="200"
+          />
+          <button type="submit" class="btn btn-primary">
+            {t("dashboard.add", locale)}
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboard-open" class="dashboard-shell__section" data-dashboard-section>
+      <div class="dashboard-section__intro">
+        <div>
+          <div class="dashboard-section__eyebrow">Focus Queue</div>
+          <h2 class="dashboard-section__title">Open work by person or ownership</h2>
+          <p class="dashboard-section__description">
+            Filter the queue when you need to review your own work, unblock someone else, or
+            jump into the Kanban board with the same ownership filter applied.
+          </p>
+        </div>
+      </div>
+
+      <div class="card dashboard-card" id="my-open-tasks-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title" id="open-tasks-title">Focus Queue</div>
+            <div class="card-subtitle" id="my-open-count">
+              {openTasks.length} open task{openTasks.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+
+          <div class="dashboard-card__actions">
+            <select
+              class="form-select"
+              id="my-open-user-filter"
+              aria-label="Filter open work by assignee"
+              style="font-size: 12px; padding: 4px 8px; min-width: 120px;"
+            >
+              <option value="all">All users</option>
+            </select>
+            <a href="/kanban" class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
+              Kanban →
+            </a>
+          </div>
+        </div>
+
+        <div class="task-list" id="my-open-list">
+          {
+            openTasks.length === 0 ? (
+              <div class="dashboard-empty-note">
+                Everything is caught up here - no open tasks at the moment.
+              </div>
+            ) : (
+              openTasks.map((task) => {
+                const priority = Number(task.priority ?? 3)
+                const priorityColor = getPriorityColor(priority)
+                const ticketNumber = task.ticket_number
+                  ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
+                  : null
+                const statusLabel =
+                  statusLabels[String(task.status)] ?? String(task.status)
+
+                return (
+                  <div
+                    class="task-item cursor-pointer"
+                    data-id={String(task.id)}
+                    data-assigned={String(task.assigned_to ?? "")}
+                  >
+                    <div class="task-title">
+                      <span class="priority-dot" style={`background: ${priorityColor}`} />
+                      {ticketNumber && (
+                        <span class="dashboard-ticket-key">{ticketNumber}</span>
+                      )}
+                      {String(task.title)}
+                    </div>
+                    <div class="dashboard-task-meta">
+                      <span class={`task-badge badge-${String(task.status)}`}>
+                        {statusLabel}
+                      </span>
+                      {task.due_date && (
+                        <span class="text-xs text-text-muted">
+                          {relativeTime(String(task.due_date))}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )
+          }
+        </div>
+      </div>
+    </section>
+
+    <section id="dashboard-recent" class="dashboard-shell__section" data-dashboard-section>
+      <div class="dashboard-section__intro">
+        <div>
+          <div class="dashboard-section__eyebrow">Recent Work</div>
+          <h2 class="dashboard-section__title">{t("dashboard.recent_tasks", locale)}</h2>
+          <p class="dashboard-section__description">
+            Recently touched work stays close at hand so the dashboard feels like a reliable
+            re-entry surface, not just a stat board.
+          </p>
+        </div>
+        <div class="dashboard-section__actions">
+          <a href="/tasks" class="btn btn-ghost">{t("dashboard.view_all", locale)}</a>
+        </div>
+      </div>
+
+      <div class="card dashboard-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">{t("dashboard.recent_tasks", locale)}</div>
+            <div class="card-subtitle">
+              {
+                t("dashboard.tasks_of_total", locale, {
+                  count: String(tasks.length),
+                  total: String(stats.total),
+                })
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="bento-grid" id="task-list">
+          {
+            tasks.length === 0 ? (
+              <div class="bento-empty-state">
+                <EmptyState
+                  title={t("dashboard.no_tasks_yet", locale)}
+                  description={t("dashboard.create_first_task", locale)}
+                >
+                  <span slot="icon" style="font-size: 48px; line-height: 1;">✦</span>
+                </EmptyState>
+              </div>
+            ) : (
+              tasks.map((task) => {
+                const priority = Number(task.priority ?? 3)
+                const isDone = String(task.status) === "complete"
+                const taskColor = task.color
+                  ? String(task.color)
+                  : priority === 1
+                    ? "#ef4444"
+                    : priority === 2
+                      ? "#f97316"
+                      : priority === 4
+                        ? "#22c55e"
+                        : priority === 5
+                          ? "#6b7280"
+                          : "#eab308"
+                const areaId = String(task.area_id ?? "default")
+                const area = areaMap[areaId] ?? {
+                  name: "Default",
+                  color: "#6366F1",
+                }
+                const ticketNumber = task.ticket_number
+                  ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
+                  : null
+
+                return (
+                  <div
+                    class={`bento-card ${isDone ? "bento-card-done" : ""}`}
+                    data-id={String(task.id)}
+                    data-area={areaId}
+                    style={`border-left: 3px solid ${taskColor};`}
+                  >
+                    <div class="bento-card-body">
+                      <div class="bento-card-header">
+                        <div class={`bento-card-title ${isDone ? "done" : ""}`}>
+                          {ticketNumber && (
+                            <span class="bento-ticket-key">{ticketNumber}</span>
+                          )}
+                          {String(task.title)}
+                        </div>
+                      </div>
+
+                      <div class="bento-card-footer">
+                        <span
+                          class={`task-badge badge-${isDone ? "complete" : String(task.status)}`}
+                        >
+                          {statusLabels[String(task.status)] ?? String(task.status)}
+                        </span>
+                        <span
+                          class="bento-area-badge"
+                          style={`background: ${area.color}20; color: ${area.color}; border-color: ${area.color}40;`}
+                        >
+                          {area.name}
+                        </span>
+                        {task.due_date && (
+                          <span class="bento-card-due">
+                            {relativeTime(String(task.due_date))}
+                          </span>
+                        )}
+                      </div>
+
+                      {task.labels && String(task.labels) !== "[]" && (
+                        <LabelBadges labels={String(task.labels)} compact max={2} />
+                      )}
+                    </div>
+
+                    <div class="bento-card-actions">
+                      <button
+                        class="card-action-btn card-edit-btn"
+                        data-id={String(task.id)}
+                        title="Edit task"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        class="card-action-btn card-ai-btn"
+                        data-title={String(task.title)}
+                        data-desc={task.description ? String(task.description) : ""}
+                        data-status={String(task.status ?? "pending")}
+                        data-priority={String(priority)}
+                        title="Ask AI"
+                      >
+                        🤖
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )
+          }
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <button
+    id="dashboard-go-top"
+    class="dashboard-go-top"
+    type="button"
+    aria-label="Scroll to top"
+    title="Back to top"
+    hidden
+  >
+    ↑
+  </button>
+
+  <div
+    id="toast-container"
+    class="toast-container"
+    aria-live="polite"
+    role="status"
+    data-no-scroll-lock="true"
+  />
+
+  <script>
+    import "@lib/dashboard-controller"
+  </script>
+</Layout>
+
+<style>
+  .dashboard-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding: 24px clamp(16px, 2vw, 24px) 52px;
+  }
+
+  .dashboard-shell__section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 20px);
+  }
+
+  .dashboard-shell__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .dashboard-hero {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(22px, 4vw, 32px);
+    border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 92%, var(--accent) 8%), var(--bg-card));
+    box-shadow: 0 18px 42px rgba(7, 11, 24, 0.16);
+  }
+
+  .dashboard-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto -64px -64px auto;
+    width: 180px;
+    height: 180px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    filter: blur(18px);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  .dashboard-hero__eyebrow,
+  .dashboard-section__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
+
+  .dashboard-hero__title-row,
+  .dashboard-section__intro {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-hero__copy {
+    max-width: 60ch;
+  }
+
+  .dashboard-hero__title {
+    margin: 10px 0 0;
+    font-size: clamp(2rem, 4vw, 2.8rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+  }
+
+  .dashboard-hero__description,
+  .dashboard-section__description {
+    margin: 10px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .dashboard-hero__chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .dashboard-hero__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .dashboard-hero__chip:hover,
+  .dashboard-hero__chip:focus-visible {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    color: var(--accent);
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  .dashboard-hero__status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+    color: var(--text-secondary);
+  }
+
+  .dashboard-hero__status-label {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .dashboard-hero__status-link {
+    color: var(--text-primary);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  .dashboard-hero__status-link:hover,
+  .dashboard-hero__status-link:focus-visible {
+    color: var(--accent);
+    outline: none;
+  }
+
+  .dashboard-section__title {
+    margin: 4px 0 0;
+    font-size: 1.35rem;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+  }
+
+  .dashboard-section__actions,
+  .dashboard-card__actions,
+  .dashboard-task-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-card {
+    margin: 0;
+  }
+
+  .dashboard-card--flush {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .dashboard-card--capture {
+    padding: 20px;
+  }
+
+  .dashboard-card__header {
+    margin-bottom: 14px;
+  }
+
+  .dashboard-quick-add-form {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .dashboard-quick-add-input {
+    flex: 1 1 auto;
+  }
+
+  .dashboard-ticket-key {
+    margin-right: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .dashboard-empty-note {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .dashboard-go-top {
+    position: fixed;
+    right: 24px;
+    bottom: var(--floating-action-bottom, calc(24px + env(safe-area-inset-bottom, 0px)));
+    width: 44px;
+    height: 44px;
+    border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+    color: var(--text-primary);
+    box-shadow: 0 16px 40px rgba(7, 11, 24, 0.24);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 160ms ease, transform 160ms ease;
+    z-index: 40;
+  }
+
+  .dashboard-go-top.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .dashboard-go-top:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+
+  .dashboard-section--flash {
+    animation: dashboard-section-flash 1s ease;
+  }
+
+  @keyframes dashboard-section-flash {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 16px transparent;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .dashboard-shell {
+      gap: 24px;
+      padding: 20px 16px 48px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .dashboard-quick-add-form {
+      flex-direction: column;
+    }
+
+    .dashboard-card__actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .dashboard-hero {
+      border-radius: 20px;
+    }
+
+    .dashboard-go-top {
+      right: 16px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard-hero__chip,
+    .dashboard-go-top,
+    .dashboard-section--flash {
+      animation: none;
+      transition: none;
+    }
+  }
+</style>

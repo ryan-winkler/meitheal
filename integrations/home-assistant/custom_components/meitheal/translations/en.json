@@ -1,0 +1,196 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Meitheal",
+        "description": "Enter the address of your Meitheal server and a scoped Meitheal API token.",
+        "data": {
+          "host": "Hostname",
+          "port": "Port",
+          "ssl": "Use HTTPS",
+          "api_token": "Meitheal API token"
+        },
+        "data_description": {
+          "host": "The server hostname or IP address. Enter only the hostname or address.",
+          "port": "The port where Meitheal is reachable. A Supervisor App uses port 3000.",
+          "ssl": "Turn this on for a manual connection. The internal network of an installed Supervisor App uses HTTP.",
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+        }
+      },
+      "hassio_confirm": {
+        "title": "Connect to the Meitheal App",
+        "description": "Home Assistant found the Meitheal App at {host}:{port}. Enter a scoped Meitheal API token.",
+        "data": {
+          "api_token": "Meitheal API token"
+        },
+        "data_description": {
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Meitheal",
+        "description": "Update the address or add a new Meitheal API token. Leave the token field blank to keep the existing credential at the same address.",
+        "data": {
+          "host": "Hostname",
+          "port": "Port",
+          "ssl": "Use HTTPS",
+          "api_token": "Meitheal API token"
+        },
+        "data_description": {
+          "host": "The server hostname or IP address. Enter only the hostname or address.",
+          "port": "The port where Meitheal is reachable. A Supervisor App uses port 3000.",
+          "ssl": "Turn this on for a manual connection. The internal network of an installed Supervisor App uses HTTP.",
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect Meitheal",
+        "description": "Meitheal denied access to tasks. Create a Meitheal API token with task permissions and enter it below. Use Reconfigure if you also need to change the address.",
+        "data": {
+          "api_token": "Meitheal API token"
+        },
+        "data_description": {
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Meitheal is already configured.",
+      "cannot_connect": "Home Assistant received an invalid App address.",
+      "reconfigure_successful": "Meitheal connection settings updated.",
+      "reauth_successful": "Meitheal API token updated.",
+      "configuration_changed": "The connection settings changed. Open the form again to use the current settings."
+    },
+    "error": {
+      "cannot_connect": "Cannot read tasks from Meitheal. Check the App, address and TLS certificate.",
+      "invalid_auth": "Enter a valid Meitheal API token with permission to read tasks.",
+      "invalid_host": "Enter a hostname or IP address and a port from 1 to 65535.",
+      "insecure_connection": "Use HTTPS or verify this address is the installed Meitheal App on port 3000 in Supervisor.",
+      "token_required_for_origin": "Enter a token issued by the Meitheal instance at this address."
+    }
+  },
+  "entity": {
+    "todo": {
+      "task_list": {
+        "name": "Tasks"
+      }
+    },
+    "sensor": {
+      "active_tasks": {
+        "name": "Active Tasks"
+      },
+      "overdue_tasks": {
+        "name": "Overdue Tasks"
+      },
+      "total_tasks": {
+        "name": "Total Tasks"
+      },
+      "due_today": {
+        "name": "Due Today"
+      },
+      "completed_today": {
+        "name": "Completed Today"
+      },
+      "streak": {
+        "name": "Streak"
+      }
+    },
+    "binary_sensor": {
+      "all_clear": {
+        "name": "All Clear"
+      }
+    }
+  },
+  "services": {
+    "create_task": {
+      "name": "Create Task",
+      "description": "Create a new task in Meitheal.",
+      "fields": {
+        "title": {
+          "name": "Title",
+          "description": "The title of the task to create"
+        },
+        "description": {
+          "name": "Description",
+          "description": "Optional description or notes for the task"
+        }
+      }
+    },
+    "complete_task": {
+      "name": "Complete Task",
+      "description": "Mark a task as done by ID or title.",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "The task ID to complete (use either this or title)"
+        },
+        "title": {
+          "name": "Title",
+          "description": "Find and complete a task by title (use either this or task_id)"
+        }
+      }
+    },
+    "sync_todo": {
+      "name": "Sync Tasks",
+      "description": "Trigger a manual refresh of task data from Meitheal."
+    },
+    "search_tasks": {
+      "name": "Search Tasks",
+      "description": "Search tasks by keyword. Returns matching tasks from Meitheal.",
+      "fields": {
+        "query": {
+          "name": "Search Query",
+          "description": "Keyword to search in task titles and descriptions"
+        },
+        "status": {
+          "name": "Status Filter",
+          "description": "Filter by task status (backlog, todo, in_progress, or done)"
+        }
+      }
+    },
+    "get_overdue_tasks": {
+      "name": "Get Overdue Tasks",
+      "description": "Get a list of all tasks that are past their due date and not yet completed."
+    },
+    "notify_overdue": {
+      "name": "Notify Overdue",
+      "description": "Push a notification about overdue tasks to HA persistent notifications."
+    }
+  },
+  "exceptions": {
+    "task_not_found": {
+      "message": "Task not found. Make sure the task ID or title is correct."
+    },
+    "addon_unavailable": {
+      "message": "Cannot reach the Meitheal addon. Make sure it is running."
+    },
+    "create_failed": {
+      "message": "Failed to create task: {error}"
+    },
+    "complete_failed": {
+      "message": "Failed to complete task: {error}"
+    },
+    "update_failed": {
+      "message": "Failed to update task: {error}"
+    },
+    "delete_failed": {
+      "message": "Failed to delete task: {error}"
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "task_created": "Task was created in Meitheal",
+      "task_completed": "Task was completed in Meitheal",
+      "task_updated": "Task was updated in Meitheal",
+      "task_deleted": "Task was deleted from Meitheal",
+      "task_overdue": "Task became overdue in Meitheal",
+      "board_updated": "Meitheal board data changed"
+    }
+  },
+  "issues": {
+    "addon_unreachable": {
+      "title": "Meitheal addon is unreachable",
+      "description": "Cannot connect to the Meitheal addon: {error}\n\nPlease check:\n1. The Meitheal addon is running (Settings → Add-ons → Meitheal)\n2. The hostname and port are correct (Settings → Integrations → Meitheal → Configure)\n3. The addon container is healthy (`ha addons info local_meitheal`)"
+    }
+  }
+}

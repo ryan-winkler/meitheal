@@ -1,0 +1,260 @@
+---
+/**
+ * TasksTimelineView — Native SVG GANTT chart view.
+ *
+ * Renders an interactive SVG-based GANTT chart with zero external dependencies.
+ * Fully Astro-native and HA-native, using Meitheal CSS variables for theming.
+ *
+ * @domain Task Visualization
+ * @phase 16.2 — Native GANTT rebuild (persona loop iteration 02)
+ *
+ * Architecture:
+ * - SSR: Fetch task data, serialize as JSON blob
+ * - Client: Native SVG renderer initializes lazily on first view display
+ * - Events: drag/resize → PATCH /api/tasks/{id}
+ * - Cleanup: AbortSignal-based lifecycle via pageLifecycle
+ */
+import SignalBar from "../layout/SignalBar.astro";
+import FilterToolbar from "../ui/FilterToolbar.astro"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+import { serializeForScript } from "@lib/safe-html"
+
+interface TaskRecord {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  due_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  color: string | null;
+  task_type: string | null;
+  task_kind: string | null;
+  progress: number | null;
+  ticket_number: number | null;
+  parent_id: string | null;
+  blocked_by: string | null;
+  effort_minutes: number | null;
+  labels: string | null;
+  area_id: string | null;
+  [key: string]: any;
+}
+
+let tasks: TaskRecord[] = [];
+let areaMap: Record<string, string> = {};
+let projectMap: Record<string, string> = {};
+let fetchError = false;
+try {
+  await ensureSchema();
+  const client = getPersistenceClient();
+  const repo = new TaskRepository(client);
+  tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
+  // Load area/project names for grouping display (non-critical — graceful fallback)
+  try {
+    const areas = await repo.getAreas();
+    for (const [id, info] of Object.entries(areas)) {
+      areaMap[id] = info.name;
+    }
+    const hierarchyRepo = new HierarchyRepository(client);
+    const projects = await hierarchyRepo.findAllProjects();
+    for (const p of projects) {
+      projectMap[p.id] = p.title;
+    }
+  } catch { /* Area/project lookup failure is non-fatal — grouping will show IDs */ }
+} catch (e) {
+  fetchError = true;
+}
+
+const datedTasks = tasks.filter(t => t.start_date || t.due_date);
+const taskCount = datedTasks.length;
+const totalTasks = tasks.length;
+---
+
+<div id="tasks-view-timeline" class="tasks-view-container" data-task-view="timeline">
+  <FilterToolbar view="timeline" showSearch showSortBy={false} />
+
+  <!-- Signal bar (task count only) -->
+  <SignalBar>
+    {taskCount > 0 ? (
+      <span><strong>{taskCount}</strong> of {totalTasks} tasks on timeline</span>
+    ) : (
+      <span>Timeline view — add dates to tasks to see them here</span>
+    )}
+  </SignalBar>
+
+  <!-- ClickUp-style toolbar row above the sidebar/chart area -->
+  <div class="timeline-controls-bar" id="timeline-controls-bar">
+    <!-- Sidebar show/hide toggle -->
+    <button id="timeline-sidebar-toggle" class="timeline-ctrl-btn" title="Show/hide sidebar" aria-label="Toggle sidebar">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.2"/>
+        <rect x="8" y="1" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
+      </svg>
+    </button>
+
+    <button id="timeline-scroll-today" class="timeline-ctrl-btn" title="Scroll to today" aria-label="Scroll to today">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="2" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="7" cy="9" r="1.5" fill="currentColor"/>
+      </svg>
+      Today
+    </button>
+
+    <!-- Zoom dropdown with "Time period" title -->
+    <details class="timeline-zoom-dropdown" id="timeline-zoom-dropdown">
+      <summary class="timeline-ctrl-btn timeline-zoom-trigger" id="timeline-zoom-label">
+        Week
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+          <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </summary>
+      <div class="timeline-zoom-panel">
+        <div class="timeline-zoom-panel-title">Time period</div>
+        <button type="button" class="timeline-zoom-option" data-zoom="Day">Day</button>
+        <button type="button" class="timeline-zoom-option timeline-zoom-option--active" data-zoom="Week">
+          Week
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3 3 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="timeline-zoom-option" data-zoom="Month">Month</button>
+      </div>
+    </details>
+
+    <!-- Export as PNG -->
+    <button id="timeline-export-btn" class="timeline-ctrl-btn" title="Export as PNG" aria-label="Export timeline as PNG">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M7 1v8M7 9L4 6M7 9l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Export
+    </button>
+
+    <!-- Legend -->
+    <details class="timeline-legend">
+      <summary class="timeline-ctrl-btn" title="Colour legend">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="4" cy="7" r="3" fill="#EF4444"/>
+          <circle cx="10" cy="7" r="3" fill="#3B82F6"/>
+        </svg>
+        Legend
+      </summary>
+      <div class="timeline-legend-panel">
+        <div class="legend-section">
+          <div class="legend-title">Priority</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#EF4444"></span> Critical (P1)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#F97316"></span> High (P2)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#3B82F6"></span> Medium (P3)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#9CA3AF"></span> Low (P4)</div>
+        </div>
+        <div class="legend-section">
+          <div class="legend-title">Kind</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#3B82F6"></span> Standard Task</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#10B981"></span> Routine</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#F59E0B"></span> Shopping Item</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#8B5CF6"></span> Calendar Event</div>
+        </div>
+        <div class="legend-section">
+          <div class="legend-title">State</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#EF4444"></span> Overdue (red bar)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#9CA3AF;opacity:0.4"></span> Completed</div>
+          <div class="legend-item"><span style="display:inline-block;width:2px;height:10px;background:#EF4444;border-radius:1px;margin-right:8px;vertical-align:middle"></span> Today</div>
+        </div>
+        <div class="legend-section">
+          <div class="legend-title">Hierarchy</div>
+          <div class="legend-item"><span style="font-size:10px;margin-right:6px">▸</span> Pillar (the why)</div>
+          <div class="legend-item"><span style="display:inline-block;width:12px;margin-right:6px;text-align:center;font-size:10px">▸</span> Project (initiative)</div>
+          <div class="legend-item"><span style="display:inline-block;width:20px;margin-right:4px"></span> Task (action item)</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- SSR data blob for client-side GANTT initialization -->
+  <script type="application/json" id="timeline-data" set:html={serializeForScript(tasks)} />
+  <script type="application/json" id="timeline-areas" set:html={serializeForScript(areaMap)} />
+  <script type="application/json" id="timeline-projects" set:html={serializeForScript(projectMap)} />
+
+  <!-- Loading skeleton -->
+  <div id="timeline-skeleton" class="timeline-skeleton">
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:60%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:80%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:45%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:70%"></div></div>
+    <div class="skel-row"><div class="skel-label"></div><div class="skel-bar" style="width:55%"></div></div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="timeline-empty" class="timeline-empty-state" style="display:none">
+    <div class="empty-icon">📊</div>
+    <div class="empty-title">No tasks on the timeline yet</div>
+    <div class="empty-desc">
+      Add <strong>start dates</strong> and <strong>due dates</strong> to your tasks
+      to see them here as interactive GANTT bars. You can drag to reschedule and
+      resize to adjust duration.
+    </div>
+  </div>
+
+  <!-- GANTT chart container (native SVG rendered here) -->
+  <div
+    id="gantt-chart"
+    class="gantt-chart-wrapper"
+    style="display:none"
+    role="grid"
+    aria-label="Task timeline Gantt chart"
+    aria-rowcount={String(taskCount)}
+    aria-colcount="1"
+  ></div>
+
+  <!-- Error state -->
+  {fetchError && (
+    <div class="timeline-empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load tasks</div>
+      <div class="empty-desc">
+        The database may not be available. Try reloading the page.
+      </div>
+    </div>
+  )}
+</div>
+
+<style is:global>
+  @import "../../styles/timeline-gantt.css";
+  @import "../../styles/inline-date-picker.css";
+  @import "../../styles/field-picker-panel.css";
+</style>
+
+<style>
+  #tasks-view-timeline :global(.filter-toolbar--timeline) {
+    flex-wrap: wrap !important;
+    margin-bottom: 12px;
+  }
+  #tasks-view-timeline :global(.filter-toolbar--timeline .form-select) {
+    width: auto;
+  }
+
+  .gantt-chart-wrapper {
+    min-height: 300px;
+    max-height: calc(100vh - 180px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: auto;
+  }
+</style>
+
+<script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { initTimelineController } from "../../lib/timeline-controller"
+
+  pageLifecycle.onPageLoad((signal) => {
+    if (document.getElementById("tasks-view-timeline")) initTimelineController(signal)
+  })
+</script>

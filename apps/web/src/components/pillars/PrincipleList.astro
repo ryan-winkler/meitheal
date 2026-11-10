@@ -1,0 +1,152 @@
+---
+/**
+ * PrincipleList — Displays Principles/Non-Negotiables for a Pillar
+ *
+ * Shows each Principle with a shield badge for Non-Negotiables.
+ * Supports inline add/edit via client-side controller.
+ *
+ * @domain pillars
+ * @kcs Non-Negotiables are injected into AI prompts — shield icon makes this visible
+ */
+interface PrincipleRow {
+  id: string
+  statement: string
+  isNonNegotiable: boolean
+  position: number
+}
+
+interface Props {
+  principles: PrincipleRow[]
+  pillarId: string
+  accentColor?: string
+}
+
+const { principles, pillarId, accentColor = "var(--accent)" } = Astro.props
+---
+
+<div class="principle-list" data-pillar-id={pillarId} style={`--pillar-accent: ${accentColor}`}>
+  <div class="principle-list__header">
+    <h4 class="principle-list__title">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Principles
+    </h4>
+    <button type="button" class="principle-list__add-btn" data-action="add-principle" aria-label="Add Principle">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  {principles.length === 0 ? (
+    <p class="principle-list__empty">
+      No principles yet. Add boundaries that define how you live this Pillar.
+    </p>
+  ) : (
+    <ul class="principle-list__items">
+      {principles.map((p) => (
+        <li class="principle-list__item" data-principle-id={p.id}>
+          <div class="principle-list__statement">
+            {p.isNonNegotiable && (
+              <span class="principle-list__nn-badge" title="Non-Negotiable — AI enforced">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </span>
+            )}
+            <span>{p.statement}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+</div>
+
+<style>
+.principle-list {
+  --pillar-accent: var(--accent);
+}
+
+.principle-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.principle-list__title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.principle-list__add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.principle-list__add-btn:hover {
+  border-color: var(--pillar-accent);
+  color: var(--pillar-accent);
+  background: color-mix(in srgb, var(--pillar-accent) 8%, transparent);
+}
+
+.principle-list__empty {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.principle-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.principle-list__item {
+  padding: 0.5rem 0.625rem;
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 150ms ease;
+}
+
+.principle-list__item:hover {
+  border-color: color-mix(in srgb, var(--pillar-accent) 50%, var(--border));
+}
+
+.principle-list__statement {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.principle-list__nn-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--pillar-accent);
+  margin-top: 0.125rem;
+}
+</style>

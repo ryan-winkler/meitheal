@@ -1,0 +1,8 @@
+auth:
+  passkey:
+    enabled: true
+    rp_id: "meitheal.local"
+  ingress:
+    required_headers:
+      - x-ingress-path
+      - hassio_token

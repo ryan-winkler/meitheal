@@ -1,0 +1,126 @@
+name: Build App images and publish stable discovery
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+    secrets:
+      ADDON_REPO_TOKEN:
+        required: false
+
+concurrency:
+  group: app-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-ref:
+    if: github.repository == 'ryan-winkler/meitheal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: release
+        name: Verify source and version
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANNEL" == stable ]]; then
+            git merge-base --is-ancestor HEAD origin/main
+            node scripts/check-version-sync.mjs
+          fi
+          node scripts/app-release.mjs prepare "$CHANNEL" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  amd64:
+    needs: release-ref
+    uses: ./.github/workflows/build-app-image.yml
+    with:
+      architecture: amd64
+      channel: ${{ inputs.channel }}
+      version: ${{ needs.release-ref.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+
+  aarch64:
+    needs: release-ref
+    uses: ./.github/workflows/build-app-image.yml
+    with:
+      architecture: aarch64
+      channel: ${{ inputs.channel }}
+      version: ${{ needs.release-ref.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+
+  promote:
+    if: inputs.channel == 'stable'
+    needs: [release-ref, amd64, aarch64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify both published images without registry credentials
+        env:
+          AMD64_IMAGE: ${{ needs.amd64.outputs.image }}
+          AMD64_DIGEST: ${{ needs.amd64.outputs.digest }}
+          AARCH64_IMAGE: ${{ needs.aarch64.outputs.image }}
+          AARCH64_DIGEST: ${{ needs.aarch64.outputs.digest }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG
+          DOCKER_CONFIG="$(mktemp -d)"
+          verify() {
+            local image="$1" digest="$2" platform="$3"
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            docker pull --platform "$platform" "$image"
+            docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" |
+              grep -Fx "${image%:*}@$digest"
+          }
+          verify "$AMD64_IMAGE" "$AMD64_DIGEST" linux/amd64
+          verify "$AARCH64_IMAGE" "$AARCH64_DIGEST" linux/arm64
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ryan-winkler/meitheal-ha-addon
+          ref: main
+          path: app-repository
+          token: ${{ secrets.ADDON_REPO_TOKEN }}
+      - name: Promote the verified stable release
+        env:
+          VERSION: ${{ needs.release-ref.outputs.version }}
+          AMD64_DIGEST: ${{ needs.amd64.outputs.digest }}
+          AARCH64_DIGEST: ${{ needs.aarch64.outputs.digest }}
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          git -C app-repository config user.name "github-actions[bot]"
+          git -C app-repository config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git -C app-repository fetch origin main
+            git -C app-repository reset --hard FETCH_HEAD
+            node scripts/app-release.mjs stage stable "$VERSION" app-repository
+            git -C app-repository add -A
+            if git -C app-repository diff --cached --quiet; then
+              exit 0
+            fi
+            git -C app-repository commit -m "Publish Meitheal stable $VERSION" \
+              -m "Source: $revision" -m "amd64: $AMD64_DIGEST" -m "aarch64: $AARCH64_DIGEST"
+            if git -C app-repository push origin HEAD:main; then
+              exit 0
+            fi
+          done
+          exit 1

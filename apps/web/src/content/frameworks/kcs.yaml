@@ -1,0 +1,32 @@
+name: KCS
+version: 1.0.0
+archetype: workflow
+badge_thresholds:
+  - min: 4
+    label: "Improved"
+    color: "success"
+  - min: 3
+    label: "Reused"
+    color: "accent"
+  - min: 2
+    label: "Structured"
+    color: "bg-secondary"
+  - min: 1
+    label: "Captured"
+    color: "bg-tertiary"
+fields:
+  - key: kcs_state
+    label: Knowledge State
+    type: select
+    ui_type: radio
+    weight: 1
+    options:
+      - value: 1
+        label: "Capture (Drafting)"
+      - value: 2
+        label: "Structure (Formatting)"
+      - value: 3
+        label: "Reuse (Published)"
+      - value: 4
+        label: "Improve (Iterating)"
+    help_text: "Current state of the documentation artifact in the Knowledge-Centered Support loop."

@@ -1,0 +1,247 @@
+/* =============================================
+ * _feedback.css — Toast, skeleton, empty states, loading, error boundary
+ *
+ * Domain: Feedback bounded context
+ * Owns: toast, skeleton loading, empty states, error boundary, stagger animations
+ * Does NOT own: modals (_modal.css), buttons (_buttons.css), settings tabs (_layout.css)
+ * ============================================= */
+/* CSP audit: No external url() references. All animations are CSS-only — safe for strict CSP. */
+/* Skeleton loading pulse — gradient sweep for placeholder content */
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-pulse {
+  background: linear-gradient(90deg,
+      rgba(107, 114, 128, 0.08) 25%,
+      rgba(107, 114, 128, 0.18) 50%,
+      rgba(107, 114, 128, 0.08) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: var(--radius-xs);
+  color: transparent !important;
+}
+
+.skeleton-pulse * {
+  visibility: hidden;
+}
+
+/* Skeleton fade — opacity pulse for skeleton rows/cards */
+@keyframes skeleton-fade {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.skeleton-row {
+  @apply rounded-lg bg-bg-card/60 border border-border/30;
+  height: 48px;
+  animation: skeleton-fade 1.5s ease-in-out infinite;
+}
+
+.skeleton-row:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.skeleton-row:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.skeleton-row:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+.skeleton-card {
+  @apply rounded-lg bg-bg-card/40 border border-border/20;
+  height: 80px;
+  animation: skeleton-fade 1.5s ease-in-out infinite;
+}
+  .n8n-event {
+    @apply flex items-center justify-between py-2 px-3 bg-bg-secondary/50 rounded-md text-sm;
+  }
+
+  /* Empty state variants */
+  .empty-icon {
+    @apply text-5xl mb-4 opacity-30;
+  }
+
+
+/* Error boundary */
+.error-boundary {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  margin: 16px 0;
+}
+
+.error-boundary h3 {
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+
+.error-boundary .btn {
+  margin-top: 12px;
+}
+
+/* Toast notifications — restored from pre-split global.css */
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 300;
+  display: flex;
+  flex-direction: column-reverse; /* Newest toasts appear at the bottom */
+  gap: 0.5rem;
+  pointer-events: none;
+    /* Container is transparent to touches — fixes mobile blocking */
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-inline-start-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+    /* Individual toasts remain tappable */
+}
+
+.toast span {
+  flex: 1;
+}
+
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  flex-shrink: 0;
+}
+
+.toast-dismiss:hover {
+  background: var(--bg-hover);
+}
+/* Toast types */
+.toast.success {
+  border-inline-start-color: var(--success);
+}
+
+.toast.error {
+  border-inline-start-color: var(--danger);
+}
+
+.toast.warning {
+  border-inline-start-color: var(--warning);
+}
+
+/* UX-01/02: Undo / Retry action button inside toasts */
+.toast-undo {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.toast-undo:hover {
+  background: var(--bg-hover);
+}
+
+
+/* B5: Kanban column skeleton placeholder */
+.skeleton-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  min-height: 120px;
+}
+
+.skeleton-cell {
+  height: 16px;
+  border-radius: var(--radius-xs);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg,
+      rgba(107, 114, 128, 0.08) 25%,
+      rgba(107, 114, 128, 0.18) 50%,
+      rgba(107, 114, 128, 0.08) 75%);
+  background-size: 200% 100%;
+}
+
+/* B6: Page-level fade-in for Astro ViewTransitions */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.main-content {
+  animation: page-fade-in 0.3s ease-out;
+}
+
+
+
+/* B9: Calendar today cell pulse */
+@keyframes today-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+}
+
+.cal-day.today {
+  animation: today-pulse 2s ease-in-out 1;
+  border-color: var(--accent);
+}
+
+.cal-day:hover {
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}

@@ -1,0 +1,628 @@
+---
+
+import SignalBar from "../layout/SignalBar.astro";
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store";
+import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { STATUS } from "../../lib/status-config";
+import { CALENDAR_SECTIONS } from "../../lib/calendar-registry";
+
+const { weekStart = "monday" } = Astro.locals;
+
+// Get current month from query param or default to today
+const url = new URL(Astro.request.url);
+const yearParam = url.searchParams.get("year");
+const monthParam = url.searchParams.get("month");
+
+const now = new Date();
+const year = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
+const month = monthParam ? parseInt(monthParam, 10) : now.getMonth(); // 0-indexed
+
+const firstDay = new Date(year, month, 1);
+const lastDay = new Date(year, month + 1, 0);
+
+let startDayOfWeek = firstDay.getDay(); // 0=Sun
+let weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+let isWeekendFn: (dow: number) => boolean = (dow: number) =>
+  dow === 0 || dow === 6;
+
+if (weekStart === "monday") {
+  startDayOfWeek = (startDayOfWeek + 6) % 7;
+  weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  isWeekendFn = (dow: number) => dow === 5 || dow === 6;
+} else if (weekStart === "saturday") {
+  startDayOfWeek = (startDayOfWeek + 1) % 7;
+  weekLabels = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+  isWeekendFn = (dow: number) => dow === 0 || dow === 1;
+}
+
+const daysInMonth = lastDay.getDate();
+
+const monthName = firstDay.toLocaleDateString("en-US", {
+  month: "long",
+  year: "numeric",
+});
+
+// Prev/next month links
+const prevMonth = month === 0 ? 11 : month - 1;
+const prevYear = month === 0 ? year - 1 : year;
+const nextMonth = month === 11 ? 0 : month + 1;
+const nextYear = month === 11 ? year + 1 : year;
+
+// Query task counts per day for this month
+const tasksByDay: Record<
+  string,
+  { count: number; colors: string[]; haEvents: number }
+> = {};
+let monthTotal = 0;
+let monthHAEvents = 0;
+
+try {
+  await ensureSchema();
+  const repo = new TaskRepository(getPersistenceClient());
+  const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+
+  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd);
+  for (const [dateStr, info] of Object.entries(calendarData)) {
+    tasksByDay[dateStr] = {
+      count: info.count,
+      colors: info.colors,
+      haEvents: 0,
+    };
+    monthTotal += info.count;
+  }
+
+  // Also query HA-synced event counts per day
+  const haData = await repo.getCalendarHAEventCounts(monthStart, monthEnd);
+  for (const [dateStr, count] of Object.entries(haData)) {
+    monthHAEvents += count;
+    if (tasksByDay[dateStr]) {
+      tasksByDay[dateStr].haEvents = count;
+    } else {
+      tasksByDay[dateStr] = { count, colors: [], haEvents: count };
+      monthTotal += count;
+    }
+  }
+} catch {
+  /* DB not available */
+}
+
+// Build calendar grid (6 rows × 7 cols)
+interface CalDay {
+  day: number;
+  dateStr: string;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  isWeekend: boolean;
+  taskCount: number;
+  haEventCount: number;
+  colors: string[];
+}
+
+const grid: CalDay[][] = [];
+let currentDay = 1 - startDayOfWeek;
+const todayStr = now.toISOString().split("T")[0] ?? "";
+
+for (let week = 0; week < 6; week++) {
+  const row: CalDay[] = [];
+  for (let dow = 0; dow < 7; dow++) {
+    const d = currentDay;
+    const isCurrentMonth = d >= 1 && d <= daysInMonth;
+    const dateStr = isCurrentMonth
+      ? `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+      : "";
+    const dayData = tasksByDay[dateStr];
+
+    row.push({
+      day: d,
+      dateStr,
+      isCurrentMonth,
+      isToday: dateStr === todayStr,
+      isWeekend: isWeekendFn(dow),
+      taskCount: dayData?.count ?? 0,
+      haEventCount: dayData?.haEvents ?? 0,
+      colors: dayData?.colors ?? [],
+    });
+    currentDay++;
+  }
+  // Skip empty trailing weeks
+  if (row.every((d) => !d.isCurrentMonth) && week > 0) break;
+  grid.push(row);
+}
+
+const scheduledDayCount = Object.keys(tasksByDay).length
+const calendarSignal =
+  monthTotal === 0
+    ? "No tasks or connected events on this month yet"
+    : `${monthTotal} items tracked across ${scheduledDayCount} days`
+---
+
+<div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
+
+  <div id="calendar-shell" class="page-shell">
+    <!-- Signal bar -->
+    <SignalBar>
+      <span id="calendar-signal-summary">
+        <strong>{monthTotal}</strong> items across <strong>{scheduledDayCount}</strong> days · <strong>{monthHAEvents}</strong> HA events
+      </span>
+    </SignalBar>
+
+      <div class="calendar-controls">
+        <a
+          href={`/calendar?year=${prevYear}&month=${prevMonth}`}
+          class="cal-nav-btn"
+          aria-label="Previous month"
+        >
+          <span>←</span>
+        </a>
+        <a
+          href={`/calendar?year=${nextYear}&month=${nextMonth}`}
+          class="cal-nav-btn"
+          aria-label="Next month"
+        >
+          <span>→</span>
+        </a>
+        <a href="/calendar" class="cal-today-btn">Today</a>
+        <span class="cal-task-summary"
+          >{monthTotal}
+          {monthTotal === 1 ? "item" : "items"} this month{
+            monthHAEvents > 0 ? ` (${monthHAEvents} 📅)` : ""
+          }</span
+        >
+      </div>
+
+      <div class="calendar-grid">
+        {
+          weekLabels.map((d, i) => (
+            <div class={`cal-header ${isWeekendFn(i) ? "cal-header-weekend" : ""}`}>
+              {d}
+            </div>
+          ))
+        }
+        {
+          grid.flat().map((cell) => (
+            <div
+              class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
+              data-date={cell.dateStr}
+              role={cell.isCurrentMonth ? "button" : undefined}
+              tabindex={cell.isCurrentMonth ? "0" : undefined}
+              aria-label={
+                cell.isCurrentMonth
+                  ? `${cell.dateStr}, ${cell.taskCount} tasks`
+                  : undefined
+              }
+            >
+              {cell.isCurrentMonth && (
+                <div>
+                  <span
+                    class={`cal-day-num ${cell.isToday ? "cal-day-today" : ""}`}
+                  >
+                    {cell.day}
+                  </span>
+                  {cell.taskCount > 0 && (
+                    <div class="cal-task-indicator">
+                      <span class="cal-task-badge">{cell.taskCount}</span>
+                      {cell.haEventCount > 0 && (
+                        <span
+                          class="cal-ha-badge"
+                          title={`${cell.haEventCount} calendar event${cell.haEventCount !== 1 ? "s" : ""}`}
+                        >
+                          📅
+                        </span>
+                      )}
+                      {cell.colors.length > 0 && (
+                        <div class="cal-color-dots">
+                          {cell.colors.map((c) => (
+                            <span
+                              class="cal-color-dot"
+                              style={`background: ${c || "var(--accent)"};`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>
+                </div>
+              )}
+            </div>
+          ))
+        }
+      </div>
+
+    <!-- Agenda hint card -->
+    <div class="card calendar-shell__agenda-card">
+      Click any active day in the month grid to inspect calendar events and due tasks.
+    </div>
+
+    <div class="day-drawer" id="day-drawer" aria-hidden="true">
+      <div class="day-drawer-backdrop" id="day-drawer-backdrop"></div>
+      <div class="day-drawer-panel">
+        <div class="day-drawer-header">
+          <h3 class="day-drawer-title" id="day-drawer-title"></h3>
+          <button class="day-drawer-close" id="day-drawer-close" aria-label="Close">✕</button>
+        </div>
+        <div class="day-drawer-content">
+          <div class="day-drawer-section">
+            <h4 class="day-drawer-section-title">📅 Calendar Events</h4>
+            <div id="day-drawer-events" class="day-drawer-list">
+              <span class="day-drawer-empty">Loading...</span>
+            </div>
+          </div>
+          <div class="day-drawer-section">
+            <h4 class="day-drawer-section-title">📋 Tasks Due</h4>
+            <div id="day-drawer-tasks" class="day-drawer-list">
+              <span class="day-drawer-empty">Loading...</span>
+            </div>
+          </div>
+          <div class="day-drawer-actions">
+            <button class="btn btn-primary day-drawer-add" id="day-drawer-add-event">+ Add Event</button>
+            <button class="btn btn-ghost day-drawer-add" id="day-drawer-add-task">+ Add Task</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Signal bar CSS now in SignalBar.astro */
+
+  /* Calendar-specific styles */
+
+  .calendar-shell__agenda-card {
+    padding: 18px;
+    color: var(--text-muted);
+  }
+
+  .calendar-shell__sync-btn {
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--info, #60a5fa) 35%, var(--border));
+    background: color-mix(in srgb, var(--info, #60a5fa) 10%, transparent);
+    color: var(--text-primary);
+  }
+
+  .calendar-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .cal-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 16px;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
+  }
+  .cal-nav-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+  .cal-month-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .cal-today-btn {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+    transition: background 0.15s;
+  }
+  .cal-today-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+  }
+  .cal-task-summary {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .cal-header {
+    padding: 8px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .cal-header-weekend {
+    color: var(--text-muted);
+    opacity: 0.7;
+  }
+
+  .cal-cell {
+    padding: 8px;
+    min-height: 80px;
+    background: var(--bg-card);
+    cursor: default;
+    position: relative;
+    transition: background 0.15s;
+  }
+  .cal-cell[role="button"] {
+    cursor: pointer;
+  }
+  .cal-cell[role="button"]:hover {
+    background: var(--bg-hover);
+  }
+  .cal-cell:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+
+  .cal-today {
+    background: var(--bg-hover) !important;
+  }
+  .cal-other {
+    background: var(--bg-secondary);
+  }
+  .cal-weekend {
+    background: color-mix(in srgb, var(--bg-card) 90%, var(--bg-secondary) 10%);
+  }
+
+  .cal-day-num {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-primary);
+  }
+  .cal-day-today {
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent);
+    color: white;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 12px;
+  }
+
+  .cal-task-indicator {
+    margin-top: 4px;
+  }
+  .cal-task-badge {
+    font-size: 10px;
+    background: var(--accent);
+    color: white;
+    padding: 1px 5px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  .cal-color-dots {
+    display: flex;
+    gap: 2px;
+    margin-top: 3px;
+  }
+  .cal-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+  .cal-ha-badge {
+    font-size: 10px;
+    margin-left: 2px;
+    cursor: help;
+  }
+
+  @media (max-width: 640px) {
+    .cal-cell {
+      min-height: 48px;
+      padding: 4px;
+    }
+    .cal-day-num {
+      font-size: 11px;
+    }
+  }
+
+  /* Inline event previews */
+  .cal-inline-events {
+    margin-top: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .cal-inline-event {
+    font-size: 9px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+    line-height: 1.3;
+  }
+  .cal-inline-event.cal-inline-ha {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--info, #38bdf8);
+  }
+  .cal-inline-more {
+    font-size: 9px;
+    color: var(--text-muted);
+    padding: 0 3px;
+  }
+
+  /* Day Detail Drawer */
+  .day-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .day-drawer[aria-hidden="false"] {
+    pointer-events: auto;
+    visibility: visible;
+  }
+  .day-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .day-drawer[aria-hidden="false"] .day-drawer-backdrop {
+    opacity: 1;
+  }
+  .day-drawer-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 90vw);
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .day-drawer[aria-hidden="false"] .day-drawer-panel {
+    transform: translateX(0);
+  }
+  .day-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+  }
+  .day-drawer-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .day-drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
+  }
+  .day-drawer-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .day-drawer-content {
+    padding: 16px 20px;
+    flex: 1;
+  }
+  .day-drawer-section {
+    margin-bottom: 20px;
+  }
+  .day-drawer-section-title {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .day-drawer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .day-drawer-item {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+  }
+  .day-drawer-item:hover {
+    background: var(--bg-hover);
+  }
+  .day-drawer-item-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .day-drawer-item-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .day-drawer-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .day-drawer-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .day-drawer-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 8px 0;
+  }
+  .day-drawer-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .day-drawer-add {
+    flex: 1;
+    font-size: 12px;
+  }
+
+  /* Responsive overrides for shell/hero classes are in _page-shell.css */
+</style>
+
+<script>
+  import { initCalendarPage } from "../../lib/calendar-controller"
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(() => {
+    initCalendarPage()
+  })
+</script>

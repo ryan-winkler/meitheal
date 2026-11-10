@@ -1,0 +1,19 @@
+# Architecture and product decisions
+
+- [ADR 0001: Legal and Naming Strategy](0001-legal-and-naming-strategy.md) - Records the product naming and legal strategy.
+- [ADR 0002: Target Architecture](0002-target-architecture.md) - Describes runtime, domain, persistence, and integration boundaries.
+- [ADR 0003: Clean-Room Protocol](0003-clean-room-protocol.md) - Records rules for independently implementing compatible behavior.
+- [ADR 0004: Threat Model Baseline](0004-threat-model.md) - Records the threat model and release security baseline.
+- [ADR 0005: HA Calendar Sync and Idempotency](0005-ha-calendar-sync-and-idempotency.md) - Defines the calendar sync model and how repeated requests are handled.
+- [ADR-0008: Phase 27 Security & Accessibility Hardening](0008-phase-27-security-accessibility.md) - Records security and accessibility decisions for the affected release.
+- [ADR-0009: Rate Limiting Strategy](0009-rate-limiting-strategy.md) - Records the request rate-limiting strategy.
+- [ADR-0011: Task Activity Log Design](0011-task-activity-log.md) - Defines the task activity history and its storage.
+- [ADR-0012: Docker Hub Publishing for HA Add-on Distribution](0012-docker-hub-publishing.md) - Records the earlier decision to publish Home Assistant App images to Docker Hub.
+- [ADR 0013: Dual-Licensing Strategy (AGPLv3 + Commercial)](0013-dual-licensing-strategy.md) - Records the earlier decision to document separate licensing scopes.
+- [ADR-0014: Unified Observability Standard (Immutable Audit Ledger)](0014-unified-observability.md) - Records the structured logging and audit ledger design.
+- [Home Assistant owns app backup consistency](0018-home-assistant-backup-ownership.md) - Records why the Home Assistant Supervisor owns consistent App backups.
+- [ADR-007: Hierarchy Model — Area → Goal → Project → Task → Routine](ADR-007-hierarchy-model.md) - Defines the relationships between areas, goals, projects, tasks, and routines.
+- [ADR-014: Eisenhower Matrix as First-Class Schema Columns](adr-014-eisenhower-schema-columns.md) - Records how task urgency and importance are represented in SQLite.
+- [ADR-015: Hierarchy Architecture Overhaul — Parent Pages, Helpers, Breadcrumbs](adr-015-hierarchy-architecture-overhaul.md) - Records hierarchy routes, shared navigation helpers, and breadcrumbs.
+- [ADR-016: Recurrence Engine vs Habit Cadence — Deliberate Separation](adr-016-recurrence-vs-habits.md) - Explains the distinction between recurring tasks and habits.
+- [ADR-017: Pillars Domain — Identity-Based Motivational Anchors](adr-017-pillars-domain.md) - Defines pillars, principles, and their relationships to planning work.

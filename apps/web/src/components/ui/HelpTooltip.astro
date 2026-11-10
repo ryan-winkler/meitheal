@@ -1,0 +1,269 @@
+---
+/**
+ * HelpTooltip — Shared UI Component
+ *
+ * Renders a (?) icon that shows a popover with explanatory text on click.
+ * Optional link to external documentation.
+ *
+ * @domain ui
+ * @bounded-context shared
+ *
+ * Usage:
+ *   <HelpTooltip text="Explanation here" />
+ *   <HelpTooltip text="CalDAV is..." href="https://docs.example.com" />
+ */
+interface Props {
+  /** The help text to display in the popover */
+  text: string;
+  /** Optional link to external docs */
+  href?: string;
+  /** Optional link label (defaults to "Learn more →") */
+  linkLabel?: string;
+  /** Unique ID for ARIA */
+  id?: string;
+}
+
+const { text, href, linkLabel = "Learn more →", id } = Astro.props;
+const tooltipId = id || `help-${Math.random().toString(36).slice(2, 8)}`;
+---
+
+<span class="help-tooltip" data-tooltip-id={tooltipId}>
+  <button
+    type="button"
+    class="help-tooltip__trigger"
+    aria-label="Help"
+    aria-describedby={`${tooltipId}-popover`}
+    aria-expanded="false">?</button
+  >
+  <div
+    class="help-tooltip__popover"
+    id={`${tooltipId}-popover`}
+    role="tooltip"
+    aria-hidden="true"
+  >
+    <div class="help-tooltip__content">
+      <p>{text}</p>
+      {
+        href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="help-tooltip__link"
+          >
+            {linkLabel}
+          </a>
+        )
+      }
+    </div>
+    <button type="button" class="help-tooltip__close" aria-label="Close tooltip"
+      >×</button
+    >
+  </div>
+</span>
+
+<style>
+  .help-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    margin-left: 6px;
+    z-index: 1;
+  }
+
+  /* When popover is open, elevate the entire tooltip above card headers */
+  .help-tooltip:has(.help-tooltip__popover[aria-hidden="false"]) {
+    z-index: 1000;
+  }
+
+  .help-tooltip__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+    padding: 0;
+    line-height: 1;
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  .help-tooltip__trigger:hover,
+  .help-tooltip__trigger:focus-visible {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .help-tooltip__popover {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    min-width: 220px;
+    max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    animation: tooltip-fade-in 150ms ease;
+  }
+
+  .help-tooltip__popover[aria-hidden="false"] {
+    display: block;
+  }
+
+  @keyframes tooltip-fade-in {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  .help-tooltip__content p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .help-tooltip__link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .help-tooltip__link:hover {
+    text-decoration: underline;
+  }
+
+  .help-tooltip__close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .help-tooltip__close:hover {
+    color: var(--text-primary);
+  }
+
+  /* Position above if near bottom of viewport */
+  .help-tooltip--above .help-tooltip__popover {
+    top: auto;
+    bottom: calc(100% + 8px);
+  }
+</style>
+
+<script>
+  function initHelpTooltips() {
+    document.querySelectorAll(".help-tooltip").forEach((tooltip) => {
+      const trigger = tooltip.querySelector(
+        ".help-tooltip__trigger",
+      ) as HTMLButtonElement;
+      const popover = tooltip.querySelector(
+        ".help-tooltip__popover",
+      ) as HTMLElement;
+      const close = tooltip.querySelector(
+        ".help-tooltip__close",
+      ) as HTMLButtonElement;
+      if (!trigger || !popover) return;
+
+      // Prevent double-init
+      if (trigger.dataset.tooltipInit) return;
+      trigger.dataset.tooltipInit = "true";
+
+      function show() {
+        popover.setAttribute("aria-hidden", "false");
+        trigger.setAttribute("aria-expanded", "true");
+
+        // Check if popover overflows below viewport — flip above if so
+        requestAnimationFrame(() => {
+          const rect = popover.getBoundingClientRect();
+          if (rect.bottom > window.innerHeight) {
+            tooltip.classList.add("help-tooltip--above");
+          }
+        });
+      }
+
+      function hide() {
+        popover.setAttribute("aria-hidden", "true");
+        trigger.setAttribute("aria-expanded", "false");
+        tooltip.classList.remove("help-tooltip--above");
+      }
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = popover.getAttribute("aria-hidden") === "false";
+        // Close all other tooltips first
+        document
+          .querySelectorAll('.help-tooltip__popover[aria-hidden="false"]')
+          .forEach((p) => {
+            if (p !== popover) {
+              p.setAttribute("aria-hidden", "true");
+              p.closest(".help-tooltip")
+                ?.querySelector(".help-tooltip__trigger")
+                ?.setAttribute("aria-expanded", "false");
+            }
+          });
+        isOpen ? hide() : show();
+      });
+
+      close?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hide();
+      });
+
+      // Close on Escape
+      document.addEventListener("keydown", (e) => {
+        if (
+          e.key === "Escape" &&
+          popover.getAttribute("aria-hidden") === "false"
+        ) {
+          hide();
+          trigger.focus();
+        }
+      });
+    });
+
+    // Close all tooltips when clicking outside
+    document.addEventListener("click", () => {
+      document
+        .querySelectorAll('.help-tooltip__popover[aria-hidden="false"]')
+        .forEach((p) => {
+          p.setAttribute("aria-hidden", "true");
+          p.closest(".help-tooltip")
+            ?.querySelector(".help-tooltip__trigger")
+            ?.setAttribute("aria-expanded", "false");
+        });
+    });
+  }
+
+  initHelpTooltips();
+  document.addEventListener("astro:page-load", initHelpTooltips);
+</script>

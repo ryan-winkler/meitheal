@@ -1,0 +1,42 @@
+name: 📖 Documentation Issue
+description: Report incorrect, missing, or confusing documentation
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Affected page or section
+      description: Which page, README section, or in-app help text is affected?
+      placeholder: "e.g. Settings → System & Danger → Keyboard Shortcuts"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Issue type
+      options:
+        - Incorrect information
+        - Missing information
+        - Confusing or unclear
+        - Typo / Grammar
+        - Outdated
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What's wrong?
+      description: Name the first step you could not finish and what you saw.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, screenshots, or references to help us understand.
+    validations:
+      required: false

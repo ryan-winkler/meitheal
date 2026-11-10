@@ -1,0 +1,67 @@
+{
+  "folders": [
+    {
+      "path": "../pobal-os"
+    },
+    {
+      "path": "."
+    },
+    {
+      "path": "../coolock-village-org-kit"
+    },
+    {
+      "path": "../ryanwinkler"
+    },
+    {
+      "path": "../pobal-os/apps/meitheal-io"
+    },
+    {
+      "path": "../pobal-os/apps/ryanw-eu"
+    },
+    {
+      "path": "../pobal-os/apps/coolock-village-forge"
+    }
+  ],
+  "settings": {
+    // Workspace-specific: hide noise in multi-root explorer
+    "files.exclude": {
+      "**/.git": true,
+      "**/node_modules": true,
+      "**/.astro": true,
+      "**/.next": true,
+    },
+    // Workspace-specific: formatter overrides per language
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "[astro]": {
+      "editor.defaultFormatter": "astro-build.astro-vscode",
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+    },
+    "typescript.disableAutomaticTypeAcquisition": false,
+    // Extension: project-specific config
+    "piny.project_settings": {
+      "open-pages": [
+        "pinyfakepage.html"
+      ],
+    },
+    "liveServer.settings.multiRootWorkspaceName": "📦 Meitheal Root",
+    "files.autoSave": "onFocusChange",
+    "notebook.formatOnSave.enabled": true,
+    "git.promptToSaveFilesBeforeCommit": "never",
+    "git.promptToSaveFilesBeforeStash": "staged",
+    "editor.codeActions.triggerOnFocusChange": true,
+    "workbench.editor.highlightModifiedTabs": true,
+    "java.typeHierarchy.lazyLoad": false,
+    "workbench.commandPalette.history": 100,
+  },
+  "extensions": {
+    "recommendations": [
+      "astro-build.astro-vscode",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "bradlc.vscode-tailwindcss",
+      "golang.go",
+    ],
+  },
+}

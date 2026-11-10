@@ -1,0 +1,403 @@
+---
+/**
+ * PillarFormModal — Create/Edit Pillar modal
+ *
+ * Follows the established modal-overlay pattern from NewTaskModal.astro.
+ * Fields: name, manifesto (WHY), icon (emoji/upload), color (swatch picker), weight (1-10 slider).
+ *
+ * @domain pillars
+ * @phase 17C — Shared Icon & Color Pickers
+ * @kcs Manifesto-first: the WHY field is prominent, not an afterthought
+ */
+import IconPicker from "../ui/IconPicker.astro"
+import ColorPicker from "../ui/ColorPicker.astro"
+import { t } from "../../i18n/translations"
+---
+
+<div
+  id="pillar-form-overlay"
+  class="modal-overlay z-200"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="pillar-form-title"
+>
+  <div class="modal-content max-w-lg w-full p-6">
+    <div class="modal-header flex items-center justify-between mb-4 border-b border-border pb-3">
+      <h2 class="text-xl font-bold text-text-primary" id="pillar-form-title"
+        data-create-label={t("pillars.new_pillar")}
+        data-edit-label={t("pillars.edit_pillar")}
+      >
+        {t("pillars.new_pillar")}
+      </h2>
+      <button
+        type="button"
+        class="btn-icon text-xl text-text-muted hover:text-text-primary"
+        id="close-pillar-modal"
+        aria-label={t("pillars.close")}
+      >✕</button>
+    </div>
+
+    <form id="pillar-form" class="space-y-4"
+      data-created-toast={t("pillars.created_toast")}
+      data-updated-toast={t("pillars.updated_toast")}
+      data-error-save={t("pillars.error_save")}
+      data-error-network={t("pillars.error_network")}
+    >
+      <!-- Name -->
+      <div class="form-group">
+        <label for="pillar-name" class="form-label">
+          {t("pillars.name_label")} <span class="text-accent">{t("pillars.required")}</span>
+        </label>
+        <input
+          type="text"
+          class="form-input bg-bg-input"
+          id="pillar-name"
+          placeholder={t("pillars.name_placeholder")}
+          required
+          autofocus
+          maxlength="100"
+        />
+        <p class="pillar-form__hint">{t("pillars.name_hint")}</p>
+      </div>
+
+      <!-- Manifesto (WHY) -->
+      <div class="form-group">
+        <label for="pillar-manifesto" class="form-label">{t("pillars.manifesto_label")}</label>
+        <textarea
+          class="form-input bg-bg-input resize-y min-h-[100px]"
+          id="pillar-manifesto"
+          placeholder={t("pillars.manifesto_placeholder")}
+          rows="4"
+        ></textarea>
+        <p class="pillar-form__hint">{t("pillars.manifesto_hint")}</p>
+      </div>
+
+      <div class="pillar-form__row">
+        <!-- Icon (shared picker) -->
+        <div class="form-group pillar-form__icon-group">
+          <label class="form-label">{t("picker.icon_label")}</label>
+          <input type="hidden" id="pillar-icon" value="" />
+          <IconPicker id="pillar-icon-picker" />
+        </div>
+
+        <!-- Color (shared picker) -->
+        <div class="form-group pillar-form__color-group">
+          <label class="form-label">{t("picker.color_label")}</label>
+          <input type="hidden" id="pillar-color" value="#7c5bf5" />
+          <ColorPicker id="pillar-color-picker" />
+        </div>
+      </div>
+
+      <!-- Weight -->
+      <div class="form-group">
+        <label for="pillar-weight" class="form-label">
+          {t("pillars.weight_label")} <span class="pillar-form__weight-value" id="pillar-weight-display">5</span>
+        </label>
+        <input
+          type="range"
+          class="pillar-form__slider"
+          id="pillar-weight"
+          min="1"
+          max="10"
+          value="5"
+          step="1"
+        />
+        <div class="pillar-form__slider-labels">
+          <span>{t("pillars.weight_low")}</span>
+          <span>{t("pillars.weight_high")}</span>
+        </div>
+        <p class="pillar-form__hint">{t("pillars.weight_hint")}</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="modal-actions pt-4 border-t border-border flex justify-end gap-3 mt-6">
+        <button type="button" class="btn btn-ghost" id="cancel-pillar-modal">{t("pillars.cancel")}</button>
+        <button type="submit" class="btn btn-primary shadow-lg shadow-accent/20" id="submit-pillar-btn"
+          data-create-label={t("pillars.create_btn")}
+          data-save-label={t("pillars.save_btn")}
+          data-creating-label={t("pillars.creating")}
+          data-saving-label={t("pillars.saving")}
+        >
+          {t("pillars.create_btn")}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.pillar-form__hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.pillar-form__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.pillar-form__icon-group {
+  width: auto;
+  min-width: 5rem;
+}
+
+.pillar-form__color-group {
+  flex: 1;
+}
+
+.pillar-form__weight-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.25rem;
+  margin-left: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.pillar-form__slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pillar-form__slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin-top: 0.125rem;
+}
+</style>
+
+<script>
+  import { showToast } from "@lib/toast"
+  import { createClientLogger } from "@lib/client-logger"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { initIconPicker } from "@lib/controllers/icon-picker-controller"
+  import { initColorPicker } from "@lib/controllers/color-picker-controller"
+
+  const log = createClientLogger("pillars", "pillar-form-modal")
+
+  pageLifecycle.onPageLoad(() => {
+    const overlay = document.getElementById("pillar-form-overlay")
+    const closeBtn = document.getElementById("close-pillar-modal")
+    const cancelBtn = document.getElementById("cancel-pillar-modal")
+    const form = document.getElementById("pillar-form") as HTMLFormElement | null
+    const titleEl = document.getElementById("pillar-form-title")
+    const submitBtn = document.getElementById("submit-pillar-btn") as HTMLButtonElement | null
+    const iconHidden = document.getElementById("pillar-icon") as HTMLInputElement | null
+    const colorHidden = document.getElementById("pillar-color") as HTMLInputElement | null
+    const weightSlider = document.getElementById("pillar-weight") as HTMLInputElement | null
+    const weightDisplay = document.getElementById("pillar-weight-display") as HTMLElement | null
+
+    if (!overlay || !form) return
+
+    // --- State: tracks current editing context ---
+    let editingPillarId: string | null = null
+
+    // --- Init shared pickers ---
+    const iconPickerCleanup = initIconPicker("pillar-icon-picker", {
+      onSelect: (value: string) => {
+        if (iconHidden) iconHidden.value = value
+        // Also update trigger preview
+        const triggerIcon = document.querySelector<HTMLElement>("#pillar-icon-picker-trigger .icon-picker__preview-icon")
+        if (triggerIcon) triggerIcon.textContent = value
+      },
+    })
+
+    const colorPickerCleanup = initColorPicker("pillar-color-picker", {
+      onSelect: (value: string) => {
+        if (colorHidden) colorHidden.value = value
+        // Also update trigger preview
+        const triggerSwatch = document.querySelector<HTMLElement>("#pillar-color-picker-trigger .color-picker__preview-swatch")
+        const triggerHex = document.querySelector<HTMLElement>("#pillar-color-picker-trigger .color-picker__preview-hex")
+        if (triggerSwatch) triggerSwatch.style.background = value
+        if (triggerHex) triggerHex.textContent = value
+      },
+    })
+
+    // --- Focus trap helper ---
+    function trapFocus(e: KeyboardEvent) {
+      if (e.key !== "Tab" || !overlay?.classList.contains("active")) return
+      const focusable = overlay.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]):not([type=hidden]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusable.length === 0) return
+      const first = focusable.item(0)
+      const last = focusable.item(focusable.length - 1)
+      if (!first || !last) return
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+
+    // --- Weight slider live display ---
+    weightSlider?.addEventListener("input", () => {
+      if (weightDisplay) weightDisplay.textContent = weightSlider.value
+    })
+
+    // --- Open/Close ---
+    function openPillarModal(editData?: Record<string, unknown>) {
+      form?.reset()
+      editingPillarId = null
+
+      // Reset picker previews
+      const iconPreview = document.querySelector<HTMLElement>("#pillar-icon-picker .icon-picker__preview-icon")
+      const colorPreview = document.querySelector<HTMLElement>("#pillar-color-picker .color-picker__preview-swatch")
+
+      if (editData && editData.id) {
+        // Edit mode: pre-fill fields
+        editingPillarId = String(editData.id)
+        if (titleEl) titleEl.textContent = titleEl.dataset.editLabel || "Edit Pillar"
+        if (submitBtn) submitBtn.textContent = submitBtn.dataset.saveLabel || "Save Changes"
+
+        const nameInput = document.getElementById("pillar-name") as HTMLInputElement
+        const manifestoInput = document.getElementById("pillar-manifesto") as HTMLTextAreaElement
+
+        if (nameInput) nameInput.value = String(editData.name || "")
+        if (manifestoInput) manifestoInput.value = String(editData.manifesto || "")
+
+        // Set hidden values and update picker previews
+        const iconVal = String(editData.icon || "")
+        const colorVal = String(editData.colorHex || "#7c5bf5")
+        if (iconHidden) iconHidden.value = iconVal
+        if (colorHidden) colorHidden.value = colorVal
+        if (iconPreview) iconPreview.textContent = iconVal || "🏛️"
+        if (colorPreview) colorPreview.style.background = colorVal
+
+        if (weightSlider) weightSlider.value = String(editData.weight || 5)
+        if (weightDisplay) weightDisplay.textContent = String(editData.weight || 5)
+      } else {
+        // Create mode: reset to defaults
+        if (titleEl) titleEl.textContent = titleEl.dataset.createLabel || "New Pillar"
+        if (submitBtn) submitBtn.textContent = submitBtn.dataset.createLabel || "Create Pillar"
+        if (iconHidden) iconHidden.value = ""
+        if (colorHidden) colorHidden.value = "#7c5bf5"
+        if (iconPreview) iconPreview.textContent = "🏛️"
+        if (colorPreview) colorPreview.style.background = "#7c5bf5"
+        if (weightDisplay) weightDisplay.textContent = "5"
+      }
+
+      overlay?.classList.add("active")
+      document.body.style.overflow = "hidden"
+      document.addEventListener("keydown", trapFocus)
+      setTimeout(() => {
+        document.getElementById("pillar-name")?.focus()
+      }, 50)
+    }
+
+    function closePillarModal() {
+      if (!overlay?.classList.contains("active")) return
+      document.removeEventListener("keydown", trapFocus)
+      editingPillarId = null
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      const finishClose = () => {
+        overlay.classList.remove("active", "closing")
+        document.body.style.overflow = ""
+        form?.reset()
+      }
+      if (reducedMotion) { finishClose(); return }
+      overlay.classList.add("closing")
+      const content = overlay.querySelector(".modal-content")
+      if (content) {
+        const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose() }
+        content.addEventListener("animationend", onEnd, { once: true })
+        setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose() }, 300)
+      } else {
+        finishClose()
+      }
+    }
+
+    closeBtn?.addEventListener("click", closePillarModal)
+    cancelBtn?.addEventListener("click", closePillarModal)
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closePillarModal()
+    })
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.classList.contains("active")) {
+        e.preventDefault()
+        closePillarModal()
+      }
+    })
+
+    // --- Wire add buttons (create mode) ---
+    const addBtn = document.getElementById("pillar-add-btn")
+    const addBtnEmpty = document.getElementById("pillar-add-btn-empty")
+    addBtn?.addEventListener("click", () => openPillarModal())
+    addBtnEmpty?.addEventListener("click", () => openPillarModal())
+
+    // --- Wire edit event (edit mode) — dispatched from detail page ---
+    document.addEventListener("edit-pillar", ((e: CustomEvent) => {
+      openPillarModal(e.detail)
+    }) as EventListener)
+
+    // --- Form submission ---
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault()
+      const nameInput = document.getElementById("pillar-name") as HTMLInputElement
+      const name = nameInput.value.trim()
+      if (!name) return
+
+      if (!submitBtn) return
+      const originalText = submitBtn.textContent || submitBtn.dataset.createLabel || "Create Pillar"
+      submitBtn.disabled = true
+      submitBtn.textContent = editingPillarId
+        ? (submitBtn.dataset.savingLabel || "Saving…")
+        : (submitBtn.dataset.creatingLabel || "Creating…")
+
+      try {
+        const body: Record<string, unknown> = {
+          name,
+          manifesto: (document.getElementById("pillar-manifesto") as HTMLTextAreaElement).value.trim() || null,
+          icon: (document.getElementById("pillar-icon") as HTMLInputElement).value.trim() || null,
+          colorHex: (document.getElementById("pillar-color") as HTMLInputElement).value || null,
+          weight: parseInt((document.getElementById("pillar-weight") as HTMLInputElement).value, 10),
+        }
+
+        const url = editingPillarId ? `/api/pillars/${editingPillarId}` : "/api/pillars"
+        const method = editingPillarId ? "PATCH" : "POST"
+
+        const res = await fetch(url, {
+          method,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.warning) {
+            showToast(data.warning, "error")
+          }
+          const toastTemplate = editingPillarId
+            ? (form.dataset.updatedToast || '"{name}" updated')
+            : (form.dataset.createdToast || 'Pillar "{name}" created')
+          showToast(toastTemplate.replace("{name}", name), "success")
+          closePillarModal()
+          window.location.reload()
+        } else {
+          const err = await res.json().catch(() => ({ error: "Unknown error" }))
+          showToast(err.error || form.dataset.errorSave || "Failed to save pillar", "error")
+        }
+      } catch (err) {
+        log.error("Failed to save pillar", err)
+        showToast(form.dataset.errorNetwork || "Network error saving pillar", "error")
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = originalText
+      }
+    })
+  })
+
+</script>

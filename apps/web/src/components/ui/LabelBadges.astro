@@ -1,0 +1,76 @@
+---
+/**
+ * LabelBadges — Reusable label badge display component
+ *
+ * @domain labels
+ * @bounded-context labels
+ *
+ * Renders a flexbox row of label chips from a labels prop.
+ * Supports both raw string arrays and JSON-serialized label data
+ * (string or {name, color?, hex_color?} objects).
+ *
+ * @prop labels - Raw label data: string[] or JSON string
+ * @prop compact - Use compact sizing (for kanban cards)
+ * @prop max - Maximum labels to show (rest collapsed as "+N more")
+ */
+interface Props {
+  labels: string | string[] | null | undefined
+  compact?: boolean
+  max?: number
+}
+
+type LabelEntry = string | { name: string; color?: string; hex_color?: string }
+
+const { labels: rawLabels, compact = false, max } = Astro.props
+
+let parsed: LabelEntry[] = []
+
+try {
+  if (Array.isArray(rawLabels)) {
+    parsed = rawLabels
+  } else if (typeof rawLabels === "string" && rawLabels.trim()) {
+    const p = JSON.parse(rawLabels)
+    if (Array.isArray(p)) parsed = p
+  }
+} catch {
+  /* invalid JSON — skip silently */
+}
+
+// Apply max limit
+const visible = max && max > 0 ? parsed.slice(0, max) : parsed
+const overflow = max && max > 0 ? parsed.length - max : 0
+
+function labelName(l: LabelEntry): string {
+  return typeof l === "string" ? l : l.name
+}
+
+function labelColor(l: LabelEntry): string {
+  if (typeof l === "object") return l.hex_color || l.color || ""
+  return ""
+}
+
+function labelStyle(l: LabelEntry): string {
+  const c = labelColor(l)
+  if (!c) return ""
+  return `background: ${c}20; color: ${c}; border-color: ${c}40;`
+}
+---
+
+{visible.length > 0 && (
+  <div class={`label-badges ${compact ? "label-badges--compact" : ""}`}>
+    {visible.map((l) => (
+      <span
+        class="label-badge label-badge--default"
+        style={labelStyle(l)}
+        title={labelName(l)}
+      >
+        {labelName(l)}
+      </span>
+    ))}
+    {overflow > 0 && (
+      <span class="label-badge label-badge--default" title={`${overflow} more labels`}>
+        +{overflow}
+      </span>
+    )}
+  </div>
+)}

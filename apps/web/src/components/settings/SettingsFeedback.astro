@@ -1,0 +1,182 @@
+---
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+
+interface Props {
+  version: string
+}
+
+const { version } = Astro.props
+const user = verifiedIngressUser(Astro.locals)
+---
+
+<SettingsPanelCard
+  id="local-feedback"
+  title="Report a problem or share feedback"
+  subtitle="Share feedback with an administrator of this Meitheal installation."
+>
+  {user ? (
+    <div class="feedback-panel" data-feedback-panel>
+      <p id="feedback-privacy" class="settings-hint">
+        Your category, message and any context you choose stay on this installation.
+        Administrators can see your Home Assistant user ID and the date you submitted.
+        Leave out passwords, addresses and other private details.
+      </p>
+      <form method="post" data-feedback-form autocomplete="off">
+        <fieldset disabled>
+          <label class="form-label" for="feedback-category">Category</label>
+          <select id="feedback-category" class="form-select" name="category" required>
+            <option value="">Choose a category</option>
+            <option value="problem">Problem</option>
+            <option value="accessibility">Accessibility</option>
+            <option value="suggestion">Suggestion</option>
+            <option value="other">Other</option>
+          </select>
+          <label class="form-label" for="feedback-message">Message</label>
+          <textarea id="feedback-message" class="form-input" name="message" rows="4" maxlength="4096"
+            aria-describedby="feedback-privacy feedback-message-hint" required></textarea>
+          <p id="feedback-message-hint" class="settings-hint">Up to 4 KiB of plain text.</p>
+          <label class="feedback-context">
+            <input type="checkbox" name="context" value={version} />
+            Include the app version ({version}) and the page category (Settings)
+          </label>
+          <button type="submit" class="btn btn-primary">Save feedback</button>
+        </fieldset>
+      </form>
+      <noscript>Enable JavaScript to save feedback from this page.</noscript>
+      <p role="status" class="feedback-status" data-feedback-status></p>
+
+      {user.isAdmin && (
+        <details class="feedback-queue" data-feedback-queue>
+          <summary>Local feedback queue</summary>
+          <p class="settings-hint">Review reports and prepare a local copy to share if needed.</p>
+          <fieldset data-queue-controls>
+            <div class="feedback-actions">
+              <label class="form-label" for="feedback-filter">Report state</label>
+              <select id="feedback-filter" class="form-select" data-feedback-filter>
+                <option value="open">Open</option>
+                <option value="in_progress">In progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="declined">Declined</option>
+                <option value="">All reports</option>
+              </select>
+              <button type="button" class="btn btn-secondary" data-feedback-refresh>Refresh reports</button>
+            </div>
+            <div data-feedback-list></div>
+            <button type="button" class="btn btn-secondary" data-feedback-more hidden>Load more reports</button>
+          </fieldset>
+          <p role="status" class="feedback-status" data-queue-status></p>
+
+          <template data-feedback-report>
+            <details class="feedback-report">
+              <summary data-report-summary></summary>
+              <p class="feedback-text" data-report-message></p>
+              <p class="settings-hint" data-report-context></p>
+              <p class="feedback-text" data-report-disposition hidden></p>
+              <div class="feedback-actions">
+                <button type="button" class="btn btn-primary" data-claim-report hidden>Claim report</button>
+                <button type="button" class="btn btn-secondary" data-delete-report hidden>Delete closed report</button>
+              </div>
+              <form method="post" data-close-report hidden>
+                <label class="form-label">
+                  Disposition
+                  <textarea name="disposition" class="form-input" rows="2" maxlength="1024" required></textarea>
+                </label>
+                <div class="feedback-actions">
+                  <button type="submit" class="btn btn-primary" value="resolved">Resolve report</button>
+                  <button type="submit" class="btn btn-secondary" value="declined">Decline report</button>
+                </div>
+              </form>
+              <details class="feedback-export">
+                <summary>Prepare a reviewed export</summary>
+                <form method="post" data-review-export>
+                  <label class="form-label">
+                    Text to share
+                    <textarea name="reviewedMessage" class="form-input" rows="3" maxlength="4096" required></textarea>
+                  </label>
+                  <p class="settings-hint">Write a copy without private details. Check the text and optional context in the preview.</p>
+                  <button type="submit" class="btn btn-secondary">Preview export</button>
+                  <pre class="feedback-text" data-export-preview hidden></pre>
+                  <button type="button" class="btn btn-primary" data-download-export hidden>Download reviewed JSON</button>
+                </form>
+              </details>
+            </details>
+          </template>
+        </details>
+      )}
+    </div>
+  ) : (
+    <p class="settings-hint">Open Meitheal from Home Assistant to use local feedback.</p>
+  )}
+  <p class="settings-hint mt-3">
+    <a class="feedback-security-link" href="mailto:info@coolockvillage.ie">Report a security vulnerability privately</a>
+  </p>
+</SettingsPanelCard>
+
+<style>
+  .feedback-security-link {
+    color: var(--color-text-primary);
+    text-decoration: underline;
+  }
+
+  .feedback-panel :is(.settings-hint, .btn-secondary) {
+    color: var(--color-text-secondary);
+  }
+
+  .feedback-panel fieldset {
+    display: grid;
+    gap: .75rem;
+    min-inline-size: 0;
+  }
+
+  .feedback-panel textarea {
+    display: block;
+    width: 100%;
+    resize: vertical;
+  }
+
+  .feedback-panel select {
+    max-width: 100%;
+  }
+
+  .feedback-panel button {
+    justify-self: start;
+  }
+
+  .feedback-context {
+    display: flex;
+    align-items: baseline;
+    gap: .5rem;
+  }
+
+  .feedback-queue,
+  .feedback-report,
+  .feedback-export {
+    border-top: 1px solid var(--border);
+    margin-top: .75rem;
+    padding-top: .75rem;
+  }
+
+  .feedback-panel summary {
+    cursor: pointer;
+    padding-block: .5rem;
+    font-weight: 600;
+  }
+
+  .feedback-text,
+  .feedback-status {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .feedback-panel :global([hidden]) {
+    display: none !important;
+  }
+
+  .feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+  }
+</style>

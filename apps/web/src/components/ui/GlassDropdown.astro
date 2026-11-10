@@ -1,0 +1,40 @@
+---
+/**
+ * Glassmorphic Dropdown component
+ * Replaces native <select> elements with premium styling.
+ */
+interface Props {
+  /** Unique ID for the dropdown */
+  id: string
+  /** Alignment of the popover menu (left or right) */
+  align?: "left" | "right"
+  /** Extra CSS classes */
+  class?: string
+}
+
+const { id, align = "left", class: className } = Astro.props
+---
+
+<div class:list={["glass-dropdown", className]} id={id} data-initialized="false">
+  <div class="glass-dropdown__trigger" aria-haspopup="true" aria-expanded="false">
+    <slot name="trigger" />
+  </div>
+  <div 
+    class:list={[
+      "glass-dropdown__content", 
+      align === "right" ? "glass-dropdown__content--align-right" : ""
+    ]} 
+    role="menu" 
+    aria-orientation="vertical"
+  >
+    <slot />
+  </div>
+</div>
+
+<script>
+  import { initGlassDropdowns } from "../../lib/glass-dropdown"
+
+  // Initialize on full page load and Astro view transitions
+  document.addEventListener("DOMContentLoaded", initGlassDropdowns)
+  document.addEventListener("astro:page-load", initGlassDropdowns)
+</script>

@@ -1,0 +1,18 @@
+---
+interface Props {
+  rice: number | null | undefined;
+}
+
+const { rice } = Astro.props;
+
+if (rice === null || rice === undefined || isNaN(rice)) {
+  return;
+}
+
+const riceClass =
+  rice >= 15 ? "rice-high" : rice >= 8 ? "rice-med" : "rice-low";
+---
+
+<span class={`rice-badge ${riceClass}`}>
+  {rice}
+</span>

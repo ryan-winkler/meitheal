@@ -1,0 +1,57 @@
+---
+/**
+ * TypingIndicator — Three-dot animated typing indicator for AskAssist loading state.
+ * CSS-only animation, no JS required.
+ *
+ * @domain ai
+ * @bounded-context ui
+ */
+---
+
+<div class="typing-indicator" aria-label="Assistant is thinking">
+  <span class="typing-dot"></span>
+  <span class="typing-dot"></span>
+  <span class="typing-dot"></span>
+</div>
+
+<style>
+  .typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 12px 0;
+    align-self: flex-start;
+  }
+
+  .typing-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: typing-bounce 1.4s ease-in-out infinite both;
+  }
+
+  .typing-dot:nth-child(1) {
+    animation-delay: 0s;
+  }
+  .typing-dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .typing-dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes typing-bounce {
+    0%, 60%, 100% {
+      transform: translateY(0);
+      opacity: 0.4;
+    }
+    30% {
+      transform: translateY(-4px);
+      opacity: 1;
+    }
+  }
+</style>

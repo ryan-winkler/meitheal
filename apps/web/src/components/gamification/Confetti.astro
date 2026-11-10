@@ -1,0 +1,120 @@
+---
+/**
+ * Confetti — CSS-only celebration animation for task completion
+ *
+ * @domain gamification
+ * @bounded-context gamification
+ *
+ * Triggers a burst of confetti particles when a task is completed.
+ * Pure CSS animation — no JS libraries needed.
+ * Respects prefers-reduced-motion.
+ *
+ * Usage: Import this component in Layout.astro. Call window.triggerConfetti()
+ * from any page script after a task completion.
+ */
+---
+
+<div id="confetti-container" aria-hidden="true" data-no-scroll-lock="true"></div>
+
+<style>
+  #confetti-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+    overflow: hidden;
+  }
+
+  .confetti-piece {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    opacity: 0;
+    animation: confetti-fall 1.5s ease-out forwards;
+  }
+
+  .confetti-piece--circle {
+    border-radius: 50%;
+  }
+
+  .confetti-piece--square {
+    border-radius: 1px;
+    transform: rotate(45deg);
+  }
+
+  .confetti-piece--strip {
+    width: 4px;
+    height: 12px;
+    border-radius: 2px;
+  }
+
+  @keyframes confetti-fall {
+    0% {
+      opacity: 1;
+      transform: translateY(0) rotate(0deg) scale(1);
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(100vh) rotate(720deg) scale(0.3);
+    }
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .confetti-piece {
+      animation: none;
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  const CONFETTI_COLORS = [
+    "#f59e0b", "#ef4444", "#3b82f6", "#10b981",
+    "#8b5cf6", "#ec4899", "#06b6d4", "#f97316",
+  ]
+
+  const SHAPES = ["circle", "square", "strip"] as const
+
+  function triggerConfetti() {
+    // Respect reduced motion
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
+    const container = document.getElementById("confetti-container")
+    if (!container) return
+
+    const count = 30
+    const fragment = document.createDocumentFragment()
+
+    for (let i = 0; i < count; i++) {
+      const piece = document.createElement("div")
+      const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)]!
+      piece.className = `confetti-piece confetti-piece--${shape}`
+
+      // Random position, color, and timing
+      piece.style.left = `${Math.random() * 100}%`
+      piece.style.top = `${-10 + Math.random() * 20}%`
+      piece.style.backgroundColor = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]!
+      piece.style.animationDelay = `${Math.random() * 0.5}s`
+      piece.style.animationDuration = `${1 + Math.random() * 1}s`
+
+      fragment.appendChild(piece)
+    }
+
+    container.appendChild(fragment)
+
+    // Cleanup after animation
+    setTimeout(() => {
+      container.innerHTML = ""
+    }, 2500)
+  }
+
+  // Expose globally
+  ;(window as unknown as Record<string, unknown>).triggerConfetti = triggerConfetti
+</script>

@@ -1,0 +1,15 @@
+{
+  "build_from": {
+    "aarch64": "ghcr.io/home-assistant/aarch64-base:3.23",
+    "amd64": "ghcr.io/home-assistant/amd64-base:3.23"
+  },
+  "args": {
+    "BUILD_FROM": "{build_from}"
+  },
+  "labels": {
+    "org.opencontainers.image.title": "Meitheal",
+    "org.opencontainers.image.description": "Cooperative task and life engine with HA calendar sync",
+    "org.opencontainers.image.source": "https://github.com/ryan-winkler/meitheal-ha-addon",
+    "org.opencontainers.image.licenses": "LicenseRef-Meitheal-Source-Available-1.0"
+  }
+}

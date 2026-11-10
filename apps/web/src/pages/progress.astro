@@ -1,0 +1,285 @@
+---
+/**
+ * /progress — Parent page for Progress & Growth (Pillars, Routines, Goals, Achievements)
+ *
+ * Uses ParentPageShell for hash-based routing between sub-views.
+ * Each sub-view embeds the full content of its respective domain page
+ * directly inline — no summary cards, no indirection.
+ *
+ * @domain navigation + pillars + routines
+ * @phase 15 + 17 + 18 — Hierarchy Architecture + Pillars + Unification
+ */
+import Layout from "../layouts/Layout.astro"
+import ParentPageShell from "../components/layout/ParentPageShell.astro"
+import SectionHubCard from "../components/layout/SectionHubCard.astro"
+import GoalsTab from "../components/progress/GoalsTab.astro"
+import AchievementsTab from "../components/progress/AchievementsTab.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
+import PillarCard from "../components/pillars/PillarCard.astro"
+import PillarFormModal from "../components/pillars/PillarFormModal.astro"
+import PillarDetailModal from "../components/pillars/PillarDetailModal.astro"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+import {
+  ensureSchema,
+  getPersistenceClient,
+} from "@domains/tasks/persistence/store"
+import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
+import { getPillars } from "@domains/pillars/pillar-service"
+import { getAllPrinciples } from "@domains/pillars/principle-service"
+import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
+
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
+
+// ─── Pillar data ────────────────────────────────────────────────
+let enrichedPillars: Array<{
+  id: string
+  slug: string
+  name: string
+  manifesto: string | null
+  icon: string
+  colorHex: string
+  weight: number
+  principles: Array<{ id: string; pillarId: string; statement: string; isNonNegotiable: boolean; position: number; createdAt: number }>
+  linkedGoalCount: number
+}> = []
+
+try {
+  const pillarsData = await getPillars({ includeInactive: false })
+  const allPrinciplesMap = await getAllPrinciples()
+  enrichedPillars = await Promise.all(
+    pillarsData.map(async (p) => {
+      const associations = await getAssociationsForPillar(p.id)
+      const linkedGoalCount = associations.filter((a: { entityType: string }) => a.entityType === "goal").length
+      return {
+        ...p,
+        slug: (p as any).slug || p.id,
+        principles: allPrinciplesMap.get(p.id) || [],
+        linkedGoalCount,
+      }
+    })
+  )
+} catch { /* pillars may not be available yet */ }
+
+// ─── Routine data ───────────────────────────────────────────────
+let habits: RoutineWithStats[] = []
+
+try {
+  await ensureSchema()
+  const client = getPersistenceClient()
+  const templateRepo = new TemplateRepository(client)
+
+  // Routines (stat counts for hub card)
+  habits = await templateRepo.getRoutinesWithStats()
+} catch { /* DB not available */ }
+---
+
+<Layout title={`Meitheal — ${t("nav.progress", locale)}`} hideSearchHub={true} hideGlobalSearch={true}>
+  {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
+  <Fragment slot="custom-header" />
+  <ParentPageShell pageId="progress">
+
+    {/* ─── Pillars (full inline content) ─── */}
+    <section data-parent-section="pillars" id="progress-section-pillars">
+      <div class="progress-inline-page" id="pillars-inline">
+        <div class="progress-inline-page__header">
+          <button
+            type="button"
+            class="pillars-page__add-btn"
+            id="pillar-add-btn"
+            aria-label="Create new Pillar"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Pillar
+          </button>
+        </div>
+
+        <InlineHelper helperId="pillars-explainer" title="What are Pillars?" icon="🏛️">
+          <p><strong>Pillars</strong> are permanent, identity-based motivational anchors. They answer the question <em>"Who am I, and what do I stand for?"</em></p>
+          <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. Principles marked <strong>Non-Negotiable</strong> are injected into AI system prompts to keep recommendations aligned with your values.</p>
+          <p>Research suggests 3-5 active Pillars is optimal for focus. Press <kbd>?</kbd> to restore this helper if dismissed.</p>
+        </InlineHelper>
+
+        {enrichedPillars.length === 0 ? (
+          <div class="pillars-page__empty">
+            <div class="pillars-page__empty-icon" aria-hidden="true">🏛️</div>
+            <h2 class="pillars-page__empty-title">No Pillars yet</h2>
+            <p class="pillars-page__empty-desc">
+              Start by defining the 3-5 core pillars that anchor your identity.
+              Think big, permanent categories: <em>Physical Longevity</em>, <em>Financial Independence</em>, <em>Unbreakable Family</em>.
+            </p>
+            <button
+              type="button"
+              class="pillars-page__empty-action"
+              id="pillar-add-btn-empty"
+              aria-label="Create your first Pillar"
+            >
+              Create Your First Pillar
+            </button>
+          </div>
+        ) : (
+          <div class="pillars-page__grid">
+            {enrichedPillars.map((pillar) => (
+              <PillarCard
+            id={pillar.id}
+            slug={pillar.slug}
+            name={pillar.name}
+            manifesto={pillar.manifesto}
+            icon={pillar.icon}
+            colorHex={pillar.colorHex}
+            weight={pillar.weight}
+            principles={pillar.principles}
+            linkedGoalCount={pillar.linkedGoalCount}
+          />
+            ))}
+          </div>
+        )}
+      </div>
+      <PillarFormModal />
+      <PillarDetailModal />
+    </section>
+
+    {/* ─── Routines (links to full /habits page — too complex for inline embed) ─── */}
+    <section data-parent-section="routines" id="progress-section-routines" hidden>
+      <InlineHelper helperId="progress-routines-explainer" title="What are Routines?" icon="💡">
+        <p><strong>Routines</strong> are recurring templates that automatically create daily or weekly tasks. Complete them to build streaks and earn XP.</p>
+        <p>Press <kbd>?</kbd> to restore this helper if dismissed.</p>
+      </InlineHelper>
+      <SectionHubCard
+        href="/habits"
+        icon="🔁"
+        title="Routines"
+        description="Daily and weekly routine templates with streak tracking and habit formation. Routines create real tasks that feed into your daily workflow."
+        id="progress-routines-link"
+      >
+        <div slot="stats" class="stat-card"><span class="stat-value">{habits.length}</span><span class="stat-label">Active Routines</span></div>
+        <div slot="stats" class="stat-card"><span class="stat-value">{habits.filter(h => h.currentStreak > 0).length}</span><span class="stat-label">Active Streaks</span></div>
+      </SectionHubCard>
+    </section>
+
+    {/* ─── Goals (inline content — Phase 18) ─── */}
+    <section data-parent-section="goals" id="progress-section-goals" hidden>
+      <InlineHelper helperId="progress-goals-explainer" title="How do Goals work?" icon="🎯" variant="tip">
+        <p><strong>Goals</strong> are long-term pillars — they have no deadlines. Link Projects to Goals to track progress toward outcomes. Goals sit at the top of the hierarchy: <strong>Area → Goal → Project → Task</strong>.</p>
+      </InlineHelper>
+      <GoalsTab />
+    </section>
+
+    {/* ─── Achievements (inline content — Phase 18) ─── */}
+    <section data-parent-section="achievements" id="progress-section-achievements" hidden>
+      <InlineHelper helperId="progress-achievements-explainer" title="Achievements & Gamification" icon="🏆" variant="tip">
+        <p>Complete tasks to earn <strong>XP</strong>, build <strong>streaks</strong>, and unlock achievements. Higher-priority tasks award more points. Routine streaks also contribute to your progress here.</p>
+      </InlineHelper>
+      <AchievementsTab />
+    </section>
+  </ParentPageShell>
+</Layout>
+
+<script>
+  import "@lib/pillar-card-controller"
+  import "@lib/pillar-detail-controller"
+</script>
+
+<style>
+  @reference "../styles/global.css";
+
+  /* ─── Inline page wrapper ─── */
+  .progress-inline-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0.5rem 0;
+  }
+
+  .progress-inline-page__header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  /* ─── Pillars inline ─── */
+  .pillars-page__add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 150ms ease, transform 150ms ease;
+    white-space: nowrap;
+  }
+
+  .pillars-page__add-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+
+  .pillars-page__grid {
+    columns: 1;
+    gap: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .pillars-page__grid { columns: 2; }
+  }
+
+  @media (min-width: 960px) {
+    .pillars-page__grid { columns: 3; }
+  }
+
+  .pillars-page__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4rem 2rem;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg, 12px);
+    margin-top: 1rem;
+  }
+
+  .pillars-page__empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.6;
+  }
+
+  .pillars-page__empty-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .pillars-page__empty-desc {
+    margin: 0 0 1.5rem;
+    font-size: 0.9375rem;
+    color: var(--text-muted);
+    max-width: 400px;
+    line-height: 1.5;
+  }
+
+  .pillars-page__empty-action {
+    padding: 0.625rem 1.5rem;
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 150ms ease, transform 150ms ease;
+  }
+
+
+  .pillars-page__empty-action:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+</style>

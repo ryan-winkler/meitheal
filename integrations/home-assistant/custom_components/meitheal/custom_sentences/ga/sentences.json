@@ -1,0 +1,402 @@
+{
+  "language": "ga",
+  "intents": {
+    "MeithealAddTask": {
+      "data": [
+        {
+          "sentences": [
+            "cuir {item} le [mo] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "cuir {item} ar [mo] liosta [tascanna]"
+          ]
+        },
+        {
+          "sentences": [
+            "tasc nua {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] cuir {item} [leis]"
+          ]
+        },
+        {
+          "sentences": [
+            "caithfidh mé {item} [a dhéanamh]"
+          ]
+        },
+        {
+          "sentences": [
+            "tá {item} le déanamh [agam]"
+          ]
+        },
+        {
+          "sentences": [
+            "cuir [i gcuimhne dom] {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "[cruthaigh|déan] tasc {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "cuir {item} [ar] [an] liosta le déanamh"
+          ]
+        },
+        {
+          "sentences": [
+            "[an féidir leat] {item} [a chur] [le mo thascanna|ar an liosta]"
+          ]
+        }
+      ]
+    },
+    "MeithealAddTaskPrompt": {
+      "data": [
+        {
+          "sentences": [
+            "cuir tasc [nua] [leis]"
+          ]
+        },
+        {
+          "sentences": [
+            "tasc nua"
+          ]
+        },
+        {
+          "sentences": [
+            "[cruthaigh|déan] tasc [nua]"
+          ]
+        },
+        {
+          "sentences": [
+            "cuir [rud éigin] [ar] [mo] liosta"
+          ]
+        },
+        {
+          "sentences": [
+            "[ba mhaith liom] tasc [nua] [a chur leis]"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] [cuir|cruthaigh|déan] [tasc] [nua]"
+          ]
+        }
+      ]
+    },
+    "MeithealDoneTask": {
+      "data": [
+        {
+          "sentences": [
+            "tá {item} déanta"
+          ]
+        },
+        {
+          "sentences": [
+            "críochnaigh {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "déanta [le] {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] déanta [le] {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "{item} [atá] déanta"
+          ]
+        },
+        {
+          "sentences": [
+            "[marcáil] {item} [mar] déanta"
+          ]
+        },
+        {
+          "sentences": [
+            "rinne mé {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "[tá] {item} [curtha i] [gcrích|críoch]"
+          ]
+        },
+        {
+          "sentences": [
+            "tic {item} [as]"
+          ]
+        },
+        {
+          "sentences": [
+            "seiceáil {item} [as]"
+          ]
+        }
+      ]
+    },
+    "MeithealDeleteTask": {
+      "data": [
+        {
+          "sentences": [
+            "scrios {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "bain {item} [de] [mo] [liosta|thascanna]"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] scrios {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] bain {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "fáigh réidh le {item}"
+          ]
+        },
+        {
+          "sentences": [
+            "cuir {item} ar ceal"
+          ]
+        },
+        {
+          "sentences": [
+            "ná bac le {item} [a thuilleadh]"
+          ]
+        }
+      ]
+    },
+    "MeithealShowTasks": {
+      "data": [
+        {
+          "sentences": [
+            "taispeáin [mo] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad|céard] [atá] ar [mo] liosta"
+          ]
+        },
+        {
+          "sentences": [
+            "[mo] liosta tascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] tascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "liostaigh [mo] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad|céard] [iad] [mo] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[an féidir leat] [mo] thascanna [a thaispeáint]"
+          ]
+        },
+        {
+          "sentences": [
+            "oscail [mo] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad] [atá] le déanamh [agam]"
+          ]
+        },
+        {
+          "sentences": [
+            "taispeáin [mo] [meitheal|me hall|may hall] [liosta|tascanna]"
+          ]
+        }
+      ]
+    },
+    "MeithealOverdue": {
+      "data": [
+        {
+          "sentences": [
+            "[cad|céard] [atá] déanach"
+          ]
+        },
+        {
+          "sentences": [
+            "tascanna déanacha"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad] a chaill mé"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] [cad|céard] [atá] déanach"
+          ]
+        },
+        {
+          "sentences": [
+            "[an bhfuil] [aon rud|rud ar bith] déanach"
+          ]
+        },
+        {
+          "sentences": [
+            "tascanna [atá] thar am"
+          ]
+        },
+        {
+          "sentences": [
+            "[an bhfuil] mé i ndiaidh [na] [spriocdhátaí|am]"
+          ]
+        }
+      ]
+    },
+    "MeithealToday": {
+      "data": [
+        {
+          "sentences": [
+            "[cad|céard] [atá] dlite inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "tascanna [an lae] inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[mo] lá"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad|céard] [atá] ar siúl inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad] [atá] le déanamh [agam] inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad|céard] [atá] [beartaithe|pleanáilte] inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad] [é] [mo] sceideal inniu"
+          ]
+        }
+      ]
+    },
+    "MeithealSummary": {
+      "data": [
+        {
+          "sentences": [
+            "[cé mhéad|cá mhéad] tasc"
+          ]
+        },
+        {
+          "sentences": [
+            "achoimre [ar] thascanna"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] achoimre"
+          ]
+        },
+        {
+          "sentences": [
+            "[conas] [atá] [ag éirí liom|mé ag déanamh] [le tascanna]"
+          ]
+        },
+        {
+          "sentences": [
+            "stádas [na] [dtascanna|tascanna]"
+          ]
+        },
+        {
+          "sentences": [
+            "[tabhair] forbhreathnú [dom] [ar] [na] tascanna"
+          ]
+        }
+      ]
+    },
+    "MeithealBriefing": {
+      "data": [
+        {
+          "sentences": [
+            "maidin mhaith"
+          ]
+        },
+        {
+          "sentences": [
+            "tabhair tuairisc dom"
+          ]
+        },
+        {
+          "sentences": [
+            "tosaigh [mo] lá"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] maidin mhaith"
+          ]
+        },
+        {
+          "sentences": [
+            "[meitheal|me hall|may hall] [tuairisc|achoimre]"
+          ]
+        },
+        {
+          "sentences": [
+            "[cad] [é] scéal [an lae] inniu"
+          ]
+        },
+        {
+          "sentences": [
+            "[conas] [atá] [mo] lá [ag breathnú]"
+          ]
+        },
+        {
+          "sentences": [
+            "tuairisc [laethúil]"
+          ]
+        }
+      ]
+    }
+  },
+  "lists": {}
+}

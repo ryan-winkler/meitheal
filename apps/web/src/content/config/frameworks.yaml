@@ -1,0 +1,3 @@
+registry:
+  path: "src/content/frameworks"
+  strict_schema: true

@@ -1,0 +1,612 @@
+/* =============================================
+ * _kanban.css — Kanban board, columns, cards, drag-drop, lane management
+ *
+ * Domain: Kanban bounded context
+ * Owns: .kanban-board, .kanban-column, .kanban-card, .drag-over, .lane-*
+ * Does NOT own: task items (_tasks.css), generic cards (_cards.css)
+ * ============================================= */
+/* --- Kanban board --- */
+.kanban-board {
+  @apply flex gap-4 overflow-x-auto pb-4 px-6 min-h-[60vh];
+  max-height: calc(100dvh - 200px);
+  /* P0-2: Enable native touch scrolling in HA WebView iframe */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  /* P0-3: Promote to GPU compositing layer for smooth scroll */
+  /* will-change removed per research — static application wastes GPU memory */
+}
+
+.kanban-column {
+  @apply min-w-[260px] max-w-[300px] bg-bg-secondary/40 backdrop-blur-md rounded-lg border border-border flex flex-col;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* Column top-border accent — matches status dot color */
+.kanban-column-header[data-column-key="backlog"] { border-top: 3px solid #9ca3af; }
+.kanban-column-header[data-column-key="pending"] { border-top: 3px solid #3b82f6; }
+.kanban-column-header[data-column-key="active"] { border-top: 3px solid #f59e0b; }
+.kanban-column-header[data-column-key="complete"] { border-top: 3px solid #22c55e; }
+
+/* Drag insertion line between cards */
+.kanban-card.drag-insert-above {
+  border-top: 2px solid var(--accent);
+  margin-top: -1px;
+}
+.kanban-card.drag-insert-below {
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
+}
+
+.reorder-indicator {
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  margin: 2px 0;
+  pointer-events: none;
+}
+
+.kanban-column-header {
+  @apply flex items-center justify-between px-4 py-3 font-semibold text-sm;
+  flex-shrink: 0;
+}
+
+.kanban-column-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+}
+
+.column-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.column-status-dot.status-backlog { background: #9ca3af; }
+.column-status-dot.status-pending { background: #3b82f6; }
+.column-status-dot.status-active { background: #f59e0b; }
+.column-status-dot.status-complete { background: #22c55e; }
+
+.kanban-count {
+  @apply bg-bg-card text-text-muted text-xs px-2 py-0.5 rounded-[8px];
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.kanban-count.wip-warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.kanban-count.wip-over { background: rgba(239, 68, 68, 0.2); color: #ef4444; font-weight: 600; }
+
+.kanban-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kanban-wip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+}
+
+.kanban-wip.wip-over {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  font-weight: 600;
+  animation: wip-pulse 1.5s ease-in-out infinite;
+}
+
+.kanban-column.wip-exceeded {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.03);
+}
+
+@keyframes wip-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.kanban-cards {
+  @apply flex flex-col gap-2 p-3 flex-1 min-h-[100px];
+  overflow-y: auto;
+  min-height: 0; /* Allow flex child to shrink below content size for scroll */
+}
+
+.kanban-cards::-webkit-scrollbar {
+  width: 4px;
+}
+
+.kanban-cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kanban-cards::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.kanban-cards::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.kanban-card {
+  @apply bg-bg-card/90 backdrop-blur-sm border border-border rounded-md p-3 cursor-grab shadow-sm relative;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.kanban-card:hover {
+  @apply bg-bg-card border-accent/40;
+  box-shadow:
+    0 12px 24px -6px rgba(99, 102, 241, 0.15),
+    0 4px 8px -2px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+/* Drag handle grip indicator on hover */
+.kanban-card::before {
+  content: "⠿";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  line-height: 1;
+}
+.kanban-card:hover::before { opacity: 0.5; }
+.kanban-card.dragging::before { opacity: 0; }
+
+/* Keyboard focus ring (accessibility) */
+.kanban-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.kanban-column.drag-over {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.kanban-card.dragging {
+  @apply bg-bg-card;
+  opacity: 0.85;
+  transform: scale(1.03);
+  border: 1px solid var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  cursor: grabbing;
+  will-change: transform;
+}
+
+.kanban-card-title {
+  @apply font-medium text-sm text-text-primary mb-1;
+  font-weight: 600;
+  line-height: 1.4;
+  padding-bottom: 2px;
+}
+
+.kanban-title-text {
+  cursor: default;
+  border-radius: 3px;
+  padding: 1px 2px;
+  margin: -1px -2px;
+  transition: background 0.15s ease, outline 0.15s ease;
+}
+
+.kanban-title-text:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.kanban-title-text[contenteditable="true"] {
+  cursor: text;
+  outline: 1.5px solid var(--accent);
+  background: var(--bg-secondary);
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+}
+
+.search-highlight {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.kanban-ticket-key {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  margin-right: 6px;
+  font-weight: 500;
+}
+
+.kanban-card-desc {
+  @apply text-xs text-text-muted leading-relaxed mb-2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding-top: 2px;
+  margin-top: 2px;
+}
+
+.kanban-card-meta {
+  @apply flex items-center gap-2 text-xs;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.kanban-card-actions {
+  @apply absolute bottom-2 right-2 flex gap-1 opacity-0 pointer-events-none;
+  transition: opacity 0.15s ease;
+}
+
+.kanban-card:is(:hover, :focus-within) .kanban-card-actions {
+  @apply opacity-100 pointer-events-auto;
+}
+
+.card-action-btn {
+  @apply bg-bg-hover/80 border-none rounded px-1.5 py-0.5 cursor-pointer text-xs transition-colors;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+
+.card-action-btn:hover {
+  @apply bg-accent/20;
+}
+
+/* More actions and lane choice */
+.card-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 32px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.card-open-btn .kanban-ticket-key {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.card-more-btn {
+  flex: none;
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+}
+.card-more-btn:active {
+  background: var(--bg-hover);
+}
+.kanban-card[aria-busy="true"] .card-more-btn {
+  cursor: progress;
+}
+.kanban-column-title {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.kanban-header-right {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.kanban-context-menu {
+  position: fixed;
+  z-index: 200;
+  width: min(15rem, calc(100vw - 16px));
+  overflow: auto;
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+}
+.ctx-heading {
+  margin: 4px 8px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  text-align: start;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ctx-item:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+}
+.ctx-delete {
+  margin-block-start: 4px;
+  border-block-start: 1px solid var(--border);
+  color: var(--danger);
+}
+@media (pointer: coarse) {
+  .ctx-item, .card-more-btn, .card-open-btn {
+    min-block-size: 44px;
+  }
+  .card-more-btn {
+    min-inline-size: 44px;
+  }
+}
+
+.kanban-empty {
+  @apply text-center text-text-muted text-xs py-8 border border-dashed border-border/60 rounded-lg;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+  opacity: 0.8;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.kanban-empty:hover {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%);
+}
+
+.kanban-empty::before {
+  content: "✨";
+  font-size: 20px;
+  opacity: 0.5;
+  filter: grayscale(1);
+  margin-bottom: 2px;
+}
+
+.kanban-add-task {
+  @apply text-sm text-text-muted cursor-pointer px-4 py-2.5 transition-all;
+    border-top: 1px dashed var(--border);
+    text-align: center;
+    font-weight: 500;
+}
+
+.kanban-add-task:hover {
+  @apply text-accent;
+  background: rgba(99, 102, 241, 0.06);
+    border-top-color: var(--accent);
+    border-top-style: solid;
+}
+
+.swimlane-add-btn {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px dashed var(--border);
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.swimlane-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- Lane management --- */
+.lane-mgmt {
+  @apply fixed inset-0 bg-black/60 z-[200] flex items-center justify-center;
+}
+
+.lane-mgmt.hidden {
+  display: none !important;
+}
+
+.lane-mgmt-inner {
+  @apply bg-bg-card border border-border rounded-xl shadow-lg w-full max-w-md mx-4 p-6;
+}
+
+.lane-item {
+  @apply flex items-center gap-2 py-1;
+}
+
+.lane-edit,
+.lane-remove {
+  @apply bg-transparent border-none cursor-pointer text-text-muted text-sm;
+}
+
+.lane-edit:hover {
+  @apply text-info;
+}
+
+.lane-remove:hover {
+  @apply text-danger;
+}
+
+/* --- Command palette items --- */
+.cp-item {
+  @apply px-4 py-2.5 cursor-pointer text-sm text-text-primary transition-colors;
+}
+
+.cp-item:hover {
+  @apply bg-bg-hover;
+}
+
+/* --- Misc --- */
+.n8n-event {
+  @apply flex items-center justify-between py-2 px-3 bg-bg-secondary/50 rounded-md text-sm;
+}
+
+/* --- Swimlane collapse animation --- */
+.swimlane-cards {
+  transition: max-height 0.3s ease-out, opacity 0.2s ease, padding 0.2s ease;
+  overflow: hidden;
+}
+
+.swimlane-cards.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  padding: 0;
+}
+
+.swimlane-toggle {
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.swimlane-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* --- Accessibility: respect motion preferences --- */
+@media (prefers-reduced-motion: reduce) {
+  .kanban-card,
+  .kanban-card-actions,
+  .card-action-btn,
+  .swimlane-cards,
+  .swimlane-toggle,
+  .swimlane-add-btn,
+  .kanban-add-task,
+  .kanban-context-menu,
+  .kanban-card::before {
+    transition: none !important;
+    animation: none !important;
+  }
+  .kanban-card:hover {
+    transform: none;
+  }
+  .kanban-card.dragging {
+    transform: none;
+  }
+}
+
+/* --- Inline style migrations (Plan 06-05) --- */
+
+/* Toolbar */
+.kanban-actions-slot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.kanban-type-toolbar {
+  padding: 8px 0;
+}
+
+.toolbar-label {
+  margin-right: 4px;
+}
+
+/* Lane management panel */
+.lane-mgmt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.lane-mgmt-close {
+  font-size: 18px;
+  padding: 4px 8px;
+}
+
+.lane-mgmt-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lane-mgmt-add-input {
+  flex: 1;
+  font-size: 13px;
+}
+
+.lane-mgmt-add-btn {
+  font-size: 13px;
+}
+
+/* Lane item rows (JS template) */
+.lane-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.lane-drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.lane-item-label {
+  flex: 1;
+  font-size: 13px;
+}
+
+.lane-wip-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lane-wip-input {
+  width: 40px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.lane-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.lane-action-btn.edit { color: var(--text-muted); }
+.lane-action-btn.remove { color: var(--danger); }
+
+.lane-builtin-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Quick-add form */
+.quick-add-input {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.quick-add-btn {
+  font-size: 13px;
+  padding: 6px 12px;
+}
+
+/* Card metadata text color default */
+.kanban-card-due {
+  color: var(--text-primary);
+}

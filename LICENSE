@@ -1,0 +1,33 @@
+# Meitheal Source-Available License 1.0
+
+Copyright (c) 2026 Ryan Winkler
+
+## 1. Covered software
+
+“Meitheal” means the source and other material that the rights holder identifies as covered by this license in the release’s notices. “Modified Meitheal” means that covered material with additions, deletions, or adaptations. Separately licensed material remains subject to the license identified in its notices.
+
+## 2. Permission
+
+Subject to these terms, the rights holder grants a worldwide, royalty-free, nonexclusive copyright license to run, study, copy, and modify Meitheal. A person or organisation may run it for its own internal purposes, including business operations. You may publish a fork, distribute copies, and provide access to Meitheal free of charge, subject to the attribution and source obligations below.
+
+## 3. Paid activity
+
+This license withholds permission to sell, rent, sublicense for payment, or otherwise distribute Meitheal or Modified Meitheal for compensation. This restriction covers charging for access to a hosted or managed instance and charging for services that provide, install, host, integrate, operate, maintain, customise, support, or train users on Meitheal. It also covers a bundle, white-label offer, or required payment that includes such a copy, access, or service. Paying employees for their work within the organisation’s own operations remains within the internal-use permission.
+
+## 4. Attribution and distribution
+
+For each public fork, distributed copy, and service that gives others access to Meitheal, retain the applicable copyright, license, attribution, and warranty notices. Identify Meitheal and the original rights holder in the README or another equally visible place. Link to the upstream repository and include this license with the copy. Identify modified releases as modified and give a date or version for the changes. Describe your relationship to Meitheal accurately.
+
+Provide the corresponding source of a distributed modified build, including the changes and instructions needed to reproduce it, without charge to its recipients. Supply the source with the build or through a durable link included with it. Each recipient receives the same permissions and obligations under these terms. Trademark and endorsement permissions require a separate grant.
+
+## 5. Offer changes upstream
+
+If you put Modified Meitheal into operational use, including internal use inside your organisation, offer the covered changes to the Meitheal maintainer within 30 days of first use. If you distribute the modified build or offer access to it sooner, make the offer by that date.
+
+Provide the complete source for your changes as a patch, branch, or equivalent readable source. Identify the upstream version and include the build or verification steps needed to understand the change. You may use the project’s contribution route or send the offer directly to the maintainer. Use the project’s private reporting route for security-sensitive changes. Remove credentials and household data from what you send. You retain ownership of your changes and grant the maintainer permission to use and distribute the offered changes under these terms. The maintainer decides whether to accept them.
+
+## 6. Termination and warranty
+
+The permissions in this license depend on compliance with its terms. If you violate them, these permissions terminate. The rights holder may reinstate them after you remedy the violation. Existing recipients who comply with the license retain their permissions.
+
+The software is provided as is, to the extent permitted by applicable law. The rights holder gives no express or implied warranty. To the extent permitted by applicable law, the rights holder is not liable for losses arising from use of the software.

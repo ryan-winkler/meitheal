@@ -1,0 +1,112 @@
+---
+/**
+ * PillarSelector — Dropdown for linking entities to a Pillar
+ *
+ * Used in task/goal/routine creation/edit modals to assign a Pillar.
+ * Loads Pillars from /api/pillars on mount.
+ *
+ * @domain pillars
+ * @kcs Primary association via direct FK — this selector sets pillar_id
+ */
+interface Props {
+  value?: string | null
+  name?: string
+  id?: string
+  class?: string
+}
+
+const { value, name = "pillarId", id = "pillar-selector", class: className } = Astro.props
+---
+
+<div class={`pillar-selector ${className ?? ""}`}>
+  <label for={id} class="pillar-selector__label">Pillar</label>
+  <select
+    id={id}
+    name={name}
+    class="pillar-selector__select"
+    data-pillar-selector
+  >
+    <option value="">— None (Unaligned) —</option>
+    <!-- Populated by client-side controller -->
+  </select>
+</div>
+
+<style>
+.pillar-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pillar-selector__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pillar-selector__select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.pillar-selector__select:hover {
+  border-color: var(--accent);
+}
+
+.pillar-selector__select:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 1px;
+}
+</style>
+
+<script>
+  /**
+   * PillarSelector client controller
+   *
+   * Fetches active Pillars and populates the <select>.
+   * Sets selected value from data-value attribute or initial value.
+   */
+  document.addEventListener("astro:page-load", () => {
+    const selects = document.querySelectorAll<HTMLSelectElement>("[data-pillar-selector]")
+    if (selects.length === 0) return
+
+    fetch("/api/pillars")
+      .then(r => r.json())
+      .then(data => {
+        if (!data.pillars) return
+
+        selects.forEach(select => {
+          // Preserve first option (None)
+          const firstOption = select.querySelector("option")
+          select.replaceChildren()
+          if (firstOption) select.appendChild(firstOption)
+
+          for (const pillar of data.pillars) {
+            const option = document.createElement("option")
+            option.value = pillar.id
+            option.textContent = `${pillar.icon || "🏛️"} ${pillar.name}`
+            select.appendChild(option)
+          }
+
+          // Set initial value if present
+          const initialValue = select.dataset.initialValue
+          if (initialValue) {
+            select.value = initialValue
+          }
+        })
+      })
+      .catch(() => {
+        // Silently fail — selector stays with "None" option only
+      })
+  })
+</script>

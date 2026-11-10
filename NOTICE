@@ -1,0 +1,11 @@
+# Meitheal notices
+
+Copyright (c) 2026 Ryan Winkler. The Meitheal Source-Available License 1.0 applies to the Meitheal-owned source and artwork in this release. Preserve this notice, LICENSE, and applicable third-party notices in redistributions.
+
+The application documentation in docs/ is available under CC BY 4.0 unless a file identifies other terms. See https://creativecommons.org/licenses/by/4.0/.
+
+The integration code in integrations/home-assistant/ and integrations/nodered/ is covered by the license files in those directories.
+
+Dependencies installed during setup or included in a build retain their own licenses. The font notices used by the web build are in apps/web/public/licenses/.
+
+The earlier compatibility API and alternate runtime are separately maintained in the private historical source under their existing terms. This release contains neither implementation. Earlier license grants continue to apply to copies already received under those grants.

@@ -1,0 +1,21 @@
+# i18n Configuration — Meitheal Locale Settings
+# Bounded Context: Infrastructure (i18n)
+#
+# To add a new language:
+#   1. Add an entry to supported_locales below
+#   2. Create src/i18n/{code}.json with all translation keys
+#   3. Import the new JSON in src/i18n/translations.ts
+#   4. Add the code to the Locale union type in src/lib/locale.ts
+
+i18n:
+  default_locale: en
+  supported_locales:
+    - code: en
+      label: English
+      native_label: English
+    - code: ga
+      label: Irish
+      native_label: Gaeilge
+  storage_key: meitheal-locale
+  cookie_name: meitheal-locale
+  fallback_locale: en

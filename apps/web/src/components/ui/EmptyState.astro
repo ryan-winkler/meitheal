@@ -1,0 +1,55 @@
+---
+import Icon from "./Icon.astro";
+interface Props {
+  title: string;
+  description: string;
+  actionText?: string;
+  actionHref?: string;
+  /** When set, renders a <button> that dispatches this custom event instead of an <a> link */
+  actionEvent?: string;
+}
+
+const { title, description, actionText, actionHref, actionEvent } = Astro.props;
+---
+
+<div class="empty-state">
+  <div class="empty-state-icon">
+    <slot name="icon">
+      <Icon name="empty" size={48} class="text-text-muted/40" />
+    </slot>
+  </div>
+  <h3 class="empty-state-title">{title}</h3>
+  <p class="empty-state-desc">{description}</p>
+  {
+    actionText && actionEvent ? (
+      <div class="empty-state-actions">
+        <button
+          type="button"
+          class="btn-primary"
+          data-empty-action={actionEvent}
+        >
+          {actionText}
+        </button>
+      </div>
+    ) : actionText && actionHref ? (
+      <div class="empty-state-actions">
+        <a href={actionHref} class="btn-primary">
+          {actionText}
+        </a>
+      </div>
+    ) : null
+  }
+</div>
+
+<script>
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-empty-action]")
+    .forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const eventName = btn.dataset.emptyAction;
+        if (eventName) {
+          document.dispatchEvent(new CustomEvent(eventName));
+        }
+      });
+    });
+</script>
