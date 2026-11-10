@@ -3,7 +3,8 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
-import { prepareCommentMentions } from "@lib/comment-mention-request"
+import { checkCommentMentionWriteContext, prepareCommentMentions } from "@lib/comment-mention-request"
+import { commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
 function parseCommentId(value: string | undefined): number | null {
@@ -12,14 +13,20 @@ function parseCommentId(value: string | undefined): number | null {
   return Number.isSafeInteger(id) ? id : null
 }
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, locals, request }) => {
   const id = parseCommentId(params.commentId)
   if (id === null) return apiError("Comment not found", 404)
 
   try {
     await ensureSchema()
     const comment = await new TaskRepository(getPersistenceClient()).getComment(params.id!, id)
-    return comment ? commentJson(comment) : apiError("Comment not found", 404)
+    if (!comment) return apiError("Comment not found", 404)
+    const content = String(comment.content)
+    if (locals.behindIngress && !locals.agentToken && hasCommentMentionSelector(content) &&
+        !await hasCurrentTaskParticipant(locals, request.signal, true)) {
+      return commentJson({ ...comment, content: redactCommentMentionSelectors(content) })
+    }
+    return commentJson(comment)
   } catch {
     return commentFailure("get", "Failed to load comment")
   }
@@ -35,9 +42,14 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
   if (id === null) return apiError("Comment not found", 404)
   const content = await readComment(request)
   if (content instanceof Response) return content
+  const parsedMentions = commentMentions(content)
+  if (parsedMentions.length) {
+    const wrongContext = checkCommentMentionWriteContext(request, locals)
+    if (wrongContext) return wrongContext
+  }
 
   try {
-    const prepared = await prepareCommentMentions(content, locals, request.signal)
+    const prepared = await prepareCommentMentions(content, parsedMentions, locals, request.signal)
     if (prepared instanceof Response) return prepared
     await ensureSchema()
     const comment = await new CommentMentionRepository(getPersistenceClient()).edit(params.id!, id, owner, prepared.content, prepared.recipients)

@@ -12,7 +12,7 @@ import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
-import { commentAttemptHeader } from "./lib/comment-mentions"
+import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
 import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
 
 const logger = createLogger({
@@ -378,8 +378,12 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
     hassUserId ? `ha:${hassUserId}` : undefined
   const replayBodySignal = commentRoute && request.headers.has("idempotency-key") ? taskParticipantBodySignal(request) : undefined
-  const durableComment = commentRoute && method === "POST" && request.headers.has(commentAttemptHeader)
-  const retryKey = privatePersonalRoute || durableComment ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
+  // Recheck the rendered account before processing mention writes or returning a durable receipt.
+  const commentMentionWrite = commentRoute && (
+    (method === "POST" && request.headers.has(commentAttemptHeader)) ||
+    ((method === "POST" || method === "PATCH") && request.headers.has(commentMentionContextHeader))
+  )
+  const retryKey = privatePersonalRoute || commentMentionWrite ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
   if (retryKey instanceof Response && !commentRoute) return retryKey
   locals.taskRetryKey = typeof retryKey === "string" ? retryKey : undefined
 

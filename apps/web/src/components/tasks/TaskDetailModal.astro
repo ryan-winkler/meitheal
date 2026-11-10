@@ -566,6 +566,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                 data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
                 data-participant-required={t("task_modal.participant_required", locale)}
                 data-mention-failed={t("mention_inbox.write_error", locale)}
+                data-mention-context-changed={t("mention_inbox.context_changed", locale)}
                 data-edit-failed={t("task_modal.comment_edit_failed", locale)}
                 data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
                 <div data-comment-actions class="flex flex-wrap gap-2">
@@ -593,6 +594,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
                     <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden
                       data-mention-failed={t("mention_inbox.write_error", locale)}
+                      data-mention-context-changed={t("mention_inbox.context_changed", locale)}
                       data-failed={t("task_modal.comment_failed", locale)}
                       data-participant-required={t("task_modal.participant_required", locale)}></p>
                     <div class="flex justify-end items-center gap-3 mt-2">

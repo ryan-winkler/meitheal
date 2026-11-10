@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 
 const contextKey = randomBytes(32)
-export const mentionInboxContextHeader = "X-Meitheal-Mention-Context"
+export { commentMentionContextHeader as mentionInboxContextHeader } from "./comment-mentions"
 
 export function mentionInboxContext(owner: string): string {
   return createHmac("sha256", contextKey).update(owner).digest("base64url")

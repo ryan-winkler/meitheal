@@ -34,7 +34,7 @@ components:
         id:
           type: integer
           minimum: 1
-        content: &a37
+        content: &a38
           type: string
           minLength: 1
           maxLength: 16
@@ -60,7 +60,7 @@ components:
           maxItems: 50
         next_cursor:
           anyOf:
-            - &a35
+            - &a36
               type: string
               pattern: ^[1-9][0-9]*$
             - type: "null"
@@ -826,7 +826,7 @@ paths:
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
       security: &a8
-        - &a33
+        - &a35
           haIngressSession: []
       parameters:
         - &a14
@@ -2541,7 +2541,7 @@ paths:
         - Tasks
       summary: List comments on a task
       description: Historical comments remain readable with task access. If Home Assistant cannot verify current membership,
-        can_manage is false.
+        mention selectors are hidden and can_manage is false.
       parameters:
         - name: id
           in: path
@@ -2568,8 +2568,9 @@ paths:
       tags:
         - Tasks
       summary: Add a comment to a task
-      description: Add a status update or handoff note. Home Assistant comment mentions require a current member and a durable
-        attempt header. Retry with the same text and header for 48 hours. The JSON body is limited to 32 KiB.
+      description: Add a status update or handoff note. Home Assistant comment mentions require a current member, a
+        rendered-account context, and a durable attempt header. Retry with the same text and attempt header for 48 hours
+        under the original account. The JSON body is limited to 32 KiB.
       parameters:
         - name: id
           in: path
@@ -2580,7 +2581,11 @@ paths:
           in: header
           schema:
             type: string
-      requestBody: &a32
+        - name: X-Meitheal-Mention-Context
+          in: header
+          schema:
+            type: string
+      requestBody: &a33
         required: true
         content:
           application/json:
@@ -2621,7 +2626,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "409":
-          description: A selected person is unavailable or the attempt already used different text.
+          description: The rendered account changed, a selected person is unavailable, or the attempt already used different text.
           content:
             application/problem+json:
               schema:
@@ -2650,14 +2655,15 @@ paths:
       tags:
         - Tasks
       summary: Get one comment on a task
-      parameters: &a31
-        - &a34
+      description: If Home Assistant cannot verify current membership, mention selectors are hidden.
+      parameters: &a34
+        - &a31
           name: id
           in: path
           required: true
           schema:
             type: string
-        - &a41
+        - &a32
           name: commentId
           in: path
           required: true
@@ -2683,9 +2689,16 @@ paths:
         - Tasks
       summary: Edit your comment
       description: The same currently active Home Assistant user or automation credential that created the comment may edit
-        it. A display name does not grant ownership.
-      parameters: *a31
-      requestBody: *a32
+        it. A display name does not grant ownership. Home Assistant edits containing mentions require the
+        rendered-account context.
+      parameters:
+        - *a31
+        - *a32
+        - name: X-Meitheal-Mention-Context
+          in: header
+          schema:
+            type: string
+      requestBody: *a33
       responses:
         "200":
           description: The updated comment
@@ -2712,6 +2725,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: The rendered account changed or a selected person is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
         "413":
           description: The request body exceeds 32 KiB.
           content:
@@ -2730,7 +2749,7 @@ paths:
         - Tasks
       summary: Delete your comment
       description: Permanently remove a comment created by the same currently active Home Assistant user or automation credential.
-      parameters: *a31
+      parameters: *a34
       responses:
         "204":
           description: Comment deleted
@@ -2760,14 +2779,14 @@ paths:
       summary: List reactions on a task card
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
-      security: &a36
-        - *a33
+      security: &a37
+        - *a35
         - bearerAuth: []
       parameters:
-        - *a34
+        - *a31
         - name: cursor
           in: query
-          schema: *a35
+          schema: *a36
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -2776,19 +2795,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
         "400": *a10
-        "401": &a38
+        "401": &a39
           description: An ingress session or a valid automation token is required.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "403": &a39
+        "403": &a40
           description: An active, nonsystem Home Assistant account or an automation token with the required task scope is needed.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "404": &a40
+        "404": &a41
           description: The task or comment does not exist.
           content:
             application/problem+json:
@@ -2803,9 +2822,9 @@ paths:
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
         need tasks:write.
-      security: *a36
+      security: *a37
       parameters:
-        - *a34
+        - *a31
       requestBody:
         required: true
         content:
@@ -2815,7 +2834,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a37
+                content: *a38
               additionalProperties: false
       responses:
         "201":
@@ -2825,9 +2844,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
         "400": *a10
-        "401": *a38
-        "403": *a39
-        "404": *a40
+        "401": *a39
+        "403": *a40
+        "404": *a41
         "408":
           description: The request body did not arrive in time.
           content:
@@ -2855,9 +2874,9 @@ paths:
       summary: Remove your reaction from a task card
       description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
         Automation tokens need tasks:write.
-      security: *a36
+      security: *a37
       parameters:
-        - *a34
+        - *a31
         - name: reactionId
           in: path
           required: true
@@ -2867,8 +2886,8 @@ paths:
       responses:
         "204":
           description: Reaction removed
-        "401": *a38
-        "403": *a39
+        "401": *a39
+        "403": *a40
         "404":
           description: The reaction was not found on this target or is owned by a different caller.
           content:
@@ -2884,13 +2903,13 @@ paths:
       summary: List reactions on a task comment
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
-      security: *a36
+      security: *a37
       parameters:
-        - *a34
-        - *a41
+        - *a31
+        - *a32
         - name: cursor
           in: query
-          schema: *a35
+          schema: *a36
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -2899,9 +2918,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
         "400": *a10
-        "401": *a38
-        "403": *a39
-        "404": *a40
+        "401": *a39
+        "403": *a40
+        "404": *a41
         "500": *a12
     post:
       operationId: addTaskCommentReaction
@@ -2911,8 +2930,8 @@ paths:
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
         need tasks:write.
-      security: *a36
-      parameters: *a31
+      security: *a37
+      parameters: *a34
       requestBody:
         required: true
         content:
@@ -2922,7 +2941,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a37
+                content: *a38
               additionalProperties: false
       responses:
         "201":
@@ -2932,9 +2951,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
         "400": *a10
-        "401": *a38
-        "403": *a39
-        "404": *a40
+        "401": *a39
+        "403": *a40
+        "404": *a41
         "408":
           description: The request body did not arrive in time.
           content:
@@ -2962,10 +2981,10 @@ paths:
       summary: Remove your reaction from a task comment
       description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
         Automation tokens need tasks:write.
-      security: *a36
+      security: *a37
       parameters:
-        - *a34
-        - *a41
+        - *a31
+        - *a32
         - name: reactionId
           in: path
           required: true
@@ -2975,8 +2994,8 @@ paths:
       responses:
         "204":
           description: Reaction removed
-        "401": *a38
-        "403": *a39
+        "401": *a39
+        "403": *a40
         "404":
           description: The reaction was not found on this target or is owned by a different caller.
           content:
@@ -2992,7 +3011,7 @@ paths:
       summary: Count card reactions for a batch of tasks
       description: Returns positive counts keyed by task ID. Comment reactions are excluded. Home Assistant ingress requires
         current membership. Automation tokens need tasks:read.
-      security: *a36
+      security: *a37
       parameters:
         - name: ids
           in: query
@@ -3009,8 +3028,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionCounts"
         "400": *a10
-        "401": *a38
-        "403": *a39
+        "401": *a39
+        "403": *a40
         "500": *a12
   /api/tasks/{id}/links:
     get:

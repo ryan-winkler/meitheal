@@ -1,5 +1,6 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { apiError, apiJson } from "./api-response"
+import { hasCommentMentionSelector, isIndentedCommentCode } from "./comment-mentions"
 import { readWithinLimit } from "./bounded-body"
 import { taskParticipantBodySignal, taskParticipantBodyTimeout } from "./task-participant"
 import { sanitize } from "./sanitize"
@@ -27,9 +28,19 @@ export async function readComment(request: Request): Promise<string | Response> 
     return apiError("Send a valid UTF-8 JSON request body", 400)
   }
   const rawContent = payload && typeof payload === "object" && "content" in payload
-    && typeof payload.content === "string" ? payload.content.trim() : ""
-  const content = rawContent.length <= maxContentLength ? sanitize(rawContent).trim() : rawContent
-  if (!content) return apiError("content is required", 400)
+    && typeof payload.content === "string" ? payload.content : ""
+  const trimmed = rawContent.trim()
+  let content = trimmed
+  if (trimmed.length <= maxContentLength) {
+    if (hasCommentMentionSelector(rawContent)) {
+      // Trimming away the first line's indentation could turn an example into a delivery.
+      const cleaned = sanitize(rawContent).replace(/^(?:[ \t\r]*\n)+/, "").trimEnd()
+      content = isIndentedCommentCode(cleaned) ? cleaned : cleaned.trimStart()
+    } else {
+      content = sanitize(trimmed).trim()
+    }
+  }
+  if (!content.trim()) return apiError("content is required", 400)
   if (content.length > maxContentLength) {
     return apiError("content must be 5000 characters or less", 400)
   }

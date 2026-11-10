@@ -103,7 +103,13 @@ Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
       }))
     }
 
+    function clearOffline() {
+      clear()
+      status!.textContent = labels.error ?? ""
+    }
+
     async function load(mark?: { id: number | null, read: boolean }) {
+      if (!navigator.onLine) return clearOffline()
       clear()
       status!.textContent = labels.loading ?? ""
       const pending = new AbortController()
@@ -116,7 +122,7 @@ Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
         const read = await request({ action: "list", before }, pending)
         if (!read.ok) throw read
         const data = await read.json() as { items: Item[], unread: number, next: number | null }
-        if (pending.signal.aborted || signal.aborted || current !== pending) return
+        if (pending.signal.aborted || signal.aborted || current !== pending || !navigator.onLine) return
         next = data.next
         render(data.items, data.unread)
         if (mark?.id !== null && mark?.id !== undefined) {
@@ -138,14 +144,17 @@ Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
       if (button) void load({ id: Number(button.dataset.notification), read: button.dataset.read !== "true" })
     }, { signal })
     window.addEventListener("blur", clear, { signal })
-    window.addEventListener("focus", () => { if (!document.hidden && !current) void load() }, { signal })
+    const reloadVisible = () => { if (!document.hidden && !current) void load() }
+    window.addEventListener("focus", reloadVisible, { signal })
+    window.addEventListener("offline", clearOffline, { signal })
+    window.addEventListener("online", reloadVisible, { signal })
     window.addEventListener("pagehide", clear, { signal })
-    window.addEventListener("pageshow", event => { if (event.persisted) void load() }, { signal })
+    window.addEventListener("pageshow", event => { if (event.persisted) reloadVisible() }, { signal })
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) clear()
-      else void load()
+      else reloadVisible()
     }, { signal })
-    navigator.serviceWorker?.addEventListener("controllerchange", () => void load(), { signal })
+    navigator.serviceWorker?.addEventListener("controllerchange", () => { clear(); reloadVisible() }, { signal })
     signal.addEventListener("abort", clear, { once: true })
     void load()
   })

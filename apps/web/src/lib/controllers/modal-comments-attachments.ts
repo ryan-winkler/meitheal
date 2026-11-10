@@ -12,7 +12,7 @@ import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
-import { isCommentMentionProblem } from "@lib/comment-mention-client"
+import { commentMentionWriteHeaders, readCommentMentionProblem } from "@lib/comment-mention-client"
 import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
 
@@ -66,15 +66,16 @@ function attachCommentManagement(
     try {
       const response = await fetch(url, {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...commentMentionWriteHeaders(input.value) },
         body: JSON.stringify({ content: input.value }),
         signal,
       })
       if (!response.ok) {
         const participantDenied = await isActiveParticipantProblem(response)
-        const mentionFailed = await isCommentMentionProblem(response)
+        const mentionFailure = await readCommentMentionProblem(response)
         if (isCurrent()) error.textContent = (participantDenied ? template.dataset.participantRequired
-          : mentionFailed ? template.dataset.mentionFailed : template.dataset.editFailed) ?? ""
+          : mentionFailure === "context" ? template.dataset.mentionContextChanged
+          : mentionFailure ? template.dataset.mentionFailed : template.dataset.editFailed) ?? ""
         throw new Error("Comment edit failed")
       }
       const updated = await response.json() as { content: string }

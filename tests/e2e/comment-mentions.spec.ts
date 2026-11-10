@@ -15,6 +15,10 @@ test("only canonical markers outside escaped text, code and links are comment me
   expect(commentMentions(text).map(({ key, label }) => ({ key, label }))).toEqual([
     { key, label: "Bríd · household" }, { key, label: "Bríd · household" },
   ])
+  const code = ["~~~md", marker, "~~~~", "", "    " + marker, "\t" + marker, "",
+    "<code> " + marker + " </code>", "```", marker, "```", "", marker,
+    "", "```markdown", marker].join("\n")
+  expect(commentMentions(code).map(({ start }) => start)).toEqual([code.indexOf("\n\n" + marker) + 2])
 })
 
 async function stop(child: ChildProcess) {
@@ -75,31 +79,90 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     const list = sender.getByRole("listbox", { name: "People to mention" })
     await expect(list.getByRole("option", { name: "Bríd Byrne" })).toBeVisible()
     await expect(list.getByRole("option")).toHaveCount(1)
+    await sender.context().setOffline(true)
+    await expect(list).toBeHidden()
+    await sender.context().setOffline(false)
+    await input.fill("Please check @Bri")
+    await input.fill("Please check @Br")
+    await expect(list.getByRole("option", { name: "Bríd Byrne" })).toBeVisible()
     await input.press("ArrowDown")
     await input.press("Enter")
     await expect(input).toHaveValue(/Please check @\{person:/)
-    const sent = input.inputValue()
-    const [receipt] = await Promise.all([
+    const text = await input.inputValue()
+    const marker = text.slice("Please check ".length)
+    const picker = sender.locator("#td-task-reference-picker")
+    let writeContext = (await picker.getAttribute("data-person-context"))!
+    const writeHeaders = () => ({ ...apiHeaders, "x-meitheal-mention-context": writeContext })
+    const switchSender = (user: string) => sender.context().addCookies([{ name: "feedback-fixture", value: user, url: origin }])
+    const postFromEditor = async () => (await Promise.all([
       sender.waitForResponse(response => response.url() === commentUrl && response.request().method() === "POST"),
       sender.locator("#td-comment-submit").click(),
-    ])
+    ]))[0]
+    const inbox = root + "/mention-inbox"
+    const recipientLink = recipient.getByRole("link", { name: "Private mention journey" })
+    const commentError = sender.locator("#td-comment-error")
+    const contextProblem = "https://meitheal.local/problems/comment-mention-context"
+
+    await switchSender("member-two")
+    const stale = await postFromEditor()
+    expect(stale.status()).toBe(409)
+    expect(stale.headers()["cache-control"]).toBe("private, no-store")
+    expect((await stale.json()).type).toBe(contextProblem)
+    await expect(commentError).toContainText("Your draft is still here")
+    await expect(input).toHaveValue(text)
+    await expect(input).toBeFocused()
+    expect((await (await sender.request.get(commentUrl)).json()).comments).toEqual([])
+    await recipient.goto(inbox)
+    await expect(recipient.getByText("You have no mentions.")).toBeVisible()
+    await switchSender("admin")
+
+    const literal = await sender.request.post(commentUrl, { headers: apiHeaders, data: { content: "    " + marker } })
+    expect(literal.status()).toBe(201)
+    const literalComment = await literal.json()
+    expect(literalComment.content).toBe("    " + marker)
+    expect((await sender.request.delete(commentUrl + "/" + literalComment.id, { headers: apiHeaders })).status()).toBe(204)
+
+    let committedStatus: number | undefined
+    await sender.route(commentUrl, async route => {
+      if (route.request().method() !== "POST") return route.continue()
+      const committed = await route.fetch()
+      committedStatus = committed.status()
+      await route.fulfill({ status: 201, contentType: "application/json", body: '{"id":' })
+    })
+    const truncated = await postFromEditor()
+    expect(committedStatus).toBe(201)
+    await expect(commentError).toContainText("Could not post your comment. Your text is still here")
+    await expect(input).toHaveValue(text)
+    expect((await (await sender.request.get(commentUrl)).json()).comments).toHaveLength(1)
+    await sender.unroute(commentUrl)
+    const receipt = await postFromEditor()
     expect(receipt.status()).toBe(201)
     const id = (await receipt.json()).id as number
     const attempt = (await receipt.request().allHeaders())["x-meitheal-comment-attempt"]!
-    const text = await sent
-    const marker = text.slice("Please check ".length)
+    expect(attempt).toMatch(/^\d+\./)
+    expect((await stale.request().allHeaders())["x-meitheal-comment-attempt"]).toBe(attempt)
+    expect((await truncated.request().allHeaders())["x-meitheal-comment-attempt"]).toBe(attempt)
+    await expect(input).toHaveValue("")
     await expect(sender.locator("#td-comment-" + id)).toContainText("@Bríd Byrne")
-    const replay = () => sender.request.post(commentUrl, { headers: { ...apiHeaders, "x-meitheal-comment-attempt": attempt }, data: { content: text } })
+    const replay = () => sender.request.post(commentUrl, { headers: { ...writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: text } })
+    await switchSender("member-two")
+    const staleReplay = await replay()
+    expect(staleReplay.status()).toBe(409)
+    expect((await staleReplay.json()).type).toBe(contextProblem)
+    await switchSender("admin")
     expect((await (await replay()).json()).id).toBe(id)
     expect((await sender.request.post(commentUrl, {
-      headers: { ...apiHeaders, "x-meitheal-comment-attempt": attempt }, data: { content: "Changed " + marker },
+      headers: { ...writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: "Changed " + marker },
     })).status()).toBe(409)
 
-    const inbox = root + "/mention-inbox"
-    const recipientLink = recipient.getByRole("link", { name: "Private mention journey" })
-    await recipient.goto(inbox)
+    await recipient.getByRole("button", { name: "Refresh inbox" }).click()
     await expect(recipientLink).toHaveAttribute("href", `${prefix}/tasks?open=${taskId}&comment=${id}`)
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 1" })).toBeVisible()
+    await recipient.context().setOffline(true)
+    await expect(recipientLink).toHaveCount(0)
+    await expect(recipient.getByText("Could not load mentions. Refresh and try again.")).toBeVisible()
+    await recipient.context().setOffline(false)
+    await expect(recipientLink).toBeVisible()
     await other.goto(inbox)
     await expect(other.getByText("You have no mentions.")).toBeVisible()
     await expect(other.getByRole("link", { name: "Private mention journey" })).toHaveCount(0)
@@ -121,6 +184,19 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await expect(list.getByRole("option", { name: "Bríd Byrne" })).toBeVisible()
     await list.getByRole("option", { name: "Bríd Byrne" }).tap()
     await expect(edit).toHaveValue(/Mention again @\{person:/)
+    const editDraft = await edit.inputValue()
+    await switchSender("member-two")
+    const [staleEdit] = await Promise.all([
+      sender.waitForResponse(response => response.url() === commentUrl + "/" + id && response.request().method() === "PATCH"),
+      editor.getByRole("button", { name: "Save comment" }).click(),
+    ])
+    expect(staleEdit.status()).toBe(409)
+    expect((await staleEdit.json()).type).toBe(contextProblem)
+    await expect(editor.getByRole("alert")).toContainText("Your draft is still here")
+    await expect(edit).toHaveValue(editDraft)
+    await recipient.getByRole("button", { name: "Refresh inbox" }).click()
+    await expect(recipient.getByText("You have no mentions.")).toBeVisible()
+    await switchSender("admin")
     await editor.getByRole("button", { name: "Save comment" }).click()
     await expect(editor).toContainText("@Bríd Byrne")
     await recipient.getByRole("button", { name: "Refresh inbox" }).click()
@@ -136,6 +212,8 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 1" })).toBeVisible()
     await recipient.getByRole("button", { name: "Mark all as read" }).click()
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 0" })).toBeVisible()
+    expect((await (await recipient.request.get(commentUrl)).json()).comments[0].content).toBe(editDraft)
+    expect((await (await recipient.request.get(commentUrl + "/" + id)).json()).content).toBe(editDraft)
 
     // Changing the HA session under a loaded page must not expose a new account.
     const contextKey = await recipient.locator("[data-mention-inbox]").getAttribute("data-context")
@@ -155,6 +233,14 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await recipient.getByRole("button", { name: "Refresh inbox" }).click()
     await expect(recipientLink).toHaveCount(0)
     await expect(recipient.getByText("Open the inbox again through Home Assistant with your active account.")).toBeVisible()
+    const revokedList = await recipient.request.get(commentUrl)
+    const revokedSingle = await recipient.request.get(commentUrl + "/" + id)
+    for (const result of [revokedList, revokedSingle]) {
+      expect(result.status()).toBe(200)
+      expect(result.headers()["cache-control"]).toBe("no-store")
+    }
+    expect((await revokedList.json()).comments).toMatchObject([{ content: "Mention again @…", can_manage: false }])
+    expect((await revokedSingle.json()).content).toBe("Mention again @…")
 
     const priorWhileRecipientRevoked = await replay()
     expect(priorWhileRecipientRevoked.status()).toBe(201)
@@ -162,7 +248,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await coreChange(child, "member", { unavailable: true })
     expect((await replay()).status()).toBe(403)
     const attemptWhileUnavailable = await sender.request.post(commentUrl, {
-      headers: { ...apiHeaders, "x-meitheal-comment-attempt": `${Date.now()}.${crypto.randomUUID()}` },
+      headers: { ...writeHeaders(), "x-meitheal-comment-attempt": `${Date.now()}.${crypto.randomUUID()}` },
       data: { content: text },
     })
     expect(attemptWhileUnavailable.status()).toBe(403)
@@ -174,6 +260,12 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     child = startCoreFixture(work, false, info.port)
     await fixture()
     await coreChange(child, "member", { name: "Bríd Byrne" })
+    expect((await replay()).status()).toBe(409)
+    await sender.goto(root + "/today?open=" + taskId)
+    const refreshedContext = await picker.getAttribute("data-person-context")
+    expect(refreshedContext).toBeTruthy()
+    expect(refreshedContext).not.toBe(writeContext)
+    writeContext = refreshedContext!
     expect((await replay()).status()).toBe(410)
     const after = await sender.request.get(commentUrl)
     expect((await after.json()).comments).toEqual([])

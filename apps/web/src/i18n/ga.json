@@ -1654,6 +1654,7 @@
     "person_choose": "Roghnaigh duine leis na saigheadeochracha agus brúigh Enter.",
     "person_empty": "Níor aimsíodh aon duine.",
     "person_failed": "Níorbh fhéidir daoine a aimsiú. Oscail Meitheal ó Home Assistant nó bain triail eile as.",
+    "context_changed": "D’athraigh do sheisiún Home Assistant. Tá do dhréacht fós anseo. Cóipeáil é sula n-osclaíonn tú Meitheal arís leis an gcuntas bunaidh.",
     "write_error": "Níorbh fhéidir an tagairt a shábháil. Seiceáil na daoine a roghnaigh tú, nó cóipeáil an téacs sula dtosaíonn tú nóta nua."
   },
   "task_modal": {

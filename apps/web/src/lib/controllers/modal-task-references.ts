@@ -61,7 +61,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
     close()
     if ((event instanceof InputEvent && (event.isComposing || event.inputType === "historyUndo")) || document.activeElement !== input) return
     const token = referenceAtCaret(input)
-    if (!token) return
+    if (!token || (token.kind === "person" && !navigator.onLine)) return
     const state = { input, token, lookup: new AbortController() }
     active = state
 
@@ -188,6 +188,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
     if (option) insert(Number(option.dataset.index))
   }, { signal })
   window.addEventListener("blur", close, { signal })
+  window.addEventListener("offline", () => { if (active?.token.kind === "person") close() }, { signal })
   window.addEventListener("pagehide", close, { signal })
   navigator.serviceWorker?.addEventListener("controllerchange", close, { signal })
   signal.addEventListener("abort", close, { once: true })

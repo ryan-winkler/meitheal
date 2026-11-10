@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { getCurrentHAUserRoster } from "@domains/ha/ha-users"
 import { apiProblem } from "./api-response"
-import { commentAttemptHeader, commentAttemptHorizonMs, commentMentions, commentMentionToken } from "./comment-mentions"
+import { commentAttemptHeader, commentAttemptHorizonMs, commentMentionContextHeader, commentMentionContextProblemType, commentMentionProblemType, commentMentions, commentMentionToken } from "./comment-mentions"
+import { matchesMentionInboxContext } from "./mention-inbox-context"
 import { activeParticipantRequired, hasCurrentTaskParticipant } from "./task-participant"
 import { verifiedIngressUser } from "./verified-ingress-user"
 
@@ -28,7 +29,14 @@ export async function commentPeople(locals: App.Locals, signal: AbortSignal) {
 const headers = { "Cache-Control": "private, no-store" }
 
 export function commentMentionProblem(detail: string, status = 409) {
-  return apiProblem({ status, type: "https://meitheal.local/problems/comment-mention", detail, extraHeaders: headers })
+  return apiProblem({ status, type: commentMentionProblemType, detail, extraHeaders: headers })
+}
+
+export function checkCommentMentionWriteContext(request: Request, locals: App.Locals): Response | undefined {
+  const user = verifiedIngressUser(locals)
+  if (!user || matchesMentionInboxContext(user.id, request.headers.get(commentMentionContextHeader))) return
+  return apiProblem({ status: 409, type: commentMentionContextProblemType, extraHeaders: headers,
+    detail: "Your Home Assistant session changed. Copy your draft before reopening Meitheal under the original account." })
 }
 
 export function commentAttempt(request: Request) {
@@ -43,8 +51,9 @@ export function commentAttempt(request: Request) {
   return { key, issuedAt }
 }
 
-export async function prepareCommentMentions(content: string, locals: App.Locals, signal: AbortSignal) {
-  const mentions = commentMentions(content)
+export async function prepareCommentMentions(
+  content: string, mentions: ReturnType<typeof commentMentions>, locals: App.Locals, signal: AbortSignal,
+) {
   if (!mentions.length || !verifiedIngressUser(locals)) {
     if (!await hasCurrentTaskParticipant(locals, signal, true)) return activeParticipantRequired()
     return { content, recipients: [] as string[] }

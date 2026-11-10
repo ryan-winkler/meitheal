@@ -4,8 +4,8 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
-import { commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
-import { commentAttemptHorizonMs } from "@lib/comment-mentions"
+import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
+import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
@@ -14,10 +14,14 @@ export const GET: APIRoute = async ({ locals, params, request }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const agent = locals.agentToken
-    const owner = (!agent || hasScope(agent.scopes, "tasks:write")) && await hasCurrentTaskParticipant(locals, request.signal)
-      ? resolveCommentAuthor(locals)?.owner ?? null
-      : null
+    const owner = !agent || hasScope(agent.scopes, "tasks:write") ? resolveCommentAuthor(locals)?.owner ?? null : null
     const comments = await repo.getComments(params.id!, owner)
+    const privateMentions = locals.behindIngress && !agent && comments.some(comment => hasCommentMentionSelector(comment.content))
+    if ((owner || privateMentions) && !await hasCurrentTaskParticipant(locals, request.signal, privateMentions)) {
+      return commentJson({ comments: comments.map(comment => ({ ...comment, can_manage: false,
+        content: privateMentions ? redactCommentMentionSelectors(comment.content) : comment.content,
+      })) })
+    }
     return commentJson({ comments })
   } catch {
     return commentFailure("get", "Failed to load comments")
@@ -40,6 +44,11 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
 
   const attempt = verifiedIngressUser(locals) ? commentAttempt(request) : null
   if (attempt instanceof Response) return attempt
+  const parsedMentions = commentMentions(content)
+  if (attempt || parsedMentions.length) {
+    const wrongContext = checkCommentMentionWriteContext(request, locals)
+    if (wrongContext) return wrongContext
+  }
 
   try {
     await ensureSchema()
@@ -53,7 +62,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
         return attemptResponse(prior ?? { state: "gone" })
       }
     }
-    const prepared = await prepareCommentMentions(content, locals, request.signal)
+    const prepared = await prepareCommentMentions(content, parsedMentions, locals, request.signal)
     if (prepared instanceof Response) return prepared
     if (prepared.recipients.length && !attempt) return commentMentionProblem("Start this comment again to send its mentions.", 400)
     if (attempt && actor.owner) {

@@ -1668,6 +1668,7 @@
     "person_choose": "Use the arrow keys to choose a person, then press Enter.",
     "person_empty": "No matching people.",
     "person_failed": "Could not find people. Reopen Meitheal from Home Assistant or try again.",
+    "context_changed": "Your Home Assistant session changed. Your draft is still here. Copy it before reopening Meitheal under the original account.",
     "write_error": "The mention could not be saved. Check the people selected, or copy the text before starting a new comment."
   },
   "task_modal": {

@@ -1574,7 +1574,7 @@ export class TaskRepository {
             FROM comments WHERE task_id = ? ORDER BY created_at ASC, id ASC`,
       args: [ownerKey, taskId],
     })
-    return result.rows.map(row => ({ ...row, can_manage: Number(row.can_manage) === 1 }))
+    return result.rows.map(row => ({ ...row, content: String(row.content), can_manage: Number(row.can_manage) === 1 }))
   }
 
   /** Insert and return this comment while the parent task exists. */
