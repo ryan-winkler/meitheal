@@ -16,7 +16,7 @@
 
 services:
   ha-devcontainer:
-    image: ghcr.io/home-assistant/devcontainer:2-addons
+    image: ghcr.io/home-assistant/devcontainer:6-apps
     privileged: true
     command: /sbin/init
     ports:

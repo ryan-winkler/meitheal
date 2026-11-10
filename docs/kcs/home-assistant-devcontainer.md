@@ -19,6 +19,8 @@ Use a disposable development host for changes to ingress, Supervisor integration
 
 The checked-in configuration installs Node 26 and pnpm 10.8.0 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
 
+The stack uses Home Assistant’s official `6-apps` devcontainer and beta Supervisor channel, matching the upstream App development template. This launcher shares the host runtime socket directory with Supervisor; the legacy `2-addons` launcher fails to start current Core builds because `/run/supervisor/core` is missing. Rebuild older environments through the editor to update the base image.
+
 Setup checks Grocy at its public root URL. The authenticated Grocy API requires a separate key and is not a readiness probe.
 
 The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal`. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.

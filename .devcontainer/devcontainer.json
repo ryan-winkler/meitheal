@@ -13,7 +13,8 @@
   "containerEnv": {
     "WORKSPACE_DIRECTORY": "/workspaces/meitheal",
     "GROCY_URL": "http://grocy:80",
-    "NODERED_URL": "http://nodered:1880"
+    "NODERED_URL": "http://nodered:1880",
+    "SUPERVISOR_CHANNEL": "beta"
   },
   "forwardPorts": [
     7123,
