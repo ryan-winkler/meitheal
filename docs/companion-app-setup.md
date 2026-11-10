@@ -69,11 +69,7 @@ Set up the optional Core integration so Home Assistant can call `meitheal.comple
 3. Create an automation from each blueprint. Choose the same notification device, then set the task event and ingress path in the sender.
 4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 
-Notifications will include:
-- 📋 **View Task** — opens Meitheal in the companion app
-- ✅ **Complete** — marks the task done directly from notification
-- 📊 **Dashboard** — opens the Meitheal dashboard
-- Haptic feedback (vibration pattern)
+Notifications for events with a task ID include **View task** and **Complete**. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
 
 ### Widgets
 

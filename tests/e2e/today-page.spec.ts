@@ -62,7 +62,7 @@ test("Today refreshes full task counters after an external completion", async ({
 
 test("Today and Dashboard label shared favorites separately from personal pins", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = { origin: new URL(baseURL!).origin, "Content-Type": "application/json" }
   const title = "Shared favorite fixture"
   const created = await request.post("/api/tasks", { headers, data: { title, is_favorite: true } })
   expect(created.status(), await created.text()).toBe(201)
