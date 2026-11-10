@@ -39,7 +39,9 @@ export default defineConfig({
     name: "compact-server-output",
     hooks: {
       "astro:build:setup": ({ target, updateConfig }) => {
-        if (target === "server") updateConfig({ build: { minify: true } })
+        if (target === "server") updateConfig({
+          build: { minify: "terser", terserOptions: { keep_fnames: true, keep_classnames: true } },
+        })
       },
     },
   }],
