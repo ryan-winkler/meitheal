@@ -85,12 +85,12 @@ Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-ad
 2. Open the menu.
 3. Select **Repositories**.
 4. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
-5. When the image is available, select **Meitheal**.
+5. When the image is available, select **Meitheal Canary**.
 6. Select **Install**.
 7. Select **Start**.
 8. Select **Open web UI**.
 
-Earlier Home Assistant versions call Apps **Add-ons**. See the [setup guide](meitheal-hub/DOCS.md) for more detail.
+Earlier Home Assistant versions call Apps **Add-ons**. See the [Canary setup guide](meitheal-hub-canary/DOCS.md) for more detail.
 
 ## Try Meitheal from Source
 
