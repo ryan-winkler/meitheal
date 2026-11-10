@@ -374,7 +374,7 @@ test("account switch during a simulated focus change clears the old draft before
     const shared = await page.evaluate(async prefix => await (await fetch(prefix + "/api/tasks")).json(), prefix)
     expect(shared.total).toBe(1)
     expect(shared.tasks[0].title).toBe("Independent ordinary capture")
-    expect(new URL(page.url()).searchParams.get("open")).toBe(shared.tasks[0].id)
+    expect(new URL(page.url()).pathname).toBe(prefix + "/tickets/" + encodeURIComponent(shared.tasks[0].id))
     await detail.getByRole("button", { name: "Close detail" }).click()
     await expect(detail).toBeHidden()
 

@@ -166,7 +166,9 @@ test("an acknowledgement during Details keeps the dialog and retires the accepte
     await expect(firstCard.getByRole("button", { name: "Accept to Todo" })).toBeDisabled()
     await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
     await page.keyboard.press("Escape")
-    await page.getByRole("link", { name: "Reload Triage" }).click()
+    await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)
+    await expect(page).toHaveURL(/\/triage$/)
+    // Returning to the background route revalidates the accepted queue.
     await expect(firstCard).toHaveCount(0)
   } finally {
     held.resolve()

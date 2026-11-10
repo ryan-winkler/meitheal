@@ -1,11 +1,12 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { taskBackgroundUrl } from "./task-page-url"
 import { workerAllowsNetworkOnly } from "./network-only-worker"
 
 const cacheModes = new Set(["visible", "hidden", "disabled", "unavailable"])
 
 function queueUrl(): URL {
-  const url = new URL(location.href)
+  const url = taskBackgroundUrl(new URL(location.href))
   url.searchParams.delete("open")
   url.searchParams.delete("comment")
   return url
