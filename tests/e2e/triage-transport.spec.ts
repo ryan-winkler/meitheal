@@ -27,9 +27,20 @@ self.addEventListener("fetch", event => {
 
 async function proxy(baseURL: string, intercept: (req: IncomingMessage, res: ServerResponse) => boolean) {
   const upstream = new URL(baseURL)
+  if (upstream.protocol !== "http:" || upstream.hostname !== "127.0.0.1" || upstream.username || upstream.password) {
+    throw new Error("The test proxy requires the loopback HTTP fixture")
+  }
   const server = createServer((req, res) => {
+    if (!req.url?.startsWith("/") || req.url.startsWith("//") || req.url.includes("\\")) {
+      res.writeHead(400)
+      res.end()
+      return
+    }
     if (intercept(req, res)) return
-    const forward = proxyRequest(new URL(req.url ?? "/", upstream), {
+    const forward = proxyRequest({
+      hostname: "127.0.0.1",
+      port: upstream.port,
+      path: req.url,
       method: req.method ?? "GET",
       headers: { ...req.headers, host: upstream.host, origin: upstream.origin },
     }, response => {
@@ -54,6 +65,39 @@ async function proxy(baseURL: string, intercept: (req: IncomingMessage, res: Ser
     }),
   }
 }
+
+test("the disposable proxy rejects alternate destinations and only forwards local paths", async () => {
+  let received = ""
+  const upstream = createServer((req, res) => {
+    received = req.url ?? ""
+    res.end("local fixture")
+  })
+  await new Promise<void>(resolve => { upstream.listen(0, "127.0.0.1", resolve) })
+  const address = upstream.address()
+  if (!address || typeof address === "string") throw new Error("No upstream address")
+  const fixture = await proxy(`http://127.0.0.1:${address.port}`, () => false)
+  try {
+    for (const path of ["http://example.invalid/private", "//example.invalid/private", "/\\example.invalid/private"]) {
+      const status = await new Promise<number | undefined>((resolve, reject) => {
+        const request = proxyRequest(fixture.origin, { path }, response => {
+          response.resume()
+          response.on("end", () => resolve(response.statusCode))
+        })
+        request.on("error", reject)
+        request.end()
+      })
+      expect(status).toBe(400)
+      expect(received).toBe("")
+    }
+    const response = await fetch(fixture.origin + "/api/health?probe=1")
+    expect(await response.text()).toBe("local fixture")
+    expect(received).toBe("/api/health?probe=1")
+    await expect(proxy("http://example.invalid", () => false)).rejects.toThrow("loopback HTTP fixture")
+  } finally {
+    await fixture.close()
+    await new Promise<void>(resolve => { upstream.close(() => resolve()) })
+  }
+})
 
 async function createBacklog(request: APIRequestContext, title: string) {
   const result = await request.post("/api/tasks", { data: { title, status: "backlog" } })
