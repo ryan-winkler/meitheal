@@ -27,7 +27,7 @@ The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versio
 
 ## Local configuration and recovery
 
-The Compose file supplies the development ports and service defaults. Copy [.env.example](../../.devcontainer/.env.example) to `.devcontainer/.env` if you need to set them explicitly, including to reuse the `meitheal-dev` project name. Keep any environment-specific credentials in the ignored local file.
+The Compose file supplies the development ports and service defaults. Copy [.env.example](../../.devcontainer/.env.example) to `.devcontainer/.env` if you need to set them explicitly, including to reuse the `meitheal-dev` project name. Keep any environment-specific credentials in the ignored local file. Current supervised Core defaults to port 80, so Compose forwards `HA_UI_PORT` to `HA_CORE_PORT=80`. For an existing Core configuration that still listens on 8123, set `HA_CORE_PORT=8123` before recreating its outer container. Check `ha core info` rather than assuming the port.
 
 | Service | Default local URL |
 | --- | --- |
