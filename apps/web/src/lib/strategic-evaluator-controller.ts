@@ -237,7 +237,8 @@ pageLifecycle.onPageLoad(signal => {
       const values = result.scores[selected.id]
       if (values) {
         if (renderedFrameworkId) payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
-        payload[selectedId] = { ...asFrameworkPayload(payload[selectedId]), ...values }
+        payload[selectedId] = { ...asFrameworkPayload(payload[selectedId]), ...Object.fromEntries(Object.entries(asFrameworkPayload(values)).filter(([key, value]) =>
+          selected.data.fields.some(field => field.key === key) && (typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))))) }
         if (select.value === selectedId) render()
       }
       status.textContent = result.justification

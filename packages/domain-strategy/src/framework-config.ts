@@ -195,6 +195,10 @@ export function validateFrameworkConfig(
   } else {
     const keys = new Set<string>()
     for (const field of config.fields) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) {
+        errors.push("Each field must be an object")
+        continue
+      }
       if (!field.key || typeof field.key !== "string") {
         errors.push("Each field must have a non-empty key")
       } else if (keys.has(field.key)) {
@@ -216,7 +220,8 @@ export function validateFrameworkConfig(
     errors.push("Formula archetypes require a formula expression")
   }
 
-  if (config.formula && (typeof config.formula !== "string" || !isFrameworkFormulaSupported(config.formula, (config.fields ?? []).map(field => field.key)))) {
+  const fieldKeys = Array.isArray(config.fields) ? config.fields.flatMap(field => typeof field?.key === "string" ? [field.key] : []) : []
+  if (config.formula && (typeof config.formula !== "string" || !isFrameworkFormulaSupported(config.formula, fieldKeys))) {
     errors.push("Formula must use declared fields, numbers, parentheses and + - * / operators")
   }
 

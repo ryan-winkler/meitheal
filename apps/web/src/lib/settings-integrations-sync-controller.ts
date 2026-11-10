@@ -503,7 +503,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
         if (noEntities) noEntities.style.display = "flex"
       } else {
         if (noEntities) noEntities.style.display = "none"
-        const autoSelect = settings.todo_entities == null && settings.todo_entity == null
+        const autoSelect = configured == null
         entitiesContainer.innerHTML = entities.map((e) => {
           const isEnabled = autoSelect ? e === entities[0] : savedEnabled.includes(e.entity_id)
           const stateLabel = e.sync?.active ? `${e.state} · syncing${e.sync.itemCount ? ` · ${e.sync.itemCount} items` : ""}` : e.state

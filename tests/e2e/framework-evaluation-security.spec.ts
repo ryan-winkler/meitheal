@@ -3,7 +3,7 @@ import { deferred } from "./_helpers"
 
 test.use({ serviceWorkers: "block" })
 
-test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable App server")
+test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
 
 async function create(request: APIRequestContext) {
   const response = await request.post("/api/tasks", { data: { title: "Framework review fixture" } })
@@ -18,6 +18,9 @@ test("API rejects unsupported formulas and HTML-shaped numeric bounds", async ({
     { ...config, fields: [{ ...config.fields[0], min: '0" autofocus onfocus="alert(1)' }] },
   ]) {
     expect((await request.post("/api/frameworks", { data })).status()).toBe(400)
+  }
+  for (const fields of ["x", {}, null, [null]]) {
+    expect((await request.post("/api/frameworks", { data: { ...config, fields } })).status()).toBe(400)
   }
   expect((await request.get("/api/frameworks/rejected-formula")).status()).toBe(404)
 })
@@ -105,4 +108,30 @@ test("partial Assist scores preserve estimates while another framework is select
     await expect(page.getByRole("spinbutton", { name: "Impact", exact: true })).toHaveValue("4")
     await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
   } finally { release.resolve(); expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204) }
+})
+
+
+test("malformed Assist scores cannot replace estimates or introduce undeclared payload keys", async ({ page, request }) => {
+  const id = await create(request)
+  let suggestion: unknown = "unexpected string"
+  await page.route("**/api/ha/assist", route => route.fulfill({ json: { speech: JSON.stringify({ scores: { rice: suggestion }, justification: "Fixture response" }) } }))
+  try {
+    await page.goto(`/tickets/${id}`)
+    await expect(page.getByLabel("Scoring framework", { exact: true })).toBeEnabled()
+    await page.getByLabel("Scoring framework", { exact: true }).selectOption("rice")
+    for (const [name, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) await page.getByRole("spinbutton", { name, exact: true }).fill(value)
+    for (const value of ["unexpected string", [99], { reach: { nested: true }, unexpected: 99, impact: 4 }]) {
+      suggestion = value
+      await page.locator("#se-ask-ai").click()
+      await expect(page.locator("#se-status")).toHaveText("Fixture response")
+      await expect(page.getByRole("spinbutton", { name: "Reach", exact: true })).toHaveValue("10")
+    }
+    await expect(page.getByRole("spinbutton", { name: "Impact", exact: true })).toHaveValue("4")
+    await page.getByRole("button", { name: "Save score", exact: true }).click()
+    await expect(page.locator("#se-status")).toHaveText("Evaluation saved.")
+    const stored = JSON.parse((await (await request.get(`/api/tasks/${id}`)).json()).framework_payload).rice
+    expect(stored.reach).toBe(10)
+    expect(stored).not.toHaveProperty("0")
+    expect(stored).not.toHaveProperty("unexpected")
+  } finally { expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204) }
 })

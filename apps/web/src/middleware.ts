@@ -374,8 +374,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
             locals.timezone = value
           } catch { /* retain the default for invalid stored zones */ }
         }
-        if (row.key === "week_start" && (value === "monday" || value === "sunday")) locals.weekStart = value
-        if (row.key === "date_format" && typeof value === "string") locals.dateFormat = value as DateFormat
+        if (row.key === "week_start" && (value === "monday" || value === "sunday" || value === "saturday")) locals.weekStart = value
+        if (row.key === "date_format" && typeof value === "string" && ["relative", "absolute-iso", "absolute-eu", "absolute-us"].includes(value)) locals.dateFormat = value as DateFormat
       }
       _settingsCache = { timezone: locals.timezone, weekStart: locals.weekStart, dateFormat: locals.dateFormat };
       _settingsCacheExpiry = now + SETTINGS_CACHE_TTL_MS;

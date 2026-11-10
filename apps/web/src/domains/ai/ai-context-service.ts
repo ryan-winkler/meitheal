@@ -161,24 +161,21 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
   if (provider === "claude") targetUrl = "https://claude.ai/new";
   else if (provider === "gemini") targetUrl = "https://gemini.google.com/";
   else if (provider === "ollama" || provider === "custom") {
+    let configured: unknown
     try {
-      const resUrl = await fetch(
-        (window.__ingress_path || "") + "/api/settings?key=ai-custom-url"
-      );
-      if (resUrl.ok) {
-        const d = await resUrl.json();
-        if (d?.value) {
-          const url = parseAiHandoffUrl(d.value)
-          if (!url) {
-            showToast("The saved AI URL is invalid. Open Settings → Automation & AI to correct it.", "error")
-            return
-          }
-          targetUrl = url.href
-        }
-      }
+      const response = await fetch((window.__ingress_path || "") + "/api/settings?key=ai-custom-url")
+      if (!response.ok) throw new Error("Provider settings unavailable")
+      configured = (await response.json())?.value
     } catch {
-      /* use default */
+      showToast("settings.ai_handoff_url_unavailable", "error")
+      return
     }
+    const url = parseAiHandoffUrl(configured)
+    if (!url) {
+      showToast("settings.ai_handoff_url_invalid", "error")
+      return
+    }
+    targetUrl = url.href
   }
 
   window.open(targetUrl, "_blank", "noopener,noreferrer")

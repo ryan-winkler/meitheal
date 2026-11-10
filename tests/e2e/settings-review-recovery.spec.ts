@@ -20,9 +20,15 @@ test("To-do selection hydrates JSON arrays and legacy single entity IDs", async 
   await page.reload()
   await expect(page.locator('.todo-entity-toggle:checked')).toHaveCount(1)
   await expect(page.locator('.todo-entity-toggle[value="todo.household"]')).toBeChecked()
+  for (const value of ["null", null, "[]"]) {
+    saved = value
+    await page.reload()
+    await expect(page.locator('.todo-entity-toggle:checked')).toHaveCount(value === "[]" ? 0 : 1)
+    if (value !== "[]") await expect(page.locator('.todo-entity-toggle[value="todo.shopping"]')).toBeChecked()
+  }
 })
 
-test("Task AI handoff explains an invalid saved URL without opening a provider", async ({ page, request }) => {
+test("Task AI handoff explains an invalid saved URL without opening a provider", async ({ page, request, context, baseURL }) => {
   const created = await request.post("/api/tasks", { data: { title: "Invalid AI URL fixture" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
@@ -30,14 +36,37 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
   page.on("popup", () => opens++)
   await page.route("**/api/ha/assist", route => route.fulfill({ status: 503, json: { error: "Unavailable" } }))
   await page.route("**/api/settings?key=ai-provider", route => route.fulfill({ json: { value: "custom" } }))
-  await page.route("**/api/settings?key=ai-custom-url", route => route.fulfill({ json: { value: "javascript:alert(1)" } }))
+  let configured: unknown = "javascript:alert(1)"
+  await page.route("**/api/settings?key=ai-custom-url", route => route.fulfill({ json: { value: configured } }))
   try {
     await page.goto(`/tickets/${id}`)
     await expect(page.locator("#td-title")).toHaveValue("Invalid AI URL fixture")
+    for (const value of ["javascript:alert(1)", "", null, undefined]) {
+      configured = value
+      await page.locator("#td-ask-ai").click()
+      await expect(page.getByText("The saved AI URL is invalid. Open Settings → Automation & AI to correct it.", { exact: true })).toBeVisible()
+      expect(opens).toBe(0)
+      await page.locator(".toast-dismiss").click()
+    }
+    configured = ""
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
+    await page.goto(`/tickets/${id}`)
     await page.locator("#td-ask-ai").click()
-    await expect(page.getByText("The saved AI URL is invalid. Open Settings → Automation & AI to correct it.", { exact: true })).toBeVisible()
+    await expect(page.getByText("Tá an URL IS sábháilte neamhbhailí. Oscail Socruithe → Automation & AI chun é a cheartú.", { exact: true })).toBeVisible()
     expect(opens).toBe(0)
   } finally {
     expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+  }
+})
+
+
+test("Saturday week starts apply immediately after a regional Settings save", async ({ page, request }) => {
+  const previous = (await (await request.get("/api/settings?key=week_start")).json()).value ?? "monday"
+  try {
+    expect((await request.put("/api/settings", { data: { key: "week_start", value: "saturday" } })).status()).toBe(200)
+    await page.goto("/tasks?view=calendar#calendar")
+    await expect(page.locator("#tasks-view-calendar .cal-header").first()).toHaveText("Sat")
+  } finally {
+    expect((await request.put("/api/settings", { data: { key: "week_start", value: previous } })).status()).toBe(200)
   }
 })

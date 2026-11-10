@@ -11,8 +11,11 @@ test.describe("Sidebar and Today follow-through", () => {
     createdIds = []
   })
   test.afterEach(async ({ request }) => {
-    for (const id of createdIds) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
-    expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: originalSidebar } })).status()).toBe(200)
+    try {
+      for (const id of createdIds) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    } finally {
+      expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: originalSidebar } })).status()).toBe(200)
+    }
   })
 
   test("Areas visibility, label and order persist, with one custom link per click", async ({ page }) => {
