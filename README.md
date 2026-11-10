@@ -1,59 +1,16 @@
 # Meitheal
 
-> The Home Assistant-native execution hub for your house, your homelab, and the plans that keep both moving.
+Meitheal is a local task planner for Home Assistant. Use it to share a household checklist, schedule regular maintenance, or create a task when a sensor triggers an automation. It runs in the Home Assistant sidebar and keeps task data in SQLite on your own device.
 
 [Install status](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
 
-## What Meitheal Is
+## Plan and follow through
 
-Meitheal (pronounced "meh-hal") takes its name from the old Irish idea of neighbors showing up together to get real work done.
-
-That is the product idea here too.
-
-Meitheal started as a task list inside Home Assistant. It has grown into a local-first planner for running a home, a family, or a homelab. Capture tasks, decide what matters now, and connect work to calendars and automations. Keep that context available in the Home Assistant dashboard and companion app.
-
-Meitheal helps answer three questions. What should happen next? Who owns it? What will keep it moving?
-
-## Why It Lives Inside Home Assistant
-
-- It works in the Home Assistant sidebar, companion app, automations, and voice controls.
-- It stores your task data locally in SQLite and opens through Home Assistant.
-- It can connect work to the rest of the house through to-do lists, calendars, notifications, webhooks, and companion shortcuts.
-- It supports both human and agent workflows without asking you to leave your Home Assistant environment.
-
-## What You Can Do With It
-
-### Capture and clarify work
-
-- Capture tasks quickly from the dashboard, Today view, task modal, templates, Assist, or automation flows.
-- Use descriptions, checklists, recurrence, labels, due dates, favorites, saved filters, and task links to keep work actionable instead of vague.
-- Triage carried-forward work, pin the most important tasks, and surface suggested work for the day.
-
-### Work the way your brain works
-
-- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Pillars, Gamification, Review, Timeline, and Settings.
-- Use the shared SearchHub to jump between tasks, views, settings, saved filters, and high-value actions.
-- Keep daily work simple when you want it simple, or go deep with strategy lenses, custom fields, rules, and review flows when you want more structure.
-
-### Keep plans connected to the home
-
-- Sync with Home Assistant todo entities and calendar entities.
-- Trigger HA automations from task events and push overdue reminders through Home Assistant notifications.
-- Bring companion app shortcuts, x-callback-url flows, and installable PWA behavior into the same system.
-- Use webhooks to connect task changes to automations you already run.
-
-### Stay available everywhere
-
-- Use the searchable Settings shell to manage integrations, AI, PWA, automation, and system trust surfaces from one place.
-- Install it as a PWA, keep working offline, and sync back when connectivity returns.
-- Export your data as JSON, CSV, or SQLite, and use built-in backup flows so your planning system stays portable.
-
-### Work with voice and agents
-
-- Use Home Assistant Assist for built-in task actions.
-- Expose Meitheal to conversation agents through the Home Assistant LLM API.
-- Give external tools a token with only the permissions they need. See the [agent guide](WEBMCP.md).
-- Review task changes in Meitheal after you run an automation.
+- Add a task with a due date, a checklist, or a repeat schedule. Use Today to choose what to do next and Kanban, Table, or Calendar to plan ahead.
+- Group work by Area or Project, save filters you use often, and open tasks and views through [Search](docs/kcs/search-hub-guide.md).
+- Configure Home Assistant to-do sync, calendar connections, notifications, or webhooks for the work you want to automate.
+- Open Meitheal on a phone or [install the web app](docs/kcs/pwa-offline-guide.md). The offline guide lists which views and edits are available without a connection.
+- Use [Home Assistant backups](docs/kcs/home-assistant-backup-and-restore.md) or export your tasks as JSON, CSV, or SQLite.
 
 ## Ubiquitous Language
 
@@ -96,16 +53,17 @@ Earlier Home Assistant versions call Apps **Add-ons**. See the [Canary setup gui
 
 Follow the [local setup](CONTRIBUTING.md#run-and-verify-locally) to open Meitheal in your browser and create a task with a disposable database. Use Home Assistant for voice, companion app, and automation features.
 
-## Voice and AI Quick Start
+## Connect Home Assistant Assist
 
-The optional Home Assistant integration adds voice and conversation-agent controls. Set it up separately after the app is running.
+The optional Home Assistant integration adds a to-do entity, task sensors, and actions. Set it up after the app is running.
 
 1. Install the [Meitheal integration](docs/kcs/home-assistant-marketplace.md).
 2. Open **Settings → Devices & Services** in Home Assistant.
 3. Set up the discovered Meitheal entry.
 4. Enter a scoped Meitheal token when Home Assistant asks for it.
-5. To use voice actions, expose `todo.meitheal_tasks` to Assist.
-6. To use a conversation agent, select **Meitheal Tasks** in its settings.
+5. In **Settings → Voice assistants → Expose**, choose whether Assist can use `todo.meitheal_tasks`. Use a token with **Read Tasks** and **Create & Update Tasks** for voice capture and completion.
+
+On Home Assistant Core 2026.11 or later, an active administrator can enable **Meitheal Tasks (read only)** in a conversation agent's LLM API settings. It searches and looks up tasks. The selected agent receives the task data returned by those tools. External tools can use separate scoped tokens.
 
 [Integration credentials](docs/kcs/home-assistant-core-credentials.md) · [Agent guide](WEBMCP.md)
 
