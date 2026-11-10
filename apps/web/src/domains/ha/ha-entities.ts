@@ -6,7 +6,7 @@
  * @domain ha
  * @bounded-context integration
  */
-import { subscribeEntities, type HassEntities, type HassEntity } from "home-assistant-js-websocket";
+import { subscribeEntities, type HassEntities, type HassEntity, type Connection } from "home-assistant-js-websocket";
 import { getHAConnection } from "./ha-connection";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
@@ -19,13 +19,16 @@ const SYS_REQ = "ha-system";
 
 let entityCache: HassEntities = {};
 let subscribed = false;
+let subscribedConnection: Connection | null = null
 let unsubscribe: (() => void) | null = null;
 const changeListeners: Map<string, Set<(entity: HassEntity) => void>> = new Map();
 
-export async function initEntitySubscription(): Promise<void> {
-  if (subscribed) return;
-  const conn = await getHAConnection();
-  if (!conn) return;
+export async function initEntitySubscription(establishedConnection?: Connection): Promise<void> {
+  const conn = establishedConnection ?? await getHAConnection();
+  if (!conn || (subscribed && subscribedConnection === conn)) return;
+  if (unsubscribe) unsubscribe()
+  entityCache = {}
+  subscribed = false
   try {
     unsubscribe = subscribeEntities(conn, (entities) => {
       const prevCache = entityCache;
@@ -52,6 +55,7 @@ export async function initEntitySubscription(): Promise<void> {
       }
     });
     subscribed = true;
+    subscribedConnection = conn
     logger.log("info", {
       event: "ha.entities.subscribed", domain: "ha", component: "ha-entities",
       request_id: SYS_REQ, message: "Subscribed to HA entity state changes",
@@ -106,6 +110,7 @@ export function onEntityChange(entityId: string, callback: (entity: HassEntity) 
 export function stopEntitySubscription(): void {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   subscribed = false;
+  subscribedConnection = null
   entityCache = {};
   changeListeners.clear();
 }

@@ -15,7 +15,7 @@
  * @bounded-context integration
  */
 import { initEntitySubscription } from "./ha-entities";
-import { getHAConnection } from "./ha-connection";
+import { getHAConnection, getHAConfiguration } from "./ha-connection";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
 const logger = createLogger({
@@ -61,16 +61,19 @@ export async function initHAIntegrations(): Promise<void> {
   initializing = true;
 
   try {
+    // Task deadlines are local domain transitions, including in standalone
+    // mode or while HA is unavailable. The scheduler itself is idempotent.
+    await autoStartDueDateReminders();
+
     // Only initialize when running as HA addon (SUPERVISOR_TOKEN present)
-    if (!process.env.SUPERVISOR_TOKEN) {
+    if (!(await getHAConfiguration())) {
       logger.log("info", {
         event: "ha.startup.skipped",
         domain: "ha",
         component: "ha-startup",
         request_id: SYS_REQ,
-        message: "No SUPERVISOR_TOKEN — standalone mode, skipping HA integrations",
+        message: "Home Assistant is not configured; skipping HA integrations",
       });
-      initialized = true;
       return;
     }
 
@@ -113,9 +116,6 @@ export async function initHAIntegrations(): Promise<void> {
     // Step 6: Validate webhook/n8n endpoints (non-blocking)
     await validateWebhookEndpoints();
 
-    // Step 7: Start due-date reminder scheduler
-    await autoStartDueDateReminders();
-
     initialized = true;
     logger.log("info", {
       event: "ha.startup.complete",
@@ -132,7 +132,8 @@ export async function initHAIntegrations(): Promise<void> {
       request_id: SYS_REQ,
       message: `HA integration startup failed: ${err}`,
     });
-    initializing = false; // Allow retry on next request
+  } finally {
+    initializing = false // Also allow retry after unconfigured/disconnected early returns
   }
 }
 

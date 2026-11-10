@@ -10,6 +10,7 @@
  * @domain ha
  * @bounded-context integration
  */
+import { createHash } from "node:crypto"
 import {
   createConnection,
   createLongLivedTokenAuth,
@@ -23,6 +24,7 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
+import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
 const CORE_PROXY = "http://supervisor/core"
 
@@ -46,6 +48,17 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 // ── State ──
 
 let connection: Connection | null = null;
+let configurationFingerprint: string | null = null
+
+export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+  if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
+  const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
+  const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
+  await ensureSchema()
+  const repo = new SettingsRepository(getPersistenceClient())
+  await repo.ensureSettingsTable()
+  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+}
 let connecting = false;
 let lastError: string | null = null;
 let reconnectAttempts = 0;
@@ -77,6 +90,22 @@ function emitStatus(state: HAConnectionState, detail?: string): void {
 // ── Public API ──
 
 export async function getHAConnection(): Promise<Connection | null> {
+  let config: HAConfiguration | null
+  try { config = await getHAConfiguration() } catch {
+    lastError = "HA_CONFIGURATION_UNAVAILABLE"
+    closeHAConnection()
+    return null
+  }
+  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  if (connection && configurationFingerprint !== fingerprint) {
+    closeHAConnection()
+    invalidateBaseUrlCache()
+    cachedIngressEntry = null
+  }
+  if (!config) {
+    lastError = "HA_NOT_CONFIGURED"
+    return null
+  }
   if (connection) return connection;
   if (connecting) {
     // Wait for in-flight connection with timeout — both branches clear both timers
@@ -96,19 +125,12 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
   }
 
-  const token = process.env.SUPERVISOR_TOKEN;
-  if (!token) {
-    logger.log("info", {
-      event: "ha.connection.skipped", domain: "ha", component: "ha-connection",
-      request_id: SYS_REQ, message: "SUPERVISOR_TOKEN not set — standalone mode",
-    });
-    return null;
-  }
-
   connecting = true;
   try {
-    const auth = createLongLivedTokenAuth(CORE_PROXY, token);
+    const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
     connection = await createConnection({ auth });
+    configurationFingerprint = fingerprint
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
     reconnectAttempts = 0;
     lastError = null;
 
@@ -140,8 +162,20 @@ export async function getHAConnection(): Promise<Connection | null> {
     startHeartbeat();
     emitStatus("connected", `HA ${connection.haVersion}`);
 
+    const establishedConnection = connection
+    const subscribeEvent = (listener: (event: unknown) => void, eventType: string) => {
+      void establishedConnection.subscribeEvents(listener, eventType).catch(() => {
+        // Closing a replaced connection rejects its pending subscriptions.
+        if (connection !== establishedConnection || !establishedConnection.connected) return
+        logger.log("warn", {
+          event: "ha.subscription.failed", domain: "ha", component: "ha-connection",
+          request_id: SYS_REQ, message: "Home Assistant event subscription failed",
+        })
+      })
+    }
+
     // Phase 52: Subscribe to actionable notifications from Companion Apps
-    connection.subscribeEvents((event: unknown) => {
+    subscribeEvent((event: unknown) => {
       const ev = event as { data?: { action?: string } };
       const action: string | undefined = ev?.data?.action;
       if (action && action.startsWith("MEITHEAL_TASK_DONE_")) {
@@ -181,7 +215,7 @@ export async function getHAConnection(): Promise<Connection | null> {
       "meitheal_task_updated", "meitheal_task_deleted",
       "meitheal_area_updated",
     ]) {
-      connection.subscribeEvents((event: unknown) => {
+      subscribeEvent((event: unknown) => {
         try {
           const ev = event as { data?: { source?: string; title?: string; task_id?: string } };
           if (ev?.data?.source === "meitheal") return;
@@ -195,6 +229,9 @@ export async function getHAConnection(): Promise<Connection | null> {
       }, eventType);
     }
 
+    import("./ha-entities").then(mod => {
+      if (connection === establishedConnection) return mod.initEntitySubscription(establishedConnection)
+    }).catch(() => {})
     return connection;
   } catch (err) {
     const errorCode = err === ERR_CANNOT_CONNECT ? "CANNOT_CONNECT"
@@ -280,6 +317,8 @@ export async function getHAConfig(): Promise<HassConfig | null> {
 
 export function closeHAConnection(): void {
   stopHeartbeat();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  configurationFingerprint = null
   if (connection) {
     connection.close();
     connection = null;
