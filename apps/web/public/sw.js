@@ -460,15 +460,11 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY"].includes(event.data?.type)) {
-    event.ports[0]?.postMessage(true)
-  }
-
   if (event.data?.type === "TASK_PINS_IMPLEMENTED") {
     event.ports[0]?.postMessage(true)
   }
 
-  if (event.data?.type === "TASK_PINS_NETWORK_ONLY" && event.ports[0]) {
+  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
     const port = event.ports[0]
     event.waitUntil(ensureSensitiveCachePurge().then(
       () => port.postMessage(true),
