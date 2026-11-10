@@ -3,6 +3,7 @@ import Layout from "../layouts/Layout.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "@lib/ticket-key"
+import { formatCalendarDay } from "@lib/calendar-day"
 import { getTriageMode, type TriageMode } from "@lib/triage-mode"
 import { t } from "../i18n/translations"
 
@@ -25,7 +26,6 @@ const total = queue?.total ?? 0
 const tasks = queue?.tasks ?? []
 const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
-const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" })
 
 function pageHref(target: number, open?: string): string {
   const query = new URLSearchParams()
@@ -34,13 +34,6 @@ function pageHref(target: number, open?: string): string {
   return query.size ? `/triage?${query}` : "/triage"
 }
 
-function displayDueDate(raw: string | null): string | undefined {
-  const day = raw?.match(/^\d{4}-\d{2}-\d{2}(?=$|[T ])/u)?.[0]
-  if (!day) return
-  const date = new Date(day + "T00:00:00Z")
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== day) return
-  return dateFormat.format(date)
-}
 ---
 
 <Layout title={t("triage.title", locale)} suppressTaskUrlOpen>
@@ -64,7 +57,7 @@ function displayDueDate(raw: string | null): string | undefined {
           {tasks.length ? (
             <ul class="intake-list">
               {tasks.map(task => {
-                const due = displayDueDate(task.due_date)
+                const due = formatCalendarDay(task.due_date, locale, true)
                 return (
                   <li class="intake-card" data-triage-card={task.id} data-triage-version={task.updated_at}>
                     <div class="intake-card-main">

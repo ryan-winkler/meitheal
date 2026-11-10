@@ -8,4 +8,6 @@ The integration code in integrations/home-assistant/ and integrations/nodered/ i
 
 Dependencies installed during setup or included in a build retain their own licenses. The font notices used by the web build are in apps/web/public/licenses/.
 
+The Irish calendar abbreviations use the Gregorian calendar data for Irish in Unicode CLDR 46.1 under the Unicode License v3. See apps/web/public/licenses/unicode-cldr.txt and https://github.com/unicode-org/cldr-json/tree/46.1.0.
+
 The earlier compatibility API and alternate runtime are separately maintained in the private historical source under their existing terms. This release contains neither implementation. Earlier license grants continue to apply to copies already received under those grants.

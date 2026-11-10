@@ -780,6 +780,10 @@
     "review_delete_title": "Delete this task permanently",
     "review_skip": "Skip"
   },
+  "habits": {
+    "never_completed": "Never completed",
+    "last_done": "Last done {date}"
+  },
   "triage": {
     "title": "Triage",
     "planning": "Back to Planning",

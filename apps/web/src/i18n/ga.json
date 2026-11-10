@@ -778,6 +778,10 @@
     "review_delete_title": "Scrios an tasc seo go buan",
     "review_skip": "Scar"
   },
+  "habits": {
+    "never_completed": "Gan chríochnú fós",
+    "last_done": "Déanta den uair dheireanach {date}"
+  },
   "triage": {
     "title": "Triáis",
     "planning": "Ar ais chuig Pleanáil",

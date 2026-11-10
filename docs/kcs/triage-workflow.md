@@ -8,6 +8,8 @@ description: "Review Backlog tasks and move them to Todo or In Progress."
 
 Open **Planning → Triage** to review Backlog. The queue shows the oldest tasks first, 25 at a time. **Details** opens the shared task panel. **Accept to Todo** commits to a task without starting it. **Start now** puts it in progress once its dependencies allow it. The card leaves the queue after the server confirms the decision.
 
+Due dates use the selected app language and keep the stored calendar day when you change time zones.
+
 Use Tab to reach the card controls, Enter to activate them and Escape to close Details. Closing Details returns focus to its link. After a saved decision, focus moves to the next available card or the queue heading. To return a task to intake, move it to the built-in Backlog lane in Kanban while Backlog is Visible.
 
 In Settings, **Visible** makes Triage available. **Hidden** removes the built-in lane and the Triage entry. Review remaining Backlog tasks in Table. **Disabled** also removes Backlog from the status choices. Reload after changing modes.
