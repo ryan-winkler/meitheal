@@ -236,11 +236,11 @@ const { locale } = Astro.props;
   <!-- /settings-grid (agents) -->
 
   <div class="settings-grid mt-4">
-    <SettingsPanelCard title={t("settings.bot_handoff_title", locale)}>
-      <p id="bot-allow-proposals" class="settings-caption" tabindex="-1">
-        {t("settings.bot_handoff_subtitle", locale)}
-      </p>
-      <a class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
+    <SettingsPanelCard
+      title={t("settings.bot_handoff_title", locale)}
+      subtitle={t("settings.bot_handoff_subtitle", locale)}
+    >
+      <a id="bot-allow-proposals" class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
     </SettingsPanelCard>
   </div>
 </div>
