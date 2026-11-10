@@ -101,6 +101,10 @@ test.describe("Saved Table filters", () => {
 
       await page.goto("/table?status=complete")
       await expect(completeRow).toBeVisible()
+      // First worker control invalidates any preset list loaded before it.
+      await page.waitForFunction(() =>
+        !("serviceWorker" in navigator) || navigator.serviceWorker.controller?.state === "activated",
+      )
       await presetToggle.press("Enter")
       const apply = panel.getByRole("button", { name: new RegExp(name) }).filter({ hasText: "<img src=x>" })
       await expect(apply.locator("img")).toHaveCount(0)
