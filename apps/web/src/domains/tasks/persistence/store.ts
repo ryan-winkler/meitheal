@@ -9,6 +9,7 @@ import { openDatabase } from "../../../../scripts/database-client.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
 import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
+import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_task_drafts.mjs"
 
 export interface PersistedTask {
   id: string;
@@ -972,11 +973,12 @@ async function initializeSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  const targetVersion = 14
+  const targetVersion = 15
   const migration = await client.transaction("write")
   try {
     await applyTaskDeferralMigration(migration)
     await applyTaskPinsMigration(migration)
+    await applyTaskDraftsMigration(migration)
     // Publish the schema version atomically with the last migration.
     await migration.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

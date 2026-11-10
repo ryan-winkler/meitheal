@@ -57,6 +57,10 @@ Restore only the matching Meitheal app from the selected Home Assistant backup. 
 
 If the restored app cannot start, preserve the backup and check Supervisor and app logs. Verify that the old image can be retrieved and the backup contains the selected app. If database integrity fails, keep the restored app stopped and use the last verified backup.
 
+## Verify the draft storage migration
+
+For an upgrade from schema 14, take an App-only checkpoint and use a disposable copy to verify schema 15. Confirm SQLite integrity and read a known ordinary task after the app starts. Run `node scripts/migrate.mjs --check` from `apps/web` with the fixture database URL to verify the draft tables and receipt index. Keep the original checkpoint available for a rollback to the previous App.
+
 ## Tier 2 acceptance
 
 In the editor-managed Home Assistant devcontainer, seed a task, related data and settings, then create a Supervisor backup while Meitheal runs. Observe a stop before archiving and a restart afterward. Make a second write, restore the backup and verify that the first write survived, the second is absent, and ingress and database integrity pass. Repeat with the app already stopped and confirm backup leaves it stopped. Record the image digest and outage.
