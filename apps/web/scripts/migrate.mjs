@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDatabase } from "./database-client.mjs"
+import { autoBackupDb } from "./startup-backup.mjs"
 import { splitSqlStatements } from "./split-sql-statements.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +19,8 @@ if (dbUrl.startsWith("file:")) {
 const client = openDatabase(dbUrl)
 
 async function main() {
+  if (!checkOnly) await autoBackupDb(client)
+
   await client.execute(`
     CREATE TABLE IF NOT EXISTS __meitheal_migrations (
       name TEXT PRIMARY KEY,

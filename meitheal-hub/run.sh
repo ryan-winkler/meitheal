@@ -89,6 +89,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
       echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
       exit "${exit_code}"
     fi
+    export MEITHEAL_STARTUP_BACKUP_HANDLED=1
     if [ ! -f dist/server/entry.mjs ]; then
       echo "Missing Astro server entry at dist/server/entry.mjs"
       exit 1

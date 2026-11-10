@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path";
 import type { Client } from "@libsql/client"
@@ -6,6 +6,7 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
 import { openDatabase } from "../../../../scripts/database-client.mjs"
+import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 
 export interface PersistedTask {
   id: string;
@@ -27,7 +28,8 @@ export interface PersistedTaskResponse {
 
 let clientSingleton: Client | null = null;
 let dbSingleton: LibSQLDatabase | null = null
-let ensured = false;
+let schemaInitialization: Promise<void> | undefined
+let startupBackupAttempted = false
 
 /** Latest DB integrity check result — exposed via /api/health */
 let dbIntegrityOk = true
@@ -53,47 +55,6 @@ function ensureFileDbDirectory(dbUrl: string): void {
   const absolutePath = resolveDbPath(dbUrl)
   if (absolutePath) {
     mkdirSync(path.dirname(absolutePath), { recursive: true })
-  }
-}
-
-/**
- * Auto-backup DB on cold start (PRA-25).
- * Copies the DB file to a backups/ subdirectory with FIFO rotation (max 5).
- * Skips backup if DB doesn't exist yet (fresh install).
- */
-const MAX_BACKUPS = 5
-function autoBackupDb(dbUrl: string): void {
-  const dbPath = resolveDbPath(dbUrl)
-  if (!dbPath || !existsSync(dbPath)) return
-
-  const backupDir = path.join(path.dirname(dbPath), "backups")
-  mkdirSync(backupDir, { recursive: true })
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const backupPath = path.join(backupDir, `meitheal-${timestamp}.db`)
-
-  try {
-    copyFileSync(dbPath, backupPath)
-    // eslint-disable-next-line no-console
-    console.log(`[meitheal] DB backup created: ${backupPath} (${statSync(backupPath).size} bytes)`)
-  } catch {
-    // eslint-disable-next-line no-console
-    console.error(`[meitheal] DB backup failed — continuing without backup`)
-    return
-  }
-
-  // FIFO rotation — keep max 5 backups
-  try {
-    const backups = readdirSync(backupDir)
-      .filter(f => f.startsWith("meitheal-") && f.endsWith(".db"))
-      .map(f => ({ name: f, time: statSync(path.join(backupDir, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time)
-
-    for (const old of backups.slice(MAX_BACKUPS)) {
-      unlinkSync(path.join(backupDir, old.name))
-    }
-  } catch {
-    // Non-critical — cleanup failure shouldn't block startup
   }
 }
 
@@ -164,17 +125,24 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
 
 /**
  * Idempotent schema bootstrap — creates all tables, indexes, and default data.
- * Safe to call on every request; short-circuits after first successful run.
+ * Concurrent requests share one initialization and later calls reuse its result.
  */
-export async function ensureSchema(): Promise<void> {
-  if (ensured) {
-    return;
+export function ensureSchema(): Promise<void> {
+  schemaInitialization ??= initializeSchema().catch(error => {
+    schemaInitialization = undefined
+    throw error
+  })
+  return schemaInitialization
+}
+
+async function initializeSchema(): Promise<void> {
+  const client = getClient()
+
+  if (!startupBackupAttempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
+    // A schema retry may follow partial writes. Keep the original pre-migration snapshot.
+    startupBackupAttempted = true
+    await autoBackupDb(client)
   }
-
-  const client = getClient();
-
-  // Auto-backup before any migrations (PRA-25)
-  autoBackupDb(resolveDbUrl())
 
   // WAL mode: enables concurrent reads during writes — critical for addon
   // context where SSR page loads and background syncs can overlap.
@@ -993,9 +961,6 @@ export async function ensureSchema(): Promise<void> {
     })
   }
   currentSchemaVersion = targetVersion
-
-  ensured = true;
-
 }
 
 export async function findByIdempotencyKey(idempotencyKey: string): Promise<PersistedTaskResponse | null> {
@@ -1347,5 +1312,6 @@ export async function persistManualCalendarConfirmation(params: {
 export function resetPersistenceForTests(): void {
   clientSingleton = null;
   dbSingleton = null;
-  ensured = false;
+  schemaInitialization = undefined
+  startupBackupAttempted = false
 }

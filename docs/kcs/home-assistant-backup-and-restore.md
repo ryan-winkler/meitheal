@@ -20,6 +20,12 @@ The **Download database** action under **Settings → App & PWA** is available t
 
 Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
 
+## Automatic startup database snapshots
+
+For an existing nonempty local SQLite database, the migration runner saves a consistent snapshot before applying SQL changes. If you start the web server directly, its first schema initialization takes the snapshot instead. The packaged launchers coordinate so each successful startup makes one backup attempt.
+
+The snapshot includes committed WAL data. Meitheal publishes the completed file as `backups/meitheal-<timestamp>.db` beside the database and keeps the five newest named snapshots. If it cannot complete a snapshot, it logs the failure and continues startup. Fresh, in-memory and remote databases skip this local backup. Use a verified Supervisor backup for the complete App recovery point.
+
 ## Create a backup
 
 1. Open **Settings → System → Backups → Backup now → Manual backup** in Home Assistant.
