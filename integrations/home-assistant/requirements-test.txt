@@ -1,3 +1,3 @@
 pytest-homeassistant==2026.11.0
 # Match the Supervisor client required by the 2026.11.0 hassio integration.
-aiohasupervisor==0.8.1
+aiohasupervisor==0.10.0
