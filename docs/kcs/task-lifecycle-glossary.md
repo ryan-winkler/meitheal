@@ -56,7 +56,7 @@ Completing a recurring task creates the next pending occurrence on its existing 
 
 ### Delete (Permanent Removal)
 - **What it means:** The task and all its related data are **permanently and irreversibly removed** from the database.
-- **What changes:** Task row deleted. Cascades to: comments, activity log, task links.
+- **What changes:** The task row is deleted, along with its comments, reactions, activity log, and task links.
 - **Reversible?** ❌ **No.** This cannot be undone. Export your data first.
 - **Data impact:** Total — task and all audit trail entries are gone
 - **Triggered by:**

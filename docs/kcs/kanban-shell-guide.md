@@ -22,6 +22,12 @@ Use **All Areas** above the board to select a specific area. The card and lane c
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
+### React to a task or comment
+
+Open a task and select **Task reactions**, or use **Comment reactions** beside a comment. With a verified Home Assistant identity, you can add an emoji or up to 16 characters of text and remove your own reactions. If saving fails, your draft remains available to retry. Choose **Older reactions** to see earlier entries.
+
+A card's reaction count covers the task itself. Open the task to see who reacted or to read reactions on its comments.
+
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.

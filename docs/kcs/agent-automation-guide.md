@@ -47,7 +47,9 @@ Open Meitheal through Home Assistant as an administrator, then go to **Settings 
 | Operation | Scope |
 |-----------|-------|
 | List tasks, read a task, or read its links | `tasks:read` |
+| Read task or comment reactions and board reaction counts | `tasks:read` |
 | Create or update tasks, or add and remove their links | `tasks:write` |
+| Add or remove your own task or comment reactions | `tasks:write` |
 | Delete tasks, including bulk removal of completed tasks | `tasks:delete` |
 | Query universal search | `search:read` |
 | List and change projects | `projects:read` and `projects:write`, respectively |
@@ -61,6 +63,12 @@ An invalid, revoked, or expired token returns HTTP 401. A valid token without pe
 3. Update the task with `PATCH /api/tasks/{id}`. Set `status` to `complete` when the work is done.
 
 The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
+
+### Read or change reactions
+
+Use `GET` or `POST` on `/api/tasks/{id}/reactions` for a task, or `/api/tasks/{id}/comments/{commentId}/reactions` for a comment. A verified Home Assistant user or scoped agent can send a JSON `content` value with up to 16 Unicode code points after normalization. Repeating the same reaction as the same author returns the existing reaction ID. To remove your own reaction, send `DELETE` to the same collection path with the reaction ID appended.
+
+Lists contain up to 50 entries and a `next_cursor` for older entries. Use `GET /api/tasks/reaction-counts?ids=…` with up to 100 comma-separated task IDs for card counts. This response can omit tasks with zero reactions.
 
 ### Retry a task mutation
 
