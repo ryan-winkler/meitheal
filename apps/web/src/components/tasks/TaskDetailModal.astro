@@ -505,7 +505,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                   <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} maxlength="5000" required></textarea>
                   <div class="flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary min-h-11">{t("task_modal.comment_save", locale)}</button>
-                    <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("task_modal.cancel", locale)}</button>
+                    <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("common.cancel", locale)}</button>
                   </div>
                 </form>
                 <p role="alert" class="text-sm text-text-primary [&:not(:empty)]:mt-2"></p>

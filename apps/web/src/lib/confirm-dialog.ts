@@ -117,17 +117,20 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) cleanup(false);
     });
+    // Let the buttons handle native activation while keeping app shortcuts outside.
+    overlay.addEventListener(
+      "keydown",
+      (event) => event.stopPropagation(),
+      options.signal ? { signal: options.signal } : undefined,
+    );
 
-    // Keyboard: Enter confirms, Escape cancels, Tab traps focus
+    // Escape cancels and Tab keeps focus in the dialog.
     const focusable = [cancelBtn, okBtn].filter(Boolean);
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         cleanup(false);
-      } else if (e.key === "Enter" && document.activeElement === okBtn) {
-        e.preventDefault();
-        cleanup(true);
       } else if (e.key === "Tab" && focusable.length > 0) {
         // Focus trap — cycle between cancel and confirm
         const idx = focusable.indexOf(document.activeElement as HTMLButtonElement);
