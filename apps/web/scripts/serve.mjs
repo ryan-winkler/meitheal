@@ -48,6 +48,8 @@ const server = http.createServer((req, res) => {
   // Normalize only the path. Preserve the query string exactly.
   let sseSocket
   let waitForDatabaseDownloadDrain
+  const waitForDrain = signal => waitForDownloadDrain(res, signal)
+  const waitForHtmlDrain = fromSupervisor ? waitForDrain : undefined
   if (req.url) {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
@@ -55,11 +57,11 @@ const server = http.createServer((req, res) => {
     req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
     if (req.method === "GET" && normalizedPath === "/api/export/database.sqlite") {
-      waitForDatabaseDownloadDrain = signal => waitForDownloadDrain(res, signal)
+      waitForDatabaseDownloadDrain = waitForDrain
     }
   }
 
-  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket, waitForDatabaseDownloadDrain }, () => handler(req, res))
+  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket, waitForDatabaseDownloadDrain, waitForHtmlDrain }, () => handler(req, res))
 })
 
 server.listen(port, host, () => {

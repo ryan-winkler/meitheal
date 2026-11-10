@@ -301,7 +301,10 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
 
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
-    response = await rewriteIngressHtml(response, ingressPath)
+    response = await rewriteIngressHtml(response, ingressPath, {
+      wait: transport?.waitForHtmlDrain,
+      signal: request.signal,
+    })
     // Echo ingress path as response header so client-side JS can read it
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);

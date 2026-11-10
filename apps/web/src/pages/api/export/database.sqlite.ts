@@ -7,51 +7,14 @@ import { logApiError } from "@lib/api-logger"
 import { exportFilename } from "@lib/export-filename"
 import { apiProblem } from "@lib/api-response"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
-import { getIngressTransport, type IngressTransport } from "../../../../scripts/ingress-transport.mjs"
+import { getIngressTransport } from "../../../../scripts/ingress-transport.mjs"
+import { paceResponseBody } from "@lib/response-backpressure"
 
 const noStore = { "cache-control": "no-store" }
 let exportInProgress = false
 
 function backupProblem(status: number, detail: string): Response {
   return apiProblem({ status, detail, extraHeaders: noStore })
-}
-
-function pacedDownload(
-  body: ReadableStream<Uint8Array>,
-  waitForDrain: NonNullable<IngressTransport["waitForDatabaseDownloadDrain"]>,
-  signal: AbortSignal,
-): ReadableStream<Uint8Array> {
-  const reader = body.getReader()
-  const cancelled = new AbortController()
-  const downloadSignal = AbortSignal.any([signal, cancelled.signal])
-
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        if (!await waitForDrain(downloadSignal)) {
-          if (!cancelled.signal.aborted) controller.close()
-          await reader.cancel().catch(() => undefined)
-          return
-        }
-        const result = await reader.read()
-        if (cancelled.signal.aborted) return
-        if (result.done) controller.close()
-        else controller.enqueue(result.value)
-      } catch (error) {
-        if (cancelled.signal.aborted) return
-        if (signal.aborted) controller.close()
-        else throw error
-      }
-    },
-    async cancel(reason) {
-      cancelled.abort()
-      try {
-        await reader.cancel(reason)
-      } catch (error) {
-        if (!signal.aborted) throw error
-      }
-    },
-  }, { highWaterMark: 0 })
 }
 
 export const GET: APIRoute = async ({ locals, request }) => {
@@ -126,7 +89,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
     const body = Readable.toWeb(stream, {
       strategy: { highWaterMark: 64 * 1024, size: (chunk: Uint8Array) => chunk.byteLength },
     }) as ReadableStream<Uint8Array>
-    return new Response(pacedDownload(body, waitForDrain, signal), { headers })
+    return new Response(paceResponseBody(body, waitForDrain, signal), { headers })
   } catch (error) {
     stream?.destroy()
     if (signal.aborted) return backupProblem(499, "Database download was cancelled.")

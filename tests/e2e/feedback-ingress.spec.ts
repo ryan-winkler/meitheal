@@ -202,6 +202,10 @@ test("a 2,000-task Table page keeps its assets and next view inside ingress", as
   await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(2000)
   await expect(page.getByText("Nótaí & fittings 2000", { exact: true })).toBeVisible()
 
+  const filters = page.locator("#table-shell").getByRole("button", { name: "Toggle filter builder" })
+  await filters.press("Enter")
+  await expect(filters).toHaveAttribute("aria-expanded", "true")
+
   const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
   await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
   await calendar.click()

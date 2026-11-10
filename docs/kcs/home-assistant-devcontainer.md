@@ -47,7 +47,7 @@ With the App running, test the UI through Supervisor ingress as a regular user a
 
 Open Tasks from a fresh browser session and inspect its network requests. JavaScript loaded by the board and its preloads should use the App's ingress path. A request to a bare `/_astro/` path goes to Home Assistant Core. The Vite build resolves script preloads relative to their importing script, so the same chunks also work in a standalone installation. [Vite build options](https://v8.vite.dev/config/build-options#build-modulepreload).
 
-Open a large board's Table view and switch to Calendar or Timeline. Meitheal scopes links, forms and assets to ingress and streams oversized HTML. The check should still pass when the Table response exceeds 5 MiB. A request to the Home Assistant root or unscoped task links usually indicates a failed ingress rewrite.
+Open a large board's Table view and switch to Calendar or Timeline. Meitheal scopes links, forms and assets to ingress and streams oversized HTML. The check should still pass when the Table response exceeds 5 MiB. A request to the Home Assistant root or unscoped task links usually indicates a failed ingress rewrite. Check that a slow client limits queued socket data and that disconnecting cancels the upstream HTML stream.
 
 The older Core coordinator calls native task routes without credentials. Direct sibling calls are denied by the new ingress boundary. Verify a credential-backed Core integration path before promoting the App if that integration is required.
 

@@ -1,5 +1,7 @@
 import type { ServerResponse } from "node:http"
 
+export type WaitForResponseDrain = (signal: AbortSignal) => boolean | Promise<boolean>
+
 export interface IngressTransport {
   peer: string
   fromSupervisor: boolean
@@ -9,7 +11,8 @@ export interface IngressTransport {
     readonly writableLength: number
     destroy(): void
   } | undefined
-  waitForDatabaseDownloadDrain?: ((signal: AbortSignal) => boolean | Promise<boolean>) | undefined
+  waitForDatabaseDownloadDrain?: WaitForResponseDrain | undefined
+  waitForHtmlDrain?: WaitForResponseDrain | undefined
 }
 
 export function runWithIngressTransport<T>(context: IngressTransport, handle: () => T): T

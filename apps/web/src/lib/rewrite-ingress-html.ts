@@ -1,14 +1,28 @@
 import { Readable, Transform, pipeline } from "node:stream"
 import { RewritingStream } from "parse5-html-rewriting-stream"
+import type { WaitForResponseDrain } from "../../scripts/ingress-transport.mjs"
+import { paceResponseBody } from "./response-backpressure"
 
 const scopedAttributes = new Set(["href", "src", "action"])
 const bufferedLimit = 5 * 1024 * 1024
 const outputBatchSize = 16 * 1024
 
-export async function rewriteIngressHtml(response: Response, ingressPath: string): Promise<Response> {
+export async function rewriteIngressHtml(
+  response: Response,
+  ingressPath: string,
+  options?: { wait?: WaitForResponseDrain | undefined; signal: AbortSignal },
+): Promise<Response> {
   if (!response.body || !response.headers.get("content-type")?.includes("text/html")) return response
 
   const reader = response.body.getReader()
+  const signal = options?.signal
+  const cancelInput = () => { void reader.cancel().catch(() => {}) }
+  const releaseInput = () => {
+    signal?.removeEventListener("abort", cancelInput)
+    reader.releaseLock()
+  }
+  signal?.addEventListener("abort", cancelInput, { once: true })
+  if (signal?.aborted) cancelInput()
   const buffered: Uint8Array[] = []
   const script = `<script>window.__ingress_path=${JSON.stringify(ingressPath)};</script>`
   const headers = new Headers(response.headers)
@@ -20,16 +34,24 @@ export async function rewriteIngressHtml(response: Response, ingressPath: string
   })
 
   let size = 0
-  while (size <= bufferedLimit) {
-    const next = await reader.read()
-    if (next.done) {
-      reader.releaseLock()
-      const html = Buffer.concat(buffered, size).toString("utf8")
-      return result(html.replace("<head>", `<head>${script}`)
-        .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`))
+  try {
+    while (size <= bufferedLimit) {
+      const next = await reader.read()
+      signal?.throwIfAborted()
+      if (next.done) break
+      buffered.push(next.value)
+      size += next.value.byteLength
     }
-    buffered.push(next.value)
-    size += next.value.byteLength
+  } catch (error) {
+    cancelInput()
+    releaseInput()
+    throw error
+  }
+  if (size <= bufferedLimit) {
+    releaseInput()
+    const html = Buffer.concat(buffered, size).toString("utf8")
+    return result(html.replace("<head>", `<head>${script}`)
+      .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`))
   }
 
   // Ordinary pages take the existing fast path. Large pages stay scoped
@@ -59,8 +81,8 @@ export async function rewriteIngressHtml(response: Response, ingressPath: string
         yield next.value
       }
     } finally {
-      await reader.cancel().catch(() => {})
-      reader.releaseLock()
+      cancelInput()
+      releaseInput()
     }
   }
 
@@ -81,6 +103,9 @@ export async function rewriteIngressHtml(response: Response, ingressPath: string
     },
   })
   const body = Readable.from(readBody(), { encoding: "utf8", objectMode: false })
+  // A generator blocked on read cannot reach its finally block on its own.
+  output.once("close", cancelInput)
   pipeline(body, rewriter, output, () => { /* Stream failures propagate to the response consumer. */ })
-  return result(Readable.toWeb(output) as ReadableStream<Uint8Array>)
+  const stream = Readable.toWeb(output, { strategy: { highWaterMark: 0 } }) as ReadableStream<Uint8Array>
+  return result(options?.wait ? paceResponseBody(stream, options.wait, options.signal, outputBatchSize) : stream)
 }

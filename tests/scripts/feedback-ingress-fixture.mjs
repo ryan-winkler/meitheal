@@ -16,14 +16,16 @@ const server = http.createServer((request, response) => {
     if (user === "admin" || user === "old") request.headers["x-remote-user-groups"] = "system-admin"
   }
 
+  const waitForDrain = signal => waitForDownloadDrain(response, signal)
   runWithIngressTransport({
     peer: fromSupervisor ? "172.30.32.2" : "172.30.33.7",
     fromSupervisor,
     identityHeadersSafe: user !== "old",
     configuredPath,
     waitForDatabaseDownloadDrain: request.method === "GET" && request.url === "/api/export/database.sqlite"
-      ? signal => waitForDownloadDrain(response, signal)
+      ? waitForDrain
       : undefined,
+    waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
   }, () => handler(request, response))
 })
 
