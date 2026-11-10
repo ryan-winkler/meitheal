@@ -151,6 +151,7 @@ All API responses include dual rate limit headers:
 | `GET /openapi.yaml` | Full OpenAPI 3.1 spec |
 | `GET /.well-known/jsondoc.json` | Same API operations as OpenAPI 3.1 JSON. The relative server URL retains the App's ingress path. |
 | `GET /asyncapi.yaml` | AsyncAPI 2.6 event spec |
+| `GET /.well-known/mcp.json` | Current MCP discovery and ingress-aware endpoint |
 | `POST /api/mcp` | JSON-RPC 2.0 MCP server |
 | `GET /api/a2a/agent-card` | Agent-to-Agent discovery |
 
@@ -158,6 +159,7 @@ All API responses include dual rate limit headers:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| MCP discovery or authenticated requests return 404 | MCP is disabled | Check the MCP toggle in Settings → Automation & AI → Agent Protocols |
 | MCP returns empty tools list | `openapi.yaml` not found | Run `npm run generate:openapi` |
 | Tool definitions stale in dev | 30s cache TTL | Wait or restart dev server |
 | `X-Automation-Source` logged as `unknown` | Value not in allowlist | Use one of the documented values above |

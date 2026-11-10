@@ -8,11 +8,14 @@ description: "Connect to the scoped App MCP endpoint and identify the status of 
 
 ## Connect an MCP client
 
-1. Create a dedicated Meitheal token with `mcp:execute` and the scopes for the tools you need.
-2. Configure the client to send the token in the `Authorization: Bearer` header on every request to `POST /api/mcp`.
-3. Call `initialize` and `tools/list`. The public `/.well-known/mcp.json` manifest identifies the endpoint and credential requirement. The authenticated tool list contains only the tools available to that token. Use the returned input schema when calling a tool.
+1. Check the MCP toggle in **Settings → Automation & AI → Agent Protocols**. MCP starts enabled on installations without a saved preference.
+2. Create a dedicated Meitheal token with `mcp:execute` and the scopes for the tools you need.
+3. Configure a Streamable HTTP client to send the token in the `Authorization: Bearer` header on every request. The installed App serves the current manifest at `/.well-known/mcp.json`. Open it through Home Assistant for the ingress-prefixed endpoint, or directly when running standalone.
+4. Use `server/discover` with a client supporting MCP 2026-07-28, or `initialize` with an older client. Then call `tools/list` and use the returned input schemas. The catalog contains only tools allowed by the token.
 
-A 401 response means the token is absent, expired, revoked, or invalid. A 403 response means the token lacks access to the operation. Check the installed App’s discovery manifest and the [API setup guide](agent-automation-guide.md) when configuring a client.
+Saving the toggle off makes discovery and the MCP endpoint return HTTP 404 on the next authorized request. Existing tokens keep their scopes when you re-enable MCP. HTTP 401 indicates a missing or invalid token. HTTP 403 indicates a blocked operation or browser origin. See the [API setup guide](agent-automation-guide.md) for credentials and scopes.
+
+The endpoint returns a JSON reply per request. Legacy clients that check for a standalone SSE stream receive HTTP 405 on an authenticated GET.
 
 ## Experimental protocols
 

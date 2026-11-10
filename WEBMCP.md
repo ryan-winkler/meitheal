@@ -13,7 +13,7 @@ Meitheal exposes a scoped MCP endpoint for external clients. The optional Home A
 
 Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. For example, reading a task also requires `tasks:read`. Title-based completion requires `search:read` and `tasks:write`.
 
-Send an `Authorization: Bearer` header with `initialize`, `tools/list` and `tools/call`. The App serves discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller.
+Send an `Authorization: Bearer` header on each MCP request. Use `server/discover` with MCP 2026-07-28 or `initialize` with an older client, followed by `tools/list` and `tools/call`. The App serves live discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller. Saving the MCP toggle off disables discovery and tool calls.
 
 ## Home Assistant Core
 

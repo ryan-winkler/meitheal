@@ -1,0 +1,5 @@
+export const MCP_PROTOCOL_VERSION = "2026-07-28"
+export const MCP_LEGACY_VERSION = "2025-03-26"
+export const MCP_SUPPORTED_VERSIONS: readonly string[] = [
+  MCP_PROTOCOL_VERSION, "2025-11-25", "2025-06-18", MCP_LEGACY_VERSION,
+]

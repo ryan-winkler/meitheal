@@ -3970,8 +3970,9 @@ paths:
       tags:
         - Agents
       summary: Model Context Protocol JSON-RPC endpoint
-      description: "JSON-RPC 2.0 server for AI agents. Supports methods: initialize, tools/list, tools/call. Tools are
-        dynamically generated from this OpenAPI spec. Use this for programmatic AI agent integration."
+      description: Streamable HTTP with JSON responses. Use server/discover for MCP 2026-07-28 or initialize for older
+        revisions, then tools/list and tools/call. Requires a Meitheal token with mcp:execute and the scope of each
+        called tool.
       requestBody:
         content:
           application/json:
@@ -3982,11 +3983,17 @@ paths:
                   type: string
                   const: "2.0"
                 id:
-                  type: string
+                  type:
+                    - string
+                    - number
                 method:
                   type: string
                   enum:
+                    - server/discover
                     - initialize
+                    - notifications/initialized
+                    - notifications/cancelled
+                    - ping
                     - tools/list
                     - tools/call
                 params:
@@ -3995,6 +4002,14 @@ paths:
       responses:
         "200":
           description: JSON-RPC response
+        "202":
+          description: Legacy notification accepted
+        "400":
+          description: Invalid request, protocol version or metadata
+        "404":
+          description: MCP disabled or method unavailable
+        "413":
+          description: Request exceeds 1 MiB
   /api/a2a/agent-card:
     get:
       operationId: getA2AAgentCard

@@ -1335,7 +1335,26 @@ const paths = {
 
   // ── MCP ──
   "/api/mcp": {
-    post: { operationId: "mcpEndpoint", tags: ["Agents"], summary: "Model Context Protocol JSON-RPC endpoint", description: "JSON-RPC 2.0 server for AI agents. Supports methods: initialize, tools/list, tools/call. Tools are dynamically generated from this OpenAPI spec. Use this for programmatic AI agent integration.", requestBody: { content: { "application/json": { schema: { type: "object", properties: { jsonrpc: { type: "string", const: "2.0" }, id: { type: "string" }, method: { type: "string", enum: ["initialize", "tools/list", "tools/call"] }, params: { type: "object" } } } } } }, responses: { 200: { description: "JSON-RPC response" } } },
+    post: {
+      operationId: "mcpEndpoint", tags: ["Agents"], summary: "Model Context Protocol JSON-RPC endpoint",
+      description: "Streamable HTTP with JSON responses. Use server/discover for MCP 2026-07-28 or initialize for older revisions, then tools/list and tools/call. Requires a Meitheal token with mcp:execute and the scope of each called tool.",
+      requestBody: { content: { "application/json": { schema: {
+        type: "object",
+        properties: {
+          jsonrpc: { type: "string", const: "2.0" },
+          id: { type: ["string", "number"] },
+          method: { type: "string", enum: ["server/discover", "initialize", "notifications/initialized", "notifications/cancelled", "ping", "tools/list", "tools/call"] },
+          params: { type: "object" },
+        },
+      } } } },
+      responses: {
+        200: { description: "JSON-RPC response" },
+        202: { description: "Legacy notification accepted" },
+        400: { description: "Invalid request, protocol version or metadata" },
+        404: { description: "MCP disabled or method unavailable" },
+        413: { description: "Request exceeds 1 MiB" },
+      },
+    },
   },
 
   // ── A2A ──

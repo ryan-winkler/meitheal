@@ -210,7 +210,12 @@ test.describe("MCP Discovery", () => {
     const work = await mkdtemp(join(tmpdir(), "meitheal-mcp-discovery-"))
     const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
     const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
-    const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}` }
+    const env = {
+      PATH: process.env.PATH,
+      NODE_ENV: "production",
+      MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+      MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+    }
     const api = await playwright.request.newContext()
     let server: ReturnType<typeof fork> | undefined
 
@@ -223,6 +228,7 @@ test.describe("MCP Discovery", () => {
         once(child, "exit").then(([code]) => { throw new Error(`Ingress fixture exited with ${code}`) }),
       ])
       const origin = `http://127.0.0.1:${info.port}`
+      const ingress = origin + info.configuredPath
       const discovery = await api.get(origin + info.configuredPath + "/.well-known/agent-card.json", { maxRedirects: 0 })
       expect(discovery.status()).toBe(200)
       const card = await discovery.json()
@@ -239,19 +245,45 @@ test.describe("MCP Discovery", () => {
         return { authorization: `Bearer ${token}` }
       }
       const send = (headers: Record<string, string>, method: string, params?: Record<string, unknown>) =>
-        api.post(origin + "/api/mcp", { headers, data: { jsonrpc: "2.0", id: 1, method, params } })
+        api.post(ingress + "/api/mcp", { headers: { origin, ...headers }, data: { jsonrpc: "2.0", id: 1, method, params } })
       const readHeaders = await issueToken(["mcp:execute", "tasks:read"])
       const writeHeaders = await issueToken(["mcp:execute", "tasks:write"])
       const noMcpHeaders = await issueToken(["tasks:read"])
 
+      const manifest = await api.get(ingress + "/.well-known/mcp.json")
+      expect(manifest.status()).toBe(200)
+      expect(manifest.headers()["cache-control"]).toBe("no-store")
+      expect(await manifest.json()).toMatchObject({
+        endpoint: info.configuredPath + "/api/mcp",
+        supportedVersions: expect.arrayContaining(["2026-07-28", "2025-03-26"]),
+      })
+      expect((await api.get(origin + "/.well-known/mcp.json")).status()).toBe(403)
+      expect((await send({}, "tools/list")).status()).toBe(401)
       expect((await send(noMcpHeaders, "tools/list")).status()).toBe(403)
       const initialize = await send(readHeaders, "initialize")
-      expect(initialize.ok()).toBeTruthy()
+      expect(initialize.status(), await initialize.text()).toBe(200)
       expect(await initialize.json()).toMatchObject({
         jsonrpc: "2.0",
         id: 1,
         result: { protocolVersion: "2025-03-26", capabilities: { tools: { listChanged: false } } },
       })
+      const negotiated = await send(readHeaders, "initialize", { protocolVersion: "2025-11-25" })
+      expect(await negotiated.json()).toMatchObject({ result: { protocolVersion: "2025-11-25" } })
+      const initialized = await api.post(ingress + "/api/mcp", {
+        headers: { origin, ...readHeaders, "mcp-protocol-version": "2025-11-25" },
+        data: { jsonrpc: "2.0", method: "notifications/initialized" },
+      })
+      expect(initialized.status()).toBe(202)
+      expect(await initialized.text()).toBe("")
+      const probe = (headers: Record<string, string>, method = "GET") =>
+        api.fetch(ingress + "/api/mcp", { method, headers: { origin, ...headers } })
+      for (const method of ["GET", "HEAD"]) {
+        expect((await probe({}, method)).status()).toBe(401)
+        expect((await probe(noMcpHeaders, method)).status()).toBe(403)
+        const unsupported = await probe(readHeaders, method)
+        expect(unsupported.status()).toBe(405)
+        expect(unsupported.headers().allow).toBe("POST")
+      }
 
       const readList = await send(readHeaders, "tools/list")
       const writeList = await send(writeHeaders, "tools/list")
@@ -296,6 +328,58 @@ test.describe("MCP Discovery", () => {
         id: 1,
         error: { code: -32603, message: "Tool is unavailable to this token" },
       })
+
+      const version = "2026-07-28"
+      const modern = (method: string, params: Record<string, unknown> = {}, extraHeaders = {}) =>
+        send({ ...readHeaders, "mcp-protocol-version": version, "mcp-method": method, ...extraHeaders }, method, {
+          ...params,
+          _meta: { "io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {} },
+        })
+      const discover = await modern("server/discover")
+      expect(discover.status()).toBe(200)
+      expect(await discover.json()).toMatchObject({
+        result: {
+          resultType: "complete",
+          supportedVersions: expect.arrayContaining([version]),
+          _meta: { "io.modelcontextprotocol/serverInfo": { name: "meitheal" } },
+        },
+      })
+      const list = await modern("tools/list")
+      expect(await list.json()).toMatchObject({ result: { resultType: "complete", tools: readTools } })
+      const params = { name: "listTasks", arguments: { limit: 1 } }
+      const tool = await modern("tools/call", params, { "mcp-name": "listTasks", origin })
+      expect(tool.status()).toBe(200)
+      expect(tool.headers()["ratelimit"]).toBeDefined()
+      expect(await tool.json()).toMatchObject({
+        result: { resultType: "complete", isError: false, structuredContent: { tasks: expect.any(Array) } },
+      })
+      const wrongName = await modern("tools/call", params, { "mcp-name": "createTask" })
+      expect(wrongName.status()).toBe(400)
+      expect(await wrongName.json()).toMatchObject({ error: { code: -32020 } })
+      const wrongVersion = await modern("tools/list", {}, { "mcp-protocol-version": "2099-01-01" })
+      expect(wrongVersion.status()).toBe(400)
+      expect(await wrongVersion.json()).toMatchObject({ error: { code: -32022 } })
+      expect((await modern("tools/list", {}, { origin: "https://untrusted.example" })).status()).toBe(403)
+      expect((await send(readHeaders, "tools/list", { padding: "x".repeat(1024 * 1024) })).status()).toBe(413)
+
+      const save = (value: unknown, role: string) => api.put(ingress + "/api/settings", {
+        headers: { cookie: `feedback-fixture=${role}` },
+        data: { key: "agent-protocols-mcp-enabled", value },
+      })
+      expect((await save(false, "member")).status()).toBe(403)
+      expect((await save(false, "admin")).status()).toBe(200)
+      const hidden = await api.get(ingress + "/.well-known/mcp.json")
+      expect(hidden.status()).toBe(404)
+      expect(hidden.headers()["cache-control"]).toBe("no-store")
+      expect(await hidden.json()).not.toHaveProperty("endpoint")
+      expect((await send(readHeaders, "tools/list")).status()).toBe(404)
+      expect((await modern("server/discover")).status()).toBe(404)
+      expect((await probe(readHeaders)).status()).toBe(404)
+      expect((await probe(noMcpHeaders)).status()).toBe(403)
+      expect((await send(noMcpHeaders, "tools/list")).status()).toBe(403)
+      expect((await save("true", "admin")).status()).toBe(200)
+      expect((await api.get(ingress + "/.well-known/mcp.json")).status()).toBe(200)
+      expect((await send(readHeaders, "tools/list")).status()).toBe(200)
     } finally {
       if (server && server.exitCode === null && server.signalCode === null) {
         const exited = once(server, "exit")
