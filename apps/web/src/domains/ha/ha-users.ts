@@ -42,6 +42,13 @@ let cachedUsers: HAUser[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60_000; // 60s
 
+function sanitizeHAUserName(value: unknown): string {
+  let name = typeof value === "string" ? value : ""
+  // Strip nested tags as well as ordinary tags from display names.
+  for (let i = 0; i < 10 && /<[^>]*>/.test(name); i++) name = name.replace(/<[^>]*>/g, "")
+  return name.trim() || "Unknown"
+}
+
 // ── Public API ──
 
 /**
@@ -72,9 +79,7 @@ export async function listHAUsers(): Promise<HAUser[]> {
       (u) => !((u as unknown as Record<string, unknown>).system_generated) && u.is_active
     ).map((u) => ({
       ...u,
-      // Sanitize display name — strip HTML tags to prevent stored XSS.
-      // Loop to handle nested/malformed fragments like <scr<script>ipt> (CodeQL: js/incomplete-multi-character-sanitization).
-      name: (() => { let n = u.name || ""; for (let i = 0; i < 10 && /<[^>]*>/g.test(n); i++) n = n.replace(/<[^>]*>/g, ""); return n.trim() || "Unknown"; })(),
+      name: sanitizeHAUserName(u.name),
       // Validate ID is clean alphanumeric — prefix with ha_ for downstream validation compat
       id: /^[a-zA-Z0-9_-]+$/.test(u.id) ? u.id : `ha_sanitized_${u.id.replace(/[^a-zA-Z0-9]/g, "")}`,
     }));
@@ -121,44 +126,45 @@ export async function getHAUserById(userId: string): Promise<HAUser | null> {
 
 const activeUserFreshnessMs = 5_000
 const maxMembershipLookups = 16
-let activeUsers: { ids: Set<string>; expiresAt: number } | undefined
-let checkingActiveUsers: Promise<Set<string> | undefined> | undefined
+type ActiveHARoster = ReadonlyMap<string, string>
+let activeUsers: { roster: ActiveHARoster; expiresAt: number } | undefined
+let checkingActiveUsers: Promise<ActiveHARoster | undefined> | undefined
 let pendingLookups = 0
 let latestLookup = 0
 let latestCompletedLookup = 0
 
-function parseActiveUserIds(users: unknown): Set<string> | undefined {
+function parseActiveUserRoster(users: unknown): ActiveHARoster | undefined {
   if (!Array.isArray(users)) return
   const seen = new Set<string>()
-  const active = new Set<string>()
+  const active = new Map<string, string>()
   for (const user of users) {
     if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
       || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
       || seen.has(user.id)) return
     seen.add(user.id)
-    if (user.is_active && !user.system_generated) active.add(user.id)
+    if (user.is_active && !user.system_generated) active.set(user.id, sanitizeHAUserName(user.name))
   }
   return active
 }
 
-async function refreshActiveUsers(signal?: AbortSignal): Promise<Set<string> | undefined> {
+async function refreshActiveUsers(signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
   if (pendingLookups >= maxMembershipLookups || signal?.aborted) return
   const generation = ++latestLookup
   const expiresAt = performance.now() + activeUserFreshnessMs
   pendingLookups++
   try {
-    const ids = parseActiveUserIds(await readCurrentHACoreUsers(signal))
+    const roster = parseActiveUserRoster(await readCurrentHACoreUsers(signal))
     if (generation > latestCompletedLookup) {
       latestCompletedLookup = generation
-      activeUsers = ids && { ids, expiresAt }
+      activeUsers = roster && { roster, expiresAt }
     }
-    return ids
+    return roster
   } finally {
     pendingLookups--
   }
 }
 
-async function waitForReadCheck(check: Promise<Set<string> | undefined>, signal?: AbortSignal): Promise<void> {
+async function waitForReadCheck(check: Promise<ActiveHARoster | undefined>, signal?: AbortSignal): Promise<void> {
   if (!signal) {
     await check
     return
@@ -176,19 +182,23 @@ async function waitForReadCheck(check: Promise<Set<string> | undefined>, signal?
   }
 }
 
+/** Fetch a current roster and return it only to a currently active member. */
+export async function getCurrentHAUserRoster(id: string, signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
+  const roster = await refreshActiveUsers(signal)
+  const latest = activeUsers?.roster
+  if (!signal?.aborted && roster?.has(id) && latest?.has(id)) return latest
+}
+
 /** Check the exact Core identity for an authorization decision without using discovery fallbacks. */
 export async function isCurrentActiveHAUser(
   id: string,
   { fresh = false, signal }: { fresh?: boolean; signal?: AbortSignal } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  if (fresh) {
-    const ids = await refreshActiveUsers(signal)
-    return Boolean(!signal?.aborted && ids?.has(id) && activeUsers?.ids.has(id))
-  }
+  if (fresh) return Boolean(await getCurrentHAUserRoster(id, signal))
   if (!activeUsers || activeUsers.expiresAt <= performance.now()) {
     checkingActiveUsers ??= refreshActiveUsers().finally(() => { checkingActiveUsers = undefined })
     await waitForReadCheck(checkingActiveUsers, signal)
   }
-  return Boolean(!signal?.aborted && activeUsers && activeUsers.expiresAt > performance.now() && activeUsers.ids.has(id))
+  return Boolean(!signal?.aborted && activeUsers && activeUsers.expiresAt > performance.now() && activeUsers.roster.has(id))
 }

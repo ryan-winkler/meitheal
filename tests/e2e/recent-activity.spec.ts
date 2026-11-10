@@ -165,9 +165,20 @@ test("verified members see committed task activity and can filter it by current 
     expect(denied?.headers()["cache-control"]).toBe("private, no-store")
     expect(await denied?.text()).not.toContain("Service the boiler")
 
-    const changed = once(child, "message", { signal: AbortSignal.timeout(3_000) })
-    child.send({ type: "fixture-core", user: "member", active: false })
-    expect((await changed)[0]).toEqual({ coreChanged: true })
+    async function setCoreMember(user: string, active: boolean) {
+      const changed = once(child, "message", { signal: AbortSignal.timeout(3_000) })
+      child.send({ type: "fixture-core", user, active })
+      expect((await changed)[0]).toEqual({ coreChanged: true })
+    }
+    await setCoreMember("member-two", false)
+    expect((await a.goto(activity))?.status()).toBe(200)
+    await expect(optionB).toHaveCount(0)
+    expect((await a.goto(activity + "?person=" + bKey))?.status()).toBe(400)
+    await setCoreMember("member-two", true)
+    expect((await a.goto(activity + "?person=" + bKey))?.status()).toBe(200)
+    await expect(optionB).toHaveCount(1)
+
+    await setCoreMember("member", false)
     const revoked = await a.goto(activity + "?person=" + bKey)
     expect(revoked?.status()).toBe(403)
     expect(revoked?.headers()["cache-control"]).toBe("private, no-store")

@@ -8,7 +8,7 @@ description: "See recent task changes across the shared task list."
 
 Open **Recent activity** from the Meitheal navigation while signed into Home Assistant. The view shows ordinary task additions, edits, closures and reopenings recorded after the update. Publishing a draft appears once as a task addition.
 
-Choose a **Current area** or **Person** and apply the filters. When a task moves, its activity appears in the new area. Deleting a task removes it from the view. Person filters use verified Home Assistant identities. Updates with no verified person have a general attribution and remain visible under **Everyone**.
+Choose a **Current area** or **Person** and apply the filters. When a task moves, its activity appears in the new area. Deleting a task removes it from the view. Person filters use the current Home Assistant roster that also verifies access to the page. Events without a current person match have a general attribution and remain visible under **Everyone**.
 
 Select a task title to open its details. Use **Older activity** to continue or **Refresh activity** to see new changes.
 Open the task's activity history in Details to inspect its individual field changes.

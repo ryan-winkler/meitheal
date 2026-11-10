@@ -1,5 +1,5 @@
 ---
-import { isCurrentActiveHAUser, listHAUsers } from "@domains/ha/ha-users"
+import { getCurrentHAUserRoster } from "@domains/ha/ha-users"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { readRecentActivity, recentActivityPersonKey } from "@domains/tasks/persistence/recent-activity"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -13,7 +13,8 @@ const headers = { "cache-control": "private, no-store" }
 Astro.response.headers.set("cache-control", headers["cache-control"])
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const user = verifiedIngressUser(Astro.locals)
-if (!user || !await isCurrentActiveHAUser(user.id, { fresh: true })) {
+const roster = user ? await getCurrentHAUserRoster(user.id, Astro.request.signal) : undefined
+if (!roster) {
   return new Response(t("recent_activity.denied", locale), { status: 403, headers })
 }
 
@@ -31,30 +32,20 @@ let page: Awaited<ReturnType<typeof readRecentActivity>> = { items: [], next: nu
 let unavailable = false
 
 if (!invalid) {
-  let deadline: ReturnType<typeof setTimeout> | undefined
   try {
     await ensureSchema()
     const client = getPersistenceClient()
     areas = await new HierarchyRepository(client).findAllAreas()
-    const roster = await Promise.race([
-      listHAUsers(),
-      new Promise<never>((_, reject) => {
-        deadline = setTimeout(() => reject(new Error("Core user directory unavailable")), 2_000)
-      }),
-    ])
     const names = new Map<string, number>()
-    for (const member of roster) names.set(member.name, (names.get(member.name) ?? 0) + 1)
-    people = new Map(roster.map(member => {
-      const key = recentActivityPersonKey(member.id)
-      const label = (names.get(member.name) ?? 0) > 1 ? `${member.name} · ${key.slice(-6)}` : member.name
-      return [key, label]
-    }))
+    for (const name of roster.values()) names.set(name, (names.get(name) ?? 0) + 1)
+    for (const [id, name] of roster) {
+      const key = recentActivityPersonKey(id)
+      people.set(key, (names.get(name) ?? 0) > 1 ? `${name} · ${key.slice(-6)}` : name)
+    }
     invalid = Boolean((areaId && !areas.some(area => area.id === areaId)) || (personKey && !people.has(personKey)))
     if (!invalid) page = await readRecentActivity(client, { areaId, personKey, before })
   } catch {
     unavailable = true
-  } finally {
-    clearTimeout(deadline)
   }
 }
 if (invalid) Astro.response.status = 400
