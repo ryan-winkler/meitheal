@@ -15,6 +15,8 @@ Open the task's activity history in Details to inspect its individual field chan
 
 Recent activity requires an active Home Assistant session and a connection. The web app removes saved copies of the activity page when its service worker activates.
 
+When your browser restores the page from history, Recent activity refreshes using the same filters after checking your Home Assistant account.
+
 ## Verify a new release
 
-In a disposable App session with two active Home Assistant accounts, create tasks in two areas. Have the second account edit and close one task and the first reopen it. Confirm each action appears once, that the area and person filters work together, and that a moved task appears in its new area. Reopen the page after revoking a test account and check that the account can no longer see the feed.
+In a disposable App session with two active Home Assistant accounts, create tasks in two areas. Have the second account edit and close one task and the first reopen it. Confirm each action appears once, that the area and person filters work together, and that a moved task appears in its new area. Follow a task link, then go Back and confirm the filters are retained. Repeat after revoking the viewing account while the task is open and confirm Back denies access without displaying the activity or filters.

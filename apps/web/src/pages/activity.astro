@@ -73,7 +73,7 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
 ---
 
 <Layout title={t("recent_activity.title", locale)} suppressTaskUrlOpen>
-  <section class="recent-activity" aria-labelledby="recent-activity-heading">
+  <section class="recent-activity" data-recent-activity aria-labelledby="recent-activity-heading">
     <header>
       <h1 id="recent-activity-heading">{t("recent_activity.title", locale)}</h1>
       <p>{t("recent_activity.description", locale)}</p>
@@ -137,6 +137,26 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
     )}
   </section>
 </Layout>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(signal => {
+    const section = document.querySelector<HTMLElement>("[data-recent-activity]")
+    if (!section || section.dataset.historyGuard) return
+    section.dataset.historyGuard = "true"
+
+    window.addEventListener("pagehide", event => {
+      if (!event.persisted) return
+      // A browser history snapshot can outlive the verified Home Assistant session.
+      section.hidden = true
+      section.replaceChildren()
+    }, { signal })
+    window.addEventListener("pageshow", event => {
+      if (event.persisted) window.location.reload()
+    }, { signal })
+  })
+</script>
 
 <style>
   .recent-activity {
