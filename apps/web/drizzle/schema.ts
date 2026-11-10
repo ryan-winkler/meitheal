@@ -1,5 +1,5 @@
 import { desc, sql } from "drizzle-orm"
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const tasks = sqliteTable(
   "tasks",
@@ -27,6 +27,16 @@ export const tasks = sqliteTable(
       .where(sql`${table.deferredAt} IS NOT NULL`)
   })
 );
+
+export const taskPins = sqliteTable("task_pins", {
+  ownerId: text("owner_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  pinnedAt: integer("pinned_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.ownerId, table.taskId] }),
+  index("task_pins_owner_recent_idx").on(table.ownerId, desc(table.pinnedAt), table.taskId),
+  index("task_pins_task_idx").on(table.taskId),
+])
 
 export const domainEvents = sqliteTable(
   "domain_events",

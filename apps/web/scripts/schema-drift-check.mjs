@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { openDatabase } from "./database-client.mjs"
 import { validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
+import { validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
 
 const execFileAsync = promisify(execFile);
 
@@ -67,6 +68,7 @@ async function main() {
 
   try {
     await validateTaskDeferralSchema(client)
+    await validateTaskPinsSchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",

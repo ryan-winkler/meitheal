@@ -27,6 +27,8 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+A personal pin is a relationship between one household user and one task. It survives changes to the task's workflow, including deferral and completion, and disappears when the task is permanently deleted. Shared favorites continue to drive the existing household views.
+
 ### Create a Checklist
 
 Choose **Checklist** in the task form and enter one item per line. Use **Add Item** or Enter to stage the lines. Shift+Enter starts a new line. Creating the task includes any text still in the item field. If saving fails, the form keeps the staged items and draft for retry.

@@ -55,7 +55,7 @@ function migrate(...args: string[]) {
 
 test("runtime bootstrap and CLI converge without changing existing task rows", async ({ database: db }) => {
   await Promise.all([ensureSchema(), ensureSchema()])
-  expect(getSchemaVersion()).toBe(13)
+  expect(getSchemaVersion()).toBe(14)
   await seed(db, "retained")
   expect(migrate()).toContain("Applied migration: 0004_task_deferral.mjs")
   expect(migrate("--check")).toContain("Migration check passed")
@@ -65,7 +65,7 @@ test("runtime bootstrap and CLI converge without changing existing task rows", a
 test("runtime validates the CLI-first migration and rejects conflicting schema", async ({ database: db }) => {
   expect(migrate()).toContain("Applied migration: 0004_task_deferral.mjs")
   await ensureSchema()
-  expect(getSchemaVersion()).toBe(13)
+  expect(getSchemaVersion()).toBe(14)
   await db.execute("DROP INDEX tasks_deferred_order_idx")
   await db.execute("CREATE INDEX tasks_deferred_order_idx ON tasks (deferred_at ASC, id ASC)")
   expect(() => migrate("--check")).toThrow(/Unexpected task deferral index/)

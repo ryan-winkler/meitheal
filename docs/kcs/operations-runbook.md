@@ -208,6 +208,8 @@ On a Supervisor start, s6 prepares the App’s files under `/data`, including a 
 
 ## Database Migrations
 
+Schema 12 adds the personal task pin associations. The migration check verifies both pin indexes and the cascading task foreign key. For recovery, use a matching Supervisor cold app backup and image. Pair a downgrade with its pre-upgrade backup so an older app never opens a database containing private pin rows.
+
 Primary command path:
 
 1. `pnpm --filter @meitheal/web db:migrate`
