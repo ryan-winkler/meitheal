@@ -17,12 +17,41 @@
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "details > summary:first-of-type",
+  "[tabindex]",
+  "[contenteditable]",
 ].join(", ")
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(element => {
+    if (element.matches(":disabled") || element.closest("[inert]")) return false
+    const editable = element.isContentEditable && !element.hasAttribute("tabindex")
+      && !element.parentElement?.isContentEditable
+    if (element.tabIndex < 0 && !editable) return false
+    return element.checkVisibility?.({ visibilityProperty: true })
+      ?? (element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible")
+  })
+}
+
+export function containTabFocus(container: HTMLElement, event: KeyboardEvent): void {
+  if (event.key !== "Tab" || event.defaultPrevented) return
+
+  const focusable = getFocusableElements(container)
+  const first = focusable[0]
+  const last = focusable.at(-1)
+  if (!first || !last) return
+
+  const active = document.activeElement
+  const boundary = event.shiftKey ? first : last
+  if (active === boundary || !container.contains(active)) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first).focus()
+  }
+}
 
 export interface FocusTrap {
   activate(): void
@@ -31,43 +60,15 @@ export interface FocusTrap {
 
 export function createFocusTrap(container: HTMLElement): FocusTrap {
   let previouslyFocused: HTMLElement | null = null
-  let handler: ((e: KeyboardEvent) => void) | null = null
-
-  function getFocusableElements(): HTMLElement[] {
-    return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-      .filter(el => el.offsetParent !== null) // visible only
-  }
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key !== "Tab") return
-
-    const focusable = getFocusableElements()
-    if (focusable.length === 0) return
-
-    const first = focusable[0]!
-    const last = focusable[focusable.length - 1]!
-
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-  }
+  const onKeyDown = (event: KeyboardEvent) => containTabFocus(container, event)
 
   return {
     activate() {
       previouslyFocused = document.activeElement as HTMLElement | null
-      handler = onKeyDown
-      container.addEventListener("keydown", handler)
+      container.addEventListener("keydown", onKeyDown)
 
       // Focus first focusable element
-      const focusable = getFocusableElements()
+      const focusable = getFocusableElements(container)
       if (focusable.length > 0) {
         // Try autofocus first, then first focusable
         const autoFocusEl = container.querySelector<HTMLElement>("[autofocus]")
@@ -76,10 +77,7 @@ export function createFocusTrap(container: HTMLElement): FocusTrap {
     },
 
     deactivate() {
-      if (handler) {
-        container.removeEventListener("keydown", handler)
-        handler = null
-      }
+      container.removeEventListener("keydown", onKeyDown)
       // Restore previous focus
       if (previouslyFocused && previouslyFocused.isConnected) {
         previouslyFocused.focus()

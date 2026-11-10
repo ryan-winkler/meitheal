@@ -4,6 +4,7 @@
         import { confirmDialog } from "@lib/confirm-dialog";
         import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
+        import { containTabFocus } from "@lib/focus-trap"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
 
@@ -167,18 +168,26 @@
                 }
               }
 
+              if (e.key === "Tab") {
+                const shortcut = document.querySelector<HTMLElement>("#shortcut-modal:not(.hidden)")
+                const task = document.querySelector<HTMLElement>("#task-detail-overlay.active")
+                const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
+                const activeOverlay = shortcut ?? task ?? search
+                if (activeOverlay) containTabFocus(activeOverlay, e)
+                return
+              }
+
               if (isEditing) return;
 
               // Suppress most shortcuts when task detail overlay is open
-              // Allow ?, Escape, and Tab through so users can access help and close/navigate
+              // Allow ? and Escape through so users can access help and close
               const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
                 ?.classList.contains("active") ?? false;
               if (
                 taskDetailOpen &&
                 e.key !== "?" &&
-                e.key !== "Escape" &&
-                e.key !== "Tab"
+                e.key !== "Escape"
               )
                 return;
 
@@ -230,54 +239,9 @@
                 if (modal) modal.classList.toggle("hidden");
               }
 
-              // --- Focus Trap Logic ---
-              const taskOverlay = document.getElementById(
-                "task-detail-overlay",
-              );
-              const searchHubOverlay = document.getElementById(
-                "search-hub-overlay",
-              );
-              const shortcutModal = document.getElementById("shortcut-modal");
-
-              // Find which overlay is active (priority order)
-              let activeOverlay: HTMLElement | null = null;
-              if (shortcutModal && !shortcutModal.classList.contains("hidden"))
-                activeOverlay = shortcutModal;
-              else if (taskOverlay && taskOverlay.classList.contains("active"))
-                activeOverlay = taskOverlay;
-              else if (
-                searchHubOverlay &&
-                !searchHubOverlay.classList.contains("hidden")
-              )
-                activeOverlay = searchHubOverlay;
-
-              if (activeOverlay && e.key === "Tab") {
-                const focusableElements = activeOverlay.querySelectorAll(
-                  'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])',
-                );
-                const firstElement = focusableElements[0] as HTMLElement;
-                const lastElement = focusableElements[
-                  focusableElements.length - 1
-                ] as HTMLElement;
-
-                if (e.shiftKey) {
-                  // Shift + Tab
-                  if (document.activeElement === firstElement) {
-                    lastElement?.focus();
-                    e.preventDefault();
-                  }
-                } else {
-                  // Tab
-                  if (document.activeElement === lastElement) {
-                    firstElement?.focus();
-                    e.preventDefault();
-                  }
-                }
-              }
-
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is open AND user is NOT editing a text field
-              if (taskOverlay && taskOverlay.classList.contains("active")) {
+              if (taskDetailOpen) {
                 const tdTag = (e.target as HTMLElement)?.tagName;
                 const tdIsEditing =
                   ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||

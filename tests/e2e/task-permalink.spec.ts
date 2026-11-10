@@ -82,6 +82,61 @@ test("Table keyboard controls retain their actions beside the task detail shortc
   await expect(page.getByRole("dialog", { name: `Task detail: ${title}` })).toBeVisible()
 })
 
+test("task detail contains Tab while loading and after a nested confirmation", async ({ page, request, baseURL }) => {
+  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
+  const origin = new URL(baseURL!).origin
+  const title = "Task detail keyboard boundaries"
+  const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+  const detailResponse = deferred<void>()
+  await page.route(`${origin}/api/tasks/${id}`, async route => {
+    await detailResponse.promise
+    await route.continue()
+  })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+
+  try {
+    await page.goto("/tasks?area_id=default#kanban")
+    await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+    const card = page.locator(`.kanban-card[data-id="${id}"]`).getByRole("button", { name: new RegExp(`^Task: ${title},`) })
+    await card.press("Enter")
+    const detail = page.locator("#task-detail-overlay")
+    const close = detail.getByRole("button", { name: "Close detail" })
+    await expect(close).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    await expect(close).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(close).toBeFocused()
+
+    detailResponse.resolve()
+    const first = detail.getByRole("button", { name: "Favorite" })
+    const last = detail.getByRole("button", { name: "Strategic Lens" })
+    await expect(first).toBeVisible()
+    await first.focus()
+    await page.keyboard.press("Shift+Tab")
+    await expect(last).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(first).toBeFocused()
+
+    const remove = detail.getByRole("button", { name: "Delete Task" })
+    await remove.press("Enter")
+    const confirm = page.getByRole("alertdialog", { name: "Delete Task" })
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    await expect(confirm.getByRole("button", { name: "Delete Task" })).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(remove).toBeFocused()
+    await expect(detail).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(detail).toBeHidden()
+    await expect(card).toBeFocused()
+  } finally {
+    detailResponse.resolve()
+    await request.delete(`/api/tasks/${id}`, { headers: { origin } })
+  }
+})
+
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))
