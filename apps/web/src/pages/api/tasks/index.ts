@@ -284,6 +284,7 @@ export const POST: APIRoute = async ({ request }) => {
   const recurrence_rule = rawRecurrence && /^[A-Z=;,0-9]+$/.test(rawRecurrence) && rawRecurrence.length <= 200
     ? rawRecurrence : null
 
+  const now = Date.now()
   await repo.createTask({
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
@@ -291,9 +292,8 @@ export const POST: APIRoute = async ({ request }) => {
     task_type, task_kind, ticket_number, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
     recurrence_rule,
-  })
+  }, now)
 
-  const now = Date.now()
   const ticket_key = formatTicketKey(ticket_number)
   const taskPayload = { id, ticket_number, ticket_key, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, goal_id, custom_fields, time_tracked: 0, start_date, end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance), eisenhower_override: 0, created_at: now, updated_at: now }
 

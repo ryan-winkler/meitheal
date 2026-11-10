@@ -71,8 +71,11 @@ test("an inbound blocks link follows the same policy and reciprocal links list o
 test("intake updates validate the version and reject stale or noncanonical decisions", async ({ request }) => {
   const creation = await request.post("/api/tasks", { data: { title: "Intake API decision", status: "backlog" } })
   expect(creation.status()).toBe(201)
-  const { id, updated_at } = await creation.json()
+  const { id, created_at, updated_at } = await creation.json()
   const path = `/api/tasks/${id}`
+  const created = await request.get(path)
+  expect(created.status()).toBe(200)
+  expect(await created.json()).toMatchObject({ created_at, updated_at })
   const invalid = await request.patch(path, {
     headers: { "content-type": "application/json" },
     data: '{"status":"pending","updated_at":1e309}',

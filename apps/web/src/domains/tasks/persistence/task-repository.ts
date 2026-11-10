@@ -820,8 +820,7 @@ export class TaskRepository {
     recurrence_rule?: string | null;
     urgency?: number; importance?: number;
     effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
-  }): Promise<string> {
-    const now = Date.now();
+  }, now = Date.now()): Promise<string> {
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
