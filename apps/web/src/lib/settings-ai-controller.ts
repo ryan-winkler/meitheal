@@ -1,4 +1,5 @@
 import { withAsyncButton } from "@lib/async-button"
+import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 /**
  * AI & Agent settings controller.
  *
@@ -16,7 +17,7 @@ export function initAISettings(): void {
     pageLifecycle.on(aiProviderEl, "change", () => {
       const group = document.getElementById("ai-custom-url-group")
       if (group) {
-        group.style.display = (aiProviderEl as HTMLSelectElement).value === "custom" ? "block" : "none"
+        group.style.display = ["custom", "ollama"].includes((aiProviderEl as HTMLSelectElement).value) ? "" : "none"
       }
     })
   }
@@ -25,16 +26,20 @@ export function initAISettings(): void {
   const saveAiBtn = document.getElementById("save-ai") as HTMLButtonElement | null
   if (saveAiBtn) {
     pageLifecycle.on(saveAiBtn, "click", withAsyncButton(saveAiBtn, async () => {
-    const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
-    const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value
+      const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
+      const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value.trim()
+      const usesUrl = provider === "custom" || provider === "ollama"
+      const url = usesUrl ? parseAiHandoffUrl(customUrl || (provider === "ollama" ? "http://localhost:11434" : "")) : null
+      if (usesUrl && !url) {
+        showToast("settings.ext_ai_invalid_url", "error")
+        return
+      }
 
+      await saveSettings(url ? { "ai-custom-url": url.href, "ai-provider": provider } : { "ai-provider": provider })
+      localStorage.setItem("meitheal-ai-provider", provider)
+      if (url) localStorage.setItem("meitheal-ai-custom-url", url.href)
 
-    const custom = provider === "custom" || provider === "ollama"
-    await saveSettings(custom ? { "ai-custom-url": customUrl, "ai-provider": provider } : { "ai-provider": provider })
-    localStorage.setItem("meitheal-ai-provider", provider)
-    if (custom) localStorage.setItem("meitheal-ai-custom-url", customUrl)
-
-    showToast("settings.ai_saved")
+      showToast("settings.ai_saved")
     }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
@@ -73,7 +78,7 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     const el = document.getElementById("ai-provider") as HTMLSelectElement | null
     if (el) el.value = String(s["ai-provider"])
     const group = document.getElementById("ai-custom-url-group")
-    if (group) group.style.display = s["ai-provider"] === "custom" ? "block" : "none"
+    if (group) group.style.display = s["ai-provider"] === "custom" || s["ai-provider"] === "ollama" ? "" : "none"
   }
   if (s["ai-custom-url"]) {
     const el = document.getElementById("ai-custom-url") as HTMLInputElement | null

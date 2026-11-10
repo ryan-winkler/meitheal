@@ -85,6 +85,42 @@ test("Today and Dashboard label shared favorites separately from personal pins",
   }
 })
 
+test("Today validates stored provider links before opening them", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  const headers = { origin: new URL(baseURL!).origin, "Content-Type": "application/json" }
+  const due_date = new Date().toISOString().slice(0, 10)
+  const created = await request.post("/api/tasks", { headers, data: { title: "Provider link fixture", due_date } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem("meitheal-ai-provider", "custom")
+      localStorage.setItem("meitheal-ai-custom-url", "javascript:void(0)")
+      window.open = (url, target, features) => {
+        document.documentElement.dataset.aiHandoff = JSON.stringify([String(url), target, features])
+        return null
+      }
+    })
+    await page.goto("/today")
+    const row = page.locator(`#section-today .tli[data-id="${id}"]`)
+    const ask = row.getByRole("button", { name: "Ask AI" })
+    await row.hover()
+    await ask.click()
+    await expect(page.getByText("Enter an HTTP or HTTPS URL without a username or password.")).toBeVisible()
+    expect(await page.locator("html").getAttribute("data-ai-handoff")).toBeNull()
+
+    await page.evaluate(() => localStorage.setItem("meitheal-ai-custom-url", "https://assistant.example/chat"))
+    await ask.click()
+    await expect(page.locator("html")).toHaveAttribute("data-ai-handoff", JSON.stringify([
+      "https://assistant.example/chat", "_blank", "noopener,noreferrer",
+    ]))
+  } finally {
+    const removed = await request.delete(`/api/tasks/${id}`, { headers })
+    expect(removed.status(), await removed.text()).toBe(204)
+  }
+})
+
 test.describe("Today Page — Structure & Sections", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 

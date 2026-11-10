@@ -411,6 +411,7 @@
     "ext_ai_ha_llm": "Home Assistant (LLM)",
     "ext_ai_custom": "Custom URL",
     "ext_ai_custom_url": "Custom API URL",
+    "ext_ai_invalid_url": "Cuir isteach seoladh HTTP nó HTTPS gan ainm úsáideora ná pasfhocal.",
     "save_ai_settings": "Save AI Settings",
     "agent_protocols_title": "🔗 Agent Protocols",
     "agent_protocols_desc": "Expose Meitheal tools to AI agents via A2A, WebMCP, and MCP protocols. Enable agent-to-agent collaboration, browser agent tools, and tool discovery.",

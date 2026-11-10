@@ -11,6 +11,7 @@
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
+import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 
 const log = createClientLogger("ai", "context");
 
@@ -165,14 +166,18 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
       );
       if (resUrl.ok) {
         const d = await resUrl.json();
-        if (d?.value) targetUrl = d.value;
+        if (d?.value) {
+          const url = parseAiHandoffUrl(d.value)
+          if (!url) return
+          targetUrl = url.href
+        }
       }
     } catch {
       /* use default */
     }
   }
 
-  window.open(targetUrl, "_blank");
+  window.open(targetUrl, "_blank", "noopener,noreferrer")
 }
 
 /**

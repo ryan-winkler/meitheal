@@ -35,6 +35,7 @@ import {
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
 import { initPageShellNavigation } from "./page-shell-controller"
 import { openTaskDetailHandoff } from "./task-detail-handoff"
+import { parseAiHandoffUrl } from "./ai-handoff-url"
 import type { TodayTaskCounts } from "./task-queries"
 import { TODAY_SECTIONS } from "./today-registry"
 import { compareTodayRows, matchesTodayFilters, type TodayFilters } from "./today-list"
@@ -416,16 +417,25 @@ function handleAskAi(el: HTMLElement) {
     return
   }
 
+  if (provider === "ollama" || provider === "custom") {
+    const configured = localStorage.getItem("meitheal-ai-custom-url")
+    const url = parseAiHandoffUrl(configured || (provider === "ollama" ? "http://localhost:11434" : ""))
+    if (!url) {
+      showToast("settings.ext_ai_invalid_url", "error")
+      return
+    }
+    window.open(url.href, "_blank", "noopener,noreferrer")
+    return
+  }
+
   const encodedPrompt = encodeURIComponent(prompt)
   const urls: Record<string, string> = {
     chatgpt: `https://chatgpt.com/?q=${encodedPrompt}`,
     claude: `https://claude.ai/new?q=${encodedPrompt}`,
     gemini: `https://gemini.google.com/app?q=${encodedPrompt}`,
-    ollama: localStorage.getItem("meitheal-ai-custom-url") || "http://localhost:11434",
-    custom: localStorage.getItem("meitheal-ai-custom-url") || "",
   }
   const url = urls[provider] || urls.chatgpt
-  if (url) window.open(url, "_blank")
+  window.open(url, "_blank", "noopener,noreferrer")
 }
 
 // ── Quick Add ─────────────────────────────────────────────────────────────
