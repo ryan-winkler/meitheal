@@ -19,7 +19,8 @@ On narrow screens, swipe sideways over the table to reach more columns. With a k
 1. Enter text in **Filter by text**, or choose **Filter** above the table to add rules.
 2. Select **Apply Rules**. The current rules are recorded in the URL and apply after reload.
 3. If no rows match, change the filters or use **Clear all active filters** above the table. Clear returns keyboard focus to the text filter.
-4. Use **Previous** and **Next** below the table to move through 50 matching rows at a time. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
+4. Use **Previous** and **Next** above the table to move through 50 matching rows at a time. Keyboard paging returns focus to the page controls, which report the current range. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
+5. Focus a group or subgroup toggle and press Enter or Space to expand or collapse its rows. The Title cell is associated with its column, group, and subgroup headings.
 
 ### Save a working view
 

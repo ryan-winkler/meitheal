@@ -42,6 +42,8 @@ test("Table filters, sorts, groups and counts before slicing and keeps selection
     await expect(page.locator("#selected-count")).toHaveText("50 selected")
     await pager.getByRole("link", { name: "Next" }).press("Enter")
     await expect(page).toHaveURL(url => url.searchParams.get("tp") === "2" && url.searchParams.get("area_id") === areaId)
+    await expect(pager.getByRole("link", { name: "Previous" })).toBeFocused()
+    await expect(pager.getByRole("link", { name: "Previous" })).toHaveAccessibleDescription("51–53 of 53 matching tasks")
     await expect(rows).toHaveCount(3)
     await expect(rareRow).toBeVisible()
     await expect(table.locator(".row-check:checked")).toHaveCount(0)

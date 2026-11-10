@@ -61,6 +61,40 @@ let areaMap: Record<string, AreaInfo> = {}
 // Initialization
 // =============================================================================
 
+const PAGE_FOCUS_KEY = "meitheal:table-page-focus"
+
+function focusTablePage(shell: HTMLElement, direction: string) {
+  const pager = shell.querySelector<HTMLElement>("#table-pagination:not([hidden])")
+  const links = Array.from(pager?.querySelectorAll<HTMLAnchorElement>("[data-table-page-link]") ?? [])
+  const target = links.find(link => link.rel === direction) ?? links[0] ?? shell.querySelector<HTMLElement>("#table-search")
+  target?.focus()
+}
+
+function setupPagerFocus(shell: HTMLElement, signal: AbortSignal) {
+  shell.querySelector("#table-pagination")?.addEventListener("click", event => {
+    if (!(event instanceof MouseEvent) || event.defaultPrevented || event.detail !== 0 ||
+        event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    const link = (event.target as Element).closest<HTMLAnchorElement>("[data-table-page-link]")
+    if (!link) return
+    try {
+      sessionStorage.setItem(PAGE_FOCUS_KEY, JSON.stringify({
+        destination: link.pathname + link.search, direction: link.rel, expires: Date.now() + 10_000,
+      }))
+    } catch { /* storage unavailable */ }
+  }, { signal })
+
+  try {
+    const pending = sessionStorage.getItem(PAGE_FOCUS_KEY)
+    if (!pending) return
+    sessionStorage.removeItem(PAGE_FOCUS_KEY)
+    const marker = JSON.parse(pending)
+    if (marker?.destination === location.pathname + location.search && marker.expires > Date.now() &&
+        (marker.direction === "next" || marker.direction === "prev")) {
+      focusTablePage(shell, marker.direction)
+    }
+  } catch { /* storage unavailable or marker malformed */ }
+}
+
 function init(signal: AbortSignal) {
   const shell = document.getElementById("table-shell")
   if (!shell || shell.dataset.tableReady === "true") return
@@ -151,6 +185,7 @@ function init(signal: AbortSignal) {
       const control = ["[data-open-table-task]", ".row-check", ".editable-cell", "select[data-field=status]",
         "select[data-field=priority]", ".delete-row", ".subtree-toggle", "[data-open-table-parent]"]
         .find(selector => focused?.matches(selector))
+      const pagerLink = focused?.closest<HTMLAnchorElement>("#table-pagination [data-table-page-link]")
       const group = focused?.closest<HTMLElement>(".group-header-row")
       const groupControl = [".group-toggle", ".group-select-all"].find(selector => focused?.matches(selector))
       table.dataset.tablePage = replacement.dataset.tablePage
@@ -169,7 +204,9 @@ function init(signal: AbortSignal) {
       status.classList.add("sr-only")
       message.textContent = `${count} ${status.dataset.tableUpdated}`
       status.hidden = false
-      if (focused && !focused.isConnected && (row || group)) {
+      if (pagerLink && !pagerLink.isConnected) {
+        focusTablePage(shell, pagerLink.rel)
+      } else if (focused && !focused.isConnected && (row || group)) {
         const replacementRow = id && table.querySelector<HTMLElement>(`.table-row[data-id="${CSS.escape(id)}"]`)
         const replacementGroup = group && Array.from(table.querySelectorAll<HTMLElement>(".group-header-row")).find(header =>
           header.dataset.groupKey === group.dataset.groupKey && header.dataset.parentGroupKey === group.dataset.parentGroupKey)
@@ -191,6 +228,7 @@ function init(signal: AbortSignal) {
     }
   }
 
+  setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
   setupInlineEditing(table, signal, () => void refresh())
@@ -270,7 +308,7 @@ function applyColumns(columns: readonly string[] | undefined) {
   for (const column of TABLE_COLUMNS) {
     table.classList.toggle(`hide-col-${column.id}`, columns !== undefined && !columns.includes(column.id))
   }
-  table.querySelectorAll<HTMLTableCellElement>("tbody td[colspan]").forEach(cell => {
+  table.querySelectorAll<HTMLTableCellElement>("tbody :is(td, th)[colspan]").forEach(cell => {
     cell.colSpan = (columns?.length ?? TABLE_COLUMNS.length) + 2
   })
   document.querySelectorAll<HTMLAnchorElement>("#table-pagination [data-table-page-link], #task-table [data-open-table-parent]")
@@ -338,7 +376,8 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   const groups = new Map<string, HTMLElement[]>()
   const groupOrder: string[] = []
 
-  rows.forEach((row) => {
+  rows.forEach((row, index) => {
+    row.id = `table-task-row-${index}`
     const key = getGroupKey(row, groupBy)
     row.setAttribute("data-group-value", key)
     if (!groups.has(key)) {
@@ -358,7 +397,14 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
     collapsedGroups = JSON.parse(sessionStorage.getItem(collapseKey) ?? "[]")
   } catch { /* ignore */ }
 
-  for (const key of groupOrder) {
+  function associateHeaders(rows: HTMLElement[], ...headers: string[]) {
+    for (const row of rows) {
+      row.querySelector(".col-title")?.setAttribute("headers", ["table-title-header", ...headers].join(" "))
+    }
+  }
+
+  for (const [index, key] of groupOrder.entries()) {
+    const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
     const display = getGroupDisplayForKey(groupBy, key)
     const isCollapsed = collapsedGroups.includes(key)
@@ -368,25 +414,28 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
     headerRow.className = `group-header-row${isCollapsed ? " collapsed" : ""}`
     headerRow.setAttribute("data-group-key", key)
     headerRow.setAttribute("data-group-by", groupBy)
-    headerRow.setAttribute("role", "rowgroup")
-    headerRow.setAttribute("aria-expanded", String(!isCollapsed))
-
-    const td = document.createElement("td")
-    td.colSpan = TABLE_COLUMNS.length + 2
-    td.className = "group-header-cell"
-    td.innerHTML = `
-      <button type="button" class="group-toggle" aria-label="Toggle group ${escapeHtml(display.label)}" aria-expanded="${!isCollapsed}">
-        <span class="group-toggle-arrow">▾</span>
-      </button>
-      <span class="group-dot" style="background: ${sanitizeCssColor(display.color)}"></span>
-      <span class="group-icon">${escapeHtml(display.icon)}</span>
-      <span class="group-label">${escapeHtml(display.label)}</span>
-      <span class="group-count">${groupTotals.get(key)?.count ?? 0}</span>
-      <span class="group-checkbox-wrapper">
-        <input type="checkbox" class="group-select-all" data-group-key="${escapeHtml(key)}" aria-label="Select visible tasks in ${escapeHtml(display.label)} on this page" />
-      </span>
+    const headerCell = document.createElement("th")
+    headerCell.id = groupId
+    headerCell.scope = "row"
+    headerCell.colSpan = TABLE_COLUMNS.length + 2
+    headerCell.className = "group-header-cell"
+    headerCell.setAttribute("aria-labelledby", groupId + "-label")
+    headerCell.innerHTML = `
+      <div class="group-header-content">
+        <button type="button" class="group-toggle" aria-label="Toggle group ${escapeHtml(display.label)}" aria-expanded="${!isCollapsed}">
+          <span class="group-toggle-arrow" aria-hidden="true">▾</span>
+        </button>
+        <span class="group-dot" aria-hidden="true" style="background: ${sanitizeCssColor(display.color)}"></span>
+        <span class="group-icon" aria-hidden="true">${escapeHtml(display.icon)}</span>
+        <span class="group-label" id="${groupId}-label">${escapeHtml(display.label)}</span>
+        <span class="group-count">${groupTotals.get(key)?.count ?? 0}</span>
+        <span class="group-checkbox-wrapper">
+          <input type="checkbox" class="group-select-all" data-group-key="${escapeHtml(key)}" aria-label="Select visible tasks in ${escapeHtml(display.label)} on this page" />
+        </span>
+      </div>
     `
-    headerRow.appendChild(td)
+    const controlledRows = groupRows.map(row => row.id)
+    headerRow.appendChild(headerCell)
     fragment.appendChild(headerRow)
 
     if (subGroupBy !== "none" && subGroupBy !== groupBy) {
@@ -404,7 +453,8 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       let collapsedSubs: string[] = []
       try { collapsedSubs = JSON.parse(sessionStorage.getItem(subCollapseKey) ?? "[]") } catch { /* */ }
 
-      for (const sk of subOrder) {
+      for (const [subIndex, sk] of subOrder.entries()) {
+        const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
         const subDisplay = getGroupDisplayForKey(subGroupBy, sk)
         const subIsCollapsed = collapsedSubs.includes(sk)
@@ -415,24 +465,31 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
         subHeaderRow.setAttribute("data-group-by", subGroupBy)
         subHeaderRow.setAttribute("data-parent-group-key", key)
         subHeaderRow.setAttribute("data-sub-group-collapse-key", subCollapseKey)
-        subHeaderRow.setAttribute("role", "rowgroup")
-        subHeaderRow.setAttribute("aria-expanded", String(!subIsCollapsed))
+        subHeaderRow.id = subgroupId + "-row"
+        controlledRows.push(subHeaderRow.id)
         if (isCollapsed) subHeaderRow.classList.add("group-collapsed-row")
 
-        const subTd = document.createElement("td")
-        subTd.colSpan = TABLE_COLUMNS.length + 2
-        subTd.className = "group-header-cell sub-group-header-cell"
-        subTd.innerHTML = `
-          <button type="button" class="group-toggle sub-group-toggle" aria-label="Toggle sub-group ${escapeHtml(subDisplay.label)}" aria-expanded="${!subIsCollapsed}">
-            <span class="group-toggle-arrow">▾</span>
-          </button>
-          <span class="group-dot" style="background: ${sanitizeCssColor(subDisplay.color)}"></span>
-          <span class="group-label">${escapeHtml(subDisplay.label)}</span>
-          <span class="group-count">${subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0}</span>
+        const subCell = document.createElement("th")
+        subCell.id = subgroupId
+        subCell.scope = "row"
+        subCell.colSpan = TABLE_COLUMNS.length + 2
+        subCell.className = "group-header-cell sub-group-header-cell"
+        subCell.setAttribute("aria-labelledby", subgroupId + "-label")
+        subCell.innerHTML = `
+          <div class="group-header-content">
+            <button type="button" class="group-toggle sub-group-toggle" aria-label="Toggle sub-group ${escapeHtml(subDisplay.label)}"
+              aria-expanded="${!subIsCollapsed}" aria-controls="${subRows.map(row => row.id).join(" ")}">
+              <span class="group-toggle-arrow" aria-hidden="true">▾</span>
+            </button>
+            <span class="group-dot" aria-hidden="true" style="background: ${sanitizeCssColor(subDisplay.color)}"></span>
+            <span class="group-label" id="${subgroupId}-label">${escapeHtml(subDisplay.label)}</span>
+            <span class="group-count">${subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0}</span>
+          </div>
         `
-        subHeaderRow.appendChild(subTd)
+        subHeaderRow.appendChild(subCell)
         fragment.appendChild(subHeaderRow)
 
+        associateHeaders(subRows, groupId, subgroupId)
         subRows.forEach((row) => {
           row.classList.toggle("group-collapsed-row", isCollapsed || subIsCollapsed)
           fragment.appendChild(row)
@@ -440,11 +497,13 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       }
     } else {
       // --- No sub-grouping: add rows directly ---
+      associateHeaders(groupRows, groupId)
       groupRows.forEach((row) => {
         row.classList.toggle("group-collapsed-row", isCollapsed)
         fragment.appendChild(row)
       })
     }
+    headerCell.querySelector("button")?.setAttribute("aria-controls", controlledRows.join(" "))
   }
 
   const noResults = tbody.querySelector(".no-results-row")
@@ -482,7 +541,6 @@ function setupGroupHeaderListeners(tbody: HTMLElement, signal: AbortSignal) {
     const groupKey = header.dataset.groupKey ?? ""
     const groupBy = header.dataset.groupBy ?? currentGroupBy
     const isCollapsed = header.classList.toggle("collapsed")
-    header.setAttribute("aria-expanded", String(!isCollapsed))
     header.querySelector("button")?.setAttribute("aria-expanded", String(!isCollapsed))
 
     if (isSubGroup) {
@@ -576,6 +634,9 @@ function updateGroupHeaderLabels() {
       const icon = header.querySelector<HTMLElement>(".group-icon")
       const dot = header.querySelector<HTMLElement>(".group-dot")
       if (label) label.textContent = areaMap[key].name
+      const subgroup = header.classList.contains("sub-group-header-row")
+      header.querySelector(".group-toggle")?.setAttribute("aria-label", `Toggle ${subgroup ? "sub-group" : "group"} ${areaMap[key].name}`)
+      header.querySelector(".group-select-all")?.setAttribute("aria-label", `Select visible tasks in ${areaMap[key].name} on this page`)
       if (icon) icon.textContent = areaMap[key].icon ?? "📋"
       if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
     }

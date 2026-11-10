@@ -69,6 +69,14 @@ const priorityClasses: Record<number, string> = {
       </div>
     </div>
 
+    <nav id="table-pagination" class="table-pagination" aria-label={t("table.task_pages", locale)} hidden={pageCount === 1}>
+      <span id="table-page-range">{offset + 1}–{offset + rows.length} {t("table.matching_tasks_of", locale)} {stats.total.count} {t("table.matching_tasks", locale)}</span>
+      <div class="table-pagination__links">
+        {page > 1 && <a class="btn" data-table-page-link aria-describedby="table-page-range" href={tableLink(page - 1)} rel="prev">{t("table.previous_page", locale)}</a>}
+        {page < pageCount && <a class="btn" data-table-page-link aria-describedby="table-page-range" href={tableLink(page + 1)} rel="next">{t("table.next_page", locale)}</a>}
+      </div>
+    </nav>
+
     <div id="table-empty" hidden={tasks.length > 0}>
       <EmptyState
         title={t("table.no_tasks", locale)}
@@ -95,7 +103,7 @@ const priorityClasses: Record<number, string> = {
                     <span class="sort-indicator" />
                   </button>
                 </th>
-                <th scope="col" class="sortable col-title" data-col="title">
+                <th id="table-title-header" scope="col" class="sortable col-title" data-col="title">
                   <button type="button" class="table-sort-control">
                     {t("table.col_title", locale)}
                     <span class="sort-indicator" />
@@ -399,13 +407,6 @@ const priorityClasses: Record<number, string> = {
           </table>
     </div>
 
-    <nav id="table-pagination" class="table-pagination" aria-label={t("table.task_pages", locale)} hidden={pageCount === 1}>
-      <span>{offset + 1}–{offset + rows.length} {t("table.matching_tasks_of", locale)} {stats.total.count} {t("table.matching_tasks", locale)}</span>
-      <div class="table-pagination__links">
-        {page > 1 && <a class="btn" data-table-page-link href={tableLink(page - 1)} rel="prev">{t("table.previous_page", locale)}</a>}
-        {page < pageCount && <a class="btn" data-table-page-link href={tableLink(page + 1)} rel="next">{t("table.next_page", locale)}</a>}
-      </div>
-    </nav>
     <div id="table-refresh-status" class="table-refresh-status" role="status" hidden
       data-table-updated={t("table.matching_tasks", locale)}
       data-table-failure={t("table.refresh_failed", locale)}>
@@ -469,8 +470,13 @@ const priorityClasses: Record<number, string> = {
     padding-block: var(--space-2, 8px);
   }
 
-  .table-pagination {
-    justify-content: space-between;
+  .table-pagination a {
+    color: var(--accent-text);
+  }
+
+  .table-pagination a:focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
   }
 
   .table-pagination[hidden], .table-refresh-status[hidden], .table-container[hidden], tr[hidden] {
