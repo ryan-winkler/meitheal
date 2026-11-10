@@ -301,3 +301,71 @@ test("a legacy GET-only worker can cache only the empty shell", async () => {
     await rm(work, { recursive: true, force: true })
   }
 })
+
+test("the current worker scrubs cached inactivity pages and API aliases", async () => {
+  const work = await mkdtemp(join(tmpdir(), "meitheal-inactivity-worker-scrub-"))
+  let child: ChildProcess | undefined
+  let browser: Browser | undefined
+  try {
+    child = startCoreFixture(work)
+    child.stdout?.resume()
+    child.stderr?.resume()
+    const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${info.port}`
+    const prefix: string = info.configuredPath
+    const variants = [
+      prefix + "/inactivity?area=synthetic",
+      prefix + "/%2569nactivity/?area=synthetic",
+      prefix + path,
+      prefix + "/api/%2574ask-inactivity/",
+    ]
+    const ordinary = prefix + "/api/ordinary-cache-fixture"
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({ extraHTTPHeaders: {} })
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const page = await context.newPage()
+    expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
+
+    const version = await page.evaluate(async prefix => {
+      const response = await fetch(prefix + "/version.json")
+      return (await response.json()).version as string
+    }, prefix)
+    expect(version).toBeTruthy()
+    const cacheNames = ["api", "nav", "precache", "static"].map(kind => `meitheal-${kind}-v${version}`)
+    await page.evaluate(async ({ cacheNames, variants, ordinary }) => {
+      const headers = { date: new Date().toUTCString() }
+      for (const name of cacheNames) {
+        const cache = await caches.open(name)
+        for (const url of variants) await cache.put(url, new Response("Stale inactivity payload", { headers }))
+        await cache.put(ordinary, new Response("Ordinary offline payload", { headers }))
+      }
+    }, { cacheNames, variants, ordinary })
+
+    await page.evaluate(async prefix => {
+      await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
+    }, prefix)
+    await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
+    const cached = await page.evaluate(async ({ cacheNames, variants, ordinary }) => {
+      return Promise.all(cacheNames.map(async name => {
+        const cache = await caches.open(name)
+        return Promise.all([...variants, ordinary].map(async url => Boolean(await cache.match(url))))
+      }))
+    }, { cacheNames, variants, ordinary })
+    expect(cached).toEqual(cacheNames.map(() => [false, false, false, false, true]))
+
+    await context.setOffline(true)
+    const offline = await page.evaluate(async ({ variants, ordinary }) => {
+      const read = (url: string) => fetch(url).then(response => response.text()).catch(() => null)
+      return Promise.all([...variants, ordinary].map(read))
+    }, { variants, ordinary })
+    expect(offline).toEqual([null, null, null, null, "Ordinary offline payload"])
+  } finally {
+    await browser?.close()
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "exit", { signal: AbortSignal.timeout(3000) })
+      child.kill("SIGKILL")
+      await closed
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})
