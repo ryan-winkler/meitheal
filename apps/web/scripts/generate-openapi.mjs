@@ -1090,11 +1090,12 @@ const paths = {
       responses: {
         200: { description: "SQLite snapshot", content: { "application/x-sqlite3": { schema: { type: "string", format: "binary" } } } },
         400: { description: "The form could not be read or the app uses a remote database" },
-        403: { description: "Administrator access or a valid same-origin download form is required" },
+        403: { description: "Current administrator access and a valid same-origin download form are required" },
         404: { description: "Local database or download path unavailable" },
         409: { description: "Another database download is in progress" },
         413: { description: "The form exceeds 256 bytes" },
         415: { description: "The form must use application/x-www-form-urlencoded" },
+        503: { description: "Home Assistant Core could not verify current administrator access" },
         507: { description: "Insufficient free space for a snapshot on the database volume" },
       },
     },

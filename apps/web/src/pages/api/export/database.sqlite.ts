@@ -3,6 +3,7 @@ import { mkdtemp, open, rm, stat, statfs } from "node:fs/promises"
 import path from "node:path"
 import { Readable } from "node:stream"
 import type { APIRoute } from "astro"
+import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
 import { logApiError } from "@lib/api-logger"
 import { readWithinLimit } from "@lib/bounded-body"
 import { verifyDatabaseDownloadToken } from "@lib/database-download-token"
@@ -91,6 +92,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   try {
     signal.throwIfAborted()
+    const currentAdmin = await verifyCurrentHAAdministrator(user.id, signal)
+    signal.throwIfAborted()
+    if (currentAdmin === "unavailable") {
+      return backupProblem(503, "Could not verify current administrator access with Home Assistant. Try again when it is available.")
+    }
+    if (currentAdmin === "denied") {
+      return backupProblem(403, "Database download requires an active Home Assistant administrator.")
+    }
     if (!(await stat(dbPath)).isFile()) {
       return backupProblem(404, "Database file not found on the server.")
     }

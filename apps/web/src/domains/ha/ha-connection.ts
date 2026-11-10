@@ -5,7 +5,7 @@
  * `home-assistant-js-websocket`. Uses `SUPERVISOR_TOKEN` for auth.
  *
  * Architecture:
- *   Addon Server → ws://supervisor/core/websocket → HA Core
+ *   Addon Server → ws://supervisor/core/api/websocket → HA Core
  *
  * @domain ha
  * @bounded-context integration
@@ -21,9 +21,16 @@ import {
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
 // Polyfill WebSocket for Node.js server-side usage
-import WebSocket from "ws";
+import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
+const CORE_PROXY = "http://supervisor/core"
+
+/** Open an isolated socket to Core with caller-specific transport limits. */
+export function openHACoreSocket(token: string, options: ClientOptions): WebSocket {
+  const Socket = globalThis.WebSocket as unknown as typeof WebSocket
+  return new Socket(createLongLivedTokenAuth(CORE_PROXY, token).wsUrl, options)
+}
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -100,7 +107,7 @@ export async function getHAConnection(): Promise<Connection | null> {
 
   connecting = true;
   try {
-    const auth = createLongLivedTokenAuth("http://supervisor/core", token);
+    const auth = createLongLivedTokenAuth(CORE_PROXY, token);
     connection = await createConnection({ auth });
     reconnectAttempts = 0;
     lastError = null;

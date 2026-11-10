@@ -9,11 +9,13 @@ import { DatabaseSync } from "node:sqlite"
 import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test, type APIRequestContext } from "@playwright/test"
+import { expect, test as base, type APIRequestContext } from "@playwright/test"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 const browserMutation = { "x-meitheal-feedback": "1" }
+const test = base.extend<{ liveCore: boolean }>({ liveCore: [false, { option: true }] })
+const coreTest = test.extend({ liveCore: true })
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
 
@@ -22,11 +24,12 @@ let server: ChildProcess | undefined
 let origin: string
 let prefix: string
 
-async function startServer(): Promise<void> {
+async function startServer(liveCore = false): Promise<void> {
   const env = {
     PATH: process.env.PATH,
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${path.join(work, "meitheal.db")}`,
+    ...(liveCore ? { MEITHEAL_TEST_CORE_USER_LOOKUP: "1" } : {}),
   }
   execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
   server = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
@@ -46,9 +49,9 @@ async function stopServer(): Promise<void> {
   await exited
 }
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ liveCore }) => {
   work = await mkdtemp(path.join(tmpdir(), "meitheal-feedback-ingress-"))
-  await startServer()
+  await startServer(liveCore)
 })
 
 test.afterEach(async () => {
@@ -65,7 +68,42 @@ async function databaseForm(api: APIRequestContext, headers: Record<string, stri
   return { token: token! }
 }
 
-test("database download includes committed writes still in the WAL", async ({ playwright }) => {
+async function setDatabaseCoreRole(role: string) {
+  const child = server!
+  const reply = once(child, "message", { signal: AbortSignal.timeout(3000) })
+  child.send({ type: "database-core-role", role })
+  expect((await reply)[0]).toEqual({ type: "database-core-role", role })
+}
+
+coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const headers = { cookie: "feedback-fixture=admin", origin }
+  const endpoint = `${prefix}/api/export/database.sqlite`
+  const snapshotDirs = async () => (await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))
+  try {
+    const form = await databaseForm(api, headers)
+    const download = () => api.post(endpoint, { headers, form })
+    const users = await api.get(`${prefix}/api/users`, { headers })
+    expect((await users.json()).users).toContainEqual(expect.objectContaining({ id: "ha_fixture-admin" }))
+    expect((await download()).status()).toBe(200)
+    await expect.poll(snapshotDirs).toEqual([])
+
+    for (const role of ["demoted", "inactive", "system", "missing", "malformed", "oversized", "disconnected", "stalled"]) {
+      await setDatabaseCoreRole(role)
+      const denied = await download()
+      expect(denied.status(), role).toBe(["demoted", "inactive", "system", "missing"].includes(role) ? 403 : 503)
+      expect(denied.headers()["cache-control"], role).toBe("no-store")
+      expect(denied.headers()["content-disposition"], role).toBeUndefined()
+      expect(await snapshotDirs(), role).toEqual([])
+    }
+    await setDatabaseCoreRole("owner")
+    expect((await download()).status()).toBe(200)
+  } finally {
+    await api.dispose()
+  }
+})
+
+coreTest("database download includes committed writes still in the WAL", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const dbPath = path.join(work, "meitheal.db")
   const exportPath = `${prefix}/api/export/database.sqlite`
@@ -135,7 +173,7 @@ test("database download includes committed writes still in the WAL", async ({ pl
   }
 })
 
-test("a paused database download keeps one snapshot until cancelled", async ({ playwright }) => {
+coreTest("a paused database download keeps one snapshot until cancelled", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const admin = { cookie: "feedback-fixture=admin", origin }
   const exportPath = `${prefix}/api/export/database.sqlite`
@@ -211,7 +249,7 @@ test("database download requires a valid administrator form and rejects cross-si
 })
 
 for (const secure of [true, false]) {
-  test(`Settings submits a native database download from the Home Assistant frame on ${secure ? "trusted loopback" : "plain HTTP LAN"}`, async ({ browser, playwright }) => {
+  coreTest(`Settings submits a native database download from the Home Assistant frame on ${secure ? "trusted loopback" : "plain HTTP LAN"}`, async ({ browser, playwright }) => {
     const lanBrowser = secure ? null : await playwright.chromium.launch({
       args: ["--host-resolver-rules=MAP meitheal.test 127.0.0.1", "--no-proxy-server"],
     })
@@ -517,6 +555,8 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
       expect(await response.text()).not.toContain(receipt.id)
     }
 
+    await stopServer()
+    await startServer(true)
     const backup = await api.post(at("/api/export/database.sqlite"), { headers: admin, form: await databaseForm(api, admin) })
     expect(backup.status()).toBe(200)
     expect(backup.headers()["cache-control"]).toBe("no-store")

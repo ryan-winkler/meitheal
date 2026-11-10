@@ -3116,7 +3116,7 @@ paths:
         "400":
           description: The form could not be read or the app uses a remote database
         "403":
-          description: Administrator access or a valid same-origin download form is required
+          description: Current administrator access and a valid same-origin download form are required
         "404":
           description: Local database or download path unavailable
         "409":
@@ -3125,6 +3125,8 @@ paths:
           description: The form exceeds 256 bytes
         "415":
           description: The form must use application/x-www-form-urlencoded
+        "503":
+          description: Home Assistant Core could not verify current administrator access
         "507":
           description: Insufficient free space for a snapshot on the database volume
   /api/export/settings.json:

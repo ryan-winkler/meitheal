@@ -22,7 +22,7 @@ Confirm the download in Settings. The browser submits a native form and saves th
 
 Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
 
-The download needs an online connection. If an edited download URL fails, open it again from **Settings → App & PWA**. Reload Meitheal and activate the app update on browsers that used an older build to remove old cached export URLs.
+The download needs an online connection to Home Assistant Core. Meitheal checks the administrator’s current account before creating a snapshot. If Core cannot verify access, wait for it to reconnect and retry. If an edited download URL fails, open it again from **Settings → App & PWA**. Reload Meitheal and activate the app update on browsers that used an older build to remove old cached export URLs.
 
 ## Automatic startup database snapshots
 

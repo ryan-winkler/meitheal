@@ -1,4 +1,5 @@
 import http from "node:http"
+import { createRequire } from "node:module"
 import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
 
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
@@ -31,6 +32,81 @@ const server = http.createServer((request, response) => {
     waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
   }, () => handler(request, response))
 })
+
+if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
+  const requireWeb = createRequire(new URL("../../apps/web/package.json", import.meta.url))
+  const { WebSocket, WebSocketServer } = requireWeb("ws")
+  const token = "database-core-fixture-only"
+  const core = new WebSocketServer({ server, path: "/core/websocket" })
+  process.once("SIGTERM", () => {
+    // End the fixture's persistent Core connection before Astro drains HTTP.
+    for (const socket of core.clients) socket.terminate()
+    process.exit(0)
+  })
+  let role = "allowed"
+  process.env.SUPERVISOR_TOKEN = token
+  const fetchNetwork = globalThis.fetch
+  globalThis.fetch = (input, options) => {
+    if (typeof input === "string" && new URL(input).hostname === "supervisor") {
+      return Promise.resolve(Response.json({ data: { addons: [] } }))
+    }
+    return fetchNetwork(input, options)
+  }
+  class FixtureSocket extends WebSocket {
+    constructor(address, ...options) {
+      if (address !== "ws://supervisor/core/api/websocket") throw new Error("Unexpected fixture WebSocket target")
+      super(`ws://127.0.0.1:${server.address().port}/core/websocket`, ...options)
+    }
+  }
+  // The lazily loaded Astro connection module installs its own Node polyfill.
+  Object.defineProperty(globalThis, "WebSocket", {
+    configurable: true,
+    get: () => FixtureSocket,
+    set: () => {},
+  })
+  process.on("message", message => {
+    if (message?.type === "database-core-role") {
+      role = message.role
+      process.send({ type: "database-core-role", role })
+    }
+  })
+  core.on("connection", socket => {
+    let authenticated = false
+    const send = message => socket.send(JSON.stringify(message))
+    send({ type: "auth_required", ha_version: "2026.11.1" })
+    socket.on("message", data => {
+      const message = JSON.parse(data.toString())
+      if (!authenticated) {
+        if (message.type !== "auth" || message.access_token !== token) {
+          send({ type: "auth_invalid" })
+          return
+        }
+        authenticated = true
+        send({ type: "auth_ok", ha_version: "2026.11.1" })
+      } else if (message.type === "config/auth/list") {
+        if (role === "stalled") return
+        if (role === "disconnected") return socket.terminate()
+        const admin = {
+          id: "fixture-admin",
+          name: "Fixture admin",
+          is_active: role !== "inactive",
+          system_generated: role === "system",
+          is_owner: role === "owner",
+          group_ids: role === "demoted" || role === "owner" ? ["system-users"] : ["system-admin"],
+        }
+        const result = role === "missing" ? []
+          : role === "oversized" ? [{ ...admin, name: "x".repeat(256 * 1024) }]
+          : role === "malformed" ? [{ ...admin, system_generated: undefined }]
+          : [admin]
+        send({ type: "result", id: message.id, success: true, result })
+      } else if (message.type === "ping") {
+        send({ type: "pong", id: message.id })
+      } else {
+        send({ type: "result", id: message.id, success: true, result: [] })
+      }
+    })
+  })
+}
 
 server.listen(Number(process.env.MEITHEAL_INGRESS_FIXTURE_PORT ?? 0), "127.0.0.1", () => {
   const { port } = server.address()
