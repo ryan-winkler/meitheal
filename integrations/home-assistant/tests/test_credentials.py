@@ -59,7 +59,9 @@ async def test_existing_entry_keeps_entity_after_enrollment(
     """Legacy use, credential enrollment, and authenticated polling share one entry."""
     entry = mock_entry(hass, CONNECTION)
     aioclient_mock.get(TASKS, json={"tasks": [{"id": "one", "status": "complete"}]})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(PROBE, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert "Authorization" not in aioclient_mock.mock_calls[0][3]
@@ -91,8 +93,9 @@ async def test_protected_actions_share_bearer_and_never_log_error_body(
     """All action requests use the configured origin and sanitize failures."""
     entry = mock_entry(hass, {**CONNECTION, CONF_API_TOKEN: TOKEN})
     aioclient_mock.get(TASKS, json={"tasks": []})
-    aioclient_mock.post(f"{TASKS}/create", json={"id": "one"}, status=201)
-    aioclient_mock.put(f"{TASKS}/one", json={"id": "one"})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
+    aioclient_mock.post(TASKS, json={"id": "one"}, status=201)
+    aioclient_mock.put(f"{TASKS}/one", json={"id": "one", "status": "complete"})
     aioclient_mock.get(
         f"{ORIGIN}/api/search",
         json={"sections": [{"id": "tasks", "items": [{"id": "one"}]}]},
@@ -146,7 +149,9 @@ async def test_rejected_poll_opens_reauth_on_existing_entry(
     await hass.async_block_till_done()
     aioclient_mock.clear_requests()
     aioclient_mock.get(PROBE, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(TASKS, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     (flow,) = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert flow["context"]["source"] == config_entries.SOURCE_REAUTH
     assert flow["step_id"] == "reauth_confirm"
@@ -216,7 +221,9 @@ async def test_supervisor_discovery_only_uses_operator_token_for_installed_app(
     reported_host = "2e8c4a3f_meitheal_canary"
     origin = "http://2e8c4a3f-meitheal-canary:3000"
     aioclient_mock.get(f"{origin}/api/tasks?limit=1", json={"tasks": []})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
     addon_info = AsyncMock(return_value=SimpleNamespace(hostname="other-meitheal"))
     hass.config.components.add("hassio")
     flow = await hass.config_entries.flow.async_init(

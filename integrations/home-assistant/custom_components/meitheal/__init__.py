@@ -60,6 +60,10 @@ CREATE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("title"): cv.string,
         vol.Optional("description"): cv.string,
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("due_date"): cv.string,
+        vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
     }
 )
 
@@ -74,6 +78,8 @@ SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
         vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("include_completed", default=False): cv.boolean,
     }
 )
 
@@ -134,6 +140,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
+                priority=call.data.get("priority"),
+                due_date=call.data.get("due_date"),
+                urgency=call.data.get("urgency"),
+                importance=call.data.get("importance"),
             )
         except Exception as err:
             raise HomeAssistantError(
