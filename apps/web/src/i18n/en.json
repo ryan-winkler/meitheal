@@ -1,4 +1,9 @@
 {
+  "settings.rules_import_refresh_failed": "Configuration was imported, but the editor could not reload it. Reload this page to review the saved values.",
+  "settings.framework_saving": "Saving…",
+  "settings.framework_unsaved": "Framework changes are not saved.",
+  "settings.framework_save_failed": "Framework changes could not be saved.",
+  "settings.framework_retry": "Retry save",
   "settings.rules_import_partial": "Rules and built-in settings were imported, but a custom framework failed. Review the configuration before retrying.",
   "settings.defaults_restored": "Defaults restored.",
   "settings.framework_created": "Framework created.",

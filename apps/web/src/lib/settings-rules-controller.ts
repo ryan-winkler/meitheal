@@ -270,6 +270,96 @@ let replacing = false
 let configurationMutation: Promise<unknown> = Promise.resolve()
 let frameworkLoadGeneration = 0
 
+interface FrameworkDraft {
+  frameworkId: string
+  fieldKey: string
+  weight: number
+  failed: boolean
+  pending: Promise<void> | null
+}
+const frameworkDrafts = new Map<string, FrameworkDraft>()
+const draftKey = (frameworkId: string, fieldKey: string) => `${frameworkId}:${fieldKey}`
+const settingsCopy = (key: string, fallback: string) => window.mI18n?.get(key) || fallback
+
+function renderFrameworkDraft(slider: HTMLInputElement): void {
+  const draft = frameworkDrafts.get(draftKey(slider.dataset.framework!, slider.dataset.field!))
+  const status = slider.closest(".rules-fw-field")?.querySelector<HTMLElement>(".rules-fw-save-status")
+  if (!status) return
+  status.replaceChildren()
+  if (!draft) {
+    delete slider.dataset.saveState
+    slider.removeAttribute("aria-invalid")
+    return
+  }
+  slider.value = String(draft.weight)
+  const display = slider.parentElement?.querySelector(".weight-display")
+  if (display) display.textContent = `${draft.weight.toFixed(1)}×`
+  slider.dataset.saveState = draft.pending ? "saving" : draft.failed ? "error" : "dirty"
+  if (draft.failed) slider.setAttribute("aria-invalid", "true")
+  else slider.removeAttribute("aria-invalid")
+  status.textContent = draft.pending ? settingsCopy("settings.framework_saving", "Saving…")
+    : settingsCopy(draft.failed ? "settings.framework_save_failed" : "settings.framework_unsaved", "Framework changes are not saved.")
+  if (draft.failed && !draft.pending) {
+    const retry = document.createElement("button")
+    retry.type = "button"
+    retry.className = "btn btn-ghost btn-sm rules-fw-retry"
+    retry.textContent = settingsCopy("settings.framework_retry", "Retry save")
+    pageLifecycle.on(retry, "click", settingsAction(() => persistFrameworkDraft(draft)))
+    status.append(" ", retry)
+  }
+}
+
+function renderDraftFor(draft: FrameworkDraft): void {
+  document.querySelectorAll<HTMLInputElement>(".rules-fw-weight").forEach(slider => {
+    if (slider.dataset.framework === draft.frameworkId && slider.dataset.field === draft.fieldKey) renderFrameworkDraft(slider)
+  })
+}
+
+function rememberFrameworkDraft(slider: HTMLInputElement): FrameworkDraft {
+  const frameworkId = slider.dataset.framework!
+  const fieldKey = slider.dataset.field!
+  const key = draftKey(frameworkId, fieldKey)
+  const previous = frameworkDrafts.get(key)
+  if (previous?.weight === Number(slider.value)) return previous
+  const draft: FrameworkDraft = { frameworkId, fieldKey, weight: Number(slider.value), failed: previous?.failed ?? false, pending: null }
+  frameworkDrafts.set(key, draft)
+  ++frameworkLoadGeneration
+  renderFrameworkDraft(slider)
+  return draft
+}
+
+function persistFrameworkDraft(draft: FrameworkDraft): Promise<void> {
+  if (draft.pending) return draft.pending
+  const key = draftKey(draft.frameworkId, draft.fieldKey)
+  draft.pending = withConfigurationMutation(() => apiFetch(`/api/frameworks/${encodeURIComponent(draft.frameworkId)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: { [draft.fieldKey]: { weight: draft.weight } } }),
+  })).then(() => {
+    if (frameworkDrafts.get(key) === draft) {
+      frameworkDrafts.delete(key)
+      showToast("settings.framework_updated")
+    }
+  }, error => {
+    draft.failed = true
+    throw error
+  }).finally(() => { draft.pending = null; renderDraftFor(draft) })
+  renderDraftFor(draft)
+  return draft.pending
+}
+
+async function flushFrameworkDrafts(): Promise<void> {
+  for (;;) {
+    for (const draft of frameworkDrafts.values()) {
+      if (!draft.pending && !draft.failed) void persistFrameworkDraft(draft).catch(() => {})
+    }
+    const tail = configurationMutation
+    await Promise.allSettled([tail, ...[...frameworkDrafts.values()].map(draft => draft.pending)])
+    if (tail !== configurationMutation || [...frameworkDrafts.values()].some(draft => draft.pending || !draft.failed)) continue
+    if (frameworkDrafts.size) throw new Error("Framework changes have not been saved")
+    return
+  }
+}
+
 /** All rule/framework writes share one ordering, including destructive resets. */
 export function withConfigurationMutation<T>(action: () => Promise<T>): Promise<T> {
   const signal = pageLifecycle.signal
@@ -326,6 +416,7 @@ export async function flushRulesSave(): Promise<void> {
     await savePromise
   }
   if (saveFailed) throw new Error("Rule changes have not been saved")
+  await flushFrameworkDrafts()
 }
 
 /** Save current UI state as rules to the API */
@@ -470,49 +561,42 @@ async function loadFrameworkConfigs(): Promise<void> {
                 data-framework="${escapeHtml(fw.id)}"
                 data-field="${safeKey}"
                 min="0" max="3" step="0.1"
-                value="${field.weight}"
+                value="${frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight}"
                 aria-label="${safeLabel} weight"
               />
               <span class="weight-display">${field.weight.toFixed(1)}×</span>
             </div>
             <p class="fw-field-help">${safeHelp}</p>
+            <div class="rules-fw-save-status text-xs" role="status"></div>
           </div>
         `
       }).join("")
 
       // Wire up weight sliders
       container.querySelectorAll<HTMLInputElement>(".rules-fw-weight").forEach((slider) => {
+        renderFrameworkDraft(slider)
         pageLifecycle.on(slider, "input", () => {
-          const display = slider.parentElement?.querySelector(".weight-display")
-          if (display) display.textContent = `${Number(slider.value).toFixed(1)}×`
+          if (!replacing) rememberFrameworkDraft(slider)
         })
         pageLifecycle.on(slider, "change", settingsAction(async () => {
-          const frameworkId = slider.dataset.framework
-          const fieldKey = slider.dataset.field
-          if (!frameworkId || !fieldKey || replacing) return
-          const weight = Number(slider.value)
-          frameworkLoadGeneration++
-
-          await withConfigurationMutation(() => apiFetch(`/api/frameworks/${frameworkId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fields: { [fieldKey]: { weight } },
-            }),
-          }))
-          showToast("settings.framework_updated")
+          if (replacing) return
+          await persistFrameworkDraft(rememberFrameworkDraft(slider))
         }))
       })
     }
-  } catch {
+  } catch (error) {
     if (generation !== frameworkLoadGeneration) return
     document.querySelectorAll<HTMLElement>(".rules-fw-config-fields").forEach((container) => {
       const message = document.createElement("p")
-      message.className = "text-muted text-xs"
+      message.className = "text-muted text-xs rules-fw-load-error"
       message.setAttribute("role", "status")
       message.textContent = "Framework settings could not load. Reload this page to retry."
-      container.replaceChildren(message)
+      if ([...frameworkDrafts.values()].some(draft => draft.frameworkId === container.dataset.framework)) {
+        container.querySelector(".rules-fw-load-error")?.remove()
+        container.append(message)
+      } else container.replaceChildren(message)
     })
+    throw error
   }
 }
 
@@ -527,6 +611,7 @@ export function initRulesSettings(): void {
     _saveTimer = null
     _saveAgain = false
     rulesLoaded = false
+    frameworkDrafts.clear()
     ++loadGeneration
     ++frameworkLoadGeneration
   }, { once: true })
@@ -566,7 +651,7 @@ export function initRulesSettings(): void {
   })
   // Load current state
   loadRulesIntoUI()
-  loadFrameworkConfigs()
+  void loadFrameworkConfigs().catch(() => {})
 
   // Preset buttons
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {
@@ -692,6 +777,7 @@ export function initRulesSettings(): void {
       }
 
       let configurationImported = false
+      let definitionsImported = false
       try {
         if (file.size > 204800) throw new Error("Rules import exceeds 200 KiB")
         const payload = JSON.parse(await file.text()) as Record<string, unknown>
@@ -744,13 +830,14 @@ export function initRulesSettings(): void {
               method: exists ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
             })
           }
+          definitionsImported = true
           await loadRulesIntoUI()
           await loadFrameworkConfigs()
           showToast("settings.rules_imported")
           importInput.value = ""
         })
       } catch {
-        showToast(configurationImported ? "settings.rules_import_partial" : "settings.import_failed", "error")
+        showToast(configurationImported ? definitionsImported ? "settings.rules_import_refresh_failed" : "settings.rules_import_partial" : "settings.import_failed", "error")
       }
     }))
   }
@@ -758,7 +845,7 @@ export function initRulesSettings(): void {
   // ── Framework Creation Wizard ──
   initFrameworkWizard(() => {
     // Refresh framework configs after wizard creates a new framework
-    loadFrameworkConfigs()
+    void loadFrameworkConfigs().catch(() => {})
     showToast("settings.framework_created")
   }, withConfigurationMutation)
 
@@ -826,8 +913,8 @@ export function initRulesSettings(): void {
           return
         }
 
-        yamlImportDialog.close()
         await loadFrameworkConfigs()
+        yamlImportDialog.close()
         showToast("settings.framework_imported")
       } catch (err) {
         if (yamlImportErrors) {
