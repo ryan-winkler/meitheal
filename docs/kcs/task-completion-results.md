@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: "Task completion results"
+description: "Understand committed completion rewards and optional failures."
+---
 # Task completion results
 
 Complete a task through `PUT` or `PATCH /api/tasks/{id}`. The server reads the prior status and saves the mutation in the same writer transaction. Only an actual transition into a completed status earns completion statistics, emits the completion event and starts recurrence processing. Concurrent requests or repeated writes to an already-complete task do not earn additional points. Existing version, checklist and dependency guards still apply.

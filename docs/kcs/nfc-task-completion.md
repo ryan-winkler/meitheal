@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: "Complete tasks with NFC"
+description: "Use unique tag assignments and acknowledged task completion."
+---
 # Complete an assigned task with NFC
 
 With the NFC feature enabled, assign a physical tag identifier using `PUT /api/tasks/{id}` with `nfc_tag_id`. Use a non-empty identifier of at most 255 characters, or `null` to remove the assignment. Assign each tag to one unarchived task.

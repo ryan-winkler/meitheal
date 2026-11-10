@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: "Overdue task events"
+description: "Observe deadline transitions separately from notification delivery."
+---
 # Overdue task events
 
 Meitheal observes overdue transitions through the existing deadline scheduler, including when reminder notifications are off or Home Assistant is unavailable. The first run establishes a baseline without replaying the existing overdue inventory. Later checks observe open tasks whose deadline crossed, or whose deadline was edited into the past. A changed deadline creates a new episode. Completed, archived and cancelled tasks are excluded.

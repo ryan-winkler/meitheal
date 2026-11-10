@@ -44,3 +44,11 @@
 - [Releasing Meitheal](releasing.md) - Understand release channels and how to verify builds.
 - [Green Canary benchmark](green-canary-benchmark.md) - Qualify the fixed workload, memory limits and driver telemetry.
 - [Licensing & Distribution — KCS Runbook](licensing.md) - Find the license boundaries for source, integrations, and distribution.
+
+# Task automation and configuration
+
+- [Agent task approvals](agent-task-approvals.md) - Submit and review scoped automation proposals.
+- [Recovering rules and framework settings](settings-configuration-recovery.md) - Preserve configuration when saves and imports fail.
+- [Complete tasks with NFC](nfc-task-completion.md) - Use unique tag assignments and acknowledged task completion.
+- [Task completion results](task-completion-results.md) - Understand committed completion rewards and optional failures.
+- [Overdue task events](overdue-task-events.md) - Observe deadline transitions separately from notification delivery.

@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: "Agent task approvals"
+description: "Submit and review scoped automation proposals."
+---
 # Agent task approvals
 
 Use the proposal scope when an automation should suggest a change for a person to review. In **Settings → Automation & AI → Agent Tokens**, issue a token with **Propose Task Changes** (`tasks:propose`). Add **Read Tasks** only if the client also needs to browse tasks. Direct task writes use their existing separate permission. A proposal token cannot approve its own work. For mandatory review, grant `tasks:propose` and only the read/transport scopes the client needs; omit `tasks:write`, `tasks:delete`. This is an operation permission boundary, not a restriction based on advisory per-task AI scope preferences. Claims and review windows are fixed; there is no automatic acceptance setting.

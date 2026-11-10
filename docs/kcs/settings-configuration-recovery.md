@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: "Recovering rules and framework settings"
+description: "Preserve configuration when saves and imports fail."
+---
 # Recovering rules and framework settings
 
 Use an administrator session in Home Assistant to change shared rules, framework overrides or import Settings. Agent credentials cannot administer these settings. A standalone operator can manage them from the local machine.
