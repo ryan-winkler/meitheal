@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Meitheal — Devcontainer CLI Launcher
 #
-# Starts the HA Supervisor devcontainer stack via podman-compose.
-# Works from host, ai-vibe distrobox, or any terminal with podman access.
+# Starts or recovers the HA development stack without replacing editor containers.
+# First creation uses the Dev Containers CLI so configured Features are applied.
 #
 # Usage:
 #   ./scripts/devcontainer-up.sh          # Start stack
@@ -100,11 +100,30 @@ run_compose() {
   $COMPOSE_CMD -f "$COMPOSE_FILE" "$@"
 }
 
+start_stack() {
+  local existing
+  existing=$(run_compose ps --all --quiet ha-devcontainer)
+  if [[ -n "$existing" ]]; then
+    # Starting an existing container preserves its editor-generated image and Features.
+    run_compose start ha-devcontainer
+    run_compose exec -T ha-devcontainer sh -lc 'command -v node >/dev/null && command -v pnpm >/dev/null' || {
+      err "The existing container is missing Node or pnpm. Rebuild it in the editor; this helper will not replace it."
+      return 1
+    }
+    run_compose up -d --no-recreate grocy nodered
+  elif command -v devcontainer &>/dev/null; then
+    devcontainer up --workspace-folder "$PROJECT_ROOT"
+  else
+    err "Create the environment with Reopen in Container, or install the Dev Containers CLI and run this command again."
+    return 1
+  fi
+}
+
 # ── Commands ──
 case "${1:-up}" in
   up|start)
     log "Starting HA devcontainer stack..."
-    run_compose up -d
+    start_stack
     echo ""
     log "Stack is up! Access points:"
     echo -e "  ${BOLD}HA UI:${RESET}       http://localhost:${HA_UI_PORT}/"
@@ -127,9 +146,8 @@ case "${1:-up}" in
     ;;
   restart)
     log "Restarting devcontainer stack..."
-    run_compose down
-    run_compose up -d
-    log "Stack restarted."
+    run_compose restart
+    log "Stack restarted with its existing images."
     ;;
   *)
     echo "Usage: $0 {up|down|status|logs|restart}"

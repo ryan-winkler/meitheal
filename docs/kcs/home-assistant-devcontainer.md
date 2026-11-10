@@ -34,7 +34,7 @@ The Compose file supplies the development ports and service defaults. Copy [.env
 | Grocy | `http://localhost:9192/` |
 | Node-RED | `http://localhost:1880/` |
 
-Run the helper from the repository root. Check ownership before stopping a stack that may be shared.
+Run the helper from the repository root. Its `up` command starts the existing editor-generated container and does not replace its image; `restart` also retains existing images. A fresh environment uses `devcontainer up` when the Dev Containers CLI is installed. Otherwise, open the checked-in configuration in the editor first. Rebuild through the editor when Features change. Check ownership before stopping a stack that may be shared.
 
 ```sh
 ./scripts/devcontainer-up.sh status
