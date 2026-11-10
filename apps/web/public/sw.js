@@ -83,6 +83,17 @@ function getPrecacheUrls() {
   return PRECACHE_PATHS.map((p) => `${ingressPath}${p}`);
 }
 
+function hasNoStore(response) {
+  return response.headers.get("cache-control")?.split(",").some(directive =>
+    directive.trim().toLowerCase() === "no-store"
+  );
+}
+
+async function matchCacheable(request, cacheName) {
+  const response = await caches.match(request, { cacheName });
+  return response && !hasNoStore(response) ? response : undefined;
+}
+
 // --- Cache Eviction ---
 
 /**
@@ -173,11 +184,15 @@ self.addEventListener("install", (event) => {
         // Precache each URL individually — one 404 shouldn't break the whole install
         const urls = getPrecacheUrls();
         return Promise.allSettled(
-          urls.map((url) =>
-            cache.add(new Request(url, { redirect: "error" })).catch(() => {
+          urls.map(async (url) => {
+            try {
+              const request = new Request(url, { redirect: "error" });
+              const response = await fetch(request);
+              if (response.ok && !hasNoStore(response)) await cache.put(request, response);
+            } catch {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
-            })
-          )
+            }
+          })
         );
       })
   );
@@ -187,13 +202,23 @@ function appRoutePath(pathname) {
   return pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "").replace(/\/$/, "") || "/"
 }
 
-async function purgeTriageCache() {
-  const names = (await caches.keys()).filter(name => /^meitheal-(?:static|nav)-v/.test(name))
+const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
+
+function isNetworkOnlyPage(path, params) {
+  return path === "/triage" ||
+    (path === "/tasks" && params.has("boardRefresh")) ||
+    (path === "/today" && params.has("unscheduledPage"))
+}
+
+async function purgeNetworkOnlyPages() {
+  const names = (await caches.keys()).filter(name => meithealCacheName.test(name))
   await Promise.all(names.map(async name => {
     const cache = await caches.open(name)
     const requests = await cache.keys()
-    await Promise.all(requests.filter(request => appRoutePath(new URL(request.url).pathname) === "/triage")
-      .map(request => cache.delete(request)))
+    await Promise.all(requests.filter(request => {
+      const url = new URL(request.url)
+      return isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+    }).map(request => cache.delete(request)))
   }))
 }
 
@@ -208,11 +233,11 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter(key => /^meitheal-(?:precache|static|api|nav)-v/.test(key) && !currentCacheNames.has(key))
+            .filter(key => meithealCacheName.test(key) && !currentCacheNames.has(key))
             .map((key) => caches.delete(key))
         )
       )
-      .then(() => purgeTriageCache())
+      .then(() => purgeNetworkOnlyPages())
       .then(() => evictAllCaches())
       .then(() => self.clients.claim())
   );
@@ -242,11 +267,8 @@ self.addEventListener("fetch", (event) => {
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   if (/^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
-  // Live Kanban pages and counts must never reuse a cached board after a write.
-  if (apiPath === "/tasks" && url.searchParams.has("boardRefresh")) return;
-
   const pagePath = appRoutePath(url.pathname)
-  if (pagePath === "/triage") return
+  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return
@@ -274,16 +296,16 @@ self.addEventListener("fetch", (event) => {
  */
 async function cacheFirst(request) {
   // Check precache (app shell) first
-  const precached = await caches.match(request, { cacheName: CACHES.precache });
+  const precached = await matchCacheable(request, CACHES.precache);
   if (precached) return precached;
 
   // Check runtime static cache
-  const cached = await caches.match(request, { cacheName: CACHES.static });
+  const cached = await matchCacheable(request, CACHES.static);
   if (cached) return cached;
 
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(CACHES.static);
       cache.put(request, response.clone());
     }
@@ -300,13 +322,13 @@ async function cacheFirst(request) {
 async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
-    if (response.ok && !response.headers.get("cache-control")?.includes("no-store")) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
-    const cached = await caches.match(request);
+    const cached = await matchCacheable(request, cacheName);
     if (cached) return cached;
     return new Response(JSON.stringify({ error: "offline" }), {
       status: 503,
@@ -321,22 +343,22 @@ async function networkFirst(request, cacheName) {
 async function navigationHandler(request) {
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(CACHES.nav);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
     // Try navigation cache
-    const cached = await caches.match(request, { cacheName: CACHES.nav });
+    const cached = await matchCacheable(request, CACHES.nav);
     if (cached) return cached;
 
     // Try precache (app shell pages)
-    const precached = await caches.match(request, { cacheName: CACHES.precache });
+    const precached = await matchCacheable(request, CACHES.precache);
     if (precached) return precached;
 
     // Offline fallback page
-    const offlinePage = await caches.match(`${ingressPath}/offline`, { cacheName: CACHES.precache });
+    const offlinePage = await matchCacheable(`${ingressPath}/offline`, CACHES.precache);
     if (offlinePage) return offlinePage;
 
     return new Response("Offline", { status: 503 });

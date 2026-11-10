@@ -15,6 +15,8 @@ Meitheal uses a **service worker** to cache the app shell and intercept network 
 3. **Navigation** — cached pages load normally, unknown routes show the offline fallback page
 4. **Task operations** — saved to IndexedDB immediately, queued for sync when online
 
+Paginated unscheduled tasks on Today require a network connection. When the updated service worker takes control, it removes older cached copies of these live pages. Ordinary Today and the offline fallback remain available from the app shell.
+
 ## What's Available Offline
 
 | Feature | Offline | Notes |
