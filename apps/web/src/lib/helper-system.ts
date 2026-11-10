@@ -75,6 +75,7 @@ function handleHelperRestore(event: KeyboardEvent): void {
   if (target instanceof HTMLElement && (target.matches("input, textarea") || target.isContentEditable)) return
   const count = dismissedCount()
   if (count === 0) return
+  event.preventDefault()
 
   restoreAllHelpers()
   for (const helper of document.querySelectorAll<HTMLElement>("[data-helper-id]")) {
@@ -97,5 +98,5 @@ export function initHelperSystem(signal: AbortSignal): void {
   }
 
   document.addEventListener("click", handleHelperClick, { signal })
-  document.addEventListener("keydown", handleHelperRestore, { signal })
+  document.addEventListener("keydown", handleHelperRestore, { capture: true, signal })
 }

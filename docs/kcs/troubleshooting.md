@@ -31,7 +31,7 @@ description: "Diagnose common connection, search, and sync problems."
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore them. Press `Esc` to close the keyboard shortcuts dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard Shortcuts**, then press `Esc` to close the dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 

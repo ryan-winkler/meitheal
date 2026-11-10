@@ -49,7 +49,7 @@ test.describe("Settings Shell", () => {
   test("search jumps directly to matching anchors", async ({ page }) => {
     await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
 
     await searchInput.fill("theme")
     await expect(search.locator(".search-hub-item.is-selected .search-hub-item-title")).toHaveText("Theme")
@@ -67,10 +67,10 @@ test.describe("Settings Shell", () => {
   test("dismissing Settings search resets the query and restores launcher focus", async ({ page }) => {
     await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
 
     await searchInput.fill("companion")
-    await expect(search.getByRole("button", { name: /Companion App Links/ })).toBeVisible()
+    await expect(search.getByRole("option", { name: /Companion App Links/ })).toBeVisible()
 
     await searchInput.press("Escape")
 
@@ -83,7 +83,7 @@ test.describe("Settings Shell", () => {
   test("keyboard search navigation highlights results before jumping", async ({ page }) => {
     await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
     const results = search.locator(".search-hub-item")
 
     await searchInput.fill("companion")
