@@ -50,6 +50,19 @@ Run this from a clean source checkout on a trusted Linux host with Git, Node, Py
 3. Run `bash scripts/publish-canary-local.sh stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT GREEN_RECEIPT` with a clean checkout of the current App repository `main`. It rechecks the Green receipt and pulls both tags without credentials from an empty image store. It verifies their digests, qualified image IDs and App metadata before writing the canary files. If either package denies anonymous access, leave the advertised version alone. Public visibility applies to the whole package, including previous versions. Review the existing images before changing that setting. [GitHub package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
 4. Review the resulting files. A discovery push can trigger an installation on a device with automatic App updates enabled. Capture the target device’s pre-upgrade backup and rollback evidence before pushing. Recheck the current source `main` SHA against the reported revision immediately before submitting the App repository change through its normal branch rules. Include the source revision and both digests in the commit message. Verify the offered and installed versions in Supervisor.
 
+### Read the Green performance receipt
+
+Run `python3 scripts/verify-canary-green.py --report GREEN_RECEIPT ARM64_IMAGE_ID VERSION`, using the 12-character Canary version. The JSON reports individual gates even when a complete receipt fails. The command still exits nonzero on failure. Keep the raw receipt with the report.
+
+| Release gate | What the fixed workload measures |
+| --- | --- |
+| Idle memory below 64 MiB | The largest of 12 cgroup `memory.current` samples under the nearest-rank p95 calculation. |
+| Active memory below 96 MiB | Nearest-rank p95 of sampled `memory.current` during the 105-cycle workload. The report also includes the sampled maximum and the observed cgroup high-water mark when available. |
+| Mean active CPU at or below 15% of one core | Cgroup CPU time divided by the elapsed time between active samples. The window includes the fixed 2.5-second pause in each cycle. The report also includes interval CPU and throttling to show bursts the mean can hide. |
+| Every route p95 at or below 350 ms | The 100th value in ascending order for each set of 105 complete loopback HTTP responses. The report shows p50, maximum and the number above 350 ms, so up to five slow responses remain visible even when the gate passes. |
+
+Charged cgroup memory includes anonymous memory, file cache and kernel charges. Treat a single run as a repeatable release screen. Record repeated runs with the same image and workload when investigating variance. For installed acceptance, separately check browser interactions through Home Assistant ingress and observe the installed App with Home Assistant connected. Loopback curl records the full response, including transfer and writing the response to a file. Browser rendering, ingress and Home Assistant integrations have separate costs. [Linux cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files) · [curl timing fields](https://curl.se/docs/manpage.html#-w)
+
 ## Verify the contribution check
 
 The [CLA workflow](../../.github/workflows/cla.yml) runs trusted repository code and uses the job token to maintain the signature ledger, post the signing prompt and set the **Contributor License Agreement** status on the checked pull request head. The contributor’s fork code runs in the separate read-only CI workflow. CLA writes run one at a time on the shared ledger branch.

@@ -13,6 +13,10 @@ MIN_DRIVER_SECONDS = Decimal("262.5")  # 105 fixed 2.5-second sleeps
 MAX_DRIVER_SECONDS = 360
 MIN_SAMPLE_GAP_SECONDS = 5
 MAX_SAMPLE_GAP_SECONDS = 8  # 5-second interval plus sampling and launch overhead
+IDLE_LIMIT_BYTES = 64 * MIB
+ACTIVE_LIMIT_BYTES = 96 * MIB
+CPU_LIMIT_PERCENT = 15
+ROUTE_LIMIT_MS = 350
 WORKLOAD_SHA256 = "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549"
 FIXED_HELPER = (
     "sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f architecture=arm64 "
@@ -26,11 +30,20 @@ MEMORY_EVENTS = ("max", "oom", "oom_kill")
 REQUIRED_FIELDS = {"phase", "epoch", "memory_current", "swap", "cpu_usec", *MEMORY_EVENTS}
 
 
-def percentile_95(values):
-    return sorted(values)[(95 * len(values) + 99) // 100 - 1]
+def summarize(values):
+    ordered = sorted(values)
+    count = len(ordered)
+    p95_rank = (95 * count + 99) // 100
+    return {
+        "samples": count,
+        "p50": ordered[(count - 1) // 2],
+        "p95": ordered[p95_rank - 1],
+        "p95_rank": p95_rank,
+        "max": ordered[-1],
+    }
 
 
-def verify(lines, config_id, version):
+def evaluate_receipt(lines, config_id, version):
     def matching_lines(prefix):
         return [line.removeprefix(prefix) for line in lines if line.startswith(prefix)]
 
@@ -85,11 +98,14 @@ def verify(lines, config_id, version):
     if MIN_DRIVER_SECONDS + request_seconds > driver_seconds + Decimal("0.01"):
         raise ValueError("Driver wall time cannot contain the recorded requests and sleeps")
 
-    idle_p95 = percentile_95([sample["memory_current"] for sample in idle])
-    active_p95 = percentile_95([sample["memory_current"] for sample in active])
+    idle_memory = summarize([sample["memory_current"] for sample in idle])
+    active_memory = summarize([sample["memory_current"] for sample in active])
     cpu_usec = active[-1]["cpu_usec"] - active[0]["cpu_usec"]
     cpu_percent = Decimal(cpu_usec) / (active_seconds * 10_000)
-    routes_p95 = {route: percentile_95(values) for route, values in latencies.items()}
+    route_timings = {
+        route: {**summarize(values), "over_limit": sum(value > ROUTE_LIMIT_MS for value in values)}
+        for route, values in latencies.items()
+    }
 
     images = matching_lines("image=")
     health = [json.loads(line) for line in lines if line.startswith('{"status":')]
@@ -117,10 +133,10 @@ def verify(lines, config_id, version):
         "192 MiB, one CPU, zero swap": matching_lines("limits,") == ["201326592,0,100000 100000"],
         "seeded 2,000 tasks": lines.count('{"synthetic_tasks":2000}') == 1,
         "105 complete cycles": matching_lines("workload,completed,") == ["105"],
-        "idle below 64 MiB": idle_p95 < 64 * MIB,
-        "active below 96 MiB": active_p95 < 96 * MIB,
-        "active CPU at or below 15%": cpu_percent <= 15,
-        "each route p95 at or below 350 ms": all(value <= 350 for value in routes_p95.values()),
+        "idle below 64 MiB": idle_memory["p95"] < IDLE_LIMIT_BYTES,
+        "active below 96 MiB": active_memory["p95"] < ACTIVE_LIMIT_BYTES,
+        "active CPU at or below 15%": cpu_percent <= CPU_LIMIT_PERCENT,
+        "each route p95 at or below 350 ms": all(timing["p95"] <= ROUTE_LIMIT_MS for timing in route_timings.values()),
         "zero sampled and final memory events or swap": all(
             matching_lines(f"{key} ") == ["0"] for key in MEMORY_EVENTS
         ) and all(all(sample[key] == 0 for key in (*MEMORY_EVENTS, "swap")) for sample in ordered),
@@ -137,9 +153,29 @@ def verify(lines, config_id, version):
             )
         ),
     }
-    failures = [name for name, passed in conditions.items() if not passed]
-    if failures:
-        raise ValueError("Failed Green checks: " + ", ".join(failures))
+    return {
+        "config_id": config_id,
+        "version": version,
+        "checks": conditions,
+        "driver_wall_seconds": driver_seconds,
+        "active_sample_window_seconds": active_seconds,
+        "memory_current_bytes": {
+            "idle": {**idle_memory, "exclusive_limit": IDLE_LIMIT_BYTES},
+            "active": {**active_memory, "exclusive_limit": ACTIVE_LIMIT_BYTES},
+        },
+        "memory_peak_bytes": max(sample["memory_peak"] for sample in ordered) if "memory_peak" in header else None,
+        "active_cpu_percent_of_one_core": {
+            "mean": cpu_percent,
+            "inclusive_mean_limit": CPU_LIMIT_PERCENT,
+            "intervals": summarize([
+                Decimal(newer["cpu_usec"] - older["cpu_usec"]) / ((newer["epoch"] - older["epoch"]) * 10_000)
+                for older, newer in zip(active, active[1:])
+            ]),
+            "throttle_count_delta": active[-1]["throttle_count"] - active[0]["throttle_count"]
+            if "throttle_count" in header else None,
+        },
+        "loopback_full_response_ms": {"inclusive_p95_limit": ROUTE_LIMIT_MS, "routes": route_timings},
+    }
 
 
 def main():
@@ -147,6 +183,7 @@ def main():
     parser.add_argument("receipt")
     parser.add_argument("config_id")
     parser.add_argument("version")
+    parser.add_argument("--report", action="store_true", help="Print JSON metrics even when a parsed receipt fails a gate")
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.config_id) or not re.fullmatch(r"[a-f0-9]{12}", args.version):
         parser.error("Expected an exact image config ID and Canary version")
@@ -155,7 +192,12 @@ def main():
             contents = receipt.read(MAX_RECEIPT_BYTES + 1)
         if len(contents) > MAX_RECEIPT_BYTES:
             raise ValueError("Green receipt exceeds 1 MiB")
-        verify(contents.decode().splitlines(), args.config_id, args.version)
+        result = evaluate_receipt(contents.decode().splitlines(), args.config_id, args.version)
+        if args.report:
+            print(json.dumps(result, indent=2, default=float))
+        failures = [name for name, passed in result["checks"].items() if not passed]
+        if failures:
+            raise ValueError("Failed Green checks: " + ", ".join(failures))
     except (OSError, ValueError, csv.Error) as error:
         parser.exit(1, f"Green receipt rejected: {error}\n")
 

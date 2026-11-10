@@ -187,6 +187,35 @@ test("receipt metrics and exact ARM64 config must pass before registry action", 
   expect(readFileSync(harness.trace, "utf8")).toBe("")
 })
 
+test("the Green report exposes tail samples without changing the gate", ({ harness }) => {
+  const report = () => spawnSync("python3", ["scripts/verify-canary-green.py", "--report", harness.receipt, arm, version], {
+    cwd: root,
+    encoding: "utf8",
+  })
+  const withListOutliers = (count: number) => {
+    let listRequests = 0
+    return passingReceipt().replaceAll("list,200,0.020000", line => listRequests++ < count ? "list,200,0.800000" : line)
+  }
+
+  writeFileSync(harness.receipt, withListOutliers(5))
+  const passing = report()
+  expect(passing.status, passing.stderr).toBe(0)
+  const metrics = JSON.parse(passing.stdout)
+  expect(metrics.memory_current_bytes.idle).toMatchObject({ samples: 12, p95_rank: 12, p95: 67108863, max: 67108863 })
+  expect(metrics.active_cpu_percent_of_one_core).toMatchObject({ mean: 15, intervals: { p95: 15 }, throttle_count_delta: null })
+  expect(metrics.loopback_full_response_ms.routes.list).toEqual({
+    samples: 105, p50: 20, p95: 20, p95_rank: 100, max: 800, over_limit: 5,
+  })
+
+  writeFileSync(harness.receipt, withListOutliers(6))
+  const failing = report()
+  expect(failing.status).toBe(1)
+  expect(failing.stderr).toContain("each route p95 at or below 350 ms")
+  const failedMetrics = JSON.parse(failing.stdout)
+  expect(failedMetrics.checks["each route p95 at or below 350 ms"]).toBe(false)
+  expect(failedMetrics.loopback_full_response_ms.routes.list).toMatchObject({ p95: 800, over_limit: 6 })
+})
+
 test("driver timing must be unique, valid and consistent with the request and sample windows", ({ harness }) => {
   const args = publish("aarch64", arm, harness.receipt)
   for (const [record, failure] of [
