@@ -6,6 +6,7 @@ import { hasScope, resolveAgentRouteScope, type AgentScope } from "@meitheal/dom
 import { apiJson, apiError, apiProblem } from "../../lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
 import { resolveMcpSchema } from "@lib/mcp-schema"
+import { isDoneStatus } from "@lib/status-config"
 import { checkMcpAvailability } from "@lib/mcp-availability"
 import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 
@@ -248,7 +249,7 @@ customHandlers.set("completeTask", async (args, requestApi) => {
       method: "PUT",
       body: JSON.stringify({ status: "complete" }),
     })
-    return { ...await checkedJson(res), status: "completed" }
+    return acknowledgedCompletion(res, String(args.id))
   }
   if (args.title) {
     const searchRes = await requestApi(`/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
@@ -265,7 +266,7 @@ customHandlers.set("completeTask", async (args, requestApi) => {
         method: "PUT",
         body: JSON.stringify({ status: "complete" }),
       })
-      return { ...await checkedJson(response), status: "completed", id: taskId, title: match.title }
+      return acknowledgedCompletion(response, String(taskId))
     }
     return { status: "not_found", title: args.title }
   }
@@ -371,13 +372,25 @@ async function executeTool(
   return { ...await checkedJson(res), status: res.status }
 }
 
+async function acknowledgedCompletion(response: Response, expectedId: string): Promise<Record<string, unknown>> {
+  const task = await checkedJson(response)
+  const exactId = task.id === expectedId
+  const exactTicket = /^MTH-\d+$/i.test(expectedId) && typeof task.ticket_key === "string" &&
+    task.ticket_key.toUpperCase() === expectedId.toUpperCase()
+  if (typeof task.id !== "string" || !task.id || (!exactId && !exactTicket) ||
+    typeof task.status !== "string" || !isDoneStatus(task.status)) {
+    throw new Error("Task completion returned an invalid acknowledgement")
+  }
+  return { ...task, status: "completed" }
+}
+
 async function checkedJson(response: Response): Promise<Record<string, unknown>> {
   if (!response.ok) throw new Error(`Operation failed (HTTP ${response.status})`)
   if (response.status === 204 || response.status === 205) return { ok: true }
   let data: unknown
   try { data = await response.json() } catch { throw new Error("Operation returned invalid JSON") }
   if (!isRecord(data)) throw new Error("Operation returned an invalid response")
-  if (data.ok === false || data.error) throw new Error("Operation was rejected")
+  if (data.ok === false || data.success === false || data.error) throw new Error("Operation was rejected")
   return data
 }
 

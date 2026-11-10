@@ -70,7 +70,7 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
       child!.send({ type: "fixture-mcp-result", result })
       expect((await acknowledged)[0]).toEqual({ mcpResultReady: true })
     }
-    for (const result of [{ status: 403, body: "{}" }, { status: 200, body: "<private-response-secret" }, { status: 200, body: "null" }, { status: 200, body: "[]" }, { status: 200, body: '{"ok":false}' }, { status: 200, body: '{"error":"rejected"}' }]) {
+    for (const result of [{ status: 403, body: "{}" }, { status: 200, body: "<private-response-secret" }, { status: 200, body: "null" }, { status: 200, body: "[]" }, { status: 200, body: '{"ok":false}' }, { status: 200, body: '{"error":"rejected"}' }, { status: 200, body: '{}' }, { status: 200, body: '{"success":false}' }, { status: 200, body: '{"id":"result-fixture","status":"pending"}' }, { status: 200, body: '{"id":"different-task","status":"complete"}' }]) {
       await setResult(result)
       for (const modern of [false, true]) {
         for (const args of [{ id: "result-fixture" }, { title: "Fixture title" }]) {
@@ -86,8 +86,14 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     const deleted = (await rpc("tools/call", { name: "deleteTask", arguments: { id: "result-fixture" } })).result
     expect(deleted.isError).toBe(false)
     expect(JSON.parse(deleted.content[0].text)).toEqual({ ok: true, status: 204 })
-    await setResult({ status: 200, body: '{"id":"result-fixture","title":"Fixture title"}' })
-    expect((await rpc("tools/call", { name: "completeTask", arguments: { id: "result-fixture" } })).result.isError).toBe(false)
+    await setResult({ status: 200, body: '{"id":"result-fixture","title":"Fixture title","status":"complete"}' })
+    for (const modern of [false, true]) {
+      for (const args of [{ id: "result-fixture" }, { title: "Fixture title" }]) {
+        expect((await rpc("tools/call", { name: "completeTask", arguments: args }, modern)).result.isError).toBe(false)
+      }
+    }
+    await setResult({ status: 200, body: '{"id":"result-fixture","ticket_key":"MTH-42","status":"complete"}' })
+    expect((await rpc("tools/call", { name: "completeTask", arguments: { id: "MTH-42" } })).result.isError).toBe(false)
   } finally {
     await api.dispose()
     if (child && child.exitCode === null) {

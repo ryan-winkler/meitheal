@@ -11,7 +11,7 @@ globalThis.fetch = (input, options) => {
   if (failure && url.hostname === "127.0.0.1" && url.pathname === "/api/search") {
     return Promise.resolve(Response.json({ sections: [{ id: "tasks", items: [{ id: "result-fixture", title: "Fixture title" }] }] }))
   }
-  if (failure && url.hostname === "127.0.0.1" && url.pathname === "/api/tasks/result-fixture") {
+  if (failure && url.hostname === "127.0.0.1" && ["/api/tasks/result-fixture", "/api/tasks/MTH-42"].includes(url.pathname)) {
     return Promise.resolve(new Response(failure.status === 204 ? null : failure.body, {
       status: failure.status,
       headers: { "content-type": "application/json" },

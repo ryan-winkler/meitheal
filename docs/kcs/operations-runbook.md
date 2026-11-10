@@ -446,3 +446,5 @@ two seconds if SIGTERM does not close it. A printed result is complete only
 when the command exits; failures retain a nonzero status. Its version/integrity
 health check, five warmups, 100 validated task writes and existing budgets are
 unchanged by this build-entry command.
+
+MCP completion acknowledgements require the expected task ID or exact ticket key and a completed native status. A JSON object alone does not prove completion. Empty acknowledgements remain valid for native operations such as deletion that deliberately return204/205; they do not fabricate a completed task result.
