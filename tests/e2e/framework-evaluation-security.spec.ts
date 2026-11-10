@@ -135,3 +135,33 @@ test("malformed Assist scores cannot replace estimates or introduce undeclared p
     expect(stored).not.toHaveProperty("unexpected")
   } finally { expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204) }
 })
+
+test("switching tickets during Assist resets the reused action and ignores the aborted reply", async ({ page, request }) => {
+  const first = await create(request)
+  const second = await create(request)
+  const started = deferred<void>()
+  const release = deferred<void>()
+  let calls = 0
+  await page.route("**/api/ha/assist", async route => {
+    const attempt = ++calls
+    if (attempt === 1) { started.resolve(); await release.promise }
+    await route.fulfill({ json: { speech: JSON.stringify({ scores: { rice: { impact: attempt } }, justification: `Fixture ticket ${attempt}` }) } }).catch(() => {})
+  })
+  try {
+    await page.goto(`/tickets/${first}`)
+    await expect(page.getByLabel("Scoring framework", { exact: true })).toBeEnabled()
+    await page.locator("#se-ask-ai").click()
+    await started.promise
+    await expect(page.locator("#se-ask-ai")).toBeDisabled()
+    await page.evaluate(id => window.openTaskDetail?.(id), second)
+    await expect(page).toHaveURL(new RegExp(`/tickets/${second}$`))
+    await expect(page.getByLabel("Scoring framework", { exact: true })).toBeEnabled()
+    await expect(page.locator("#se-ask-ai")).toBeEnabled()
+    release.resolve()
+    await page.locator("#se-ask-ai").click()
+    await expect(page.locator("#se-status")).toHaveText("Fixture ticket 2")
+  } finally {
+    release.resolve()
+    for (const id of [first, second]) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+  }
+})

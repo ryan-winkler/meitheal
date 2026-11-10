@@ -74,6 +74,12 @@ test.describe("framework import API and Settings", () => {
     expect(listed.status()).toBe(200)
     const builtIns = (await listed.json()).data.filter((item: { source: string }) => item.source === "built-in")
     expect(builtIns.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining(["rice", "ice", "eisenhower"]))
+    const ice = builtIns.find((item: { id: string }) => item.id === "ice")
+    expect(ice.description).toContain("Impact × Confidence × Ease")
+    const eisenhower = (await (await request.get("/api/frameworks/eisenhower")).json()).data
+    expect(eisenhower.fields.find((field: { key: string }) => field.key === "urgency").description).toBe("How time-sensitive is this task?")
+    expect(await (await request.get("/api/frameworks/eisenhower/export")).text()).toContain("How time-sensitive is this task?")
+    expect(await (await request.get("/api/frameworks/ice/export")).text()).toContain("Impact × Confidence × Ease")
     const path = "/api/frameworks/rice"
     const original = (await (await request.get(path)).json()).data
     expect(original.source).toBe("built-in")

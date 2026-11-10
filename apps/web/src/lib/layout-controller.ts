@@ -42,6 +42,8 @@
             if (text) text.textContent = indicator.dataset.unreachable ?? "Meitheal unavailable";
           }
           indicator.title = text?.textContent ?? ""
+          const settingsLink = indicator.parentElement?.querySelector<HTMLAnchorElement>('a[aria-describedby~="connection-status"]')
+          if (settingsLink) settingsLink.title = indicator.title
         }
         checkHealth();
         // P0-4: Clear previous interval before creating new one to prevent

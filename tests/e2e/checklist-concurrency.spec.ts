@@ -412,11 +412,12 @@ test("a checklist rebase preserves the selected new-item placeholder before typi
   let release!: () => void
   const deliverConflict = new Promise<void>(resolve => { release = resolve })
   let held = false
+  let conflictStatus = 0
   await page.route("**" + path, async route => {
     if (route.request().method() !== "PUT" || held) return route.continue()
-    const response = await route.fetch()
-    expect(response.status()).toBe(409)
     held = true
+    const response = await route.fetch()
+    conflictStatus = response.status()
     await deliverConflict
     await route.fulfill({ response })
   })
@@ -449,6 +450,7 @@ test("a checklist rebase preserves the selected new-item placeholder before typi
       { ...original[0], done: true },
       { id: expect.any(String), text: "Keep this replacement", done: false },
     ])
+    expect(conflictStatus).toBe(409)
   } finally {
     release()
   }

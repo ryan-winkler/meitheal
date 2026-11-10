@@ -11,6 +11,6 @@
     "org.opencontainers.image.title": "Meitheal Canary",
     "org.opencontainers.image.description": "Bleeding-edge development build of Meitheal",
     "org.opencontainers.image.source": "https://github.com/ryan-winkler/meitheal-ha-addon",
-    "org.opencontainers.image.licenses": "LicenseRef-Meitheal-Source-Available-1.0"
+    "org.opencontainers.image.licenses": "LicenseRef-Proprietary"
   }
 }

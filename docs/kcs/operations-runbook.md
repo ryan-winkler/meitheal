@@ -373,3 +373,5 @@ The OpenAPI comment-list schema includes comment fields and `can_manage` in one 
 Keep CommonJS dependencies such as `sanitize-html` and `yaml` external in the Astro dev server; bundle them only in the production server build. Forcing them through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
 
 Assist scoring ignores undeclared fields and non-primitive suggestions. Malformed framework field arrays return validation errors. Regional preferences retain Saturday week starts and validate saved date formats. Custom/Ollama handoff never substitutes another provider when its URL is missing or unavailable; recovery messages follow the chosen language.
+
+Built-in catalog and field descriptions survive packaged discovery and YAML export. The Settings link exposes the current readiness tooltip while retaining its full click target. Switching tickets resets an aborted Assist action. Both Supervisor build metadata files use the same Proprietary image license label as the Dockerfile.

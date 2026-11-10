@@ -123,6 +123,7 @@ pageLifecycle.onPageLoad(signal => {
     const requestSignal = AbortSignal.any([signal, lifetime.signal, ...(session ? [session.signal] : [])])
     taskSignal = requestSignal
     saveEvaluation = session?.save
+    ask.disabled = false
     taskId = id
     payload = parsePayload(raw)
     if (!payload.rice) {

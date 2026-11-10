@@ -24,6 +24,7 @@ export interface FrameworkFieldOption {
 export interface FrameworkField {
   key: string
   label: string
+  description?: string | undefined
   type: "number" | "select"
   uiType: "slider" | "radio" | "select"
   weight: number
@@ -93,6 +94,7 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
     ? (raw.fields as Record<string, unknown>[]).map((f) => ({
         key: String(f.key ?? ""),
         label: String(f.label ?? ""),
+        ...(typeof f.description === "string" ? { description: f.description } : {}),
         type: String(f.type ?? "number") as FrameworkField["type"],
         uiType: String(f.ui_type ?? "slider") as FrameworkField["uiType"],
         weight: Number(f.weight ?? 1),
@@ -251,6 +253,7 @@ export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, un
     fields: config.fields.map((f) => ({
       key: f.key,
       label: f.label,
+      ...(f.description !== undefined ? { description: f.description } : {}),
       type: f.type,
       ui_type: f.uiType,
       weight: f.weight,
