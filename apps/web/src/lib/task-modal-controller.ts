@@ -74,6 +74,7 @@
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
           currentCommentTarget = null
+          delete tdOverlay.dataset.openTaskId
           setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -91,7 +92,7 @@
                 _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
               _previouslyFocused.focus()
             } else {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"]')?.focus()
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading')?.focus()
             }
             _previouslyFocused = null
           };
@@ -124,11 +125,12 @@
         }, { signal: __signal });
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null) {
-          if (!tdOverlay) return;
+          if (!tdOverlay?.isConnected || __signal.aborted) return
           // P3-4: Store focus origin for restore on close
           if (!tdOverlay.classList.contains("active")) _previouslyFocused = document.activeElement
           currentTaskId = taskId;
           currentCommentTarget = commentTarget
+          tdOverlay.dataset.openTaskId = taskId
           const legacyLink = getLegacyTaskId(window.location.hash) === taskId
           if (!legacyLink) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
@@ -1559,7 +1561,8 @@
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD()
-          else if (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active")) {
+          else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
+            (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
             void openTaskDetail(taskId, commentTarget)
           }
         }
@@ -1569,6 +1572,9 @@
 
         // Expose openTaskDetail globally for cross-page use (table, index new-task flow)
         window.openTaskDetail = openTaskDetail;
+        __signal.addEventListener("abort", () => {
+          if (window.openTaskDetail === openTaskDetail) delete window.openTaskDetail
+        }, { once: true })
 
         // Delegated click → open task detail for any task element
         // P1-3: Also handles keyboard activation (Enter/Space) for a11y

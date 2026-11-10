@@ -126,6 +126,10 @@ Use this after changing the Kanban shell or `kanban-controller.ts`.
 6. Run `tests/e2e/kanban-pagination.spec.ts` against a disposable server. Inspect the raw Tasks response and confirm it contains only the requested view. Check page navigation, full-board filtering, the retry state and relative card order.
 7. For render changes, compare the packaged server with the same 1,000- and 2,000-card fixture. Record uncompressed HTML bytes, warm request latency and rendered card count. Use an isolated Home Assistant fixture for native performance qualification.
 
+A task write that returns `TASK_VERSION_CONFLICT` should be checked by reloading the task before retrying. A `TASK_BLOCKED` response identifies the open dependencies preventing activation. Native clients can pass the observed epoch-millisecond `updated_at` to reject stale writes. Intake decisions also pass `expected_status: "backlog"` and require an exact version and status match in SQLite.
+
+In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
+
 ## Table Shell Verification
 
 Use this after changing the Table shell or `table-controller.ts`.

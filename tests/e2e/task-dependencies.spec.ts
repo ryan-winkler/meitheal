@@ -30,6 +30,7 @@ test("an outbound blocked_by link blocks the dependent but does not block the pr
   expect(rejected.status(), await rejected.text()).toBe(409)
   expect(await rejected.json()).toEqual({
     error: "Cannot activate: task is blocked by open dependencies",
+    errorCode: "TASK_BLOCKED",
     blocked_by: [{ ...prerequisite, status: "pending" }],
   })
   expect(await (await request.get(`/api/tasks/${dependent.id}`)).json()).toMatchObject({
@@ -65,4 +66,26 @@ test("an inbound blocks link follows the same policy and reciprocal links list o
   const allowed = await activate()
   expect(allowed.status(), await allowed.text()).toBe(200)
   expect(await (await request.get(`/api/tasks/${dependent.id}`)).json()).toMatchObject({ status: "active" })
+})
+
+test("intake updates validate the version and reject stale or noncanonical decisions", async ({ request }) => {
+  const creation = await request.post("/api/tasks", { data: { title: "Intake API decision", status: "backlog" } })
+  expect(creation.status()).toBe(201)
+  const { id, updated_at } = await creation.json()
+  const path = `/api/tasks/${id}`
+  const invalid = await request.patch(path, {
+    headers: { "content-type": "application/json" },
+    data: '{"status":"pending","updated_at":1e309}',
+  })
+  expect(invalid.status()).toBe(400)
+  const alias = await request.patch(path, { data: { status: "todo", expected_status: "backlog", updated_at } })
+  expect(alias.status()).toBe(400)
+
+  const accepted = await request.patch(path, { data: { status: "pending", expected_status: "backlog", updated_at } })
+  expect(accepted.status()).toBe(200)
+  expect(await accepted.json()).toMatchObject({ id, status: "pending" })
+  const stale = await request.patch(path, { data: { status: "active", expected_status: "backlog", updated_at } })
+  expect(stale.status()).toBe(409)
+  expect(await stale.json()).toMatchObject({ errorCode: "TASK_VERSION_CONFLICT", client_updated_at: updated_at })
+  expect(await (await request.get(path)).json()).toMatchObject({ status: "pending" })
 })

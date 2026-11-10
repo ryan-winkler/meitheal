@@ -564,17 +564,75 @@ const paths = {
       operationId: "updateTask",
       tags: ["Tasks"],
       summary: "Update a task",
-      description: "Send only the fields you want to change. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves the task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET. A stale guard returns 409 with code checklist_conflict and the current checklist.",
+      description: "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-      requestBody: { content: { "application/json": { schema: { allOf: [ref("Task"), {
+      requestBody: { content: { "application/json": { schema: {
         type: "object",
         properties: {
+          title: { type: "string", minLength: 1, maxLength: 500 },
+          description: { type: "string", description: "Task text. The server keeps the first 10,000 characters." },
+          status: { type: "string", description: "Canonical task status, a supported alias, or a custom status. Backlog decisions require exactly pending or active." },
+          priority: { type: "number", description: "The server rounds and clamps this to 1 through 5." },
+          due_date: { type: ["string", "null"] },
+          assigned_to: { type: ["string", "null"] },
+          project_id: { type: ["string", "null"] },
+          parent_id: { type: ["string", "null"] },
+          area_id: { type: "string" },
+          labels: { type: "string", description: "JSON-encoded array of label names", example: '["repair","garage"]' },
           checklists: { type: "string", description: "Replacement JSON-encoded checklist array" },
           expected_checklists: { type: ["string", "null"], description: "Exact previous checklist value returned by GET" },
+          updated_at: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Observed task version as epoch milliseconds. Send the exact observed value with expected_status backlog." },
+          expected_status: { type: "string", const: "backlog", description: "Requires exact updated_at and status pending or active. The task must still be in Backlog." },
         },
         dependentRequired: { expected_checklists: ["checklists"] },
-      }] } } } },
-      responses: { 200: jsonContent(ref("Task"), "Updated"), 400: err400, 404: jsonContent(ref("ProblemDetail"), "Not found"), 409: jsonContent(ref("ProblemDetail"), "Checklist conflict or task or destination project is no longer available") },
+        if: { required: ["expected_status"] },
+        then: { required: ["updated_at", "status"], properties: { status: { enum: ["pending", "active"] } } },
+        additionalProperties: true,
+      } } } },
+      responses: {
+        200: jsonContent(ref("Task"), "Updated"),
+        400: err400,
+        404: jsonContent(ref("ProblemDetail"), "Not found"),
+        409: {
+          description: "Task version, intake state or checklist changed, dependencies remain open, or the destination is unavailable",
+          content: {
+            "application/json": { schema: { oneOf: [
+              {
+                type: "object",
+                required: ["error", "code", "checklists"],
+                properties: {
+                  error: { type: "string" }, code: { const: "checklist_conflict" },
+                  checklists: { type: ["string", "null"] },
+                },
+              },
+              {
+                type: "object",
+                required: ["error", "errorCode", "server_updated_at", "client_updated_at"],
+                properties: {
+                  error: { type: "string" }, errorCode: { const: "TASK_VERSION_CONFLICT" },
+                  server_updated_at: { type: "integer" }, client_updated_at: { type: "integer" },
+                },
+              },
+              {
+                type: "object",
+                required: ["error", "errorCode", "blocked_by"],
+                properties: {
+                  error: { type: "string" }, errorCode: { const: "TASK_BLOCKED" },
+                  blocked_by: { type: "array", items: {
+                    type: "object",
+                    required: ["id", "title", "status", "ticket_key"],
+                    properties: {
+                      id: { type: "string" }, title: { type: "string" },
+                      status: { type: "string" }, ticket_key: { type: ["string", "null"] },
+                    },
+                  } },
+                },
+              },
+            ] } },
+            "application/problem+json": { schema: ref("ProblemDetail") },
+          },
+        },
+      },
     },
     delete: {
       operationId: "deleteTask",

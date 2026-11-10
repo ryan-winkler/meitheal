@@ -36,7 +36,7 @@ const locale = (Astro.cookies.get("meitheal-locale")?.value ?? "en") as Locale
 
 const isEnabled = await isFeatureEnabled("habits")
 if (!isEnabled) {
-  return Astro.redirect("/")
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/`)
 }
 
 let habits: HabitViewModel[] = []

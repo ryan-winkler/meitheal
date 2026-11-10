@@ -214,6 +214,34 @@ test("a 2,000-task Table page keeps its assets and next view inside ingress", as
   expect(escaped).toEqual([])
 })
 
+test("the service worker precaches inside ingress without opening inactive board views", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const workerRequests: URL[] = []
+    context.on("request", request => {
+      const url = new URL(request.url())
+      if (request.serviceWorker() && url.origin === origin) workerRequests.push(url)
+    })
+    const page = await context.newPage()
+    await page.goto(origin + prefix + "/planning")
+    await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
+
+    expect(workerRequests.some(url => url.pathname === prefix + "/version.json")).toBe(true)
+    expect(workerRequests.some(url => url.pathname === prefix + "/planning")).toBe(true)
+    for (const legacy of ["/areas", "/projects"]) {
+      const redirect = await page.request.get(origin + prefix + legacy, { maxRedirects: 0 })
+      expect(redirect.status()).toBe(302)
+      expect(redirect.headers().location).toBe(prefix + "/planning#spaces")
+    }
+    expect(workerRequests.filter(url => !url.pathname.startsWith(prefix + "/")).map(url => url.pathname)).toEqual([])
+    expect(workerRequests.filter(url => ["/table", "/calendar", "/timeline"].includes(url.pathname.slice(prefix.length))
+      || ["table", "calendar", "timeline"].includes(url.searchParams.get("view") ?? "")).map(url => url.pathname)).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
   // Two entry points, three themes, and two contrast scans per theme.
   test.setTimeout(90_000)

@@ -213,9 +213,11 @@ const { locale } = Astro.props
         <div
           id="backlog-mode-help"
           class="settings-hint"
+          data-mode-visible={t("triage.setting_visible", locale)}
+          data-mode-hidden={t("triage.setting_hidden", locale)}
+          data-mode-disabled={t("triage.setting_disabled", locale)}
         >
-          Backlog lane is shown on the Kanban board. Tasks can be placed in
-          Backlog.
+          {t("triage.setting_visible", locale)}
         </div>
       </div>
 
@@ -648,13 +650,10 @@ const { locale } = Astro.props
     if (!select) return;
 
     var helpTexts = {
-      visible:
-        "Backlog lane is shown on the Kanban board. Tasks can be placed in Backlog.",
-      hidden:
-        "Backlog lane is hidden from the Kanban board. Backlog tasks are only visible in Table view.",
-      disabled:
-        "Backlog is fully disabled. The status option is removed from all dropdowns. Use Todo for everything.",
-    };
+      visible: helpDiv?.dataset.modeVisible,
+      hidden: helpDiv?.dataset.modeHidden,
+      disabled: helpDiv?.dataset.modeDisabled,
+    }
 
     function updateHelp() {
       if (helpDiv) helpDiv.textContent = helpTexts[select.value] || "";

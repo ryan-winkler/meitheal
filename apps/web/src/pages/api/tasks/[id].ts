@@ -13,6 +13,18 @@ import type { TaskType } from "@meitheal/domain-tasks"
 
 /** GET /api/tasks/[id], PUT /api/tasks/[id], DELETE /api/tasks/[id] */
 
+function taskVersionConflict(serverVersion: number, clientVersion: number): Response {
+  return new Response(JSON.stringify({
+    error: "Conflict: task was modified since your last read",
+    errorCode: "TASK_VERSION_CONFLICT",
+    server_updated_at: serverVersion,
+    client_updated_at: clientVersion,
+  }), {
+    status: 409,
+    headers: { "content-type": "application/json" },
+  })
+}
+
 export const GET: APIRoute = async ({ params }) => {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
@@ -56,19 +68,21 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
   const resolvedId = resolved.id
 
-  // Optimistic locking: reject stale updates (Persona #7)
-  if (typeof body.updated_at === "number") {
-    const stored = Number(resolved.updated_at ?? 0)
-    if (body.updated_at < stored) {
-      return new Response(JSON.stringify({
-        error: "Conflict: task was modified since your last read",
-        server_updated_at: stored,
-        client_updated_at: body.updated_at,
-      }), {
-        status: 409,
-        headers: { "content-type": "application/json" },
-      })
-    }
+  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
+  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
+    return apiError("updated_at must be a non-negative safe integer", 400)
+  }
+
+  if (body.expected_status !== undefined && (
+    body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
+    (body.status !== STATUS.PENDING && body.status !== STATUS.ACTIVE)
+  )) {
+    return apiError("Backlog decisions require expected_status backlog, updated_at and status pending or active", 400)
+  }
+
+  const storedVersion = Number(resolved.updated_at)
+  if (clientVersion !== undefined && clientVersion < storedVersion) {
+    return taskVersionConflict(storedVersion, clientVersion)
   }
 
   // Input sanitization — same rules as POST
@@ -295,8 +309,18 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const oldTask = await repo.getFieldsForDiff(resolvedId)
 
   // Perform the update via repository
-  const update = await repo.updateTask(resolvedId, sanitized, expectedChecklists)
+  const version = clientVersion === undefined ? undefined : {
+    updatedAt: clientVersion,
+    ...(body.expected_status === STATUS.BACKLOG ? { expectedStatus: STATUS.BACKLOG } : {}),
+  }
+  const update = await repo.updateTask(resolvedId, sanitized, {
+    ...(version ? { version } : {}),
+    ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
+  })
   if (!update.ok) {
+    if (update.errorCode === "conflict") {
+      return taskVersionConflict(update.updatedAt, clientVersion!)
+    }
     if (update.errorCode === "checklist_conflict") {
       return Response.json({
         error: "The checklist changed since your last read",
@@ -307,6 +331,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
     if (update.errorCode === "blocked") {
       return new Response(JSON.stringify({
         error: "Cannot activate: task is blocked by open dependencies",
+        errorCode: "TASK_BLOCKED",
         blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
           id,
           title,

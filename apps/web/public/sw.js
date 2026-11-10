@@ -7,9 +7,8 @@
  * Push notification handler for task reminders.
  * skipWaiting requires client message (FR-308).
  *
- * Ingress-aware: When running behind HA Supervisor ingress, the
- * registration script sends SET_INGRESS_PATH with the permanent
- * ingress prefix. All precache and fetch routing respects this.
+ * Ingress-aware: The registration scope supplies the Home Assistant path
+ * before install runs, so precache and fetch routing stay inside ingress.
  *
  * @kcs Ingress token is permanent per-installation (HA issue #6605).
  */
@@ -54,11 +53,9 @@ const EVICTION_POLICY = {
   // precache: no eviction policy — cleaned entirely on version bump
 };
 
-/**
- * HA ingress path prefix, set via SET_INGRESS_PATH message
- * from the registration script. Empty string when running standalone.
- */
-let ingressPath = "";
+// Standalone registration has no Home Assistant ingress prefix.
+const scopePath = new URL(self.registration.scope).pathname.replace(/\/+$/, "")
+const ingressPath = /^\/api\/hassio_ingress\/[A-Za-z0-9_-]+$/.test(scopePath) ? scopePath : ""
 
 // Static assets to precache (app shell + key pages).
 // Paths are relative to root — ingressPath is prepended at install time.
@@ -68,15 +65,12 @@ const PRECACHE_PATHS = [
   "/today",
   "/upcoming",
   "/tasks",
-  "/table",
-  "/calendar",
+  "/planning",
   "/settings",
   "/gamification",
   "/habits",
-  "/projects",
   "/goals",
   "/eisenhower",
-  "/timeline",
   "/manifest.webmanifest",
   "/icon-192.png",
 ];
@@ -165,7 +159,7 @@ function maybeEvict() {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     // Fetch build-time version from astro.config.mjs-generated file
-    fetch(`${ingressPath}/version.json`)
+    fetch(`${ingressPath}/version.json`, { redirect: "error" })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.version && data.version !== CACHE_VERSION) {
@@ -180,7 +174,7 @@ self.addEventListener("install", (event) => {
         const urls = getPrecacheUrls();
         return Promise.allSettled(
           urls.map((url) =>
-            cache.add(url).catch(() => {
+            cache.add(new Request(url, { redirect: "error" })).catch(() => {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
             })
           )
@@ -189,12 +183,24 @@ self.addEventListener("install", (event) => {
   );
 });
 
+function appRoutePath(pathname) {
+  return pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "").replace(/\/$/, "") || "/"
+}
+
+async function purgeTriageCache() {
+  const names = (await caches.keys()).filter(name => /^meitheal-(?:static|nav)-v/.test(name))
+  await Promise.all(names.map(async name => {
+    const cache = await caches.open(name)
+    const requests = await cache.keys()
+    await Promise.all(requests.filter(request => appRoutePath(new URL(request.url).pathname) === "/triage")
+      .map(request => cache.delete(request)))
+  }))
+}
+
 // --- Activate ---
 
 self.addEventListener("activate", (event) => {
-  // Delete all caches that don't belong to the current version.
-  // This covers: old precache, old static/api/nav, and any
-  // orphaned caches from previous ingress tokens or versions.
+  // Delete older Meitheal caches and preserve other software on this origin.
   const currentCacheNames = new Set(Object.values(CACHES));
   event.waitUntil(
     caches
@@ -202,10 +208,11 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => !currentCacheNames.has(key))
+            .filter(key => /^meitheal-(?:precache|static|api|nav)-v/.test(key) && !currentCacheNames.has(key))
             .map((key) => caches.delete(key))
         )
       )
+      .then(() => purgeTriageCache())
       .then(() => evictAllCaches())
       .then(() => self.clients.claim())
   );
@@ -237,6 +244,13 @@ self.addEventListener("fetch", (event) => {
 
   // Live Kanban pages and counts must never reuse a cached board after a write.
   if (apiPath === "/tasks" && url.searchParams.has("boardRefresh")) return;
+
+  const pagePath = appRoutePath(url.pathname)
+  if (pagePath === "/triage") return
+  if (pagePath === "/planning") {
+    event.respondWith(navigationHandler(event.request))
+    return
+  }
 
   // API routes: network-first with cache fallback
   if (routePath.startsWith("/api/")) {
@@ -385,15 +399,12 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
+  if (event.data?.type === "TRIAGE_NETWORK_ONLY") {
+    event.ports[0]?.postMessage(true)
   }
 
-  // Ingress path configuration — sent by sw-register.ts after registration.
-  // The path is permanent per-installation, so this only needs to happen once
-  // per SW lifecycle. Subsequent restarts reuse the value from the client.
-  if (event.data && event.data.type === "SET_INGRESS_PATH") {
-    ingressPath = event.data.path || "";
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
   }
 
   // Version query — used by Settings UI to display SW version

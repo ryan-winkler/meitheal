@@ -159,6 +159,18 @@ export interface SettingRow {
 
 // ── Repository ─────────────────────────────────────────────────────────────
 
+function taskTimestampMs(column: "created_at" | "updated_at"): string {
+  return `MAX(0, COALESCE(CASE
+    WHEN typeof(${column}) IN ('integer', 'real') AND ${column} <= 9007199254740991
+      THEN CAST(${column} AS INTEGER)
+    WHEN typeof(${column}) = 'text'
+      AND substr(${column}, 1, 10) GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND date(substr(${column}, 1, 10), '+0 days') = substr(${column}, 1, 10)
+      THEN CAST(strftime('%s', ${column}) AS INTEGER) * 1000
+        + CAST(substr(strftime('%f', ${column}), 4, 3) AS INTEGER)
+  END, 0))`
+}
+
 /**
  * Centralized repository for task-related database queries.
  * Replaces inline SQL in Astro page files to enforce DDD boundaries.
@@ -501,7 +513,8 @@ export class TaskRepository {
       parsedTicketNum = parseInt(idOrKey.slice(4), 10);
     }
     const result = await this.client.execute({
-      sql: "SELECT id, updated_at FROM tasks WHERE id = ? OR ticket_number = ? LIMIT 1",
+      sql: `SELECT id, ${taskTimestampMs("updated_at")} AS updated_at FROM tasks
+            WHERE id = ? OR ticket_number = ? LIMIT 1`,
       args: [idOrKey, parsedTicketNum],
     });
     if (result.rows.length === 0) return null;
@@ -547,6 +560,45 @@ export class TaskRepository {
        FROM tasks ORDER BY updated_at DESC`
     );
     return result.rows as unknown as TaskRow[];
+  }
+
+  async findBacklogPage(requestedPage: number): Promise<{
+    page: number;
+    total: number;
+    tasks: Array<Pick<TaskRow, "id" | "title" | "description" | "ticket_number" | "due_date"> & { updated_at: number }>;
+  }> {
+    const pageSize = 25
+    const page = Number.isSafeInteger(requestedPage) ? requestedPage : 1
+    const result = await this.client.execute({
+      sql: `WITH totals AS (
+              SELECT COUNT(*) AS total FROM tasks WHERE status = ?
+            ), bounds AS (
+              SELECT total, MAX(1, MIN(?, CAST((total + ? - 1) / ? AS INTEGER))) AS page FROM totals
+            ), items AS (
+              SELECT id, title, description, ticket_number, due_date,
+                     ${taskTimestampMs("created_at")} AS created_ms,
+                     ${taskTimestampMs("updated_at")} AS updated_at
+              FROM tasks WHERE status = ?
+              ORDER BY created_ms ASC, id ASC
+              LIMIT ? OFFSET (SELECT (page - 1) * ? FROM bounds)
+            )
+            SELECT bounds.total, bounds.page, items.*
+            FROM bounds LEFT JOIN items ON TRUE
+            ORDER BY items.created_ms ASC, items.id ASC`,
+      args: [STATUS.BACKLOG, page, pageSize, pageSize, STATUS.BACKLOG, pageSize, pageSize],
+    })
+    return {
+      page: Number(result.rows[0]?.page ?? 1),
+      total: Number(result.rows[0]?.total ?? 0),
+      tasks: result.rows.flatMap(row => row.id == null ? [] : [{
+        id: String(row.id),
+        title: String(row.title),
+        description: row.description == null ? null : String(row.description),
+        ticket_number: row.ticket_number == null ? null : Number(row.ticket_number),
+        due_date: row.due_date == null ? null : String(row.due_date),
+        updated_at: Number(row.updated_at),
+      }]),
+    }
   }
 
   /** List tasks with optional filters, pagination, and sorting. */
@@ -793,11 +845,19 @@ export class TaskRepository {
     return data.id;
   }
 
-  /** Apply a partial update with atomic dependency and checklist guards when requested. */
-  async updateTask(id: string, fields: Record<string, InValue>, expectedChecklists?: string | null): Promise<
+  /** Apply a partial update with atomic dependency, version and checklist guards. */
+  async updateTask(
+    id: string,
+    fields: Record<string, InValue>,
+    { version, expectedChecklists }: {
+      version?: { updatedAt: number; expectedStatus?: "backlog" }
+      expectedChecklists?: string | null
+    } = {},
+  ): Promise<
     { ok: true; task: TaskRow }
     | { ok: false; errorCode: "unavailable" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
+    | { ok: false; errorCode: "conflict"; updatedAt: number }
     | { ok: false; errorCode: "blocked"; blockers: Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[] }
   > {
     const updates: string[] = []
@@ -809,7 +869,8 @@ export class TaskRepository {
     }
     if (updates.length === 0) return { ok: false, errorCode: "unavailable" }
 
-    updates.push("updated_at = ?")
+    const storedVersion = taskTimestampMs("updated_at")
+    updates.push(`updated_at = MIN(9007199254740991, MAX(${storedVersion} + 1, ?))`)
     args.push(Date.now(), id)
 
     // Legacy task databases do not have a project foreign key. Check the
@@ -821,6 +882,16 @@ export class TaskRepository {
     if (typeof projectId === "string") args.push(projectId)
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
     if (expectedChecklists !== undefined) args.push(expectedChecklists)
+
+    const predicates: string[] = []
+    if (version) {
+      predicates.push(`${storedVersion} < 9007199254740991`, `${storedVersion} ${version.expectedStatus ? "=" : "<="} ?`)
+      args.push(version.updatedAt)
+      if (version.expectedStatus) {
+        predicates.push("tasks.status = ?")
+        args.push(version.expectedStatus)
+      }
+    }
 
     // Outbound "blocked_by" and inbound "blocks" describe the same dependency.
     const dependencies = fields.status === STATUS.ACTIVE ? {
@@ -838,6 +909,7 @@ export class TaskRepository {
     } : null
     const update = {
       sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}${checklistMatches}
+              ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
               ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
@@ -848,34 +920,53 @@ export class TaskRepository {
       args: dependencies ? [...args, ...dependencies.args] : args,
     }
 
-    // Keep the diagnostic rows and guarded write in the same SQLite transaction.
-    const checks = []
+    const diagnostics = []
+    if (version) {
+      diagnostics.push({ sql: `SELECT status, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
+    }
     if (expectedChecklists !== undefined) {
-      checks.push({
+      diagnostics.push({
         sql: "SELECT checklists FROM tasks WHERE id = ? AND checklists IS NOT ?",
         args: [id, expectedChecklists],
       })
     }
-    if (dependencies) checks.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
-    const results = checks.length
-      ? await this.client.batch([...checks, update], "write")
-      : [await this.client.execute(update)]
-    const result = results.at(-1)!
-    const changed = expectedChecklists === undefined ? undefined : results[0]?.rows[0]?.checklists
-    if (typeof changed === "string" || changed === null) {
-      return { ok: false, errorCode: "checklist_conflict", checklists: changed }
+    if (dependencies) {
+      diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
     }
-    const open = dependencies ? results.at(-2) : undefined
-    if (open?.rows.length) {
+
+    // Take the diagnostic snapshots and perform the write in one SQLite transaction.
+    const results = diagnostics.length
+      ? await this.client.batch([...diagnostics, update], "write")
+      : [await this.client.execute(update)]
+    const row = results.at(-1)?.rows[0]
+    if (row) return { ok: true, task: row as unknown as TaskRow }
+
+    if (version) {
+      const current = results[0]?.rows[0]
+      if (!current) return { ok: false, errorCode: "unavailable" }
+      const updatedAt = Number(current.updated_at)
+      const changed = version.expectedStatus
+        ? updatedAt !== version.updatedAt || current.status !== version.expectedStatus
+        : updatedAt > version.updatedAt
+      if (changed || updatedAt === Number.MAX_SAFE_INTEGER) {
+        return { ok: false, errorCode: "conflict", updatedAt }
+      }
+    }
+    const changedChecklist = expectedChecklists === undefined
+      ? undefined
+      : results[version ? 1 : 0]?.rows[0]?.checklists
+    if (typeof changedChecklist === "string" || changedChecklist === null) {
+      return { ok: false, errorCode: "checklist_conflict", checklists: changedChecklist }
+    }
+    const blockers = dependencies ? results.at(-2)?.rows : undefined
+    if (blockers?.length) {
       return {
         ok: false,
         errorCode: "blocked",
-        blockers: open.rows as unknown as Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[],
+        blockers: blockers as unknown as Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[],
       }
     }
-    return result.rows[0]
-      ? { ok: true, task: result.rows[0] as unknown as TaskRow }
-      : { ok: false, errorCode: "unavailable" }
+    return { ok: false, errorCode: "unavailable" }
   }
 
   /** Fetch old field values for activity log diffing before an update */
