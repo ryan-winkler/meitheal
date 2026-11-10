@@ -27,6 +27,12 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Review unused labels
+
+Open **Settings → Workflow → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
+
+An unused label definition has no remaining task association or matching saved label name. Cleanup checks tasks in every Area, including deferred and completed work, plus private draft and template selections. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
+
 ### Link to another task
 
 In Details, type `#` in the description, a new comment, or a comment you can edit. Choose a recent task, or type a ticket number or a word from its title immediately after `#` to narrow the list. Tap a result or use the arrow keys and Enter. Escape closes the list and keeps your text. A space after `#` lets you continue typing a Markdown heading in a description.

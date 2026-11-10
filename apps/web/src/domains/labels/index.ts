@@ -22,3 +22,11 @@ export {
   resolveAllLabelColors,
   resetColorCache,
 } from "./label-color-resolver"
+
+export {
+  UnusedLabelRepository,
+  type CleanupLabel,
+  type CleanupPreview,
+  type CleanupRemoval,
+  type CleanupSelection,
+} from "./unused-labels"

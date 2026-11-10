@@ -1074,7 +1074,32 @@
     "failed_create": "Theip ar chruthú an lipéid",
     "failed_delete": "Theip ar scriosadh an lipéid",
     "filter_all": "Gach lipéad",
-    "filter_active": "Scagaire gníomhach"
+    "filter_active": "Scagaire gníomhach",
+    "cleanup": {
+      "review": "Athbhreithnigh lipéid neamhúsáidte",
+      "description": "Athbhreithnigh lipéid nach n-úsáidtear i dtascanna, i ndréachtaí sábháilte ná i dteimpléid. Roghnaigh na lipéid is mian leat a bhaint.",
+      "selection": "{count} roghnaithe",
+      "remove": "Bain na lipéid roghnaithe",
+      "confirm_title": "Bain lipéid neamhúsáidte",
+      "confirm_one": "Bain an lipéad neamhúsáidte seo?",
+      "confirm_many": "Bain na {count} lipéad neamhúsáidte seo?",
+      "cancel": "Cealaigh",
+      "loading": "Lipéid neamhúsáidte á n-athbhreithniú…",
+      "removing": "Lipéid roghnaithe á mbaint…",
+      "empty": "Tá gach lipéad in úsáid.",
+      "previous": "Roimhe seo",
+      "next": "Ar aghaidh",
+      "retry": "Athbhreithnigh arís",
+      "stale": "Athraíodh lipéad roghnaithe nó tá sé in úsáid anois. Athbhreithnigh an liosta reatha sula roghnaíonn tú arís.",
+      "blocked": "Ní mór roinnt roghanna lipéad stóráilte a sheiceáil sula nglanfar iad. Féach treoir oibríochtaí na Lipéad.",
+      "denied": "Oscail Lipéid le cuntas riarthóra Home Assistant atá gníomhach faoi láthair.",
+      "unavailable": "Níorbh fhéidir an glanadh a chríochnú. Athbhreithnigh na lipéid reatha sula ndéanann tú iarracht eile.",
+      "offline": "Ceangail leis an líonra chun lipéid neamhúsáidte a athbhreithniú.",
+      "removed_one": "Lipéad bainte.",
+      "removed_many": "{count} lipéad bainte.",
+      "untitled": "Lipéad gan ainm",
+      "color": "Dath an lipéid"
+    }
   },
   "gamification": {
     "streak": "lá ar stríoc",

@@ -342,6 +342,12 @@ For calibration, the check accepts these overrides.
 
 The native Labels API and task views use the original label tables. Updates keep existing IDs, names, colours, and task links. After an upgrade, open a task that has a coloured label. Confirm the label still appears in the task and in the label picker.
 
+Administrators can review unused definitions in **Settings → Workflow → Labels**. Review shows up to 25 eligible labels per page. Selection clears on pagination, refresh, disconnection or account verification failure. Removal rechecks current usage and metadata together before committing the complete selection. A changed or newly used label leaves the selection intact in storage and asks for a new preview.
+
+If cleanup reports that stored label selections need attention, inspect a verified backup in a disposable installation. Check task label JSON arrays, version-1 draft label selections and template label arrays for malformed or oversized data. Cleanup preserves all definitions when it cannot determine usage safely. Repair through the corresponding supported task, draft or template workflow, or restore a known-good App backup, then review again. Do not erase private draft data to make cleanup pass. Large unrelated descriptions do not prevent cleanup; each label selection is limited to 64 KiB.
+
+Use HTTPS Home Assistant ingress and a current administrator session. An unavailable Home Assistant verification asks for retry and removes the preview from view. An interrupted removal may already have committed: **Review unused labels** again before selecting another removal. Cleanup previews are not retained in offline storage. App-only database backup and restore retain definitions and their task links. After restoration, repeat the still-used-label check and confirm an unused label can be reviewed and deliberately removed.
+
 ### Inactivity Verification
 
 Use a disposable dataset. Confirm the shared policy starts Off and a specific Area can remain Off under an enabled default. Preview a change, verify the ready and upcoming counts, and confirm a stale preview cannot save after another administrator changes the policy. A stale or denied browser session should show a retry state with no preview rows.

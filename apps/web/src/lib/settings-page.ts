@@ -4,6 +4,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
 import { initSettingsShell } from "@lib/settings-shell-controller"
+import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
 
 function initPwaNotificationTest(): void {
   const button = document.querySelector<HTMLButtonElement>("#pwa-test-notification")
@@ -49,6 +50,7 @@ function bootSettingsPage(): void {
   initSettingsController()
   initSettingsShell()
   initSettingsFeedback()
+  initSettingsLabelCleanup()
   initPwaNotificationTest()
 }
 

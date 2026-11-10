@@ -3776,6 +3776,348 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Label"
+  /api/labels/cleanup:
+    post:
+      operationId: useLabelCleanup
+      tags:
+        - Labels
+      summary: Review and remove selected unused label definitions
+      description: Online-only same-origin administrator browser action. Home Assistant requires a fresh administrator check.
+        Preview includes at most 25 definitions unused across all task states, legacy links, saved drafts and templates.
+        Remove rechecks every selected revision and current usage in one transaction. A blocked or stale result deletes
+        nothing. The 8 KiB request body contains filters and selections. Responses are private and no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required:
+                    - action
+                    - afterId
+                  properties:
+                    action:
+                      const: preview
+                    afterId:
+                      type:
+                        - integer
+                        - "null"
+                      minimum: 1
+                      maximum: 9007199254740991
+                - type: object
+                  additionalProperties: false
+                  required:
+                    - action
+                    - labels
+                  properties:
+                    action:
+                      const: remove
+                    labels:
+                      type: array
+                      minItems: 1
+                      maxItems: 25
+                      uniqueItems: true
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required:
+                          - id
+                          - revision
+                        properties:
+                          id:
+                            type: integer
+                            minimum: 1
+                            maximum: 9007199254740991
+                          revision:
+                            type: string
+                            pattern: ^[a-f0-9]{64}$
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - ok
+                      - labels
+                      - nextAfter
+                    properties:
+                      ok:
+                        const: true
+                      nextAfter:
+                        type:
+                          - integer
+                          - "null"
+                      labels:
+                        type: array
+                        maxItems: 25
+                        items:
+                          type: object
+                          required:
+                            - id
+                            - title
+                            - hexColor
+                            - revision
+                          properties:
+                            id:
+                              type: integer
+                            title:
+                              type: string
+                            hexColor:
+                              type: string
+                              pattern: ^#[a-fA-F0-9]{6}$
+                            revision:
+                              type: string
+                              pattern: ^[a-f0-9]{64}$
+                          additionalProperties: false
+                    additionalProperties: false
+                  - type: object
+                    required:
+                      - ok
+                      - removed
+                    properties:
+                      ok:
+                        const: true
+                      removed:
+                        type: array
+                        minItems: 1
+                        maxItems: 25
+                        items:
+                          type: integer
+                    additionalProperties: false
+        "400":
+          description: Invalid cleanup action or query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - invalid
+                  detail:
+                    type: string
+        "401":
+          description: Authenticated browser session required
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - denied
+                  detail:
+                    type: string
+        "403":
+          description: Current administrator browser required
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - denied
+                  detail:
+                    type: string
+        "404":
+          description: Noncanonical path alias rejected without redirect
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - invalid
+                  detail:
+                    type: string
+        "405":
+          description: POST required
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - method
+                  detail:
+                    type: string
+          headers:
+            Allow:
+              schema:
+                type: string
+                const: POST
+        "409":
+          description: No selected definition was removed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - stale
+                      - blocked
+                  detail:
+                    type: string
+        "413":
+          description: Body exceeds 8 KiB
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - tooLarge
+                  detail:
+                    type: string
+        "415":
+          description: Expected JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - media
+                  detail:
+                    type: string
+        "429":
+          description: Rate limited; retry after the indicated delay
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - busy
+                  detail:
+                    type: string
+          headers:
+            Retry-After:
+              schema:
+                type: string
+        "499":
+          description: Request cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - cancelled
+                  detail:
+                    type: string
+        "503":
+          description: Administrator verification, body read or storage unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - ok
+                  - errorCode
+                  - detail
+                properties:
+                  ok:
+                    const: false
+                  errorCode:
+                    type: string
+                    enum:
+                      - unavailable
+                  detail:
+                    type: string
   /api/labels/{id}:
     put:
       operationId: updateLabel

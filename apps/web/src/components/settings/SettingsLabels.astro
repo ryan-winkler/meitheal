@@ -17,6 +17,8 @@ interface Props {
 }
 
 const { locale } = Astro.props
+const cleanupKeys = ["review", "description", "selection", "remove", "confirm_title", "confirm_one", "confirm_many", "cancel", "loading", "removing", "empty", "previous", "next", "retry", "stale", "blocked", "denied", "unavailable", "offline", "removed_one", "removed_many", "untitled"]
+const cleanupCopy = Object.fromEntries(cleanupKeys.map(key => [key, t(`labels.cleanup.${key}`, locale)]))
 ---
 
 <div class="settings-shell-panel">
@@ -55,10 +57,35 @@ const { locale } = Astro.props
         Loading labels...
       </div>
     </div>
+    <section class="label-cleanup" data-label-cleanup data-copy={JSON.stringify(cleanupCopy)}>
+      <button type="button" class="btn btn-outline" data-cleanup-review>{cleanupCopy.review}</button>
+      <p>{cleanupCopy.description}</p>
+      <p role="status" aria-atomic="true" data-cleanup-status></p>
+      <div data-cleanup-results hidden>
+        <h3 tabindex="-1" data-cleanup-heading>{cleanupCopy.review}</h3>
+        <ul class="label-cleanup-list" data-cleanup-list></ul>
+        <p data-cleanup-selection></p>
+        <div class="label-cleanup-actions">
+          <button type="button" class="btn btn-outline" data-cleanup-previous>{cleanupCopy.previous}</button>
+          <button type="button" class="btn btn-outline" data-cleanup-next>{cleanupCopy.next}</button>
+          <button type="button" class="btn btn-primary" data-cleanup-remove disabled>{cleanupCopy.remove}</button>
+        </div>
+      </div>
+    </section>
   </SettingsPanelCard>
 </div>
 
 <style>
+  .label-cleanup { border-block-start: 1px solid var(--border); margin-block-start: 1rem; padding-block-start: 1rem; min-inline-size: 0; }
+  .label-cleanup p { overflow-wrap: anywhere; margin-block: .75rem; }
+  .label-cleanup button { min-block-size: 44px; white-space: normal; }
+  .label-cleanup-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .label-cleanup-list { list-style: none; padding: 0; margin-block: .5rem; }
+  .label-cleanup :global(.label-cleanup-choice) { display: flex; align-items: center; gap: .75rem; min-block-size: 44px; padding-block: .375rem; cursor: pointer; }
+  .label-cleanup :global(.label-cleanup-choice input) { flex: 0 0 auto; inline-size: 1.25rem; block-size: 1.25rem; }
+  .label-cleanup :global(.label-cleanup-swatch) { flex: 0 0 auto; inline-size: 1rem; block-size: 1rem; border-radius: 50%; border: 1px solid var(--border); }
+  .label-cleanup :global(.label-cleanup-name) { min-inline-size: 0; overflow-wrap: anywhere; }
+  .label-cleanup [hidden] { display: none; }
   .labels-create-row {
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
@@ -110,6 +137,8 @@ const { locale } = Astro.props
     el.textContent = str
     return el.innerHTML
   }
+  pageLifecycle.on(document, "meitheal:labels-changed", () => loadLabels())
+
   // ── T7: Error state with retry ──
   function showListError() {
     if (!listEl) return

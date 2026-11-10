@@ -212,7 +212,7 @@ function privateResourcePath(url) {
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
-        path === "/inactivity" || path === "/api/task-inactivity" ||
+        path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||
         taskHistoryPath.test(path) ||
         /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
   }

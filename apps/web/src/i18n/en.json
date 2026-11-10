@@ -1076,7 +1076,32 @@
     "failed_create": "Failed to create label",
     "failed_delete": "Failed to delete label",
     "filter_all": "All labels",
-    "filter_active": "Active filter"
+    "filter_active": "Active filter",
+    "cleanup": {
+      "review": "Review unused labels",
+      "description": "Review label definitions that are unused across tasks, saved drafts and templates. Select the definitions you want to remove.",
+      "selection": "{count} selected",
+      "remove": "Remove selected labels",
+      "confirm_title": "Remove unused labels",
+      "confirm_one": "Remove this unused label?",
+      "confirm_many": "Remove these {count} unused labels?",
+      "cancel": "Cancel",
+      "loading": "Reviewing unused labels…",
+      "removing": "Removing selected labels…",
+      "empty": "Every label is in use.",
+      "previous": "Previous",
+      "next": "Next",
+      "retry": "Review again",
+      "stale": "A selected label changed or is now in use. Review the current list before selecting again.",
+      "blocked": "Some stored label selections need attention before cleanup. See the Labels runbook.",
+      "denied": "Open Labels with a current Home Assistant administrator account.",
+      "unavailable": "Could not complete cleanup. Review the current labels before trying again.",
+      "offline": "Connect to review unused labels.",
+      "removed_one": "Label removed.",
+      "removed_many": "{count} labels removed.",
+      "untitled": "Unnamed label",
+      "color": "Label color"
+    }
   },
   "gamification": {
     "streak": "day streak",

@@ -360,6 +360,11 @@ const jsonContent = (schema, desc) => ({
   content: { "application/json": { schema } },
 })
 
+const labelCleanupError = (description, codes) => jsonContent({
+  type: "object", additionalProperties: false, required: ["ok", "errorCode", "detail"],
+  properties: { ok: { const: false }, errorCode: { type: "string", enum: codes }, detail: { type: "string" } },
+}, description)
+
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` })
 const arrOf = (name) => ({ type: "array", items: ref(name) })
 
@@ -1285,6 +1290,50 @@ const paths = {
   "/api/labels": {
     get: { operationId: "listLabels", tags: ["Labels"], summary: "List all labels", responses: { 200: jsonContent(arrOf("Label"), "Labels") } },
     post: { operationId: "createLabel", tags: ["Labels"], summary: "Create a label", requestBody: { content: { "application/json": { schema: ref("Label") } } }, responses: { 201: jsonContent(ref("Label"), "Created") } },
+  },
+  "/api/labels/cleanup": {
+    post: {
+      operationId: "useLabelCleanup", tags: ["Labels"], summary: "Review and remove selected unused label definitions",
+      description: "Online-only same-origin administrator browser action. Home Assistant requires a fresh administrator check. Preview includes at most 25 definitions unused across all task states, legacy links, saved drafts and templates. Remove rechecks every selected revision and current usage in one transaction. A blocked or stale result deletes nothing. The 8 KiB request body contains filters and selections. Responses are private and no-store.",
+      requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
+        { type: "object", additionalProperties: false, required: ["action", "afterId"], properties: {
+          action: { const: "preview" }, afterId: { type: ["integer", "null"], minimum: 1, maximum: 9007199254740991 },
+        } },
+        { type: "object", additionalProperties: false, required: ["action", "labels"], properties: {
+          action: { const: "remove" }, labels: { type: "array", minItems: 1, maxItems: 25, uniqueItems: true,
+            items: { type: "object", additionalProperties: false, required: ["id", "revision"], properties: {
+              id: { type: "integer", minimum: 1, maximum: 9007199254740991 }, revision: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            } },
+          },
+        } },
+      ] } } } },
+      responses: {
+        200: jsonContent({ oneOf: [
+          { type: "object", required: ["ok", "labels", "nextAfter"], properties: {
+            ok: { const: true }, nextAfter: { type: ["integer", "null"] }, labels: { type: "array", maxItems: 25,
+              items: { type: "object", required: ["id", "title", "hexColor", "revision"], properties: {
+                id: { type: "integer" }, title: { type: "string" }, hexColor: { type: "string", pattern: "^#[a-fA-F0-9]{6}$" },
+                revision: { type: "string", pattern: "^[a-f0-9]{64}$" },
+              } },
+            },
+          } },
+          { type: "object", required: ["ok", "removed"], properties: { ok: { const: true },
+            removed: { type: "array", minItems: 1, maxItems: 25, items: { type: "integer" } },
+          } },
+        ] }),
+        400: labelCleanupError("Invalid cleanup action or query parameters", ["invalid"]),
+        401: labelCleanupError("Authenticated browser session required", ["denied"]),
+        403: labelCleanupError("Current administrator browser required", ["denied"]),
+        404: labelCleanupError("Noncanonical path alias rejected without redirect", ["invalid"]),
+        405: { ...labelCleanupError("POST required", ["method"]), headers: { Allow: { schema: { type: "string", const: "POST" } } } },
+        409: labelCleanupError("No selected definition was removed", ["stale", "blocked"]),
+        413: labelCleanupError("Body exceeds 8 KiB", ["tooLarge"]), 415: labelCleanupError("Expected JSON", ["media"]),
+        429: { ...labelCleanupError("Rate limited; retry after the indicated delay", ["busy"]),
+          headers: { "Retry-After": { schema: { type: "string" } } } },
+        499: labelCleanupError("Request cancelled", ["cancelled"]),
+        503: labelCleanupError("Administrator verification, body read or storage unavailable", ["unavailable"]),
+      },
+    },
   },
   "/api/labels/{id}": {
     put: { operationId: "updateLabel", tags: ["Labels"], summary: "Update a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Label"), "Updated") } },

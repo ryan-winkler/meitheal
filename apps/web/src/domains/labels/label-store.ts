@@ -83,33 +83,22 @@ export async function updateLabel(
   await ensureSchema()
   const client = getPersistenceClient()
 
-  const existing = await client.execute({
-    sql: "SELECT id, title, hex_color FROM vikunja_labels WHERE id = ? LIMIT 1",
-    args: [id],
-  })
-
-  if (existing.rows.length === 0) return null
-
-  const row = existing.rows[0] as Record<string, unknown>
   const newTitle = updates.title
     ? stripHtml(updates.title.trim()).slice(0, 100)
-    : String(row.title)
+    : null
   const newColor = updates.hexColor
     ? updates.hexColor.replace(/^#/, "")
-    : String(row.hex_color)
+    : null
 
-  if (!newTitle) return null
+  if (updates.title && !newTitle) return null
 
-  await client.execute({
-    sql: "UPDATE vikunja_labels SET title = ?, hex_color = ? WHERE id = ?",
+  const result = await client.execute({
+    sql: `UPDATE vikunja_labels SET title = COALESCE(?,title), hex_color = COALESCE(?,hex_color)
+      WHERE id = ? RETURNING id,title,hex_color`,
     args: [newTitle, newColor, id],
   })
-
-  return {
-    id: Number(row.id),
-    title: newTitle,
-    hexColor: newColor.startsWith("#") ? newColor : `#${newColor}`,
-  }
+  const row = result.rows[0]
+  return row ? readLabel(row) : null
 }
 
 /**
