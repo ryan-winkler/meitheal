@@ -127,6 +127,39 @@ function sanitizeRows(rows: TaskRow[]): TaskRow[] {
   })
 }
 
+function cloneRecurringChecklist(checklists: string | null): string {
+  if (!checklists) return "[]"
+  let input: unknown
+  try {
+    input = JSON.parse(checklists)
+  } catch {
+    return "[]"
+  }
+  if (!Array.isArray(input)) return "[]"
+
+  const steps: Array<{ text: string; id?: string }> = []
+  for (const row of input) {
+    if (typeof row === "string") {
+      steps.push({ text: row })
+    } else if (row && typeof row.text === "string") {
+      const id = typeof row.id === "string" && row.id.trim() ? row.id : undefined
+      steps.push(id ? { text: row.text, id } : { text: row.text })
+    }
+  }
+  const reserved = new Set(steps.map(step => step.id))
+  const assigned = new Set<string>()
+  return JSON.stringify(steps.map(({ text, id }) => {
+    if (!id || assigned.has(id)) {
+      do {
+        id = crypto.randomUUID()
+      } while (reserved.has(id))
+      reserved.add(id)
+    }
+    assigned.add(id)
+    return { id, text, done: false }
+  }))
+}
+
 /** Status count for dashboard statistics */
 export interface StatusCount {
   status: string;
@@ -1289,17 +1322,6 @@ export class TaskRepository {
     const newId = crypto.randomUUID();
     const now = Date.now();
 
-    // Reset checklists — uncheck all items for new occurrence
-    let freshChecklists: string | null = null;
-    if (sourceTask.checklists && typeof sourceTask.checklists === "string") {
-      try {
-        const items = JSON.parse(String(sourceTask.checklists));
-        if (Array.isArray(items)) {
-          freshChecklists = JSON.stringify(items.map((i: { text: string }) => ({ text: i.text, done: false })));
-        }
-      } catch { /* keep null */ }
-    }
-
     // Resolve the project in the insert so legacy references and concurrent
     // project deletion cannot create a dangling reference.
     const result = await this.client.execute({
@@ -1326,7 +1348,7 @@ export class TaskRepository {
         sourceTask.parent_id ? String(sourceTask.parent_id) : null,
         sourceTask.task_type ? String(sourceTask.task_type) : "task",
         sourceTask.assigned_to ? String(sourceTask.assigned_to) : null,
-        freshChecklists,
+        cloneRecurringChecklist(sourceTask.checklists),
         sourceTask.custom_fields ? String(sourceTask.custom_fields) : "{}",
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],

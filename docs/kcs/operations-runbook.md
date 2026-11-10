@@ -254,6 +254,12 @@ If posting fails in the task panel, the text remains in the composer. Retry on t
 
 Task activity and timeline reads return `Cache-Control: private, no-store`. They require a connection because history can contain previous field values and comment text. Automation clients continue to use `tasks:read`. Activating the updated web app removes old history responses from Meitheal’s browser caches. Reconnect before reopening **Activity Log** in Details.
 
+## Checklist edits on recurring tasks
+
+When a recurring task is completed, the next occurrence starts with every readable step unchecked. The completed task retains its checklist and completion marks. The new occurrence keeps existing unique step IDs and assigns IDs where older data lacks one.
+
+If two people edit the same step differently or an older occurrence has steps without IDs, Details can ask you to **Load latest checklist**. Review your draft against the saved checklist, then reapply the changes that still belong. See [Edit a checklist in two sessions](task-lifecycle-glossary.md#edit-a-checklist-in-two-sessions).
+
 ## Public link previews
 
 `POST /api/unfurl` accepts JSON with a public HTTP or HTTPS URL of up to 2,048 characters. Use the final page address and keep credentials out of the URL. A private or special-purpose address, a host with any restricted DNS answer, and a redirect receive HTTP 400. Link previews connect using the validated DNS answers for that request.

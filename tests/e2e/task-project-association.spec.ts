@@ -6,6 +6,7 @@
  *
  * @domain domain-tasks (project association)
  */
+import { execFileSync } from "node:child_process"
 import { test, expect } from "@playwright/test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -27,7 +28,7 @@ async function getRepos() {
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
   const client = getPersistenceClient()
-  return { taskRepo: new TaskRepository(client), hierRepo: new HierarchyRepository(client) }
+  return { client, taskRepo: new TaskRepository(client), hierRepo: new HierarchyRepository(client) }
 }
 
 test("createTask persists project_id and findByProjectId returns it", async () => {
@@ -111,10 +112,19 @@ test("completing a recurring task keeps the next occurrence in its project", asy
   const { id: projectId } = await project.json()
   const title = "Recurring project checklist"
   const assignment = { area_id: areaId, assigned_to: "custom_recurring_fixture" }
+  const rawChecklist = JSON.stringify([
+    { id: "first-step", text: "Check supplies", done: true },
+    "Keep the receipt",
+    { text: "", done: false },
+    { id: "first-step", text: "Confirm the duplicate step", done: 1 },
+    { id: "second-step", text: "Read the meter" },
+    { id: "second-step", text: 27 },
+    null,
+  ])
   const created = await request.post("/api/tasks", {
     data: {
       ...assignment, title, project_id: projectId, due_date: "2031-02-14",
-      recurrence_rule: "FREQ=DAILY", checklists: JSON.stringify([{ text: "Check supplies", done: true }]),
+      recurrence_rule: "FREQ=DAILY", checklists: rawChecklist,
     },
   })
   expect(created.status()).toBe(201)
@@ -134,7 +144,70 @@ test("completing a recurring task keeps the next occurrence in its project", asy
     ...assignment, title, project_id: projectId, status: "pending", due_date: "2031-02-15",
     recurrence_rule: "FREQ=DAILY",
   })
-  expect(JSON.parse(occurrence.checklists)).toEqual([{ text: "Check supplies", done: false }])
+  const steps = JSON.parse(occurrence.checklists)
+  expect(steps).toEqual([
+    { id: "first-step", text: "Check supplies", done: false },
+    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Keep the receipt", done: false },
+    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "", done: false },
+    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Confirm the duplicate step", done: false },
+    { id: "second-step", text: "Read the meter", done: false },
+  ])
+  expect(new Set(steps.map((step: { id: string }) => step.id)).size).toBe(steps.length)
+  expect((await (await request.get(`/api/tasks/${id}`)).json()).checklists).toBe(rawChecklist)
+})
+
+test("rolling recurrence creates an empty checklist when omitted or empty", async ({ request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal API fixture")
+  // The production fixture evaluates recurrence calendar days in Europe/Dublin.
+  const scheduledNextDate = (timestamp: number) => execFileSync(process.execPath, ["-p", `
+    const day = new Date(Number(process.argv[1])).toISOString().slice(0, 10)
+    const next = new Date(day)
+    next.setDate(next.getDate() + 1)
+    next.toISOString().slice(0, 10)
+  `, String(timestamp)], { env: { ...process.env, TZ: "Europe/Dublin" }, encoding: "utf8" }).trim()
+  for (const [label, checklist] of [["omitted", {}], ["empty", { checklists: "[]" }]] as const) {
+    const title = `Rolling recurrence with ${label} checklist`
+    const created = await request.post("/api/tasks", {
+      data: { title, due_date: "2031-02-14", recurrence_rule: "FREQ=DAILY", ...checklist },
+    })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    const path = `/api/tasks/${id}`
+    expect((await request.patch(path, { data: { recurrence_anchor: "completion_date" } })).status()).toBe(200)
+    const started = Date.now()
+    expect((await request.patch(path, { data: { status: "complete" } })).status()).toBe(200)
+    const finished = Date.now()
+    const list = await request.get("/api/tasks", { params: { q: title } })
+    expect(list.status()).toBe(200)
+    const { tasks } = await list.json()
+    expect(tasks).toHaveLength(2)
+    const successor = tasks.find((task: { id: string }) => task.id !== id)
+    const current = await request.get(`/api/tasks/${successor.id}`)
+    expect(current.status()).toBe(200)
+    const occurrence = await current.json()
+    expect(occurrence).toMatchObject({ status: "pending", checklists: "[]" })
+    expect([scheduledNextDate(started), scheduledNextDate(finished)]).toContain(occurrence.due_date)
+    expect((await (await request.get(path)).json()).checklists).toBe("[]")
+  }
+})
+
+test("recurrence clones an empty checklist from unusable historical values", async () => {
+  createTestDb()
+  await setupDb()
+  const { client, taskRepo } = await getRepos()
+  const sources = ["{", '{"text":"Not an array"}', '[null,{"text":27}]', null]
+  for (const [index, value] of sources.entries()) {
+    const id = `historical-recurrence-${index}`
+    await client.execute({
+      sql: "INSERT INTO tasks (id, title, checklists, idempotency_key, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1)",
+      args: [id, "Historical recurrence", value ?? "[]", id, id],
+    })
+    const source = await taskRepo.getRecurrenceData(id)
+    expect(source).not.toBeNull()
+    const next = await taskRepo.cloneForRecurrence({ ...source!, checklists: value }, "2031-02-15", "FREQ=DAILY")
+    expect((await taskRepo.getRecurrenceData(next.id))?.checklists).toBe("[]")
+    expect((await taskRepo.getRecurrenceData(id))?.checklists).toBe(value ?? "[]")
+  }
 })
 
 test("task detail reassigns projects, rejects a deleted destination, and preserves the task", async ({ page, request }) => {

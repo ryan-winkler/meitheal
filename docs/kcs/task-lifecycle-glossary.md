@@ -86,7 +86,7 @@ If native task `PUT` or `PATCH` returns `409`, use the tasks listed in `blocked_
 - **Reversible?** Yes — status can be changed back to any active state
 - **Data impact:** None — task and all related data preserved
 
-Completing a recurring task creates the next pending occurrence on its existing schedule. The new task keeps its area, assignee and project, and starts with an unchecked checklist. If the task has no project or its project was removed, the next occurrence has no project.
+Completing a recurring task creates the next pending occurrence on its existing schedule. The new task keeps its area, assignee and project, and starts with an unchecked checklist. It preserves identified steps and gives older steps without IDs an identity so separate edits can still merge on the new occurrence. The completed task keeps its original checklist. If the task has no project or its project was removed, the next occurrence has no project.
 
 ### Archive (Hide from View)
 - **What it means:** A completed task is moved out of active views. This is a **convenience action**, not a lifecycle transition.
