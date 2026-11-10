@@ -782,7 +782,7 @@ const tabs = [
   // --- Settings: Delete ---
   const deleteProjectBtn = document.getElementById("delete-proj-btn");
   deleteProjectBtn?.addEventListener("click", async () => {
-    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.`);
+    const confirmed = await window.confirmDialog?.({ message: `Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.` });
     if (!confirmed) return;
 
     deleteProjectBtn.disabled = true;

@@ -23,23 +23,9 @@ interface MeithealWindowExtensions {
   /** Opens the AskAssist HA modal */
   openAskHaModal?: (prompt?: string) => void;
   /** Confirm dialog utility registered by Layout.astro */
-  confirmDialog?: (options: {
-    title: string;
-    message: string;
-    confirmText?: string;
-    cancelText?: string;
-    variant?: "danger" | "warning" | "default";
-  }) => Promise<boolean>;
-  /** Prompt dialog utility registered by Layout.astro */
-  promptDialog?: (options: {
-    title?: string;
-    message?: string;
-    placeholder?: string;
-    defaultValue?: string;
-    confirmText?: string;
-    cancelText?: string;
-    required?: boolean;
-  }) => Promise<string | null>;
+  confirmDialog?: typeof import("../lib/confirm-dialog").confirmDialog;
+  /** Prompt dialog utility registered by prompt-dialog.ts */
+  promptDialog?: typeof import("../lib/prompt-dialog").promptDialog;
 
   // === App State ===
   /** Currently active board ID for filtering */

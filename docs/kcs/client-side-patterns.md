@@ -124,3 +124,13 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 | `window.__ntDatePickers` | Date picker instances |
 | `window.openNewTaskModal` | Modal open function |
 | `window.openTaskDetail` | Detail modal open function |
+
+## Confirmation and prompt text
+
+`confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.
+
+The shared static templates retain the existing dialog appearance, variant icons and colors, focus traps, Escape/backdrop cancellation and AbortSignal handling. Prompts still select the initial value, trim submitted input, enforce required/custom validation and display validation errors as text. Empty optional messages remain absent. Call the window confirmation alias with an options object, for example `window.confirmDialog?.({ message: "Remove this area?" })`.
+
+For regressions, use a disposable App server and run `pnpm --filter @meitheal/tests test e2e/dialog-text-security.spec.ts`. Check all text options with angle brackets, literal entities, quotes and Unicode; check prompt default values and placeholders containing attribute-shaped text. The dialog must show the exact characters without creating images, SVG, scripts or event-handler attributes. Verify normal confirm/cancel, prompt validation and trimming, keyboard focus, cancellation and abort. The task permalink, saved-filter, Settings, Today and Table browser suites cover the surrounding callers.
+
+This prevents stored task/lane names and DOM-derived labels from being interpreted as markup when a dialog opens. Keep escaping at other HTML template boundaries, such as lane and Pillar list markup; remove it only when a value is passed directly to these text-only dialog options.
