@@ -2,7 +2,6 @@ import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { sanitize } from "../../../lib/sanitize"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
@@ -75,22 +74,25 @@ export const PUT: APIRoute = async ({ params, request }) => {
   // Input sanitization — same rules as POST
   const sanitized: Record<string, InValue> = {}
 
-  if (typeof body.title === "string") {
-    const t = sanitize(body.title.trim())
-    if (!t) {
-      return new Response(JSON.stringify({ error: "title cannot be empty" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+  if (typeof body.title === "string" || typeof body.description === "string") {
+    const { sanitize } = await import("../../../lib/sanitize")
+    if (typeof body.title === "string") {
+      const t = sanitize(body.title.trim())
+      if (!t) {
+        return new Response(JSON.stringify({ error: "title cannot be empty" }), {
+          status: 400, headers: { "content-type": "application/json" },
+        })
+      }
+      if (t.length > 500) {
+        return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
+          status: 400, headers: { "content-type": "application/json" },
+        })
+      }
+      sanitized.title = t
     }
-    if (t.length > 500) {
-      return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+    if (typeof body.description === "string") {
+      sanitized.description = sanitize(body.description.slice(0, 10000))
     }
-    sanitized.title = t
-  }
-  if (typeof body.description === "string") {
-    sanitized.description = sanitize(body.description.slice(0, 10000))
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")

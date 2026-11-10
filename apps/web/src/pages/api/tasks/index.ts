@@ -1,7 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { sanitize } from "../../../lib/sanitize"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
@@ -119,6 +118,7 @@ export const POST: APIRoute = async ({ request }) => {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
   // OA-604: Input sanitization
+  const { sanitize } = await import("../../../lib/sanitize")
   const rawTitle = typeof body.title === "string" ? body.title.trim() : ""
   const title = sanitize(rawTitle)
   if (!title) {

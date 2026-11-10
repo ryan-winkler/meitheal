@@ -278,6 +278,8 @@ Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for im
 
 The ingress HTML parser loads on the first HTML response above 5 MiB. Smaller pages use the existing buffered rewrite. Check a fresh process if measuring parser startup, since the first large page loads the parser for the life of that process.
 
+Task list and detail reads do not load the task text sanitizer. It loads when a task is created or its title or description changes. Use a fresh process to distinguish the read-only footprint from a process that already handled a text write.
+
 For calibration, the check accepts these overrides.
 
 - `MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX`
