@@ -26,12 +26,15 @@ test.describe("Progress Parent Page — /progress", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/progress")
-    await page.waitForLoadState("networkidle")
   })
 
   test("switches from Pillars to Routines with stat cards and helper", async ({ page }) => {
-    await expect(page.locator("#progress-section-pillars")).toBeVisible()
-    await page.getByRole("button", { name: "Progress & Growth — switch section" }).click()
+    const pillars = page.locator("#progress-section-pillars")
+    await expect(pillars).toHaveAttribute("aria-hidden", "false")
+    await expect(pillars).toBeVisible()
+    const sectionPicker = page.getByRole("button", { name: "Progress & Growth — switch section" })
+    await sectionPicker.click()
+    await expect(sectionPicker).toHaveAttribute("aria-expanded", "true")
     await page.getByRole("menuitem", { name: "Routines" }).click()
     await expect(page).toHaveURL(/\/progress#routines$/)
     const section = page.locator("#progress-section-routines")
@@ -52,10 +55,10 @@ test.describe("Progress Parent Page — /progress", () => {
 
   test("navigating to goals hash shows goals section", async ({ page }) => {
     await page.goto("/progress#goals")
-    await page.waitForLoadState("networkidle")
 
     const goalsSection = page.locator("#progress-section-goals")
-    await expect(goalsSection).not.toHaveAttribute("hidden", "")
+    await expect(goalsSection).toHaveAttribute("aria-hidden", "false")
+    await expect(goalsSection).toBeVisible()
 
     // Goals helper
     const helper = page.locator("[data-helper-id='progress-goals-explainer']")
@@ -64,10 +67,10 @@ test.describe("Progress Parent Page — /progress", () => {
 
   test("navigating to achievements hash shows achievements section", async ({ page }) => {
     await page.goto("/progress#achievements")
-    await page.waitForLoadState("networkidle")
 
     const section = page.locator("#progress-section-achievements")
-    await expect(section).not.toHaveAttribute("hidden", "")
+    await expect(section).toHaveAttribute("aria-hidden", "false")
+    await expect(section).toBeVisible()
   })
 })
 
@@ -76,12 +79,11 @@ test.describe("Planning Parent Page — /planning", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/planning")
-    await page.waitForLoadState("networkidle")
   })
 
   test("renders spaces section as default view", async ({ page }) => {
-    // Planning now defaults to spaces (Areas & Projects)
     const spacesSection = page.locator("#planning-section-spaces")
+    await expect(spacesSection).toHaveAttribute("aria-hidden", "false")
     await expect(spacesSection).toBeVisible()
   })
 
