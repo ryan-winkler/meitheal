@@ -13,9 +13,12 @@ The source repository contains the application, integration code, and release wo
 | Material | Where to check its terms |
 | --- | --- |
 | Application source | [Source license](../../LICENSE) and [commercial licensing](../../COMMERCIAL.md) |
+| Published App images | [Image distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) |
 | Documentation | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Historical compatibility component | Separately licensed and outside the current release |
 | Integration code | License files in [integrations](../../integrations/) |
+
+The final runtime stage in `meitheal-hub/Dockerfile` sets `org.opencontainers.image.licenses=LicenseRef-Proprietary` for distributed images. Build helpers inherit this label without overriding it. The shared image checker rejects a missing or different license label, including during packaged CI smoke tests. This binary metadata leaves the source, commercial and integration grants unchanged; keep `LICENSE` and `NOTICE` in the image. An older retained image keeps its original metadata and does not verify a later corrected build.
 
 ## License Key Operations
 

@@ -45,7 +45,6 @@ if [[ "$existing" == false ]]; then
     --label "org.opencontainers.image.source=https://github.com/ryan-winkler/meitheal" \
     --label "org.opencontainers.image.revision=$revision" \
     --label "org.opencontainers.image.version=$VERSION" \
-    --label "org.opencontainers.image.licenses=LicenseRef-Meitheal-Source-Available-1.0" \
     --label "io.hass.version=$VERSION" --label "io.hass.arch=$ARCHITECTURE" \
     --tag "$image" .
 fi

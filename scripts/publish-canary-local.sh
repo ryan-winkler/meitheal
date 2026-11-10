@@ -120,7 +120,6 @@ if [[ "$1" == build ]]; then
     --label "org.opencontainers.image.source=https://github.com/ryan-winkler/meitheal" \
     --label "org.opencontainers.image.revision=$revision" \
     --label "org.opencontainers.image.version=$version" \
-    --label "org.opencontainers.image.licenses=LicenseRef-Meitheal-Source-Available-1.0" \
     --label "io.hass.version=$version" --label "io.hass.arch=$arch" \
     --tag "$local_image" "$scratch/source"
   image_id="$(cat "$scratch/image-id")"
