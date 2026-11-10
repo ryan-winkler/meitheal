@@ -1363,6 +1363,28 @@
     "required": "*"
   },
 
+  "reactions": {
+    "task": "Freagairtí don tasc",
+    "comment": "Freagairtí don trácht",
+    "input": "Emoji nó téacs gairid",
+    "add": "Cuir freagairt leis",
+    "loading": "Freagairtí á lódáil…",
+    "saving": "Freagairt á sábháil…",
+    "empty": "Níl aon fhreagairt ann fós.",
+    "unavailable": "Níl freagairtí ar fáil sa seisiún seo.",
+    "load_failed": "Níorbh fhéidir na freagairtí a lódáil.",
+    "save_failed": "Níorbh fhéidir an fhreagairt a chur leis. Bain triail eile as.",
+    "remove_failed": "Níorbh fhéidir an fhreagairt a bhaint. Bain triail eile as.",
+    "invalid": "Cuir isteach emoji nó téacs gairid (1–16 carachtar).",
+    "saved": "Cuireadh an fhreagairt leis.",
+    "removed": "Baineadh an fhreagairt.",
+    "remove": "Bain",
+    "remove_description": "Bain an fhreagairt: {reaction}",
+    "retry": "Lódáil na freagairtí arís",
+    "newest": "Freagairtí is déanaí",
+    "older": "Freagairtí níos sine",
+    "card_count": "Freagairtí: {count}"
+  },
   "task_modal": {
     "copy_link": "Cóipeáil nasc an taisc",
     "link_copied": "Cóipeáladh nasc an taisc",

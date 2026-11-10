@@ -11,6 +11,7 @@ import {
 import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
+import { mountReactions } from "./modal-reactions"
 
 const log = createClientLogger("tasks", "comments-attachments")
 
@@ -182,6 +183,7 @@ export async function loadComments(
       wrapper.setAttribute("aria-describedby", body.id)
       wrapper.append(meta, body)
       if (c.can_manage === true) attachCommentManagement(wrapper, body, `${url}/${c.id}`, signal)
+      mountReactions(wrapper, `${url}/${c.id}/reactions`, signal)
       container.appendChild(wrapper)
       if (String(c.id) === commentTarget) linkedComment = wrapper
     }

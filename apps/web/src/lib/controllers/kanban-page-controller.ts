@@ -3,6 +3,7 @@ import type { FilterState } from "@lib/filter-state"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters } from "@lib/kanban-query"
 import { initLaneManagementPanel } from "./kanban-lanes"
+import { initKanbanReactionCounts } from "./kanban-reaction-counts"
 
 export interface KanbanRefreshFocus {
   lane?: string
@@ -71,6 +72,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       board = replacement
       boardLifetime = new AbortController()
       initKanbanArea(boardLifetime.signal, refresh)
+      initKanbanReactionCounts(board, boardLifetime.signal)
 
       const total = shell?.querySelector("[data-kanban-visible-count]")
       const label = shell?.querySelector("[data-kanban-visible-label]")
@@ -128,6 +130,7 @@ export function initKanbanPage(signal: AbortSignal): void {
 
   initLaneManagementPanel()
   initKanbanArea(boardLifetime.signal, refresh)
+  initKanbanReactionCounts(board, boardLifetime.signal)
 
   shell.addEventListener("click", event => {
     if (!(event instanceof MouseEvent) || event.defaultPrevented || event.button !== 0 ||

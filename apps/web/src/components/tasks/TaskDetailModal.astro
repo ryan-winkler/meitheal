@@ -350,6 +350,8 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               </div>
             </section>
 
+            <div id="td-task-reactions" class="mb-5"></div>
+
             <!-- Checklists -->
             <section>
               <div class="flex items-center justify-between mb-2">
@@ -497,6 +499,42 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
               <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)}
                 class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
+              <template id="td-reaction-controls"
+                data-task-label={t("reactions.task", locale)}
+                data-comment-label={t("reactions.comment", locale)}
+                data-loading={t("reactions.loading", locale)}
+                data-saving={t("reactions.saving", locale)}
+                data-empty={t("reactions.empty", locale)}
+                data-unavailable={t("reactions.unavailable", locale)}
+                data-load-failed={t("reactions.load_failed", locale)}
+                data-save-failed={t("reactions.save_failed", locale)}
+                data-remove-failed={t("reactions.remove_failed", locale)}
+                data-invalid={t("reactions.invalid", locale)}
+                data-saved={t("reactions.saved", locale)}
+                data-removed={t("reactions.removed", locale)}
+                data-remove-label={t("reactions.remove", locale)}
+                data-remove-description={t("reactions.remove_description", locale)}>
+                <p data-reaction-status role="status" class="text-sm text-text-secondary [&:not(:empty)]:my-2"></p>
+                <p data-reaction-error role="alert" class="text-sm text-text-primary [&:not(:empty)]:my-2"></p>
+                <button type="button" data-reaction-retry class="btn btn-ghost min-h-11" hidden>{t("reactions.retry", locale)}</button>
+                <ul data-reaction-list class="space-y-1" role="list"></ul>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" data-reaction-newest class="btn btn-ghost min-h-11" hidden>{t("reactions.newest", locale)}</button>
+                  <button type="button" data-reaction-older class="btn btn-ghost min-h-11" hidden>{t("reactions.older", locale)}</button>
+                </div>
+                <form data-reaction-form class="mt-2 space-y-2" hidden>
+                  <label class="block text-sm text-text-secondary">
+                    {t("reactions.input", locale)}
+                    <input type="text" class="form-input mt-1 w-full min-h-11" maxlength="128" autocomplete="off" dir="auto" required />
+                  </label>
+                  <div class="flex flex-wrap items-center gap-1">
+                    {["👍", "❤️", "🎉", "👀"].map(emoji => (
+                      <button type="button" data-reaction-emoji={emoji} class="btn btn-ghost min-h-11 min-w-11">{emoji}</button>
+                    ))}
+                  </div>
+                  <button type="submit" class="btn btn-primary min-h-11">{t("reactions.add", locale)}</button>
+                </form>
+              </template>
               <template id="td-comment-management"
                 data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
                 data-edit-failed={t("task_modal.comment_edit_failed", locale)}

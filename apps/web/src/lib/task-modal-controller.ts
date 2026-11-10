@@ -18,6 +18,7 @@
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { mountReactions } from "@lib/controllers/modal-reactions"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -869,6 +870,11 @@
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
             showTaskChecklist(taskId, t.checklists, modalSignal)
+            const taskReactions = document.getElementById("td-task-reactions")
+            if (taskReactions) {
+              taskReactions.replaceChildren()
+              mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
+            }
 
             // Load comments for the current task.
             document.getElementById("td-comments")?.replaceChildren()

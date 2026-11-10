@@ -1377,6 +1377,28 @@
     "required": "*"
   },
 
+  "reactions": {
+    "task": "Task reactions",
+    "comment": "Comment reactions",
+    "input": "Emoji or short text",
+    "add": "Add reaction",
+    "loading": "Loading reactions…",
+    "saving": "Saving reaction…",
+    "empty": "No reactions yet.",
+    "unavailable": "Reactions are unavailable for this session.",
+    "load_failed": "Could not load reactions.",
+    "save_failed": "Could not add the reaction. Try again.",
+    "remove_failed": "Could not remove the reaction. Try again.",
+    "invalid": "Enter an emoji or short text (1–16 characters).",
+    "saved": "Reaction added.",
+    "removed": "Reaction removed.",
+    "remove": "Remove",
+    "remove_description": "Remove reaction: {reaction}",
+    "retry": "Retry reactions",
+    "newest": "Newest reactions",
+    "older": "Older reactions",
+    "card_count": "Reactions: {count}"
+  },
   "task_modal": {
     "copy_link": "Copy task link",
     "link_copied": "Task link copied",

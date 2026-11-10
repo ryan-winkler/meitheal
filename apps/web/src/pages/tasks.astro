@@ -354,6 +354,7 @@ try {
     data-available={String(Boolean(kanbanPages))}
     data-group-by={kanbanFilters.groupBy}
     data-backlog-mode={backlogMode}
+    data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
   >
     {
@@ -515,6 +516,7 @@ try {
                           ★
                         </span>
                       )}
+                      <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden></span>
                       <button
                         type="button"
                         class="card-action-btn card-more-btn"
@@ -1596,6 +1598,20 @@ try {
     color: var(--warning);
     font-size: 14px;
     flex-shrink: 0;
+  }
+  .kanban-reaction-count:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    padding: 2px 5px;
+    border-radius: 0.25rem;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+  }
+  .kanban-reaction-count::before {
+    content: "☺";
   }
 
   /* Progress bar */
