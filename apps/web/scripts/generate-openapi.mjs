@@ -1474,13 +1474,24 @@ const paths = {
   "/api/rules": {
     get: { operationId: "listRules", tags: ["Automation"], summary: "List automation rules", description: "Rules engine for automatic task mutations (e.g., auto-assign, auto-label, auto-prioritize).", responses: { 200: { description: "Rules" } } },
     post: { operationId: "createRule", tags: ["Automation"], summary: "Create an automation rule", responses: { 201: { description: "Created" } } },
+    put: {
+      operationId: "replaceRules", tags: ["Automation"], summary: "Replace validated task context rules atomically",
+      description: "Omit replaceIds to replace the complete list. Supply replaceIds to replace only the displayed rules and preserve other custom rules. Invalid input or a failed insert preserves the previous configuration.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["rules"], properties: {
+          rules: { type: "array", maxItems: 1000, items: { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, maxLength: 500 } } } },
+          replaceIds: { type: "array", maxItems: 1000, items: { type: "string", maxLength: 128 } },
+        },
+      } } } },
+      responses: { 200: { description: "Rules replaced" }, 400: { description: "Invalid rules or replacement IDs" }, 500: { description: "Replacement failed; previous rules unchanged" } },
+    },
   },
   "/api/rules/{id}": {
     put: { operationId: "updateRule", tags: ["Automation"], summary: "Update a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteRule", tags: ["Automation"], summary: "Delete a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/rules/defaults": {
-    get: { operationId: "getRuleDefaults", tags: ["Automation"], summary: "Get default rule configuration", responses: { 200: { description: "Defaults" } } },
+    post: { operationId: "restoreRuleDefaults", tags: ["Automation"], summary: "Atomically restore Strategic rules and clear framework overrides", responses: { 200: { description: "Defaults restored" }, 500: { description: "Reset failed; previous configuration unchanged" } } },
   },
   "/api/rules/resolve": {
     post: { operationId: "resolveRules", tags: ["Automation"], summary: "Test rule resolution against a task payload", description: "Dry-run: shows what rules would fire for a given task payload without applying changes.", responses: { 200: { description: "Resolution result" } } },

@@ -173,6 +173,8 @@ and [registered-agent manager](https://github.com/home-assistant/core/blob/maste
 
 ## Verify a Settings change
 
+For rejected rule saves, framework overrides or Settings imports, see [Recovering rules and framework settings](settings-configuration-recovery.md). Validation and write failures preserve the previous configuration; resolve the reported input or storage error before retrying.
+
 Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
 
 Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.

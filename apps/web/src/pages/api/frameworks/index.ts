@@ -9,6 +9,7 @@
  *      and merges built-in configs with user overrides stored in framework_configs table.
  */
 import type { APIRoute } from "astro"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
 import { listBuiltInFrameworks } from "@domains/strategy/framework-catalog"
 import { readFrameworkImport } from "@domains/strategy/framework-import"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
@@ -49,7 +50,9 @@ export const GET: APIRoute = async () => {
   }
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     let body: Partial<FrameworkConfig>

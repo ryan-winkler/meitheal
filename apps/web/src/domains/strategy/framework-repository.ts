@@ -6,9 +6,10 @@
  * and provides merged configs at runtime.
  */
 
+import type { Client } from "@libsql/client"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import type { FrameworkConfig, FrameworkOverrides, FrameworkOverrideRecord } from "@meitheal/domain-strategy"
-import { mergeFrameworkConfig, parseFrameworkConfig } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, parseFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -36,8 +37,7 @@ function toOverrideRecord(row: Record<string, unknown>): FrameworkOverrideRecord
 }
 
 /** Get overrides for a specific framework */
-export async function getOverrides(frameworkId: string): Promise<FrameworkOverrideRecord | null> {
-  const client = getPersistenceClient()
+export async function getOverrides(frameworkId: string, client: Pick<Client, "execute"> = getPersistenceClient()): Promise<FrameworkOverrideRecord | null> {
   const result = await client.execute({
     sql: "SELECT * FROM framework_configs WHERE framework_id = ? LIMIT 1",
     args: [frameworkId],
@@ -51,11 +51,25 @@ export async function getOverrides(frameworkId: string): Promise<FrameworkOverri
 export async function saveOverrides(
   frameworkId: string,
   overrides: FrameworkOverrides,
+  client: Pick<Client, "execute"> = getPersistenceClient(),
 ): Promise<FrameworkOverrideRecord> {
-  const client = getPersistenceClient()
+  const { getBuiltInFramework } = await import("./framework-catalog")
+  const base = await getBuiltInFramework(frameworkId)
+  if (!base) throw new TypeError(`Unknown built-in framework: ${frameworkId}`)
+  const errors = validateFrameworkOverrides(overrides, base.fields.map(field => field.key))
+  if (errors) throw new TypeError(errors.join(". "))
   const now = new Date().toISOString()
 
-  const existing = await getOverrides(frameworkId)
+  const existing = await getOverrides(frameworkId, client)
+  const previous = existing && !validateFrameworkOverrides(existing.overrides) ? existing.overrides : {}
+  overrides = {
+    ...previous,
+    ...overrides,
+    ...((previous.fields || overrides.fields) ? { fields: {
+      ...previous.fields,
+      ...Object.fromEntries(Object.entries(overrides.fields ?? {}).map(([key, field]) => [key, { ...previous.fields?.[key], ...field }])),
+    } } : {}),
+  }
   if (existing) {
     await client.execute({
       sql: "UPDATE framework_configs SET overrides = ?, updated_at = ? WHERE framework_id = ?",
