@@ -314,12 +314,16 @@ export function loadTableFilterState(): Partial<FilterState> {
   return state
 }
 
-export function saveTableFilterState(state: Partial<FilterState>): void {
+export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
   } catch { /* storage unavailable */ }
   const url = new URL(window.location.href)
   writeTableFilterParams(url.searchParams, state)
+  if (page !== undefined) {
+    if (page > 1) url.searchParams.set("tp", String(page))
+    else url.searchParams.delete("tp")
+  }
   window.history.replaceState(window.history.state, "", url)
 }
 
@@ -540,7 +544,7 @@ export function isTaskVisible(
  * Get the group key for a task element based on the group-by dimension.
  * Returns a string key used to sort tasks into groups.
  */
-export function getGroupKey(el: HTMLElement, groupBy: string): string {
+export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): string {
   switch (groupBy) {
     case "type":
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"

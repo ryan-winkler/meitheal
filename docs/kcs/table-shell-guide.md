@@ -18,7 +18,8 @@ On narrow screens, swipe sideways over the table to reach more columns. With a k
 
 1. Enter text in **Filter by text**, or choose **Filter** above the table to add rules.
 2. Select **Apply Rules**. The current rules are recorded in the URL and apply after reload.
-3. If no rows match, change the filters or use **Clear all active filters** above the table.
+3. If no rows match, change the filters or use **Clear all active filters** above the table. Clear returns keyboard focus to the text filter.
+4. Use **Previous** and **Next** below the table to move through 50 matching rows at a time. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
 
 ### Save a working view
 
@@ -44,7 +45,11 @@ The type icon in each row has a text equivalent. Completed rows stay readable an
 
 Table reads filters and presentation with `readTableFilterParams`. An explicit `area_id` takes priority over `area` and the legacy `board` query key. An empty Area explicitly shows all Areas. Only a URL that omits Area uses the browser's remembered Area. Presets and Search write the normalized `area` key.
 
-When moving Table to server paging, apply the same normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Reset `tp` for row-affecting changes and preserve it when toggling Columns. Keep the existing task projection, including project and deferral fields, and use a fresh response for Table row refreshes through ingress and the worker.
+The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
+
+### Table rows could not update
+
+Choose **Retry** to fetch the current filter selection again. The previous results and address remain visible while the refresh fails. A Table refresh uses a unique `tableRefresh` marker, a no-store response, and the active worker's network-only path. The marker stays out of shared links.
 
 ## Troubleshooting
 

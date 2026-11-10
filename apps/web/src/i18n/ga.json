@@ -272,6 +272,14 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "subtask_of": "Fothasc de",
+    "task_pages": "Leathanaigh tascanna",
+    "matching_tasks_of": "as",
+    "matching_tasks": "tasc comhoiriúnacha",
+    "previous_page": "Siar",
+    "next_page": "Ar aghaidh",
+    "retry_page": "Bain triail eile as",
+    "refresh_failed": "Níorbh fhéidir an liosta tascanna a nuashonrú.",
     "title": "Amharc Tábla",
     "filter_placeholder": "Scag...",
     "select_all": "Roghnaigh gach tasc",

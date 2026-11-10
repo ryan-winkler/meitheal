@@ -274,6 +274,14 @@
     "group_by_tooltip": "Group swimlanes by"
   },
   "table": {
+    "subtask_of": "Subtask of",
+    "task_pages": "Task pages",
+    "matching_tasks_of": "of",
+    "matching_tasks": "matching tasks",
+    "previous_page": "Previous",
+    "next_page": "Next",
+    "retry_page": "Retry",
+    "refresh_failed": "The task list couldn’t update.",
     "title": "Table View",
     "filter_placeholder": "Filter...",
     "select_all": "Select all tasks",

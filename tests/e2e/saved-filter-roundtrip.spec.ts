@@ -62,6 +62,10 @@ test.describe("Saved Table filters", () => {
     await expect(page).toHaveURL(url =>
       url.pathname === "/tasks" && url.searchParams.get("status") === "active" && url.hash === "#table",
     )
+    const toolbar = page.getByRole("toolbar", { name: "Filter tasks" })
+    await toolbar.getByRole("button", { name: "Clear all active filters" }).press("Enter")
+    await expect(toolbar.getByRole("textbox", { name: "Filter by text" })).toBeFocused()
+    await expect(page).toHaveURL(url => !url.searchParams.has("status"))
   })
 
   test("Table and Search apply the same rows and body columns", async ({ page, request, baseURL }) => {

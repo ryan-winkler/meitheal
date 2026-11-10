@@ -803,6 +803,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     // Clear all button
     clearBtn?.addEventListener("click", () => {
+      const restoreTableFocus = prefix === "table" && document.activeElement === clearBtn
       if (search) search.value = ""
       setPromoted(false)
       status = priority = rice = user = task_type = area = ""
@@ -856,6 +857,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
       emitChange(true)
       clearBtn.classList.add("hidden") // Immediate visual feedback
+      if (restoreTableFocus) search?.focus()
     }, { signal })
 
     function setPromoted(value: boolean) {

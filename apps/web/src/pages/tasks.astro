@@ -47,8 +47,10 @@ const heading = renderedView === "kanban" ? t("kanban.title", locale)
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
 currentUrl.pathname = "/tasks"
-if (currentUrl.searchParams.has("boardRefresh")) {
+if (currentUrl.searchParams.has("boardRefresh") ||
+    (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
+  currentUrl.searchParams.delete("tableRefresh")
   Astro.response.headers.set("cache-control", "no-store")
 }
 
