@@ -101,6 +101,7 @@ test("staging one channel preserves the other channel and the source manifest", 
     expect(canary.stderr).toBe("")
     expect(canary.status).toBe(0)
     expect(readFileSync(join(fixture, "meitheal-hub-canary/config.yaml"), "utf8")).toContain('version: "abcdef123456"')
+    expect(readFileSync(join(fixture, "meitheal-hub-canary/config.yaml"), "utf8")).toContain('image: "ghcr.io/coolock-village/meitheal-canary-{arch}"')
     expect(readFileSync(stable, "utf8")).toBe('version: "999999.0.0"\n')
     expect(readFileSync(source, "utf8")).toBe(before)
     expect(existsSync(join(fixture, "repository.yaml"))).toBe(true)
@@ -182,8 +183,9 @@ test("all release entrypoints retain one canonical Canary and reject extra App m
       expect(result.status, command.join(" ")).toBe(0)
       if (command[0] === "image") {
         const family = command[1] === "canary" ? "meitheal-canary" : "meitheal"
+        const owner = command[1] === "canary" ? "coolock-village" : "ryan-winkler"
         expect(JSON.parse(result.stdout)).toMatchObject({
-          image: `ghcr.io/ryan-winkler/${family}-${command[2]}:${command[3]}`,
+          image: `ghcr.io/${owner}/${family}-${command[2]}:${command[3]}`,
           platform: command[2] === "amd64" ? "linux/amd64" : "linux/arm64",
         })
       }
@@ -225,9 +227,16 @@ test("all release entrypoints retain one canonical Canary and reject extra App m
     for (const command of commands) {
       expect(run(...command).stderr).toContain("Unexpected App slug")
     }
-    writeFileSync(canary, manifest.replace(/^image: .+$/m, 'image: "ghcr.io/ryan-winkler/meitheal-settings-{arch}"'))
-    for (const command of commands) {
-      expect(run(...command).stderr).toContain("Unexpected App image template")
+    for (const image of [
+      "ghcr.io/ryan-winkler/meitheal-canary-{arch}",
+      "ghcr.io/coolock-village/meitheal-settings-{arch}",
+    ]) {
+      writeFileSync(canary, manifest.replace(/^image: .+$/m, `image: "${image}"`))
+      for (const command of commands) {
+        const result = run(...command)
+        expect(result.status, command.join(" ")).toBe(1)
+        expect(result.stderr).toContain("Unexpected App image template")
+      }
     }
   } finally {
     rmSync(fixture, { recursive: true, force: true })

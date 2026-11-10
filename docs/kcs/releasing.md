@@ -8,7 +8,9 @@ description: "Qualify App images and promote a verified version to the Home Assi
 
 Home Assistant discovers both channels through the [Meitheal add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon). Keep existing Store entries and App slugs when updating a channel. The optional Core integration has a separate [Marketplace release process](home-assistant-marketplace.md).
 
-Maintain one Canary App entry in `meitheal-hub-canary/config.yaml`, with slug `meitheal_canary` and image family `ghcr.io/ryan-winkler/meitheal-canary-{arch}`. Settings and other feature work ship through this same Canary. The Stable manifest remains in `meitheal-hub/config.yaml` with slug `meitheal`. Release preparation, image metadata and staging validate both canonical manifests and reject additional root App manifests, including Settings, preview and extra experimental variants. Staging checks the destination repository before writing files. Remove an obsolete extra manifest through its reviewed retirement process before staging.
+Maintain one Canary App entry in `meitheal-hub-canary/config.yaml`, with slug `meitheal_canary` and image family `ghcr.io/coolock-village/meitheal-canary-{arch}`. Settings and other feature work ship through this same Canary. The Stable manifest remains in `meitheal-hub/config.yaml` with slug `meitheal`. Release preparation, image metadata and staging validate both canonical manifests and reject additional root App manifests, including Settings, preview and extra experimental variants. Staging checks the destination repository before writing files. Remove an obsolete extra manifest through its reviewed retirement process before staging.
+
+Canary publication retains the existing Coolock Village packages. The source repository and image source label remain `ryan-winkler/meitheal`, and discovery remains `ryan-winkler/meitheal-ha-addon`. The release-host publisher derives its destination from the canonical image template. This registry owner does not change package visibility or repository association, and does not grant the source repository's Actions token access to the packages.
 
 This repository guard covers the release tooling. Supervisor installations from other repositories or manually created local Apps require separate device checks and cleanup.
 
@@ -23,7 +25,7 @@ Keep at most one Canary installed during the transition: uninstall the legacy Ca
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
 | Stable | A matching `vX.Y.Z` tag on a commit in `main` | `X.Y.Z` | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
-| Canary | The current `main` commit | The first 12 hexadecimal characters of its commit ID | `ghcr.io/ryan-winkler/meitheal-canary-{arch}:{version}` |
+| Canary | The current `main` commit | The first 12 hexadecimal characters of its commit ID | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
 
 ## Qualify the release
 
