@@ -26,6 +26,8 @@ A new discovery flow also asks for the token. Supervisor discovery supplies the 
 
 When access to the task list is rejected, **Settings → Devices & services** offers **Reauthenticate**. Create a replacement at the existing Meitheal address, submit it, and verify the task entity and any required action. Then revoke the previous token. If only a write, search or delete action receives HTTP 403, use **Reconfigure** with a token that carries the missing scope.
 
+If a Core delete still returns 403 with **Delete Tasks** enabled, update the Core integration and restart Home Assistant. The current integration uses the bearer token for those calls. Older copies can send a browser Origin header that the App rejects for requests with no body.
+
 Use **Reconfigure** to change the address. Supply a token issued by the Meitheal server at the new address. A blank token field preserves the current credential when the origin stays the same.
 
 If the old App was upgraded first, reauthenticate the existing Core entry after the 401 response. For a connection error, check that the App is running and the configured host and port match the installed App. For a manual HTTPS connection, verify the certificate chain. The integration rejects redirects. Configure the final address directly.

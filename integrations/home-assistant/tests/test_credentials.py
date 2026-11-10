@@ -63,6 +63,7 @@ async def test_existing_entry_keeps_entity_after_enrollment(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert "Authorization" not in aioclient_mock.mock_calls[0][3]
+    assert aioclient_mock.mock_calls[0][3]["Origin"] == ORIGIN
     registry = er.async_get(hass)
     entity_id = registry.async_get_entity_id("todo", DOMAIN, f"{entry.entry_id}_todo")
     assert entity_id is not None
@@ -80,7 +81,7 @@ async def test_existing_entry_keeps_entity_after_enrollment(
     assert entry.data[CONF_API_TOKEN] == TOKEN
     assert registry.async_get_entity_id("todo", DOMAIN, f"{entry.entry_id}_todo") == entity_id
     assert aioclient_mock.mock_calls[-1][3]["Authorization"] == f"Bearer {TOKEN}"
-    assert aioclient_mock.mock_calls[-1][3]["Origin"] == ORIGIN
+    assert "Origin" not in aioclient_mock.mock_calls[-1][3]
     assert TOKEN not in str(await async_get_config_entry_diagnostics(hass, entry))
 
 
@@ -113,7 +114,7 @@ async def test_protected_actions_share_bearer_and_never_log_error_body(
     assert all(
         url.origin() == connection_origin(CONNECTION)
         and headers["Authorization"] == f"Bearer {TOKEN}"
-        and headers["Origin"] == ORIGIN
+        and "Origin" not in headers
         for _, url, _, headers in aioclient_mock.mock_calls
     )
 

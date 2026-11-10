@@ -93,7 +93,10 @@ class MeithealApi:
     ) -> None:
         self.session = session
         self.origin = origin
-        self._headers = {"Origin": str(origin), "Accept": "application/json"}
+        self._headers = {"Accept": "application/json"}
+        # Tokenless standalone writes use the existing same-origin proof.
+        if not token:
+            self._headers["Origin"] = str(origin)
         self._authorization = f"Bearer {token}" if token else None
 
     async def async_request(
