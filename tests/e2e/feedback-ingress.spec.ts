@@ -2,7 +2,7 @@ import { execFileSync, fork, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
-import { request as httpRequest, type IncomingMessage } from "node:http"
+import { createServer, request as httpRequest, type IncomingMessage } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -630,7 +630,12 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
     }
 
     if (location === panel) {
-      await page.evaluate(() => { document.documentElement.style.colorScheme = "dark" })
+      // A stylesheet insertion changes computed style without mutating the parent root.
+      await page.evaluate(() => {
+        const stylesheet = document.createElement("style")
+        stylesheet.textContent = ":root { color-scheme: dark }"
+        document.head.append(stylesheet)
+      })
       await root.evaluate(() => new Promise<void>(resolve => {
         function observe(event: MessageEvent): void {
           if (event.source !== window || event.data?.probe !== "untrusted-theme-event") return
@@ -651,6 +656,135 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
         getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase(),
       )).toBe("#1e293b")
     }
+  }
+})
+
+type ThemeObserverProbe = { active: number; registrations: number }
+type ThemeFixtureWindow = Window & { themeObserverProbe?: ThemeObserverProbe }
+
+test("ingress Auto updates with its parent and restores one observer across iframe lifecycles", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("meitheal-theme")) localStorage.setItem("meitheal-theme", "auto")
+    if (parent === window) return
+    const originalObserve = MutationObserver.prototype.observe
+    const originalDisconnect = MutationObserver.prototype.disconnect
+    const active = new WeakMap<MutationObserver, ThemeObserverProbe>()
+    MutationObserver.prototype.observe = function (target, options) {
+      originalObserve.call(this, target, options)
+      const owner = target.ownerDocument
+      if (!owner || owner === document || target !== owner.documentElement || active.has(this)) return
+      const host = owner.defaultView as ThemeFixtureWindow
+      const probe = host.themeObserverProbe ??= { active: 0, registrations: 0 }
+      probe.registrations++
+      probe.active++
+      active.set(this, probe)
+    }
+    MutationObserver.prototype.disconnect = function () {
+      originalDisconnect.call(this)
+      const probe = active.get(this)
+      if (!probe) return
+      probe.active--
+      active.delete(this)
+    }
+  })
+  const settings = origin + prefix + "/settings"
+  const panel = origin + "/live-theme-panel-fixture"
+  await page.route(panel, route => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html lang="en" style="--primary-background-color: #fafafa">
+      <title>Home Assistant theme fixture</title>
+      <iframe src="${settings}" title="Meitheal" style="width:100%;height:900px"></iframe></html>`,
+  }))
+  await page.goto(panel)
+  const content = page.frameLocator("iframe")
+  const root = content.locator("html")
+  const selectedTheme = content.locator("#theme-select")
+  const palette = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
+  const observerCounts = () => page.evaluate(() => (window as ThemeFixtureWindow).themeObserverProbe)
+  const setParentBackground = (color: string) => page.evaluate(value => {
+    document.documentElement.style.setProperty("--primary-background-color", value)
+  }, color)
+
+  await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect(root).toHaveAttribute("data-ha-theme", "light")
+  await expect.poll(palette).toBe("#f1f5f9")
+  await expect.poll(observerCounts).toEqual({ active: 1, registrations: 1 })
+
+  await setParentBackground("#16202a")
+  await expect(root).toHaveAttribute("data-ha-theme", "dark")
+  await expect.poll(palette).toBe("#1e293b")
+  await selectedTheme.selectOption("light")
+  await expect(root).toHaveAttribute("data-theme", "light")
+  await setParentBackground("#fafafa")
+  await expect(root).toHaveAttribute("data-ha-theme", "light")
+  await setParentBackground("#16202a")
+  await expect(root).toHaveAttribute("data-ha-theme", "dark")
+  await expect.poll(palette).toBe("#f1f5f9")
+  await selectedTheme.selectOption("auto")
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect.poll(palette).toBe("#1e293b")
+
+  await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })))
+  await expect.poll(observerCounts).toEqual({ active: 0, registrations: 1 })
+  await setParentBackground("")
+  await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+  await expect.poll(observerCounts).toEqual({ active: 1, registrations: 2 })
+  await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
+  await page.emulateMedia({ colorScheme: "light" })
+  await expect.poll(palette).toBe("#f1f5f9")
+
+  await page.locator("iframe").evaluate((frame: HTMLIFrameElement) => {
+    const next = new URL(frame.src)
+    next.searchParams.set("theme-fixture", "reload")
+    frame.src = next.href
+  })
+  await expect.poll(observerCounts).toEqual({ active: 1, registrations: 3 })
+  await setParentBackground("#16202a")
+  await expect(root).toHaveAttribute("data-ha-theme", "dark")
+  await expect.poll(palette).toBe("#1e293b")
+})
+
+test("ingress Auto follows device preference when its parent is cross-origin", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.addInitScript(appOrigin => {
+    if (location.origin === appOrigin) localStorage.setItem("meitheal-theme", "auto")
+  }, origin)
+  const settings = origin + prefix + "/settings"
+  // A real loopback parent lets Chromium classify both local network origins.
+  const panel = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html" }).end(
+      `<!doctype html><html lang="en" style="--primary-background-color: #fafafa">
+      <title>Cross-origin theme fixture</title>
+      <iframe src="${settings}" title="Meitheal"></iframe></html>`,
+    )
+  }).listen(0, "127.0.0.1")
+  await once(panel, "listening")
+  try {
+    const address = panel.address()
+    if (!address || typeof address === "string") throw new Error("Expected a loopback panel address")
+    await page.goto(`http://127.0.0.1:${address.port}/`)
+    const root = page.frameLocator("iframe").locator("html")
+    const palette = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
+    await expect(root).toHaveAttribute("data-theme", "auto")
+    await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
+    await expect.poll(palette).toBe("#1e293b")
+    await page.evaluate(appOrigin => {
+      document.querySelector("iframe")?.contentWindow?.postMessage({ type: "theme-changed" }, appOrigin)
+    }, origin)
+    await page.emulateMedia({ colorScheme: "light" })
+    await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
+    await expect.poll(palette).toBe("#f1f5f9")
+  } finally {
+    const closed = once(panel, "close")
+    panel.close()
+    panel.closeAllConnections()
+    await closed
   }
 })
 

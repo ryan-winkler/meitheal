@@ -69,7 +69,7 @@ If the URL does not change to `#automation-ai-settings`, capture the browser con
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light** or **Dark** to choose a Meitheal palette. **Auto** follows the light or dark appearance of a same-origin Home Assistant panel when it can read it, then uses the corresponding Meitheal palette. A direct ingress page and a panel with an unavailable appearance follow the device preference. Use **Custom** to import your own Meitheal colors.
+Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. Use **Custom** to import your own Meitheal colors.
 
 An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent.
 
