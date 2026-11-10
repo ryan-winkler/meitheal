@@ -989,7 +989,7 @@ export class TaskRepository {
       activity?: RecentTaskActor
     } = {},
   ): Promise<
-    { ok: true; task: TaskRow }
+    { ok: true; task: TaskRow; previousStatus?: string }
     | { ok: false; errorCode: "unavailable" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "conflict"; updatedAt: number }
@@ -1060,6 +1060,11 @@ export class TaskRepository {
       diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
     }
 
+    // A status transition and its prior state share the same writer transaction.
+    // Callers must use this snapshot for once-only completion side effects.
+    const statusIndex = diagnostics.length
+    if (typeof fields.status === "string") diagnostics.push({ sql: "SELECT status FROM tasks WHERE id = ?", args: [id] })
+
     // Capture the old state and commit the event and update in the same writer batch.
     const eventId = activity ? crypto.randomUUID() : null
     const statements: InStatement[] = [...diagnostics]
@@ -1071,7 +1076,9 @@ export class TaskRepository {
       ? await this.client.batch(statements, "write")
       : [await this.client.execute(update)]
     const row = results[writeIndex]?.rows[0]
-    if (row) return { ok: true, task: row as unknown as TaskRow }
+    if (row) return { ok: true, task: row as unknown as TaskRow,
+      ...(typeof fields.status === "string" ? { previousStatus: String(results[statusIndex]?.rows[0]?.status ?? "") } : {}),
+    }
 
     if (version) {
       const current = results[0]?.rows[0]
@@ -1090,7 +1097,7 @@ export class TaskRepository {
     if (typeof changedChecklist === "string" || changedChecklist === null) {
       return { ok: false, errorCode: "checklist_conflict", checklists: changedChecklist }
     }
-    const blockers = dependencies ? results[diagnostics.length - 1]?.rows : undefined
+    const blockers = dependencies ? results[statusIndex - 1]?.rows : undefined
     if (blockers?.length) {
       return {
         ok: false,

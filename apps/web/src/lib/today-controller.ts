@@ -161,9 +161,9 @@ function setupEventDelegation(container: HTMLElement) {
       }
 
       try {
-        await taskApi.updateTask(id, { status: newStatus })
+        const completed = await taskApi.updateTask(id, { status: newStatus })
         showToast(cb.checked ? "common.task_completed" : "common.task_reopened")
-        if (cb.checked) onTaskCompleted()
+        if (cb.checked) onTaskCompleted(completed)
       } catch {
         cb.checked = !cb.checked
         item?.classList.toggle("tli--done", cb.checked)

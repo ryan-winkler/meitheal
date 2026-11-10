@@ -738,7 +738,7 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
         row.dataset.status = value
         row.classList.toggle("row-done", value === "complete")
         void reconcileTableDeferral(row, value, signal)
-        if (value === "complete") onTaskCompleted(Number(row.dataset.priority ?? 3))
+        if (value === "complete") onTaskCompleted(await response.json())
       }
       refresh()
     } catch {

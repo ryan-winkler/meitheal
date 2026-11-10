@@ -375,7 +375,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const taskPayload = {
+  const taskPayload: Record<string, unknown> = {
     ...updatedRow,
     is_promoted: Boolean(updatedRow.is_promoted),
     ticket_key: formatTicketKey(updTicketNum),
@@ -525,7 +525,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Auto-dismiss all notifications when task is marked done/complete
   if (notifPrefs.enabled && sanitized.status !== undefined) {
-    if (isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+    if (isDoneStatus(String(sanitized.status)) && !isDoneStatus(update.previousStatus ?? "")) {
       dismissMobileNotification(`meitheal_urgent_${resolvedId}`)
       dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
       dismissMobileNotification(`meitheal_due_${resolvedId}`)
@@ -541,7 +541,21 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Phase 1 + Phase 6: Recurrence auto-create — clone task with next due date on completion
   // Rolling recurrence: uses completion date (today) as base instead of original due date
-  if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+  if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(update.previousStatus ?? "")) {
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
+    try {
+      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
+      if (await isFeatureEnabled("gamification")) {
+        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
+        const stats = await recordTaskCompletion(xp)
+        const achievements = await checkAchievements(stats)
+        taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+      }
+    } catch {
+      // The task write succeeded. Optional statistics must not invent a failed mutation.
+      taskPayload.gamification = { error: "Task saved; completion statistics unavailable" }
+    }
     try {
       const recTask = await repo.getRecurrenceData(resolvedId)
       if (recTask?.recurrence_rule && typeof recTask.recurrence_rule === "string" && recTask.recurrence_rule.length > 0) {

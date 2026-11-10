@@ -32,13 +32,13 @@ function initTaskCheckboxes(): void {
       if (!id) return
 
       try {
-        await taskApi.updateTask(id, {
+        const completed = await taskApi.updateTask(id, {
           status: checkbox.checked ? "complete" : "pending",
         })
 
         if (!checkbox.checked) return
 
-        onTaskCompleted()
+        onTaskCompleted(completed)
         const item = checkbox.closest(".task-item") as HTMLElement | null
         if (!item) return
 

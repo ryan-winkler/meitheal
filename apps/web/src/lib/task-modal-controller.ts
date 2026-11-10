@@ -1055,6 +1055,9 @@
             saved = response.ok
             if (saved) {
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
+              if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
+                onTaskCompleted(await response.json())
+              }
               return !search || generation === detailGeneration
             }
             log.warn(`Failed to save ${field}:`, response.status)
@@ -1203,10 +1206,6 @@
             const newVal = (e.target as HTMLSelectElement).value;
             saveTD("status", newVal);
             const isDone = newVal === "complete";
-            if (isDone) {
-              const pri = Number((document.getElementById("td-priority") as HTMLSelectElement)?.value ?? 3);
-              onTaskCompleted(pri);
-            }
             const doneBtn = document.getElementById("td-toggle-done");
             if (doneBtn)
               doneBtn.textContent = isDone
@@ -1478,11 +1477,6 @@
                 newStatus === "complete"
                   ? "↩ Mark as Undone"
                   : "✓ Mark as Done";
-            // Gamification + confetti on completion
-            if (newStatus === "complete") {
-              const priorityEl = document.getElementById("td-priority") as HTMLSelectElement | null;
-              onTaskCompleted(Number(priorityEl?.value ?? 3));
-            }
           }, { signal: __signal });
 
         // Toggle favorite

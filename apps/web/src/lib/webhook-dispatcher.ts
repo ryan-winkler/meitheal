@@ -142,14 +142,6 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         // Fire the mapped event type
         fireHAEvent(haEventType, eventData).catch(() => {});
 
-        // Also fire "completed" event when a task is updated to done status
-        if (eventType === "task.updated" && payload.status === "complete") {
-          fireHAEvent("meitheal_task_completed", {
-            ...eventData,
-            completed_at: new Date().toISOString(),
-          }).catch(() => {});
-        }
-
         logger.log("info", {
           event: "integration.ha_event.dispatched",
           domain: "integrations",
