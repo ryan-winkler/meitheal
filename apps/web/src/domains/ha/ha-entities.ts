@@ -25,12 +25,13 @@ const changeListeners: Map<string, Set<(entity: HassEntity) => void>> = new Map(
 
 export async function initEntitySubscription(establishedConnection?: Connection): Promise<void> {
   const conn = establishedConnection ?? await getHAConnection();
-  if (!conn || (subscribed && subscribedConnection === conn)) return;
-  if (unsubscribe) unsubscribe()
-  entityCache = {}
-  subscribed = false
+  if (!conn) { resetEntityConnection(); return }
+  if (subscribed && subscribedConnection === conn) return;
+  resetEntityConnection()
+  subscribedConnection = conn
   try {
     unsubscribe = subscribeEntities(conn, (entities) => {
+      if (subscribedConnection !== conn) return
       const prevCache = entityCache;
       entityCache = entities;
       if (!changeListeners.size) return
@@ -107,10 +108,15 @@ export function onEntityChange(entityId: string, callback: (entity: HassEntity) 
   };
 }
 
-export function stopEntitySubscription(): void {
+/** Retire one connection snapshot while preserving consumers registered by the App. */
+export function resetEntityConnection(): void {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-  subscribed = false;
+  subscribed = false
   subscribedConnection = null
-  entityCache = {};
-  changeListeners.clear();
+  entityCache = {}
+}
+
+export function stopEntitySubscription(): void {
+  resetEntityConnection()
+  changeListeners.clear()
 }
