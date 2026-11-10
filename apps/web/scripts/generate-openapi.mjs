@@ -1073,18 +1073,28 @@ const paths = {
   "/api/export/tasks.csv": { get: { operationId: "exportTasksCsv", tags: ["Export"], summary: "Export all tasks as CSV", responses: { 200: { description: "CSV export" } } } },
   "/api/export/tasks.ics": { get: { operationId: "exportTasksIcs", tags: ["Export"], summary: "Export tasks as iCalendar feed", responses: { 200: { description: "ICS export" } } } },
   "/api/export/database.sqlite": {
-    get: {
+    post: {
       operationId: "exportDatabase",
       tags: ["Export"],
       summary: "Download a consistent SQLite snapshot as a verified Home Assistant administrator",
-      description: "Includes local database writes committed before the snapshot, including those in the write-ahead log. Contains private household data and local feedback. Use the database host's backup tools for remote databases.",
+      description: "Submit the native form from the administrator's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Contains private household data and local feedback. Use the database host's backup tools for remote databases.",
       security: ingressSession,
+      requestBody: {
+        required: true,
+        content: {
+          "application/x-www-form-urlencoded": {
+            schema: { type: "object", required: ["token"], properties: { token: { type: "string" } } },
+          },
+        },
+      },
       responses: {
         200: { description: "SQLite snapshot", content: { "application/x-sqlite3": { schema: { type: "string", format: "binary" } } } },
-        400: { description: "The app uses a remote database" },
-        403: feedbackForbidden,
+        400: { description: "The form could not be read or the app uses a remote database" },
+        403: { description: "Administrator access or a valid same-origin download form is required" },
         404: { description: "Local database or download path unavailable" },
         409: { description: "Another database download is in progress" },
+        413: { description: "The form exceeds 256 bytes" },
+        415: { description: "The form must use application/x-www-form-urlencoded" },
         507: { description: "Insufficient free space for a snapshot on the database volume" },
       },
     },

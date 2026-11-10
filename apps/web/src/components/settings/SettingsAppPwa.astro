@@ -1,7 +1,6 @@
 ---
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
-import { verifiedIngressUser } from "../../lib/verified-ingress-user"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
@@ -11,9 +10,9 @@ import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
 interface Props {
   locale: Locale
+  databaseDownloadToken: string | undefined
 }
-const { locale } = Astro.props
-const canDownloadDatabase = verifiedIngressUser(Astro.locals)?.isAdmin
+const { locale, databaseDownloadToken } = Astro.props
 
 // Dynamic version — injected at build time from meitheal-hub/config.yaml via
 // vite.define in astro.config.mjs. Runtime env var takes precedence (Docker).
@@ -63,13 +62,18 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           style="flex: 1; text-align: center; text-decoration: none;"
           >{t("settings.download_csv", locale)}</a
         >
-        {canDownloadDatabase && (
-          <button type="button" class="btn btn-secondary" id="export-db-btn"
-            style="flex: 1; text-align: center;">{t("settings.raw_db", locale)}</button>
+        {databaseDownloadToken && (
+          <>
+            <form id="export-db-form" method="post" action="/api/export/database.sqlite" hidden>
+              <input type="hidden" name="token" value={databaseDownloadToken} />
+            </form>
+            <button type="button" class="btn btn-secondary" id="export-db-btn"
+              style="flex: 1; text-align: center;">{t("settings.raw_db", locale)}</button>
+          </>
         )}
       </SettingsActionRow>
       <small class="settings-hint" style="display: block; margin-top: 6px;">
-        {t(canDownloadDatabase ? "settings.export_hint_admin" : "settings.export_hint", locale)}
+        {t(databaseDownloadToken ? "settings.export_hint_admin" : "settings.export_hint", locale)}
       </small>
     </div>
 

@@ -17,14 +17,17 @@ const server = http.createServer((request, response) => {
   }
 
   const waitForDrain = signal => waitForDownloadDrain(response, signal)
+  const databaseDownload = request.method === "POST" && request.url === "/api/export/database.sqlite"
+  if (databaseDownload) {
+    response.setHeader("cache-control", "no-store")
+    if (fromSupervisor && request.headers["sec-fetch-site"] === undefined) delete request.headers.origin
+  }
   runWithIngressTransport({
     peer: fromSupervisor ? "172.30.32.2" : "172.30.33.7",
     fromSupervisor,
     identityHeadersSafe: user !== "old",
     configuredPath,
-    waitForDatabaseDownloadDrain: request.method === "GET" && request.url === "/api/export/database.sqlite"
-      ? waitForDrain
-      : undefined,
+    waitForDatabaseDownloadDrain: databaseDownload ? waitForDrain : undefined,
     waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
   }, () => handler(request, response))
 })

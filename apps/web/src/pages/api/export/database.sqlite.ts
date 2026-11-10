@@ -4,6 +4,8 @@ import path from "node:path"
 import { Readable } from "node:stream"
 import type { APIRoute } from "astro"
 import { logApiError } from "@lib/api-logger"
+import { readWithinLimit } from "@lib/bounded-body"
+import { verifyDatabaseDownloadToken } from "@lib/database-download-token"
 import { exportFilename } from "@lib/export-filename"
 import { apiProblem } from "@lib/api-response"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -11,16 +13,56 @@ import { getIngressTransport } from "../../../../scripts/ingress-transport.mjs"
 import { paceResponseBody } from "@lib/response-backpressure"
 
 const noStore = { "cache-control": "no-store" }
+const formLimit = 256
 let exportInProgress = false
 
 function backupProblem(status: number, detail: string): Response {
   return apiProblem({ status, detail, extraHeaders: noStore })
 }
 
-export const GET: APIRoute = async ({ locals, request }) => {
-  if (!verifiedIngressUser(locals)?.isAdmin) {
+export const ALL: APIRoute = () => apiProblem({
+  status: 405,
+  title: "Method Not Allowed",
+  detail: "Start a database download from Meitheal Settings.",
+  extraHeaders: { ...noStore, allow: "POST" },
+})
+
+export const POST: APIRoute = async ({ locals, request }) => {
+  const user = verifiedIngressUser(locals)
+  if (!user?.isAdmin) {
     return backupProblem(403, "Database download requires a verified Home Assistant administrator.")
   }
+
+  const site = request.headers.get("sec-fetch-site")
+  const mode = request.headers.get("sec-fetch-mode")
+  // HTTP LAN browsers may omit Fetch Metadata. Every request still needs the
+  // signed form from the verified administrator's Settings page.
+  if ((site !== null && site !== "same-origin") || (mode !== null && mode !== "navigate")) {
+    return backupProblem(403, "Start the database download in the same Home Assistant browser window.")
+  }
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/x-www-form-urlencoded") {
+    return backupProblem(415, "Use the database download form in Meitheal Settings.")
+  }
+  if (Number(request.headers.get("content-length")) > formLimit) {
+    return backupProblem(413, "The database download form exceeds 256 bytes.")
+  }
+  let form: URLSearchParams
+  try {
+    const body = await readWithinLimit(request.body, formLimit, request.signal)
+    if (!body) return backupProblem(413, "The database download form exceeds 256 bytes.")
+    form = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body))
+  } catch {
+    if (request.signal.aborted) return backupProblem(499, "Database download was cancelled.")
+    return backupProblem(400, "Could not read the database download form.")
+  }
+  const token = form.get("token")
+  if (form.size !== 1 || !token || !verifyDatabaseDownloadToken(token, user.id)) {
+    return backupProblem(403, "Refresh Meitheal Settings and start the database download again.")
+  }
+
+  const waitForDrain = getIngressTransport()?.waitForDatabaseDownloadDrain
+  // Astro can resolve encoded aliases that did not get the wrapper's socket guard.
+  if (!waitForDrain) return backupProblem(404, "Database download not found.")
 
   const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
   if (!dbUrl.startsWith("file:")) {
@@ -57,11 +99,6 @@ export const GET: APIRoute = async ({ locals, request }) => {
       "content-type": "application/x-sqlite3",
       "content-disposition": `attachment; filename="${exportFilename("Database", "db")}"`,
     }
-    if (request.method === "HEAD") return new Response(null, { headers })
-    const waitForDrain = getIngressTransport()?.waitForDatabaseDownloadDrain
-    // Astro can resolve encoded aliases that did not get the wrapper's socket guard.
-    if (!waitForDrain) return backupProblem(404, "Database download not found.")
-
     // Use the database volume so a Home Assistant tmpfs cannot hold the entire copy.
     snapshotDirectory = await mkdtemp(path.join(directory, ".meitheal-export-"))
     const snapshotPath = path.join(snapshotDirectory, "snapshot.tmp")

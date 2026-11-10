@@ -82,8 +82,12 @@ const server = http.createServer((req, res) => {
     }
     req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
-    if (req.method === "GET" && normalizedPath === "/api/export/database.sqlite") {
+    if (req.method === "POST" && normalizedPath === "/api/export/database.sqlite") {
       waitForDatabaseDownloadDrain = waitForDrain
+      res.setHeader("cache-control", "no-store")
+      // For a trusted HTTP LAN form, Astro cannot compare the public Origin
+      // with its internal URL. This route verifies a signed, user-bound form.
+      if (fromSupervisor && req.headers["sec-fetch-site"] === undefined) delete req.headers.origin
     }
   }
 

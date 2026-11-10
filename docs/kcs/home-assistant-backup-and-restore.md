@@ -18,6 +18,8 @@ Task and Settings downloads are portable exports. The Settings export includes e
 
 The **Download database** action under **Settings → App & PWA** is available to verified Home Assistant administrators. It copies a consistent snapshot of the local SQLite database, including writes already committed in the WAL. It needs enough free space for one temporary copy on the database volume. Only one download can prepare or read that copy at a time. Retry after the first finishes or is cancelled. If the app loses power during a copy, a private `.meitheal-export-*` folder may remain beside the database. With Meitheal stopped, remove the incomplete temporary folder before retrying.
 
+Confirm the download in Settings. The browser submits a native form and saves the streamed attachment. If the app has restarted or Settings has been open for more than 15 minutes, refresh Settings before retrying. The form is tied to the signed-in administrator and direct links to the download endpoint return a method error.
+
 Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
 
 The download needs an online connection. If an edited download URL fails, open it again from **Settings → App & PWA**. Reload Meitheal and activate the app update on browsers that used an older build to remove old cached export URLs.

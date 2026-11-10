@@ -6,7 +6,6 @@
  */
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
 import { confirmDialog } from "@lib/confirm-dialog"
-import { buildIngressPagePath } from "@lib/page-shell-links"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
@@ -31,21 +30,18 @@ export function initDataSettings(): void {
 
   // Raw DB download with confirmation dialog
   const exportDbBtn = document.getElementById("export-db-btn")
-  if (exportDbBtn) {
+  const exportDbForm = document.querySelector<HTMLFormElement>("#export-db-form")
+  if (exportDbBtn && exportDbForm) {
     pageLifecycle.on(exportDbBtn, "click", async () => {
-    const confirmed = await confirmDialog({
-      message: "This database file contains private household data and local feedback. Store it privately.",
-      title: "Download Database",
-      confirmText: "Download",
-      variant: "warning",
-    })
-    if (!confirmed) return
-    const a = document.createElement("a")
-    a.href = buildIngressPagePath("/api/export/database.sqlite")
-    a.download = ""
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+      const signal = pageLifecycle.signal
+      const confirmed = await confirmDialog({
+        message: "This database file contains private household data and local feedback. Store it privately.",
+        title: "Download Database",
+        confirmText: "Download",
+        variant: "warning",
+        signal,
+      })
+      if (confirmed && !signal.aborted) exportDbForm.submit()
     })
   }
 

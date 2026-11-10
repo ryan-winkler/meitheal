@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test } from "@playwright/test"
+import { expect, test, type APIRequestContext } from "@playwright/test"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
@@ -56,6 +56,15 @@ test.afterEach(async () => {
   await rm(work, { recursive: true, force: true })
 })
 
+async function databaseForm(api: APIRequestContext, headers: Record<string, string>) {
+  const settings = await api.get(origin + prefix + "/settings", { headers })
+  expect(settings.status()).toBe(200)
+  expect(settings.headers()["cache-control"]).toBe("private, no-store")
+  const token = /name="token" value="([\w.-]+)"/.exec(await settings.text())?.[1]
+  expect(token).toBeTruthy()
+  return { token: token! }
+}
+
 test("database download includes committed writes still in the WAL", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const dbPath = path.join(work, "meitheal.db")
@@ -64,6 +73,7 @@ test("database download includes committed writes still in the WAL", async ({ pl
 
   try {
     expect((await api.get(`${prefix}/api/health`, { headers: admin })).ok()).toBe(true)
+    const form = await databaseForm(api, admin)
     const source = new DatabaseSync(dbPath)
     try {
       expect(source.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
@@ -83,14 +93,24 @@ test("database download includes committed writes still in the WAL", async ({ pl
         raw.close()
       }
 
-      const head = await api.head(exportPath, { headers: admin })
-      expect(head.status()).toBe(200)
-      expect(head.headers()).toMatchObject({ "cache-control": "no-store", "content-type": "application/x-sqlite3" })
+      const [get, head] = await Promise.all([api.get(exportPath, { headers: admin }), api.head(exportPath, { headers: admin })])
+      for (const response of [get, head]) {
+        expect(response.status()).toBe(405)
+        expect(response.headers()).toMatchObject({ allow: "POST", "cache-control": "no-store" })
+        expect(response.headers()["content-disposition"]).toBeUndefined()
+        expect((await response.body()).subarray(0, 16).toString()).not.toBe("SQLite format 3\0")
+      }
       expect(await head.body()).toHaveLength(0)
-      expect((await api.get(`${prefix}/api/export/database%2esqlite`, { headers: admin })).status()).toBe(404)
+      const alias = await api.post(`${prefix}/api/export/database%2esqlite`, {
+        headers: { ...admin, "sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate" }, form,
+      })
+      expect(alias.status()).toBe(404)
       expect((await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
 
-      const [first, second] = await Promise.all([api.get(exportPath, { headers: admin }), api.get(exportPath, { headers: admin })])
+      const [first, second] = await Promise.all([
+        api.post(exportPath, { headers: admin, form }),
+        api.post(exportPath, { headers: admin, form }),
+      ])
       const [downloaded, busy] = first.status() === 200 ? [first, second] : [second, first]
       expect(busy.status()).toBe(409)
       expect(busy.headers()["cache-control"]).toBe("no-store")
@@ -123,6 +143,7 @@ test("a paused database download keeps one snapshot until cancelled", async ({ p
 
   try {
     expect((await api.get(`${prefix}/api/health`, { headers: admin })).ok()).toBe(true)
+    const form = await databaseForm(api, admin)
     const writer = new DatabaseSync(path.join(work, "meitheal.db"))
     try {
       writer.exec(`CREATE TABLE export_fixture (payload BLOB);
@@ -132,9 +153,13 @@ test("a paused database download keeps one snapshot until cancelled", async ({ p
       writer.close()
     }
 
-    const slow = httpRequest(origin + exportPath, { headers: admin })
+    const body = new URLSearchParams(form).toString()
+    const slow = httpRequest(origin + exportPath, {
+      method: "POST",
+      headers: { ...admin, "content-type": "application/x-www-form-urlencoded", "content-length": Buffer.byteLength(body) },
+    })
     try {
-      slow.end()
+      slow.end(body)
       const [response] = await once(slow, "response", { signal: AbortSignal.timeout(5000) }) as [IncomingMessage]
       expect(response.statusCode).toBe(200)
       response.on("error", () => {})
@@ -142,16 +167,88 @@ test("a paused database download keeps one snapshot until cancelled", async ({ p
       // Let the server reach the client socket's full receive buffer.
       await sleep(250)
       expect(await snapshotDirs()).toHaveLength(1)
-      expect((await api.get(exportPath, { headers: admin })).status()).toBe(409)
+      expect((await api.post(exportPath, { headers: admin, form })).status()).toBe(409)
     } finally {
       slow.destroy()
     }
     await expect.poll(snapshotDirs).toEqual([])
-    expect((await api.head(exportPath, { headers: admin })).status()).toBe(200)
+    expect((await api.post(exportPath, { headers: admin, form })).status()).toBe(200)
   } finally {
     await api.dispose()
   }
 })
+
+test("database download requires a valid administrator form and rejects cross-site submissions", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const exportPath = `${prefix}/api/export/database.sqlite`
+
+  try {
+    const form = await databaseForm(api, admin)
+    for (const site of ["cross-site", "same-site"]) {
+      const rejected = await api.post(exportPath, { headers: { ...admin, "sec-fetch-site": site }, form })
+      expect(rejected.status()).toBe(403)
+      expect(rejected.headers()["cache-control"]).toBe("no-store")
+    }
+    const fetchRejected = await api.post(exportPath, {
+      headers: { ...admin, "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" }, form,
+    })
+    expect(fetchRejected.status()).toBe(403)
+    for (const invalid of [{ token: "" }, { token: form.token + "x" }, { ...form, extra: "x" }]) {
+      expect((await api.post(exportPath, { headers: admin, form: invalid })).status()).toBe(403)
+    }
+    expect((await api.post(exportPath, { headers: admin, data: form })).status()).toBe(415)
+    expect((await api.post(exportPath, { headers: admin, form: { token: "x".repeat(256) } })).status()).toBe(413)
+    expect((await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
+
+    await stopServer()
+    await startServer()
+    const restarted = await api.post(origin + exportPath, { headers: { ...admin, origin }, form })
+    expect(restarted.status()).toBe(403)
+  } finally {
+    await api.dispose()
+  }
+})
+
+for (const secure of [true, false]) {
+  test(`Settings submits a native database download from the Home Assistant frame on ${secure ? "trusted loopback" : "plain HTTP LAN"}`, async ({ browser, playwright }) => {
+    const lanBrowser = secure ? null : await playwright.chromium.launch({
+      args: ["--host-resolver-rules=MAP meitheal.test 127.0.0.1", "--no-proxy-server"],
+    })
+    const browserOrigin = secure ? origin : origin.replace("127.0.0.1", "meitheal.test")
+    const admin = await (lanBrowser ?? browser).newContext({ extraHTTPHeaders: {}, acceptDownloads: true })
+    try {
+      await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: browserOrigin }])
+      const page = await admin.newPage()
+      const settings = browserOrigin + prefix + "/settings#app-pwa-settings"
+      const endpoint = browserOrigin + prefix + "/api/export/database.sqlite"
+      await page.goto(browserOrigin + "/api/health")
+      await page.setContent(`<iframe title="Home Assistant app" style="width:100%;height:95vh" src="${settings}"></iframe>`)
+      const app = page.frameLocator('iframe[title="Home Assistant app"]')
+      const form = app.locator("#export-db-form")
+      await expect(form).toHaveAttribute("method", "post")
+      await expect(form).toHaveAttribute("action", prefix + "/api/export/database.sqlite")
+      expect(await form.evaluate(() => window.isSecureContext)).toBe(secure)
+      await app.locator("#export-db-btn").click()
+      const [request, download] = await Promise.all([
+        page.waitForRequest(request => request.url() === endpoint),
+        page.waitForEvent("download"),
+        app.getByRole("alertdialog").getByRole("button", { name: "Download", exact: true }).click(),
+      ])
+      expect(request.method()).toBe("POST")
+      expect(request.isNavigationRequest()).toBe(true)
+      const headers = await request.allHeaders()
+      expect(headers.origin).toBe(browserOrigin)
+      if (!secure) expect(headers["sec-fetch-site"]).toBeUndefined()
+      expect(download.suggestedFilename()).toMatch(/\.db$/)
+      expect((await readFile(await download.path())).subarray(0, 16).toString()).toBe("SQLite format 3\0")
+      await expect(app.locator("#export-db-btn")).toBeVisible()
+    } finally {
+      await admin.close()
+      await lanBrowser?.close()
+    }
+  })
+}
 
 test("ingress loads board dependencies from the app path", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
@@ -386,8 +483,8 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
       api.patch(at(reportPath), { headers: { ...member, ...browserMutation }, data: { state: "in_progress" } }),
       api.post(at(reportPath + "/export"), { headers: { ...member, ...browserMutation }, data: { reviewedMessage: "test" } }),
       api.delete(at(reportPath), { headers: { ...member, ...browserMutation } }),
-      api.get(at("/api/export/database.sqlite"), { headers: member }),
-      api.get(origin + "/api/export/database.sqlite", { headers: fake }),
+      api.post(at("/api/export/database.sqlite"), { headers: member }),
+      api.post(origin + "/api/export/database.sqlite", { headers: { ...fake, origin } }),
     ])
     expect(memberReads.map(response => response.status())).toEqual([403, 403, 403, 403, 403, 403])
 
@@ -406,7 +503,7 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     const { token } = await enrollment.json()
     const agent = { authorization: `Bearer ${token}` }
     expect((await api.get(at("/api/feedback"), { headers: { ...admin, ...agent } })).status()).toBe(403)
-    expect((await api.get(at("/api/export/database.sqlite"), { headers: { ...admin, ...agent } })).status()).toBe(403)
+    expect((await api.post(at("/api/export/database.sqlite"), { headers: { ...admin, ...agent } })).status()).toBe(403)
     const tools = await api.post(at("/api/mcp"), {
       headers: agent, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
     })
@@ -420,7 +517,7 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
       expect(await response.text()).not.toContain(receipt.id)
     }
 
-    const backup = await api.get(at("/api/export/database.sqlite"), { headers: admin })
+    const backup = await api.post(at("/api/export/database.sqlite"), { headers: admin, form: await databaseForm(api, admin) })
     expect(backup.status()).toBe(200)
     expect(backup.headers()["cache-control"]).toBe("no-store")
     expect((await backup.body()).subarray(0, 16).toString()).toBe("SQLite format 3\0")
