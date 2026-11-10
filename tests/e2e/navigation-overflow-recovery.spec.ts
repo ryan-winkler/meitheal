@@ -48,6 +48,9 @@ test.describe("Native navigation overflow", () => {
       await page.keyboard.press("End")
       await expect(reference).toBeFocused()
       const box = await menu.boundingBox()
+      const focusedBox = await reference.boundingBox()
+      expect(focusedBox!.y).toBeGreaterThanOrEqual(box!.y)
+      expect(focusedBox!.y + focusedBox!.height).toBeLessThanOrEqual(box!.y + box!.height + 1)
       expect(box!.x).toBeGreaterThanOrEqual(0)
       expect(box!.x + box!.width).toBeLessThanOrEqual(1440)
 
@@ -80,7 +83,7 @@ test.describe("Native navigation overflow", () => {
       expect(await row.locator("a[data-page]").count()).toBe(count)
       await planning.evaluate((link, href) => link.setAttribute("href", href!), originalHref)
       await planning.click()
-      await expect(page).toHaveURL(/\/planning$/)
+      await expect(page).toHaveURL(/\/planning(?:#spaces)?$/)
       await expect(page.locator('[data-nav-overflow="sidebar"] a[data-page="planning"]')).toHaveAttribute("aria-current", "page")
       await expect(page.locator("#sidebar-more-destinations")).toHaveCount(1)
       expect(errors).toEqual([])

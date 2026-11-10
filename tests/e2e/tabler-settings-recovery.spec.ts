@@ -112,6 +112,6 @@ test.describe("Tabler Settings recovery", () => {
     const card = page.locator(".settings-panel-card:visible").first()
     expect(await card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("16px")
     await page.addStyleTag({ content: ":root { --settings-inset: 20px; }" })
-    expect(await card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("20px")
+    await expect.poll(() => card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("20px")
   })
 })

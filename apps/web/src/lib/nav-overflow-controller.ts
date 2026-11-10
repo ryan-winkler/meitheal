@@ -57,6 +57,15 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       for (const item of sourceItems) primary.append(item)
     }
   }
+  function focusDestination(target: HTMLElement | undefined) {
+    if (!target) return
+    target.focus({ preventScroll: true })
+    if (!menu.contains(target)) return
+    const item = target.getBoundingClientRect()
+    const viewport = menu.getBoundingClientRect()
+    if (item.top < viewport.top || item.height > menu.clientHeight) menu.scrollTop += item.top - viewport.top
+    else if (item.bottom > viewport.bottom) menu.scrollTop += item.bottom - viewport.bottom
+  }
   function closeMenu(restoreFocus = false) {
     if (restoreFocus && !more.hidden) toggle.focus({ preventScroll: true })
     more.open = false
@@ -115,7 +124,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
         ;(primaryLinks().find(currentItem) ?? primaryLinks()[0])?.focus({ preventScroll: true })
       } else {
         if (menu.contains(focused)) more.open = true
-        focused.focus({ preventScroll: true })
+        focusDestination(focused)
       }
     }
     syncTabStops()
@@ -153,7 +162,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       if (more.open && ["Enter", " "].includes(event.key)) { closeMenu(true); return }
       more.open = true
       const overflow = menuLinks()
-      ;(event.key === "ArrowUp" ? overflow.at(-1) : overflow[0])?.focus({ preventScroll: true })
+      focusDestination(event.key === "ArrowUp" ? overflow.at(-1) : overflow[0])
       return
     }
     const inMenu = menu.contains(target)
@@ -164,7 +173,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const index = candidates.indexOf(target)
     const next = event.key === "Home" ? 0 : event.key === "End" ? candidates.length - 1
       : (index + (["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1) + candidates.length) % candidates.length
-    candidates[next]?.focus({ preventScroll: true })
+    focusDestination(candidates[next])
   }, { signal })
   root.addEventListener("focusin", () => syncTabStops(), { signal })
   more.addEventListener("toggle", () => {
