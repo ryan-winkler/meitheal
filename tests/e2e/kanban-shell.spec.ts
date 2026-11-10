@@ -40,6 +40,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
       await expect(card.getByRole("button", { name: `Task: ${title}, Priority: High, ${key}` })).toBeVisible()
       const menus = await card.getByRole("button", { name: `Assign user to: ${title}` }).evaluate(trigger => {
+        if (!(trigger instanceof HTMLButtonElement)) throw new Error("Expected the card assignment button")
         trigger.click()
         trigger.click()
         return Array.from(document.querySelectorAll<HTMLElement>(".quick-action-popover"), menu => ({
