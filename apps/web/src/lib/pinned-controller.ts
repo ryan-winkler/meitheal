@@ -1,4 +1,4 @@
-import { getClientLocale, t } from "../i18n/translations"
+import { getClientLocale, t } from "../i18n/client"
 import { pageLifecycle } from "./page-lifecycle"
 import { getStatusDef } from "./status-config"
 import { buildTaskPermalink } from "./task-detail-handoff"

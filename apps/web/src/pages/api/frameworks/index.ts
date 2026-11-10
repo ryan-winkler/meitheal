@@ -13,6 +13,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { resolve, dirname, basename } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse as parseYaml } from "yaml"
+import { readFrameworkImport } from "@domains/strategy/framework-import"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } from "@domains/strategy/custom-framework-repository"
 import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
@@ -84,7 +85,19 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const body = await request.json() as Partial<FrameworkConfig>
+    const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+    let body: Partial<FrameworkConfig>
+    if (media === "application/yaml") {
+      const imported = await readFrameworkImport(request)
+      if (!imported.ok) {
+        return new Response(JSON.stringify({ ok: false, errorCode: imported.errorCode, message: imported.message }), {
+          status: imported.status, headers: { "Content-Type": "application/json" },
+        })
+      }
+      body = imported.config
+    } else {
+      body = await request.json() as Partial<FrameworkConfig>
+    }
 
     // Validate the submitted config
     const errors = validateFrameworkConfig(body)

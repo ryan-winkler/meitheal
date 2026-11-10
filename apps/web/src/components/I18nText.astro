@@ -6,7 +6,7 @@
  * Client-side <i18n-text> custom element handles dynamic locale switching
  * without page reload via the meitheal:locale-changed event.
  *
- * Zero JS when user stays on default locale (English).
+ * Each element carries its two escaped text variants; catalogs stay on the server.
  *
  * Bounded Context: Infrastructure (i18n)
  */
@@ -30,11 +30,10 @@ const translated = t(key, locale);
 const displayText = translated !== key ? translated : fallback || key;
 ---
 
-<i18n-text data-key={key}>{displayText}</i18n-text>
+<i18n-text data-key={key} data-en={t(key, "en")} data-ga={t(key, "ga")}>{displayText}</i18n-text>
 
 <script>
   import { getStoredLocale, isValidLocale, STORAGE_KEY } from "@lib/locale";
-  import { t } from "@i18n/translations";
 
   class I18nTextElement extends HTMLElement {
     private originalText: string;
@@ -84,13 +83,7 @@ const displayText = translated !== key ? translated : fallback || key;
     private updateText(locale: string) {
       if (!this.key) return;
 
-      if (locale === "en") {
-        // Optimization: restore original SSR text for English
-        this.textContent = this.originalText;
-        return;
-      }
-
-      const translated = t(this.key, locale as "en" | "ga");
+      const translated = this.dataset[locale] ?? this.key;
       if (translated !== this.key) {
         this.textContent = translated;
       } else {

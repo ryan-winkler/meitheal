@@ -196,10 +196,12 @@ test("Current signal aligns at 320 px and desktop and its links stay in ingress"
     await expect(signal.getByRole("link")).toHaveCount(0)
     const active = await request.post(ingress + "/api/tasks", { data: { title: "Active QA task", status: "active" } })
     expect(active.status()).toBe(201)
+    const activeTask = await active.json()
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(signal.getByRole("link")).toHaveAttribute("href", /\/tasks\?status=active$/)
     const overdue = await request.post(ingress + "/api/tasks", { data: { title: "Overdue QA task", due_date: "2020-01-01" } })
     expect(overdue.status()).toBe(201)
+    const overdueTask = await overdue.json()
     await page.reload({ waitUntil: "domcontentloaded" })
     const link = signal.getByRole("link")
     await expect(link).toHaveAttribute("href", /\/tasks\?status=overdue$/)
@@ -222,7 +224,13 @@ test("Current signal aligns at 320 px and desktop and its links stay in ingress"
       await expect(link).toHaveCSS("outline-style", "solid")
     }
     await link.press("Enter")
-    await expect(page).toHaveURL(ingress + "/tasks?status=overdue#kanban")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    const destination = new URL(ingress + "/tasks?status=overdue")
+    // Tasks may add its canonical view fragment after navigation.
+    await expect(page).toHaveURL(url => url.origin === destination.origin &&
+      url.pathname === destination.pathname && url.search === destination.search)
+    await expect(page.locator(`.kanban-card[data-id="${overdueTask.id}"]`)).toBeVisible()
+    await expect(page.locator(`.kanban-card[data-id="${activeTask.id}"]`)).toHaveCount(0)
   } finally {
     await context.close()
   }

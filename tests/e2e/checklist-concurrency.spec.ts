@@ -63,6 +63,52 @@ test("task detail preserves separate checklist edits made in two sessions", asyn
   }
 })
 
+test("rebasing an appended checklist item preserves its selected placeholder before typing", async ({ page, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const original = [{ id: "existing", text: "Existing step", done: false }]
+  const created = await request.post("/api/tasks", {
+    data: { title: "Checklist selection rebase", checklists: JSON.stringify(original) },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const taskPath = "/api/tasks/" + encodeURIComponent(id)
+  await page.goto("/tasks?open=" + encodeURIComponent(id))
+  await expect(page.locator("#td-checklists input[type=checkbox]")).toHaveCount(1)
+  const latest = original.map(item => ({ ...item, done: true }))
+  expect((await request.put(taskPath, {
+    data: { checklists: JSON.stringify(latest), expected_checklists: JSON.stringify(original) },
+  })).status()).toBe(200)
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let intercepted = false
+  await page.route("**" + taskPath, async route => {
+    if (route.request().method() === "PUT" && !intercepted) {
+      intercepted = true
+      await held
+    }
+    await route.continue()
+  })
+  try {
+    await page.getByRole("button", { name: "Add Item" }).click()
+    const input = page.locator("#td-checklists textarea").last()
+    await expect(input).toBeFocused()
+    const selection = () => input.evaluate((element: HTMLTextAreaElement) => ({ start: element.selectionStart, end: element.selectionEnd, length: element.value.length }))
+    await expect.poll(selection).toEqual({ start: 0, end: 8, length: 8 })
+    release()
+    await expect(page.locator("#td-checklists input[type=checkbox]").first()).toBeChecked()
+    await expect(input).toBeFocused()
+    await expect.poll(selection).toEqual({ start: 0, end: 8, length: 8 })
+    await input.fill("Replace the placeholder")
+    await input.press("Enter")
+    await expect.poll(async () => JSON.parse((await (await request.get(taskPath)).json()).checklists)).toEqual([
+      ...latest,
+      { id: expect.any(String), text: "Replace the placeholder", done: false },
+    ])
+  } finally {
+    release()
+  }
+})
+
 test("a long checklist item wraps in a narrow detail panel and can be edited", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
   await page.setViewportSize({ width: 360, height: 760 })

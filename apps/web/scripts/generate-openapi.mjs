@@ -1365,7 +1365,14 @@ const paths = {
   // ── Frameworks (RICE, etc.) ──
   "/api/frameworks": {
     get: { operationId: "listFrameworks", tags: ["Strategy"], summary: "List available strategic frameworks", responses: { 200: { description: "Frameworks" } } },
-    post: { operationId: "createFramework", tags: ["Strategy"], summary: "Create a framework", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createFramework", tags: ["Strategy"], summary: "Create or import a framework",
+      requestBody: { required: true, content: {
+        "application/json": { schema: { type: "object", description: "Framework configuration using the existing camelCase JSON fields." } },
+        "application/yaml": { schema: { type: "string", maxLength: 65536, description: "Framework YAML, at most 64 KiB of UTF-8. Uses snake_case YAML fields; generates the ID from name and sets source to imported. Alias expansion is limited to 100 and AST nesting to 64 levels." } },
+      } },
+      responses: { 201: { description: "Created" }, 400: { description: "Invalid YAML or framework validation errors" }, 409: { description: "Framework ID already exists" }, 413: { description: "YAML exceeds the 64 KiB UTF-8 limit" } },
+    },
   },
   "/api/frameworks/{id}": {
     get: { operationId: "getFramework", tags: ["Strategy"], summary: "Get framework details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Framework" } } },

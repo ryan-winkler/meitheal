@@ -30,6 +30,8 @@
 # Development and operations
 
 - [Client-Side Patterns & HMR Gotchas](client-side-patterns.md) - Implement client controls that work with the application lifecycle.
+- [Browser translations](browser-translations.md) - Maintain browser locale behavior and avoid duplicate translation catalogs.
+- [Import a framework from YAML](framework-yaml-import.md) - Import a framework and diagnose validation or size errors.
 - [Memory-Safe Event Listener Patterns](memory-safety-patterns.md) - Manage browser event listeners and clean up their resources.
 - [Vertical Slice Runbook (Iteration 2+)](vertical-slice.md) - Understand the reference end-to-end task workflow.
 - [Home Assistant devcontainer](home-assistant-devcontainer.md) - Run the Supervisor development environment and verify Meitheal through ingress.

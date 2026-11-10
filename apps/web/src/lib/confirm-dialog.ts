@@ -57,30 +57,41 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓";
 
     dialog.innerHTML = `
-      <div style="text-align: center; margin-bottom: 16px; font-size: 32px;">${icon}</div>
+      <div data-confirm-icon style="text-align: center; margin-bottom: 16px; font-size: 32px;"></div>
       <h3 id="confirm-title" style="
         margin: 0 0 8px; font-size: 16px; font-weight: 600;
         color: var(--text-primary, #f1f5f9); text-align: center;
-      ">${options.title ?? "Confirm"}</h3>
+      "></h3>
       <p id="confirm-message" style="
         margin: 0 0 24px; font-size: 14px; line-height: 1.5;
         color: var(--text-secondary, #94a3b8); text-align: center;
-      ">${options.message}</p>
+      "></p>
       <div style="display: flex; gap: 12px; justify-content: center;">
         <button type="button" id="confirm-cancel" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
           background: transparent; border: 1px solid var(--border, #334155);
           color: var(--text-secondary, #94a3b8);
           transition: background 0.15s, border-color 0.15s;
-        ">${options.cancelText ?? "Cancel"}</button>
+        "></button>
         <button type="button" id="confirm-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: ${accentColor}; border: 1px solid ${accentColor};
+          background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
           color: #fff; font-weight: 500;
           transition: opacity 0.15s;
-        ">${options.confirmText ?? "Confirm"}</button>
+        "></button>
       </div>
     `;
+
+    // Dialog options are plain text, including values read back from DOM labels.
+    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
+    dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
+    dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
+    const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
+    const okBtn = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    cancelBtn.textContent = options.cancelText ?? "Cancel"
+    okBtn.textContent = options.confirmText ?? "Confirm"
+    okBtn.style.background = accentColor
+    okBtn.style.borderColor = accentColor
 
     overlay.appendChild(dialog);
 
@@ -90,8 +101,6 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     mountDialogOverlay(overlay)
 
     // Focus the cancel button by default (safer)
-    const cancelBtn = dialog.querySelector("#confirm-cancel") as HTMLButtonElement;
-    const okBtn = dialog.querySelector("#confirm-ok") as HTMLButtonElement;
     cancelBtn?.focus();
 
     let settled = false

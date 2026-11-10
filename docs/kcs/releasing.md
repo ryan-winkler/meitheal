@@ -16,7 +16,9 @@ This repository guard covers the release tooling. Supervisor installations from 
 
 Supervisor derives the installed App ID from its repository URL. The public repository gives Meitheal Canary a new internal ID. Use the public HTTPS URL without credentials. [Supervisor Store API](https://contributors.home-assistant.io/apps/supervisor-api/store/)
 
-After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Then uninstall the legacy Canary, install **Meitheal Canary** from the public repository, and verify health and authenticated ingress. Update any saved Home Assistant shortcuts to the new App entry. Remove the legacy repository once no installed Apps depend on it.
+After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Rehearse the [database and App-option transfer](home-assistant-backup-and-restore.md#move-data-between-store-repositories) in an isolated Supervisor first; a new repository ID does not inherit the old data volume, and Settings JSON does not include tasks or protected credentials.
+
+Keep at most one Canary installed during the transition: uninstall the legacy Canary before installing **Meitheal Canary** from the public repository. Transfer the verified data and compatible App options, then verify health, authenticated ingress, settings, tasks and restart persistence. Update saved Home Assistant shortcuts and any separately installed Meitheal integration that still targets the old App hostname. Keep the legacy recovery material until acceptance and a matching backup of the new App are verified. Remove the legacy repository once no installed Apps depend on it.
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
@@ -25,11 +27,17 @@ After the public ARM64 image passes the Green benchmark and publishes, add the p
 
 ## Qualify the release
 
+The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update. Push checks on `main` verify the merged source; pushes changing only `meitheal-hub-canary/config.yaml` remain excluded.
+
 1. Run the required checks and review findings for the intended source commit.
 2. Follow the [Supervisor devcontainer runbook](home-assistant-devcontainer.md) for ingress, permissions, install, update and restart. Exercise [backup and restore](home-assistant-backup-and-restore.md) with disposable data.
 3. Verify the intended Home Assistant version, supported architectures, and the resource budget on the target hardware. Record the tested source commit and image digest.
 4. For stable, run `node scripts/bump-version.mjs patch` and update the App changelog. Check the edited files with `node scripts/check-version-sync.mjs`. Merge through the normal review process, then push the exact matching version tag after the reviewed commit reaches `main`.
 5. For canary, use the hosted smoke workflow to check native builds from `main`. Build and retain the candidate images on the release host. Qualify those exact images before publication.
+
+## Pull-request image checks
+
+The [App container smoke workflow](../../.github/workflows/container-smoke.yml) lists its covered paths: the Dockerfile, both channel build manifests, the lockfile, root/web/domain package manifests, workspace configuration, root/web TypeScript configuration, Astro configuration, and image smoke helpers. Changes to these files run native amd64 and ARM64 builds against both channel bases. The checks detect absolute font paths in packaged CSS, including quoted and spaced URLs, and run the existing migration, startup, health and task-creation smoke test against the Home Assistant base runtime. Run the workflow manually from `main` to verify the combined result after several merges. The jobs do not publish images or update App Store discovery. This catches builder-version changes that the host Node checks cannot cover; it does not replace Supervisor or physical-device qualification.
 
 ## Hosted builds and stable publication
 

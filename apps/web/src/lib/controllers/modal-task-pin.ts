@@ -1,4 +1,4 @@
-import { getClientLocale, t } from "../../i18n/translations"
+import { getClientLocale, t } from "../../i18n/client"
 import {
   activatePinUpdate, PinAccessError, pinsInvalidated, readTaskPin, setTaskPin, supportsPersonalPins,
   watchPinLease, type PinLease,

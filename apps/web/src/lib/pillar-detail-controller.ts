@@ -159,7 +159,7 @@ pageLifecycle.onPageLoad(signal => {
     if (!pillar || busy || document.getElementById("meitheal-confirm-overlay")) return
     const deleting = pillar
     const confirmed = await confirmDialog({
-      message: `Remove "${escapeHtml(deleting.name)}" from active pillars?`,
+      message: `Remove "${deleting.name}" from active pillars?`,
       variant: "danger",
       confirmText: "Remove pillar",
       signal,

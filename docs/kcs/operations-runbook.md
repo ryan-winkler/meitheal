@@ -6,6 +6,12 @@ description: "Diagnose and recover from operating problems."
 
 # Operations Runbook
 
+## Custom icon uploads
+
+The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
+
+If an SVG is rejected, export a single SVG and retry. If its appearance changes, replace embedded images or CSS with paths and presentation attributes. Verify with `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/icon-upload-security.spec.ts` after building the web app, or point `E2E_BASE_URL` at a local Astro dev server.
+
 ## Logging Pipeline Health
 
 1. Confirm app emits JSON logs to stdout.
@@ -343,3 +349,7 @@ Use a disposable dataset. Confirm the shared policy starts Off and a specific Ar
 After enabling a policy, restart the App and allow one five-minute sweep. Verify up to 25 eligible cards move and protected or recently edited cards stay in place. Confirm each move has one system audit event and appears in **Deferred** with the inactivity label. Resume one card and confirm its status is preserved and its next inactivity deadline uses the new activity window. App-only SQLite backups retain the policy, including explicit Area inheritance and its revision.
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
+
+## Checklist edits from multiple sessions
+
+When another session saves a checklist, Meitheal merges compatible edits by item ID. A merge preserves the focused editor, its unsaved text and its selection. Adding an item keeps the placeholder selected so typing replaces it after a background merge. If edits conflict, the app keeps the draft and offers the latest saved version for review. Verify this with `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/checklist-concurrency.spec.ts` after building the web app.
