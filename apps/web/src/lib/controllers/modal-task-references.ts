@@ -1,6 +1,6 @@
 import type { SearchResultItem } from "@domains/search/search-types"
 import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
-import { commentMentionToken } from "@lib/comment-mentions"
+import { commentMentionContextHeader, commentMentionToken } from "@lib/comment-mentions"
 import { fetchCommentPrivate } from "@lib/comment-mention-client"
 import { buildTaskPath } from "@lib/task-detail-handoff"
 
@@ -74,16 +74,13 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
       list.setAttribute("aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
       status.textContent = (person ? picker.dataset.personLoading : picker.dataset.loading) ?? ""
       picker.scrollIntoView({ block: "nearest" })
-      const params = new URLSearchParams({ scope: "tasks", task_fields: "id,title", limit: String(limit), include_completed: "1" })
-      if (token.query) {
-        params.set("q", token.query)
-        params.set("include_archived", "1")
-      }
       try {
         const signal = AbortSignal.any([state.lookup.signal, AbortSignal.timeout(5_000)])
         if (person) {
-          const response = await fetchCommentPrivate("api/comment-people?" + new URLSearchParams({ q: token.query }), signal, {
-            headers: { "X-Meitheal-Mention-Context": picker.dataset.personContext ?? "" },
+          const response = await fetchCommentPrivate("api/comment-people", signal, {
+            method: "POST",
+            headers: { "content-type": "application/json", [commentMentionContextHeader]: picker.dataset.personContext ?? "" },
+            body: JSON.stringify({ q: token.query }),
           })
           if (!response.ok) throw new Error("Could not look up people.")
           const { matches } = await response.json() as { matches: { key: string, label: string }[] }
@@ -92,6 +89,11 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
             title: label, detail: "", replacement: commentMentionToken(key, label),
           }))
         } else {
+          const params = new URLSearchParams({ scope: "tasks", task_fields: "id,title", limit: String(limit), include_completed: "1" })
+          if (token.query) {
+            params.set("q", token.query)
+            params.set("include_archived", "1")
+          }
           const scope = searchWorkerScope()
           const worker = navigator.serviceWorker?.controller
           if (worker && !await searchWorkerReady(scope, worker)) {

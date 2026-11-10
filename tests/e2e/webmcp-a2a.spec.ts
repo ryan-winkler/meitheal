@@ -291,6 +291,7 @@ test.describe("MCP Discovery", () => {
         const names = tools.map(tool => tool.name)
         expect(new Set(names).size).toBe(names.length)
         expect(names.filter(name => /agenttoken|localfeedback|exportdatabase|settings/i.test(name))).toEqual([])
+        expect(names).not.toContain("findCommentPeople")
         for (const tool of tools) {
           expect(tool.name).toMatch(/^[A-Za-z][A-Za-z0-9_]{0,62}$/)
           expect(tool.description).toMatch(/\S/)
@@ -312,6 +313,11 @@ test.describe("MCP Discovery", () => {
         properties: { title: { type: "string" } },
         required: expect.arrayContaining(["title"]),
       })
+      const people = await api.post(ingress + "/api/comment-people", {
+        headers: { origin, ...readHeaders }, data: { q: "" },
+      })
+      expect(people.status()).toBe(403)
+      expect(people.headers()["cache-control"]).toBe("private, no-store")
 
       const denied = await send(readHeaders, "tools/call", { name: "createTask", arguments: { title: "Denied" } })
       expect(denied.ok()).toBeTruthy()

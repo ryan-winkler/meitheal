@@ -2085,28 +2085,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
   /api/comment-people:
-    get:
+    post:
       operationId: findCommentPeople
       tags:
         - Tasks
       summary: Find people to mention in a comment
-      description: Verified Home Assistant editor only. Returns up to five eligible people and opaque selectors.
+      description: Verified same-origin Home Assistant editor only. Send the search term in a JSON body of at most 1 KiB.
+        Returns up to five eligible people and opaque selectors.
       parameters:
-        - in: query
-          name: q
-          schema:
-            type: string
-            maxLength: 40
         - in: header
           name: X-Meitheal-Mention-Context
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - q
+              properties:
+                q:
+                  type: string
+                  maxLength: 40
       responses:
         "200":
           description: Eligible people
+        "400":
+          description: Invalid search body or URL parameters
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
         "403":
           description: Current editor session required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Search request exceeds 1 KiB
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
           content:
             application/problem+json:
               schema:

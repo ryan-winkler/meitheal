@@ -71,14 +71,54 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     const taskId = created.body.id as string
     const commentUrl = root + `/api/tasks/${taskId}/comments`
     const apiHeaders = { origin, "sec-fetch-site": "same-origin" }
+    const peopleUrl = root + "/api/comment-people"
     await sender.goto(root + "/today?open=" + taskId)
     await sender.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
     await expect(sender.locator("#td-title")).toHaveValue("Private mention journey")
     const input = sender.locator("#td-comment-input")
-    await input.fill("Please check @Br")
+    const picker = sender.locator("#td-task-reference-picker")
+    let writeContext = (await picker.getAttribute("data-person-context"))!
+    const [lookup] = await Promise.all([
+      sender.waitForRequest(request => new URL(request.url()).pathname === prefix + "/api/comment-people"),
+      input.fill("Please check @Brí"),
+    ])
+    expect(lookup.url()).toBe(peopleUrl)
+    expect(lookup.method()).toBe("POST")
+    expect(lookup.postDataJSON()).toEqual({ q: "Brí" })
+    expect((await lookup.allHeaders())["x-meitheal-mention-context"]).toBe(writeContext)
+    expect((await lookup.response())?.headers()["cache-control"]).toBe("private, no-store")
     const list = sender.getByRole("listbox", { name: "People to mention" })
     await expect(list.getByRole("option", { name: "Bríd Byrne" })).toBeVisible()
     await expect(list.getByRole("option")).toHaveCount(1)
+    const peopleHeaders = { ...apiHeaders, referer: sender.url(), "sec-fetch-mode": "same-origin",
+      "x-meitheal-mention-context": writeContext }
+    const lookupStatus = async (url: string, method: string, status: number,
+      headers: Record<string, string>, data?: object | string) => {
+      const denied = await sender.request.fetch(url, { method, headers, data, maxRedirects: 0 })
+      expect(denied.status(), method + " " + url).toBe(status)
+      expect(denied.headers()["cache-control"]).toBe("private, no-store")
+      expect(await denied.text()).not.toContain("Bríd Byrne")
+      return denied
+    }
+    const query = { q: "Brí" }
+    for (const method of ["GET", "HEAD", "PUT"]) {
+      const denied = await lookupStatus(peopleUrl, method, 405, peopleHeaders)
+      expect(denied.headers().allow).toBe("POST")
+    }
+    await lookupStatus(peopleUrl + "?q=Br%C3%AD", "POST", 400, peopleHeaders, query)
+    await lookupStatus(root + "/api/%63omment-people", "POST", 404, peopleHeaders, query)
+    await lookupStatus(peopleUrl, "POST", 403, { ...peopleHeaders, origin: "https://other.invalid" }, query)
+    await lookupStatus(peopleUrl, "POST", 403, { ...peopleHeaders, "sec-fetch-site": "cross-site" }, query)
+    await lookupStatus(peopleUrl, "POST", 403, { ...peopleHeaders, referer: origin + "/outside-ingress" }, query)
+    await lookupStatus(peopleUrl, "POST", 403, { ...peopleHeaders, "x-meitheal-mention-context": "" }, query)
+    await lookupStatus(peopleUrl, "POST", 415, peopleHeaders, "Brí")
+    await lookupStatus(peopleUrl, "POST", 400, { ...peopleHeaders, "content-type": "application/json" }, '{"q":')
+    await lookupStatus(peopleUrl, "POST", 400, peopleHeaders, { ...query, extra: true })
+    await lookupStatus(peopleUrl, "POST", 400, peopleHeaders, { q: "x".repeat(41) })
+    await lookupStatus(peopleUrl, "POST", 413, peopleHeaders, { q: "x".repeat(1024) })
+    await coreChange(child, "admin", { active: false })
+    await lookupStatus(peopleUrl, "POST", 403, peopleHeaders, query)
+    await coreChange(child, "admin", { active: true })
     await sender.context().setOffline(true)
     await expect(list).toBeHidden()
     await sender.context().setOffline(false)
@@ -90,8 +130,6 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await expect(input).toHaveValue(/Please check @\{person:/)
     const text = await input.inputValue()
     const marker = text.slice("Please check ".length)
-    const picker = sender.locator("#td-task-reference-picker")
-    let writeContext = (await picker.getAttribute("data-person-context"))!
     const writeHeaders = () => ({ ...apiHeaders, "x-meitheal-mention-context": writeContext })
     const switchSender = (user: string) => sender.context().addCookies([{ name: "feedback-fixture", value: user, url: origin }])
     const postFromEditor = async () => (await Promise.all([
@@ -104,6 +142,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     const contextProblem = "https://meitheal.local/problems/comment-mention-context"
 
     await switchSender("member-two")
+    await lookupStatus(peopleUrl, "POST", 403, peopleHeaders, query)
     const stale = await postFromEditor()
     expect(stale.status()).toBe(409)
     expect(stale.headers()["cache-control"]).toBe("private, no-store")

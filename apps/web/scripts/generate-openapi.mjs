@@ -941,16 +941,22 @@ const paths = {
     },
   },
   "/api/comment-people": {
-    get: {
+    post: {
       operationId: "findCommentPeople",
       tags: ["Tasks"],
       summary: "Find people to mention in a comment",
-      description: "Verified Home Assistant editor only. Returns up to five eligible people and opaque selectors.",
-      parameters: [
-        { in: "query", name: "q", schema: { type: "string", maxLength: 40 } },
-        { in: "header", name: "X-Meitheal-Mention-Context", required: true, schema: { type: "string" } },
-      ],
-      responses: { 200: { description: "Eligible people" }, 403: problemContent("Current editor session required") },
+      description: "Verified same-origin Home Assistant editor only. Send the search term in a JSON body of at most 1 KiB. Returns up to five eligible people and opaque selectors.",
+      parameters: [{ in: "header", name: "X-Meitheal-Mention-Context", required: true, schema: { type: "string" } }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", additionalProperties: false, required: ["q"], properties: { q: { type: "string", maxLength: 40 } },
+      } } } },
+      responses: {
+        200: { description: "Eligible people" },
+        400: problemContent("Invalid search body or URL parameters"),
+        403: problemContent("Current editor session required"),
+        413: problemContent("Search request exceeds 1 KiB"),
+        415: problemContent("Expected JSON"),
+      },
     },
   },
   "/api/mention-inbox": {

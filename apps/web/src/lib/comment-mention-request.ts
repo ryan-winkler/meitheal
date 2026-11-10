@@ -32,6 +32,18 @@ export function commentMentionProblem(detail: string, status = 409) {
   return apiProblem({ status, type: commentMentionProblemType, detail, extraHeaders: headers })
 }
 
+export function isSameIngressMentionRequest(request: Request, path: string | undefined): boolean {
+  if (!path || request.headers.get("sec-fetch-site") !== "same-origin" ||
+      request.headers.get("sec-fetch-mode") !== "same-origin") return false
+  try {
+    const referer = new URL(request.headers.get("referer") ?? "")
+    return (referer.protocol === "http:" || referer.protocol === "https:") &&
+      referer.origin === request.headers.get("origin") && referer.pathname.startsWith(path + "/")
+  } catch {
+    return false
+  }
+}
+
 export function checkCommentMentionWriteContext(request: Request, locals: App.Locals): Response | undefined {
   const user = verifiedIngressUser(locals)
   if (!user || matchesMentionInboxContext(user.id, request.headers.get(commentMentionContextHeader))) return

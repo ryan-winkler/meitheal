@@ -3,22 +3,10 @@ import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { readWithinLimit } from "@lib/bounded-body"
-import { commentMentionProblem, commentPersonKey } from "@lib/comment-mention-request"
+import { commentMentionProblem, commentPersonKey, isSameIngressMentionRequest } from "@lib/comment-mention-request"
 import { matchesMentionInboxContext, mentionInboxContextHeader } from "@lib/mention-inbox-context"
 import { buildTaskPath } from "@lib/task-detail-handoff"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
-
-function validSameIngress(request: Request, path: string) {
-  const origin = request.headers.get("origin")
-  try {
-    const referer = new URL(request.headers.get("referer") ?? "")
-    return request.headers.get("sec-fetch-site") === "same-origin" &&
-      request.headers.get("sec-fetch-mode") === "same-origin" &&
-      referer.origin === origin && referer.pathname.startsWith(path + "/")
-  } catch {
-    return false
-  }
-}
 
 function validId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
@@ -26,7 +14,7 @@ function validId(value: unknown): value is number {
 
 export const POST: APIRoute = async ({ locals, request, url }) => {
   const user = verifiedIngressUser(locals)
-  if (!user || !locals.ingressPath || !validSameIngress(request, locals.ingressPath)) {
+  if (!user || !isSameIngressMentionRequest(request, locals.ingressPath)) {
     return commentMentionProblem("Open the inbox through your verified Home Assistant session.", 403)
   }
   if (!matchesMentionInboxContext(user.id, request.headers.get(mentionInboxContextHeader))) {
