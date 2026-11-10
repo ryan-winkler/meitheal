@@ -1,11 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { rewriteIngressHtml } from "../../apps/web/src/lib/rewrite-ingress-html"
-
-function gate<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
-}
+import { deferred } from "./_helpers"
 
 test("scopes HTML tags split across chunks and preserves scripts, UTF-8 and external links", async () => {
   const prefix = "/api/hassio_ingress/fixture"
@@ -55,7 +50,7 @@ test("keeps ordinary HTML on the compact response path", async () => {
 test("cancels an upstream read when the client disconnects from large HTML", async () => {
   const prefix = "/api/hassio_ingress/fixture"
   const bytes = new TextEncoder().encode("<head></head><main>" + '<a href="/tasks">abc</a>'.repeat(240_000))
-  const requested = gate<void>()
+  const requested = deferred<void>()
   let cancelled = false
   const input = new Response(new ReadableStream({
     start(controller) { controller.enqueue(bytes) },
@@ -76,7 +71,7 @@ test("cancels an upstream read when the client disconnects from large HTML", asy
 
 test("aborting before the stream threshold releases the upstream reader", async () => {
   const prefix = "/api/hassio_ingress/fixture"
-  const requested = gate<void>()
+  const requested = deferred<void>()
   const aborter = new AbortController()
   let cancelled = false
   const input = new Response(new ReadableStream({
@@ -100,8 +95,8 @@ test("large HTML waits for a writable socket and bounds each output chunk", asyn
   const input = new Response("<head></head><script>" + "a".repeat(6 * 1024 * 1024) + "</script>", {
     headers: { "content-type": "text/html" },
   })
-  const paused = gate<void>()
-  const drained = gate<boolean>()
+  const paused = deferred<void>()
+  const drained = deferred<boolean>()
   let pulls = 0
   const result = await rewriteIngressHtml(input, prefix, {
     signal: new AbortController().signal,

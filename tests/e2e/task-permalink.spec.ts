@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
+import { deferred } from "./_helpers"
 
 test("copies a stable task link and returns from a deleted task to the task view", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
@@ -224,8 +225,8 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(page.locator("#td-comments")).toContainText("First visible comment")
     await expect(target).toHaveCount(0)
 
-    const started = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const started = deferred<void>()
+    const release = deferred<void>()
     const search = "Comment link task"
     await page.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
       started.resolve()
