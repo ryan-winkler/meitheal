@@ -36,7 +36,8 @@ function isExternal(href: string): boolean {
             data-page={item.key}
             title={item.label}
             data-tooltip={item.label}
-            data-astro-prefetch={external ? undefined : "viewport"}
+            data-astro-prefetch={item.key === "system-pinned" ? "false" : external ? undefined : "viewport"}
+            aria-current={item.isActive ? "page" : undefined}
             aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
             {...(external
               ? { target: "_blank", rel: "noopener noreferrer" }
@@ -94,13 +95,16 @@ function isExternal(href: string): boolean {
       // Skip external links — they never get "active" state
       if (link.classList.contains("nav-link--external")) return;
       link.classList.remove("active");
-      const href = link.getAttribute("href") || "";
+      link.removeAttribute("aria-current");
+      const rawHref = link.getAttribute("href") || "";
+      const href = ip && rawHref.startsWith(ip + "/") ? rawHref.slice(ip.length) : rawHref;
       if (
         href === currentPath ||
         (href !== "/" && currentPath.startsWith(href + "/")) ||
         (currentPath === "/" && link.getAttribute("data-page") === "dashboard")
       ) {
         link.classList.add("active");
+        link.setAttribute("aria-current", "page");
       }
     });
   }

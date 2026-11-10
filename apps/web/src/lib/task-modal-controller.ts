@@ -21,6 +21,7 @@
         import { showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
+        import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -32,7 +33,11 @@
           ) as HTMLDivElement;
         if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
+        let pinnedSession: {
+          reconcile: () => void; dirty: boolean; pending: number; queued?: () => void
+        } | undefined
         const deferral = initModalDeferral(tdOverlay, __signal)
+        const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const tdClose = document.getElementById("td-close")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
@@ -60,7 +65,32 @@
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
 
+        function beginPinnedWrite() {
+          const session = pinnedSession
+          if (!session) return undefined
+          session.pending++
+          session.dirty = true
+          return {
+            signal: AbortSignal.any([__signal, AbortSignal.timeout(7_000)]),
+            finish() {
+              if (--session.pending !== 0) return
+              const next = session.queued
+              delete session.queued
+              if (next && !__signal.aborted && session === pinnedSession) queueMicrotask(next)
+            },
+          }
+        }
+
+        function waitForDetailWrites(next: () => void): boolean {
+          if (pinnedSession?.pending) {
+            pinnedSession.queued = next
+            return true
+          }
+          return deferral.waitForWrite(next) || pins.waitForWrite(next)
+        }
+
         function setTaskLocation(taskId: string | null, replace = false, commentTarget: string | null = null) {
+          if (pinnedSession) return
           const url = new URL(window.location.href)
           if (taskId) url.searchParams.set("open", taskId)
           else url.searchParams.delete("open")
@@ -74,8 +104,9 @@
 
         function closeTD() {
           if (!tdOverlay?.classList.contains("active") || tdOverlay.classList.contains("closing")) return
-          if (deferral.waitForWrite(closeTD)) return
+          if (waitForDetailWrites(closeTD)) return
           deferral.opening(false)
+          pins.opening()
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
@@ -98,10 +129,13 @@
                 _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
               _previouslyFocused.focus()
             } else {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading')?.focus()
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
             }
             _previouslyFocused = null
-            deferral.closed()
+            const closed = pinnedSession
+            pinnedSession = undefined
+            const deferralChanged = deferral.closed(Boolean(closed))
+            if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
           };
 
           if (reducedMotion) {
@@ -133,9 +167,10 @@
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
-          if (deferral.waitForWrite(() => { void openTaskDetail(taskId, commentTarget) })) return
+          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget) })) return
           const newSession = !tdOverlay.classList.contains("active")
           deferral.opening(newSession)
+          pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = document.activeElement
           currentTaskId = taskId;
@@ -922,6 +957,7 @@
               _isPopulating = false
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal)
+              pins.loaded(taskId, modalSignal)
             }, 100)
           } catch (e) {
             if (modalSignal.aborted) return
@@ -935,12 +971,14 @@
         async function saveTaskField(field: string, value: unknown): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
           const completeDeferralWrite = deferral.nativeWrite(field, value)
+          const scopedWrite = ["title", "status", "project_id"].includes(field) ? beginPinnedWrite() : undefined
           let saved = false
           try {
             const response = await fetch(`/api/tasks/${currentTaskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ [field]: value }),
+              ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
             })
             saved = response.ok
             if (saved) return true
@@ -949,6 +987,7 @@
             log.warn(`Network error saving ${field}:`, err)
           } finally {
             completeDeferralWrite(saved)
+            scopedWrite?.finish()
           }
           const { showToast } = await import("@lib/toast")
           showToast("common.failed_update", "error")
@@ -1498,31 +1537,36 @@
         document
           .getElementById("td-delete")
           ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
+            const taskId = currentTaskId
+            if (!taskId) return
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
             });
-            if (!ok) return;
+            if (!ok || taskId !== currentTaskId) return
+            const scopedWrite = beginPinnedWrite()
             try {
               const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${currentTaskId}`,
+                `${window.__ingress_path || ""}/api/tasks/${taskId}`,
                 {
                   method: "DELETE",
+                  ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
                 },
               );
               // Treat 204 (deleted) and 404 (already gone) as success
               if (res.ok || res.status === 404) {
                 const deferred = currentTaskId ? deferral.removing(currentTaskId) : false
                 closeTD();
-                if (!deferred) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
+                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
               }
             } catch {
               // Network error — still close and refresh to re-sync
               closeTD();
-              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+              if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+            } finally {
+              scopedWrite?.finish()
             }
           }, { signal: __signal });
 
@@ -1580,7 +1624,7 @@
         }, { signal: __signal });
 
         function checkTaskLocation() {
-          if (deferral.waitForWrite(checkTaskLocation)) return
+          if (waitForDetailWrites(checkTaskLocation)) return
           const url = new URL(window.location.href)
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")
@@ -1596,8 +1640,15 @@
 
         // Expose openTaskDetail globally for cross-page use (table, index new-task flow)
         window.openTaskDetail = openTaskDetail;
+        const openPinnedTaskDetail = (taskId: string, reconcile: () => void) => {
+          if (!tdOverlay.isConnected || __signal.aborted || tdOverlay.classList.contains("active")) return
+          pinnedSession = { reconcile, dirty: false, pending: 0 }
+          void openTaskDetail(taskId)
+        }
+        window.openPinnedTaskDetail = openPinnedTaskDetail
         __signal.addEventListener("abort", () => {
           if (window.openTaskDetail === openTaskDetail) delete window.openTaskDetail
+          if (window.openPinnedTaskDetail === openPinnedTaskDetail) delete window.openPinnedTaskDetail
         }, { once: true })
 
         // Delegated click → open task detail for any task element

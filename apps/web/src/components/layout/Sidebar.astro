@@ -142,7 +142,7 @@ try {
 /** Inject custom items into NAV_ITEMS before processing */
 if (Array.isArray(sidebarConfig.customItems)) {
   sidebarConfig.customItems.forEach((c) => {
-    if (c.id && c.href) {
+    if (c.id && c.id !== "system-pinned" && c.href) {
       NAV_ITEMS[c.id] = {
         href: c.href,
         i18nKey: "",
@@ -190,6 +190,12 @@ const navItems = order
       : currentPath.startsWith(def.href);
     return { key, label, isActive, ...def };
   });
+const tasksIndex = navItems.findIndex(item => item.key === "tasks")
+const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
+navItems.splice(pinIndex, 0, {
+  key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
+  icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
+})
 ---
 
 <nav
@@ -294,6 +300,7 @@ const navItems = order
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
     min-height: 0;
     padding-top: 8px;
     scrollbar-width: none; /* Hide scrollbar Firefox */
@@ -450,16 +457,10 @@ const navItems = order
 
     .sidebar.open {
       transform: translateX(0);
+      z-index: 200;
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
     }
 
-    .sidebar.open::after {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: -1;
-    }
   }
 
   .sidebar-gamification-wrapper {

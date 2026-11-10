@@ -1,0 +1,64 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { t } from "../i18n/translations"
+
+Astro.response.headers.set("cache-control", "private, no-store")
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+---
+
+<Layout title={t("pins.title", locale)} suppressTaskUrlOpen>
+  <section class="pinned" data-pinned-root aria-labelledby="pinned-heading">
+    <header>
+      <h1 id="pinned-heading" tabindex="-1">{t("pins.title", locale)}</h1>
+      <p>{t("pins.description", locale)}</p>
+    </header>
+    <p role="status" aria-atomic="true" data-pins-status>{t("pins.loading", locale)}</p>
+    <button type="button" class="btn btn-outline" data-pins-refresh hidden>{t("pins.refresh", locale)}</button>
+    <ul class="pinned-list" data-pins-list hidden></ul>
+    <nav class="pinned-actions" data-pins-pagination aria-label={t("pins.pagination", locale)} hidden>
+      <button type="button" class="btn btn-outline" data-pins-previous>{t("triage.previous", locale)}</button>
+      <span data-pins-page></span>
+      <button type="button" class="btn btn-outline" data-pins-next>{t("triage.next", locale)}</button>
+    </nav>
+    <template data-pin-row>
+      <li class="pinned-row">
+        <div class="pinned-task">
+          <p class="pinned-meta" data-pin-ticket></p>
+          <h2><a data-pin-task data-astro-prefetch="false"></a></h2>
+          <p class="pinned-meta" data-pin-status></p>
+        </div>
+        <button type="button" class="btn btn-outline" data-pin-remove>{t("pins.unpin", locale)}</button>
+      </li>
+    </template>
+  </section>
+</Layout>
+
+<script>
+  import "@lib/pinned-controller"
+</script>
+
+<style>
+  .pinned { max-width: 56rem; margin-inline: auto; padding: clamp(1rem, 3vw, 2.5rem); }
+  header { margin-bottom: 1.5rem; }
+  header p, .pinned-meta { color: var(--text-secondary); }
+  .pinned-list { display: grid; gap: .75rem; list-style: none; padding: 0; }
+  .pinned-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .75rem;
+    padding: 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+  }
+  .pinned-task { min-width: 0; overflow-wrap: anywhere; }
+  .pinned-row h2 { margin: .2rem 0; font-size: 1rem; }
+  .pinned-meta { margin: 0; font-size: .875rem; }
+  .pinned-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  button { min-height: 2.75rem; }
+  [hidden] { display: none; }
+  @media (max-width: 420px) {
+    .pinned-row { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  }
+</style>

@@ -477,7 +477,7 @@ self.addEventListener("message", (event) => {
   }
 
   if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
+    event.waitUntil(self.skipWaiting());
   }
 
   // Version query — used by Settings UI to display SW version

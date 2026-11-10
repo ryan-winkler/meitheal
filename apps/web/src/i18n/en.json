@@ -881,6 +881,25 @@
     "setting_hidden": "Hides the built-in Backlog lane and Triage queue. Open Table to review existing Backlog tasks.",
     "setting_disabled": "Disables the Triage queue and removes Backlog from status choices. Use Todo for new work."
   },
+  "pins": {
+    "title": "Pinned tasks",
+    "description": "Keep tasks you want to return to in one place. Your pins are private to your Home Assistant account.",
+    "loading": "Checking your pins…",
+    "empty": "No pinned tasks yet. Open a task’s details to pin it.",
+    "unavailable": "Open Meitheal in the Home Assistant app panel over HTTPS to use personal pins.",
+    "account": "Your pin session changed. Open Meitheal from Home Assistant again or refresh to verify your account.",
+    "connection": "Couldn’t verify your pins. Refresh before trying again.",
+    "update": "Activate the app update to use personal pins.",
+    "activate": "Activate update",
+    "refresh": "Refresh pins",
+    "pin": "Pin task",
+    "unpin": "Unpin",
+    "unpin_named": "Unpin {title}",
+    "removed": "Pin removed.",
+    "saved": "Pin saved.",
+    "pagination": "Pinned task pages",
+    "page": "Page {page} of {pages}"
+  },
   "deferral": {
     "title": "Deferred",
     "description": "Review work you set aside and bring it back when you’re ready.",

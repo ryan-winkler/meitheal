@@ -552,6 +552,9 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- Toast notifications are handled by the shared showToast() system (see @lib/toast) -->
 
     <script>
+      import "@lib/mobile-sidebar-controller"
+    </script>
+    <script>
       import "@lib/layout-controller";
       import { initHAThemeBridge } from "@lib/ha-theme-bridge";
       import { initGlobalErrorHandler } from "@lib/global-error-handler";

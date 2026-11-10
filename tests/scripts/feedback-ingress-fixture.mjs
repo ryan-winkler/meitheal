@@ -49,7 +49,17 @@ process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../../apps/web/dist/server/entry.mjs")
 const configuredPath = "/api/hassio_ingress/feedback-fixture"
 let serveOldWorker = false
+let holdPinReceipt = false
+let releasePinReceipt
 process.on("message", message => {
+  if (pinFixture && message?.type === "hold-pin-receipt") {
+    holdPinReceipt = true
+    process.send({ holdingPinReceipt: true })
+  }
+  if (pinFixture && message?.type === "release-pin-receipt") {
+    releasePinReceipt?.()
+    releasePinReceipt = undefined
+  }
   if (message?.type !== "fixture-worker") return
   serveOldWorker = message.old === true
   process.send({ oldWorker: serveOldWorker })
@@ -77,6 +87,8 @@ self.addEventListener("fetch", event => {
   })())
 })
 `
+const pinnedLegacyWorker = pinFixture && process.env.MEITHEAL_PIN_LEGACY_WORKER
+  ? readFileSync(process.env.MEITHEAL_PIN_LEGACY_WORKER, "utf8") : oldWorker
 
 const handle = (request, response) => {
   const fromSupervisor = request.url?.startsWith(`${configuredPath}/`) ?? false
@@ -88,7 +100,7 @@ const handle = (request, response) => {
   if (fromSupervisor && serveOldWorker && request.method === "GET" &&
       request.url.split("?")[0] === `${configuredPath}/sw.js`) {
     response.writeHead(200, { "content-type": "application/javascript", "cache-control": "no-store" })
-    response.end(oldWorker)
+    response.end(pinnedLegacyWorker)
     return
   }
   const user = /(?:^|;\s*)feedback-fixture=(admin|member|member-two|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
@@ -106,6 +118,16 @@ const handle = (request, response) => {
     response.setHeader("cache-control", "no-store")
     if (fromSupervisor && request.headers["sec-fetch-site"] === undefined) delete request.headers.origin
   }
+
+  if (fromSupervisor && holdPinReceipt && request.method === "PUT" && request.url === "/api/task-pins") {
+    holdPinReceipt = false
+    const end = response.end.bind(response)
+    response.end = (...args) => {
+      releasePinReceipt = () => end(...args)
+      process.send({ pinReceiptStatus: response.statusCode })
+      return response
+    }
+  }
   runWithIngressTransport({
     peer: fromSupervisor ? "172.30.32.2" : "172.30.33.7",
     fromSupervisor,
@@ -115,7 +137,7 @@ const handle = (request, response) => {
     waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
   }, () => handler(request, response))
 }
-const server = pinFixture ? https.createServer({
+const server = pinFixture && process.env.MEITHEAL_PIN_FIXTURE_HTTP !== "1" ? https.createServer({
   key: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_KEY),
   cert: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_CERT),
 }, handle) : http.createServer(handle)

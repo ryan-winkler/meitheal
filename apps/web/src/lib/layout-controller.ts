@@ -61,8 +61,6 @@
           log.error("Unhandled promise rejection", e.reason);
         });
 
-        // Mobile menu toggle managed in TopNavigation.astro
-
         // ============================================================
         // P0-2/P0-3/P0-5: Lifecycle-managed page initialization
         // All DOM-dependent listeners use pageLifecycle.signal so they

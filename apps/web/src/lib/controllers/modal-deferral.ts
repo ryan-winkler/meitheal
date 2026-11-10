@@ -175,17 +175,19 @@ export function initModalDeferral(overlay: HTMLElement, signal: AbortSignal) {
       notifyTaskCountsChanged(task.projectId)
       return true
     },
-    closed() {
+    closed(suppressGlobal = false): boolean {
       const changedIds = [...changed]
       const taskId = originId
       originId = undefined
       changed.clear()
-      if (!changedIds.length || signal.aborted) return
+      if (!changedIds.length || signal.aborted) return false
+      if (suppressGlobal) return true
       if (document.querySelector("#kanban-board, [data-deferred-root]")) {
         window.dispatchEvent(new CustomEvent(DEFERRAL_RECONCILED, { detail: { taskId, changedIds } }))
       } else {
         document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "deferral" } }))
       }
+      return true
     },
   }
 }

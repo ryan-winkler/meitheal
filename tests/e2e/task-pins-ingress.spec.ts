@@ -1,14 +1,11 @@
-import { execFileSync, fork, type ChildProcess } from "node:child_process"
-import { createHash, X509Certificate } from "node:crypto"
+import type { ChildProcess } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
-import { chromium, expect, test, type Page } from "@playwright/test"
+import { expect, test } from "@playwright/test"
+import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
-const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
-const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 const noStore = "private, no-store"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
@@ -41,38 +38,6 @@ test("packaged transport denies alternate pin URLs and marks errors no-store", a
   expect(limited?.headers()["cache-control"]).toBe(noStore)
 })
 
-function startCoreFixture(work: string): ChildProcess {
-  const cert = join(work, "fixture-cert.pem")
-  const key = join(work, "fixture-key.pem")
-  execFileSync("openssl", ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "1",
-    "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" })
-  const env = {
-    PATH: process.env.PATH,
-    NODE_ENV: "production",
-    MEITHEAL_DB_URL: `file:${join(work, "pins.db")}`,
-    MEITHEAL_PIN_FIXTURE: "1",
-    MEITHEAL_PIN_FIXTURE_TLS_CERT: cert,
-    MEITHEAL_PIN_FIXTURE_TLS_KEY: key,
-  }
-  execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
-  return fork(fixture, { cwd: web, env, stdio: ["ignore", "pipe", "pipe", "ipc"] })
-}
-
-async function pinRequest(page: Page, path: string, method: "POST" | "PUT" | "HEAD", body?: object, context?: string) {
-  return page.evaluate(async ({ path, method, body, context }) => {
-    const response = await fetch(path, {
-      method, mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
-      signal: AbortSignal.timeout(7_000),
-      headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(context ? { "X-Meitheal-Pin-Context": context } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    })
-    return {
-      status: response.status, cache: response.headers.get("cache-control"),
-      body: method === "HEAD" ? null : await response.json(),
-    }
-  }, { path, method, body, context })
-}
-
 test("browser-generated HTTPS requests isolate owners and reject revoked Core identity", async () => {
   const work = await mkdtemp(join(tmpdir(), "meitheal-pin-ingress-"))
   let child: ChildProcess | undefined
@@ -89,9 +54,7 @@ test("browser-generated HTTPS requests isolate owners and reject revoked Core id
     const origin = `https://127.0.0.1:${info.port}`
     const prefix: string = info.configuredPath
     const path = prefix + "/api/task-pins"
-    const certificate = new X509Certificate(await readFile(join(work, "fixture-cert.pem")))
-    const spki = createHash("sha256").update(certificate.publicKey.export({ type: "spki", format: "der" })).digest("base64")
-    browser = await chromium.launch({ args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`] })
+    browser = await launchPinBrowser(work)
     const context = await browser.newContext({ extraHTTPHeaders: {} })
     await context.setExtraHTTPHeaders({})
     const page = await context.newPage()

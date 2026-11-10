@@ -879,6 +879,25 @@
     "setting_hidden": "Folaítear lána ionsuite an Riaráiste agus scuaine na triáise. Oscail an Tábla chun na tascanna sa Riaráiste a fheiceáil.",
     "setting_disabled": "Díchumasaítear scuaine na triáise agus baintear an Riaráiste as na roghanna stádais. Úsáid Déanamh le haghaidh obair nua."
   },
+  "pins": {
+    "title": "Tascanna pionnáilte",
+    "description": "Coinnigh in aon áit amháin na tascanna ar mhaith leat filleadh orthu. Ní fheiceann ach do chuntas Home Assistant do phionnaí.",
+    "loading": "Do phionnaí á seiceáil…",
+    "empty": "Níl aon tasc pionnáilte fós. Oscail sonraí taisc chun é a phionnáil.",
+    "unavailable": "Oscail Meitheal i bpainéal Home Assistant thar HTTPS chun pionnaí pearsanta a úsáid.",
+    "account": "D’athraigh do sheisiún. Oscail Meitheal arís ó Home Assistant nó athnuaigh an liosta chun do chuntas a fhíorú.",
+    "connection": "Níorbh fhéidir do phionnaí a fhíorú. Athnuaigh an liosta sula mbainfidh tú triail eile as.",
+    "update": "Gníomhachtaigh nuashonrú na haipe chun pionnaí pearsanta a úsáid.",
+    "activate": "Gníomhachtaigh an nuashonrú",
+    "refresh": "Athnuaigh na pionnaí",
+    "pin": "Pionnáil an tasc",
+    "unpin": "Bain an pionna",
+    "unpin_named": "Bain an pionna de {title}",
+    "removed": "Baineadh an pionna.",
+    "saved": "Sábháladh an pionna.",
+    "pagination": "Leathanaigh na dtascanna pionnáilte",
+    "page": "Leathanach {page} as {pages}"
+  },
   "deferral": {
     "title": "Curtha ar athló",
     "description": "Déan athbhreithniú ar obair a chuir tú ar leataobh agus fill uirthi nuair a bheidh tú réidh.",
