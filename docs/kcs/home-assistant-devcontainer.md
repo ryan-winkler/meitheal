@@ -19,6 +19,8 @@ Use a disposable development host for changes to ingress, Supervisor integration
 
 The checked-in configuration installs Node 26 and pnpm 10.8.0 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
 
+Setup checks Grocy at its public root URL. The authenticated Grocy API requires a separate key and is not a readiness probe.
+
 The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal`. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
 
 ## Local configuration and recovery
