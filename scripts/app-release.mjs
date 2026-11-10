@@ -7,23 +7,47 @@ const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const canaryVersion = /^[0-9a-f]{12}$/
 const architectures = { amd64: "linux/amd64", aarch64: "linux/arm64" }
 const channels = {
-  stable: { dir: "meitheal-hub", image: "meitheal" },
-  canary: { dir: "meitheal-hub-canary", image: "meitheal-canary" },
+  stable: { dir: "meitheal-hub", slug: "meitheal", image: "meitheal" },
+  canary: { dir: "meitheal-hub-canary", slug: "meitheal_canary", image: "meitheal-canary" },
 }
 
 function fail(message) {
   throw new Error(message)
 }
 
+function checkAdditionalAppManifests(checkout) {
+  const canonicalDirectories = Object.values(channels).map(config => config.dir)
+  for (const entry of readdirSync(checkout, { withFileTypes: true })) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    for (const filename of ["config.yaml", "config.yml", "config.json"]) {
+      const path = join(checkout, entry.name, filename)
+      if (!existsSync(path)) continue
+      const canonical = canonicalDirectories.includes(entry.name)
+      if (canonical && filename === "config.yaml") continue
+      const manifest = readFileSync(path, "utf8")
+      const hasSlug = filename === "config.json"
+        ? Object.hasOwn(JSON.parse(manifest) ?? {}, "slug")
+        : /(?:^|[,{])\s*(?:slug|"slug"|'slug')\s*:/m.test(manifest)
+      if (canonical || hasSlug) fail(`Unexpected App manifest ${entry.name}/${filename}. Keep only meitheal-hub and meitheal-hub-canary.`)
+    }
+  }
+}
+
 function channelConfig(channel) {
   if (!Object.hasOwn(channels, channel)) fail("Expected stable or canary")
-  const config = channels[channel]
-  const source = join(root, config.dir)
-  const manifest = readFileSync(join(source, "config.yaml"), "utf8")
-  const image = `ghcr.io/ryan-winkler/${config.image}-{arch}`
-  const imageFields = manifest.match(/^image: .+$/gm)
-  if (imageFields?.length !== 1 || imageFields[0] !== `image: "${image}"`) fail("Unexpected App image template")
-  return { source, dir: config.dir, manifest, image }
+  checkAdditionalAppManifests(root)
+  const configurations = {}
+  for (const [name, config] of Object.entries(channels)) {
+    const source = join(root, config.dir)
+    const manifest = readFileSync(join(source, "config.yaml"), "utf8")
+    const image = `ghcr.io/ryan-winkler/${config.image}-{arch}`
+    const imageFields = manifest.match(/^image: .+$/gm)
+    if (imageFields?.length !== 1 || imageFields[0] !== `image: "${image}"`) fail("Unexpected App image template")
+    const slugFields = manifest.match(/^slug: .+$/gm)
+    if (slugFields?.length !== 1 || slugFields[0] !== `slug: "${config.slug}"`) fail("Unexpected App slug")
+    configurations[name] = { source, dir: config.dir, manifest, image }
+  }
+  return configurations[channel]
 }
 
 function versionOf(manifest) {
@@ -66,6 +90,7 @@ function stage(channel, config, version, destination) {
 
   const target = resolve(destination)
   if (target === root || !existsSync(join(target, ".git"))) fail("Expected a separate App repository checkout")
+  checkAdditionalAppManifests(target)
   const directory = join(target, config.dir)
   const manifestPath = join(directory, "config.yaml")
   checkDestination(directory, true)

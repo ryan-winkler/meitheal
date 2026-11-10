@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -99,5 +99,96 @@ test("staging rejects destination links outside the App repository", () => {
     expect(existsSync(join(fixture, "redirect/config.yaml"))).toBe(false)
   } finally {
     rmSync(fixture, { recursive: true })
+  }
+})
+
+test("all release entrypoints retain one canonical Canary and reject extra App manifests", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-policy-"))
+  const source = join(fixture, "source")
+  const destination = join(fixture, "destination")
+  try {
+    mkdirSync(join(source, "scripts"), { recursive: true })
+    cpSync(join(root, "scripts/app-release.mjs"), join(source, "scripts/app-release.mjs"))
+    cpSync(join(root, "repository.yaml"), join(source, "repository.yaml"))
+    for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
+      cpSync(join(root, directory), join(source, directory), { recursive: true })
+    }
+    mkdirSync(join(destination, ".git"), { recursive: true })
+    mkdirSync(join(source, "tooling"))
+    writeFileSync(join(source, "tooling/config.json"), '{"compilerOptions":{}}')
+    const run = (...args: string[]) => spawnSync(process.execPath, [join(source, "scripts/app-release.mjs"), ...args], {
+      cwd: source,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        GITHUB_REF: args[1] === "stable" ? `refs/tags/v${stableVersion}` : "refs/heads/main",
+      },
+    })
+    const commands = ["stable", "canary"].flatMap(channel => {
+      const version = channel === "stable" ? String(stableVersion) : revision.slice(0, 12)
+      const ref = channel === "stable" ? `refs/tags/v${version}` : "refs/heads/main"
+      return [
+        ["prepare", channel, "push", ref, revision],
+        ["image", channel, "amd64", version, revision],
+        ["image", channel, "aarch64", version, revision],
+        ["stage", channel, version, destination],
+      ]
+    })
+    for (const command of commands) {
+      const result = run(...command)
+      expect(result.stderr, command.join(" ")).toBe("")
+      expect(result.status, command.join(" ")).toBe(0)
+      if (command[0] === "image") {
+        const family = command[1] === "canary" ? "meitheal-canary" : "meitheal"
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          image: `ghcr.io/ryan-winkler/${family}-${command[2]}:${command[3]}`,
+          platform: command[2] === "amd64" ? "linux/amd64" : "linux/arm64",
+        })
+      }
+    }
+    const before = readFileSync(join(destination, "meitheal-hub-canary/config.yaml"), "utf8")
+    const extraManifests = [
+      ["meitheal-settings", "config.yaml", 'name: "Settings Canary"\nslug: "meitheal_settings"\n'],
+      ["meitheal-preview", "config.yml", "name: Preview\n'slug': meitheal_preview\n"],
+      ["experimental", "config.json", '{"name":"Extra Canary","slug":"meitheal_extra"}'],
+      ["meitheal-hub-canary", "config.json", '{"slug":"meitheal_canary"}'],
+    ]
+    for (const [directory, filename, manifest] of extraManifests) {
+      const extra = join(source, directory!, filename!)
+      mkdirSync(join(source, directory!), { recursive: true })
+      writeFileSync(extra, manifest!)
+      try {
+        for (const command of commands) {
+          const result = run(...command)
+          expect(result.status, command.join(" ")).toBe(1)
+          expect(result.stderr).toContain(`Unexpected App manifest ${directory}/${filename}`)
+        }
+      } finally {
+        rmSync(extra)
+      }
+    }
+    const extraDestination = join(destination, "meitheal-settings")
+    mkdirSync(extraDestination)
+    writeFileSync(join(extraDestination, "config.yaml"), 'slug: "meitheal_settings"\n')
+    for (const channel of ["stable", "canary"]) {
+      const version = channel === "stable" ? String(stableVersion) : revision.slice(0, 12)
+      expect(run("stage", channel, version, destination).stderr).toContain("Unexpected App manifest meitheal-settings/config.yaml")
+    }
+    expect(readFileSync(join(destination, "meitheal-hub-canary/config.yaml"), "utf8")).toBe(before)
+    rmSync(extraDestination, { recursive: true })
+
+    const canary = join(source, "meitheal-hub-canary/config.yaml")
+    const manifest = readFileSync(canary, "utf8")
+    writeFileSync(canary, manifest.replace(/^slug: .+$/m, 'slug: "meitheal_settings"'))
+    for (const command of commands) {
+      expect(run(...command).stderr).toContain("Unexpected App slug")
+    }
+    writeFileSync(canary, manifest.replace(/^image: .+$/m, 'image: "ghcr.io/ryan-winkler/meitheal-settings-{arch}"'))
+    for (const command of commands) {
+      expect(run(...command).stderr).toContain("Unexpected App image template")
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
   }
 })

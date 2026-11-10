@@ -8,6 +8,10 @@ description: "Qualify App images and promote a verified version to the Home Assi
 
 Home Assistant discovers both channels through the [Meitheal add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon). Keep existing Store entries and App slugs when updating a channel. The optional Core integration has a separate [Marketplace release process](home-assistant-marketplace.md).
 
+Maintain one Canary App entry in `meitheal-hub-canary/config.yaml`, with slug `meitheal_canary` and image family `ghcr.io/ryan-winkler/meitheal-canary-{arch}`. Settings and other feature work ship through this same Canary. The Stable manifest remains in `meitheal-hub/config.yaml` with slug `meitheal`. Release preparation, image metadata and staging validate both canonical manifests and reject additional root App manifests, including Settings, preview and extra experimental variants. Staging checks the destination repository before writing files. Remove an obsolete extra manifest through its reviewed retirement process before staging.
+
+This repository guard covers the release tooling. Supervisor installations from other repositories or manually created local Apps require separate device checks and cleanup.
+
 ## Move a Canary from the legacy private Store repository
 
 Supervisor derives the installed App ID from its repository URL. The public repository gives Meitheal Canary a new internal ID. Use the public HTTPS URL without credentials. [Supervisor Store API](https://contributors.home-assistant.io/apps/supervisor-api/store/)
