@@ -10,4 +10,6 @@ Open **Planning → RICE**. **Ranked work** shows the highest scores first. **Ne
 
 Choose **Edit score** beside a task and enter Reach, Impact, Confidence as a percentage, and Effort in a consistent unit. The score updates as you type. Use an effort greater than zero. **Save score** returns you to the lists and refreshes the ranking.
 
+Tasks with older saved estimates keep their existing scores. Saving an edit stores the new numeric estimates alongside the original fields.
+
 If another session changes the task while the editor is open, choose **Reload score** and review the latest estimates before saving. If a request is interrupted, check the latest score before trying again.

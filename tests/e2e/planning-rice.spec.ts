@@ -1,13 +1,18 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
-import { readRiceInputs, riceLensScore } from "../../apps/web/src/lib/rice-lens"
+import { parseRiceInputs, readRiceInputs, riceLensScore } from "../../apps/web/src/lib/rice-lens"
 
 test("the shared lens reads numeric legacy fields, nested scores and zero values", () => {
   const legacy = { reach: "10", impact: 2, confidence: 50, effort: 2 }
   expect(riceLensScore(readRiceInputs(legacy)!)).toBe(500)
+  expect(riceLensScore(readRiceInputs({ reach: "0x10", impact: 2, confidence: true, effort: 1 })!)).toBe(32)
   expect(riceLensScore(readRiceInputs({ ...legacy, rice: { ...legacy, reach: 0 } })!)).toBe(0)
+  expect(readRiceInputs({ ...legacy, reach: 0 })).toBeNull()
   expect(readRiceInputs({ ...legacy, effort: 0 })).toBeNull()
   expect(readRiceInputs({ ...legacy, confidence: "" })).toBeNull()
-  expect(readRiceInputs({ ...legacy, impact: true })).toBeNull()
+  expect(readRiceInputs({ ...legacy, confidence: false })).toBeNull()
+  expect(readRiceInputs({ rice: { ...legacy, impact: true } })).toBeNull()
+  expect(parseRiceInputs({ ...legacy, impact: true })).toBeNull()
+  expect(parseRiceInputs({ ...legacy, impact: -1 })).toBeNull()
 })
 
 test.describe("Planning RICE editor", () => {
@@ -21,7 +26,7 @@ test.describe("Planning RICE editor", () => {
   }
 
   test("edits a legacy score in place and preserves the rest of its payload", async ({ page, request }) => {
-    const legacy = { reach: "10", impact: 2, confidence: 50, effort: 2, heart: { note: "keep me" } }
+    const legacy = { reach: "0x10", impact: 2, confidence: true, effort: 1, heart: { note: "keep me" } }
     const title = "A long task " + "window".repeat(26)
     const id = await create(request, title, legacy)
     const finished = await create(request, "Completed score outside active work", legacy, "complete")
@@ -36,14 +41,15 @@ test.describe("Planning RICE editor", () => {
       await page.goto("/planning#rice")
       const row = page.locator(`[data-rice-task="${id}"]`)
       const link = row.getByRole("link", { name: /Edit score/ })
-      await expect(row.locator("[data-rice-score]")).toHaveText("500")
+      await expect(row.locator("[data-rice-score]")).toHaveText("32")
       await expect(page.locator(`[data-rice-task="${finished}"], [data-rice-task="${deferred}"]`)).toHaveCount(0)
       const navigation = page.waitForResponse(response => response.url().includes(`score=${id}`))
       await link.press("Enter")
       expect((await navigation).headers()["cache-control"]).toBe("private, no-store")
       const form = page.locator("[data-rice-editor]")
       await expect(form.getByRole("heading")).toBeFocused()
-      await expect(form.getByRole("spinbutton", { name: "Reach" })).toHaveValue("10")
+      await expect(form.getByRole("spinbutton", { name: "Reach" })).toHaveValue("16")
+      await expect(form.getByRole("spinbutton", { name: "Confidence (%)" })).toHaveValue("1")
       expect(await form.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
       await form.getByRole("spinbutton", { name: "Effort" }).fill("0")
       await form.getByRole("button", { name: "Save score" }).press("Enter")
@@ -58,7 +64,7 @@ test.describe("Planning RICE editor", () => {
       const saved = await (await request.get(`/api/tasks/${id}`)).json()
       expect(JSON.parse(saved.framework_payload)).toMatchObject({
         ...legacy,
-        rice: { reach: 0, impact: 2, confidence: 50, effort: 0.5, score: 0 },
+        rice: { reach: 0, impact: 2, confidence: 1, effort: 0.5, score: 0 },
       })
       await page.goto("/tasks?view=table#table")
       await expect(page.locator(`#task-table tr[data-id="${id}"]`)).toHaveAttribute("data-rice", "0")
