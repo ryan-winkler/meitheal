@@ -814,6 +814,7 @@ export class TaskRepository {
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
+                              urgency, importance, eisenhower_override,
                               ${taskTimestampMs("updated_at")} AS task_version
                        FROM tasks${where}
                        ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
