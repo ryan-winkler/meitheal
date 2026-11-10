@@ -10,6 +10,7 @@ import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
+import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -133,57 +134,6 @@ function applyRateLimitHeaders(response: Response, remaining: number, resetAt: n
   // IETF standard headers (draft-ietf-httpapi-ratelimit-headers-10)
   response.headers.set("RateLimit", `limit=${limit}, remaining=${remaining}, reset=${resetSeconds}`)
   response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
-}
-
-/**
- * Rewrite absolute paths in HTML responses when behind HA ingress.
- * The ingress proxy maps /{ingressPath}/* → http://addon:port/*
- * but if the HTML contains absolute paths like href="/tasks" or src="/_astro/page.js",
- * the browser resolves them against the HA root, bypassing ingress → 404.
- *
- * This rewrites ALL href="/...", src="/...", and action="/..." attributes
- * to include the ingress path prefix.
- */
-async function rewriteIngressPaths(response: Response, ingressPath: string): Promise<Response> {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  // NOTE: CSS url() paths are rewritten at BUILD TIME by the
-  // fontsource-relative-paths Vite plugin in astro.config.mjs.
-  // No runtime CSS rewriting needed.
-
-  if (!contentType.includes("text/html")) return response;
-
-  // Guard: skip rewriting excessively large responses (>5MB) to prevent OOM.
-  // Normal pages are <500KB; anything larger is likely a data export or error.
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > 5 * 1024 * 1024) return response;
-
-  const html = await response.text();
-
-  // Double-check size after reading (content-length may be absent/wrong)
-  if (html.length > 5 * 1024 * 1024) {
-    return new Response(html, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
-  }
-
-  // Inject runtime ingress path for client-side JS (must come before any scripts)
-  const ingressScript = `<script>window.__ingress_path="${ingressPath}";</script>`;
-
-  // Rewrite absolute paths in HTML attributes: href="/...", src="/...", action="/..."
-  // Matches: href="/path", src="/path", action="/path" (with double or single quotes)
-  // Does NOT match: href="//cdn.example.com" (protocol-relative), href="http://..." (absolute URL)
-  const rewritten = html
-    .replace("<head>", `<head>${ingressScript}`)
-    .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`);
-
-  return new Response(rewritten, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
 }
 
 export const onRequest: MiddlewareHandler = async ({ request, locals }, next) => {
@@ -351,7 +301,7 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
 
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
-    response = await rewriteIngressPaths(response, ingressPath);
+    response = await rewriteIngressHtml(response, ingressPath)
     // Echo ingress path as response header so client-side JS can read it
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);

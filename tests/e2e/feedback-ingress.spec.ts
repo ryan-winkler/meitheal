@@ -171,6 +171,45 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
   expect(escapedAssets).toEqual([])
 })
 
+test("a 2,000-task Table page keeps its assets and next view inside ingress", async ({ page, context }) => {
+  test.setTimeout(45000)
+  const db = new DatabaseSync(path.join(work, "meitheal.db"))
+  try {
+    const task = db.prepare(`INSERT INTO tasks
+      (id, title, description, status, request_id, idempotency_key, created_at, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`)
+    const stamp = Date.now()
+    db.exec("BEGIN IMMEDIATE")
+    for (let index = 1; index <= 2000; index++) {
+      const id = `large-table-${index}`
+      task.run(id, `Nótaí & fittings ${index}`, "Inspect the equipment and record worn parts.", id, id, stamp, stamp)
+    }
+    db.exec("COMMIT")
+  } finally {
+    db.close()
+  }
+
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  const escaped: string[] = []
+  page.on("request", request => {
+    const url = new URL(request.url())
+    if (url.origin === origin && (/^\/(?:tasks(?:\/|$)|_astro\/)/).test(url.pathname)) escaped.push(url.pathname)
+  })
+  const table = await page.goto(origin + prefix + "/tasks?view=table#table")
+  expect(table?.status()).toBe(200)
+  expect((await table!.body()).byteLength).toBeGreaterThan(5 * 1024 * 1024)
+  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(2000)
+  await expect(page.getByText("Nótaí & fittings 2000", { exact: true })).toBeVisible()
+
+  const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
+  await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
+  await calendar.click()
+  await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  expect(escaped).toEqual([])
+})
+
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
   // Two entry points, three themes, and two contrast scans per theme.
   test.setTimeout(90_000)
