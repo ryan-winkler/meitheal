@@ -157,26 +157,30 @@ test.describe("browser catalog and YAML import", () => {
     }
   })
 
-  test("YAML import parses valid documents and reports invalid documents without posting them", async ({ page }) => {
+  test("YAML import displays server validation errors and sends the original document", async ({ page }) => {
     await page.goto("/settings#rules-lenses-settings")
     await page.locator("#fw-import-btn").click()
-    let payload: Record<string, unknown> | undefined
+    let payload: string | null = null
     await page.route("**/api/frameworks", async route => {
       if (route.request().method() !== "POST") return route.continue()
-      payload = route.request().postDataJSON()
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) })
+      payload = route.request().postData()
+      expect(route.request().headers()["content-type"]).toBe("application/yaml")
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ ok: false, message: "Invalid YAML: 'name' field is required" }) })
     })
-    await page.locator("#fw-import-yaml").fill("name: [unterminated")
-    await page.locator("#fw-import-submit").click()
-    await expect(page.locator("#fw-import-errors")).toBeVisible()
-    expect(payload).toBeUndefined()
     await page.locator("#fw-import-yaml").fill("fields: []")
     await page.locator("#fw-import-submit").click()
     await expect(page.locator("#fw-import-errors")).toHaveText("Invalid YAML: 'name' field is required")
-    expect(payload).toBeUndefined()
-    await page.locator("#fw-import-yaml").fill("name: Locale YAML fixture\nformula: impact\nfields:\n  - key: impact\n    label: Impact\n    type: number\n")
+    expect(payload).toBe("fields: []")
+    await page.unroute("**/api/frameworks")
+    await page.route("**/api/frameworks", async route => {
+      if (route.request().method() !== "POST") return route.continue()
+      payload = route.request().postData()
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ ok: true }) })
+    })
+    const yaml = "name: Locale YAML fixture\nformula: impact\nfields:\n  - key: impact\n    label: Impact\n    type: number\n"
+    await page.locator("#fw-import-yaml").fill(yaml)
     await page.locator("#fw-import-submit").click()
     await expect(page.locator("#fw-import-dialog")).not.toBeVisible()
-    expect(payload).toMatchObject({ id: "locale-yaml-fixture", name: "Locale YAML fixture", formula: "impact", fields: [{ key: "impact", label: "Impact", type: "number" }] })
+    expect(payload).toBe(yaml.trim())
   })
 })
