@@ -43,10 +43,16 @@ let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60_000; // 60s
 
 function sanitizeHAUserName(value: unknown): string {
-  let name = typeof value === "string" ? value : ""
-  // Strip nested tags as well as ordinary tags from display names.
-  for (let i = 0; i < 10 && /<[^>]*>/.test(name); i++) name = name.replace(/<[^>]*>/g, "")
-  return name.trim() || "Unknown"
+  const name = typeof value === "string" ? value : ""
+  let visible = ""
+  let start = 0
+  for (let open = name.indexOf("<"); open !== -1; open = name.indexOf("<", start)) {
+    const close = name.indexOf(">", open + 1)
+    if (close === -1) break
+    visible += name.slice(start, open)
+    start = close + 1
+  }
+  return (visible + name.slice(start)).trim().slice(0, 256) || "Unknown"
 }
 
 // ── Public API ──
@@ -142,7 +148,9 @@ function parseActiveUserRoster(users: unknown): ActiveHARoster | undefined {
       || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
       || seen.has(user.id)) return
     seen.add(user.id)
-    if (user.is_active && !user.system_generated) active.set(user.id, sanitizeHAUserName(user.name))
+    if (user.is_active && !user.system_generated) {
+      active.set(user.id, typeof user.name === "string" ? user.name : "")
+    }
   }
   return active
 }
@@ -182,11 +190,16 @@ async function waitForReadCheck(check: Promise<ActiveHARoster | undefined>, sign
   }
 }
 
-/** Fetch a current roster and return it only to a currently active member. */
-export async function getCurrentHAUserRoster(id: string, signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
+async function getFreshHAUserRoster(id: string, signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
   const roster = await refreshActiveUsers(signal)
   const latest = activeUsers?.roster
   if (!signal?.aborted && roster?.has(id) && latest?.has(id)) return latest
+}
+
+/** Fetch a current roster and return display names only to a currently active member. */
+export async function getCurrentHAUserRoster(id: string, signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
+  const roster = await getFreshHAUserRoster(id, signal)
+  if (roster) return new Map([...roster].map(([id, name]) => [id, sanitizeHAUserName(name)]))
 }
 
 /** Check the exact Core identity for an authorization decision without using discovery fallbacks. */
@@ -195,7 +208,7 @@ export async function isCurrentActiveHAUser(
   { fresh = false, signal }: { fresh?: boolean; signal?: AbortSignal } = {},
 ): Promise<boolean> {
   if (signal?.aborted) return false
-  if (fresh) return Boolean(await getCurrentHAUserRoster(id, signal))
+  if (fresh) return Boolean(await getFreshHAUserRoster(id, signal))
   if (!activeUsers || activeUsers.expiresAt <= performance.now()) {
     checkingActiveUsers ??= refreshActiveUsers().finally(() => { checkingActiveUsers = undefined })
     await waitForReadCheck(checkingActiveUsers, signal)
