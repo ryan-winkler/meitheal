@@ -387,3 +387,5 @@ Label removal confirmations render the count and each selected name as plain tex
 ## Database readiness
 
 `GET /api/health` reports HTTP 503 and `status: degraded` when the database is reachable but its startup integrity check failed. A successful connection alone does not establish healthy storage. Inspect `db_status` and `db_integrity` separately. Keep a copy of the database and its WAL together before recovery, and restore a verified backup in a disposable installation before replacing live data. `HEAD /api/health` remains a lightweight process/schema liveness check; its 200 response does not override degraded readiness.
+
+MCP tool inputs resolve local OpenAPI component references with bounded expansion. Search uses native `q`, keeps `query` as an alias and remains task-scoped. Native operation responses must contain a valid JSON object without a rejection flag; HTTP204/205 are acknowledged empty success. A malformed or rejected completion response must produce a tool error, including completion by title. Human-only rule and framework settings mutations are not advertised as token tools. Use scoped disposable credentials when checking these paths.
