@@ -92,6 +92,60 @@ test.describe("Native navigation overflow", () => {
     }
   })
 
+  test("a saved long Areas label leaves More and Settings reachable at 769px", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const previous = (await (await request.get("/api/settings")).json()).sidebar_config
+    const longLabel = "HouseholdAreas_".repeat(48)
+    const created = await request.post("/api/areas", { headers, data: { name: "Navbar label fixture" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    try {
+      expect((await request.put("/api/settings", { headers, data: {
+        key: "sidebar_config", value: {
+          order: ["dashboard", "today", "upcoming", "tasks", "areas", "progress", "planning"],
+          labels: { areas: longLabel },
+        },
+      } })).ok()).toBe(true)
+      expect((await (await request.get("/api/settings")).json()).sidebar_config.labels.areas).toBe(longLabel)
+      await page.addInitScript(() => localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" })))
+      await page.setViewportSize({ width: 769, height: 900 })
+      await page.goto("/today")
+      const row = page.locator('[data-nav-overflow="sidebar"]')
+      const more = row.locator("[data-nav-overflow-more]")
+      const menu = more.locator("[data-nav-overflow-menu]")
+      const toggle = page.locator("#project-nav-group-toggle")
+      const settings = page.locator(".sidebar-footer a")
+      await expect(row).toHaveAttribute("data-nav-overflow-active", "")
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(2)
+      await expect(more).toHaveCount(1)
+      await expect(menu.locator('[data-page="dashboard"]')).toHaveCount(1)
+      await expect(menu.locator('[data-page="planning"]')).toHaveCount(1)
+      await expect(more.locator("summary")).toBeInViewport()
+      await expect(settings).toBeInViewport()
+      await expect(toggle).toHaveAccessibleName(longLabel)
+      await expect(toggle.locator(".stree__label")).toHaveText(longLabel)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(770)
+      await toggle.focus()
+      await toggle.press("Enter")
+      await expect(page.locator("#sidebar-areas-group")).toHaveAttribute("open", "")
+      await expect(page.locator(`[data-area-toggle="${id}"]`)).toBeInViewport()
+      await expect(more.locator("summary")).toBeInViewport()
+      await expect(settings).toBeInViewport()
+      await toggle.press("Space")
+      await expect(page.locator("#sidebar-areas-group")).not.toHaveAttribute("open", "")
+      await more.locator("summary").press("ArrowDown")
+      await expect(menu.locator("a").first()).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(more.locator("summary")).toBeFocused()
+      await settings.focus()
+      await expect(settings).toBeFocused()
+      expect((await (await request.get("/api/settings")).json()).sidebar_config.labels.areas).toBe(longLabel)
+    } finally {
+      expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })).ok()).toBe(true)
+      expect((await request.delete(`/api/areas/${id}`, { headers })).ok()).toBe(true)
+    }
+  })
+
   test("crowded Tasks views keep the selected native link visible and navigate from More with filters", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 })
     await page.goto("/tasks?q=overflow-filter&priority=2")
