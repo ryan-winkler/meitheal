@@ -21,6 +21,7 @@
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { isActiveParticipantProblem } from "@lib/task-participant-problem"
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
         import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
@@ -1661,6 +1662,7 @@
           closeTaskReferences()
           commentButton.disabled = true
           commentError?.setAttribute("hidden", "")
+          let participantDenied = false
           try {
             const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, {
               method: "POST",
@@ -1668,14 +1670,21 @@
               body: JSON.stringify({ content: draft.trim() }),
               signal,
             })
-            if (!response.ok) throw new Error("Comment request failed")
+            if (!response.ok) {
+              participantDenied = await isActiveParticipantProblem(response)
+              throw new Error("Comment request failed")
+            }
             if (signal.aborted) return
             if (commentInput.value === draft) commentInput.value = ""
             const { id } = await response.json() as { id: number }
             await initialComments
             if (!signal.aborted) await loadComments(taskId, signal, null, id)
           } catch {
-            if (!signal.aborted) commentError?.removeAttribute("hidden")
+            if (!signal.aborted && commentError) {
+              commentError.textContent = (participantDenied ? commentError.dataset.participantRequired : commentError.dataset.failed) ?? ""
+              commentError.removeAttribute("hidden")
+              if (participantDenied && [document.body, commentButton].includes(document.activeElement as HTMLElement)) commentInput.focus()
+            }
           } finally {
             if (!signal.aborted) commentButton.disabled = false
           }

@@ -35,6 +35,7 @@ test("verified comment owners can edit and delete without claiming other comment
     PATH: process.env.PATH,
     NODE_ENV: "production",
     SUPERVISOR_TOKEN: "comment-fixture-only",
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
     HA_BASE_URL: "http://127.0.0.1:1",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
   }

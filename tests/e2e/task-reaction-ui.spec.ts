@@ -17,6 +17,7 @@ test("reactions load on demand through ingress and update only rendered card cou
     PATH: process.env.PATH,
     NODE_ENV: "production",
     SUPERVISOR_TOKEN: "reaction-ui-fixture-only",
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
   }
   const owner = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block", reducedMotion: "reduce" })

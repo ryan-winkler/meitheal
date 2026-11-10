@@ -8,6 +8,7 @@
  * @domain ha
  * @bounded-context users
  */
+import { readCurrentHACoreUsers } from "./core-user-lookup"
 import { getHAConnection } from "./ha-connection";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
@@ -119,45 +120,75 @@ export async function getHAUserById(userId: string): Promise<HAUser | null> {
 }
 
 const activeUserFreshnessMs = 5_000
-const activeUserDeadlineMs = 2_000
+const maxMembershipLookups = 16
 let activeUsers: { ids: Set<string>; expiresAt: number } | undefined
 let checkingActiveUsers: Promise<Set<string> | undefined> | undefined
-let activeUserCheckGeneration = 0
+let pendingLookups = 0
+let latestLookup = 0
+let latestCompletedLookup = 0
 
-async function refreshActiveUsers(): Promise<Set<string> | undefined> {
-  const generation = ++activeUserCheckGeneration
-  const checkedAt = performance.now()
-  let timer: ReturnType<typeof setTimeout> | undefined
+function parseActiveUserIds(users: unknown): Set<string> | undefined {
+  if (!Array.isArray(users)) return
+  const seen = new Set<string>()
+  const active = new Set<string>()
+  for (const user of users) {
+    if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
+      || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
+      || seen.has(user.id)) return
+    seen.add(user.id)
+    if (user.is_active && !user.system_generated) active.add(user.id)
+  }
+  return active
+}
+
+async function refreshActiveUsers(signal?: AbortSignal): Promise<Set<string> | undefined> {
+  if (pendingLookups >= maxMembershipLookups || signal?.aborted) return
+  const generation = ++latestLookup
+  const expiresAt = performance.now() + activeUserFreshnessMs
+  pendingLookups++
   try {
-    const users = await Promise.race([
-      (async () => {
-        const connection = await getHAConnection()
-        if (!connection?.connected) throw new Error("Core unavailable")
-        return connection.sendMessagePromise<Array<{ id: string; is_active: boolean; system_generated: boolean }>>({
-          type: "config/auth/list",
-        })
-      })(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Core authorization check timed out")), activeUserDeadlineMs)
-      }),
-    ])
-    const ids = new Set(users.filter(user => user.is_active === true && user.system_generated === false).map(user => user.id))
-    if (generation === activeUserCheckGeneration) activeUsers = { ids, expiresAt: checkedAt + activeUserFreshnessMs }
+    const ids = parseActiveUserIds(await readCurrentHACoreUsers(signal))
+    if (generation > latestCompletedLookup) {
+      latestCompletedLookup = generation
+      activeUsers = ids && { ids, expiresAt }
+    }
     return ids
-  } catch {
-    if (generation === activeUserCheckGeneration) activeUsers = undefined
-    return undefined
   } finally {
-    clearTimeout(timer)
+    pendingLookups--
+  }
+}
+
+async function waitForReadCheck(check: Promise<Set<string> | undefined>, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await check
+    return
+  }
+  if (signal.aborted) return
+  let detach: (() => void) | undefined
+  try {
+    await Promise.race([check, new Promise<void>(resolve => {
+      const abort = () => resolve()
+      detach = () => signal.removeEventListener("abort", abort)
+      signal.addEventListener("abort", abort, { once: true })
+    })])
+  } finally {
+    detach?.()
   }
 }
 
 /** Check the exact Core identity for an authorization decision without using discovery fallbacks. */
-export async function isCurrentActiveHAUser(id: string, { fresh = false } = {}): Promise<boolean> {
-  if (fresh) return Boolean((await refreshActiveUsers())?.has(id))
+export async function isCurrentActiveHAUser(
+  id: string,
+  { fresh = false, signal }: { fresh?: boolean; signal?: AbortSignal } = {},
+): Promise<boolean> {
+  if (signal?.aborted) return false
+  if (fresh) {
+    const ids = await refreshActiveUsers(signal)
+    return Boolean(!signal?.aborted && ids?.has(id) && activeUsers?.ids.has(id))
+  }
   if (!activeUsers || activeUsers.expiresAt <= performance.now()) {
     checkingActiveUsers ??= refreshActiveUsers().finally(() => { checkingActiveUsers = undefined })
-    if (!await checkingActiveUsers) return false
+    await waitForReadCheck(checkingActiveUsers, signal)
   }
-  return Boolean(activeUsers && activeUsers.expiresAt > performance.now() && activeUsers.ids.has(id))
+  return Boolean(!signal?.aborted && activeUsers && activeUsers.expiresAt > performance.now() && activeUsers.ids.has(id))
 }

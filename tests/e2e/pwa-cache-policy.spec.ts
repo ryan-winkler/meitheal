@@ -218,3 +218,54 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     }
   })
 }
+
+for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
+  test(`participant reads bypass retained caches in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+    const server = await fixture(prefix)
+    const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+    try {
+      const page = await context.newPage()
+      await page.goto(server.base + "/fixture")
+      const activeUrls = [
+        "/api/tasks/card/comments",
+        "/api/tasks/card/comments/1",
+        "/api/tasks/card/comments/1/reactions",
+        "/api/tasks/card/comments/1/reactions/2",
+        "/api/tasks/card/reactions",
+        "/api/tasks/card/reactions/1",
+        "/api/tasks/reaction-counts?ids=card",
+        "//api/tasks/card/%2563omments/",
+        "/api/tasks/card/%63omments/%25legacy",
+        "/api/tasks/card/comments/1/%72eactions",
+        "/api/tasks/card%2Fcomments",
+      ].map(path => server.base + path)
+      const retired = new URL("/api/hassio_ingress/retired/api/tasks/card/comments", server.base).href
+      const unrelated = server.base + "/api/tasks/card/links"
+      const bucket = "meitheal-api-v0.0.1"
+      const seed = (urls: string[]) => page.evaluate(async ({ urls, bucket }) => {
+        const cache = await caches.open(bucket)
+        for (const url of urls) {
+          await cache.put(url, new Response("Previously cached activity", { headers: { date: new Date().toUTCString() } }))
+        }
+      }, { urls, bucket })
+      const keys = () => page.evaluate(async bucket => (await (await caches.open(bucket)).keys()).map(request => request.url), bucket)
+      await seed([...activeUrls, retired, unrelated])
+      expect(await keys()).toEqual(expect.arrayContaining([...activeUrls, retired, unrelated]))
+      await register(page, server.base + "/sw.js")
+      expect(await keys()).toEqual([unrelated])
+      for (const url of activeUrls) {
+        expect(await page.evaluate(url => fetch(url, { cache: "no-store" }).then(response => response.status), url)).toBe(200)
+      }
+      expect(await keys()).toEqual([unrelated])
+      await seed(activeUrls)
+      await context.setOffline(true)
+      for (const url of activeUrls) {
+        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+      }
+      expect(await keys()).toEqual(expect.arrayContaining(activeUrls))
+    } finally {
+      await context.close()
+      await server.close()
+    }
+  })
+}

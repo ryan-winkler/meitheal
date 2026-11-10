@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import { once } from "node:events"
 import { readFileSync } from "node:fs"
 import http from "node:http"
@@ -6,26 +7,69 @@ import { createRequire } from "node:module"
 import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
 
 const pinFixture = process.env.MEITHEAL_PIN_FIXTURE === "1"
-if (pinFixture) {
+const activeMemberFixture = pinFixture || process.env.MEITHEAL_ACTIVE_MEMBER_FIXTURE === "1"
+const heldBodies = new AsyncLocalStorage()
+if (activeMemberFixture) {
+  // Only the marked fixture requests are observed. Wait for the real parser to
+  // ask for another chunk, rather than just acknowledging HTTP arrival.
+  const originalRead = ReadableStreamDefaultReader.prototype.read
+  ReadableStreamDefaultReader.prototype.read = function (...args) {
+    const held = heldBodies.getStore()
+    if (held && !held.acknowledged && new Error().stack?.includes("at readWithinLimit")) {
+      if (held.reader === this) {
+        held.acknowledged = true
+        process.send({ participantBodyStarted: true })
+      } else {
+        held.reader = this
+      }
+    }
+    return originalRead.apply(this, args)
+  }
+}
+if (activeMemberFixture) {
   const require = createRequire(new URL("../../apps/web/package.json", import.meta.url))
   const { WebSocketServer } = require("ws")
   const core = new WebSocketServer({ host: "127.0.0.1", port: 0 })
   await once(core, "listening")
   const users = ["admin", "member", "member-two"].map(user => ({
     id: `fixture-${user}`, is_active: true, system_generated: false,
+    is_owner: user === "admin", group_ids: [user === "admin" ? "system-admin" : "system-users"],
   }))
   let unavailable = false
+  let resultOverride
+  let membershipQueries = 0
+  let holdAtQuery
+  let releaseQuery
+  let heldLookup
+  process.once("SIGTERM", () => {
+    for (const socket of core.clients) socket.terminate()
+    process.exit(0)
+  })
   core.on("connection", socket => {
     socket.send(JSON.stringify({ type: "auth_required", ha_version: "2026.11.0" }))
     socket.on("message", raw => {
       const message = JSON.parse(raw.toString())
       if (message.type === "auth") socket.send(JSON.stringify({ type: "auth_ok", ha_version: "2026.11.0" }))
       else if (message.type === "ping") socket.send(JSON.stringify({ id: message.id, type: "pong" }))
-      else if (message.type === "config/auth/list" && unavailable) return
-      else socket.send(JSON.stringify({
-        id: message.id, type: "result", success: true,
-        result: message.type === "config/auth/list" ? users : [],
-      }))
+      else {
+        const isMembership = message.type === "config/auth/list"
+        if (isMembership) membershipQueries++
+        const result = isMembership ? structuredClone(resultOverride === undefined ? users : resultOverride) : []
+        const reply = value => {
+          if (socket.readyState !== socket.OPEN) return
+          socket.send(JSON.stringify({
+            id: message.id, type: "result", success: true,
+            result: value,
+          }))
+        }
+        if (isMembership && membershipQueries === holdAtQuery) {
+          heldLookup = socket
+          releaseQuery = snapshot => reply(snapshot ? result : (resultOverride === undefined ? users : resultOverride))
+          process.send({ participantLookupHeld: true })
+        } else if (!isMembership || !unavailable) {
+          reply(result)
+        }
+      }
     })
   })
   const realRequest = http.request
@@ -35,11 +79,28 @@ if (pinFixture) {
     }
     return realRequest.call(this, options, ...rest)
   }
-  process.env.SUPERVISOR_TOKEN = "synthetic-pin-fixture"
+  process.env.SUPERVISOR_TOKEN ??= "synthetic-pin-fixture"
   process.on("message", message => {
+    if (message?.type === "fixture-core-metrics") {
+      process.send({ membershipQueries, lookupStillHeld: heldLookup?.readyState === heldLookup?.OPEN && Boolean(heldLookup) })
+      return
+    }
+    if (message?.type === "fixture-core-hold") {
+      holdAtQuery = membershipQueries + message.ordinal
+      process.send({ participantLookupArmed: true })
+      return
+    }
+    if (message?.type === "fixture-core-release") {
+      releaseQuery?.(message.snapshot)
+      releaseQuery = undefined
+      heldLookup = undefined
+      return
+    }
     if (message?.type !== "fixture-core") return
     const user = users.find(user => user.id === `fixture-${message.user}`)
-    if (user) user.is_active = message.active
+    if (user && typeof message.active === "boolean") user.is_active = message.active
+    if (user && typeof message.systemGenerated === "boolean") user.system_generated = message.systemGenerated
+    resultOverride = message.result
     unavailable = message.unavailable === true
     process.send({ coreChanged: true })
   })
@@ -108,6 +169,9 @@ const handle = (request, response) => {
     response.end(pinnedLegacyWorker)
     return
   }
+  if (activeMemberFixture && fromSupervisor && request.headers["x-meitheal-fixture-watch-disconnect"] === "1") {
+    request.socket.once("close", () => process.send({ participantReaderDisconnected: true }))
+  }
   const user = /(?:^|;\s*)feedback-fixture=(admin|member|member-two|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
   if (fromSupervisor) {
     request.url = request.url.slice(configuredPath.length)
@@ -152,7 +216,12 @@ const handle = (request, response) => {
     configuredPath,
     waitForDatabaseDownloadDrain: databaseDownload ? waitForDrain : undefined,
     waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
-  }, () => handler(request, response))
+  }, () => {
+    if (activeMemberFixture && fromSupervisor && request.headers["x-meitheal-fixture-held-body"] === "1") {
+      return heldBodies.run({}, () => handler(request, response))
+    }
+    return handler(request, response)
+  })
 }
 const server = pinFixture && process.env.MEITHEAL_PIN_FIXTURE_HTTP !== "1" ? https.createServer({
   key: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_KEY),

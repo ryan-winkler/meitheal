@@ -207,6 +207,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     PATH: process.env.PATH,
     NODE_ENV: "production",
     SUPERVISOR_TOKEN: "comment-link-fixture-only",
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
   }
   const web = fileURLToPath(new URL("../../apps/web", import.meta.url))

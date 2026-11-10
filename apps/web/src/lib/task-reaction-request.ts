@@ -5,7 +5,10 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { TaskReactionRepository, type ReactionTarget } from "@domains/tasks/persistence/task-reaction-repository"
 import { apiJson, apiProblem } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
-import { resolveTaskAuthor } from "./task-participant"
+import {
+  activeParticipantRequired, hasCurrentTaskParticipant, resolveTaskAuthor,
+  taskParticipantBodySignal, taskParticipantBodyTimeout,
+} from "./task-participant"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -57,12 +60,14 @@ async function readContent(request: Request): Promise<string | Response> {
     return reactionProblem(413, "The reaction request exceeds 1 KiB")
   }
 
+  const signal = taskParticipantBodySignal(request)
   let payload: unknown
   try {
-    const bytes = await readWithinLimit(request.body, maxBodyBytes, request.signal)
+    const bytes = await readWithinLimit(request.body, maxBodyBytes, signal)
     if (!bytes) return reactionProblem(413, "The reaction request exceeds 1 KiB")
     payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
   } catch {
+    if (signal.aborted) return taskParticipantBodyTimeout()
     return reactionProblem(400, "Send a valid UTF-8 JSON request body")
   }
 
@@ -84,15 +89,17 @@ function reactionRoute(
   ) => Promise<Response>,
 ): APIRoute {
   return async context => {
-    const { locals } = context
+    const { locals, request } = context
     const actor = resolveTaskAuthor(locals)
     const token = locals.agentToken
-    if (!actor?.owner || (token && !hasScope(token.scopes, scope))) {
+    if (!actor) return activeParticipantRequired()
+    if (!actor.owner || (token && !hasScope(token.scopes, scope))) {
       return reactionProblem(403, "Use a verified Home Assistant session or an automation credential with the required task permission")
     }
     const canReact = !token || hasScope(token.scopes, "tasks:write")
 
     try {
+      if (scope === "tasks:read" && !await hasCurrentTaskParticipant(locals, request.signal)) return activeParticipantRequired()
       await ensureSchema()
       return await handler(context, new TaskReactionRepository(getPersistenceClient()), { ...actor, owner: actor.owner }, canReact)
     } catch {
@@ -120,20 +127,23 @@ export const listReactions = reactionRoute("tasks:read", async ({ params, url },
   return list ? reactionJson({ ...list, can_react: canReact }) : reactionProblem(404, "Task or comment not found")
 })
 
-export const addReaction = reactionRoute("tasks:write", async ({ params, request }, repo, actor) => {
+export const addReaction = reactionRoute("tasks:write", async ({ params, request, locals }, repo, actor) => {
   const target = targetFrom(params)
   if (!target) return reactionProblem(404, "Task or comment not found")
   const content = await readContent(request)
   if (content instanceof Response) return content
 
+  if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
   const reaction = await repo.add(target, content, actor.author, actor.owner)
   return reaction ? reactionJson(reaction, 201) : reactionProblem(404, "Task or comment not found")
 })
 
-export const removeReaction = reactionRoute("tasks:write", async ({ params }, repo, actor) => {
+export const removeReaction = reactionRoute("tasks:write", async ({ params, request, locals }, repo, actor) => {
   const target = targetFrom(params)
   const reactionId = parsePositiveId(params.reactionId ?? "")
-  if (!target || reactionId === null || !await repo.remove(target, reactionId, actor.owner)) {
+  if (!target || reactionId === null) return reactionProblem(404, "Reaction not found")
+  if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
+  if (!await repo.remove(target, reactionId, actor.owner)) {
     return reactionProblem(404, "Reaction not found")
   }
   return new Response(null, { status: 204, headers: cacheHeaders })

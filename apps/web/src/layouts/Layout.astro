@@ -167,7 +167,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               || /\bjson\b/i.test(response.headers.get("content-type") || "");
             var privateTaskResponse = ingressResponse &&
               [ip + "/api/task-pins", ip + "/api/task-drafts"].includes(resultUrl.pathname);
-            if (response.status === 403 && ingressResponse && !appResponse && !privateTaskResponse) {
+            var participantResponse = ingressResponse &&
+              /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/
+                .test(resultUrl.pathname.slice(ip.length));
+            if (response.status === 403 && ingressResponse && !appResponse && !privateTaskResponse && !participantResponse) {
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
               var now = Date.now();

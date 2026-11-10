@@ -126,3 +126,8 @@ Complete → Archive → Delete (selective) → Purge (everything)
 | Can undo? | ✅ | ✅ | ❌ |
 | Counts in stats? | Yes | No | No |
 | Searchable? | Yes | Opt-in | No |
+
+
+## Task participation
+
+Comments record shared task context. Reactions add a short acknowledgment to a task or comment. Home Assistant ingress checks current membership for writes and keyed comment retries. Existing comments remain visible to callers with task access. Edit and delete still belong to the original author. For account recovery and API behavior, see the [operations runbook](operations-runbook.md).

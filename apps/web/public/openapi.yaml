@@ -2218,6 +2218,8 @@ paths:
       tags:
         - Tasks
       summary: List comments on a task
+      description: Historical comments remain readable with task access. If Home Assistant cannot verify current membership,
+        can_manage is false.
       parameters:
         - name: id
           in: path
@@ -2244,8 +2246,9 @@ paths:
       tags:
         - Tasks
       summary: Add a comment to a task
-      description: Add a status update or handoff note. Meitheal records the author from the verified caller. The JSON body is
-        limited to 32 KiB.
+      description: Add a status update or handoff note. Meitheal records the author from the verified caller. For Home
+        Assistant ingress, it checks active membership before a write or keyed replay. The JSON body is limited to 32
+        KiB.
       parameters:
         - name: id
           in: path
@@ -2275,13 +2278,19 @@ paths:
                 $ref: "#/components/schemas/TaskComment"
         "400": *a10
         "403":
-          description: The Home Assistant session must identify its user or the API credential must allow task writes.
+          description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "404":
           description: Task not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "408":
+          description: The request body did not arrive in time.
           content:
             application/problem+json:
               schema:
@@ -2336,8 +2345,8 @@ paths:
       tags:
         - Tasks
       summary: Edit your comment
-      description: The same verified Home Assistant user or automation credential that created the comment may edit it. A
-        display name does not grant ownership.
+      description: The same currently active Home Assistant user or automation credential that created the comment may edit
+        it. A display name does not grant ownership.
       parameters: *a24
       requestBody: *a25
       responses:
@@ -2349,13 +2358,19 @@ paths:
                 $ref: "#/components/schemas/TaskComment"
         "400": *a10
         "403":
-          description: A verified caller or task-write credential is required.
+          description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "404":
           description: The comment was not found on this task or does not belong to the caller.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "408":
+          description: The request body did not arrive in time.
           content:
             application/problem+json:
               schema:
@@ -2377,13 +2392,13 @@ paths:
       tags:
         - Tasks
       summary: Delete your comment
-      description: Permanently remove a comment created by the same verified Home Assistant user or automation credential.
+      description: Permanently remove a comment created by the same currently active Home Assistant user or automation credential.
       parameters: *a24
       responses:
         "204":
           description: Comment deleted
         "403":
-          description: A verified caller or task-write credential is required.
+          description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
             application/problem+json:
               schema:
@@ -2394,13 +2409,20 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+        "408":
+          description: A keyed request body did not arrive in time.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
   /api/tasks/{id}/reactions:
     get:
       operationId: getTaskReactions
       tags:
         - Tasks
       summary: List reactions on a task card
-      description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
+      description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
+        tokens need tasks:read.
       security: &a29
         - *a26
         - bearerAuth: []
@@ -2424,7 +2446,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "403": &a32
-          description: A verified Home Assistant user or an automation token with the required task scope is needed.
+          description: An active, nonsystem Home Assistant account or an automation token with the required task scope is needed.
           content:
             application/problem+json:
               schema:
@@ -2442,7 +2464,8 @@ paths:
         - Tasks
       summary: React to a task card
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
-        limited to 1 KiB. Automation tokens need tasks:write.
+        limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
+        need tasks:write.
       security: *a29
       parameters:
         - *a27
@@ -2468,6 +2491,12 @@ paths:
         "401": *a31
         "403": *a32
         "404": *a33
+        "408":
+          description: The request body did not arrive in time.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
         "413":
           description: The request body exceeds 1 KiB.
           content:
@@ -2487,7 +2516,8 @@ paths:
       tags:
         - Tasks
       summary: Remove your reaction from a task card
-      description: Only the creator can remove a reaction. Automation tokens need tasks:write.
+      description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
+        Automation tokens need tasks:write.
       security: *a29
       parameters:
         - *a27
@@ -2515,7 +2545,8 @@ paths:
       tags:
         - Tasks
       summary: List reactions on a task comment
-      description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
+      description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
+        tokens need tasks:read.
       security: *a29
       parameters:
         - *a27
@@ -2541,7 +2572,8 @@ paths:
         - Tasks
       summary: React to a task comment
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
-        limited to 1 KiB. Automation tokens need tasks:write.
+        limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
+        need tasks:write.
       security: *a29
       parameters: *a24
       requestBody:
@@ -2566,6 +2598,12 @@ paths:
         "401": *a31
         "403": *a32
         "404": *a33
+        "408":
+          description: The request body did not arrive in time.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
         "413":
           description: The request body exceeds 1 KiB.
           content:
@@ -2585,7 +2623,8 @@ paths:
       tags:
         - Tasks
       summary: Remove your reaction from a task comment
-      description: Only the creator can remove a reaction. Automation tokens need tasks:write.
+      description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
+        Automation tokens need tasks:write.
       security: *a29
       parameters:
         - *a27
@@ -2614,7 +2653,8 @@ paths:
       tags:
         - Tasks
       summary: Count card reactions for a batch of tasks
-      description: Returns positive counts keyed by task ID. Comment reactions are excluded. Automation tokens need tasks:read.
+      description: Returns positive counts keyed by task ID. Comment reactions are excluded. Home Assistant ingress requires
+        current membership. Automation tokens need tasks:read.
       security: *a29
       parameters:
         - name: ids

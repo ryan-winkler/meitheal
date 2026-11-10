@@ -1,3 +1,5 @@
+import { isActiveParticipantProblem } from "@lib/task-participant-problem"
+
 interface Reaction {
   id: number
   content: string
@@ -97,9 +99,11 @@ function initReactionPanel(
       })
       if (!isCurrent()) return
       if (response.status === 401 || response.status === 403) {
+        const participantDenied = await isActiveParticipantProblem(response)
+        if (!isCurrent()) return
         list.replaceChildren()
         form.hidden = newest.hidden = older.hidden = true
-        status.textContent = labels.unavailable ?? ""
+        status.textContent = (participantDenied ? labels.participantRequired : labels.unavailable) ?? ""
         return
       }
       if (!response.ok) throw new Error("Reaction list unavailable")
@@ -147,9 +151,11 @@ function initReactionPanel(
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
         ...(remove ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }),
       })
+      const participantDenied = await isActiveParticipantProblem(response)
       if (!isCurrent()) return
       saved = response.ok
-      if (!remove && response.status === 400) error.textContent = labels.invalid ?? ""
+      if (participantDenied) error.textContent = labels.participantRequired ?? ""
+      else if (!remove && response.status === 400) error.textContent = labels.invalid ?? ""
     } catch {
       // Keep the draft and the current page available for retry.
     } finally {

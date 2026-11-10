@@ -1,9 +1,10 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { apiError, apiJson } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
+import { taskParticipantBodySignal, taskParticipantBodyTimeout } from "./task-participant"
 import { sanitize } from "./sanitize"
 
-export { resolveTaskAuthor as resolveCommentAuthor } from "./task-participant"
+export { activeParticipantRequired, hasCurrentTaskParticipant, resolveTaskAuthor as resolveCommentAuthor } from "./task-participant"
 
 const maxBodyBytes = 32 * 1024
 const maxContentLength = 5000
@@ -15,12 +16,14 @@ export async function readComment(request: Request): Promise<string | Response> 
   const tooLarge = () => apiError("The comment request exceeds 32 KiB", 413)
   if (Number(request.headers.get("content-length")) > maxBodyBytes) return tooLarge()
 
+  const signal = taskParticipantBodySignal(request)
   let payload: unknown
   try {
-    const bytes = await readWithinLimit(request.body, maxBodyBytes)
+    const bytes = await readWithinLimit(request.body, maxBodyBytes, signal)
     if (!bytes) return tooLarge()
     payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
   } catch {
+    if (signal.aborted) return taskParticipantBodyTimeout()
     return apiError("Send a valid UTF-8 JSON request body", 400)
   }
   const rawContent = payload && typeof payload === "object" && "content" in payload

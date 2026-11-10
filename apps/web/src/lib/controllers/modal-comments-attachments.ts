@@ -11,6 +11,7 @@ import {
 import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
+import { isActiveParticipantProblem } from "@lib/task-participant-problem"
 import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
 
@@ -68,7 +69,11 @@ function attachCommentManagement(
         body: JSON.stringify({ content: input.value }),
         signal,
       })
-      if (!response.ok) throw new Error("Comment edit failed")
+      if (!response.ok) {
+        const participantDenied = await isActiveParticipantProblem(response)
+        if (isCurrent() && participantDenied) error.textContent = template.dataset.participantRequired ?? ""
+        throw new Error("Comment edit failed")
+      }
       const updated = await response.json() as { content: string }
       if (!isCurrent()) return
       content = updated.content
@@ -76,7 +81,7 @@ function attachCommentManagement(
       endEdit()
     } catch {
       if (isCurrent()) {
-        error.textContent = template.dataset.editFailed ?? ""
+        error.textContent ||= template.dataset.editFailed ?? ""
         input.focus()
       }
     } finally {
@@ -101,7 +106,11 @@ function attachCommentManagement(
     remove.disabled = true
     try {
       const response = await fetch(url, { method: "DELETE", signal })
-      if (!response.ok) throw new Error("Comment deletion failed")
+      if (!response.ok) {
+        const participantDenied = await isActiveParticipantProblem(response)
+        if (isCurrent() && participantDenied) error.textContent = template.dataset.participantRequired ?? ""
+        throw new Error("Comment deletion failed")
+      }
       if (!isCurrent()) return
       const next = wrapper.nextElementSibling ?? wrapper.previousElementSibling
       wrapper.remove()
@@ -109,7 +118,7 @@ function attachCommentManagement(
       focusTarget?.focus()
     } catch {
       if (isCurrent()) {
-        error.textContent = template.dataset.deleteFailed ?? ""
+        error.textContent ||= template.dataset.deleteFailed ?? ""
         remove.disabled = false
         remove.focus()
       }
@@ -140,7 +149,7 @@ export async function loadComments(
   }
 
   try {
-    const res = await fetch(url, { signal })
+    const res = await fetch(url, { signal, cache: "no-store" })
     if (!res.ok) {
       showLinkStatus(status?.dataset.loadFailed)
       return

@@ -211,7 +211,8 @@ function privateResourcePath(url) {
     if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
-        taskHistoryPath.test(path)) return path
+        taskHistoryPath.test(path) ||
+        /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
   }
 
   if (url.origin !== self.location.origin) return
@@ -228,7 +229,7 @@ function privateResourcePath(url) {
       if (decoded === pathname) break
       pathname = decoded
     } catch {
-      return
+      break
     }
   }
   const normalized = new URL(url.origin + pathname.replace(/[\\/]+/g, "/")).pathname
@@ -315,8 +316,6 @@ self.addEventListener("fetch", (event) => {
     return
   }
   if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
-
-  if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
 
   const pagePath = appRoutePath(url.pathname)
   if (isNetworkOnlyPage(pagePath, url.searchParams)) return

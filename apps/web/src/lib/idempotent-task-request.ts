@@ -3,13 +3,14 @@ import { isTaskReactionRoute, resolveAgentRouteScope } from "@meitheal/domain-au
 import { apiProblem } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
 import { idempotencyCache } from "./idempotency-cache"
+import { taskParticipantBodyTimeout } from "./task-participant"
 
 const MAX_KEY_LENGTH = 255
 const MAX_REQUEST_BYTES = 64 * 1024
 const MAX_RESPONSE_BYTES = 16 * 1024
 
 /** Replay keys apply only to authenticated task mutations. */
-export async function taskRetryKey(request: Request, url: URL, principal: string | undefined): Promise<string | Response | undefined> {
+export async function taskRetryKey(request: Request, url: URL, principal: string | undefined, bodySignal?: AbortSignal): Promise<string | Response | undefined> {
   const clientKey = request.headers.get("idempotency-key")
   if (clientKey === null || !principal) return
   // Deferral retries must compare against the live revision, even with a replay key.
@@ -26,7 +27,13 @@ export async function taskRetryKey(request: Request, url: URL, principal: string
     return apiProblem({ status: 400, detail: "Idempotency-Key must contain 1 to 255 characters without control characters." })
   }
 
-  const body = await readWithinLimit(request.clone().body, MAX_REQUEST_BYTES)
+  let body: Buffer | null
+  try {
+    body = await readWithinLimit(request.clone().body, MAX_REQUEST_BYTES, bodySignal)
+  } catch (error) {
+    if (bodySignal?.aborted) return taskParticipantBodyTimeout()
+    throw error
+  }
   if (!body) return apiProblem({ status: 413, detail: "A retryable task request body cannot exceed 64 KiB." })
 
   const namespace = JSON.stringify([

@@ -532,6 +532,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 data-load-failed={t("reactions.load_failed", locale)}
                 data-save-failed={t("reactions.save_failed", locale)}
                 data-remove-failed={t("reactions.remove_failed", locale)}
+                data-participant-required={t("task_modal.participant_required", locale)}
                 data-invalid={t("reactions.invalid", locale)}
                 data-saved={t("reactions.saved", locale)}
                 data-removed={t("reactions.removed", locale)}
@@ -560,6 +561,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               </template>
               <template id="td-comment-management"
                 data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
+                data-participant-required={t("task_modal.participant_required", locale)}
                 data-edit-failed={t("task_modal.comment_edit_failed", locale)}
                 data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
                 <div data-comment-actions class="flex flex-wrap gap-2">
@@ -585,7 +587,9 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                     <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
                   </div>
                     <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
-                    <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden>{t("task_modal.comment_failed", locale)}</p>
+                    <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden
+                      data-failed={t("task_modal.comment_failed", locale)}
+                      data-participant-required={t("task_modal.participant_required", locale)}></p>
                     <div class="flex justify-end items-center gap-3 mt-2">
                       <span class="text-[10px] text-text-muted hidden md:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
                       <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>

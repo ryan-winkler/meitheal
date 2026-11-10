@@ -11,6 +11,7 @@ import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
+import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -143,6 +144,14 @@ function isPinRoute(path: string) {
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity"])
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const draftPath = "/api/task-drafts"
+const commentPaths = new Set(["/api/tasks/[id]/comments", "/api/tasks/[id]/comments/[commentId]"])
+const reactionPaths = new Set([
+  "/api/tasks/reaction-counts",
+  "/api/tasks/[id]/reactions",
+  "/api/tasks/[id]/reactions/[reactionId]",
+  "/api/tasks/[id]/comments/[commentId]/reactions",
+  "/api/tasks/[id]/comments/[commentId]/reactions/[reactionId]",
+])
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
@@ -153,7 +162,8 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const draftRoute = routePattern === draftPath || url.pathname === draftPath
   const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
-  if (!pinRoute && !onlineReadRoute && !draftRoute && !taskHistoryRoute) return handleRequest(context, next, requestUrl)
+  const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
+  if (!pinRoute && !onlineReadRoute && !draftRoute && !taskHistoryRoute && !participantRoute) return handleRequest(context, next, requestUrl)
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
     return new Response(null, { status: requestPath !== draftPath ? 404 : 400, headers: { "cache-control": "private, no-store" } })
   }
@@ -164,14 +174,21 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
   const response = await handleRequest(context, next, requestUrl, pinRoute || draftRoute)
-  response.headers.set("cache-control", "private, no-store")
+  if (!participantRoute || !response.headers.has("cache-control")) {
+    const commentSuccess = commentPaths.has(routePattern) && response.ok
+    response.headers.set("cache-control", commentSuccess ? "no-store" : "private, no-store")
+  }
   return response
 }
 
 async function handleRequest({ request, locals, routePattern }: Parameters<MiddlewareHandler>[0],
   next: Parameters<MiddlewareHandler>[1], url: URL, privatePersonalRoute = false) {
   const startTime = Date.now();
-  const requestId = (privatePersonalRoute ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
+  const commentRoute = commentPaths.has(routePattern)
+  const participantRoute = commentRoute || reactionPaths.has(routePattern)
+  const privateLog = privatePersonalRoute || participantRoute
+  const logPath = participantRoute ? routePattern : url.pathname
+  const requestId = (privateLog ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
@@ -302,6 +319,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         component: "middleware",
         request_id: requestId,
         message: privatePersonalRoute ? "Private task origin check failed" :
+          participantRoute ? `Origin check failed for ${logPath}` :
           `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
       });
       return new Response(
@@ -339,12 +357,20 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
   const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
     hassUserId ? `ha:${hassUserId}` : undefined
-  const retryKey = privatePersonalRoute ? undefined : await taskRetryKey(request, url, principal)
-  if (retryKey instanceof Response) return retryKey
-  locals.taskRetryKey = retryKey
+  const replayBodySignal = commentRoute && request.headers.has("idempotency-key") ? taskParticipantBodySignal(request) : undefined
+  const retryKey = privatePersonalRoute ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
+  if (retryKey instanceof Response && !commentRoute) return retryKey
+  locals.taskRetryKey = typeof retryKey === "string" ? retryKey : undefined
 
   const securityHeaders = buildSecurityHeaders(behindIngress, import.meta.env.DEV);
-  let response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+  let response: Response
+  if (retryKey instanceof Response) {
+    response = retryKey
+  } else if (retryKey && commentRoute && !await hasCurrentTaskParticipant(locals, request.signal, true)) {
+    response = activeParticipantRequired()
+  } else {
+    response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+  }
 
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
@@ -383,14 +409,14 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         domain: "observability",
         component: "middleware",
         request_id: requestId,
-        ...(!privatePersonalRoute ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
-        message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
+        ...(!privateLog ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
+        message: `${request.method} ${logPath} → ${response.status} (${elapsed}ms)`,
         metadata: {
           method: request.method,
-          path: url.pathname,
+          path: logPath,
           status: response.status,
           latency_ms: elapsed,
-          ...(!privatePersonalRoute ? {
+          ...(!privateLog ? {
             automation_source: automationSource,
             ...(agentId ? { agent_id: agentId } : {}),
             ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),

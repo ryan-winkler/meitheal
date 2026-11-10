@@ -394,7 +394,7 @@ const feedbackJsonErrors = {
 const feedbackJsonBody = schema => ({ required: true, content: { "application/json": { schema } } })
 
 const reactionSecurity = [...ingressSession, { bearerAuth: [] }]
-const reactionForbidden = problemContent("A verified Home Assistant user or an automation token with the required task scope is needed.")
+const reactionForbidden = problemContent("An active, nonsystem Home Assistant account or an automation token with the required task scope is needed.")
 const reactionNotFound = problemContent("The task or comment does not exist.")
 const reactionUnauthenticated = problemContent("An ingress session or a valid automation token is required.")
 const reactionResponseErrors = { 401: reactionUnauthenticated, 403: reactionForbidden, 500: err500 }
@@ -406,7 +406,7 @@ function reactionPaths(resource, label, parameters) {
         operationId: `get${resource}Reactions`,
         tags: ["Tasks"],
         summary: `List reactions on a ${label}`,
-        description: "Returns up to 50 reactions, newest first. Automation tokens need tasks:read.",
+        description: "Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation tokens need tasks:read.",
         security: reactionSecurity,
         parameters: [...parameters, { name: "cursor", in: "query", schema: reactionCursor }],
         responses: { 200: jsonContent(ref("TaskReactionPage"), "Reactions and continuation cursor"), 400: err400,
@@ -416,7 +416,7 @@ function reactionPaths(resource, label, parameters) {
         operationId: `add${resource}Reaction`,
         tags: ["Tasks"],
         summary: `React to a ${label}`,
-        description: "The same reaction by the same caller on the same target returns the existing reaction. The JSON body is limited to 1 KiB. Automation tokens need tasks:write.",
+        description: "The same reaction by the same caller on the same target returns the existing reaction. The JSON body is limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens need tasks:write.",
         security: reactionSecurity,
         parameters,
         requestBody: {
@@ -427,6 +427,7 @@ function reactionPaths(resource, label, parameters) {
           201: jsonContent(ref("TaskReaction"), "Added or already present reaction"),
           400: err400,
           404: reactionNotFound,
+          408: problemContent("The request body did not arrive in time."),
           413: problemContent("The request body exceeds 1 KiB."),
           415: problemContent("The request body must be application/json."),
           ...reactionResponseErrors,
@@ -438,7 +439,7 @@ function reactionPaths(resource, label, parameters) {
         operationId: `delete${resource}Reaction`,
         tags: ["Tasks"],
         summary: `Remove your reaction from a ${label}`,
-        description: "Only the creator can remove a reaction. Automation tokens need tasks:write.",
+        description: "Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check. Automation tokens need tasks:write.",
         security: reactionSecurity,
         parameters: [...parameters, { name: "reactionId", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
         responses: {
@@ -993,6 +994,7 @@ const paths = {
       operationId: "getTaskComments",
       tags: ["Tasks"],
       summary: "List comments on a task",
+      description: "Historical comments remain readable with task access. If Home Assistant cannot verify current membership, can_manage is false.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
       responses: { 200: jsonContent({ type: "object", required: ["comments"], properties: { comments: arrOf("TaskCommentListItem") } }, "Comments") },
     },
@@ -1000,14 +1002,15 @@ const paths = {
       operationId: "addTaskComment",
       tags: ["Tasks"],
       summary: "Add a comment to a task",
-      description: "Add a status update or handoff note. Meitheal records the author from the verified caller. The JSON body is limited to 32 KiB.",
+      description: "Add a status update or handoff note. Meitheal records the author from the verified caller. For Home Assistant ingress, it checks active membership before a write or keyed replay. The JSON body is limited to 32 KiB.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
       requestBody: commentBody,
       responses: {
         201: jsonContent(ref("TaskComment"), "The comment added by this request"),
         400: err400,
-        403: problemContent("The Home Assistant session must identify its user or the API credential must allow task writes."),
+        403: problemContent("An active, nonsystem Home Assistant account or an automation token with task-write permission is required."),
         404: problemContent("Task not found."),
+        408: problemContent("The request body did not arrive in time."),
         413: problemContent("The request body exceeds 32 KiB."),
         415: problemContent("The request body must be application/json."),
       },
@@ -1028,14 +1031,15 @@ const paths = {
       operationId: "updateTaskComment",
       tags: ["Tasks"],
       summary: "Edit your comment",
-      description: "The same verified Home Assistant user or automation credential that created the comment may edit it. A display name does not grant ownership.",
+      description: "The same currently active Home Assistant user or automation credential that created the comment may edit it. A display name does not grant ownership.",
       parameters: commentResourceParameters,
       requestBody: commentBody,
       responses: {
         200: jsonContent(ref("TaskComment"), "The updated comment"),
         400: err400,
-        403: problemContent("A verified caller or task-write credential is required."),
+        403: problemContent("An active, nonsystem Home Assistant account or an automation token with task-write permission is required."),
         404: problemContent("The comment was not found on this task or does not belong to the caller."),
+        408: problemContent("The request body did not arrive in time."),
         413: problemContent("The request body exceeds 32 KiB."),
         415: problemContent("The request body must be application/json."),
       },
@@ -1044,12 +1048,13 @@ const paths = {
       operationId: "deleteTaskComment",
       tags: ["Tasks"],
       summary: "Delete your comment",
-      description: "Permanently remove a comment created by the same verified Home Assistant user or automation credential.",
+      description: "Permanently remove a comment created by the same currently active Home Assistant user or automation credential.",
       parameters: commentResourceParameters,
       responses: {
         204: { description: "Comment deleted" },
-        403: problemContent("A verified caller or task-write credential is required."),
+        403: problemContent("An active, nonsystem Home Assistant account or an automation token with task-write permission is required."),
         404: problemContent("The comment was not found on this task or does not belong to the caller."),
+        408: problemContent("A keyed request body did not arrive in time."),
       },
     },
   },
@@ -1062,7 +1067,7 @@ const paths = {
       operationId: "getTaskReactionCounts",
       tags: ["Tasks"],
       summary: "Count card reactions for a batch of tasks",
-      description: "Returns positive counts keyed by task ID. Comment reactions are excluded. Automation tokens need tasks:read.",
+      description: "Returns positive counts keyed by task ID. Comment reactions are excluded. Home Assistant ingress requires current membership. Automation tokens need tasks:read.",
       security: reactionSecurity,
       parameters: [{ name: "ids", in: "query", required: true,
         schema: { type: "string", maxLength: 12899 }, description: "1 to 100 comma-separated task IDs." }],
