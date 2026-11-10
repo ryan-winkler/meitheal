@@ -25,6 +25,10 @@ For an existing installation, back up Home Assistant before switching installers
 
 If Meitheal rejects the token, create a new one and use **Reauthenticate**. Revoke the previous token after the entity and enabled actions work with the replacement. Keep Home Assistant backups private, since config entries store tokens.
 
+## Optional conversation tools
+
+On Core 2026.11 or later, an active Home Assistant administrator can select **Meitheal Tasks (read only)** in a conversation agent's LLM API settings. It provides keyword search and task lookup by ID through the configured integration entry. The selected agent receives the task data these tools return. Use the existing Home Assistant actions or the Meitheal app to change tasks. Core 2026.10.4 supports the integration's to-do entity, sensors, and actions.
+
 ## Recover after an update
 
 If an update fails, reinstall the last working release or restore the previous `custom_components/meitheal` files, then restart Home Assistant. Keep the existing integration entry so its entity IDs and automation references are preserved.

@@ -51,7 +51,7 @@ Open a result with Enter or a click. Close Details with its Close button or Esca
 
 ## Home Assistant Parity
 
-The Home Assistant custom component, LLM API tool, and MCP `searchTasks` tool now reuse the same upgraded task-search backend instead of maintaining a weaker local-only filter path.
+The Home Assistant integration and MCP `searchTasks` tool use the task-search backend. Core 2026.11 or later also offers **Meitheal Tasks (read only)** as an optional LLM API for an active Home Assistant administrator.
 
 That means search parity now covers:
 
