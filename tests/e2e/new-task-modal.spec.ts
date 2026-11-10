@@ -145,7 +145,7 @@ test.describe("New Task Modal", () => {
     await detailsPage.goto("/tasks?open=" + id)
     const detail = detailsPage.getByRole("dialog", { name: "Task detail: Checklist creation fixture" })
     await expect(detail).toBeVisible()
-    await expect(detail.locator('#td-checklists input[type="text"]')).toHaveCount(texts.length)
+    await expect(detail.locator("#td-checklists textarea")).toHaveCount(texts.length)
     const [saved] = await Promise.all([
       detailsPage.waitForResponse(response =>
         new URL(response.url()).pathname === taskPath && response.request().method() === "PUT",

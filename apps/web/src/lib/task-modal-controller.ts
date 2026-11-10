@@ -18,7 +18,7 @@
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
-        import { showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
         import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
@@ -225,7 +225,15 @@
               showTaskError(true)
               return
             }
-            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { signal: modalSignal })
+            const pendingChecklist = pendingChecklistSave(taskId)
+            if (pendingChecklist) {
+              await pendingChecklist
+              if (modalSignal.aborted) return
+            }
+            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+              signal: modalSignal,
+              ...(pendingChecklist ? { cache: "no-store" } : {}),
+            })
             if (!res.ok) {
               showTaskError([401, 403, 404].includes(res.status))
               return
@@ -914,7 +922,7 @@
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            showTaskChecklist(taskId, t.checklists, modalSignal)
+            showTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = document.getElementById("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()

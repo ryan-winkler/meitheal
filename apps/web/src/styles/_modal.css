@@ -45,6 +45,44 @@ dialog::backdrop {
   animation: modalBackdropFadeIn 0.2s ease-out forwards;
 }
 
+.checklist-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Mirror the wrapped text to size the editor on older Home Assistant WebViews. */
+.checklist-editor::after,
+.checklist-editor > textarea.form-input {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid transparent;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.checklist-editor::after {
+  content: attr(data-content) " ";
+  visibility: hidden;
+}
+
+.checklist-editor > textarea.form-input {
+  field-sizing: fixed;
+  max-height: none;
+  overflow: hidden;
+  resize: none;
+}
+
+.checklist-editor > textarea.form-input:focus-visible {
+  border-color: var(--accent-text);
+}
+
 .modal-content {
   background: var(--bg-primary);
   color: var(--text-primary);

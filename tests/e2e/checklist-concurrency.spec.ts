@@ -39,7 +39,7 @@ test("task detail preserves separate checklist edits made in two sessions", asyn
     await expect(second.locator("#td-checklists input[type=checkbox]").last()).toBeFocused()
     for (const [page, text] of [[first, "Open the shutters"], [second, "Switch on the lamp"]] as const) {
       await page.getByRole("button", { name: "Add Item" }).click()
-      const newStep = page.locator("#td-checklists input[type=text]").last()
+      const newStep = page.locator("#td-checklists textarea").last()
       await expect(newStep).toBeFocused()
       await newStep.fill(text)
       await newStep.press("Enter")
@@ -60,6 +60,128 @@ test("task detail preserves separate checklist edits made in two sessions", asyn
   } finally {
     await first.close()
     await second.close()
+  }
+})
+
+test("a long checklist item wraps in a narrow detail panel and can be edited", async ({ page, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  await page.setViewportSize({ width: 360, height: 760 })
+  const longText = "Confirm the booking details " + "REFERENCE".repeat(30)
+  const created = await request.post("/api/tasks", {
+    data: {
+      title: "Narrow checklist",
+      checklists: JSON.stringify([{ id: "booking", text: longText, done: false }]),
+    },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const taskPath = "/api/tasks/" + encodeURIComponent(id)
+  await page.goto("/tasks")
+  await page.getByRole("button", { name: /^Task: Narrow checklist,/ }).click()
+  const item = page.getByRole("textbox", { name: "Checklist item 1", exact: true })
+  await expect(item).toBeVisible()
+  await expect(item).toHaveValue(longText)
+  const assertFits = () => item.evaluate(element => ({
+    height: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    width: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    right: element.getBoundingClientRect().right,
+  }))
+  const dimensions = await assertFits()
+  expect(dimensions.height).toBeGreaterThan(60)
+  expect(dimensions.scrollHeight).toBeLessThanOrEqual(dimensions.height + 1)
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1)
+  expect(dimensions.right).toBeLessThanOrEqual(360)
+  const edited = longText + " " + "CONFIRMATION".repeat(12)
+  await item.fill(edited)
+  const resized = await assertFits()
+  expect(resized.height).toBeGreaterThan(dimensions.height)
+  expect(resized.scrollHeight).toBeLessThanOrEqual(resized.height + 1)
+  const [saved] = await Promise.all([
+    page.waitForResponse(response =>
+      new URL(response.url()).pathname === taskPath && response.request().method() === "PUT",
+    ),
+    item.press("Enter"),
+  ])
+  expect(saved.status()).toBe(200)
+  await expect(page.getByRole("checkbox", { name: edited, exact: true })).toBeVisible()
+  const task = await request.get(taskPath)
+  expect(JSON.parse((await task.json()).checklists)).toEqual([{ id: "booking", text: edited, done: false }])
+})
+
+test("reopening by ticket key waits for only that task's pending checklist save", async ({ page, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const makeTask = async (title: string) => {
+    const response = await request.post("/api/tasks", {
+      data: {
+        title,
+        checklists: JSON.stringify([
+          { id: "first", text: "First step", done: false },
+          { id: "second", text: "Second step", done: false },
+        ]),
+      },
+    })
+    expect(response.status()).toBe(201)
+    return await response.json() as { id: string; ticket_key: string }
+  }
+  const first = await makeTask("First pending checklist")
+  const other = await makeTask("Independent checklist")
+  const taskPath = "/api/tasks/" + encodeURIComponent(first.id)
+  const ticketKey = first.ticket_key.toLowerCase()
+  const ticketPath = "/api/tasks/" + encodeURIComponent(ticketKey)
+  let releaseWrite!: () => void
+  const delayWrite = new Promise<void>(resolve => { releaseWrite = resolve })
+  let writeHeld = false
+  let ticketReadStarted = false
+  page.on("request", sent => {
+    if (new URL(sent.url()).pathname === ticketPath && sent.method() === "GET") ticketReadStarted = true
+  })
+  await page.route("**/api/tasks/*", async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === taskPath && route.request().method() === "PUT" && !writeHeld) {
+      writeHeld = true
+      await delayWrite
+    }
+    await route.continue()
+  })
+  const open = (id: string) => page.evaluate(task => { window.openTaskDetail?.(task) }, id)
+  const firstStep = page.getByRole("checkbox", { name: "First step", exact: true })
+  const secondStep = page.getByRole("checkbox", { name: "Second step", exact: true })
+  const close = page.getByRole("button", { name: "Close detail", exact: true })
+  const detail = page.locator("#task-detail-overlay")
+  try {
+    await page.goto("/tasks?open=" + encodeURIComponent(first.id))
+    await firstStep.check()
+    await expect.poll(() => writeHeld).toBe(true)
+    await close.click()
+    await expect(detail).toBeHidden()
+
+    await open(other.id)
+    await expect(detail).toHaveAttribute("aria-label", "Task detail: Independent checklist")
+    await secondStep.check()
+    await expect.poll(async () => {
+      const response = await request.get("/api/tasks/" + other.id)
+      return JSON.parse((await response.json()).checklists)[1].done
+    }).toBe(true)
+    await close.click()
+    await expect(detail).toBeHidden()
+
+    await open(ticketKey)
+    await expect(page.locator("#td-skeleton")).toBeVisible()
+    await expect(page.locator("#td-loaded-content")).toBeHidden()
+    expect(ticketReadStarted).toBe(false)
+    releaseWrite()
+    await expect(detail).toHaveAttribute("aria-label", "Task detail: First pending checklist")
+    await expect(firstStep).toBeChecked()
+    expect(ticketReadStarted).toBe(true)
+    await secondStep.check()
+    await expect.poll(async () => {
+      const response = await request.get(taskPath)
+      return JSON.parse((await response.json()).checklists).map((item: { done: boolean }) => item.done)
+    }).toEqual([true, true])
+  } finally {
+    releaseWrite()
   }
 })
 

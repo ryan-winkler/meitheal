@@ -1,7 +1,15 @@
 import { escapeHtml } from "@lib/safe-html"
 import { createChecklistItem } from "@lib/checklist-items"
+import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
 type Item = { id?: string; text: string; done: boolean }
+
+const pendingChecklistSaves = new Map<string, Promise<void>>()
+
+export function pendingChecklistSave(taskId: string): Promise<void> | undefined {
+  const ticketKey = formatTicketKey(parseTicketKey(taskId))
+  return pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined)
+}
 
 function parseChecklist(raw: string | null): Item[] | null {
   if (raw === null) return []
@@ -68,7 +76,7 @@ function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item
   return [...current.values()]
 }
 
-export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal: AbortSignal) {
+export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal: AbortSignal, ticketKey?: string) {
   const container = document.getElementById("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
   const progress = document.getElementById("td-checklist-progress")
@@ -89,7 +97,6 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
   const loaded = parseChecklist(savedRaw)
   let saved = loaded ?? []
   let items = saved.slice()
-  let saving = false
   let problem: "retry" | "conflict" | null = null
   let rendering = false
 
@@ -119,13 +126,19 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
       row.innerHTML = `
         <input type="checkbox" class="form-checkbox h-4 w-4 bg-transparent border-border rounded"
           aria-label="${escapeHtml(item.text || "Checklist item " + (index + 1))}" ${item.done ? "checked" : ""} />
-        <input type="text" class="form-input flex-1 text-sm bg-transparent border-transparent px-1 py-0.5 focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
-          aria-label="Checklist item ${index + 1}" value="${escapeHtml(item.text)}" placeholder="Checklist item..." />
+        <div class="checklist-editor">
+          <textarea class="form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
+            rows="1" aria-label="Checklist item ${index + 1}" placeholder="Checklist item..."></textarea>
+        </div>
         <button type="button" class="text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
           aria-label="Delete checklist item ${index + 1}" title="Delete item">×</button>
       `
       const checkbox = row.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-      const text = row.querySelector<HTMLInputElement>('input[type="text"]')!
+      const editor = row.querySelector<HTMLElement>(".checklist-editor")!
+      const text = editor.querySelector("textarea")!
+      text.value = item.text
+      editor.dataset.content = item.text
+      text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
         const current = items[index]
         if (!current) return
@@ -143,7 +156,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         void save()
       }, { signal })
       text.addEventListener("keydown", event => {
-        if (event.key !== "Enter") return
+        if (event.key !== "Enter" || event.isComposing) return
         event.preventDefault()
         text.blur()
       }, { signal })
@@ -170,9 +183,17 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     recover!.hidden = false
   }
 
-  async function save() {
-    if (saving || problem || equal(saved, items)) return
-    saving = true
+  function save() {
+    if (pendingChecklistSaves.has(taskId) || problem || equal(saved, items)) return
+    const pending = persist().finally(() => {
+      pendingChecklistSaves.delete(taskId)
+      if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
+    })
+    pendingChecklistSaves.set(taskId, pending)
+    if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
+  }
+
+  async function persist() {
     let rebased = false
     try {
       while (!equal(saved, items)) {
@@ -181,6 +202,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw }),
+          signal: AbortSignal.timeout(10_000),
         })
         if (response.ok) {
           savedRaw = pending
@@ -210,7 +232,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
             merged.filter(item => item.id === focusedItem.id).length === 1) {
           focusedIndex = merged.findIndex(item => item.id === focusedItem.id)
         }
-        const typing = active instanceof HTMLInputElement && active.type === "text"
+        const typing = active instanceof HTMLTextAreaElement
         const typedValue = typing && focusedItem && active.value !== focusedItem.text ? active.value : undefined
         if (typedValue !== undefined && merged[focusedIndex]?.text !== focusedItem?.text) {
           report("conflict")
@@ -220,25 +242,24 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         savedRaw = latestRaw
         saved = latest
         items = merged
-        const selector = active instanceof HTMLInputElement ? `input[type="${active.type}"]` : "button"
+        const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
         const restored = document.activeElement
-        if (typedValue !== undefined && typing && restored instanceof HTMLInputElement) {
+        if (typedValue !== undefined && typing && restored instanceof HTMLTextAreaElement) {
           restored.value = typedValue
+          restored.parentElement!.dataset.content = typedValue
           restored.setSelectionRange(active.selectionStart, active.selectionEnd)
         }
       }
     } catch {
       report("retry")
-    } finally {
-      saving = false
     }
   }
 
   add.addEventListener("click", () => {
     items.push(createChecklistItem("New Item"))
-    render({ index: items.length - 1, selector: 'input[type="text"]' })
-    if (document.activeElement instanceof HTMLInputElement) document.activeElement.select()
+    render({ index: items.length - 1, selector: "textarea" })
+    if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.select()
     void save()
   }, { signal })
   recover.addEventListener("click", async () => {
@@ -260,7 +281,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
       if (signal.aborted) return
       if (!latest) throw new Error()
       const editing = document.activeElement
-      if (editing instanceof HTMLInputElement && container.contains(editing)) editing.blur()
+      if (editing instanceof HTMLTextAreaElement && container.contains(editing)) editing.blur()
       draftRows.replaceChildren(...(items.length ? items : [{ text: "No items", done: false }]).map(item => {
         const entry = document.createElement("li")
         entry.textContent = item.done ? item.text + " (checked)" : item.text
