@@ -65,7 +65,7 @@ export interface TaskRow {
   recurrence_anchor: string
   rotation_mode: string | null
   nfc_tag_id: string | null
-  checklists: string
+  checklists: string | null
   reminder_at: string | null
   source_template_id: string | null
   ticket_number: number | null
@@ -793,10 +793,11 @@ export class TaskRepository {
     return data.id;
   }
 
-  /** Apply a partial update, checking open dependencies atomically for activation. */
-  async updateTask(id: string, fields: Record<string, InValue>): Promise<
+  /** Apply a partial update with atomic dependency and checklist guards when requested. */
+  async updateTask(id: string, fields: Record<string, InValue>, expectedChecklists?: string | null): Promise<
     { ok: true; task: TaskRow }
     | { ok: false; errorCode: "unavailable" }
+    | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "blocked"; blockers: Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[] }
   > {
     const updates: string[] = []
@@ -818,6 +819,8 @@ export class TaskRepository {
       ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ?)"
       : ""
     if (typeof projectId === "string") args.push(projectId)
+    const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
+    if (expectedChecklists !== undefined) args.push(expectedChecklists)
 
     // Outbound "blocked_by" and inbound "blocks" describe the same dependency.
     const dependencies = fields.status === STATUS.ACTIVE ? {
@@ -834,7 +837,7 @@ export class TaskRepository {
       args: [id, id, STATUS.COMPLETE],
     } : null
     const update = {
-      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}
+      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}${checklistMatches}
               ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
@@ -846,12 +849,23 @@ export class TaskRepository {
     }
 
     // Keep the diagnostic rows and guarded write in the same SQLite transaction.
-    const [open, result] = dependencies
-      ? await this.client.batch([
-        { ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` },
-        update,
-      ], "write")
-      : [undefined, await this.client.execute(update)]
+    const checks = []
+    if (expectedChecklists !== undefined) {
+      checks.push({
+        sql: "SELECT checklists FROM tasks WHERE id = ? AND checklists IS NOT ?",
+        args: [id, expectedChecklists],
+      })
+    }
+    if (dependencies) checks.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
+    const results = checks.length
+      ? await this.client.batch([...checks, update], "write")
+      : [await this.client.execute(update)]
+    const result = results.at(-1)!
+    const changed = expectedChecklists === undefined ? undefined : results[0]?.rows[0]?.checklists
+    if (typeof changed === "string" || changed === null) {
+      return { ok: false, errorCode: "checklist_conflict", checklists: changed }
+    }
+    const open = dependencies ? results.at(-2) : undefined
     if (open?.rows.length) {
       return {
         ok: false,

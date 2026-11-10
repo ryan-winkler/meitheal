@@ -362,6 +362,12 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                   <span class="whitespace-nowrap"><span id="td-checklist-done">0</span>/<span id="td-checklist-total">0</span></span>
               </div>
               <div id="td-checklists" class="space-y-1"></div>
+              <p id="td-checklist-message" role="status" class="text-sm text-text-primary mt-2"></p>
+              <button type="button" id="td-checklist-recover" class="btn text-xs px-3 py-1.5 mt-2" hidden></button>
+              <details id="td-checklist-draft" class="text-sm text-text-primary mt-2" hidden>
+                <summary>Your unsaved checklist draft</summary>
+                <ol class="list-decimal pl-5 wrap-break-word"></ol>
+              </details>
             </section>
 
             <!-- Attachments -->

@@ -105,6 +105,7 @@ const schemas = {
       parent_id: { type: "string", nullable: true, description: "Parent task ID for subtask hierarchy" },
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
       labels: { type: "string", nullable: true, description: "Comma-separated label names" },
+      checklists: { type: ["string", "null"], description: "A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null." },
       board_name: { type: "string", nullable: true },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
@@ -551,10 +552,17 @@ const paths = {
       operationId: "updateTask",
       tags: ["Tasks"],
       summary: "Update a task",
-      description: "Send only the fields you want to change. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves the task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup.",
+      description: "Send only the fields you want to change. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves the task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET. A stale guard returns 409 with code checklist_conflict and the current checklist.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-      requestBody: { content: { "application/json": { schema: ref("Task") } } },
-      responses: { 200: jsonContent(ref("Task"), "Updated"), 400: err400, 404: jsonContent(ref("ProblemDetail"), "Not found"), 409: jsonContent(ref("ProblemDetail"), "Task or destination project is no longer available") },
+      requestBody: { content: { "application/json": { schema: { allOf: [ref("Task"), {
+        type: "object",
+        properties: {
+          checklists: { type: "string", description: "Replacement JSON-encoded checklist array" },
+          expected_checklists: { type: ["string", "null"], description: "Exact previous checklist value returned by GET" },
+        },
+        dependentRequired: { expected_checklists: ["checklists"] },
+      }] } } } },
+      responses: { 200: jsonContent(ref("Task"), "Updated"), 400: err400, 404: jsonContent(ref("ProblemDetail"), "Not found"), 409: jsonContent(ref("ProblemDetail"), "Checklist conflict or task or destination project is no longer available") },
     },
     delete: {
       operationId: "deleteTask",

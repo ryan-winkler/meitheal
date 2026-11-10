@@ -46,8 +46,6 @@ interface Window {
   __prefillTaskDate?: string
   /** Cached users list for assignee dropdowns */
   __meitheal_users?: Array<{ id: string; name: string }>
-  /** Current task checklists (detail modal) */
-  __currentChecklists?: unknown[]
 
   // ── Pomodoro ──
   /** Start a pomodoro timer for a task */

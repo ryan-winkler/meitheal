@@ -27,6 +27,12 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Edit a Checklist in Two Sessions
+
+Task detail saves checklist changes against the version it loaded. Independent changes to different identified steps and new steps can be combined automatically. If a newer save changes the same step differently or the editor cannot identify the changed steps safely, it keeps your draft visible. Choose **Load latest checklist** to review the saved version alongside your draft, then make any remaining edits.
+
+A task API client can use the same protection by sending `expected_checklists` with `checklists` in `PUT /api/tasks/{id}`. Pass the exact previous checklist value from the GET response. Use JSON `null` if the task has a historical null checklist. A stale comparison returns `409` with `code: "checklist_conflict"` and the current checklist value. The rejected update leaves all task fields untouched. Existing API callers can keep using the checklist string without a comparison.
+
 ### Activate a Task with Dependencies
 
 If a task has a **Blocked by** link to a prerequisite, it can move to `active` after that prerequisite is `complete` or `archived`. A **Blocks** link created from the prerequisite has the same effect. Reciprocal links count as one prerequisite. The older free-text `blocked_by` field is a note and does not enforce a dependency.

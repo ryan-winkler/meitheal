@@ -226,6 +226,11 @@ components:
           type: string
           nullable: true
           description: Comma-separated label names
+        checklists:
+          type:
+            - string
+            - "null"
+          description: A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null.
         board_name:
           type: string
           nullable: true
@@ -1167,7 +1172,9 @@ paths:
       summary: Update a task
       description: Send only the fields you want to change. Set project_id to an existing project ID to move the task, or null
         to clear the assignment. Changing the project preserves the task area and status. Setting status to 'complete'
-        triggers webhook events and optional calendar cleanup.
+        triggers webhook events and optional calendar cleanup. To guard a checklist write, include checklists and
+        expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET. A stale
+        guard returns 409 with code checklist_conflict and the current checklist.
       parameters:
         - name: id
           in: path
@@ -1178,7 +1185,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Task"
+              allOf:
+                - $ref: "#/components/schemas/Task"
+                - type: object
+                  properties:
+                    checklists:
+                      type: string
+                      description: Replacement JSON-encoded checklist array
+                    expected_checklists:
+                      type:
+                        - string
+                        - "null"
+                      description: Exact previous checklist value returned by GET
+                  dependentRequired:
+                    expected_checklists:
+                      - checklists
+                  additionalProperties: false
       responses:
         "200":
           description: Updated
@@ -1194,7 +1216,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "409":
-          description: Task or destination project is no longer available
+          description: Checklist conflict or task or destination project is no longer available
           content:
             application/json:
               schema:

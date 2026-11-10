@@ -56,12 +56,6 @@ interface MeithealWindowExtensions {
   /** I18n translation map */
   mI18n?: Map<string, string>;
 
-  // === Checklists ===
-  /** Current checklist items for task detail view */
-  __currentChecklists?: Array<{ id: string; text: string; done: boolean }>;
-  /** Re-renders checklist UI after state change */
-  refreshChecklistsVisuals?: () => void;
-
   // === Strategic Lens ===
   /** Attaches strategic lens evaluator for a task (registered by StrategicEvaluator.astro) */
   attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>) => void;

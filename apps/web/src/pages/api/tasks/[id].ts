@@ -208,7 +208,12 @@ export const PUT: APIRoute = async ({ params, request }) => {
     sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
       ? body.assigned_to.trim() : null
   }
-  // Phase 31: Checklists
+  // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
+  const expectedChecklists = body.expected_checklists
+  if (expectedChecklists !== undefined &&
+      ((expectedChecklists !== null && typeof expectedChecklists !== "string") || body.checklists === undefined)) {
+    return apiError("expected_checklists requires the prior checklist string or null and a replacement checklist", 400)
+  }
   if (body.checklists !== undefined) {
     if (typeof body.checklists !== "string") {
       return new Response(JSON.stringify({ error: "checklists must be a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
@@ -288,8 +293,15 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const oldTask = await repo.getFieldsForDiff(resolvedId)
 
   // Perform the update via repository
-  const update = await repo.updateTask(resolvedId, sanitized)
+  const update = await repo.updateTask(resolvedId, sanitized, expectedChecklists)
   if (!update.ok) {
+    if (update.errorCode === "checklist_conflict") {
+      return Response.json({
+        error: "The checklist changed since your last read",
+        code: "checklist_conflict",
+        checklists: update.checklists,
+      }, { status: 409, headers: { "cache-control": "no-store" } })
+    }
     if (update.errorCode === "blocked") {
       return new Response(JSON.stringify({
         error: "Cannot activate: task is blocked by open dependencies",

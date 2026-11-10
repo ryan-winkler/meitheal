@@ -17,6 +17,7 @@
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
+        import { showTaskChecklist } from "@lib/controllers/modal-checklist"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -859,92 +860,7 @@
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            const checklistsContainer = document.getElementById(
-              "td-checklists",
-            ) as HTMLElement;
-            const clDoneSpan = document.getElementById(
-              "td-checklist-done",
-            ) as HTMLElement;
-            const clTotalSpan = document.getElementById(
-              "td-checklist-total",
-            ) as HTMLElement;
-            const clProgressDiv = document.getElementById(
-              "td-checklist-progress",
-            ) as HTMLElement;
-
-            window.__currentChecklists = [];
-            try {
-              if (t.checklists) {
-                window.__currentChecklists =
-                  typeof t.checklists === "string"
-                    ? JSON.parse(String(t.checklists))
-                    : t.checklists;
-              }
-            } catch {
-              /* skip */
-            }
-
-            window.refreshChecklistsVisuals = () => {
-              type ChecklistItem = { id: string; text: string; done: boolean }
-              const list = (window.__currentChecklists || []) as ChecklistItem[];
-              if (checklistsContainer) {
-                checklistsContainer.replaceChildren();
-                let doneCount = 0;
-                list.forEach((item: ChecklistItem, index: number) => {
-                  if (item.done) doneCount++;
-                  const row = document.createElement("div");
-                  row.className = "flex items-center gap-2 group";
-                  row.innerHTML = `
-                    <input type="checkbox" class="form-checkbox h-4 w-4 bg-transparent border-border rounded" ${item.done ? "checked" : ""} />
-                    <input type="text" class="form-input flex-1 text-sm bg-transparent border-transparent px-1 py-0.5 focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)" value="${escapeHtml(item.text)}" placeholder="Checklist item..." />
-                    <button type="button" class="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-xs p-1" title="Delete item">×</button>
-                  `;
-                  // Toggle done
-                  const cb = row.querySelector(
-                    "input[type=checkbox]",
-                  ) as HTMLInputElement;
-                  cb.addEventListener("change", () => {
-                    if (list[index]) {
-                      list[index].done = cb.checked;
-                      saveTD("checklists", JSON.stringify(list));
-                      window.refreshChecklistsVisuals?.();
-                    }
-                  }, { signal: __signal });
-                  // Edit text
-                  const txt = row.querySelector(
-                    "input[type=text]",
-                  ) as HTMLInputElement;
-                  txt.addEventListener("blur", () => {
-                    if (list[index] && txt.value.trim() !== list[index].text) {
-                      list[index].text = txt.value.trim();
-                      saveTD("checklists", JSON.stringify(list));
-                    }
-                  }, { signal: __signal });
-                  txt.addEventListener("keydown", (e: KeyboardEvent) => {
-                    if (e.key === "Enter") txt.blur();
-                  }, { signal: __signal });
-                  // Delete
-                  const del = row.querySelector("button") as HTMLButtonElement;
-                  del.addEventListener("click", () => {
-                    list.splice(index, 1);
-                    saveTD("checklists", JSON.stringify(list));
-                    window.refreshChecklistsVisuals?.();
-                  }, { signal: __signal });
-                  checklistsContainer.appendChild(row);
-                });
-
-                if (clProgressDiv && clDoneSpan && clTotalSpan) {
-                  if (list.length > 0) {
-                    clProgressDiv.style.display = "block";
-                    clDoneSpan.textContent = String(doneCount);
-                    clTotalSpan.textContent = String(list.length);
-                  } else {
-                    clProgressDiv.style.display = "none";
-                  }
-                }
-              }
-            };
-            window.refreshChecklistsVisuals();
+            showTaskChecklist(taskId, t.checklists, modalSignal)
 
             // Load comments for the current task.
             document.getElementById("td-comments")?.replaceChildren()
@@ -1129,35 +1045,7 @@
             input.value = "";
           }, { signal: __signal });
 
-        // Global Add Checklist Item handler
-        document
-          .getElementById("td-add-checklist-item")
-          ?.addEventListener("click", () => {
-            if (!currentTaskId) return;
-            const list = window.__currentChecklists || [];
-            list.push({
-              id: crypto.randomUUID(),
-              text: "New Item",
-              done: false,
-            });
-            window.__currentChecklists = list;
-            saveTD("checklists", JSON.stringify(list)).then(() => {
-              if (typeof window.refreshChecklistsVisuals === "function") {
-                window.refreshChecklistsVisuals();
-                // focus the newly added input
-                const container = document.getElementById("td-checklists");
-                if (container) {
-                  const inputs = container.querySelectorAll("input[type=text]");
-                  if (inputs.length > 0) {
-                    (inputs[inputs.length - 1] as HTMLElement).focus();
-                    (inputs[inputs.length - 1] as HTMLInputElement).select();
-                  }
-                }
-              }
-            });
-          }, { signal: __signal });
-
-          document.getElementById("td-status")
+        document.getElementById("td-status")
           ?.addEventListener("change", (e) => {
             const newVal = (e.target as HTMLSelectElement).value;
             saveTD("status", newVal);
