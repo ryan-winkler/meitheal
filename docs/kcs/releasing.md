@@ -78,12 +78,14 @@ Run this from a clean source checkout on a trusted Linux host with Git, Node, Py
 
 ### Read the Green performance receipt
 
-Run `python3 scripts/verify-canary-green.py --report GREEN_RECEIPT ARM64_IMAGE_ID VERSION`, using the 12-character Canary version. The JSON reports individual gates even when a complete receipt fails. The command still exits nonzero on failure. Keep the raw receipt with the report.
+Run `python3 scripts/verify-canary-green.py --report GREEN_RECEIPT ARM64_IMAGE_ID VERSION`, using the 12-character Canary version. The JSON reports individual gates even when a complete receipt fails. The command still exits nonzero on failure. Keep the raw receipt with the report. Use the versioned [Green benchmark contract](green-canary-benchmark.md), including the fixed helper, script hashes and final driver telemetry; historical receipts do not qualify under the new profile.
+
+The release minimum is 128 MiB idle and 160 MiB active within the unchanged 192 MiB hard cap. The 64/96 MiB figures remain optimization goals. App memory accounting, CPU and route latency definitions are unchanged.
 
 | Release gate | What the fixed workload measures |
 | --- | --- |
-| Idle memory below 64 MiB | The largest of 12 cgroup `memory.current` samples under the nearest-rank p95 calculation. |
-| Active memory below 96 MiB | Nearest-rank p95 of sampled `memory.current` during the 105-cycle workload. The report also includes the sampled maximum and the observed cgroup high-water mark when available. |
+| Idle memory below 128 MiB | The largest of 12 cgroup `memory.current` samples under the nearest-rank p95 calculation. |
+| Active memory below 160 MiB | Nearest-rank p95 of sampled `memory.current` during the 105-cycle workload. The report also includes the sampled maximum and the observed cgroup high-water mark when available. |
 | Mean active CPU at or below 15% of one core | Cgroup CPU time divided by the elapsed time between active samples. The window includes the fixed 2.5-second pause in each cycle. The report also includes interval CPU and throttling to show bursts the mean can hide. |
 | Every route p95 at or below 350 ms | The 100th value in ascending order for each set of 105 complete loopback HTTP responses. The report shows p50, maximum and the number above 350 ms, so up to five slow responses remain visible even when the gate passes. |
 
