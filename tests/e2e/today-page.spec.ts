@@ -73,7 +73,7 @@ test("Today and Dashboard label shared favorites separately from personal pins",
     const section = page.locator("#section-pinned")
     await expect(section.getByRole("button", { name: "Toggle Shared favorites section" })).toBeVisible()
     await expect(section.locator(".today-section__title")).toContainText("Shared favorites")
-    await expect(section.locator(`[data-id="${id}"]`)).toHaveAccessibleName(/in Shared favorites$/)
+    await expect(section.locator(`.tli[data-id="${id}"]`)).toHaveAccessibleName(/in Shared favorites$/)
 
     await page.goto("/")
     const card = page.locator(".dashboard-card").filter({ has: page.getByText("Favorites", { exact: true }) })
