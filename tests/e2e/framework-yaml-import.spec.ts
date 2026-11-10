@@ -104,6 +104,7 @@ test.describe("framework import API and Settings", () => {
   test("YAML shares JSON validation, collision checks and persistence; JSON clients keep their exact shape", async ({ request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin, "content-type": "application/yaml; charset=utf-8" }
     const json = { ...imported, id: "json-framework-import-compatibility", name: "JSON client", source: "user", fields: [
+      ...imported.fields,
       { key: "choice", label: "Choice", type: "select", uiType: "select", weight: 3, helpText: "Keep options", options: [{ value: "one", label: "One" }] },
     ] }
     const createdIds: string[] = []

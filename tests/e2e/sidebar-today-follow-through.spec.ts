@@ -63,8 +63,8 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible()
     await expect(page.locator("#today-overview .page-hero")).toHaveCount(0)
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
-    await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(0)
-    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(1)
+    await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
+    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })

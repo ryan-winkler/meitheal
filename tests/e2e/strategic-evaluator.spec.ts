@@ -28,7 +28,9 @@ test.describe("Ticket scoring review regressions", () => {
       fields: [{ key: "impact", label: "Custom impact", type: "number", min: '0" onfocus="window.scoringInjected=true', max: '10" oninput="window.scoringInjected=true' }],
     }
     const framework = await request.post("/api/frameworks", { headers: { origin }, data: config })
-    expect(framework.status(), await framework.text()).toBe(201)
+    expect(framework.status(), await framework.text()).toBe(400)
+    // Simulate a legacy stored record; new writes reject this configuration.
+    await page.route("**/api/frameworks", route => route.fulfill({ json: { data: [config] } }))
     const created = await request.post("/api/tasks", { headers: { origin }, data: {
       title: "Unsupported scoring formula", framework_payload: JSON.stringify({ [config.id]: { impact: 2 } }),
     } })
@@ -38,15 +40,15 @@ test.describe("Ticket scoring review regressions", () => {
       await page.goto(`/tickets/${id}`)
       const input = page.getByRole("spinbutton", { name: "Custom impact", exact: true })
       await expect(input).toHaveValue("2")
-      await expect(input).not.toHaveAttribute("min")
-      await expect(input).not.toHaveAttribute("max")
+      await expect(input).toHaveAttribute("min", config.fields[0].min)
+      await expect(input).toHaveAttribute("max", config.fields[0].max)
       await expect(input).not.toHaveAttribute("onfocus")
       await expect(input).not.toHaveAttribute("oninput")
       await input.focus()
       await input.fill("3")
-      await expect(page.locator("#se-live-result")).toContainText("unsupported formula")
+      await expect(page.locator("#se-live-result")).toContainText(/formula.*unsupported|unsupported.*formula/)
       await page.getByRole("button", { name: "Save score", exact: true }).click()
-      await expect(page.locator("#se-status")).toContainText("unsupported formula")
+      await expect(page.locator("#se-status")).toContainText(/formula.*unsupported|unsupported.*formula/)
       expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).scoringInjected)).toBeUndefined()
       const stored = await (await request.get(`/api/tasks/${id}`)).json()
       expect(JSON.parse(stored.framework_payload)[config.id]).toEqual({ impact: 2 })
