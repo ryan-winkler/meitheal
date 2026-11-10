@@ -66,7 +66,7 @@ const { locale } = Astro.props;
               data-text-testing={t("settings.testing", locale)}
               data-text-unavailable={t("settings.agent_unavailable", locale)}
               data-text-failed={t("settings.connection_failed", locale)}>{t("settings.test", locale)}</button>
-            <button type="button" class="btn btn-ghost settings-text-sm" id="refresh-ha-agents">Refresh agents</button>
+            <button type="button" class="btn btn-ghost settings-text-sm" id="refresh-ha-agents">{t("settings.ha_agent_refresh", locale)}</button>
             <span
               id="ha-agent-test-result"
               style="font-size: 12px; color: var(--text-muted);"></span>

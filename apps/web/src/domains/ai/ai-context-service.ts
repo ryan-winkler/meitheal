@@ -11,6 +11,7 @@
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
+import { showToast } from "@lib/toast"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 
 const log = createClientLogger("ai", "context");
@@ -168,7 +169,10 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
         const d = await resUrl.json();
         if (d?.value) {
           const url = parseAiHandoffUrl(d.value)
-          if (!url) return
+          if (!url) {
+            showToast("The saved AI URL is invalid. Open Settings → Automation & AI to correct it.", "error")
+            return
+          }
           targetUrl = url.href
         }
       }

@@ -17,6 +17,7 @@ const { locale } = Astro.props;
     data-page="settings"
     data-tooltip={t("nav.settings", locale)}
     aria-label={t("nav.settings", locale)}
+    aria-describedby="connection-status"
   >
     <span class="nav-icon"><Icon name="settings" /></span>
     <span class="nav-label">{t("nav.settings", locale)}</span>

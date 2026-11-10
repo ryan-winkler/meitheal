@@ -363,3 +363,9 @@ Ticket drawers keep their canonical URL while editing. On standalone pages, Layo
 ### Held-body revocation fixture in production builds
 
 The ingress fixture observes the bounded body-parser module when it waits for the next request chunk. Production builds minify function names, so the fixture matches the parser module filename rather than a function name in the stack. Keep the same held-body, revocation, replay and disconnect assertions when checking a minified release image.
+
+### Framework evaluation validation
+
+Framework creation accepts finite numeric bounds and formulas using declared fields, numbers, parentheses and the four arithmetic operators. Unsupported stored formulas display an explicit framework error; edit the definition before scoring. Framework field bounds render as text attributes, including records retained from older versions. Evaluation saves use the normalized task version and retain estimates after a conflict. Assist suggestions preserve fields they do not replace and do not redraw a different framework selected during the request.
+
+The OpenAPI comment-list schema includes comment fields and `can_manage` in one object so schema validation accepts actual API responses.

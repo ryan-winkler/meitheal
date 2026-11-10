@@ -129,3 +129,56 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     expect(requests).toHaveLength(3)
   })
 })
+
+test.describe("Discovery recovery and keyboard focus", () => {
+  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
+  test.use({ serviceWorkers: "block" })
+
+  test("Settings keeps Refresh focused while busy and handles non-JSON and null replies", async ({ page }) => {
+    await mockPreference(page, "01LEGACYCONFIGENTRY")
+    let release: (() => void) | undefined
+    let hold = false
+    let reads = 0
+    await page.route("**/api/ha/agents", async route => {
+      reads++
+      if (hold) await new Promise<void>(resolve => { release = resolve })
+      return route.fulfill({ json: { agents: registeredAgents } })
+    })
+    await page.goto("/settings#automation-ai-settings")
+    const refresh = page.locator("#refresh-ha-agents")
+    const status = page.locator("#ha-agent-discovery-status")
+    await expect(status).toContainText("3 Home Assistant agents available")
+    await expect(refresh).toHaveAttribute("aria-disabled", "false")
+    const before = reads
+    hold = true
+    await refresh.focus()
+    await refresh.press("Enter")
+    await expect.poll(() => reads).toBe(before + 1)
+    await expect(refresh).toBeFocused()
+    await expect(refresh).toHaveAttribute("aria-busy", "true")
+    await refresh.press("Enter")
+    expect(reads).toBe(before + 1)
+    release?.()
+    await expect(refresh).toHaveAttribute("aria-disabled", "false")
+    await expect(refresh).toBeFocused()
+    await page.unroute("**/api/ha/agents")
+    await page.route("**/api/ha/agents", route => route.fulfill({ status: 502, contentType: "text/html", body: "<h1>Bad gateway</h1>" }))
+    await refresh.press("Enter")
+    await expect(status).toContainText("Home Assistant agent discovery failed")
+    await expect(status).not.toContainText("Unexpected token")
+    await page.unroute("**/api/ha/agents")
+    await page.route("**/api/ha/agents", route => route.fulfill({ contentType: "application/json", body: "null" }))
+    await refresh.press("Enter")
+    await expect(status).toContainText("invalid agent list")
+    await expect(page.locator("#ha-agent-select-settings")).toHaveValue("01LEGACYCONFIGENTRY")
+  })
+
+  test("Irish Settings localizes discovery controls and status", async ({ page, context, baseURL }) => {
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
+    await page.addInitScript(() => localStorage.setItem("meitheal-locale", "ga"))
+    await page.route("**/api/ha/agents", route => route.fulfill({ json: { agents: registeredAgents } }))
+    await page.goto("/settings#automation-ai-settings")
+    await expect(page.locator("#refresh-ha-agents")).toHaveText("Athnuaigh gníomhairí")
+    await expect(page.locator("#ha-agent-discovery-status")).toContainText("3 gníomhaire Home Assistant ar fáil")
+  })
+})

@@ -596,10 +596,12 @@ export async function listConversationAgents(): Promise<ConversationAgent[] | nu
       request_id: SYS_REQ, message: `Found ${agents.length} conversation agent(s)`,
     });
     return agents;
-  } catch {
+  } catch (error) {
+    const parserMessages = ["Home Assistant did not return its conversation agent list", "Invalid Home Assistant conversation agent"]
+    const reason = error instanceof Error && parserMessages.includes(error.message) ? error.message : "Home Assistant WebSocket command failed"
     logger.log("error", {
       event: "ha.conversation.agents_list_failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: "Home Assistant conversation agent list failed",
+      request_id: SYS_REQ, message: reason,
     })
     return null
   }

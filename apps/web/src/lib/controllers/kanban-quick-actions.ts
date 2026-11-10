@@ -5,6 +5,7 @@
  * @kcs Extracted from kanban-controller.ts for decomposition.
  *      Manages the shared popover system and all quick-action card buttons.
  */
+import type { KanbanRefreshFocus } from "./kanban-page-controller"
 import { createClientLogger } from "@lib/client-logger"
 import { sanitizeCssColor } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
@@ -28,7 +29,7 @@ export interface QuickActionApi {
 export function initQuickActions(
   buildTaskApiUrl: (taskId: string | number | null, suffix?: string) => string,
   __signal: AbortSignal,
-  refreshBoard: () => Promise<void>,
+  refreshBoard: (focus?: KanbanRefreshFocus) => Promise<void>,
 ): QuickActionApi {
   // =============================================
   // Shared Popover Utility (P4-1)
@@ -62,7 +63,9 @@ export function initQuickActions(
 
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
-    close(true)
+    const focus = button.closest(".kanban-card")?.querySelector<HTMLButtonElement>(".card-more-btn")
+    close()
+    focus?.focus()
     button.disabled = true
     try {
       const response = await fetch(buildTaskApiUrl(taskId), {
@@ -71,7 +74,7 @@ export function initQuickActions(
         body: JSON.stringify({ color }),
       })
       if (!response.ok) throw new Error("Color write rejected")
-      await refreshBoard()
+      await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
       if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")

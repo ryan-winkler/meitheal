@@ -4,6 +4,17 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.describe("Sidebar and Today follow-through", () => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
 
+  let originalSidebar: unknown
+  let createdIds: string[] = []
+  test.beforeEach(async ({ request }) => {
+    originalSidebar = (await (await request.get("/api/settings?key=sidebar_config")).json()).value ?? null
+    createdIds = []
+  })
+  test.afterEach(async ({ request }) => {
+    for (const id of createdIds) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: originalSidebar } })).status()).toBe(200)
+  })
+
   test("Areas visibility, label and order persist, with one custom link per click", async ({ page }) => {
     await page.goto("/settings#workflow-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
@@ -45,6 +56,7 @@ test.describe("Sidebar and Today follow-through", () => {
     const now = new Date().toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", { headers, data: { title: "Due-today follow-through", due_date: now } })
     expect(created.status(), await created.text()).toBe(201)
+    createdIds.push((await created.json()).id)
     await page.goto("/")
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
@@ -66,7 +78,9 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect.poll(async () => {
       const response = await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)
       const data = await response.json()
-      return data.tasks?.[0]?.title
+      const captured = data.tasks?.find((task: { title: string }) => task.title === title)
+      if (captured?.id && !createdIds.includes(captured.id)) createdIds.push(captured.id)
+      return captured?.title
     }).toBe(title)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
@@ -76,4 +90,24 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page).toHaveURL(/#today-work$/)
     await expect(page.locator("#section-today")).toBeVisible()
   })
+})
+
+test("Today uses the chosen language and one workspace date for its label and datetime", async ({ page, request, context, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
+  const previous = (await (await request.get("/api/settings?key=timezone")).json()).value ?? null
+  const timezone = new Date().getUTCHours() < 10 ? "Pacific/Honolulu" : "Pacific/Kiritimati"
+  try {
+    expect((await request.put("/api/settings", { data: { key: "timezone", value: timezone } })).status()).toBe(200)
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
+    await page.goto("/today")
+    const date = new Date()
+    const label = new Intl.DateTimeFormat("ga-IE", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(date)
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: timezone }).formatToParts(date).map(part => [part.type, part.value]))
+    const key = `${parts.year}-${parts.month}-${parts.day}`
+    expect(key).not.toBe(date.toISOString().slice(0, 10))
+    await expect(page.locator(".today-summary__date time")).toHaveText(label)
+    await expect(page.locator(".today-summary__date time")).toHaveAttribute("datetime", key)
+  } finally {
+    expect((await request.put("/api/settings", { data: { key: "timezone", value: previous } })).status()).toBe(200)
+  }
 })

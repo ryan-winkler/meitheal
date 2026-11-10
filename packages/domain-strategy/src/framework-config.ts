@@ -1,3 +1,5 @@
+import { isFrameworkFormulaSupported } from "./framework-formula"
+
 /**
  * Framework Configuration — manages YAML defaults + user overrides
  *
@@ -200,12 +202,22 @@ export function validateFrameworkConfig(
       } else {
         keys.add(field.key)
       }
+      for (const bound of ["min", "max"] as const) {
+        if (field[bound] !== undefined && (typeof field[bound] !== "number" || !Number.isFinite(field[bound]))) {
+          errors.push(`Field "${field.key}" ${bound} must be a finite number`)
+        }
+      }
+      if (typeof field.min === "number" && typeof field.max === "number" && field.min > field.max) errors.push(`Field "${field.key}" min must not exceed max`)
       if (!field.label) errors.push(`Field "${field.key}" must have a label`)
     }
   }
 
   if (config.archetype === "formula" && !config.formula) {
     errors.push("Formula archetypes require a formula expression")
+  }
+
+  if (config.formula && (typeof config.formula !== "string" || !isFrameworkFormulaSupported(config.formula, (config.fields ?? []).map(field => field.key)))) {
+    errors.push("Formula must use declared fields, numbers, parentheses and + - * / operators")
   }
 
   if (!Array.isArray(config.badgeThresholds)) {

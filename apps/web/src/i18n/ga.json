@@ -784,7 +784,15 @@
     "custom_user_removed": "Custom user removed",
     "default_assignee_saved": "Default assignee saved",
     "ha_users_discovered": "Home Assistant users auto-discovered",
-    "no_users_found": "No users found. Add custom users or connect to Home Assistant."
+    "no_users_found": "No users found. Add custom users or connect to Home Assistant.",
+    "ha_agent_refresh": "Athnuaigh gníomhairí",
+    "ha_agent_loading": "Gníomhairí Home Assistant á lódáil…",
+    "ha_agent_missing": "Níl an gníomhaire roghnaithe ar fáil. Roghnaigh gníomhaire eile nó athnuaigh tar éis é a athcheangal le Home Assistant.",
+    "ha_agent_count": "{count} gníomhaire Home Assistant ar fáil.",
+    "ha_agent_empty": "Níor aimsíodh gníomhairí comhrá cláraithe. Seiceáil cumraíocht Assist in Home Assistant.",
+    "ha_agent_retry": "Athnuaigh chun triail eile a bhaint as; tá do rogha gan athrú.",
+    "ha_agent_discovery_unavailable": "Níl aimsiú ar fáil",
+    "ha_agent_choose_saved": "Sábháil chun an gníomhaire comhrá seo a úsáid de réir réamhshocraithe."
   },
   "command_palette": {
     "placeholder": "Clóscríobh ordú nó cuardaigh...",

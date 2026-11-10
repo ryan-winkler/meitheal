@@ -2,7 +2,7 @@ import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { frameworkPayloadObject as asFrameworkPayload, riceLensScore, readRiceInputs } from "@lib/rice-lens"
-import { evaluateFrameworkFormula } from "@lib/framework-score"
+import { evaluateFrameworkFormula, isFrameworkFormulaSupported } from "@lib/framework-score"
 
 export interface StrategicLensSession {
   signal: AbortSignal
@@ -47,7 +47,7 @@ function renderField(field: Field, value: unknown, frameworkId: string): string 
       `<option value="${escapeHtml(String(option.value))}" ${String(val) === String(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`
   } else if (field.type === "number") {
     const min = frameworkId === "rice" && field.key === "effort" ? 0.01 : field.min
-    control = `<input type="number" ${attrs} required step="any" ${min === undefined ? "" : `min="${min}"`} ${field.max === undefined ? "" : `max="${field.max}"`} value="${escapeHtml(String(val))}" />`
+    control = `<input type="number" ${attrs} required step="any" ${min === undefined ? "" : `min="${escapeHtml(String(min))}"`} ${field.max === undefined ? "" : `max="${escapeHtml(String(field.max))}"`} value="${escapeHtml(String(val))}" />`
   } else {
     control = `<input type="text" ${attrs} value="${escapeHtml(String(val))}" />`
   }
@@ -99,6 +99,10 @@ pageLifecycle.onPageLoad(signal => {
   function preview() {
     const selected = framework()
     if (!selected) return
+    if (selected.data.formula && !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))) {
+      output!.textContent = "This framework formula is unsupported. Edit the framework formula before saving."
+      return
+    }
     const score = scoreFields(selected, readFields())
     output!.textContent = selected.data.formula ? score === null ? "Enter valid estimates to calculate a score" : `Score: ${score}`
       : "Save your framework evaluation"
@@ -181,7 +185,8 @@ pageLifecycle.onPageLoad(signal => {
     const values = readFields()
     const score = scoreFields(selected, values)
     if (selected.data.formula && score === null) {
-      status.textContent = "Enter valid estimates before saving."
+      status.textContent = !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))
+        ? "This framework formula is unsupported. Edit the framework formula before saving." : "Enter valid estimates before saving."
       return
     }
     const id = taskId
@@ -196,7 +201,8 @@ pageLifecycle.onPageLoad(signal => {
       const latest = parsePayload(task.framework_payload)
       latest[selected.id] = { ...asFrameworkPayload(latest[selected.id]), ...values, ...(score === null ? {} : { score }), _evaluatedAt: new Date().toISOString() }
       const encoded = JSON.stringify(latest)
-      const updatedAt = Number(task.updated_at)
+      const updatedAt = Number(task.task_version ?? task.updated_at)
+      if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new Error("The ticket version is unavailable")
       const saved = saveEvaluation ? await saveEvaluation(encoded, updatedAt)
         : (await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
           method: "PUT", headers: { "content-type": "application/json" }, signal: requestSignal,
@@ -220,6 +226,8 @@ pageLifecycle.onPageLoad(signal => {
     const selected = framework()
     if (!selected || !taskId) return
     const requestSignal = taskSignal
+    const selectedId = selected.id
+    payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
     ask.disabled = true
     status.textContent = "Asking Assist to suggest scores…"
     try {
@@ -228,8 +236,9 @@ pageLifecycle.onPageLoad(signal => {
       if (requestSignal.aborted) return
       const values = result.scores[selected.id]
       if (values) {
-        payload[selected.id] = { ...asFrameworkPayload(payload[selected.id]), ...values }
-        render()
+        if (renderedFrameworkId) payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
+        payload[selectedId] = { ...asFrameworkPayload(payload[selectedId]), ...values }
+        if (select.value === selectedId) render()
       }
       status.textContent = result.justification
     } catch {

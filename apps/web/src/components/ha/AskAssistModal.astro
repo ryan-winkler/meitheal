@@ -169,8 +169,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   function updateControls() {
     submitBtn.disabled = sending || loadingAgents || !input.value.trim() || agentSelect.dataset.agentUnavailable === "true"
+    if ((sending || loadingAgents) && document.activeElement === agentSelect) input.focus()
     agentSelect.disabled = sending || loadingAgents
-    if (refreshAgents) refreshAgents.disabled = sending || loadingAgents
+    if (refreshAgents) {
+      refreshAgents.setAttribute("aria-disabled", String(sending || loadingAgents))
+      refreshAgents.setAttribute("aria-busy", String(loadingAgents))
+    }
   }
 
   function resetConversation() {
@@ -219,7 +223,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
   }
 
-  if (refreshAgents) pageLifecycle.on(refreshAgents, "click", () => void loadAgents())
+  if (refreshAgents) pageLifecycle.on(refreshAgents, "click", () => { if (!sending && !loadingAgents) void loadAgents() })
   pageLifecycle.on(agentSelect, "change", () => {
     sessionStorage.setItem("meitheal:assist-agent", agentSelect.value)
     agentSelect.dataset.agentUnavailable = String(agentSelect.selectedOptions[0]?.dataset.unavailable === "true")

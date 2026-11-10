@@ -16,6 +16,14 @@ import { stringify } from "yaml"
 const OUTPUT = resolve(dirname(new URL(import.meta.url).pathname), "../public/openapi.yaml")
 const JSON_OUTPUT = resolve(dirname(OUTPUT), ".well-known/jsondoc.json")
 
+const taskCommentProperties = {
+  id: { type: "integer" },
+  task_id: { type: "string" },
+  content: { type: "string" },
+  author: { type: "string", description: "Display author recorded when the comment was added." },
+  created_at: { type: "string", description: "SQLite UTC timestamp." },
+}
+
 // ─── Reusable Schema Components ───────────────────────────────────────────────
 
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
@@ -76,25 +84,15 @@ const schemas = {
   TaskComment: {
     type: "object",
     required: ["id", "task_id", "content", "author", "created_at"],
-    properties: {
-      id: { type: "integer" },
-      task_id: { type: "string" },
-      content: { type: "string" },
-      author: { type: "string", description: "Display author recorded when the comment was added." },
-      created_at: { type: "string", description: "SQLite UTC timestamp." },
-    },
+    properties: taskCommentProperties,
   },
   TaskCommentListItem: {
-    allOf: [
-      { $ref: "#/components/schemas/TaskComment" },
-      {
-        type: "object",
-        required: ["can_manage"],
-        properties: {
-          can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
-        },
-      },
-    ],
+    type: "object",
+    required: ["id", "task_id", "content", "author", "created_at", "can_manage"],
+    properties: {
+      ...taskCommentProperties,
+      can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
+    },
   },
   FeedbackSubmission: {
     type: "object",

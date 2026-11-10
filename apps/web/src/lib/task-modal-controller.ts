@@ -85,7 +85,7 @@
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
-        const drawerSession = crypto.randomUUID()
+        const drawerSession = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         function beginScopedWrite() {

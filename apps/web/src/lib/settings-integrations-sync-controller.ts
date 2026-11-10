@@ -485,8 +485,11 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
     const data = (await res.json()) as { ok: boolean; entities?: { entity_id: string; friendly_name: string; state: string; sync: { active: boolean; direction: string; lastSyncAt: number | null; itemCount: number } | null }[] }
     const entities = data.entities ?? []
     let savedEnabled: string[] = []
-    if (settings.todo_entities) savedEnabled = Array.isArray(settings.todo_entities) ? settings.todo_entities : [String(settings.todo_entities)]
-    else if (settings.todo_entity) savedEnabled = [String(settings.todo_entity)]
+    let configured: unknown = settings.todo_entities ?? settings.todo_entity
+    if (typeof configured === "string") {
+      try { configured = JSON.parse(configured) } catch { /* legacy single entity ID */ }
+    }
+    savedEnabled = (Array.isArray(configured) ? configured : [configured]).filter((value): value is string => typeof value === "string" && value.length > 0)
 
     if (entities.length > 0 && autoInfo && autoEntities) {
       autoInfo.style.display = "block"

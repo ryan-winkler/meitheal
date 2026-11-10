@@ -138,13 +138,7 @@ See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language refer
 - Retention. theme and settings state should survive reloads and hash deep-links.
 - Task success. all cross-links should land on real section ids.
 
-## Verify a Settings change
-
-Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
-
-Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
-
-### Home Assistant conversation agents
+## Home Assistant conversation agents
 
 Settings → Automation & AI and Ask Home Assistant require a currently verified
 Home Assistant administrator. They discover agents from Home
@@ -176,3 +170,13 @@ not establish Supervisor permissions or HA integration health.
 
 Upstream contract: [HA conversation WebSocket implementation](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/http.py)
 and [registered-agent manager](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/agent_manager.py).
+
+Regional preferences apply on the next page request after a successful Settings save. Today formats its readable date and machine-readable date in the same workspace timezone.
+
+## Verify a Settings change
+
+Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
+
+Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
+
+Saved To-do selections support JSON arrays and legacy single entity IDs. If a custom AI handoff URL is invalid, the task drawer explains how to correct it in Automation & AI and leaves the provider window closed.
