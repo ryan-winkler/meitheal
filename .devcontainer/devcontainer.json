@@ -1,5 +1,5 @@
 {
-  "name": "Meitheal — HA Addon Dev",
+  "name": "Meitheal \u2014 HA Addon Dev",
   "dockerComposeFile": "docker-compose.yml",
   "service": "ha-devcontainer",
   "workspaceFolder": "/workspaces/meitheal",
@@ -79,6 +79,13 @@
         "editor.formatOnType": true,
         "files.trimTrailingWhitespace": true
       }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "26",
+      "pnpmVersion": "10.8.0",
+      "nodeGypDependencies": false
     }
   }
 }
