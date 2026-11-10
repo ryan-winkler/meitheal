@@ -141,6 +141,7 @@ function isPinRoute(path: string) {
 }
 
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const draftPath = "/api/task-drafts"
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
@@ -150,12 +151,15 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
   const onlineReadRoute = onlineReadPaths.has(routePattern) || onlineReadPaths.has(url.pathname)
   const draftRoute = routePattern === draftPath || url.pathname === draftPath
-  if (!pinRoute && !onlineReadRoute && !draftRoute) return handleRequest(context, next, requestUrl)
+  const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
+  const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
+  if (!pinRoute && !onlineReadRoute && !draftRoute && !taskHistoryRoute) return handleRequest(context, next, requestUrl)
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
     return new Response(null, { status: requestPath !== draftPath ? 404 : 400, headers: { "cache-control": "private, no-store" } })
   }
   // Astro matches decoded paths, while the agent guard checks the original request path.
   if ((onlineReadPaths.has(routePattern) && requestPath !== routePattern) ||
+      (taskHistoryRoute && !hasTaskHistoryPath) ||
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }

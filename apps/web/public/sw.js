@@ -203,20 +203,22 @@ function appRoutePath(pathname) {
 }
 
 const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 
-function isPrivateResource(url) {
+function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    return path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
-      path === "/pinned" || path === "/api/search" || path === "/api/saved-filters" || path === "/api/task-drafts"
+    if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+        path === "/pinned" || path === "/api/search" || path === "/api/saved-filters" || path === "/api/task-drafts" ||
+        taskHistoryPath.test(path)) return path
   }
 
-  if (url.origin !== self.location.origin) return false
+  if (url.origin !== self.location.origin) return
 
   let pathname = url.pathname
-  if (!pathname.includes("%") && !pathname.includes("//")) {
-    return privatePath(pathname)
-  }
+  const directPath = privatePath(pathname)
+  if (directPath) return directPath
+  if (!pathname.includes("%") && !pathname.includes("//")) return
 
   // Old cache entries can contain spellings that reach a private route after normalization.
   for (let i = 0; i < 10 && pathname.includes("%"); i++) {
@@ -225,7 +227,7 @@ function isPrivateResource(url) {
       if (decoded === pathname) break
       pathname = decoded
     } catch {
-      return false
+      return
     }
   }
   const normalized = new URL(url.origin + pathname.replace(/[\\/]+/g, "/")).pathname
@@ -248,7 +250,7 @@ async function purgeSensitiveCacheEntries() {
     const requests = await cache.keys()
     await Promise.all(requests.filter(request => {
       const url = new URL(request.url)
-      return isPrivateResource(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+      return privateResourcePath(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
     }).map(request => cache.delete(request, { ignoreVary: true })))
   }))
 }
@@ -305,7 +307,13 @@ self.addEventListener("fetch", (event) => {
 
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
-  if (isPrivateResource(url) || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  const privatePath = privateResourcePath(url)
+  if (privatePath && taskHistoryPath.test(privatePath)) {
+    event.respondWith(fetch(event.request, { cache: "no-store" })
+      .catch(() => offlineApiResponse({ "cache-control": "private, no-store" })))
+    return
+  }
+  if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
   if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
 
@@ -372,11 +380,15 @@ async function networkFirst(request, cacheName) {
   } catch {
     const cached = await matchCacheable(request, cacheName);
     if (cached) return cached;
-    return new Response(JSON.stringify({ error: "offline" }), {
-      status: 503,
-      headers: { "content-type": "application/json" },
-    });
+    return offlineApiResponse()
   }
+}
+
+function offlineApiResponse(headers = {}) {
+  return new Response(JSON.stringify({ error: "offline" }), {
+    status: 503,
+    headers: { "content-type": "application/json", ...headers },
+  })
 }
 
 /**

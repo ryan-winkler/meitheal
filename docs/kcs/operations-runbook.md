@@ -248,6 +248,10 @@ Typing `#` in a task description or comment uses the authenticated, private `GET
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
 
+## Task history
+
+Task activity and timeline reads return `Cache-Control: private, no-store`. They require a connection because history can contain previous field values and comment text. Automation clients continue to use `tasks:read`. Activating the updated web app removes old history responses from Meitheal’s browser caches. Reconnect before reopening **Activity Log** in Details.
+
 ## Public link previews
 
 `POST /api/unfurl` accepts JSON with a public HTTP or HTTPS URL of up to 2,048 characters. Use the final page address and keep credentials out of the URL. A private or special-purpose address, a host with any restricted DNS answer, and a redirect receive HTTP 400. Link previews connect using the validated DNS answers for that request.

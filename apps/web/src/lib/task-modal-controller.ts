@@ -474,10 +474,11 @@
               const loadActivity = async () => {
                 try {
                   const actRes = await fetch(
-                    `${window.__ingress_path || ""}/api/tasks/${taskId}/activity`,
-                    { signal: __signal },
+                    `/api/tasks/${encodeURIComponent(taskId)}/activity`,
+                    { signal: __signal, cache: "no-store" },
                   );
-                  if (!actRes.ok) return;
+                  const cacheDirectives = actRes.headers.get("cache-control")?.toLowerCase().split(",")
+                  if (!actRes.ok || !cacheDirectives?.some(value => value.trim() === "no-store")) return
                   const actData = await actRes.json();
                   const entries = Array.isArray(actData)
                     ? actData

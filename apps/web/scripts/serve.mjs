@@ -9,6 +9,7 @@ const supervisorToken = process.env.SUPERVISOR_TOKEN
 const configuredPath = process.env.INGRESS_PATH
 const databaseExportPath = "/api/export/database.sqlite"
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const pinApiPath = "/api/task-pins"
 const draftApiPath = "/api/task-drafts"
 const pinnedPagePath = "/pinned"
@@ -83,11 +84,13 @@ const server = http.createServer((req, res) => {
     const isPins = canonical === pinApiPath || canonical === pinnedPagePath
     const isOnlineRead = onlineReadPaths.has(canonical)
     const isDraft = canonical === draftApiPath
-    if ((isPins || isOnlineRead || isDraft || canonical === databaseExportPath) && path !== canonical) {
+    const hasTaskHistoryPath = taskHistoryPath.test(path)
+    const isTaskHistoryAlias = !hasTaskHistoryPath && taskHistoryPath.test(canonical ?? "")
+    if (isTaskHistoryAlias || ((isPins || isOnlineRead || isDraft || canonical === databaseExportPath) && path !== canonical)) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
       return
     }
-    if (isPins || isOnlineRead || isDraft) res.setHeader("cache-control", "private, no-store")
+    if (isPins || isOnlineRead || isDraft || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
     if ((canonical === pinApiPath || isDraft) && query !== -1) {
       res.writeHead(400).end()
       return
