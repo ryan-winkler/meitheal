@@ -1,7 +1,6 @@
 import type { CleanupLabel } from "@domains/labels"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import type { LabelChangeDetail } from "@lib/settings-labels-controller"
 
 class CleanupError extends Error {
@@ -165,12 +164,11 @@ export function initSettingsLabelCleanup() {
     const current = generation
     confirming = true
     controls()
-    const names = chosen.map(label => escapeHtml(label.title || text("untitled"))).join("<br>")
     const accepted = await confirmDialog({
-      title: escapeHtml(text("confirm_title")),
-      message: escapeHtml(text(chosen.length === 1 ? "confirm_one" : "confirm_many", chosen.length)) +
-        '<span style="display:block;margin-block-start:.75rem;max-block-size:40vh;overflow:auto;overflow-wrap:anywhere">' + names + "</span>",
-      confirmText: escapeHtml(text("remove")), cancelText: escapeHtml(text("cancel")), variant: "danger",
+      title: text("confirm_title"),
+      message: text(chosen.length === 1 ? "confirm_one" : "confirm_many", chosen.length),
+      details: chosen.map(label => label.title || text("untitled")),
+      confirmText: text("remove"), cancelText: text("cancel"), variant: "danger",
       signal: AbortSignal.any([signal, requests.signal]),
     })
     confirming = false

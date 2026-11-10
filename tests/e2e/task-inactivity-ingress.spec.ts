@@ -292,7 +292,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     const colorCard = page.locator('.kanban-card[data-id="stall-color"]')
     const colorCues = colorCard.locator("[data-inactivity-cue]")
     await expect(colorCues).toHaveText(["Ready to defer", "Stalled"])
-    await page.evaluate(() => document.querySelector("#kanban-board")?.setAttribute("data-fixture-original-board", "true"))
+    // A successful color write refreshes board rows; it must retain the document and peer cues.
+    await page.evaluate(() => document.documentElement.setAttribute("data-fixture-board-document", "true"))
     await colorCard.getByRole("button", { name: "Set color for: Stalled color", exact: true }).click()
     const swatch = page.getByRole("radio", { name: "Set color: Red", exact: true })
     await expect(swatch).toBeVisible()
@@ -310,9 +311,9 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await colorSaved
     await expect(colorCues).toHaveText("Closing soon")
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
-    await expect(board).toHaveAttribute("data-fixture-original-board", "true")
+    await expect(page.locator("html")).toHaveAttribute("data-fixture-board-document", "true")
     await page.evaluate(() => {
-      document.querySelector("#kanban-board")?.setAttribute("data-fixture-original-board", "true")
+      document.documentElement.setAttribute("data-fixture-board-document", "true")
       window.openTaskDetail?.("browser-card")
     })
     const modal = page.locator("#task-detail-overlay")
@@ -327,7 +328,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(childCues).toHaveCount(0)
     await expect(blockedCues).toHaveText(["Ready to defer", "Stalled"])
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
-    await expect(board).toHaveAttribute("data-fixture-original-board", "true")
+    await expect(page.locator("html")).toHaveAttribute("data-fixture-board-document", "true")
     const holdDenial = new Promise<void>(resolve => { releaseDenial = resolve })
     let held = false
     const delayOneDenial = async (route: Route) => {

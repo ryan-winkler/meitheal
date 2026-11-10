@@ -12,6 +12,7 @@ import { mountDialogOverlay } from "./dialog-overlay"
 export interface ConfirmOptions {
   title?: string;
   message: string;
+  details?: readonly string[];
   confirmText?: string;
   cancelText?: string;
   variant?: "danger" | "warning" | "default";
@@ -66,6 +67,10 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
         margin: 0 0 24px; font-size: 14px; line-height: 1.5;
         color: var(--text-secondary, #94a3b8); text-align: center;
       "></p>
+      <ul id="confirm-details" hidden style="
+        margin: 0 0 24px; padding-inline-start: 20px; max-block-size: 40vh;
+        overflow: auto; overflow-wrap: anywhere; color: var(--text-secondary, #94a3b8);
+      "></ul>
       <div style="display: flex; gap: 12px; justify-content: center;">
         <button type="button" id="confirm-cancel" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
@@ -86,6 +91,16 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
     dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
+    const details = dialog.querySelector<HTMLElement>("#confirm-details")!
+    for (const text of options.details ?? []) {
+      const item = document.createElement("li")
+      item.textContent = text
+      details.appendChild(item)
+    }
+    if (details.childElementCount) {
+      details.hidden = false
+      overlay.setAttribute("aria-describedby", "confirm-message confirm-details")
+    }
     const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
     const okBtn = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
     cancelBtn.textContent = options.cancelText ?? "Cancel"
