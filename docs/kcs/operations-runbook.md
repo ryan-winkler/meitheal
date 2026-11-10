@@ -287,6 +287,13 @@ other shipped families and supported Home Assistant browsers. Duplicate legacy
 WOFF files are not bundled. The existing client-byte, memory and latency budgets
 remain unchanged; run the build and perf:budget command to verify output.
 
+The performance harness owns its temporary server process and waits for it to
+close after every measurement, including failures. It first sends SIGTERM and
+escalates to SIGKILL after two seconds if application shutdown handlers leave
+the listener running. Unused server output is ignored to avoid pipe backpressure;
+the harness still prints the measured result and returns a nonzero exit status
+when any budget fails. A printed passing result is complete once the command exits.
+
 ## Dependency security gate
 
 Run unsuppressed pnpm audit with the frozen lockfile; all CI audit severities

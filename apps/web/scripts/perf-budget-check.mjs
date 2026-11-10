@@ -106,6 +106,20 @@ async function getRssKb(pid) {
   return Number.parseInt(stdout.trim(), 10);
 }
 
+async function stopOwnedServer(server) {
+  if (server.exitCode !== null || server.signalCode !== null) return;
+  await new Promise((resolve) => {
+    // Application SIGTERM handlers may leave the HTTP listener alive. Always
+    // reap this harness-owned process, including after a failed measurement.
+    const killTimer = setTimeout(() => server.kill("SIGKILL"), 2_000);
+    server.once("close", () => {
+      clearTimeout(killTimer);
+      resolve();
+    });
+    server.kill("SIGTERM");
+  });
+}
+
 async function main() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const budgets = await loadBudgets(scriptDir);
@@ -126,7 +140,7 @@ async function main() {
   const dbUrl = `file:${dbPath}`;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const server = spawn("node", ["--max-old-space-size=128", "dist/server/entry.mjs"], {
+  const server = spawn(process.execPath, ["--max-old-space-size=128", "dist/server/entry.mjs"], {
     cwd: appRoot,
     env: {
       ...process.env,
@@ -134,7 +148,9 @@ async function main() {
       PORT: String(port),
       MEITHEAL_DB_URL: dbUrl
     },
-    stdio: ["ignore", "pipe", "pipe"]
+    // Server logs are not benchmark output; unused pipes can retain handles or
+    // backpressure a noisy server. Only the harness emits the measured result.
+    stdio: "ignore"
   });
 
   try {
@@ -191,16 +207,10 @@ async function main() {
       for (const failure of failures) {
         console.error(failure);
       }
-      process.exit(1);
+      process.exitCode = 1;
     }
   } finally {
-    if (!server.killed) {
-      server.kill("SIGTERM");
-      await new Promise((resolve) => {
-        server.once("exit", resolve);
-        setTimeout(resolve, 2_000);
-      });
-    }
+    await stopOwnedServer(server);
   }
 }
 
