@@ -1,6 +1,9 @@
+import { execFileSync, fork } from "node:child_process"
+import { once } from "node:events"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 import { resolveAgentRouteScope } from "../../packages/domain-auth/src/agent-route-policy"
 import {
@@ -254,6 +257,98 @@ test("anonymous standalone HTTP requests cannot manage agent tokens", async ({ r
   const response = await request.get("/api/agent-tokens")
   expect(response.status()).toBe(403)
   expect(await response.json()).toMatchObject({ title: "Admin Required" })
+})
+
+test("encoded API namespace cannot bypass agent authorization in managed ingress", async ({ playwright, request, baseURL }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and its disposable ingress fixture")
+  const directory = mkdtempSync(join(tmpdir(), "meitheal-agent-path-"))
+  const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
+  const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    MEITHEAL_DB_URL: `file:${join(directory, "meitheal.db")}`,
+    MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+  }
+  const api = await playwright.request.newContext()
+  let server: ReturnType<typeof fork> | undefined
+  try {
+    execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
+    server = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "ignore", "ipc"] })
+    const [{ port, configuredPath }] = await once(server, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `http://127.0.0.1:${port}`
+    const ingress = origin + configuredPath
+    const admin = { origin, cookie: "feedback-fixture=admin" }
+    const member = { origin, cookie: "feedback-fixture=member" }
+    const credential = "/api/agent-tokens"
+    const tasks = "/api/tasks"
+    const created = await api.post(ingress + credential, {
+      headers: admin, data: { name: "Scoped ingress fixture", scopes: ["tasks:read"] },
+    })
+    expect(created.status()).toBe(201)
+    expect(created.headers()["cache-control"]).toBe("no-store")
+    const { token, id } = await created.json()
+    const scoped = { authorization: `Bearer ${token}` }
+    const invalid = { authorization: "Bearer mth_invalid" }
+    const deniedTitle = "Encoded namespace mutation sentinel"
+    const write = (path: string, auth: Record<string, string>) => api.post(ingress + path, {
+      headers: { ...member, ...auth }, data: { title: deniedTitle },
+    })
+    const list = (path: string, auth: Record<string, string>) => api.get(ingress + path, {
+      headers: { ...admin, ...auth },
+    })
+
+    expect((await api.get(ingress + tasks, { headers: { ...member, ...scoped } })).status()).toBe(200)
+    expect((await write(tasks, scoped)).status()).toBe(403)
+    expect((await list(credential, scoped)).status()).toBe(403)
+    const invalidCanonical = await list(credential, invalid)
+    expect(invalidCanonical.status()).toBe(401)
+    expect(invalidCanonical.headers()["cache-control"]).toBe("no-store")
+    expect((await list(credential, {})).status()).toBe(200)
+    expect((await api.get(ingress + credential, { headers: member })).status()).toBe(403)
+
+    for (const encoded of ["/%61pi", "/%2561pi"]) {
+      for (const response of [
+        await write(encoded + "/tasks", scoped),
+        await list(encoded + "/agent-tokens", scoped),
+        await list(encoded + "/agent-tokens", invalid),
+      ]) {
+        expect(response.status()).toBe(404)
+        if (encoded === "/%61pi") expect(response.headers()["cache-control"]).toBe("private, no-store")
+      }
+    }
+
+    expect((await api.delete(ingress + credential, { headers: admin, data: { id } })).status()).toBe(200)
+    const revoked = await write(tasks, scoped)
+    expect(revoked.status()).toBe(401)
+    expect(revoked.headers()["cache-control"]).toBe("no-store")
+    for (const encoded of ["/%61pi/tasks", "/%2561pi/tasks"]) {
+      expect((await write(encoded, scoped)).status()).toBe(404)
+    }
+    const search = await api.get(ingress + "/api/search", {
+      headers: member, params: { q: deniedTitle, scope: "tasks" },
+    })
+    expect(search.status()).toBe(200)
+    expect(await search.json()).toMatchObject({ sections: [] })
+
+    const ordinary = await api.post(ingress + tasks, {
+      headers: member, data: { title: "Ordinary ingress task" },
+    })
+    expect(ordinary.status()).toBe(201)
+    const { id: taskId } = await ordinary.json()
+    const encodedId = String(taskId).replace(/^[0-9a-f]/i, char => "%" + char.charCodeAt(0).toString(16))
+    expect((await api.get(ingress + tasks + "/" + encodedId, { headers: member })).status()).toBe(200)
+    expect((await api.get(ingress + "/api/v1/tasks", { headers: member })).status()).toBe(404)
+    expect((await request.get(baseURL + "//api/tasks", { maxRedirects: 0 })).status()).toBe(200)
+  } finally {
+    if (server && server.exitCode === null && server.signalCode === null) {
+      const exited = once(server, "exit")
+      server.kill()
+      await exited
+    }
+    await api.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test("agent routes require the permission for the concrete operation", () => {

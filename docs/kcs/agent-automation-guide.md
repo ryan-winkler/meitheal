@@ -60,6 +60,8 @@ Keep tokens out of examples, logs, and reports. Use sample tasks to test a conne
 
 An invalid, revoked, or expired token returns HTTP 401. A valid token without permission returns HTTP 403. Use the Home Assistant administrator session to change scopes or revoke credentials. Existing settings and webhook scopes have no permitted operations in the current policy. To connect Home Assistant Core, create a token with all three task scopes and `search:read`.
 
+Use the literal `/api/` prefix in API URLs. Encoded spellings of that prefix that resolve to an API route return HTTP 404.
+
 ### Find, create, and complete tasks
 
 1. Find tasks with `GET /api/search?q=…&scope=tasks` and use a result's task ID for follow-up requests.

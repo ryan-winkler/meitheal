@@ -144,21 +144,27 @@ const searchPath = "/api/search"
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
+  const requestUrl = new URL(request.url)
+  const requestPath = requestUrl.pathname
+  // Astro can route a decoded API namespace that the raw-path scope checks would miss.
+  if (routePattern.startsWith("/api/") && !requestPath.startsWith("/api/")) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
+  }
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
   const searchRoute = routePattern === searchPath || url.pathname === searchPath
-  if (!pinRoute && !searchRoute) return handleRequest(context, next)
+  if (!pinRoute && !searchRoute) return handleRequest(context, next, requestUrl)
   // Astro matches decoded paths, while the agent guard checks the original request path.
-  if ((routePattern === searchPath && new URL(request.url).pathname !== searchPath) ||
+  if ((routePattern === searchPath && requestPath !== searchPath) ||
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
-  const response = await handleRequest(context, next, pinRoute)
+  const response = await handleRequest(context, next, requestUrl, pinRoute)
   response.headers.set("cache-control", "private, no-store")
   return response
 }
 
 async function handleRequest({ request, locals, routePattern }: Parameters<MiddlewareHandler>[0],
-  next: Parameters<MiddlewareHandler>[1], pinRoute = false) {
+  next: Parameters<MiddlewareHandler>[1], url: URL, pinRoute = false) {
   const startTime = Date.now();
   const requestId = (pinRoute ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
@@ -166,7 +172,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const transport = getIngressTransport();
   const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
   const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
-  const url = new URL(request.url);
   const databaseExportPath = "/api/export/database.sqlite"
   // Older workers bypass caching only for the canonical export path.
   if (routePattern === databaseExportPath && url.pathname !== databaseExportPath) {
