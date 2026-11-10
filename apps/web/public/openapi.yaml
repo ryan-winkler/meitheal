@@ -2624,13 +2624,27 @@ paths:
       operationId: exportDatabase
       tags:
         - Export
-      summary: Download the raw SQLite file as a verified Home Assistant administrator
-      description: Contains private household data and local feedback. Use a filesystem backup for standalone installs.
+      summary: Download a consistent SQLite snapshot as a verified Home Assistant administrator
+      description: Includes local database writes committed before the snapshot, including those in the write-ahead log.
+        Contains private household data and local feedback. Use the database host's backup tools for remote databases.
       security: *a8
       responses:
         "200":
-          description: SQLite file
+          description: SQLite snapshot
+          content:
+            application/x-sqlite3:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: The app uses a remote database
         "403": *a11
+        "404":
+          description: Local database or download path unavailable
+        "409":
+          description: Another database download is in progress
+        "507":
+          description: Insufficient free space for a snapshot on the database volume
   /api/export/settings.json:
     get:
       operationId: exportSettings

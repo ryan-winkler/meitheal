@@ -16,6 +16,10 @@ A Meitheal-only backup covers the selected app. Home Assistant Core settings, se
 
 Task and Settings downloads are portable exports. The Settings export includes eligible preferences, shortcuts, layouts, rules and framework overrides. Enter credentials separately when moving the exported settings to a fresh installation.
 
+The **Download database** action under **Settings → App & PWA** is available to verified Home Assistant administrators. It copies a consistent snapshot of the local SQLite database, including writes already committed in the WAL. It needs enough free space for one temporary copy on the database volume. Only one download can prepare or read that copy at a time. Retry after the first finishes or is cancelled. If the app loses power during a copy, a private `.meitheal-export-*` folder may remain beside the database. With Meitheal stopped, remove the incomplete temporary folder before retrying.
+
+Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
+
 ## Create a backup
 
 1. Open **Settings → System → Backups → Backup now → Manual backup** in Home Assistant.

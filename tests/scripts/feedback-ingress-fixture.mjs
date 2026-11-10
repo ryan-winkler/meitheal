@@ -1,5 +1,5 @@
 import http from "node:http"
-import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
 
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../../apps/web/dist/server/entry.mjs")
@@ -21,6 +21,9 @@ const server = http.createServer((request, response) => {
     fromSupervisor,
     identityHeadersSafe: user !== "old",
     configuredPath,
+    waitForDatabaseDownloadDrain: request.method === "GET" && request.url === "/api/export/database.sqlite"
+      ? signal => waitForDownloadDrain(response, signal)
+      : undefined,
   }, () => handler(request, response))
 })
 

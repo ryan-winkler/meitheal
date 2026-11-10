@@ -1,10 +1,12 @@
 import { execFileSync, fork, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
-import { request as httpRequest } from "node:http"
+import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { request as httpRequest, type IncomingMessage } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
@@ -52,6 +54,103 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   await stopServer()
   await rm(work, { recursive: true, force: true })
+})
+
+test("database download includes committed writes still in the WAL", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const dbPath = path.join(work, "meitheal.db")
+  const exportPath = `${prefix}/api/export/database.sqlite`
+  const admin = { cookie: "feedback-fixture=admin", origin }
+
+  try {
+    expect((await api.get(`${prefix}/api/health`, { headers: admin })).ok()).toBe(true)
+    const source = new DatabaseSync(dbPath)
+    try {
+      expect(source.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
+      expect(source.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get()).toMatchObject({ busy: 0, log: 0 })
+      const title = "Committed WAL task"
+      const created = await api.post(`${prefix}/api/tasks`, { headers: admin, data: { title } })
+      expect(created.status()).toBe(201)
+      const { id } = await created.json()
+      expect(source.prepare("SELECT title FROM tasks WHERE id = ?").get(id)).toMatchObject({ title })
+
+      const rawPath = path.join(work, "raw.sqlite")
+      await copyFile(dbPath, rawPath)
+      const raw = new DatabaseSync(rawPath, { readOnly: true })
+      try {
+        expect(raw.prepare("SELECT title FROM tasks WHERE id = ?").get(id)).toBeUndefined()
+      } finally {
+        raw.close()
+      }
+
+      const head = await api.head(exportPath, { headers: admin })
+      expect(head.status()).toBe(200)
+      expect(head.headers()).toMatchObject({ "cache-control": "no-store", "content-type": "application/x-sqlite3" })
+      expect(await head.body()).toHaveLength(0)
+      expect((await api.get(`${prefix}/api/export/database%2esqlite`, { headers: admin })).status()).toBe(404)
+      expect((await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
+
+      const [first, second] = await Promise.all([api.get(exportPath, { headers: admin }), api.get(exportPath, { headers: admin })])
+      const [downloaded, busy] = first.status() === 200 ? [first, second] : [second, first]
+      expect(busy.status()).toBe(409)
+      expect(busy.headers()["cache-control"]).toBe("no-store")
+      expect(downloaded.status()).toBe(200)
+      expect(downloaded.headers()).toMatchObject({ "cache-control": "no-store", "content-type": "application/x-sqlite3" })
+      expect(downloaded.headers()["content-disposition"]).toMatch(/^attachment; filename=".+\.db"$/)
+      const downloadedPath = path.join(work, "downloaded.sqlite")
+      await writeFile(downloadedPath, await downloaded.body())
+      const snapshot = new DatabaseSync(downloadedPath, { readOnly: true })
+      try {
+        expect(snapshot.prepare("PRAGMA integrity_check").get()).toMatchObject({ integrity_check: "ok" })
+        expect(snapshot.prepare("SELECT title FROM tasks WHERE id = ?").get(id)).toMatchObject({ title })
+      } finally {
+        snapshot.close()
+      }
+      await expect.poll(async () => (await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
+    } finally {
+      source.close()
+    }
+  } finally {
+    await api.dispose()
+  }
+})
+
+test("a paused database download keeps one snapshot until cancelled", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const exportPath = `${prefix}/api/export/database.sqlite`
+  const snapshotDirs = async () => (await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))
+
+  try {
+    expect((await api.get(`${prefix}/api/health`, { headers: admin })).ok()).toBe(true)
+    const writer = new DatabaseSync(path.join(work, "meitheal.db"))
+    try {
+      writer.exec(`CREATE TABLE export_fixture (payload BLOB);
+        WITH RECURSIVE block(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM block WHERE n < 3072)
+        INSERT INTO export_fixture SELECT zeroblob(4096) FROM block;`)
+    } finally {
+      writer.close()
+    }
+
+    const slow = httpRequest(origin + exportPath, { headers: admin })
+    try {
+      slow.end()
+      const [response] = await once(slow, "response", { signal: AbortSignal.timeout(5000) }) as [IncomingMessage]
+      expect(response.statusCode).toBe(200)
+      response.on("error", () => {})
+      response.pause()
+      // Let the server reach the client socket's full receive buffer.
+      await sleep(250)
+      expect(await snapshotDirs()).toHaveLength(1)
+      expect((await api.get(exportPath, { headers: admin })).status()).toBe(409)
+    } finally {
+      slow.destroy()
+    }
+    await expect.poll(snapshotDirs).toEqual([])
+    expect((await api.head(exportPath, { headers: admin })).status()).toBe(200)
+  } finally {
+    await api.dispose()
+  }
 })
 
 test("ingress loads board dependencies from the app path", async ({ page, context }) => {

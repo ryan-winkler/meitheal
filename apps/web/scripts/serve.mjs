@@ -1,6 +1,6 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
 import http from "node:http"
-import { runWithIngressTransport } from "./ingress-transport.mjs"
+import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
 // Astro's clientAddress can describe the client, so neither establishes this.
@@ -47,15 +47,19 @@ const server = http.createServer((req, res) => {
 
   // Normalize only the path. Preserve the query string exactly.
   let sseSocket
+  let waitForDatabaseDownloadDrain
   if (req.url) {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
     const normalizedPath = path.replace(/\/+/g, "/")
     req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
+    if (req.method === "GET" && normalizedPath === "/api/export/database.sqlite") {
+      waitForDatabaseDownloadDrain = signal => waitForDownloadDrain(res, signal)
+    }
   }
 
-  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket }, () => handler(req, res))
+  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket, waitForDatabaseDownloadDrain }, () => handler(req, res))
 })
 
 server.listen(port, host, () => {
