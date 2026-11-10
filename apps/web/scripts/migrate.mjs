@@ -8,6 +8,8 @@ import { applyTaskDeferralMigration, validateTaskDeferralSchema } from "../drizz
 import { applyTaskPinsMigration, validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
 import { applyTaskDraftsMigration, validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts.mjs"
 
+import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(__dirname, "../drizzle/migrations");
 const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db";
@@ -16,6 +18,7 @@ const executableMigrations = new Map([
   ["0004_task_deferral.mjs", { apply: applyTaskDeferralMigration, validate: validateTaskDeferralSchema }],
   ["0005_task_pins.mjs", { apply: applyTaskPinsMigration, validate: validateTaskPinsSchema }],
   ["0006_task_drafts.mjs", { apply: applyTaskDraftsMigration, validate: validateTaskDraftsSchema }],
+  ["0007_task_inactivity.mjs", { apply: applyTaskInactivityMigration, validate: validateTaskInactivitySchema }],
 ])
 
 if (dbUrl.startsWith("file:")) {

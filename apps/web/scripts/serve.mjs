@@ -12,6 +12,8 @@ const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const pinApiPath = "/api/task-pins"
 const draftApiPath = "/api/task-drafts"
+const inactivityApiPath = "/api/task-inactivity"
+const inactivityPagePath = "/inactivity"
 const pinnedPagePath = "/pinned"
 
 // Astro can decode escapes and redirect trailing separators before middleware.
@@ -84,14 +86,15 @@ const server = http.createServer((req, res) => {
     const isPins = canonical === pinApiPath || canonical === pinnedPagePath
     const isOnlineRead = onlineReadPaths.has(canonical)
     const isDraft = canonical === draftApiPath
+    const isInactivity = canonical === inactivityApiPath || canonical === inactivityPagePath
     const hasTaskHistoryPath = taskHistoryPath.test(path)
     const isTaskHistoryAlias = !hasTaskHistoryPath && taskHistoryPath.test(canonical ?? "")
-    if (isTaskHistoryAlias || ((isPins || isOnlineRead || isDraft || canonical === databaseExportPath) && path !== canonical)) {
+    if (isTaskHistoryAlias || ((isPins || isOnlineRead || isDraft || isInactivity || canonical === databaseExportPath) && path !== canonical)) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
       return
     }
-    if (isPins || isOnlineRead || isDraft || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
-    if ((canonical === pinApiPath || isDraft) && query !== -1) {
+    if (isPins || isOnlineRead || isDraft || isInactivity || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
+    if ((canonical === pinApiPath || isDraft || canonical === inactivityApiPath) && query !== -1) {
       res.writeHead(400).end()
       return
     }

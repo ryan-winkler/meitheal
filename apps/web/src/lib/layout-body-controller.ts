@@ -8,12 +8,13 @@ import { pageLifecycle } from "./page-lifecycle"
 // SSR renders the badge with server-side count, but it can be stale or 0
 // if the DB wasn't ready during SSR. This hydrates it client-side.
 async function refreshSidebarBadge() {
+  const badge = document.getElementById("nav-count-tasks")
+  if (!badge) return
   try {
     const res = await fetch("/api/tasks?status=active&deferred=0&limit=1")
     if (!res.ok) return
     const data = await res.json()
-    const badge = document.getElementById("nav-count-tasks")
-    if (badge && typeof data.total === "number") {
+    if (badge.isConnected && typeof data.total === "number") {
       badge.textContent = String(data.total)
     }
   } catch {

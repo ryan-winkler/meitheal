@@ -17,6 +17,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
+import { TaskInactivityRepository } from "@domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
@@ -171,6 +172,8 @@ const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
 const kanbanPages = renderedView === "kanban"
   ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams).catch(() => null)
   : null
+const inactivityEnabled = renderedView === "kanban" &&
+  await new TaskInactivityRepository(db).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
@@ -227,6 +230,10 @@ try {
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="toolbar" aria-label="Kanban view actions">
       <a href="/deferred" class="kanban-toolbar-btn" data-astro-prefetch="false">
         {t("deferral.title", locale)}
+      </a>
+      <a href={kanbanFilters.area ? `/inactivity?area=${encodeURIComponent(kanbanFilters.area)}` : "/inactivity"}
+        class="kanban-toolbar-btn" data-inactivity-link data-astro-prefetch="false">
+        {t("inactivity.title", locale)}
       </a>
       <button
         type="button"
@@ -357,6 +364,9 @@ try {
     id="kanban-board"
     class="kanban-board"
     data-available={String(Boolean(kanbanPages))}
+    data-inactivity-enabled={String(inactivityEnabled)}
+    data-inactivity-ready={t("inactivity.ready", locale)}
+    data-inactivity-upcoming={t("inactivity.upcoming", locale)}
     data-group-by={kanbanFilters.groupBy}
     data-backlog-mode={backlogMode}
     data-reaction-count-label={t("reactions.card_count", locale)}
@@ -553,6 +563,7 @@ try {
                         {String(task.description).length > 80 ? "…" : ""}
                       </div>
                     )}
+                    <div data-inactivity-slot></div>
                     <div class="kanban-card-meta">
                       <span
                         class={`priority-label ${priorityClasses[p] ?? "priority-medium"}`}
@@ -1106,6 +1117,12 @@ try {
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
+  [data-inactivity-slot]:empty { display: none; }
+  :global(.kanban-inactivity-cue) {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs, .75rem);
+    overflow-wrap: anywhere;
+  }
   .kanban-card {
     background: var(--bg-card);
     border: 1px solid var(--border);

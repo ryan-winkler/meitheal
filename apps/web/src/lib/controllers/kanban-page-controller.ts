@@ -1,7 +1,8 @@
-import { getSelectedAreaId } from "@lib/area-selector-controller"
+import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
+import { initKanbanInactivity } from "./kanban-inactivity"
 import { initLaneManagementPanel } from "./kanban-lanes"
 import { initKanbanReactionCounts } from "./kanban-reaction-counts"
 
@@ -26,6 +27,16 @@ export function initKanbanPage(signal: AbortSignal): void {
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
   let requestNumber = 0
+  const inactivityLink = document.querySelector<HTMLAnchorElement>("[data-inactivity-link]")
+  const syncInactivityLink = (area: string) => {
+    if (!inactivityLink) return
+    const url = new URL(inactivityLink.href)
+    if (area) url.searchParams.set("area", area)
+    else url.searchParams.delete("area")
+    inactivityLink.href = url.href
+  }
+  const initialArea = desired.searchParams.get("area") ?? (getSelectedAreaId() || getRememberedAreaId())
+  syncInactivityLink(initialArea)
 
   const renderStatus = (message: string, failed = false) => {
     status.hidden = !message
@@ -79,6 +90,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       boardLifetime = new AbortController()
       initKanbanArea(boardLifetime.signal, refresh)
       initKanbanReactionCounts(board, boardLifetime.signal)
+      initKanbanInactivity(board, boardLifetime.signal)
 
       const total = shell?.querySelector("[data-kanban-visible-count]")
       const label = shell?.querySelector("[data-kanban-visible-label]")
@@ -126,11 +138,11 @@ export function initKanbanPage(signal: AbortSignal): void {
     return load(url, focus)
   }
 
-  function filter(values: KanbanFilters) {
+  function filter(values: KanbanFilters, area = getSelectedAreaId()) {
     const url = new URL(desired)
     const before = url.search
     const previous = readKanbanFilters(url.searchParams)
-    const next = { ...previous, ...values, area: getSelectedAreaId() }
+    const next = { ...previous, ...values, area }
     if (JSON.stringify(previous) === JSON.stringify(next)) return
     updateKanbanFilters(url, next)
     if (url.search !== before) void load(url, undefined, true)
@@ -167,10 +179,16 @@ export function initKanbanPage(signal: AbortSignal): void {
     const sibling = (origin?.nextElementSibling ?? origin?.previousElementSibling) as HTMLElement | null
     void refresh({ lane, taskId: taskId && !changedIds?.includes(taskId) ? taskId : sibling?.dataset.id })
   }, { signal })
+  window.addEventListener("online", () => {
+    if (board.dataset.inactivityEnabled === "true") void refresh()
+  }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
   }, { signal })
-  document.addEventListener("meitheal:area-changed", () => filter({}), { signal })
+  document.addEventListener("meitheal:area-changed", () => {
+    syncInactivityLink(getSelectedAreaId())
+    filter({})
+  }, { signal })
   document.addEventListener("meitheal:filter-change", event => {
     const { view, ...values } = (event as CustomEvent).detail ?? {}
     if (view !== "kanban") return
@@ -183,6 +201,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   if (board.dataset.available !== "true") {
     renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)
   } else {
-    filter(desired.searchParams.has("groupBy") ? {} : { groupBy: storedKanbanGroup() })
+    filter(desired.searchParams.has("groupBy") ? {} : { groupBy: storedKanbanGroup() }, initialArea)
+    if (!pending) initKanbanInactivity(board, boardLifetime.signal)
   }
 }

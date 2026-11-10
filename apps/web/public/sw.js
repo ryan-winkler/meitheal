@@ -211,6 +211,7 @@ function privateResourcePath(url) {
     if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
+        path === "/inactivity" || path === "/api/task-inactivity" ||
         taskHistoryPath.test(path) ||
         /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
   }

@@ -16,7 +16,8 @@ export const tasks = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     deferredAt: integer("deferred_at"),
-    deferralRevision: text("deferral_revision")
+    deferralRevision: text("deferral_revision"),
+    inactivityTouchedAt: integer("inactivity_touched_at")
   },
   (table) => ({
     idempotencyUnique: uniqueIndex("tasks_idempotency_unique").on(table.idempotencyKey),
@@ -27,6 +28,13 @@ export const tasks = sqliteTable(
       .where(sql`${table.deferredAt} IS NOT NULL`)
   })
 );
+
+export const taskInactivityPolicy = sqliteTable("task_inactivity_policy", {
+  scope: text("scope").primaryKey().notNull(),
+  areaId: text("area_id").unique(),
+  days: integer("days").notNull(),
+  revision: text("revision").notNull(),
+})
 
 export const taskPins = sqliteTable("task_pins", {
   ownerId: text("owner_id").notNull(),

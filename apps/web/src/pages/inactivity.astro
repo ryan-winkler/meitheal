@@ -1,0 +1,94 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { t } from "../i18n/translations"
+
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const text = (key: string) => t(`inactivity.${key}`, locale)
+---
+
+<Layout title={text("title")} hideSearchHub hideGlobalSearch privatePageShell suppressTaskUrlOpen>
+  <section data-inactivity-page data-locale={locale} data-timezone={Astro.locals.timezone} aria-labelledby="inactivity-heading">
+    <header>
+      <a href="/tasks" data-inactivity-back data-astro-prefetch="false">{text("back")}</a>
+      <h1 id="inactivity-heading">{text("title")}</h1>
+      <p>{text("description")}</p>
+    </header>
+    <p data-inactivity-status role="status" aria-atomic="true">{text("loading")}</p>
+    <button type="button" class="btn btn-outline" data-inactivity-retry hidden>{text("retry")}</button>
+    <div data-inactivity-content hidden>
+      <div class="inactivity-controls">
+        <label>
+          {text("area")}
+          <select data-inactivity-area><option value="">{text("all_areas")}</option></select>
+        </label>
+        <label>
+          {text("show")}
+          <select data-inactivity-filter>
+            <option value="all">{text("all")}</option>
+            <option value="ready">{text("ready")}</option>
+            <option value="upcoming">{text("upcoming")}</option>
+          </select>
+        </label>
+      </div>
+      <p data-inactivity-policy></p>
+      <p data-inactivity-readonly hidden>{text("admin")}</p>
+      <form data-inactivity-edit hidden>
+        <div class="inactivity-controls">
+          <label>
+            {text("rule")}
+            <select name="mode" data-inactivity-mode>
+              <option value="inherit">{text("inherit")}</option>
+              <option value="off">{text("off")}</option>
+              <option value="interval">{text("custom")}</option>
+            </select>
+          </label>
+          <label data-inactivity-interval hidden>
+            {text("days")}
+            <input name="days" type="number" min="1" max="365" step="1" value="30" disabled required />
+          </label>
+        </div>
+        <p>{text("notice")}</p>
+        <div class="inactivity-controls">
+          <button type="submit" class="btn btn-outline" data-inactivity-preview>{text("preview")}</button>
+          <button type="button" class="btn btn-primary" data-inactivity-save disabled>{text("save")}</button>
+        </div>
+      </form>
+      <section class="inactivity-results" aria-labelledby="inactivity-review">
+        <h2 id="inactivity-review" tabindex="-1">{text("review")}</h2>
+        <p data-inactivity-empty hidden></p>
+        <ul data-inactivity-rows class="inactivity-rows"></ul>
+        <nav class="inactivity-controls" aria-label={t("deferral.pagination", locale)} data-inactivity-pages hidden>
+          <span data-inactivity-range></span>
+          <button type="button" class="btn btn-outline" data-inactivity-previous>{t("triage.previous", locale)}</button>
+          <button type="button" class="btn btn-outline" data-inactivity-next>{t("triage.next", locale)}</button>
+        </nav>
+      </section>
+    </div>
+  </section>
+</Layout>
+
+<script>
+  import "@lib/inactivity-controller"
+</script>
+
+<style>
+  [data-inactivity-page] {
+    max-width: 66rem;
+    margin-inline: auto;
+    padding: clamp(1rem, 3vw, 2.5rem);
+  }
+  header { margin-bottom: 1.5rem; }
+  header h1 { margin-block: .5rem; }
+  .inactivity-controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+  label { display: grid; gap: .35rem; min-inline-size: 0; }
+  select, input { max-inline-size: 100%; min-block-size: 2.75rem; }
+  .inactivity-controls > label { max-inline-size: 100%; }
+  input { inline-size: 8rem; }
+  form { margin-block: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md); }
+  .inactivity-results { margin-block: 1.25rem; }
+  .inactivity-rows { display: grid; gap: .75rem; list-style: none; padding: 0; }
+  .inactivity-rows :global(li) { padding-block: .75rem; border-bottom: 1px solid var(--border); }
+  .inactivity-rows :global(h3) { overflow-wrap: anywhere; margin-block: 0 .3rem; }
+  .inactivity-rows :global(p) { color: var(--text-secondary); margin-block: 0 .65rem; }
+  [hidden] { display: none; }
+</style>

@@ -21,6 +21,8 @@ import { parseTicketKey } from "../../../lib/ticket-key"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
 import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
+import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
+import { openTaskDependencies } from "./task-dependencies"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
@@ -218,26 +220,9 @@ type DeferralState = Pick<TaskRow, "id" | "status" | "deferred_at" | "deferral_r
 
 type DeferralResult =
   | { ok: true; task: DeferralState }
-  | { ok: false; errorCode: "unavailable" | "terminal" }
+  | { ok: false; errorCode: "unavailable" | "terminal" | "ineligible" }
   | { ok: false; errorCode: "conflict"; task: DeferralState }
   | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
-
-// Outbound "blocked_by" and inbound "blocks" describe the same dependency.
-function openTaskDependencies(id: string) {
-  return {
-    sql: `SELECT t.id, t.title, t.status, t.ticket_number
-          FROM (
-            SELECT target_task_id AS blocker_id FROM task_links
-            WHERE source_task_id = ? AND link_type = 'blocked_by'
-            UNION
-            SELECT source_task_id AS blocker_id FROM task_links
-            WHERE target_task_id = ? AND link_type = 'blocks'
-          ) AS dependency
-          JOIN tasks t ON t.id = dependency.blocker_id
-          WHERE t.status NOT IN (?, 'archived')`,
-    args: [id, id, STATUS.COMPLETE],
-  }
-}
 
 /**
  * Centralized repository for task-related database queries.
@@ -740,7 +725,7 @@ export class TaskRepository {
   async findDeferredPage(requestedPage: number): Promise<{
     page: number
     total: number
-    tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number">>
+    tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>
   }> {
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
     const { rows } = await this.client.execute({
@@ -750,7 +735,10 @@ export class TaskRepository {
               SELECT total, MAX(1, MIN(?, (total + 24) / 25)) AS page FROM totals
             ), items AS (
               SELECT id, title, project_id, status, ticket_number, deferred_at, deferral_revision,
-                     ${taskTimestampMs("updated_at")} AS updated_at
+                     ${taskTimestampMs("updated_at")} AS updated_at,
+                     COALESCE((SELECT actor = '${inactivityRuleActor}' AND actor_type = 'system'
+                      FROM task_activity_log WHERE task_id = tasks.id AND field = 'deferred_at'
+                        AND new_value = CAST(tasks.deferred_at AS TEXT) ORDER BY id DESC LIMIT 1), 0) AS automatic
               FROM tasks WHERE deferred_at IS NOT NULL
               ORDER BY deferred_at DESC, id ASC
               LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
@@ -763,7 +751,9 @@ export class TaskRepository {
     return {
       page: Number(rows[0]?.page ?? 1),
       total: Number(rows[0]?.total ?? 0),
-      tasks: rows.filter(row => row.id !== null) as unknown as Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number">>,
+      tasks: rows.filter(row => row.id !== null).map(row => ({
+        ...row, automatic: Number(row.automatic) === 1,
+      })) as unknown as Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>,
     }
   }
 
@@ -1114,13 +1104,50 @@ export class TaskRepository {
   async setDeferral(
     id: string,
     deferred: boolean,
-    guard: { updatedAt: number; revision: string | null },
-    actor: { id: string; type: "agent" | "human"; requestId: string },
+    guard: { updatedAt: number; revision: string | null; inactivityNow?: number },
+    actor: { id: string; type: "agent" | "human" | "system"; requestId: string },
   ): Promise<DeferralResult> {
-    const now = Date.now()
+    const now = guard.inactivityNow ?? Date.now()
     const marker = deferred ? now : null
     const version = taskTimestampMs("updated_at")
     const columns = `id, status, deferred_at, deferral_revision, ${version} AS updated_at`
+    if (deferred && guard.inactivityNow !== undefined) {
+      const eligibility = inactivityWriteGuard(now)
+      const transaction = await this.client.transaction("write")
+      try {
+        const [changed, audit, verified] = await transaction.batch([
+          {
+            sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))
+              WHERE id = ? AND ${version} = ? AND deferral_revision IS ? AND (${eligibility.sql})
+              RETURNING ${columns}`,
+            args: [now, id, guard.updatedAt, guard.revision, ...eligibility.args],
+          },
+          {
+            sql: `INSERT INTO task_activity_log
+                (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+              SELECT id, 'deferred_at', NULL, CAST(deferred_at AS TEXT), ?, 'system', 'field_change', ?, ?, ?
+              FROM tasks WHERE changes() = 1 AND id = ? AND deferred_at = ?`,
+            args: [inactivityRuleActor, "Automatically deferred after inactivity", actor.requestId, now, id, now],
+          },
+          {
+            sql: `SELECT 1 FROM task_activity_log WHERE id = last_insert_rowid() AND task_id = ?
+              AND field = 'deferred_at' AND old_value IS NULL AND new_value = ?
+              AND actor = ? AND actor_type = 'system' AND event_type = 'field_change'
+              AND correlation_id = ? AND created_at = ?`,
+            args: [id, String(now), inactivityRuleActor, actor.requestId, now],
+          },
+        ])
+        const task = changed?.rows[0] as unknown as DeferralState | undefined
+        if (!task && audit?.rowsAffected === 0) return { ok: false, errorCode: "ineligible" }
+        if (!task || audit?.rowsAffected !== 1 || verified?.rows.length !== 1) {
+          throw new Error("Automatic deferral requires one matching audit row")
+        }
+        await transaction.commit()
+        return { ok: true, task }
+      } finally {
+        if (!transaction.closed) await transaction.rollback()
+      }
+    }
     const dependencies = openTaskDependencies(id)
     const activeStates = [STATUS.ACTIVE, ...(getStatusDef(STATUS.ACTIVE)?.aliases ?? [])]
     const activePredicate = `lower(status) IN (${activeStates.map(() => "?").join(", ")})`
@@ -1477,7 +1504,9 @@ export class TaskRepository {
               WHERE from_position != to_position OR ordered.id = moved_id
             )
             UPDATE tasks
-            SET kanban_position = updated_order.position
+            SET kanban_position = updated_order.position,
+                inactivity_touched_at = CASE WHEN tasks.id = (SELECT moved_id FROM move WHERE from_position != to_position)
+                  THEN MAX(COALESCE(inactivity_touched_at, 0), ?) ELSE inactivity_touched_at END
             FROM updated_order
             WHERE tasks.id = updated_order.id
               AND (
@@ -1487,7 +1516,7 @@ export class TaskRepository {
                   WHERE prior_position IS NOT NULL OR id = (SELECT moved_id FROM move)
                 ))
               )`,
-      args: [input.id, input.anchorId, input.lane, input.before ? 0 : 1],
+      args: [input.id, input.anchorId, input.lane, input.before ? 0 : 1, Date.now()],
     })
     return result.rowsAffected > 0
   }

@@ -99,6 +99,7 @@ if (activeMemberFixture) {
     if (message?.type !== "fixture-core") return
     const user = users.find(user => user.id === `fixture-${message.user}`)
     if (user && typeof message.active === "boolean") user.is_active = message.active
+    if (user && typeof message.isOwner === "boolean") user.is_owner = message.isOwner
     if (user && typeof message.name === "string") user.name = message.name
     if (user && typeof message.systemGenerated === "boolean") user.system_generated = message.systemGenerated
     resultOverride = message.result

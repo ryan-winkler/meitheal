@@ -176,6 +176,8 @@ const { class: className } = Astro.props
 </style>
 
 <script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
   const FIELD_PREFS_KEY = "meitheal-kanban-fields-preferences"
   const DENSITY_KEY = "meitheal-kanban-card-density"
   const VALID_DENSITIES = ["compact", "comfortable", "spacious"] as const
@@ -244,7 +246,7 @@ const { class: className } = Astro.props
     })
   }
 
-  function renderFieldList() {
+  function renderFieldList(signal: AbortSignal) {
     const list = document.getElementById("card-customizer-list")
     if (!list) return
     list.replaceChildren() // [F4] Modern DOM clearing, no innerHTML
@@ -275,7 +277,7 @@ const { class: className } = Astro.props
         currentPrefs[field.id] = checkbox.checked
         saveFieldPrefs(currentPrefs)
         applyFieldVisibility()
-      })
+      }, { signal })
 
       label.append(checkbox, span)
       li.appendChild(label)
@@ -283,18 +285,20 @@ const { class: className } = Astro.props
     })
   }
 
-  document.addEventListener("astro:page-load", () => {
+  pageLifecycle.onPageLoad(lifetime => {
     // [F1] Abort previous listeners on soft navigation re-init
     customizerAbort?.abort()
     customizerAbort = new AbortController()
-    const signal = customizerAbort.signal
+    const instance = customizerAbort
+    const signal = instance.signal
+    lifetime.addEventListener("abort", () => instance.abort(), { once: true })
 
     const resetBtn = document.getElementById("card-customizer-reset")
     const panel = document.getElementById("card-customizer-panel")
 
     if (!panel) return
 
-    renderFieldList()
+    renderFieldList(signal)
     applyFieldVisibility() // Apply initial state on load
 
     // Card density mode
@@ -316,7 +320,7 @@ const { class: className } = Astro.props
       resetBtn.addEventListener("click", () => {
         localStorage.removeItem(FIELD_PREFS_KEY)
         localStorage.removeItem(DENSITY_KEY)
-        renderFieldList()
+        renderFieldList(signal)
         applyFieldVisibility()
         applyDensity(DEFAULT_DENSITY)
       }, { signal })

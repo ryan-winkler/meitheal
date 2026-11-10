@@ -53,6 +53,7 @@ type CustomToolHandler = (
 
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
+  "taskInactivity",
   "mcpEndpoint",       // Self-reference
   "healthPing",        // HEAD-only liveness
   "subscribeSSE",      // SSE streaming, not callable

@@ -1,4 +1,4 @@
-type TaskClockColumn = "created_at" | "updated_at" | "t.updated_at" | "task.updated_at" | "tasks.updated_at" | "confirmation.updated_at"
+type TaskClockColumn = "tasks.created_at" | "comment.created_at" | "created_at" | "updated_at" | "t.updated_at" | "task.updated_at" | "tasks.updated_at" | "confirmation.updated_at"
 
 /** Normalize the epoch and legacy ISO values stored by task writers. */
 export function taskTimestampMs(column: TaskClockColumn): string {

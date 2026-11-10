@@ -454,6 +454,17 @@ function reactionPaths(resource, label, parameters) {
 const taskReactionPaths = reactionPaths("Task", "task card", commentResourceParameters.slice(0, 1))
 const commentReactionPaths = reactionPaths("TaskComment", "task comment", commentResourceParameters)
 
+const inactivityRevision = { type: ["string", "null"], pattern: "^[a-f0-9]{32}$" }
+const inactivityCatalogRevision = { type: ["string", "null"], pattern: "^[a-f0-9]{64}$" }
+const inactivityId = { type: "string", minLength: 1, maxLength: 128 }
+const inactivityArea = { ...inactivityId, type: ["string", "null"] }
+const inactivityDays = { type: "integer", minimum: -1, maximum: 365 }
+const inactivityEpoch = { type: "integer", format: "int64", description: "Epoch milliseconds" }
+const inactivityObject = (properties) => ({
+  type: "object", required: Object.keys(properties), additionalProperties: false, properties,
+})
+const inactivityPolicy = inactivityObject({ days: inactivityDays, revision: inactivityRevision })
+
 const paths = {
   "/api/feedback": {
     post: {
@@ -870,6 +881,62 @@ const paths = {
         409: { description: "ACCOUNT_CHANGED or REVISION_CONFLICT" }, 413: problemContent("Body exceeds 64 KiB"),
         415: problemContent("Expected JSON"), 422: problemContent("Publication needs an available lane, goal, assignee and labels"),
         503: problemContent("Database writer busy. Retry the same action."),
+      },
+    },
+  },
+  "/api/task-inactivity": {
+    post: {
+      operationId: "taskInactivity",
+      tags: ["Tasks"],
+      summary: "Preview, manage, or display cues for task inactivity policies",
+      description: "Online-only same-origin browser endpoint. On Home Assistant, an active browser account is required and saving requires a fresh administrator check. Home Assistant browser ingress requires HTTPS. A null Area selects the shared default. Days are elapsed days, zero turns the rule off, and minus one lets an Area inherit. A save uses the exact revisions and Area generation or shared Area catalog revision from a preview. The all filter shows ready tasks and deadlines within the next seven elapsed days. Page numbers beyond the result count return the last page, or one when empty.",
+      requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
+        { type: "object", required: ["action", "areaId", "page", "filter"], additionalProperties: false,
+          if: { properties: { areaId: { type: "null" } } },
+          then: { properties: { days: { minimum: 0 } } }, properties: {
+          action: { const: "preview" }, areaId: inactivityArea,
+          page: { type: "integer", minimum: 1, maximum: 100000 }, filter: { enum: ["all", "ready", "upcoming"] },
+          days: inactivityDays,
+        } },
+        { type: "object", required: ["action", "areaId", "days", "expectedRevision", "expectedDefaultRevision", "areaGeneration", "expectedAreaCatalogRevision"],
+          additionalProperties: false,
+          if: { properties: { areaId: { type: "null" } } },
+          then: { properties: { days: { minimum: 0 }, areaGeneration: { type: "null" }, expectedAreaCatalogRevision: { type: "string" } } },
+          else: { properties: { areaGeneration: { type: "string" }, expectedAreaCatalogRevision: { type: "null" } } },
+          properties: {
+            action: { const: "save" }, areaId: inactivityArea,
+            days: inactivityDays,
+            expectedRevision: inactivityRevision,
+            expectedDefaultRevision: inactivityRevision,
+            areaGeneration: inactivityRevision, expectedAreaCatalogRevision: inactivityCatalogRevision,
+          },
+        },
+        { type: "object", required: ["action", "ids"], additionalProperties: false, properties: {
+          action: { const: "board" }, ids: { type: "array", minItems: 1, maxItems: 100,
+            items: inactivityId },
+        } },
+      ] } } } },
+      responses: {
+        200: jsonContent({ oneOf: [
+          inactivityObject({
+            areaExists: { const: true }, areaGeneration: inactivityRevision, areaCatalogRevision: inactivityCatalogRevision,
+            areas: { type: "array", items: inactivityObject({ id: inactivityId, name: { type: "string" } }) },
+            policy: inactivityPolicy, defaultPolicy: inactivityPolicy, hasEffectivePolicy: { type: "boolean" },
+            page: { type: "integer", minimum: 1 }, total: { type: "integer", minimum: 0 },
+            tasks: { type: "array", maxItems: 25, items: inactivityObject({
+              id: inactivityId, title: { type: "string" }, area_id: inactivityId,
+              status: { type: "string" }, ticket_number: { type: ["integer", "null"] },
+              last_activity: inactivityEpoch, deadline: inactivityEpoch,
+            }) },
+            now: inactivityEpoch, canSave: { type: "boolean" },
+          }),
+          inactivityObject({ policy: inactivityPolicy }),
+          inactivityObject({ now: inactivityEpoch, cues: { type: "object", additionalProperties: inactivityEpoch } }),
+        ] }, "Policy preview, saved revision, or current cues for requested cards"),
+        400: problemContent("Invalid action or scope"), 403: problemContent("Active browser access or administrator role required"),
+        404: problemContent("Area unavailable"), 409: problemContent("Scope, revision, or Area generation changed"),
+        413: problemContent("Request exceeds its action limit"), 415: problemContent("Expected JSON"),
+        503: problemContent("Inactivity data or current administrator verification unavailable"),
       },
     },
   },

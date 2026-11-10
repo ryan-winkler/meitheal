@@ -68,6 +68,7 @@ function pageHref(target: number, open?: string) {
                       <p class="deferred-meta">
                         {definition ? t(definition.i18nKey, locale) : task.status}
                         {" · "}<time datetime={timestamp.toISOString()}>{dateFormat.format(timestamp)}</time>
+                        {task.automatic && <>{" · "}{t("inactivity.moved", locale)}</>}
                       </p>
                     </div>
                     <div class="deferred-actions">

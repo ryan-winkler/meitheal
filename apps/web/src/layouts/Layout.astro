@@ -45,6 +45,7 @@ export interface Props {
   hideSearchHub?: boolean;
   hideGlobalSearch?: boolean;
   suppressTaskUrlOpen?: boolean;
+  privatePageShell?: boolean;
   /** Optional JSON-LD schema for page-level structured data */
   jsonLd?: Record<string, unknown>;
 }
@@ -55,12 +56,13 @@ const {
   hideSearchHub = false,
   hideGlobalSearch = false,
   suppressTaskUrlOpen = false,
+  privatePageShell = false,
   jsonLd,
 } = Astro.props;
 
 // OA-607: Sidebar task count badges (SSR)
 let taskCounts = { total: 0, active: 0, pending: 0 };
-try {
+if (!privatePageShell) try {
   const { ensureSchema, getPersistenceClient } =
     await import("@domains/tasks/persistence/store");
   await ensureSchema();
@@ -166,7 +168,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             var appResponse = response.headers.has("x-ingress-path")
               || /\bjson\b/i.test(response.headers.get("content-type") || "");
             var privateTaskResponse = ingressResponse &&
-              [ip + "/api/task-pins", ip + "/api/task-drafts"].includes(resultUrl.pathname);
+              [ip + "/api/task-pins", ip + "/api/task-drafts", ip + "/api/task-inactivity"].includes(resultUrl.pathname);
             var participantResponse = ingressResponse &&
               /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/
                 .test(resultUrl.pathname.slice(ip.length));
@@ -343,7 +345,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={Astro.url.href} />
+    {!privatePageShell && <meta property="og:url" content={Astro.url.href} />}
     <link
       rel="manifest"
       href="/manifest.webmanifest"
@@ -364,7 +366,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <ClientRouter fallback="swap" />}
-    <JsonLd schema={jsonLd ?? {
+    {!privatePageShell && <JsonLd schema={jsonLd ?? {
       "@type": "SoftwareApplication",
       name: "Meitheal",
       description,
@@ -376,7 +378,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         target: `${Astro.url.origin}/api/search?q={query}`,
         "query-input": "required name=query",
       },
-    }} />
+    }} />}
     <!-- Send only the current locale and keep client translation available during parsing. -->
     <script type="application/json" id="meitheal-client-translations" set:html={clientTranslationJson[locale]} />
     <script
@@ -442,14 +444,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <a href="#main-content" class="skip-to-content"
       >{t("nav.skip_to_content", locale)}</a
     >
-    <div transition:persist="sidebar">
+    {!privatePageShell && <div transition:persist="sidebar">
       <Sidebar locale={locale} taskCounts={taskCounts} />
-    </div>
+    </div>}
 
-    <div class="main-content">
+    <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>
       {Astro.slots.has('custom-header') ? (
         <slot name="custom-header" />
-      ) : (
+      ) : !privatePageShell && (
         <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch}>
           <Fragment slot="page-title"><slot name="page-title" /></Fragment>
           <Fragment slot="actions"><slot name="actions" /></Fragment>
@@ -583,9 +585,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       import "@lib/layout-body-controller";
     </script>
 
-    <NewTaskModal />
-    <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
-    <AskAssistModal />
+    {!privatePageShell && <>
+      <NewTaskModal />
+      <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
+      <AskAssistModal />
+    </>}
     {!hideSearchHub && <SearchHub locale={locale} />}
     <!-- Sync status announcer for screen readers (Persona #25) -->
     <div
@@ -603,7 +607,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       import "@lib/layout-pwa-controller";
     </script>
     {showConfetti && <Confetti />}
-    <PomodoroTimer enabled={showPomodoro} />
+    {!privatePageShell && <PomodoroTimer enabled={showPomodoro} />}
     <script define:vars={{ featureFlagsJson }}>
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>

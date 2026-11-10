@@ -8,6 +8,8 @@ import { validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_defe
 import { validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
 import { validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts.mjs"
 
+import { validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
+
 const execFileAsync = promisify(execFile);
 
 const expectedSchema = {
@@ -22,7 +24,8 @@ const expectedSchema = {
     "created_at",
     "updated_at",
     "deferred_at",
-    "deferral_revision"
+    "deferral_revision",
+    "inactivity_touched_at"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
@@ -71,6 +74,7 @@ async function main() {
     await validateTaskDeferralSchema(client)
     await validateTaskPinsSchema(client)
     await validateTaskDraftsSchema(client)
+    await validateTaskInactivitySchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
