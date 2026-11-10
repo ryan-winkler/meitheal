@@ -3,7 +3,6 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "ha-devcontainer",
   "workspaceFolder": "/workspaces/meitheal",
-  "postStartCommand": "bash devcontainer_bootstrap",
   "postCreateCommand": "bash /workspaces/meitheal/scripts/devcontainer-setup.sh",
   "runArgs": [
     "-e",

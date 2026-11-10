@@ -102,7 +102,21 @@ run_compose() {
 
 start_stack() {
   local existing
-  existing=$(run_compose ps --all --quiet ha-devcontainer)
+  if [[ "$COMPOSE_CMD" == *podman* ]]; then
+    # podman-compose 1.x lists stopped containers, but accepts no service filter.
+    existing=""
+    local container service
+    for container in $(run_compose ps -q); do
+      if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
+        service=$(flatpak-spawn --host podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
+      else
+        service=$(podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
+      fi
+      if [[ "$service" == ha-devcontainer ]]; then existing="$container"; break; fi
+    done
+  else
+    existing=$(run_compose ps --all --quiet ha-devcontainer)
+  fi
   if [[ -n "$existing" ]]; then
     # Starting an existing container preserves its editor-generated image and Features.
     run_compose start ha-devcontainer

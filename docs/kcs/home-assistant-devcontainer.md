@@ -23,7 +23,7 @@ The stack uses Home Assistant’s official `6-apps` devcontainer and beta Superv
 
 Setup checks Grocy at its public root URL. The authenticated Grocy API requires a separate key and is not a readiness probe.
 
-The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal`. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage only the candidate manifest, profile and support files in `/mnt/supervisor/apps/local/meitheal-candidate`. Keep the candidate outside the workspace. This monorepo intentionally omits upstream `devcontainer_bootstrap`, which would bind the complete source tree into the local App store and introduce duplicate stable/Canary manifests. Supervisor itself migrates legacy `addons` data before staging; do not create an `apps` directory before that migration. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
 
 ## Local configuration and recovery
 
