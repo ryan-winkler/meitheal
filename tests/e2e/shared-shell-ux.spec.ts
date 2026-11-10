@@ -80,6 +80,33 @@ for (const theme of ["light", "dark"]) {
   }
 }
 
+test("empty area hints stay readable in both themes", async ({ browser, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const area = await request.post("/api/areas", { headers, data: { name: "Empty area contrast fixture" } })
+  expect(area.status()).toBe(201)
+  const { id } = await area.json()
+  const selector = `#stree-area-projects-${id} .stree__empty-hint`
+
+  try {
+    for (const theme of ["light", "dark"]) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: "reduce" })
+      try {
+        const page = await context.newPage()
+        await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
+        await page.goto(baseURL!)
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        await expect(page.locator(selector)).toBeVisible()
+        const { violations } = await new AxeBuilder({ page }).include(selector).withRules(["color-contrast"]).analyze()
+        expect(violations.map(({ id }) => id), theme).toEqual([])
+      } finally {
+        await context.close()
+      }
+    }
+  } finally {
+    await request.delete(`/api/areas/${id}`, { headers })
+  }
+})
+
 test("area disclosure keeps keyboard focus and actions separate", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const areaName = `Sidebar fixture ${crypto.randomUUID()}`

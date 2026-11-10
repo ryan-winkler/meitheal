@@ -72,6 +72,8 @@ If the filter is set to `Unassigned`, the queue shows only unowned work.
 
 The pronunciation, Areas heading, and New Area button use the theme’s secondary text color at full opacity. Check them in both light and dark modes when changing sidebar styles. If the labels are dim inside Home Assistant, compare with the standalone theme and check the inherited secondary text color. The home link is named `Meitheal Home` for assistive technology and displays a visual pronunciation guide.
 
+The **No projects** hint uses the theme’s muted text color at full opacity. Indentation and italic text distinguish it from project links.
+
 The dashboard’s 300 ms page-entry fade can lower text contrast while it runs. The full dashboard accessibility scan uses normal motion and checks the rendered page after the fade and font loading complete.
 
 Completed cards use a status label and a struck-through title. Their area names and other text retain full opacity. Area colors still tint the labels, while the theme controls the text color.
