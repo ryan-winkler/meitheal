@@ -10,6 +10,7 @@ const configuredPath = process.env.INGRESS_PATH
 const databaseExportPath = "/api/export/database.sqlite"
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
 const pinApiPath = "/api/task-pins"
+const draftApiPath = "/api/task-drafts"
 const pinnedPagePath = "/pinned"
 
 // Astro can decode escapes and redirect trailing separators before middleware.
@@ -81,12 +82,13 @@ const server = http.createServer((req, res) => {
     const canonical = privateRoutePath(normalizedPath)
     const isPins = canonical === pinApiPath || canonical === pinnedPagePath
     const isOnlineRead = onlineReadPaths.has(canonical)
-    if ((isPins || isOnlineRead || canonical === databaseExportPath) && path !== canonical) {
+    const isDraft = canonical === draftApiPath
+    if ((isPins || isOnlineRead || isDraft || canonical === databaseExportPath) && path !== canonical) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
       return
     }
-    if (isPins || isOnlineRead) res.setHeader("cache-control", "private, no-store")
-    if (canonical === pinApiPath && query !== -1) {
+    if (isPins || isOnlineRead || isDraft) res.setHeader("cache-control", "private, no-store")
+    if ((canonical === pinApiPath || isDraft) && query !== -1) {
       res.writeHead(400).end()
       return
     }

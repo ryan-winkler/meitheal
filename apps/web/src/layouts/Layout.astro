@@ -165,8 +165,9 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               && resultUrl.pathname.startsWith(ip + "/");
             var appResponse = response.headers.has("x-ingress-path")
               || /\bjson\b/i.test(response.headers.get("content-type") || "");
-            var pinResponse = ingressResponse && resultUrl.pathname === ip + "/api/task-pins";
-            if (response.status === 403 && ingressResponse && !appResponse && !pinResponse) {
+            var privateTaskResponse = ingressResponse &&
+              [ip + "/api/task-pins", ip + "/api/task-drafts"].includes(resultUrl.pathname);
+            if (response.status === 403 && ingressResponse && !appResponse && !privateTaskResponse) {
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
               var now = Date.now();

@@ -208,7 +208,7 @@ function isPrivateResource(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
     return path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
-      path === "/pinned" || path === "/api/search" || path === "/api/saved-filters"
+      path === "/pinned" || path === "/api/search" || path === "/api/saved-filters" || path === "/api/task-drafts"
   }
 
   if (url.origin !== self.location.origin) return false
@@ -471,12 +471,13 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (["TASK_PINS_IMPLEMENTED", "MEITHEAL_SEARCH_WAITING_CAPABLE", "MEITHEAL_PRESETS_WAITING_CAPABLE"].includes(event.data?.type)) {
+  if (["TASK_PINS_IMPLEMENTED", "MEITHEAL_SEARCH_WAITING_CAPABLE",
+    "MEITHEAL_PRESETS_WAITING_CAPABLE", "TASK_DRAFTS_IMPLEMENTED"].includes(event.data?.type)) {
     event.ports[0]?.postMessage(true)
   }
 
   if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY",
-    "MEITHEAL_SEARCH_NETWORK_ONLY", "MEITHEAL_PRESETS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
+    "MEITHEAL_SEARCH_NETWORK_ONLY", "MEITHEAL_PRESETS_NETWORK_ONLY", "TASK_DRAFTS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
     const port = event.ports[0]
     event.waitUntil(ensureSensitiveCachePurge().then(
       () => port.postMessage(true),

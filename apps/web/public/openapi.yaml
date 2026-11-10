@@ -1646,6 +1646,180 @@ paths:
                   - error
                   - errorCode
                 additionalProperties: false
+  /api/task-drafts:
+    post:
+      operationId: readTaskDraft
+      tags:
+        - Tasks
+      summary: Read your active New Task draft and publication receipt
+      description: Private Home Assistant browser route. Send JSON with action read. An optional resolve object names a save
+        attempt, or an exact publish attempt with draftId and revision. Verify the returned account context with HEAD
+        before displaying data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              additionalProperties: false
+              properties:
+                action:
+                  const: read
+                resolve:
+                  type: object
+      responses:
+        "200":
+          description: Current owner’s draft and receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - context
+                  - draft
+                  - latestReceipt
+                properties:
+                  context: &a18
+                    type: string
+                    pattern: ^[A-Za-z0-9_-]{43}$
+                    description: Opaque, short-lived browser account binding.
+                  draft:
+                    type:
+                      - object
+                      - "null"
+                  latestReceipt:
+                    type:
+                      - object
+                      - "null"
+                  resolution:
+                    type: object
+                additionalProperties: false
+        "400":
+          description: Invalid draft read
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Verified active Home Assistant account required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Body exceeds 64 KiB
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+    head:
+      operationId: verifyTaskDraftContext
+      tags:
+        - Tasks
+      summary: Verify that the private draft context still belongs to the active account
+      parameters:
+        - in: header
+          name: X-Meitheal-Draft-Context
+          required: true
+          schema: *a18
+      responses:
+        "204":
+          description: Account context still matches
+        "403":
+          description: Verified active Home Assistant account required
+        "409":
+          description: Account context changed or is missing
+    put:
+      operationId: writeTaskDraft
+      tags:
+        - Tasks
+      summary: Save, discard, publish, or abandon an unresolved publication
+      description: Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable
+        attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or
+        advance its revision using abandon-publish.
+      parameters:
+        - in: header
+          name: X-Meitheal-Draft-Context
+          required: true
+          schema: *a18
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - expected
+              additionalProperties: false
+              properties:
+                action:
+                  enum:
+                    - save
+                    - discard
+                    - publish
+                    - abandon-publish
+                expected:
+                  type:
+                    - object
+                    - "null"
+                attemptId:
+                  type: string
+                snapshot:
+                  type: object
+                task:
+                  type: object
+      responses:
+        "200":
+          description: Draft action completed or existing publication receipt returned
+        "201":
+          description: Published task with its immutable receipt
+        "400":
+          description: Invalid draft action
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Verified active Home Assistant account required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: ACCOUNT_CHANGED or REVISION_CONFLICT
+        "413":
+          description: Body exceeds 64 KiB
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "422":
+          description: Publication needs an available lane, goal, assignee and labels
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "503":
+          description: Database writer busy. Retry the same action.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
   /api/task-pins:
     post:
       operationId: readTaskPins
@@ -1699,10 +1873,7 @@ paths:
                       - total
                       - items
                     properties:
-                      context: &a18
-                        type: string
-                        pattern: ^[A-Za-z0-9_-]{43}$
-                        description: Opaque, short-lived browser account binding.
+                      context: *a18
                       page:
                         type: integer
                       total:

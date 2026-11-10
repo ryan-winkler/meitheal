@@ -141,6 +141,7 @@ function isPinRoute(path: string) {
 }
 
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
+const draftPath = "/api/task-drafts"
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
@@ -148,21 +149,25 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const requestPath = requestUrl.pathname
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
   const onlineReadRoute = onlineReadPaths.has(routePattern) || onlineReadPaths.has(url.pathname)
-  if (!pinRoute && !onlineReadRoute) return handleRequest(context, next, requestUrl)
+  const draftRoute = routePattern === draftPath || url.pathname === draftPath
+  if (!pinRoute && !onlineReadRoute && !draftRoute) return handleRequest(context, next, requestUrl)
+  if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
+    return new Response(null, { status: requestPath !== draftPath ? 404 : 400, headers: { "cache-control": "private, no-store" } })
+  }
   // Astro matches decoded paths, while the agent guard checks the original request path.
   if ((onlineReadPaths.has(routePattern) && requestPath !== routePattern) ||
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
-  const response = await handleRequest(context, next, requestUrl, pinRoute)
+  const response = await handleRequest(context, next, requestUrl, pinRoute || draftRoute)
   response.headers.set("cache-control", "private, no-store")
   return response
 }
 
 async function handleRequest({ request, locals, routePattern }: Parameters<MiddlewareHandler>[0],
-  next: Parameters<MiddlewareHandler>[1], url: URL, pinRoute = false) {
+  next: Parameters<MiddlewareHandler>[1], url: URL, privatePersonalRoute = false) {
   const startTime = Date.now();
-  const requestId = (pinRoute ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
+  const requestId = (privatePersonalRoute ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
@@ -292,7 +297,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         domain: "security",
         component: "middleware",
         request_id: requestId,
-        message: pinRoute ? "Personal pin origin check failed" :
+        message: privatePersonalRoute ? "Private task origin check failed" :
           `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
       });
       return new Response(
@@ -330,7 +335,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
   const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
     hassUserId ? `ha:${hassUserId}` : undefined
-  const retryKey = await taskRetryKey(request, url, principal)
+  const retryKey = privatePersonalRoute ? undefined : await taskRetryKey(request, url, principal)
   if (retryKey instanceof Response) return retryKey
   locals.taskRetryKey = retryKey
 
@@ -374,14 +379,14 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         domain: "observability",
         component: "middleware",
         request_id: requestId,
-        ...(!pinRoute ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
+        ...(!privatePersonalRoute ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
         message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
         metadata: {
           method: request.method,
           path: url.pathname,
           status: response.status,
           latency_ms: elapsed,
-          ...(!pinRoute ? {
+          ...(!privatePersonalRoute ? {
             automation_source: automationSource,
             ...(agentId ? { agent_id: agentId } : {}),
             ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),

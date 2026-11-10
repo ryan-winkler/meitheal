@@ -37,6 +37,15 @@ Open a task’s Details and choose **Pin task**. Open **Pinned tasks** from the 
 
 Open **New Task** to load the available lanes and goals. **To Do** and **No goal** are ready immediately. If the other options fail to load, you can still create a task with the defaults. To retry the options, close and reopen the form.
 
+On an active Home Assistant account, open **Draft** in **New Task** to save or resume one private capture. Save keeps the form open. Closing preserves the last saved revision. An unrelated New Task can still be created while a saved draft exists. Once you save or resume the current form, use **Publish draft** or Ctrl/Cmd+Enter to create the shared task. Add files from task details after publication.
+
+If another tab edits the same draft, check for the current revision before replacing your form. If a publication is interrupted, **Check draft status** can recover the receipt. When the attempt remains unresolved, retry it with the original values or choose **Keep saved draft** to close the attempt and continue editing. **Open task** follows the original task’s identity. A receipt remains available after the task is removed.
+
+Private drafts need an online verified Home Assistant session. Changing accounts or hiding the page withdraws the draft until the account is verified again. When prompted to update the installed web app, activate the update before checking for drafts. Text, date selections, shopping items, checklist items and custom fields are saved. Attachments are handled in task details. Event location and the all-day and routine controls round-trip in the draft and use the existing task creation rules at publication.
+
+Publication commits one task, activity entry and event with the saved revision. A process interruption after that commit can delay or prevent an external webhook under the existing delivery behavior. Use the publication receipt to recover the task.
+
+
 ### Create a Checklist
 
 Choose **Checklist** in the task form and enter one item per line. Use **Add Item** or Enter to stage the lines. Shift+Enter starts a new line. Creating the task includes any text still in the item field. If saving fails, the form keeps the staged items and draft for retry.

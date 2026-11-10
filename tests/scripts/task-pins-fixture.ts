@@ -8,16 +8,22 @@ import { chromium, type Page } from "@playwright/test"
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("./feedback-ingress-fixture.mjs", import.meta.url))
 
-export async function launchPinBrowser(work: string) {
+export async function launchPinBrowser(work: string, backForwardCache = false) {
   const certificate = new X509Certificate(await readFile(join(work, "fixture-cert.pem")))
   const spki = createHash("sha256").update(certificate.publicKey.export({ type: "spki", format: "der" })).digest("base64")
-  return chromium.launch({ args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`] })
+  return chromium.launch({
+    args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`],
+    ...(backForwardCache ? {
+      channel: "chromium", executablePath: process.env.MEITHEAL_BFCACHE_CHROMIUM,
+      ignoreDefaultArgs: ["--disable-back-forward-cache"],
+    } : {}),
+  })
 }
 
-export function startCoreFixture(work: string, plainHttp = false): ChildProcess {
+export function startCoreFixture(work: string, plainHttp = false, restartPort?: number): ChildProcess {
   const cert = join(work, "fixture-cert.pem")
   const key = join(work, "fixture-key.pem")
-  execFileSync("openssl", ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "1",
+  if (!restartPort) execFileSync("openssl", ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "1",
     "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert], { stdio: "ignore" })
   const env = {
     PATH: process.env.PATH,
@@ -25,6 +31,7 @@ export function startCoreFixture(work: string, plainHttp = false): ChildProcess 
     MEITHEAL_DB_URL: `file:${join(work, "pins.db")}`,
     MEITHEAL_PIN_FIXTURE: "1",
     MEITHEAL_PIN_FIXTURE_HTTP: plainHttp ? "1" : "0",
+    ...(restartPort ? { MEITHEAL_INGRESS_FIXTURE_PORT: String(restartPort) } : {}),
     ...(process.env.MEITHEAL_PIN_LEGACY_WORKER ? { MEITHEAL_PIN_LEGACY_WORKER: process.env.MEITHEAL_PIN_LEGACY_WORKER } : {}),
     MEITHEAL_PIN_FIXTURE_TLS_CERT: cert,
     MEITHEAL_PIN_FIXTURE_TLS_KEY: key,

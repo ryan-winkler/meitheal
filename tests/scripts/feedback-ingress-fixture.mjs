@@ -50,8 +50,13 @@ const { handler } = await import("../../apps/web/dist/server/entry.mjs")
 const configuredPath = "/api/hassio_ingress/feedback-fixture"
 let serveOldWorker = false
 let holdPinReceipt = false
+let dropDraftReceipt = false
 let releasePinReceipt
 process.on("message", message => {
+  if (pinFixture && message?.type === "drop-draft-receipt") {
+    dropDraftReceipt = true
+    process.send({ droppingDraftReceipt: true })
+  }
   if (pinFixture && message?.type === "hold-pin-receipt") {
     holdPinReceipt = true
     process.send({ holdingPinReceipt: true })
@@ -125,6 +130,18 @@ const handle = (request, response) => {
     response.end = (...args) => {
       releasePinReceipt = () => end(...args)
       process.send({ pinReceiptStatus: response.statusCode })
+      return response
+    }
+  }
+  if (fromSupervisor && dropDraftReceipt && request.method === "PUT" && request.url === "/api/task-drafts") {
+    dropDraftReceipt = false
+    const write = response.write.bind(response)
+    response.write = () => true
+    response.end = () => {
+      // Send an incomplete body so Chromium cannot retry an empty HTTP connection.
+      write('{"receipt":')
+      setTimeout(() => response.destroy(), 100).unref()
+      process.send({ draftReceiptStatus: response.statusCode })
       return response
     }
   }

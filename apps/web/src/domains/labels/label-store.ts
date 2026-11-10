@@ -1,3 +1,4 @@
+import type { InStatement } from "@libsql/client"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { stripHtml } from "../../lib/strip-html"
 
@@ -24,9 +25,24 @@ export async function listLabels(): Promise<Label[]> {
   return rows.rows.map(readLabel)
 }
 
+export function normalizeLabelTitle(title: string): string {
+  return stripHtml(title.trim()).slice(0, 100)
+}
+
+/** Add an explicitly created label only if the task write in this batch won. */
+export function taskLabelInsert(title: string, taskId: string, requestId: string): InStatement {
+  return {
+    sql: `INSERT INTO vikunja_labels (title, hex_color)
+          SELECT ?, '6b7280'
+          WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND request_id = ?)
+            AND NOT EXISTS (SELECT 1 FROM vikunja_labels WHERE lower(title) = lower(?))`,
+    args: [title, taskId, requestId, title],
+  }
+}
+
 /** Return an existing label when the title differs only by case. */
 export async function createLabel(title: string, hexColor?: string): Promise<Label> {
-  const sanitized = stripHtml(title.trim()).slice(0, 100)
+  const sanitized = normalizeLabelTitle(title)
   if (!sanitized) {
     throw new Error("Label title is required")
   }

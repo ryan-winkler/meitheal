@@ -13,8 +13,7 @@
  *   const created = await repo.createTask({ id: '...', title: 'New', ... });
  */
 
-import type { Client } from "@libsql/client";
-import type { InValue } from "@libsql/client";
+import type { Client, InStatement, InValue } from "@libsql/client"
 import { getStatusDef, normalizeStatus, STATUS } from "../../../lib/status-config";
 import { logApiError } from "../../../lib/api-logger";
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -215,6 +214,55 @@ function openTaskDependencies(id: string) {
  * - Each method maps 1:1 to a query previously inline in a page file.
  * - Stateless: client injected via constructor (follows existing store pattern).
  */
+export type TaskCreationData = {
+  id: string; title: string; description: string; status: string;
+  priority: number; due_date: string | null; labels: string;
+  framework_payload: string; parent_id: string | null;
+  area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
+  end_date: string | null; progress: number; color: string | null;
+  is_favorite: number; task_type: string; task_kind?: string;
+  assigned_to: string | null; checklists?: string | null;
+  recurrence_rule?: string | null;
+  urgency?: number; importance?: number;
+  effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
+}
+
+/** Use one statement for an ordinary insert or a conditional insert in a write batch. */
+export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
+  idempotencyKey = crypto.randomUUID(),
+  requestId = crypto.randomUUID(),
+  guard,
+}: {
+  idempotencyKey?: string
+  requestId?: string
+  guard?: { sql: string; args: InValue[] }
+} = {}): InStatement {
+  return {
+    sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
+                             framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
+                             area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
+                             task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
+                             urgency, importance, effort_minutes, effort_type, blocked_by,
+                             idempotency_key, request_id, created_at, updated_at)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ${guard ? `WHERE ${guard.sql}` : ""}
+          RETURNING ticket_number`,
+    args: [
+      data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
+      data.due_date, data.labels, data.framework_payload,
+      STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
+      data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
+      data.task_type, data.task_kind ?? "standard_action", data.assigned_to,
+      data.checklists ?? "[]", data.recurrence_rule ?? null,
+      data.urgency ?? 0, data.importance ?? 0,
+      data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
+      idempotencyKey, requestId, createdAt, createdAt,
+      ...(guard?.args ?? []),
+    ] as InValue[],
+  }
+}
+
 export class TaskRepository {
   constructor(private readonly client: Client) {}
 
@@ -900,40 +948,8 @@ export class TaskRepository {
    * Insert a new task. Caller is responsible for validation and ID generation.
    * @returns The ticket number allocated by the insert.
    */
-  async createTask(data: {
-    id: string; title: string; description: string; status: string;
-    priority: number; due_date: string | null; labels: string;
-    framework_payload: string; parent_id: string | null;
-    area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
-    end_date: string | null; progress: number; color: string | null;
-    is_favorite: number; task_type: string; task_kind?: string;
-    assigned_to: string | null; checklists?: string | null;
-    recurrence_rule?: string | null;
-    urgency?: number; importance?: number;
-    effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
-  }, createdAt = Date.now()): Promise<number> {
-    const result = await this.client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
-                               area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
-                               task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
-                               urgency, importance, effort_minutes, effort_type, blocked_by,
-                               idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING ticket_number`,
-      args: [
-        data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
-        data.due_date, data.labels, data.framework_payload,
-        STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
-        data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
-        data.task_type, data.task_kind ?? "standard_action", data.assigned_to,
-        data.checklists ?? "[]", data.recurrence_rule ?? null,
-        data.urgency ?? 0, data.importance ?? 0,
-        data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
-        crypto.randomUUID(), crypto.randomUUID(), createdAt, createdAt,
-      ] as InValue[],
-    });
+  async createTask(data: TaskCreationData, createdAt = Date.now()): Promise<number> {
+    const result = await this.client.execute(taskInsertStatement(data, createdAt))
     return Number(result.rows[0]!.ticket_number)
   }
 

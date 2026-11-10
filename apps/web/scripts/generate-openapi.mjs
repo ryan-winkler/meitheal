@@ -821,6 +821,57 @@ const paths = {
   },
 
   // ── Task Sub-resources ──
+  "/api/task-drafts": {
+    post: {
+      operationId: "readTaskDraft",
+      tags: ["Tasks"],
+      summary: "Read your active New Task draft and publication receipt",
+      description: "Private Home Assistant browser route. Send JSON with action read. An optional resolve object names a save attempt, or an exact publish attempt with draftId and revision. Verify the returned account context with HEAD before displaying data.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["action"], additionalProperties: false,
+        properties: { action: { const: "read" }, resolve: { type: "object" } },
+      } } } },
+      responses: {
+        200: jsonContent({ type: "object", required: ["context", "draft", "latestReceipt"],
+          properties: { context: pinContext, draft: { type: ["object", "null"] }, latestReceipt: { type: ["object", "null"] }, resolution: { type: "object" } },
+        }, "Current owner’s draft and receipt"),
+        400: problemContent("Invalid draft read"), 403: problemContent("Verified active Home Assistant account required"),
+        413: problemContent("Body exceeds 64 KiB"), 415: problemContent("Expected JSON"),
+      },
+    },
+    head: {
+      operationId: "verifyTaskDraftContext",
+      tags: ["Tasks"],
+      summary: "Verify that the private draft context still belongs to the active account",
+      parameters: [{ in: "header", name: "X-Meitheal-Draft-Context", required: true, schema: pinContext }],
+      responses: {
+        204: { description: "Account context still matches" }, 403: { description: "Verified active Home Assistant account required" },
+        409: { description: "Account context changed or is missing" },
+      },
+    },
+    put: {
+      operationId: "writeTaskDraft",
+      tags: ["Tasks"],
+      summary: "Save, discard, publish, or abandon an unresolved publication",
+      description: "Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or advance its revision using abandon-publish.",
+      parameters: [{ in: "header", name: "X-Meitheal-Draft-Context", required: true, schema: pinContext }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["action", "expected"], additionalProperties: false,
+        properties: {
+          action: { enum: ["save", "discard", "publish", "abandon-publish"] }, expected: { type: ["object", "null"] },
+          attemptId: { type: "string" }, snapshot: { type: "object" }, task: { type: "object" },
+        },
+      } } } },
+      responses: {
+        200: { description: "Draft action completed or existing publication receipt returned" },
+        201: { description: "Published task with its immutable receipt" }, 400: problemContent("Invalid draft action"),
+        403: problemContent("Verified active Home Assistant account required"),
+        409: { description: "ACCOUNT_CHANGED or REVISION_CONFLICT" }, 413: problemContent("Body exceeds 64 KiB"),
+        415: problemContent("Expected JSON"), 422: problemContent("Publication needs an available lane, goal, assignee and labels"),
+        503: problemContent("Database writer busy. Retry the same action."),
+      },
+    },
+  },
   "/api/task-pins": {
     post: {
       operationId: "readTaskPins",

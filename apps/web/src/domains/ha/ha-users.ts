@@ -121,9 +121,11 @@ export async function getHAUserById(userId: string): Promise<HAUser | null> {
 const activeUserFreshnessMs = 5_000
 const activeUserDeadlineMs = 2_000
 let activeUsers: { ids: Set<string>; expiresAt: number } | undefined
-let checkingActiveUsers: Promise<boolean> | undefined
+let checkingActiveUsers: Promise<Set<string> | undefined> | undefined
+let activeUserCheckGeneration = 0
 
-async function refreshActiveUsers(): Promise<boolean> {
+async function refreshActiveUsers(): Promise<Set<string> | undefined> {
+  const generation = ++activeUserCheckGeneration
   const checkedAt = performance.now()
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -140,18 +142,19 @@ async function refreshActiveUsers(): Promise<boolean> {
       }),
     ])
     const ids = new Set(users.filter(user => user.is_active === true && user.system_generated === false).map(user => user.id))
-    activeUsers = { ids, expiresAt: checkedAt + activeUserFreshnessMs }
-    return true
+    if (generation === activeUserCheckGeneration) activeUsers = { ids, expiresAt: checkedAt + activeUserFreshnessMs }
+    return ids
   } catch {
-    activeUsers = undefined
-    return false
+    if (generation === activeUserCheckGeneration) activeUsers = undefined
+    return undefined
   } finally {
     clearTimeout(timer)
   }
 }
 
 /** Check the exact Core identity for an authorization decision without using discovery fallbacks. */
-export async function isCurrentActiveHAUser(id: string): Promise<boolean> {
+export async function isCurrentActiveHAUser(id: string, { fresh = false } = {}): Promise<boolean> {
+  if (fresh) return Boolean((await refreshActiveUsers())?.has(id))
   if (!activeUsers || activeUsers.expiresAt <= performance.now()) {
     checkingActiveUsers ??= refreshActiveUsers().finally(() => { checkingActiveUsers = undefined })
     if (!await checkingActiveUsers) return false

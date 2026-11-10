@@ -61,6 +61,8 @@ If the restored app cannot start, preserve the backup and check Supervisor and a
 
 For an upgrade from schema 14, take an App-only checkpoint and use a disposable copy to verify schema 15. Confirm SQLite integrity and read a known ordinary task after the app starts. Run `node scripts/migrate.mjs --check` from `apps/web` with the fixture database URL to verify the draft tables and receipt index. Keep the original checkpoint available for a rollback to the previous App. When checking post-upgrade task creation, verify concurrently created and duplicated tasks each return a distinct ticket number that matches the task details.
 
+When draft capture is enabled, make a second App-only checkpoint with a saved draft from each of two temporary members. Save a later test draft change and restore the checkpoint. Confirm each member sees only their earlier draft and the later change is absent. Check both the App version and database integrity before testing ingress. A private draft and its publication receipt are part of the App database, so apply the same custody rules as for the full database download.
+
 ## Tier 2 acceptance
 
 In the editor-managed Home Assistant devcontainer, seed a task, related data and settings, then create a Supervisor backup while Meitheal runs. Observe a stop before archiving and a restart afterward. Make a second write, restore the backup and verify that the first write survived, the second is absent, and ingress and database integrity pass. Repeat with the app already stopped and confirm backup leaves it stopped. Record the image digest and outage.
