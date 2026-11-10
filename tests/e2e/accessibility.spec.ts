@@ -22,6 +22,29 @@ for (const theme of ["light", "dark"]) {
       targets: nodes.map(({ target }) => target),
     }))).toEqual([])
   })
+
+  test(`completed dashboard cards remain readable in ${theme} theme`, async ({ page, request, baseURL }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", {
+      headers, data: { title: "Checked the air filter", status: "complete" },
+    })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    try {
+      await page.emulateMedia({ reducedMotion: "reduce" })
+      await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
+      await page.goto("/")
+      const card = page.locator(`.bento-card[data-id="${id}"]`)
+      await expect(card).toContainText("Checked the air filter")
+      await card.evaluate(() => document.fonts.ready.then(() => undefined))
+      const results = await new AxeBuilder({ page }).include(`.bento-card[data-id="${id}"]`)
+        .withRules(["color-contrast"]).analyze()
+      expect(results.violations).toEqual([])
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
 }
 
 test("dashboard section links and ownership filter use native navigation semantics", async ({ page }) => {

@@ -184,7 +184,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       class="unified-bar__new-task-btn today-shell__clear-btn"
       id="clear-completed-btn"
       title="Clear completed tasks"
-      aria-label="Clear completed tasks"
+      aria-label="Clear Done"
     >
       <span class="unified-bar__new-task-label">Clear Done</span>
     </button>
@@ -359,14 +359,14 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           placeholder="Search tasks..."
           autocomplete="off"
         />
-        <select id="today-filter-status" class="form-select">
+        <select id="today-filter-status" class="form-select" aria-label="Filter by status">
           <option value="">All Status</option>
           <option value="pending">Todo</option>
           <option value="active">Active</option>
           <option value="complete">Done</option>
           <option value="overdue">Overdue</option>
         </select>
-        <select id="today-filter-priority" class="form-select">
+        <select id="today-filter-priority" class="form-select" aria-label="Filter by priority">
           <option value="">All Priority</option>
           <option value="1">▲ Critical</option>
           <option value="2">↑ High</option>
@@ -374,13 +374,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           <option value="4">↓ Low</option>
           <option value="5">· Minimal</option>
         </select>
-        <select id="today-filter-rice" class="form-select">
+        <select id="today-filter-rice" class="form-select" aria-label="Filter by RICE score">
           <option value="">All RICE</option>
           <option value="high">High (≥15)</option>
           <option value="medium">Medium (8-14)</option>
           <option value="low">Low (&lt;8)</option>
         </select>
-        <select id="today-sort" class="form-select">
+        <select id="today-sort" class="form-select" aria-label="Sort tasks">
           <option value="priority-asc">Priority ↑</option>
           <option value="priority-desc">Priority ↓</option>
           <option value="rice-desc">RICE ↓</option>
@@ -579,7 +579,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           <button type="button" class="today-section__toggle" aria-label="Toggle Habits section">
             <span class="today-section__icon">▶</span>
           </button>
-          <span class="today-section__title" style="color: var(--accent);">
+          <span class="today-section__title" style="color: var(--accent-text);">
             🔄 Habits / Routines
           </span>
           <span class="today-section__count">{habits.length}</span>
@@ -698,6 +698,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   .today-shell__empty {
     padding: 16px 18px;
     color: var(--text-muted);
+  }
+
+  .page-shell__eyebrow {
+    color: var(--accent-text);
   }
 
 

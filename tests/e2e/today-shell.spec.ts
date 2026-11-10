@@ -9,15 +9,17 @@ test.describe("Today Shell", () => {
     await page.waitForLoadState("networkidle")
   })
 
-  test("unified bar tabs jump to the work section", async ({ page }) => {
-    const workTab = page.locator(
+  test("unified bar links jump to the work section and mark it current", async ({ page }) => {
+    const workLink = page.locator(
       '#today-bar-tabs [data-unified-bar-section="today-work"]',
     )
 
-    await workTab.click()
+    await workLink.click()
 
     await expect(page).toHaveURL(/#today-work$/)
-    await expect(workTab).toHaveClass(/is-active/)
+    await expect(workLink).toHaveClass(/is-active/)
+    await expect(workLink).toHaveAttribute("aria-current", "location")
+    await expect(workLink).not.toHaveAttribute("aria-selected")
     await expect(page.locator("#today-work")).toBeVisible()
   })
 
@@ -27,6 +29,14 @@ test.describe("Today Shell", () => {
 
     await expect(page.locator("#search-hub-overlay")).toBeVisible()
     await expect(page.locator("#search-hub-input")).toBeFocused()
+  })
+
+  test("filters and Clear Done have accessible names", async ({ page }) => {
+    const filters = page.locator("#today-filter-bar")
+    for (const name of ["Filter by status", "Filter by priority", "Filter by RICE score", "Sort tasks"]) {
+      await expect(filters.getByRole("combobox", { name, exact: true })).toBeVisible()
+    }
+    await expect(page.getByRole("button", { name: "Clear Done", exact: true })).toBeVisible()
   })
 
   test("new task button opens the shared task modal", async ({ page }) => {

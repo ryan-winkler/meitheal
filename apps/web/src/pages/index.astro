@@ -505,7 +505,7 @@ const heroHintHref =
 
                 return (
                   <div
-                    class={`bento-card ${isDone ? "bento-card-done" : ""}`}
+                    class="bento-card"
                     data-id={String(task.id)}
                     data-area={areaId}
                     style={`border-left: 3px solid ${taskColor};`}
@@ -528,7 +528,7 @@ const heroHintHref =
                         </span>
                         <span
                           class="bento-area-badge"
-                          style={`background: ${area.color}20; color: ${area.color}; border-color: ${area.color}40;`}
+                          style={`background: ${area.color}20; color: var(--text-secondary); border-color: ${area.color}40;`}
                         >
                           {area.name}
                         </span>
@@ -598,6 +598,10 @@ const heroHintHref =
 </Layout>
 
 <style>
+  .task-badge {
+    color: var(--text-secondary);
+  }
+
   .dashboard-shell {
     display: flex;
     flex-direction: column;

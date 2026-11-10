@@ -31,8 +31,8 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 ### Jump to the part of Today you need
 
 1. Open `Today`.
-2. Use the shell tabs for fast jumps between overview, focus, triage, work, and habits.
-3. Use the title switcher on smaller screens when some tabs collapse.
+2. Use the shell links to jump between Overview, Focus, Triage, Work, Habits, and Flow. The bar marks the current section.
+3. Use the title switcher on smaller screens when some links collapse.
 
 ### Capture work without leaving Today
 
@@ -57,7 +57,7 @@ While Today is open, the counters and progress bar refresh every 30 seconds. The
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.
 
 1. Open **Unscheduled** in **Work**. Today shows the full queue count and loads up to 50 task rows.
-2. Use **Next** and **Previous** to reach the rest of the queue. Use the filters in **Focus** to search or sort the full queue. The count above the rows shows the matching range. Reload keeps the open page and filters.
+2. Use **Next** and **Previous** to reach the rest of the queue. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. The count above the rows shows the matching range. Reload keeps the open page and filters.
 3. To change a card's manual board position, open the board in **Tasks**. Unscheduled pages use the selected sort order.
 4. If a page fails to load, use **Retry** in the section. The last loaded page stays visible while you retry.
 
