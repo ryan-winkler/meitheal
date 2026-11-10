@@ -19,6 +19,7 @@ import {
   stopCalendarSync,
   getCalendarSyncStatus,
   syncFromHA,
+  syncCalDAVEvents,
 } from "@domains/calendar/calendar-bridge";
 import { logApiError } from "../../../../lib/api-logger";
 
@@ -89,7 +90,8 @@ export const POST: APIRoute = async ({ request }) => {
             resolvedEntities = [entityId];
           }
 
-          if (resolvedEntities.length === 0) {
+          const includeCalDAV = !entityId && getCalendarSyncStatus().caldavActive
+          if (resolvedEntities.length === 0 && !includeCalDAV) {
             return new Response(
               JSON.stringify({ ok: false, error: "No calendar entities configured. Go to Settings → Integrations → Calendar to select calendars." }),
               { status: 400, headers: { "Content-Type": "application/json" } },
@@ -98,9 +100,12 @@ export const POST: APIRoute = async ({ request }) => {
 
           // Sync each resolved entity individually — bypasses activeSyncs check
           // so manual sync works even if background sync wasn't auto-started
-          const results = await Promise.allSettled(
-            resolvedEntities.map((eid) => syncFromHA(eid)),
-          );
+          const pending = resolvedEntities.map((eid) => syncFromHA(eid))
+          if (includeCalDAV) {
+            resolvedEntities.push("caldav")
+            pending.push(syncCalDAVEvents())
+          }
+          const results = await Promise.allSettled(pending);
 
           const outcome = calendarSyncResult(resolvedEntities, results)
           return new Response(JSON.stringify(outcome), {

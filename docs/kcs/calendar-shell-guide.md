@@ -37,6 +37,8 @@ Open **Settings → Integrations → Calendar** and check the selected entity an
 
 Repair the reported Home Assistant or database problem, then use **Sync now** to retry. Manual sync resets that entity's failure backoff and clears its error only after a successful attempt. Background sync pauses after five consecutive failed attempts; each attempt counts once, even when several events fail. A concurrent or export-only sync is skipped rather than reported as a completed import. Disabling and re-enabling sync also starts a fresh entity session.
 
+The same **Sync now** action includes an active CalDAV import. A failed calendar fetch, database import, credential check or discovery keeps the CalDAV error visible and returns an incomplete result. Completed imports retain their counts. Each new CalDAV task and its deduplication confirmation commit together, so repairing a failed import and retrying does not leave an unlinked duplicate. Background CalDAV sync pauses after five failed attempts; manual sync retries after repair. Status identifies this source as `caldav` without exposing the server URL or password.
+
 ### The drawer opens but tasks or events stay empty
 
 1. Confirm the day drawer title updates to the selected date.
