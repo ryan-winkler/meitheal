@@ -16,7 +16,9 @@ This repository guard covers the release tooling. Supervisor installations from 
 
 Supervisor derives the installed App ID from its repository URL. The public repository gives Meitheal Canary a new internal ID. Use the public HTTPS URL without credentials. [Supervisor Store API](https://contributors.home-assistant.io/apps/supervisor-api/store/)
 
-After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Then uninstall the legacy Canary, install **Meitheal Canary** from the public repository, and verify health and authenticated ingress. Update any saved Home Assistant shortcuts to the new App entry. Remove the legacy repository once no installed Apps depend on it.
+After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Rehearse the [database and App-option transfer](home-assistant-backup-and-restore.md#move-data-between-store-repositories) in an isolated Supervisor first; a new repository ID does not inherit the old data volume, and Settings JSON does not include tasks or protected credentials.
+
+Keep at most one Canary installed during the transition: uninstall the legacy Canary before installing **Meitheal Canary** from the public repository. Transfer the verified data and compatible App options, then verify health, authenticated ingress, settings, tasks and restart persistence. Update saved Home Assistant shortcuts and any separately installed Meitheal integration that still targets the old App hostname. Keep the legacy recovery material until acceptance and a matching backup of the new App are verified. Remove the legacy repository once no installed Apps depend on it.
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
