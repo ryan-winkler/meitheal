@@ -69,6 +69,38 @@ test("server rejects oversized headers, actual UTF-8 bytes and invalid UTF-8 bef
 test.describe("framework import API and Settings", () => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable App and ingress fixture")
 
+  test("packaged built-ins remain listed, protected, editable and exportable without source files", async ({ request }) => {
+    const listed = await request.get("/api/frameworks")
+    expect(listed.status()).toBe(200)
+    const builtIns = (await listed.json()).data.filter((item: { source: string }) => item.source === "built-in")
+    expect(builtIns.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining(["rice", "ice", "eisenhower"]))
+    const path = "/api/frameworks/rice"
+    const original = (await (await request.get(path)).json()).data
+    expect(original.source).toBe("built-in")
+    expect(original.fields.map((field: { key: string }) => field.key)).toEqual(["reach", "impact", "confidence", "effort"])
+    try {
+      const shadow = await request.post("/api/frameworks", { data: { ...original, source: "user" } })
+      expect(shadow.status()).toBe(409)
+      const shadowYaml = await request.post("/api/frameworks", { headers: { "content-type": "application/yaml" },
+        data: "name: RICE\nformula: reach\nfields:\n  - key: reach\n    label: Reach\n" })
+      expect(shadowYaml.status()).toBe(409)
+      expect((await request.put(path, { data: { formula: "reach", fields: { reach: { weight: 2 } } } })).status()).toBe(200)
+      const changed = (await (await request.get(path)).json()).data
+      expect(changed.formula).toBe("reach")
+      expect(changed.fields[0].weight).toBe(2)
+      const exported = await request.get(path + "/export")
+      expect(exported.status()).toBe(200)
+      expect(exported.headers()["content-disposition"]).toContain('filename="rice.yaml"')
+      const exportedText = await exported.text()
+      expect(exportedText).toContain(original.formula)
+      expect(exportedText).toContain("help_text:")
+      const reset = await request.delete(path, { data: {} })
+      expect(reset.status()).toBe(200)
+      expect((await reset.json()).source).toBe("built-in")
+      expect((await (await request.get(path)).json()).data).toEqual(original)
+    } finally { await request.delete(path, { data: {} }) }
+  })
+
   test("YAML shares JSON validation, collision checks and persistence; JSON clients keep their exact shape", async ({ request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin, "content-type": "application/yaml; charset=utf-8" }
     const json = { ...imported, id: "json-framework-import-compatibility", name: "JSON client", source: "user", fields: [
