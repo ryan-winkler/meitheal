@@ -75,6 +75,99 @@ async function setDatabaseCoreRole(role: string) {
   expect((await reply)[0]).toEqual({ type: "database-core-role", role })
 }
 
+coreTest("Assist only sends verified administrator requests to Home Assistant", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const headers = { cookie: "feedback-fixture=admin", origin }
+  const agents = `${prefix}/api/ha/agents`
+  const assist = `${prefix}/api/ha/assist`
+  const data = { text: "Synthetic test prompt", agent_id: "conversation.fixture", conversation_id: "prior-thread" }
+  const child = server!
+  try {
+    for (const role of ["member", "old"]) {
+      const untrusted = { ...headers, cookie: `feedback-fixture=${role}`, "x-remote-user-groups": "system-admin" }
+      const list = await api.get(agents, { headers: untrusted })
+      const send = await api.post(assist, { headers: untrusted, data })
+      for (const response of [list, send]) {
+        expect(response.status()).toBe(403)
+        expect(response.headers()["cache-control"]).toBe("private, no-store")
+      }
+    }
+    const blockedCalls = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "assist-calls" })
+    expect((await blockedCalls)[0]).toEqual({ type: "assist-calls", calls: [] })
+
+    const list = await api.get(agents, { headers })
+    expect(list.status()).toBe(200)
+    expect(list.headers()["cache-control"]).toBe("private, no-store")
+    expect(await list.json()).toEqual({ agents: [{ id: "conversation.fixture", name: "Fixture agent" }] })
+    const sent = await api.post(assist, { headers, data })
+    expect(sent.status()).toBe(200)
+    expect(sent.headers()["cache-control"]).toBe("private, no-store")
+    expect(await sent.json()).toEqual({ speech: "Fixture answer", conversation_id: "fixture-thread", response_type: "query_answer" })
+    const acceptedCalls = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "assist-calls" })
+    expect((await acceptedCalls)[0]).toEqual({
+      type: "assist-calls",
+      calls: [
+        expect.objectContaining({ type: "conversation/agent/list" }),
+        expect.objectContaining({ type: "conversation/process", ...data }),
+      ],
+    })
+
+    for (const mode of ["invalid", "error"]) {
+      const updated = once(child, "message", { signal: AbortSignal.timeout(3000) })
+      child.send({ type: "assist-mode", mode })
+      expect((await updated)[0]).toEqual({ type: "assist-mode", mode })
+      expect((await api.get(agents, { headers })).status()).toBe(502)
+      const failure = await api.post(assist, { headers, data })
+      expect(failure.status()).toBe(502)
+      expect(await failure.text()).not.toContain(data.text)
+    }
+    expect((await api.post(assist, { headers, data: { text: "  " } })).status()).toBe(400)
+  } finally {
+    await api.dispose()
+  }
+})
+
+coreTest("Today lets a verified administrator review an Assist prompt before sending", async ({ page }) => {
+  await page.context().setExtraHTTPHeaders({})
+  await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+  await page.addInitScript(() => localStorage.setItem("meitheal-ai-provider", "ha_llm"))
+  const title = "Review this synthetic task"
+  const created = await page.request.post(origin + prefix + "/api/tasks", {
+    headers: { origin },
+    data: { title, due_date: new Date().toISOString().slice(0, 10) },
+  })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+  expect((await page.goto(origin + prefix + "/today"))?.status()).toBe(200)
+  const row = page.locator(`#section-today .tli[data-id="${id}"]`)
+  const ask = row.getByRole("button", { name: "Ask AI" })
+  await row.hover()
+  await ask.click()
+  const dialog = page.getByRole("dialog", { name: "Ask Home Assistant" })
+  await expect(dialog).toBeVisible()
+  const prompt = dialog.getByRole("textbox", { name: "Your command" })
+  await expect(prompt).toBeFocused()
+  await expect(prompt).toHaveValue(new RegExp(title))
+  const child = server!
+  const beforeSend = once(child, "message", { signal: AbortSignal.timeout(3000) })
+  child.send({ type: "assist-calls" })
+  expect((await beforeSend)[0].calls).not.toContainEqual(expect.objectContaining({ type: "conversation/process" }))
+
+  await prompt.fill("Reviewed synthetic prompt")
+  await dialog.getByRole("button", { name: "Send" }).click()
+  await expect(dialog.getByText("Fixture answer")).toBeVisible()
+  const afterSend = once(child, "message", { signal: AbortSignal.timeout(3000) })
+  child.send({ type: "assist-calls" })
+  const [{ calls }] = await afterSend
+  expect(calls.filter((call: { type: string }) => call.type === "conversation/process")).toEqual([
+    expect.objectContaining({ text: "Reviewed synthetic prompt" }),
+  ])
+  await dialog.getByRole("button", { name: "Close" }).click()
+  await expect(ask).toBeFocused()
+})
+
 coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const headers = { cookie: "feedback-fixture=admin", origin }

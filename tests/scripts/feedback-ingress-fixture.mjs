@@ -153,6 +153,8 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
     process.exit(0)
   })
   let role = "allowed"
+  let assistMode = "ok"
+  const assistCalls = []
   process.env.SUPERVISOR_TOKEN = token
   const fetchNetwork = globalThis.fetch
   globalThis.fetch = (input, options) => {
@@ -177,6 +179,13 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
     if (message?.type === "database-core-role") {
       role = message.role
       process.send({ type: "database-core-role", role })
+    }
+    if (message?.type === "assist-mode") {
+      assistMode = message.mode
+      process.send({ type: "assist-mode", mode: assistMode })
+    }
+    if (message?.type === "assist-calls") {
+      process.send({ type: "assist-calls", calls: assistCalls })
     }
   })
   core.on("connection", socket => {
@@ -208,6 +217,14 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
           : role === "malformed" ? [{ ...admin, system_generated: undefined }]
           : [admin]
         send({ type: "result", id: message.id, success: true, result })
+      } else if (message.type === "conversation/agent/list" || message.type === "conversation/process") {
+        assistCalls.push(message)
+        const result = message.type === "conversation/agent/list"
+          ? { agents: [{ id: "conversation.fixture", name: "Fixture agent" }] }
+          : { conversation_id: "fixture-thread", response: { response_type: "query_answer", speech: { plain: { speech: "Fixture answer" } } } }
+        send(assistMode === "error"
+          ? { type: "result", id: message.id, success: false, error: { code: "fixture_error", message: message.text ?? "No agents" } }
+          : { type: "result", id: message.id, success: true, result: assistMode === "invalid" ? {} : result })
       } else if (message.type === "ping") {
         send({ type: "pong", id: message.id })
       } else {

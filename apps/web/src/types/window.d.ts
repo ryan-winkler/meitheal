@@ -21,7 +21,7 @@ interface MeithealWindowExtensions {
   /** Expands an integration settings card by its DOM ID */
   expandIntegrationCard?: (cardId: string) => void;
   /** Opens the AskAssist HA modal */
-  openAskHaModal?: () => void;
+  openAskHaModal?: (prompt?: string) => void;
   /** Confirm dialog utility registered by Layout.astro */
   confirmDialog?: (options: {
     title: string;

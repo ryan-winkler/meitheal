@@ -568,21 +568,18 @@ export async function askAssist(
       };
       conversation_id?: string;
     };
-    const speechText = payload?.response?.speech?.plain?.speech ?? null;
-    const conversationId = payload?.conversation_id ?? null;
-    const responseType = (payload?.response?.response_type as AssistResponse["responseType"]) ?? null;
+    const speech = payload?.response?.speech?.plain?.speech
+    const speechText = typeof speech === "string" ? speech : null
+    const conversationId = typeof payload?.conversation_id === "string" ? payload.conversation_id : null
+    const type = payload?.response?.response_type
+    const responseType = type === "action_done" || type === "query_answer" || type === "error" ? type : null
 
-    logger.log("info", {
-      event: "ha.conversation.success", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ,
-      message: `Asked Assist: "${text}" → ${responseType ?? "unknown"} (conv: ${conversationId ?? "new"})`,
-    });
     return { speech: speechText, conversationId, responseType };
-  } catch (err) {
+  } catch {
     logger.log("error", {
       event: "ha.conversation.failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to ask assist: ${err}`,
-    });
+      request_id: SYS_REQ, message: "Home Assistant conversation request failed",
+    })
     return { speech: null, conversationId: null, responseType: null };
   }
 }
@@ -591,25 +588,26 @@ export async function askAssist(
  * List available HA conversation agents.
  * Uses the conversation/agent/list WebSocket command.
  */
-export async function listConversationAgents(): Promise<ConversationAgent[]> {
-  const conn = await getHAConnection();
-  if (!conn) return [];
+export async function listConversationAgents(): Promise<ConversationAgent[] | null> {
+  const conn = await getHAConnection()
+  if (!conn) return null
   try {
     const result = await conn.sendMessagePromise<{ agents?: ConversationAgent[] }>({
       type: "conversation/agent/list",
     });
-    const agents = result?.agents ?? [];
+    const agents = result?.agents
+    if (!Array.isArray(agents)) return null
     logger.log("debug", {
       event: "ha.conversation.agents_listed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Found ${agents.length} conversation agent(s)`,
     });
     return agents;
-  } catch (err) {
+  } catch {
     logger.log("error", {
       event: "ha.conversation.agents_list_failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to list conversation agents: ${err}`,
-    });
-    return [];
+      request_id: SYS_REQ, message: "Home Assistant conversation agent list failed",
+    })
+    return null
   }
 }
 

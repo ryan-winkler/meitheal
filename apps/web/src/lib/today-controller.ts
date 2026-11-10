@@ -412,17 +412,7 @@ function handleAskAi(el: HTMLElement) {
   const provider = localStorage.getItem("meitheal-ai-provider") || "chatgpt"
 
   if (provider === "ha_llm") {
-    const modal = document.getElementById("ask-ha-modal")
-    if (modal) {
-      modal.classList.add("active")
-      const input = modal.querySelector("#ask-ha-input") as HTMLInputElement
-      if (input) {
-        input.value = prompt
-        input.focus()
-        const form = input.closest("form")
-        if (form) form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
-      }
-    }
+    window.openAskHaModal?.(prompt)
     return
   }
 

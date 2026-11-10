@@ -22,7 +22,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   id="ask-ha-overlay"
   class="modal-overlay z-200"
 >
-  <div class="modal-content max-w-lg w-full p-0 ask-modal">
+  <div class="modal-content max-w-lg w-full p-0 ask-modal" role="dialog" aria-modal="true" aria-labelledby="ask-ha-title">
     <!-- Header -->
     <div
       class="modal-header flex items-center justify-between px-5 py-3 border-b border-border"
@@ -146,6 +146,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   ) as HTMLSelectElement;
 
   let isModalOpen = false;
+  let opener: HTMLElement | null = null;
   let conversationId: string | null = null;
 
   // Enable/disable send button based on input
@@ -156,7 +157,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   // Load available agents
   async function loadAgents() {
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/ha/agents");
+      const res = await fetch("/api/ha/agents");
       if (res.ok) {
         const data = await res.json();
         if (data.agents && data.agents.length > 0) {
@@ -201,7 +202,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           initHints();
         }
       }
-      document.getElementById("ask-ha-btn")?.focus();
+      opener?.focus();
+      opener = null;
     };
     if (reducedMotion) { finishClose(); return; }
     overlay.classList.add("closing");
@@ -333,10 +335,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   });
 
   // Export globally for TopNavigation to trigger
-  window.openAskHaModal = () => {
+  window.openAskHaModal = (prompt) => {
+    if (!isModalOpen && document.activeElement instanceof HTMLElement) opener = document.activeElement;
     isModalOpen = true;
     overlay?.classList.add("active");
     loadAgents();
+    if (prompt && input) {
+      input.value = prompt;
+      submitBtn.disabled = false;
+    }
     initHints();
     setTimeout(() => input?.focus(), 50);
   };
@@ -366,7 +373,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (conversationId) body.conversation_id = conversationId;
 
       const res = await fetch(
-        (window.__ingress_path || "") + "/api/ha/assist",
+        "/api/ha/assist",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -382,7 +389,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (data.conversation_id) {
           conversationId = data.conversation_id;
         }
-        appendChat(data.speech || "Done.", false, data.response_type);
+        appendChat(data.speech || "Home Assistant returned no speech.", false, data.response_type);
+      } else if (res.status === 403) {
+        appendChat("Sign in as a Home Assistant administrator to use Assist from Meitheal.", false, "error");
       } else if (res.status === 429) {
         appendChat(
           "Rate limited — please wait a moment before trying again.",
