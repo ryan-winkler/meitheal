@@ -43,8 +43,8 @@ const locale = Astro.props.locale || "en"
           <span id="cal-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
         </div>
         <div class="cal-bulk-actions">
-          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title={t("settings.cal_enable_all", locale)}>{t("settings.cal_enable_all", locale)}</button>
-          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title={t("settings.cal_disable_all", locale)}>{t("settings.cal_disable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-enable-all" title={t("settings.enable_all", locale)}>{t("settings.enable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="cal-disable-all" title={t("settings.disable_all", locale)}>{t("settings.disable_all", locale)}</button>
         </div>
       </div>
       <p class="integration-hint">
@@ -66,7 +66,7 @@ const locale = Astro.props.locale || "en"
         </summary>
         <div class="form-group form-group--spaced">
           <div class="form-label-row">
-            <label class="form-label" for="cal-entity">{t("settings.cal_entity_id_label", locale)}</label>
+            <label class="form-label" for="cal-entity-manual">{t("settings.cal_entity_id_label", locale)}</label>
             <HelpTooltip
               text={t("settings.cal_entity_id_help", locale)}
               id="help-cal-entity"

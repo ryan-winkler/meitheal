@@ -8,7 +8,7 @@ import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
 
 /** Shared helper: read entity value from EntitySelector (handles select OR manual input) */
 export function readEntityValue(id: string): string {
@@ -65,23 +65,19 @@ export function initHASettings(): void {
   // Save HA settings (standalone mode only)
   const haForm = document.getElementById("ha-form")
   if (haForm) {
-    pageLifecycle.on(haForm, "submit", async (e) => {
-    e.preventDefault()
-    const haUrl = (document.getElementById("ha-url") as HTMLInputElement).value
-    const haToken = (document.getElementById("ha-token") as HTMLInputElement).value
-
-    const saveBtn = document.getElementById("save-ha") as HTMLButtonElement
-    const origText = saveBtn.innerHTML
-    saveBtn.innerHTML = "💾 Saving..."
-    saveBtn.disabled = true
-
-    await saveSetting("ha_url", haUrl)
-    if (haToken) await saveSetting("ha_token", haToken)
-
-    saveBtn.innerHTML = origText
-    saveBtn.disabled = false
-    showToast("settings.ha_saved")
-    })
+    const saveButton = document.getElementById("save-ha") as HTMLButtonElement | null
+    if (saveButton) {
+      const save = withAsyncButton(saveButton, async () => {
+        const haUrl = (document.getElementById("ha-url") as HTMLInputElement).value
+        const haToken = (document.getElementById("ha-token") as HTMLInputElement).value
+        await saveSettings({ ha_url: haUrl, ...(haToken ? { ha_token: haToken } : {}) })
+        showToast("settings.ha_saved")
+      }, { loadingText: "Saving…", onError: showSettingsSaveError })
+      pageLifecycle.on(haForm, "submit", (event) => {
+        event.preventDefault()
+        save(event)
+      })
+    }
   }
 
   // Webhook Save
@@ -97,11 +93,13 @@ export function initHASettings(): void {
       return
     }
 
-    await saveSetting("webhook_endpoint", endpoint)
-    if (secret) await saveSetting("webhook_secret", secret)
-    await saveSetting("webhook_format", format)
+    await saveSettings({
+      webhook_endpoint: endpoint,
+      ...(secret && secret !== "••••••••" ? { webhook_secret: secret } : {}),
+      webhook_format: format,
+    })
     showToast("settings.webhook_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // Webhook Test

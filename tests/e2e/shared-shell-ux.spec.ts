@@ -37,7 +37,8 @@ for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ reducedMotion: "reduce" })
       await page.addInitScript((value) => localStorage.setItem("meitheal-theme", value), theme)
 
-      for (const path of ["/", "/tasks", "/settings"]) {
+      const settingsSections = ["", "#rules-lenses-settings", "#automation-ai-settings", "#integrations-settings"]
+      for (const path of ["/", "/tasks", ...settingsSections.map(hash => `/settings${hash}`)]) {
         await page.goto(path)
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
         await expect(page.locator("#main-content")).toBeVisible()
@@ -59,12 +60,15 @@ for (const theme of ["light", "dark"]) {
         }
 
         const scan = new AxeBuilder({ page }).withRules(["color-contrast", "nested-interactive", "target-size", "link-in-text-block"])
-        if (path === "/settings") {
+        if (path.startsWith("/settings")) {
+          await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert")
+          const sections = page.locator("#settings-sections-toggle")
+          if (await sections.getAttribute("aria-expanded") === "false") await sections.click()
           scan
             .include(".sidebar")
-            .include(".unified-bar")
+            .include("#settings-bar")
             .include("#mobile-tab-bar")
-            .include(".settings-shell-nav")
+            .include("#settings-directory")
             .include("#rules-lenses-settings")
             .include("#automation-ai-settings .integration-config")
             .include("#ha-agent-status")

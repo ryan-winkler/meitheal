@@ -5,8 +5,9 @@ test.describe("Theme Settings", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
 
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
     await page.goto("/settings#personal-settings");
-    await page.waitForLoadState("networkidle");
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
     await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
@@ -73,7 +74,7 @@ test.describe("Theme Settings", () => {
     const themeSelect = page.locator("#theme-select");
     const customSection = page.locator("#custom-theme-section");
 
-    // Custom section should be hidden initially (dark is default)
+    await themeSelect.selectOption("dark");
     await expect(customSection).not.toBeVisible();
 
     // Select custom
@@ -112,7 +113,7 @@ test.describe("Theme Settings", () => {
 
     // Re-open the page to verify persistence across a fresh navigation
     await page.goto("/settings#personal-settings");
-    await page.waitForLoadState("networkidle");
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     // Theme should still be light
     const html = page.locator("html");

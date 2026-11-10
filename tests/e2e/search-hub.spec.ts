@@ -22,12 +22,12 @@ test.describe("Search Hub", () => {
     await page.locator("#search-hub-close").click()
     await expect(overlay).toBeHidden()
 
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.locator("#settings-bar-search-launcher").click()
     await expect(overlay).toBeVisible()
   })
 
   test("settings scope deep-links to the matching field anchor", async ({ page }) => {
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.locator("#settings-bar-search-launcher").click()
     await expect(page.locator("#search-hub-overlay")).toBeVisible()
     await page.locator('[data-scope="settings"]').click()
 
@@ -46,7 +46,7 @@ test.describe("Search Hub", () => {
   })
 
   test("views scope navigates to another page result", async ({ page }) => {
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.locator("#settings-bar-search-launcher").click()
     await expect(page.locator("#search-hub-overlay")).toBeVisible()
     await page.locator('[data-scope="views"]').click()
 
@@ -63,7 +63,7 @@ test.describe("Search Hub", () => {
   })
 
   test("actions scope can open the Home Assistant assist modal", async ({ page }) => {
-    await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+    await page.locator("#settings-bar-search-launcher").click()
     await expect(page.locator("#search-hub-overlay")).toBeVisible()
     await page.locator('[data-scope="actions"]').click()
 

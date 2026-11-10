@@ -12,6 +12,30 @@ import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
 
+type CustomField = { name: string; type: string; options?: string[] }
+let pendingCustomFields = Promise.resolve()
+
+function parseCustomFields(value: unknown): CustomField[] {
+  if (value == null) return []
+  const fields = typeof value === "string" ? JSON.parse(value) : value
+  if (!Array.isArray(fields)) throw new Error("Invalid custom fields")
+  return fields as CustomField[]
+}
+
+function updateCustomFields(update: (fields: CustomField[]) => CustomField[]): Promise<void> {
+  const signal = pageLifecycle.signal
+  const save = pendingCustomFields.then(async () => {
+    const response = await fetch("/api/settings", { cache: "no-store", signal })
+    if (!response.ok) throw new Error(`Custom fields could not load: ${response.status}`)
+    const settings = await response.json()
+    signal.throwIfAborted()
+    const fields = update(parseCustomFields(settings.custom_fields))
+    await saveSetting("custom_fields", JSON.stringify(fields))
+  })
+  pendingCustomFields = save.catch(() => {})
+  return save
+}
+
 export function initDataSettings(): void {
   // JSON export
   const exportJsonBtn = document.getElementById("export-json-btn")
@@ -113,7 +137,10 @@ export function initDataSettings(): void {
 
     row.querySelector("input")?.focus()
 
-    row.querySelector(".custom-field-save")?.addEventListener("click", async function () {
+    const saveButton = row.querySelector<HTMLButtonElement>(".custom-field-save")
+    if (!saveButton) return
+    pageLifecycle.on(saveButton, "click", async () => {
+      if (saveButton.disabled) return
       const nameInput = row.querySelector("input") as HTMLInputElement
       const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
       const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
@@ -133,18 +160,9 @@ export function initDataSettings(): void {
           .filter((v, i, a) => a.indexOf(v) === i)
       }
 
+      saveButton.disabled = true
       try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-        const settings = settingsRes.ok ? await settingsRes.json() : {}
-        const existing = settings.custom_fields ? JSON.parse(settings.custom_fields) : []
-        existing.push(fieldDef)
-
-        await fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(existing) }),
-          signal: pageLifecycle.signal,
-        })
+        await updateCustomFields((fields) => [...fields, fieldDef])
 
         nameInput.disabled = true
         typeSelect.disabled = true
@@ -157,6 +175,7 @@ export function initDataSettings(): void {
         }
         showToast("settings.custom_field_saved")
       } catch {
+        saveButton.disabled = false
         showToast("settings.failed_save_field", "error")
       }
     })
@@ -172,7 +191,7 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
   // Restore custom fields
   try {
     if (settings.custom_fields) {
-      const fields = JSON.parse(settings.custom_fields as string) as { name: string; type: string }[]
+      const fields = parseCustomFields(settings.custom_fields)
       const list = document.getElementById("custom-fields-list")
       if (list && fields.length > 0) {
         for (const field of fields) {
@@ -186,22 +205,16 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
             <span style="color: var(--text-muted); font-size: 12px;">Saved</span>
             <button type="button" class="btn btn-ghost" style="padding: 4px 8px; color: var(--danger);" title="Remove field definition (data on existing tasks is preserved)">×</button>
           `
-          row.querySelector("button")?.addEventListener("click", async () => {
+          const remove = row.querySelector("button")
+          if (remove) pageLifecycle.on(remove, "click", async () => {
+            remove.disabled = true
             try {
-              const curRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-              const curSettings = curRes.ok ? await curRes.json() : {}
-              const curFields = curSettings.custom_fields ? JSON.parse(curSettings.custom_fields) : []
-              const updated = curFields.filter((f: { name: string }) => f.name !== field.name)
-              await fetch((window.__ingress_path || "") + "/api/settings", {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(updated) }),
-                signal: pageLifecycle.signal,
-              })
+              await updateCustomFields((fields) => fields.filter((item) => item.name !== field.name))
               row.remove()
               showToast("settings.field_removed")
             } catch {
               showToast("common.failed_delete", "error")
+              remove.disabled = false
             }
           })
           list.appendChild(row)

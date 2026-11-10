@@ -163,7 +163,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             var ingressResponse = ip && resultUrl && resultUrl.origin === location.origin
               && resultUrl.pathname.startsWith(ip + "/");
             var appResponse = response.headers.has("x-ingress-path")
-              || response.headers.get("content-type")?.startsWith("application/problem+json");
+              || /\bjson\b/i.test(response.headers.get("content-type") || "");
             if (response.status === 403 && ingressResponse && !appResponse) {
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
@@ -374,13 +374,16 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       window.mI18n = {
         locale,
         get: function (key) {
+          if (typeof dict[key] === "string") return dict[key];
           const parts = key.split(".");
           let val = dict;
           for (const p of parts) {
-            if (!val || typeof val !== "object") return key;
+            if (!val || typeof val !== "object") break;
             val = val[p];
           }
-          return typeof val === "string" ? val : key;
+          if (typeof val === "string") return val;
+          const legacy = key.startsWith("settings.") ? dict[locale]?.[key] : undefined;
+          return typeof legacy === "string" ? legacy : key;
         },
       };
     </script>

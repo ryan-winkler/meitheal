@@ -351,6 +351,8 @@ const { locale } = Astro.props;
 </style>
 
 <script>
+  import { withAsyncButton } from "@lib/async-button"
+  import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
   import { showToast } from "@lib/toast";
   import { pageLifecycle } from "@lib/page-lifecycle";
 
@@ -410,14 +412,7 @@ const { locale } = Astro.props;
 
   if (saveHaAgentBtn) pageLifecycle.on(saveHaAgentBtn, "click", async () => {
     try {
-      await fetch((window.__ingress_path || "") + "/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: "ha-assist-agent",
-          value: haAgentSelect.value,
-        }),
-      });
+      await saveSetting("ha-assist-agent", haAgentSelect.value);
       showToast(saveHaAgentBtn?.dataset.textSaved || "Agent setting saved.", "success");
       updateAgentBadge();
     } catch {
@@ -504,7 +499,7 @@ const { locale } = Astro.props;
   const botAllowProposals = document.getElementById("bot-allow-proposals") as HTMLInputElement | null;
   const botAutoAccept = document.getElementById("bot-auto-accept") as HTMLInputElement | null;
   const botLockTimeout = document.getElementById("bot-lock-timeout") as HTMLInputElement | null;
-  const saveBotBtn = document.getElementById("save-bot-settings");
+  const saveBotBtn = document.querySelector<HTMLButtonElement>("#save-bot-settings");
 
   async function loadBotSettings() {
     try {
@@ -525,31 +520,18 @@ const { locale } = Astro.props;
     } catch { /* defaults are fine */ }
   }
 
-  if (saveBotBtn) pageLifecycle.on(saveBotBtn, "click", async () => {
+  if (saveBotBtn) pageLifecycle.on(saveBotBtn, "click", withAsyncButton(saveBotBtn, async () => {
     try {
-      // T5: Parallel save instead of sequential
-      await Promise.all([
-        fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "bot_allow_proposals", value: String(botAllowProposals?.checked ?? true) }),
-        }),
-        fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "bot_auto_accept", value: String(botAutoAccept?.checked ?? false) }),
-        }),
-        fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "bot_lock_timeout", value: String(botLockTimeout?.value ?? "5") }),
-        }),
-      ]);
+      await saveSettings({
+        bot_allow_proposals: String(botAllowProposals?.checked ?? true),
+        bot_auto_accept: String(botAutoAccept?.checked ?? false),
+        bot_lock_timeout: String(botLockTimeout?.value ?? "5"),
+      });
       showToast(saveBotBtn?.dataset.textSaved || "Bot settings saved.", "success");
-    } catch {
-      showToast(saveBotBtn?.dataset.textFailed || "Failed to save bot settings.", "error");
+    } catch (error) {
+      showSettingsSaveError(error);
     }
-  });
+  }));
 
   const section = document.getElementById("automation-ai-settings");
   if (!section) {

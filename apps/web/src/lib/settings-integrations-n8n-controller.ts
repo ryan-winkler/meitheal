@@ -4,16 +4,36 @@
  * Handles: n8n HA addon mode save, n8n standalone save,
  * test event bus, test webhook (standalone), n8n diagnostics,
  * HA bus status, Node-RED copy/deploy/status, event count,
- * n8n mode tab switching, and n8n settings restore.
+ * n8n mode selection, and n8n settings restore.
  */
 import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+
+function showN8nMode(mode: "auto" | "standalone"): void {
+  for (const option of ["auto", "standalone"] as const) {
+    const selected = option === mode
+    const button = document.getElementById(`n8n-mode-${option}`)
+    const content = document.getElementById(`n8n-${option}-content`)
+    button?.setAttribute("aria-pressed", String(selected))
+    button?.classList.toggle("mode-tab--active", selected)
+    if (content) content.style.display = selected ? "" : "none"
+  }
+}
 
 export function initN8nSettings(): void {
+  for (const mode of ["auto", "standalone"] as const) {
+    const button = document.getElementById(`n8n-mode-${mode}`)
+    if (!button) continue
+    pageLifecycle.on(button, "click", () => {
+      showN8nMode(mode)
+      localStorage.setItem("meitheal:n8n-mode", mode)
+    })
+  }
+
   // ───── n8n Save (HA Addon / Auto mode) ─────
   const saveN8nBtn = document.getElementById("save-n8n") as HTMLButtonElement
   if (saveN8nBtn) {
@@ -23,13 +43,15 @@ export function initN8nSettings(): void {
     document.querySelectorAll(".n8n-event:checked").forEach((cb) => {
       events.push((cb as HTMLInputElement).value)
     })
-    await saveSetting("n8n_mode", "ha_addon")
-    if (webhookUrl) await saveSetting("n8n_webhook_url", webhookUrl)
-    await saveSetting("n8n_events", events)
+    await saveSettings({
+      n8n_mode: "ha_addon",
+      ...(webhookUrl ? { n8n_webhook_url: webhookUrl } : {}),
+      n8n_events: events,
+    })
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // ───── Test Event Bus ─────
@@ -165,15 +187,17 @@ export function initN8nSettings(): void {
     document.querySelectorAll(".n8n-event-standalone:checked").forEach((cb) => {
       events.push((cb as HTMLInputElement).value)
     })
-    await saveSetting("n8n_mode", "standalone")
-    await saveSetting("n8n_webhook_url", webhookUrl)
-    if (apiKey) await saveSetting("n8n_api_key", apiKey)
-    if (secret) await saveSetting("n8n_signing_secret", secret)
-    await saveSetting("n8n_events", events)
+    await saveSettings({
+      n8n_mode: "standalone",
+      n8n_webhook_url: webhookUrl,
+      ...(apiKey && apiKey !== "••••••••" ? { n8n_api_key: apiKey } : {}),
+      ...(secret && secret !== "••••••••" ? { n8n_signing_secret: secret } : {}),
+      n8n_events: events,
+    })
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // ───── Test Webhook (Standalone) ─────
@@ -379,17 +403,7 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
     if (typeof window.__initN8nDiagnostics === "function") setTimeout(() => window.__initN8nDiagnostics!(), 500)
   }
 
-  // Switch to standalone tab if mode is standalone
-  if (s.n8n_mode === "standalone") {
-    const autoTab = document.getElementById("n8n-mode-auto")
-    const standaloneTab = document.getElementById("n8n-mode-standalone")
-    const autoContent = document.getElementById("n8n-auto-content")
-    const standaloneContent = document.getElementById("n8n-standalone-content")
-    if (autoTab && standaloneTab) {
-      autoTab.classList.remove("mode-tab--active")
-      standaloneTab.classList.add("mode-tab--active")
-    }
-    if (autoContent) autoContent.style.display = "none"
-    if (standaloneContent) standaloneContent.style.display = ""
-  }
+  const standalone = s.n8n_mode === "standalone" ||
+    (!s.n8n_mode && localStorage.getItem("meitheal:n8n-mode") === "standalone")
+  showN8nMode(standalone ? "standalone" : "auto")
 }

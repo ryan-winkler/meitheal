@@ -1,3 +1,4 @@
+import { withAsyncButton } from "@lib/async-button"
 /**
  * AI & Agent settings controller.
  *
@@ -6,7 +7,7 @@
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
-import { saveSetting } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
 
 export function initAISettings(): void {
   // AI provider custom URL toggle
@@ -21,48 +22,36 @@ export function initAISettings(): void {
   }
 
   // Save AI settings
-  const saveAiBtn = document.getElementById("save-ai")
+  const saveAiBtn = document.getElementById("save-ai") as HTMLButtonElement | null
   if (saveAiBtn) {
-    pageLifecycle.on(saveAiBtn, "click", async () => {
+    pageLifecycle.on(saveAiBtn, "click", withAsyncButton(saveAiBtn, async () => {
     const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
     const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value
 
-    const saveBtn = document.getElementById("save-ai") as HTMLButtonElement
-    if (!saveBtn) return
-    const origText = saveBtn.textContent
-    saveBtn.textContent = "💾 Saving..."
-    saveBtn.disabled = true
 
-    await saveSetting("ai-provider", provider)
+    const custom = provider === "custom" || provider === "ollama"
+    await saveSettings(custom ? { "ai-custom-url": customUrl, "ai-provider": provider } : { "ai-provider": provider })
     localStorage.setItem("meitheal-ai-provider", provider)
-    if (provider === "custom" || provider === "ollama") {
-      await saveSetting("ai-custom-url", customUrl)
-      localStorage.setItem("meitheal-ai-custom-url", customUrl)
-    }
+    if (custom) localStorage.setItem("meitheal-ai-custom-url", customUrl)
 
-    saveBtn.textContent = origText
-    saveBtn.disabled = false
     showToast("settings.ai_saved")
-    })
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // Save agent protocols
-  const saveProtocolsBtn = document.getElementById("save-agent-protocols")
+  const saveProtocolsBtn = document.getElementById("save-agent-protocols") as HTMLButtonElement | null
   if (saveProtocolsBtn) {
-    pageLifecycle.on(saveProtocolsBtn, "click", async () => {
+    pageLifecycle.on(saveProtocolsBtn, "click", withAsyncButton(saveProtocolsBtn, async () => {
     const a2a = (document.getElementById("agent-a2a-enabled") as HTMLInputElement)?.checked ?? true
     const webmcp = (document.getElementById("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
     const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
 
-    const saveBtn = document.getElementById("save-agent-protocols") as HTMLButtonElement
-    if (!saveBtn) return
-    const origText = saveBtn.textContent
-    saveBtn.textContent = "💾 Saving..."
-    saveBtn.disabled = true
 
-    await saveSetting("agent-protocols-a2a-enabled", a2a)
-    await saveSetting("agent-protocols-webmcp-enabled", webmcp)
-    await saveSetting("agent-protocols-mcp-enabled", mcp)
+    await saveSettings({
+      "agent-protocols-a2a-enabled": a2a,
+      "agent-protocols-webmcp-enabled": webmcp,
+      "agent-protocols-mcp-enabled": mcp,
+    })
 
     // Update status badge
     const statusEl = document.getElementById("agent-protocols-status")
@@ -72,10 +61,8 @@ export function initAISettings(): void {
       statusEl.className = anyEnabled ? "badge badge-active" : "badge badge-pending"
     }
 
-    saveBtn.textContent = origText
-    saveBtn.disabled = false
     showToast("settings.agent_protocols_saved")
-    })
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 }
 

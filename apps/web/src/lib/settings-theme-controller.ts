@@ -11,8 +11,9 @@ import {
   setTheme as importedSetTheme,
   applyCustomTheme as importedApplyCustomTheme,
 } from "@lib/theme-watcher"
+import { settingsStore } from "@lib/settings-store"
 import type { ThemeMode } from "@lib/theme-watcher"
-import { saveSetting, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { saveSetting, saveSettings, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
 
 // ───── UI helpers ─────
 
@@ -91,25 +92,42 @@ export function initThemeSettings(): void {
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
-  // Theme selector — instant apply + persist via theme-watcher
-  const themeSelectEl = document.getElementById("theme-select")
-  if (themeSelectEl) {
-    pageLifecycle.on(themeSelectEl, "change", async (e) => {
-    const theme = (e.target as HTMLSelectElement).value as ThemeMode
-    importedSetTheme(theme)
-    await saveSetting("theme", theme)
-    showCustomThemeSection(theme === "custom")
-    showToast(
-      theme === "dark"
-        ? "Theme: Dark"
-        : theme === "light"
-          ? "Theme: Light"
-          : theme === "auto"
-            ? "Theme: Auto (System)"
-            : "Theme: Custom",
-    )
+  function bindPreference(id: string, key: string, apply: (value: string) => void): void {
+    const select = document.getElementById(id) as HTMLSelectElement | null
+    if (!select) return
+
+    pageLifecycle.on(select, "change", async () => {
+      const value = select.value
+      select.disabled = true
+      select.setAttribute("aria-busy", "true")
+      try {
+        await saveSetting(key, value)
+        apply(value)
+        showToast("common.updated")
+      } catch (error) {
+        const settings = await settingsStore.load().catch(() => null)
+        if (settings) restoreThemeSettings(settings)
+        showSettingsSaveError(error)
+      } finally {
+        select.disabled = false
+        select.removeAttribute("aria-busy")
+      }
     })
   }
+
+  bindPreference("theme-select", "theme", (theme) => {
+    importedSetTheme(theme as ThemeMode)
+    showCustomThemeSection(theme === "custom")
+  })
+  bindPreference("locale-select", "locale", (locale) => {
+    localStorage.setItem("meitheal-locale", locale)
+    document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
+    window.dispatchEvent(new CustomEvent("meitheal:locale-changed", { detail: { locale } }))
+    window.location.reload()
+  })
+  bindPreference("timezone-select", "timezone", (value) => localStorage.setItem("meitheal-timezone", value))
+  bindPreference("week-start-select", "week_start", (value) => localStorage.setItem("meitheal-week-start", value))
+  bindPreference("date-format-select", "date_format", (value) => localStorage.setItem("meitheal-date-format", value))
 
   // Custom theme file import handler
   const customThemeInput = document.getElementById("custom-theme-input")
@@ -139,19 +157,16 @@ export function initThemeSettings(): void {
     try {
       const rawCSS = await file.text()
       const cleanCSS = sanitizeCSS(rawCSS)
+      await saveSettings({ custom_theme_css: cleanCSS, custom_theme_name: file.name, theme: "custom" })
       localStorage.setItem("meitheal-custom-theme-css", cleanCSS)
       importedSetTheme("custom")
       importedApplyCustomTheme(cleanCSS)
-      await saveSetting("custom_theme_css", cleanCSS)
-      await saveSetting("custom_theme_name", file.name)
-      await saveSetting("theme", "custom")
       updateCustomThemeDisplay(file.name)
       const themeEl = document.getElementById("theme-select") as HTMLSelectElement
       if (themeEl) themeEl.value = "custom"
       showToast(`Theme imported: ${file.name}`)
     } catch (err) {
-      log.error("Failed to import custom theme", err)
-      showToast("Failed to import theme", "error")
+      showSettingsSaveError(err)
     }
 
     ;(e.target as HTMLInputElement).value = ""
@@ -169,16 +184,15 @@ export function initThemeSettings(): void {
     })
     if (!ok) return
 
-    localStorage.removeItem("meitheal-custom-theme-css")
-    importedApplyCustomTheme(null)
-    importedSetTheme("dark")
-    const themeEl = document.getElementById("theme-select") as HTMLSelectElement
-    if (themeEl) themeEl.value = "dark"
-    await saveSetting("theme", "dark")
-    await saveSetting("custom_theme_css", "")
-    await saveSetting("custom_theme_name", "")
-    updateCustomThemeDisplay(null)
-    showToast("Custom theme removed — reverted to Dark")
+    try {
+      await saveSettings({ theme: "dark", custom_theme_css: "", custom_theme_name: "" })
+      localStorage.removeItem("meitheal-custom-theme-css")
+      importedApplyCustomTheme(null)
+      restoreThemeSettings({ theme: "dark" })
+      showToast("Custom theme removed. Dark mode is active.")
+    } catch (error) {
+      showSettingsSaveError(error)
+    }
     })
   }
 
@@ -199,57 +213,6 @@ export function initThemeSettings(): void {
     })
   }
 
-  // Language selector — persist to API, cookie, localStorage
-  const localeSelect = document.getElementById("locale-select")
-  if (localeSelect) {
-    pageLifecycle.on(localeSelect, "change", async (e) => {
-    const locale = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-locale", locale)
-    document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
-    try {
-      await saveSetting("locale", locale)
-    } catch {
-      /* ignore API errors */
-    }
-    window.dispatchEvent(new CustomEvent("meitheal:locale-changed", { detail: { locale } }))
-    showToast(locale === "ga" ? "Teanga athraithe go Gaeilge" : "Language changed to English")
-    // Full reload required — SSR translations are server-rendered and need a fresh page
-    setTimeout(() => window.location.reload(), 800)
-    })
-  }
-
-  // Timezone selector
-  const tzSelect = document.getElementById("timezone-select")
-  if (tzSelect) {
-    pageLifecycle.on(tzSelect, "change", async (e) => {
-    const tz = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-timezone", tz)
-    await saveSetting("timezone", tz)
-    showToast("common.updated")
-    })
-  }
-
-  // Week start selector
-  const wsSelect = document.getElementById("week-start-select")
-  if (wsSelect) {
-    pageLifecycle.on(wsSelect, "change", async (e) => {
-    const ws = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-week-start", ws)
-    await saveSetting("week_start", ws)
-    showToast("common.updated")
-    })
-  }
-
-  // Date format selector
-  const dfSelect = document.getElementById("date-format-select")
-  if (dfSelect) {
-    pageLifecycle.on(dfSelect, "change", async (e) => {
-    const df = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-date-format", df)
-    await saveSetting("date_format", df)
-    showToast("common.updated")
-    })
-  }
 }
 
 // ───── Restore ─────
@@ -266,9 +229,7 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
       importedApplyCustomTheme(String(settings.custom_theme_css))
     }
     showCustomThemeSection(String(savedTheme) === "custom")
-    if (settings.custom_theme_name) {
-      updateCustomThemeDisplay(String(settings.custom_theme_name))
-    }
+    updateCustomThemeDisplay(settings.custom_theme_name ? String(settings.custom_theme_name) : null)
   } catch (e) {
     log.error("Theme restore error", e)
   }

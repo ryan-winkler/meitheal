@@ -6,18 +6,17 @@ description: "Find settings and diagnose navigation problems."
 
 # Settings Shell Troubleshooting
 
-## What Changed
+## Find and open settings
 
-Settings now uses a grouped shell instead of hidden tabs. The top-level groups are:
+The desktop directory and the **Sections** button on narrow screens open the same seven sections. The selected section appears beside the directory or below the header. Section links keep their hash when bookmarked or opened within Home Assistant. Browser Back and Forward return to previously opened sections.
 
-- Personal
-- Workflow
-- Integrations
-- Automation & AI
-- App & PWA
-- Danger Zone
+Use **Search settings** or press `/` outside an input to open the Settings scope in the shared search. Use the arrow keys and Enter to open a result. A field result takes keyboard focus and opens any integration panel that contains it. Press Escape to close search or the section directory.
 
-Settings sections use hashes so they stay inside Home Assistant ingress, companion webviews, and the PWA scope. Moving between Settings sections keeps the current browser history entry. Back and Forward still work between Settings and other pages.
+On a long Settings page, use **Scroll to top** to return to the header and keep the selected section.
+
+### Open integration settings with the keyboard
+
+In **Settings → Integrations**, Tab to an integration and press Enter or Space to open its settings. Tab then reaches the separate help button and the open panel's controls. Collapsed controls stay out of the tab order. Saved settings can open their panel automatically on load. If an integration appears configured but its settings are unavailable, reload and check whether the card button reports the expanded state.
 
 Save notifications use the selected theme's text and card colors. A colored edge distinguishes the result, and the message stays readable from the moment it appears.
 
@@ -27,26 +26,12 @@ Manage integration credentials, outbound integration tests, Node-RED deployment,
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
 
-## Common Jobs
+## Recover from an error
 
-### Find a setting quickly
-
-1. Open `Settings`.
-2. Open search in the top bar. The search dialog starts with the Settings scope selected.
-3. Enter a setting name and choose a result. Use the arrow keys and Enter to open it from the keyboard.
-4. Press Escape to close search and return focus to the launcher.
-
-The search now prefers direct field hits such as `Theme` over broad section matches.
-
-### Move between sections
-
-On desktop, use the quick navigation in the top bar. Open the Settings title picker to reach every section, including links that do not fit in the bar. Use the arrow keys and Enter to choose a section. Press Escape to return focus to the title, or scroll the page to close the picker.
-
-On mobile, use the horizontal quick-jump strip near the top. Tap the target section card to jump there without leaving Settings. The visible links are available with Tab, and the current destination is announced as the current location.
-
-### Open integration settings with the keyboard
-
-In **Settings → Integrations**, Tab to an integration and press Enter or Space to open its settings. Tab then reaches the separate help button and the open panel's controls. Collapsed controls stay out of the tab order. Saved settings can open their panel automatically on load. If an integration appears configured but its settings are unavailable, reload and check whether the card button reports the expanded state.
+- If Settings cannot load, choose **Try again**. The controls are paused until Meitheal can read the stored values.
+- If a Personal preference fails to save, its control returns to the last known value. Check the connection or your permissions and try the change again.
+- If a save reports that some changes were saved, its form keeps your entries. Retry the save to finish, or reload Settings to see the stored values. For Calendar and To-do, the save also checks whether the sync service accepted the request.
+- The accent picker is a browser preference. Reset in Personal to use the default accent again.
 
 ### Reopen Settings in Home Assistant Companion
 
@@ -58,7 +43,7 @@ These actions preserve the ingress-safe route and reopen the exact Settings sect
 
 ### Webhooks sends me to the wrong place
 
-The Webhooks explainer in Integrations should now route to `Automation & AI`, not a dead tab id. If it does not:
+The Webhooks callout in Integrations opens **Automation & AI**. If it does not:
 
 1. Refresh the page once.
 2. Re-open `Settings → Integrations`.
@@ -119,8 +104,14 @@ See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language refer
 
 ## HEART Acceptance Lens
 
-- Happiness: the summary cards should make system state understandable at a glance.
-- Engagement: shell nav should remove the need to hunt through tabs.
-- Adoption: companion and PWA actions should be discoverable in `App & PWA`.
-- Retention: theme and settings state should survive reloads and hash deep-links.
-- Task Success: all cross-links should land on real section ids.
+- Happiness. Status and save feedback appear beside the controls and after each action.
+- Engagement. All sections are reachable from the desktop directory or the narrow-screen Sections button.
+- Adoption. companion and PWA actions should be discoverable in `App & PWA`.
+- Retention. theme and settings state should survive reloads and hash deep-links.
+- Task success. all cross-links should land on real section ids.
+
+## Verify a Settings change
+
+Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
+
+Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.

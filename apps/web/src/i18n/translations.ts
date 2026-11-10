@@ -84,11 +84,20 @@ export function t(
     params?: Record<string, string>,
 ): string {
     const loc = locale ?? DEFAULT_LOCALE;
-    let value = getNestedValue(translations[loc], key);
+    const lookup = (language: Locale): string => {
+        const catalog = translations[language]
+        const value = getNestedValue(catalog, key)
+        // Integration copy from older catalogs was grouped under a locale key.
+        if (value === key && key.startsWith("settings.")) {
+            return getNestedValue(catalog[language], key)
+        }
+        return value
+    }
+    let value = lookup(loc);
 
     // Fallback to English if key missing in target locale
     if (value === key && loc !== "en") {
-        value = getNestedValue(translations.en, key);
+        value = lookup("en");
     }
 
     // Interpolate {param} placeholders

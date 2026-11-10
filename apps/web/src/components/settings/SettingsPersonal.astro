@@ -3,7 +3,6 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import SettingsActionRow from "./SettingsActionRow.astro"
-import SettingsCallout from "./SettingsCallout.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
@@ -25,12 +24,9 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
   <div class="settings-grid">
   <!-- Language & Appearance -->
   <SettingsPanelCard
-    title={t("settings.language_title", locale)}
-    subtitle={t("settings.language_subtitle", locale)}
+    title={t("settings.appearance_region", locale)}
+    subtitle={t("settings.appearance_region_desc", locale)}
   >
-    <SettingsCallout title={t("settings.callout_personal_title", locale)} icon="🎨">
-      {t("settings.callout_personal_desc", locale)}
-    </SettingsCallout>
     <div class="form-group mt-3">
       <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
       <select
@@ -126,7 +122,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         style="display: flex; align-items: center; gap: 8px;"
       >
         <label
-          class="btn btn-secondary"
+          class="settings-file-picker btn btn-secondary"
           style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
         >
           {t("settings.theme_import", locale)}
@@ -134,7 +130,6 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
             type="file"
             id="custom-theme-input"
             accept=".css"
-            style="display: none;"
           />
         </label>
         <small class="settings-hint--sm"
@@ -208,14 +203,12 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     </div>
   </SettingsPanelCard>
 
+  <div class="settings-personal-support">
   <!-- Keyboard Shortcuts -->
   <SettingsPanelCard
     title={t("settings.shortcuts_title", locale)}
     subtitle={t("settings.shortcuts_subtitle", locale)}
   >
-    <SettingsCallout title={t("settings.callout_shortcuts_title", locale)} icon="⌨">
-      {t("settings.callout_shortcuts_desc", locale)}
-    </SettingsCallout>
     <div class="shortcut-grid" style="margin-top: 14px;">
       <div class="shortcut-row">
         <kbd>n</kbd><span>{t("settings.shortcut_new_task", locale)}</span>
@@ -314,22 +307,31 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
       >
     </SettingsActionRow>
   </SettingsPanelCard>
+  </div>
 
   </div>
 </section>
 
-<style is:inline>
+<style>
+  .settings-personal-support {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+
   /* Keyboard Shortcuts */
   .shortcut-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
     gap: 0;
   }
   .shortcut-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+    padding: 8px;
     border-bottom: 1px solid var(--border);
     font-size: 13px;
     color: var(--text-secondary);
@@ -370,8 +372,11 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
     padding: 0;
   }
-  .accent-swatch:hover {
-    transform: scale(1.15);
+  @media (pointer: coarse) {
+    .accent-swatch {
+      width: 44px;
+      height: 44px;
+    }
   }
   .accent-swatch.active {
     border-color: var(--text-primary);

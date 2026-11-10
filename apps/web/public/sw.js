@@ -288,7 +288,7 @@ self.addEventListener("fetch", (event) => {
 
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
-  if (isDatabaseExport(url) || /^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  if (isDatabaseExport(url) || /^\/api\/(?:settings|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
   if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
 

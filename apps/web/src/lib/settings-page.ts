@@ -10,8 +10,8 @@ function bootSettingsPage(): void {
 
   shell.dataset.settingsBooted = "true"
 
-  initSettingsShell()
   initSettingsController()
+  initSettingsShell()
   initSettingsFeedback()
 }
 

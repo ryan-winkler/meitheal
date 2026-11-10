@@ -70,7 +70,10 @@ test("Settings navigation and fields have valid semantics at mobile width", asyn
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/settings#workflow-settings")
 
-  const workflow = page.locator('[data-settings-nav="workflow-settings"][data-settings-nav-variant="mobile"]')
+  await expect(page.locator("#settings-directory")).toBeHidden()
+  await page.getByRole("button", { name: "Sections", exact: true }).click()
+  const workflow = page.locator('[data-settings-nav="workflow-settings"]')
+  await expect(workflow).toBeVisible()
   await expect(workflow).toHaveAttribute("aria-current", "location")
   await expect(page.getByRole("checkbox", { name: "Show Dashboard in sidebar" })).toBeVisible()
   await expect(page.getByRole("combobox", { name: "Sprint field type" })).toBeVisible()

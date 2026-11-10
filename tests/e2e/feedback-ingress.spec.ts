@@ -671,6 +671,12 @@ test("Settings saves and retries feedback, then reviews, downloads and deletes i
       await route.abort()
     })
     await userPage.goto(settings)
+    const denied = await userPage.evaluate(async () => {
+      const response = await fetch("/api/settings?key=ha-token")
+      return { status: response.status, contentType: response.headers.get("content-type") }
+    })
+    expect(denied.status).toBe(403)
+    expect(denied.contentType).toContain("json")
     await expect(userPage.getByText("Local feedback queue")).toHaveCount(0)
     await expect(userPage.locator("#export-db-btn")).toHaveCount(0)
     await userPage.getByLabel("Category", { exact: true }).selectOption("problem")

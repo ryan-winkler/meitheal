@@ -251,8 +251,7 @@ pageLifecycle.onPageLoad((signal) => {
       return
     }
     if (actionId === "ask-home-assistant") {
-      const askButton = document.getElementById("ask-ha-btn") as HTMLButtonElement | null
-      askButton?.click()
+      window.openAskHaModal?.()
     }
   }
 
@@ -269,6 +268,12 @@ pageLifecycle.onPageLoad((signal) => {
     if (item.href) {
       const target = prefixIngress(item.href)
       if (isSafeUrl(target)) {
+        const url = new URL(target, window.location.href)
+        const settingsShell = document.getElementById("settings-shell")
+        if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
+          settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
+          return
+        }
         window.location.href = target
       }
     }
@@ -413,9 +418,10 @@ pageLifecycle.onPageLoad((signal) => {
 
       if (isEditing) return
 
-      if (event.key === "/" && !event.shiftKey) {
+      if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault()
-        window.openSearchHub?.()
+        const scope = document.getElementById("settings-bar")?.dataset.searchScope
+        window.openSearchHub?.(scope ? { scope } : undefined)
         return
       }
 
