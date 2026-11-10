@@ -25,6 +25,8 @@ After the public ARM64 image passes the Green benchmark and publishes, add the p
 
 ## Qualify the release
 
+The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update. Push checks on `main` verify the merged source; pushes changing only `meitheal-hub-canary/config.yaml` remain excluded.
+
 1. Run the required checks and review findings for the intended source commit.
 2. Follow the [Supervisor devcontainer runbook](home-assistant-devcontainer.md) for ingress, permissions, install, update and restart. Exercise [backup and restore](home-assistant-backup-and-restore.md) with disposable data.
 3. Verify the intended Home Assistant version, supported architectures, and the resource budget on the target hardware. Record the tested source commit and image digest.
