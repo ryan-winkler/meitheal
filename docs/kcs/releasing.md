@@ -8,6 +8,12 @@ description: "Qualify App images and promote a verified version to the Home Assi
 
 Home Assistant discovers both channels through the [Meitheal add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon). Keep existing Store entries and App slugs when updating a channel. The optional Core integration has a separate [Marketplace release process](home-assistant-marketplace.md).
 
+## Move a Canary from the legacy private Store repository
+
+Supervisor derives the installed App ID from its repository URL. The public repository gives Meitheal Canary a new internal ID. Use the public HTTPS URL without credentials. [Supervisor Store API](https://contributors.home-assistant.io/apps/supervisor-api/store/)
+
+After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Then uninstall the legacy Canary, install **Meitheal Canary** from the public repository, and verify health and authenticated ingress. Update any saved Home Assistant shortcuts to the new App entry. Remove the legacy repository once no installed Apps depend on it.
+
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
 | Stable | A matching `vX.Y.Z` tag on a commit in `main` | `X.Y.Z` | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
