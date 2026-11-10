@@ -440,6 +440,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 
 <script>
   import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { buildIngressPagePath } from "../../lib/page-shell-links"
 
   function initPwaCompact() {
     const dot = document.getElementById("pwa-compact-dot")
@@ -712,7 +713,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             showTroubleshootResult("✓ Push notifications enabled!")
             new Notification("Meitheal", {
               body: "Push notifications are now active.",
-              icon: "/icons/icon-192.png",
+              icon: buildIngressPagePath("/icon-192.png"),
             })
           } else {
             showTroubleshootResult(
