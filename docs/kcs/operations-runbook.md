@@ -79,13 +79,15 @@ Today and Settings keep text and controls at full opacity during their entry mot
 
 ## Task Link Verification
 
-Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. The link opens the same task in the Tasks view for a recipient who can already access the installation and the task.
+Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.
 
 1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number.
-2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access.
-3. Open an old `/tasks#task-MTH-…` link. Confirm it opens the task and the Tasks view remains usable when you close the detail.
+2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
+3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
 5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app.
+
+The main ticket pane includes **Scoring & frameworks**. Choose RICE or another framework, enter estimates and select **Save score**. RICE retains the existing whole-percentage score scale. Reach 10, impact 2, confidence 80 and effort 0.5 produce 3200, matching Planning and task badges. Failed saves retain the estimates for retry. Reload to verify the saved evaluation and confirm other framework values remain intact.
 
 ## Upcoming Shell Verification
 

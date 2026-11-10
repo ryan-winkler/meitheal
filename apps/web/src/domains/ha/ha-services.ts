@@ -8,6 +8,8 @@
  */
 import { callService } from "home-assistant-js-websocket";
 import { getHAConnection } from "./ha-connection";
+import { readConversationAgents, type ConversationAgent } from "./conversation-agents";
+export type { ConversationAgent } from "./conversation-agents";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
 const logger = createLogger({
@@ -532,13 +534,6 @@ export interface AssistResponse {
   responseType: "action_done" | "query_answer" | "error" | null;
 }
 
-/** HA conversation agent descriptor */
-export interface ConversationAgent {
-  id: string;
-  name: string;
-  supported_languages: string[] | "*";
-}
-
 /**
  * Send text to HA's conversation.process service.
  * Supports multi-turn via conversation_id and agent selection via agent_id.
@@ -590,13 +585,12 @@ export async function askAssist(
  */
 export async function listConversationAgents(): Promise<ConversationAgent[] | null> {
   const conn = await getHAConnection()
-  if (!conn) return null
+  if (!conn?.connected) return null
   try {
-    const result = await conn.sendMessagePromise<{ agents?: ConversationAgent[] }>({
+    const result = await conn.sendMessagePromise<unknown>({
       type: "conversation/agent/list",
     });
-    const agents = result?.agents
-    if (!Array.isArray(agents)) return null
+    const agents = readConversationAgents(result)
     logger.log("debug", {
       event: "ha.conversation.agents_listed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Found ${agents.length} conversation agent(s)`,

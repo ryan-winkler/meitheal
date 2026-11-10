@@ -18,6 +18,7 @@ import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { formatTicketKey } from "../../lib/ticket-key"
+import { buildTaskPath } from "../../lib/task-detail-handoff"
 import type { TaskViewItem } from "../../lib/task-queries"
 
 interface Props {
@@ -88,8 +89,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-title={task.title.toLowerCase()}
   data-search={searchText}
   data-due={task.due_date ?? ""}
-  role="button"
-  tabindex="0"
+  role="group"
   aria-label={`${task.title}, priority ${task.priority}${task.due_date ? `, due ${task.due_date}` : ""}${section ? `, in ${section}` : ""}`}
 >
   {/* Color indicator */}
@@ -124,7 +124,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         <span class="tli__ticket">{ticketKey}</span>
       )}
       <TaskTypeIcon type={task.task_type} size={14} />
-      <span class="tli__title-text">{task.title}</span>
+      <a class="tli__title-text" href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
     </div>
 
     <div class="tli__meta">
@@ -352,11 +352,17 @@ const customEntries = Object.entries(task.custom_fields).filter(
     gap: 6px;
   }
   .tli__title-text {
+    color: var(--text-primary);
+    text-decoration: none;
     font-size: 14px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .tli__title-text:hover,
+  .tli__title-text:focus-visible {
+    text-decoration: underline;
   }
   .tli__title.done .tli__title-text {
     text-decoration: line-through;

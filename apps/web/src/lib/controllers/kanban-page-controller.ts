@@ -1,4 +1,5 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
+import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
@@ -23,7 +24,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   let board = initialBoard
   let boardLifetime = new AbortController()
   let pending: AbortController | undefined
-  let desired = new URL(location.href)
+  let desired = taskBackgroundUrl(new URL(location.href))
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
   let requestNumber = 0
@@ -109,7 +110,11 @@ export function initKanbanPage(signal: AbortSignal): void {
         else url.searchParams.set(key, value)
       }
       url.hash = current.hash
-      if (!dataOnly) history.replaceState(history.state, "", url)
+      if (!dataOnly) {
+        if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
+          history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
+        } else history.replaceState(history.state, "", url)
+      }
       board.scrollLeft = horizontal
       renderStatus("")
 

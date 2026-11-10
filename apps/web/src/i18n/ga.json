@@ -96,6 +96,8 @@
     "toggle_menu": "Scoránaigh an roghchlár"
   },
   "status": {
+    "app_ready": "Meitheal réidh",
+    "app_unreachable": "Níl Meitheal ar fáil",
     "connected": "Nasctha",
     "disconnected": "Dínasctha",
     "db_offline": "Bunachar Sonraí As Líne",

@@ -5,6 +5,7 @@
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { parseTaskView, TASK_VIEWS, taskViewUrl, type TaskView } from "@lib/task-view-route"
+import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 
 const STORAGE_KEY = "meitheal:tasks-last-view"
 
@@ -16,6 +17,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
 
   function syncLegacyLocation(initial = false) {
     const url = new URL(location.href)
+    if (ticketIdFromPath(url.pathname, window.__ingress_path) !== null) return true
     const legacyTask = getLegacyTaskId(url.hash)
     let requested = parseTaskView(url.hash.slice(1))
     if (initial && !url.hash && !url.searchParams.has("view") && !url.searchParams.has("open")) {
@@ -40,7 +42,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     if (!view) return
     link.addEventListener("click", () => {
       // Other views can update query filters without re-rendering the links.
-      const url = taskViewUrl(new URL(location.href), view)
+      const url = taskViewUrl(taskBackgroundUrl(new URL(location.href)), view)
       link.href = url.href
     }, { signal })
   })

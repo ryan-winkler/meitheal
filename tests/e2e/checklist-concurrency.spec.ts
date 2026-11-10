@@ -77,7 +77,7 @@ test("a long checklist item wraps in a narrow detail panel and can be edited", a
   const { id } = await created.json()
   const taskPath = "/api/tasks/" + encodeURIComponent(id)
   await page.goto("/tasks")
-  await page.getByRole("button", { name: /^Task: Narrow checklist,/ }).click()
+  await page.getByRole("link", { name: /^Task: Narrow checklist,/ }).click()
   const item = page.getByRole("textbox", { name: "Checklist item 1", exact: true })
   await expect(item).toBeVisible()
   await expect(item).toHaveValue(longText)

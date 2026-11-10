@@ -752,6 +752,7 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
 function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: () => void) {
   table.addEventListener("click", async event => {
     if (!(event.target instanceof Element)) return
+    if (event.defaultPrevented || event.target.closest("a[data-task-detail-link]")) return
     const row = event.target.closest<HTMLElement>(".table-row")
     const id = row?.dataset.id
     if (!id || !row) return

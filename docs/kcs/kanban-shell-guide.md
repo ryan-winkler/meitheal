@@ -98,3 +98,7 @@ The form keeps the title. Check the area selection and destination lane. If you 
 
 1. Confirm `#lane-mgmt` drops the `hidden` class after clicking `Manage Lanes`.
 2. If the button responds but the panel stays hidden, capture the browser console and the current filter state.
+
+## Card colors
+
+Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.

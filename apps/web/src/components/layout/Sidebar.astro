@@ -53,6 +53,11 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.progress",
     icon: "trophy",
   },
+  areas: {
+    href: "/planning#spaces",
+    i18nKey: "sidebar.areas_header",
+    icon: "folder",
+  },
   planning: {
     href: "/planning",
     i18nKey: "nav.planning",
@@ -70,6 +75,7 @@ const DEFAULT_ORDER: NavKey[] = [
   "mentionInbox",
   "progress",
   "planning",
+  "areas",
 ];
 
 interface CustomNavItem {
@@ -98,6 +104,7 @@ let sidebarConfig: SidebarConfig = {
   tasks: true,
   progress: true,
   planning: true,
+  areas: true,
 };
 
 /** Feature flags — hide gamification/habits if disabled */
@@ -183,7 +190,7 @@ const navItems = order
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if (key === "tasks" && !hierarchyEnabled) return false
+    if ((key === "tasks" || key === "areas") && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
@@ -201,6 +208,11 @@ navItems.splice(pinIndex, 0, {
   key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
+
+const areaPosition = navItems.findIndex(item => item.key === "areas")
+const areaLabel = labels.areas || t("sidebar.areas_header", locale)
+const primaryItems = areaPosition < 0 ? navItems : navItems.slice(0, areaPosition)
+const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 ---
 
 <nav
@@ -270,8 +282,16 @@ navItems.splice(pinIndex, 0, {
   </div>
 
   <div class="sidebar-scroll">
-    <SidebarNavList navItems={navItems} taskCounts={taskCounts} />
-    {hierarchyEnabled && <SidebarHierarchyTree locale={locale} />}
+    {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
+    {areaPosition >= 0 && (
+      <div id="sidebar-hierarchy-panel">
+        <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
+          <span class="nav-icon"><Icon name="folder" /></span>
+        </a>
+        <SidebarHierarchyTree locale={locale} label={areaLabel} />
+      </div>
+    )}
+    {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
   </div>
 
   {gamificationEnabled && (
@@ -299,6 +319,20 @@ navItems.splice(pinIndex, 0, {
     z-index: 40;
     padding: 1rem;
     overflow: hidden;
+  }
+
+  .sidebar-compact-areas {
+    display: none;
+  }
+
+  @media (min-width: 769px) {
+    :global(body.sidebar-collapsed) .sidebar-compact-areas {
+      display: flex;
+    }
+
+    :global(body.sidebar-collapsed) #sidebar-hierarchy-panel :global(#project-nav) {
+      display: none;
+    }
   }
 
   .sidebar-scroll {

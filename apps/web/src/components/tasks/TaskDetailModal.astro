@@ -332,6 +332,8 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
             </div>
 
+            <StrategicEvaluator />
+
             <!-- Description -->
             <div class="mb-4">
               <button type="button" class="flex items-center gap-2 text-xs font-medium text-accent hover:text-accent-hover bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-lg transition-colors border border-accent/20">
@@ -633,20 +635,6 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               </summary>
               <div id="td-activity" class="space-y-3 mt-5 ml-5 relative before:absolute before:inset-y-0 before:left-[-11px] before:w-px before:bg-border/50 text-xs text-text-secondary"></div>
             </details>
-
-            <!-- Strategic Actions -->
-            <div class="mt-auto pt-6">
-                 <div id="td-strategic-badge" class="mb-3 hidden"></div>
-                 <button id="td-evaluate-btn" class="w-full text-left px-3 py-2.5 text-sm rounded-lg bg-bg-input hover:bg-bg-hover border border-border/50 hover:border-border transition-[background,border-color] flex justify-between items-center group shadow-sm text-text-primary">
-                   <div class="flex items-center gap-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                        <span class="font-medium">Strategic Lens</span>
-                   </div>
-                   <span id="td-active-framework-name" class="text-[9px] uppercase font-bold text-bg-primary px-1.5 py-0.5 rounded bg-accent hidden shadow-sm group-hover:scale-105 transition-transform"></span>
-                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-text-muted group-hover:text-text-primary transition-colors opacity-0 group-hover:opacity-100 hidden"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                 </button>
-                 <StrategicEvaluator />
-            </div>
 
             </div> <!-- /td-sidebar-props -->
 

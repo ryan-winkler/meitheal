@@ -16,12 +16,13 @@ test("copies a stable task link and returns from a deleted task to the task view
   expect(created.status(), await created.text()).toBe(201)
   const { id, ticket_key } = await created.json()
   const taskPage = "/tasks?area_id=default#kanban"
-  const canonical = `${origin}/tasks?open=${id}`
+  const canonical = `${origin}/tickets/${id}`
 
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
   await page.goto(taskPage)
-  const card = page.getByRole("button", { name: /^Task: Task permalink round trip,/ })
+  const card = page.getByRole("link", { name: /^Task: Task permalink round trip,/ })
     .and(page.locator(`[data-id="${id}"]`))
+  await expect(card).toHaveAttribute("href", `/tickets/${id}`)
   await card.click()
   const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
   await detail.getByRole("button", { name: "Copy task link" }).click()
@@ -30,6 +31,12 @@ test("copies a stable task link and returns from a deleted task to the task view
   await page.goBack()
   await expect(detail).toBeHidden()
   await expect(page).toHaveURL(origin + taskPage)
+  await page.goForward()
+  await expect(detail).toBeVisible()
+  await expect(page).toHaveURL(canonical)
+  await page.goto(`/tasks?open=${ticket_key}#kanban`)
+  await expect(page.locator("#td-title")).toHaveValue(title)
+  await expect(page).toHaveURL(canonical)
 
   await page.goto(`/tasks#task-${ticket_key}`)
   await expect(page.locator("#td-title")).toHaveValue(title)
@@ -78,7 +85,7 @@ test("Table keyboard controls retain their actions beside the task detail shortc
   await editor.press("Escape")
   await expect(editor).toHaveText(title)
 
-  await row.getByRole("button", { name: new RegExp(title) }).press("Enter")
+  await row.getByRole("link", { name: new RegExp(title) }).press("Enter")
   await expect(page.getByRole("dialog", { name: `Task detail: ${title}` })).toBeVisible()
 })
 
@@ -99,7 +106,7 @@ test("task detail contains Tab while loading and after a nested confirmation", a
   try {
     await page.goto("/tasks?area_id=default#kanban")
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
-    const card = page.locator(`.kanban-card[data-id="${id}"]`).getByRole("button", { name: new RegExp(`^Task: ${title},`) })
+    const card = page.locator(`.kanban-card[data-id="${id}"]`).getByRole("link", { name: new RegExp(`^Task: ${title},`) })
     await card.press("Enter")
     const detail = page.locator("#task-detail-overlay")
     const close = detail.getByRole("button", { name: "Close detail" })
@@ -111,7 +118,7 @@ test("task detail contains Tab while loading and after a nested confirmation", a
 
     detailResponse.resolve()
     const first = detail.getByRole("button", { name: "Favorite" })
-    const last = detail.getByRole("button", { name: "Strategic Lens" })
+    const last = detail.locator('button:visible:not([disabled]), a[href]:visible, input:visible:not([disabled]), select:visible:not([disabled]), textarea:visible:not([disabled]), summary:visible, [tabindex="0"]:visible').last()
     await expect(first).toBeVisible()
     await first.focus()
     await page.keyboard.press("Shift+Tab")
@@ -170,7 +177,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
     })
     await sourcePage.goto(entry + "/tasks#kanban")
     await expect.poll(() => sourcePage.evaluate(() => typeof window.openTaskDetail)).toBe("function")
-    const card = sourcePage.getByRole("button", { name: /^Task: Ingress task permalink round trip,/ })
+    const card = sourcePage.getByRole("link", { name: /^Task: Ingress task permalink round trip,/ })
     await card.press("Enter")
     const detail = sourcePage.getByRole("dialog", { name: `Task detail: ${title}` })
     await expect(detail.locator("#td-title")).toHaveValue(title)
@@ -179,7 +186,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const manual = sourcePage.getByLabel("Copy this task link manually")
     await expect(manual).toBeFocused()
     const copiedLink = await manual.inputValue()
-    expect(copiedLink).toBe(`${entry}/tasks?open=${id}`)
+    expect(copiedLink).toBe(`${entry}/tickets/${id}`)
 
     const recipientPage = await recipient.newPage()
     const taskRead = recipientPage.waitForResponse(response =>
@@ -243,7 +250,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await post(id, "First visible comment")
     const comment = await post(id, "The linked comment")
     const otherComment = await post(other, "Comment belonging to a different task")
-    const taskUrl = `${entry}/tasks?open=${id}`
+    const taskUrl = `${entry}/tickets/${id}`
     const commentApiPath = `/api/tasks/${id}/comments/${comment}`
 
     const sourcePage = await source.newPage()
@@ -255,7 +262,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     const edit = authorRow.getByRole("button", { name: "Edit comment" })
     const remove = authorRow.getByRole("button", { name: "Delete comment" })
     const editor = authorRow.getByRole("textbox", { name: "Edit comment" })
-    const href = `${taskUrl}&comment=${comment}`
+    const href = `${taskUrl}?comment=${comment}`
     await expect(link).toHaveAttribute("href", href)
 
     const denied = await request.get(origin + commentApiPath)
@@ -310,8 +317,9 @@ test("a comment link focuses the edited comment through ingress and recovers aft
       await save.press("Enter")
       await editStarted.promise
       await sourcePage.getByRole("button", { name: "Close detail" }).press("Enter")
-      await expect.poll(() => new URL(sourcePage.url()).searchParams.has("open")).toBe(false)
-      await sourcePage.goBack()
+      await expect(sourcePage.locator("#task-detail-overlay")).not.toHaveClass(/active/)
+      await expect(sourcePage).toHaveURL(entry + "/tasks#kanban")
+      await sourcePage.goto(taskUrl)
       await expect(authorRow).toContainText("Edited linked comment")
     } finally {
       releaseEdit.resolve()
@@ -332,7 +340,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(target).toBeFocused()
 
     const missing = page.locator("#td-comment-link-status")
-    await page.goto(`${taskUrl}&comment=${otherComment}`)
+    await page.goto(`${taskUrl}?comment=${otherComment}`)
     await expect(missing).toContainText("This comment is unavailable")
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
@@ -404,4 +412,44 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     }
     await rm(work, { recursive: true, force: true })
   }
+})
+
+test("ticket scoring keeps other lenses and retries a failed save", async ({ page, request, baseURL }) => {
+  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
+  const origin = new URL(baseURL!).origin
+  const headers = { origin, "content-type": "application/json" }
+  const created = await request.post("/api/tasks", {
+    headers, data: { title: "Ticket scoring retry", framework_payload: JSON.stringify({ ice: { impact: 7, confidence: 8, ease: 9 } }) },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await page.goto(`/tasks?open=${id}#kanban`)
+  await expect(page).toHaveURL(`${origin}/tickets/${id}`)
+  const chooser = page.getByLabel("Scoring framework", { exact: true })
+  await expect(chooser).toBeEnabled()
+  await chooser.selectOption("rice")
+  for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
+    await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
+  }
+  await expect(page.locator("#se-live-result")).toHaveText("Score: 3200")
+  let failNext = true
+  await page.route(`**/api/tasks/${id}`, async route => {
+    if (route.request().method() === "PUT" && failNext) {
+      failNext = false
+      await route.fulfill({ status: 503, body: "Unavailable" })
+    } else await route.continue()
+  })
+  await page.getByRole("button", { name: "Save score", exact: true }).click()
+  await expect(page.locator("#se-status")).toContainText("Your estimates are still here")
+  await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
+  await page.getByRole("button", { name: "Save score", exact: true }).click()
+  await expect(page.locator("#se-status")).toHaveText("Evaluation saved.")
+  const stored = await request.get(`/api/tasks/${id}`)
+  const payload = JSON.parse((await stored.json()).framework_payload)
+  expect(payload.ice).toEqual({ impact: 7, confidence: 8, ease: 9 })
+  expect(payload.rice.score).toBe(3200)
+  await page.reload()
+  await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
+  await chooser.selectOption("ice")
+  await expect(page.getByRole("spinbutton", { name: "Ease", exact: true })).toHaveValue("9")
 })

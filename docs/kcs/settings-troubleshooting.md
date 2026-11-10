@@ -20,6 +20,14 @@ In **Settings → Integrations**, Tab to an integration and press Enter or Space
 
 Save notifications use the selected theme's text and card colors. A colored edge distinguishes the result, and the message stays readable from the moment it appears.
 
+## Configure the sidebar
+
+In **Workflow → Sidebar Configuration**, Areas has the same visibility and label controls as the page links. Use **Move up** and **Move down**, or drag the handle on a wide screen, to position the Areas tree. Reordering preserves the labels and custom links you are editing. Each area retains its project collapse control.
+
+Choose **Save Sidebar Config** to save and reload the current Settings section with the updated sidebar. **Reset to Default** restores the default items and ordering after confirmation. Personal Pinned navigation remains available beside Tasks.
+
+The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Integrations → Home Assistant**.
+
 ## Check Home Assistant
 
 Open **Settings → Integrations → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.
@@ -135,3 +143,36 @@ See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language refer
 Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
 
 Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
+
+### Home Assistant conversation agents
+
+Settings → Automation & AI and Ask Home Assistant require a currently verified
+Home Assistant administrator. They discover agents from Home
+Assistant's `conversation/agent/list` WebSocket command. HA includes loaded
+`conversation.*` entities and agents registered through integration config
+entries in this response. No provider list or language filter is applied. A
+configured integration without a loaded conversation agent is not runnable and
+will not appear until Home Assistant loads it.
+
+Both pickers refresh when opened and offer **Refresh agents**. Discovery bypasses
+browser caching. A saved agent ID stays selected if the agent is removed or HA
+cannot be reached; it is never silently replaced by the default. An unavailable
+agent is labelled in the picker. Ask Home Assistant prevents sending to an agent
+confirmed missing by a successful discovery. Select an available agent, or fix
+its integration in HA and refresh. A failed discovery displays a retry message
+while preserving the last selection. This failure is separate from the app's
+own connection to its server.
+
+Ask Home Assistant keeps its chat and HA conversation ID when closed and
+reopened on the same page. Changing the selected agent starts a new conversation.
+The Settings default is persistent; the most recent Ask selection is stored for
+the browser session. Saving a new Settings default clears that session override.
+
+For native qualification, open the managed Canary through HA ingress, confirm
+all loaded agents match HA's Assist picker, add or reload an agent in HA, and
+refresh both Meitheal pickers. Test a multi-turn exchange, close/reopen, then
+change agents. An isolated browser fixture checks the picker behavior but does
+not establish Supervisor permissions or HA integration health.
+
+Upstream contract: [HA conversation WebSocket implementation](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/http.py)
+and [registered-agent manager](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/agent_manager.py).

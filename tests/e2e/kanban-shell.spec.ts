@@ -38,7 +38,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await page.reload()
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
-      await expect(card.getByRole("button", { name: `Task: ${title}, Priority: High, ${key}` })).toBeVisible()
+      await expect(card.getByRole("link", { name: `Task: ${title}, Priority: High, ${key}` })).toBeVisible()
       const menus = await card.getByRole("button", { name: `Assign user to: ${title}` }).evaluate(trigger => {
         if (!(trigger instanceof HTMLButtonElement)) throw new Error("Expected the card assignment button")
         trigger.click()
@@ -241,7 +241,7 @@ test.describe("Kanban card workflows", () => {
     try {
       await page.goto(`/tasks?area=${areaId}#kanban`)
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-      const open = card.getByRole("button", { name: /^Task: Inspect kitchen smoke alarm,/ })
+      const open = card.getByRole("link", { name: /^Task: Inspect kitchen smoke alarm,/ })
       await open.press("Enter")
       const detail = page.getByRole("dialog", { name: "Task detail: Inspect kitchen smoke alarm" })
       await expect(detail).toBeVisible()
@@ -323,7 +323,7 @@ test.describe("Kanban card workflows", () => {
       ])
       expect(response.status()).toBe(201)
       const saved = lane.locator(`.kanban-card[data-area="${areaId}"]`)
-        .getByRole("button", { name: /^Task: Rinse the boiler filter,/ })
+        .getByRole("link", { name: /^Task: Rinse the boiler filter,/ })
       await expect(saved).toBeVisible()
       savedId = (await saved.getAttribute("data-id")) ?? undefined
       expect(savedId).toBeTruthy()

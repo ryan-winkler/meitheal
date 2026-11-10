@@ -195,7 +195,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     })).status()).toBe(409)
 
     await recipient.getByRole("button", { name: "Refresh inbox" }).click()
-    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tasks?open=${taskId}&comment=${id}`)
+    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tickets/${taskId}?comment=${id}`)
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 1" })).toBeVisible()
     await recipient.context().setOffline(true)
     await expect(recipientLink).toHaveCount(0)

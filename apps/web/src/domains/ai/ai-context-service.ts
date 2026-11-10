@@ -373,11 +373,11 @@ export async function autoScoreTask(
     fields: Array<{
       key: string;
       label: string;
-      help_text?: string;
-      description?: string;
-      min?: number;
-      max?: number;
-      options?: Array<{ label: string; value: string | number }>;
+      help_text?: string | undefined
+      description?: string | undefined
+      min?: number | undefined
+      max?: number | undefined
+      options?: Array<{ label: string; value: string | number }> | undefined
     }>;
   }>
 ): Promise<{
