@@ -1,5 +1,5 @@
 import { Readable, Transform, pipeline } from "node:stream"
-import { RewritingStream } from "parse5-html-rewriting-stream"
+import type { RewritingStream } from "parse5-html-rewriting-stream"
 import type { WaitForResponseDrain } from "../../scripts/ingress-transport.mjs"
 import { paceResponseBody } from "./response-backpressure"
 
@@ -34,6 +34,7 @@ export async function rewriteIngressHtml(
   })
 
   let size = 0
+  let rewriter: RewritingStream | undefined
   try {
     while (size <= bufferedLimit) {
       const next = await reader.read()
@@ -42,12 +43,17 @@ export async function rewriteIngressHtml(
       buffered.push(next.value)
       size += next.value.byteLength
     }
+    if (size > bufferedLimit) {
+      const { RewritingStream } = await import("parse5-html-rewriting-stream")
+      signal?.throwIfAborted()
+      rewriter = new RewritingStream()
+    }
   } catch (error) {
     cancelInput()
     releaseInput()
     throw error
   }
-  if (size <= bufferedLimit) {
+  if (!rewriter) {
     releaseInput()
     const html = Buffer.concat(buffered, size).toString("utf8")
     return result(html.replace("<head>", `<head>${script}`)
@@ -56,7 +62,6 @@ export async function rewriteIngressHtml(
 
   // Ordinary pages take the existing fast path. Large pages stay scoped
   // without joining their whole bodies into a single HTML string.
-  const rewriter = new RewritingStream()
   rewriter.on("startTag", (tag, raw) => {
     let changed = false
     for (const attr of tag.attrs) {

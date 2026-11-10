@@ -274,6 +274,8 @@ The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` comma
 
 Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for image size and actual Green qualification. Use Green route timings, raw App cgroup memory, and host coexistence observations as separate release evidence. The CI smoke measures a local production build.
 
+The ingress HTML parser loads on the first HTML response above 5 MiB. Smaller pages use the existing buffered rewrite. Check a fresh process if measuring parser startup, since the first large page loads the parser for the life of that process.
+
 For calibration, the check accepts these overrides.
 
 - `MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX`
