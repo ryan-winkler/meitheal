@@ -1,4 +1,6 @@
 ---
+import { mentionInboxContext } from "@lib/mention-inbox-context"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
 // Task Detail Modal Component
 import StrategicEvaluator from "./StrategicEvaluator.astro";
 import { t } from "../../i18n/translations"
@@ -7,6 +9,7 @@ interface Props { suppressUrlOpen?: boolean }
 const { suppressUrlOpen = false } = Astro.props
 
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const mentionUser = verifiedIngressUser(Astro.locals)
 ---
     <!-- Task Detail Centered Panel -->
     <div
@@ -562,6 +565,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               <template id="td-comment-management"
                 data-delete-prompt={t("task_modal.comment_delete_prompt", locale)}
                 data-participant-required={t("task_modal.participant_required", locale)}
+                data-mention-failed={t("mention_inbox.write_error", locale)}
                 data-edit-failed={t("task_modal.comment_edit_failed", locale)}
                 data-delete-failed={t("task_modal.comment_delete_failed", locale)}>
                 <div data-comment-actions class="flex flex-wrap gap-2">
@@ -570,9 +574,9 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 </div>
                 <form data-comment-editor class="mt-2" hidden>
                   <div class="relative">
-                    <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} aria-autocomplete="list" data-task-reference maxlength="5000" required></textarea>
+                    <textarea class="form-input w-full resize-y" aria-label={t("task_modal.comment_edit", locale)} aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" required></textarea>
                   </div>
-                  <p data-reference-hint class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
+                  <p data-reference-hint class="text-xs text-text-muted">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
                   <div class="flex flex-wrap gap-2">
                     <button type="submit" class="btn btn-primary min-h-11">{t("task_modal.comment_save", locale)}</button>
                     <button data-comment-cancel type="button" class="btn btn-ghost min-h-11">{t("common.cancel", locale)}</button>
@@ -584,10 +588,11 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                 <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
                 <div class="min-w-0 flex-1">
                   <div class="relative">
-                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
+                    <textarea id="td-comment-input" class="form-input w-full bg-bg-input text-sm py-2 px-3 resize-y min-h-[44px] focus:ring-1 focus:ring-accent transition-colors" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
                   </div>
-                    <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t("task_modal.reference_hint", locale)}</p>
+                    <p id="td-comment-reference-hint" class="text-xs text-text-muted">{t(mentionUser ? "mention_inbox.editor_hint" : "task_modal.reference_hint", locale)}</p>
                     <p id="td-comment-error" class="text-sm text-text-primary mt-2" role="alert" hidden
+                      data-mention-failed={t("mention_inbox.write_error", locale)}
                       data-failed={t("task_modal.comment_failed", locale)}
                       data-participant-required={t("task_modal.participant_required", locale)}></p>
                     <div class="flex justify-end items-center gap-3 mt-2">
@@ -599,6 +604,13 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
             </section>
 
             <div id="td-task-reference-picker" class="absolute inset-x-0 bottom-full z-30 mb-1 rounded-md border border-border bg-bg-card p-1 shadow-md"
+              data-person-context={mentionUser ? mentionInboxContext(mentionUser.id) : undefined}
+              data-task-results={t("task_modal.reference_results", locale)}
+              data-person-results={t("mention_inbox.person_results", locale)}
+              data-person-loading={t("mention_inbox.person_loading", locale)}
+              data-person-choose={t("mention_inbox.person_choose", locale)}
+              data-person-empty={t("mention_inbox.person_empty", locale)}
+              data-person-failed={t("mention_inbox.person_failed", locale)}
               data-loading={t("task_modal.reference_loading", locale)}
               data-choose={t("task_modal.reference_choose", locale)}
               data-empty={t("task_modal.reference_empty", locale)}

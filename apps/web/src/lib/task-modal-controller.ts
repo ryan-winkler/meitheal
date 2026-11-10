@@ -25,6 +25,8 @@
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
         import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
+        import { isCommentMentionProblem } from "@lib/comment-mention-client"
+        import { commentAttemptHeader, commentMentions } from "@lib/comment-mentions"
         import { initModalTaskReferences } from "@lib/controllers/modal-task-references"
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
 
@@ -1652,6 +1654,7 @@
             }
           }, { signal: __signal });
 
+        let commentAttempt: { taskId: string, draft: string, key: string } | undefined
         commentButton?.addEventListener("click", async () => {
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
@@ -1663,27 +1666,35 @@
           commentButton.disabled = true
           commentError?.setAttribute("hidden", "")
           let participantDenied = false
+          let mentionFailed = false
+          const hasMentions = commentInput.hasAttribute("data-comment-mention") && commentMentions(draft).length > 0
+          if (hasMentions && (commentAttempt?.taskId !== taskId || commentAttempt.draft !== draft)) {
+            commentAttempt = { taskId, draft, key: `${Date.now()}.${crypto.randomUUID()}` }
+          }
           try {
             const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, {
               method: "POST",
-              headers: { "content-type": "application/json" },
+              headers: { "content-type": "application/json",
+                ...(hasMentions && commentAttempt ? { [commentAttemptHeader]: commentAttempt.key } : {}) },
               body: JSON.stringify({ content: draft.trim() }),
               signal,
             })
             if (!response.ok) {
               participantDenied = await isActiveParticipantProblem(response)
+              mentionFailed = await isCommentMentionProblem(response)
               throw new Error("Comment request failed")
             }
             if (signal.aborted) return
             if (commentInput.value === draft) commentInput.value = ""
+            commentAttempt = undefined
             const { id } = await response.json() as { id: number }
             await initialComments
             if (!signal.aborted) await loadComments(taskId, signal, null, id)
           } catch {
             if (!signal.aborted && commentError) {
-              commentError.textContent = (participantDenied ? commentError.dataset.participantRequired : commentError.dataset.failed) ?? ""
+              commentError.textContent = (participantDenied ? commentError.dataset.participantRequired : mentionFailed ? commentError.dataset.mentionFailed : commentError.dataset.failed) ?? ""
               commentError.removeAttribute("hidden")
-              if (participantDenied && [document.body, commentButton].includes(document.activeElement as HTMLElement)) commentInput.focus()
+              if ((participantDenied || mentionFailed) && [document.body, commentButton].includes(document.activeElement as HTMLElement)) commentInput.focus()
             }
           } finally {
             if (!signal.aborted) commentButton.disabled = false

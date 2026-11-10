@@ -1,8 +1,12 @@
 import type { APIRoute } from "astro"
 import { hasScope } from "@meitheal/domain-auth"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
+import { commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
+import { commentAttemptHorizonMs } from "@lib/comment-mentions"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
 export const GET: APIRoute = async ({ locals, params, request }) => {
@@ -20,6 +24,13 @@ export const GET: APIRoute = async ({ locals, params, request }) => {
   }
 }
 
+function attemptResponse(result: Awaited<ReturnType<CommentMentionRepository["create"]>>): Response {
+  if (result.state === "created" || result.state === "replayed") return commentJson(result.comment, 201)
+  if (result.state === "gone") return commentMentionProblem("The original comment was deleted.", 410)
+  if (result.state === "conflict") return commentMentionProblem("This comment attempt already used different text.")
+  return apiError("Task not found", 404)
+}
+
 export const POST: APIRoute = async ({ params, request, locals }) => {
   const actor = resolveCommentAuthor(locals)
   if (!actor) return activeParticipantRequired()
@@ -27,11 +38,29 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   const content = await readComment(request)
   if (content instanceof Response) return content
 
+  const attempt = verifiedIngressUser(locals) ? commentAttempt(request) : null
+  if (attempt instanceof Response) return attempt
+
   try {
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
-    const comment = await repo.addComment(params.id!, content, actor.author, actor.owner)
+    const client = getPersistenceClient()
+    const mentions = new CommentMentionRepository(client)
+    const taskId = params.id!
+    if (attempt && actor.owner) {
+      if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
+        if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
+        const prior = await mentions.replay(taskId, actor.owner, attempt.key, content)
+        return attemptResponse(prior ?? { state: "gone" })
+      }
+    }
+    const prepared = await prepareCommentMentions(content, locals, request.signal)
+    if (prepared instanceof Response) return prepared
+    if (prepared.recipients.length && !attempt) return commentMentionProblem("Start this comment again to send its mentions.", 400)
+    if (attempt && actor.owner) {
+      return attemptResponse(await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
+        { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }))
+    }
+    const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner)
     return comment ? commentJson(comment, 201) : apiError("Task not found", 404)
   } catch {
     return commentFailure("post", "Failed to create comment")

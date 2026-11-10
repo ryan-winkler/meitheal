@@ -1648,6 +1648,28 @@
     "assignee_missing": "Saved assignee unavailable",
     "goal_missing": "Saved goal unavailable"
   },
+  "mention_inbox": {
+    "title": "Mention inbox",
+    "description": "See comments where another household member mentioned you.",
+    "loading": "Loading mentions…",
+    "empty": "You have no mentions.",
+    "error": "Could not load mentions. Refresh and try again.",
+    "denied": "Open the inbox again through Home Assistant with your active account.",
+    "read": "Read",
+    "unread": "Unread",
+    "mark_read": "Mark as read",
+    "mark_unread": "Mark as unread",
+    "mark_all": "Mark all as read",
+    "refresh": "Refresh inbox",
+    "older": "Older mentions",
+    "editor_hint": "Type @ to mention a person or # to link a task.",
+    "person_results": "People to mention",
+    "person_loading": "Finding people…",
+    "person_choose": "Use the arrow keys to choose a person, then press Enter.",
+    "person_empty": "No matching people.",
+    "person_failed": "Could not find people. Reopen Meitheal from Home Assistant or try again.",
+    "write_error": "The mention could not be saved. Check the people selected, or copy the text before starting a new comment."
+  },
   "task_modal": {
     "copy_link": "Copy task link",
     "link_copied": "Task link copied",

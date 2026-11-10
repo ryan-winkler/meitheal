@@ -46,6 +46,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
+  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "today", matchExact: true },
   activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "today", matchExact: true },
   progress: {
     href: "/progress",
@@ -66,6 +67,7 @@ const DEFAULT_ORDER: NavKey[] = [
   "upcoming",
   "tasks",
   "activity",
+  "mentionInbox",
   "progress",
   "planning",
 ];
@@ -182,7 +184,7 @@ const navItems = order
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
     if (key === "tasks" && !hierarchyEnabled) return false
-    if (key === "activity" && !Astro.locals.hassUserId) return false
+    if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
   .map((key) => {

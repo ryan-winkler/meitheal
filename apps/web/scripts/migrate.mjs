@@ -7,6 +7,7 @@ import { splitSqlStatements } from "./split-sql-statements.mjs";
 import { applyTaskDeferralMigration, validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
 import { applyTaskPinsMigration, validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
 import { applyTaskDraftsMigration, validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts.mjs"
+import { applyCommentMentionsMigration, validateCommentMentionsSchema } from "../drizzle/migrations/0007_comment_mentions.mjs"
 
 import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 
@@ -18,6 +19,7 @@ const executableMigrations = new Map([
   ["0004_task_deferral.mjs", { apply: applyTaskDeferralMigration, validate: validateTaskDeferralSchema }],
   ["0005_task_pins.mjs", { apply: applyTaskPinsMigration, validate: validateTaskPinsSchema }],
   ["0006_task_drafts.mjs", { apply: applyTaskDraftsMigration, validate: validateTaskDraftsSchema }],
+  ["0007_comment_mentions.mjs", { apply: applyCommentMentionsMigration, validate: validateCommentMentionsSchema }],
   ["0007_task_inactivity.mjs", { apply: applyTaskInactivityMigration, validate: validateTaskInactivitySchema }],
 ])
 

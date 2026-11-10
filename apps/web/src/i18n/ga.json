@@ -1634,6 +1634,28 @@
     "assignee_missing": "Níl an duine sannta ar fáil",
     "goal_missing": "Níl an sprioc shábháilte ar fáil"
   },
+  "mention_inbox": {
+    "title": "Bosca tagairtí",
+    "description": "Féach na nótaí tráchta ina ndearna ball eile den teaghlach tagairt duit.",
+    "loading": "Tagairtí á lódáil…",
+    "empty": "Níl aon tagairtí agat.",
+    "error": "Níorbh fhéidir na tagairtí a lódáil. Athnuaigh agus bain triail eile as.",
+    "denied": "Oscail an bosca arís trí Home Assistant le do chuntas gníomhach.",
+    "read": "Léite",
+    "unread": "Gan léamh",
+    "mark_read": "Marcáil mar léite",
+    "mark_unread": "Marcáil mar neamhléite",
+    "mark_all": "Marcáil gach ceann mar léite",
+    "refresh": "Athnuaigh an bosca",
+    "older": "Tagairtí níos sine",
+    "editor_hint": "Clóscríobh @ chun tagairt a dhéanamh do dhuine nó # chun nasc le tasc a chur isteach.",
+    "person_results": "Daoine le lua",
+    "person_loading": "Daoine á lorg…",
+    "person_choose": "Roghnaigh duine leis na saigheadeochracha agus brúigh Enter.",
+    "person_empty": "Níor aimsíodh aon duine.",
+    "person_failed": "Níorbh fhéidir daoine a aimsiú. Oscail Meitheal ó Home Assistant nó bain triail eile as.",
+    "write_error": "Níorbh fhéidir an tagairt a shábháil. Seiceáil na daoine a roghnaigh tú, nó cóipeáil an téacs sula dtosaíonn tú nóta nua."
+  },
   "task_modal": {
     "copy_link": "Cóipeáil nasc an taisc",
     "link_copied": "Cóipeáladh nasc an taisc",

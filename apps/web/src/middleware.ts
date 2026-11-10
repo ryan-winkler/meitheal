@@ -12,6 +12,7 @@ import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
+import { commentAttemptHeader } from "./lib/comment-mentions"
 import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
 
 const logger = createLogger({
@@ -143,6 +144,7 @@ function isPinRoute(path: string) {
 }
 
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity"])
+const mentionPaths = new Set(["/api/comment-people", "/api/mention-inbox", "/mention-inbox"])
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const draftPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
@@ -162,13 +164,14 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const requestPath = requestUrl.pathname
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
   const onlineReadRoute = onlineReadPaths.has(routePattern) || onlineReadPaths.has(url.pathname)
+  const mentionRoute = mentionPaths.has(routePattern) || mentionPaths.has(url.pathname)
   const draftRoute = routePattern === draftPath || url.pathname === draftPath
   const inactivityApi = routePattern === inactivityApiPath || url.pathname === inactivityApiPath
   const inactivityPage = routePattern === inactivityPagePath || url.pathname === inactivityPagePath
   const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
-  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage
+  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute) {
     return handleRequest(context, next, requestUrl)
   }
@@ -182,7 +185,7 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
     return new Response(null, { status: 400, headers: { "cache-control": "private, no-store" } })
   }
   // Astro matches decoded paths, while the agent guard checks the original request path.
-  if ((onlineReadPaths.has(routePattern) && requestPath !== routePattern) ||
+  if (((onlineReadPaths.has(routePattern) || mentionPaths.has(routePattern)) && requestPath !== routePattern) ||
       (taskHistoryRoute && !hasTaskHistoryPath) ||
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
@@ -375,7 +378,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
     hassUserId ? `ha:${hassUserId}` : undefined
   const replayBodySignal = commentRoute && request.headers.has("idempotency-key") ? taskParticipantBodySignal(request) : undefined
-  const retryKey = privatePersonalRoute ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
+  const durableComment = commentRoute && method === "POST" && request.headers.has(commentAttemptHeader)
+  const retryKey = privatePersonalRoute || durableComment ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
   if (retryKey instanceof Response && !commentRoute) return retryKey
   locals.taskRetryKey = typeof retryKey === "string" ? retryKey : undefined
 

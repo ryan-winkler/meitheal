@@ -10,6 +10,7 @@ import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
 import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
 import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_task_drafts.mjs"
+import { applyCommentMentionsMigration } from "../../../../drizzle/migrations/0007_comment_mentions.mjs"
 import { applyTaskInactivityMigration, installTaskInactivityTriggers } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
 
 export interface PersistedTask {
@@ -980,12 +981,13 @@ async function initializeSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  const targetVersion = 16
+  const targetVersion = 17
   const migration = await client.transaction("write")
   try {
     await applyTaskDeferralMigration(migration)
     await applyTaskPinsMigration(migration)
     await applyTaskDraftsMigration(migration)
+    await applyCommentMentionsMigration(migration)
     await applyTaskInactivityMigration(migration)
     await installTaskInactivityTriggers(migration)
     // Publish the schema version atomically with the last migration.

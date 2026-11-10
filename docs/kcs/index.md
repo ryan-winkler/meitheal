@@ -25,6 +25,8 @@
 - [Webhook Setup Guide](webhook-setup-guide.md) - Connect an external automation receiver.
 - [n8n / Node-RED Integration Examples](n8n-integration-example.md) - Connect Meitheal events to n8n or Node-RED.
 
+- [Mention someone in a comment](comment-mentions.md) - Send an in-app inbox item to another household member.
+
 # Development and operations
 
 - [Client-Side Patterns & HMR Gotchas](client-side-patterns.md) - Implement client controls that work with the application lifecycle.

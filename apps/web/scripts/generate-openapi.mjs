@@ -940,6 +940,30 @@ const paths = {
       },
     },
   },
+  "/api/comment-people": {
+    get: {
+      operationId: "findCommentPeople",
+      tags: ["Tasks"],
+      summary: "Find people to mention in a comment",
+      description: "Verified Home Assistant editor only. Returns up to five eligible people and opaque selectors.",
+      parameters: [
+        { in: "query", name: "q", schema: { type: "string", maxLength: 40 } },
+        { in: "header", name: "X-Meitheal-Mention-Context", required: true, schema: { type: "string" } },
+      ],
+      responses: { 200: { description: "Eligible people" }, 403: problemContent("Current editor session required") },
+    },
+  },
+  "/api/mention-inbox": {
+    post: {
+      operationId: "useMentionInbox",
+      tags: ["Tasks"],
+      summary: "List or mark your comment mentions",
+      description: "Verified same-origin Home Assistant inbox only. Send action list with before null or a cursor, or action mark with id and read. Null id marks all read.",
+      parameters: [{ in: "header", name: "X-Meitheal-Mention-Context", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Your current inbox page" }, 204: { description: "Read state saved" },
+        403: problemContent("Current inbox session required"), 409: problemContent("Session changed") },
+    },
+  },
   "/api/task-pins": {
     post: {
       operationId: "readTaskPins",
@@ -1069,8 +1093,11 @@ const paths = {
       operationId: "addTaskComment",
       tags: ["Tasks"],
       summary: "Add a comment to a task",
-      description: "Add a status update or handoff note. Meitheal records the author from the verified caller. For Home Assistant ingress, it checks active membership before a write or keyed replay. The JSON body is limited to 32 KiB.",
-      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      description: "Add a status update or handoff note. Home Assistant comment mentions require a current member and a durable attempt header. Retry with the same text and header for 48 hours. The JSON body is limited to 32 KiB.",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } },
+        { name: "X-Meitheal-Comment-Attempt", in: "header", schema: { type: "string" } },
+      ],
       requestBody: commentBody,
       responses: {
         201: jsonContent(ref("TaskComment"), "The comment added by this request"),
@@ -1078,6 +1105,8 @@ const paths = {
         403: problemContent("An active, nonsystem Home Assistant account or an automation token with task-write permission is required."),
         404: problemContent("Task not found."),
         408: problemContent("The request body did not arrive in time."),
+        409: problemContent("A selected person is unavailable or the attempt already used different text."),
+        410: problemContent("The comment from the original attempt was deleted."),
         413: problemContent("The request body exceeds 32 KiB."),
         415: problemContent("The request body must be application/json."),
       },

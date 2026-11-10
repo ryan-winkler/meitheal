@@ -1596,16 +1596,6 @@ export class TaskRepository {
     return result.rows[0]
   }
 
-  async updateComment(taskId: string, commentId: number, ownerKey: string, content: string) {
-    const result = await this.client.execute({
-      sql: `UPDATE comments SET content = ?
-            WHERE task_id = ? AND id = ? AND owner_key = ?
-            RETURNING id, task_id, content, author, created_at`,
-      args: [content, taskId, commentId, ownerKey],
-    })
-    return result.rows[0]
-  }
-
   async deleteComment(taskId: string, commentId: number, ownerKey: string): Promise<boolean> {
     const result = await this.client.execute({
       sql: "DELETE FROM comments WHERE task_id = ? AND id = ? AND owner_key = ?",

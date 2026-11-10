@@ -210,6 +210,7 @@ function privateResourcePath(url) {
     const path = appRoutePath(pathname)
     if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
+        path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
         path === "/inactivity" || path === "/api/task-inactivity" ||
         taskHistoryPath.test(path) ||
@@ -490,7 +491,7 @@ self.addEventListener("message", (event) => {
   }
 
   if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY",
-    "MEITHEAL_SEARCH_NETWORK_ONLY", "MEITHEAL_PRESETS_NETWORK_ONLY", "TASK_DRAFTS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
+    "MEITHEAL_SEARCH_NETWORK_ONLY", "MEITHEAL_PRESETS_NETWORK_ONLY", "TASK_DRAFTS_NETWORK_ONLY", "COMMENT_MENTIONS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
     const port = event.ports[0]
     event.waitUntil(ensureSensitiveCachePurge().then(
       () => port.postMessage(true),

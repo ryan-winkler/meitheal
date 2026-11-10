@@ -2084,6 +2084,64 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+  /api/comment-people:
+    get:
+      operationId: findCommentPeople
+      tags:
+        - Tasks
+      summary: Find people to mention in a comment
+      description: Verified Home Assistant editor only. Returns up to five eligible people and opaque selectors.
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 40
+        - in: header
+          name: X-Meitheal-Mention-Context
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Eligible people
+        "403":
+          description: Current editor session required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+  /api/mention-inbox:
+    post:
+      operationId: useMentionInbox
+      tags:
+        - Tasks
+      summary: List or mark your comment mentions
+      description: Verified same-origin Home Assistant inbox only. Send action list with before null or a cursor, or action
+        mark with id and read. Null id marks all read.
+      parameters:
+        - in: header
+          name: X-Meitheal-Mention-Context
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Your current inbox page
+        "204":
+          description: Read state saved
+        "403":
+          description: Current inbox session required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: Session changed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
   /api/task-pins:
     post:
       operationId: readTaskPins
@@ -2510,13 +2568,16 @@ paths:
       tags:
         - Tasks
       summary: Add a comment to a task
-      description: Add a status update or handoff note. Meitheal records the author from the verified caller. For Home
-        Assistant ingress, it checks active membership before a write or keyed replay. The JSON body is limited to 32
-        KiB.
+      description: Add a status update or handoff note. Home Assistant comment mentions require a current member and a durable
+        attempt header. Retry with the same text and header for 48 hours. The JSON body is limited to 32 KiB.
       parameters:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: X-Meitheal-Comment-Attempt
+          in: header
           schema:
             type: string
       requestBody: &a32
@@ -2555,6 +2616,18 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
         "408":
           description: The request body did not arrive in time.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: A selected person is unavailable or the attempt already used different text.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "410":
+          description: The comment from the original attempt was deleted.
           content:
             application/problem+json:
               schema:

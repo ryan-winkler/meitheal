@@ -1,3 +1,4 @@
+import { commentMentions } from "@lib/comment-mentions"
 import { buildTaskPath, buildTaskPermalink } from "@lib/task-detail-handoff"
 
 function getReferenceTaskId(path: string): string | null {
@@ -15,8 +16,12 @@ export function resolveDescriptionTaskReferences(description: HTMLElement): void
 }
 
 export function renderCommentTaskReferences(body: HTMLElement, content: string, taskLabel: string): void {
-  body.textContent = ""
-  let offset = 0
+  const references = commentMentions(content).map(({ label, start, end }) => {
+    const mention = document.createElement("span")
+    mention.className = "font-semibold"
+    mention.textContent = "@" + label
+    return { start, end, element: mention as HTMLElement }
+  })
   for (const match of content.matchAll(/\[(MTH-[0-9]+|Task)\]\((\/tasks\?open=[^\s)]+)\)/g)) {
     const id = getReferenceTaskId(match[2] ?? "")
     if (!id) continue
@@ -24,8 +29,14 @@ export function renderCommentTaskReferences(body: HTMLElement, content: string, 
     link.href = buildTaskPermalink(id)
     link.textContent = match[1] === "Task" ? taskLabel : match[1] ?? ""
     link.className = "underline underline-offset-2 hover:text-accent"
-    body.append(content.slice(offset, match.index), link)
-    offset = match.index + match[0].length
+    references.push({ start: match.index, end: match.index + match[0].length, element: link })
+  }
+  body.textContent = ""
+  let offset = 0
+  for (const { start, end, element } of references.sort((a, b) => a.start - b.start)) {
+    if (start < offset) continue
+    body.append(content.slice(offset, start), element)
+    offset = end
   }
   body.append(content.slice(offset))
 }

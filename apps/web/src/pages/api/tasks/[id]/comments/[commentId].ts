@@ -1,7 +1,9 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
+import { prepareCommentMentions } from "@lib/comment-mention-request"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
 function parseCommentId(value: string | undefined): number | null {
@@ -35,9 +37,10 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
   if (content instanceof Response) return content
 
   try {
+    const prepared = await prepareCommentMentions(content, locals, request.signal)
+    if (prepared instanceof Response) return prepared
     await ensureSchema()
-    if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
-    const comment = await new TaskRepository(getPersistenceClient()).updateComment(params.id!, id, owner, content)
+    const comment = await new CommentMentionRepository(getPersistenceClient()).edit(params.id!, id, owner, prepared.content, prepared.recipients)
     return comment ? commentJson(comment) : apiError("Comment not found", 404)
   } catch {
     return commentFailure("patch", "Failed to update comment")

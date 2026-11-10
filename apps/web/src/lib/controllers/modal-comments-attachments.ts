@@ -12,6 +12,7 @@ import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
+import { isCommentMentionProblem } from "@lib/comment-mention-client"
 import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
 
@@ -71,7 +72,9 @@ function attachCommentManagement(
       })
       if (!response.ok) {
         const participantDenied = await isActiveParticipantProblem(response)
-        if (isCurrent() && participantDenied) error.textContent = template.dataset.participantRequired ?? ""
+        const mentionFailed = await isCommentMentionProblem(response)
+        if (isCurrent()) error.textContent = (participantDenied ? template.dataset.participantRequired
+          : mentionFailed ? template.dataset.mentionFailed : template.dataset.editFailed) ?? ""
         throw new Error("Comment edit failed")
       }
       const updated = await response.json() as { content: string }

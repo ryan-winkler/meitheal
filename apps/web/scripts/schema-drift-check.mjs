@@ -7,6 +7,7 @@ import { openDatabase } from "./database-client.mjs"
 import { validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
 import { validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
 import { validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts.mjs"
+import { validateCommentMentionsSchema } from "../drizzle/migrations/0007_comment_mentions.mjs"
 
 import { validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 
@@ -74,6 +75,7 @@ async function main() {
     await validateTaskDeferralSchema(client)
     await validateTaskPinsSchema(client)
     await validateTaskDraftsSchema(client)
+    await validateCommentMentionsSchema(client)
     await validateTaskInactivitySchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({

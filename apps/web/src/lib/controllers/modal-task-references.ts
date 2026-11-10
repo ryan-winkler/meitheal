@@ -1,5 +1,7 @@
 import type { SearchResultItem } from "@domains/search/search-types"
 import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
+import { commentMentionToken } from "@lib/comment-mentions"
+import { fetchCommentPrivate } from "@lib/comment-mention-client"
 import { buildTaskPath } from "@lib/task-detail-handoff"
 
 const limit = 5
@@ -8,10 +10,11 @@ function referenceAtCaret(input: HTMLTextAreaElement) {
   const end = input.selectionStart
   const value = input.value
   if (input.readOnly || end !== input.selectionEnd || /^[\p{L}\p{M}\p{N}_-]/u.test(value.slice(end, end + 2))) return null
-  const match = /(?:^|\s)#([\p{L}\p{M}\p{N}_-]{0,40})$/u.exec(value.slice(0, end))
-  if (!match) return null
-  const query = match[1] ?? ""
-  return { query, start: end - query.length - 1, end }
+  const match = /(?:^|\s)([#@])([\p{L}\p{M}\p{N}_-]{0,40})$/u.exec(value.slice(0, end))
+  if (!match || (match[1] === "@" && !input.hasAttribute("data-comment-mention"))) return null
+  const kind = match[1] === "@" ? "person" : "task"
+  const query = match[2] ?? ""
+  return { kind, query, start: end - query.length - 1, end }
 }
 
 function ticketLabel(item: SearchResultItem): string {
@@ -27,7 +30,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
 
   let active: { input: HTMLTextAreaElement, token: NonNullable<ReturnType<typeof referenceAtCaret>>, lookup: AbortController } | undefined
   let timer: number | undefined
-  let results: SearchResultItem[] = []
+  let results: { title: string, detail: string, replacement: string }[] = []
   let selected = -1
 
   const close = () => {
@@ -49,7 +52,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
   const isCurrent = (state: NonNullable<typeof active>) => {
     if (active !== state || document.activeElement !== state.input) return false
     const current = referenceAtCaret(state.input)
-    return current?.start === state.token.start && current.end === state.token.end && current.query === state.token.query
+    return current?.start === state.token.start && current.end === state.token.end && current.query === state.token.query && current.kind === state.token.kind
   }
 
   const refresh = (event: Event) => {
@@ -67,7 +70,9 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
       input.after(picker)
       input.setAttribute("aria-controls", list.id)
       picker.hidden = false
-      status.textContent = picker.dataset.loading ?? ""
+      const person = token.kind === "person"
+      list.setAttribute("aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
+      status.textContent = (person ? picker.dataset.personLoading : picker.dataset.loading) ?? ""
       picker.scrollIntoView({ block: "nearest" })
       const params = new URLSearchParams({ scope: "tasks", task_fields: "id,title", limit: String(limit), include_completed: "1" })
       if (token.query) {
@@ -75,18 +80,36 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
         params.set("include_archived", "1")
       }
       try {
-        const scope = searchWorkerScope()
-        const worker = navigator.serviceWorker?.controller
-        if (worker && !await searchWorkerReady(scope, worker)) {
-          if (isCurrent(state)) status.textContent = picker.dataset.update ?? ""
-          return
+        const signal = AbortSignal.any([state.lookup.signal, AbortSignal.timeout(5_000)])
+        if (person) {
+          const response = await fetchCommentPrivate("api/comment-people?" + new URLSearchParams({ q: token.query }), signal, {
+            headers: { "X-Meitheal-Mention-Context": picker.dataset.personContext ?? "" },
+          })
+          if (!response.ok) throw new Error("Could not look up people.")
+          const { matches } = await response.json() as { matches: { key: string, label: string }[] }
+          if (!isCurrent(state)) return
+          results = matches.slice(0, limit).map(({ key, label }) => ({
+            title: label, detail: "", replacement: commentMentionToken(key, label),
+          }))
+        } else {
+          const scope = searchWorkerScope()
+          const worker = navigator.serviceWorker?.controller
+          if (worker && !await searchWorkerReady(scope, worker)) {
+            if (isCurrent(state)) status.textContent = picker.dataset.update ?? ""
+            return
+          }
+          if (!isCurrent(state) || navigator.serviceWorker?.controller !== worker) return
+          const data = await fetchOnlineSearch(params, scope, signal)
+          if (!isCurrent(state) || navigator.serviceWorker?.controller !== worker) return
+          results = (data.sections.find(section => section.id === "tasks")?.items ?? [])
+            .filter(item => item.kind === "task" && item.taskId)
+            .slice(0, limit)
+            .map(item => {
+              const label = ticketLabel(item)
+              return { title: item.title, detail: label === "Task" ? picker.dataset.taskLabel ?? "" : label,
+                replacement: `[${label}](${buildTaskPath(item.taskId!)})` }
+            })
         }
-        if (!isCurrent(state) || navigator.serviceWorker?.controller !== worker) return
-        const data = await fetchOnlineSearch(params, scope, AbortSignal.any([state.lookup.signal, AbortSignal.timeout(5_000)]))
-        if (!isCurrent(state) || navigator.serviceWorker?.controller !== worker) return
-        results = (data.sections.find(section => section.id === "tasks")?.items ?? [])
-          .filter(item => item.kind === "task" && item.taskId)
-          .slice(0, limit)
         list.replaceChildren(...results.map((item, index) => {
           const option = document.createElement("li")
           option.id = `${list.id}-${index}`
@@ -99,25 +122,27 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
           title.textContent = item.title
           const ticket = document.createElement("span")
           ticket.className = "shrink-0 text-xs text-text-secondary"
-          const label = ticketLabel(item)
-          ticket.textContent = label === "Task" ? picker.dataset.taskLabel ?? "" : label
-          option.append(title, ticket)
+          ticket.textContent = item.detail
+          option.append(title)
+          if (item.detail) option.append(ticket)
           return option
         }))
         list.hidden = results.length === 0
-        status.textContent = (results.length ? picker.dataset.choose : picker.dataset.empty) ?? ""
+        status.textContent = (person
+          ? (results.length ? picker.dataset.personChoose : picker.dataset.personEmpty)
+          : (results.length ? picker.dataset.choose : picker.dataset.empty)) ?? ""
         picker.scrollIntoView({ block: "nearest" })
       } catch {
-        if (isCurrent(state)) status.textContent = picker.dataset.failed ?? ""
+        if (isCurrent(state)) status.textContent = (person ? picker.dataset.personFailed : picker.dataset.failed) ?? ""
       }
     }, 180)
   }
 
   const insert = (index: number) => {
     const result = results[index]
-    if (!active || !isCurrent(active) || !result?.taskId) return close()
+    if (!active || !isCurrent(active) || !result) return close()
     const { input, token } = active
-    const replacement = `[${ticketLabel(result)}](${buildTaskPath(result.taskId)})`
+    const { replacement } = result
     if (input.maxLength >= 0 && input.value.length - (token.end - token.start) + replacement.length > input.maxLength) {
       status.textContent = picker.dataset.tooLong ?? ""
       return
