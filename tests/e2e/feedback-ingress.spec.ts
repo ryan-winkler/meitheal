@@ -734,9 +734,9 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     expect((await api.get(at("/api/feedback"), { headers: { ...admin, ...agent } })).status()).toBe(403)
     expect((await api.post(at("/api/export/database.sqlite"), { headers: { ...admin, ...agent } })).status()).toBe(403)
     const tools = await api.post(at("/api/mcp"), {
-      headers: agent, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      headers: { ...agent, origin }, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
     })
-    expect(tools.ok()).toBeTruthy()
+    expect(tools.status(), await tools.text()).toBe(200)
     const catalog = (await tools.json()).result.tools as { name: string }[]
     expect(catalog.some(tool => tool.name === "createTask")).toBe(true)
     expect(catalog.some(tool => /localfeedback|exportdatabase/i.test(tool.name))).toBe(false)

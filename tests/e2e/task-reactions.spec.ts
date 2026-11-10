@@ -171,9 +171,9 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
 
     const tools = async (headers: Record<string, string>) => {
       const response = await request.post(origin + "/api/mcp", {
-        headers, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        headers: { ...headers, origin }, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
       })
-      expect(response.status()).toBe(200)
+      expect(response.status(), await response.text()).toBe(200)
       return (await response.json()).result.tools.map((tool: { name: string }) => tool.name)
     }
     const readTools = await tools(reader)
