@@ -20,7 +20,7 @@ async function fixture(prefix: string) {
       return response.end('{"version":"0.0.1"}')
     }
 
-    const isPrivate = path === "/settings" || path.startsWith(privatePath) ||
+    const isPrivate = path === "/settings" || path === "/review" || path.startsWith(privatePath) ||
       (path === "/today" && url.searchParams.has("unscheduledPage"))
     response.writeHead(200, {
       "content-type": "text/html",
@@ -93,41 +93,43 @@ test("no-store responses stay out of navigation and fetch caches", async ({ brow
   }
 })
 
-for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
-  test(`unscheduled Today cannot replay stale pages in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
-    const server = await fixture(prefix)
-    const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
-    try {
-      const page = await context.newPage()
-      const url = server.base + unscheduledPath
-      await page.goto(server.base + "/fixture")
-      await page.evaluate(async url => {
-        for (const bucket of ["nav", "static", "api", "precache"]) {
-          const cache = await caches.open(`meitheal-${bucket}-v0.0.1`)
-          await cache.put(url, new Response("<h1>Stale private page</h1>", {
-            headers: { date: new Date().toUTCString(), "content-type": "text/html" },
-          }))
-        }
-        await caches.open("fixture-other-software")
-      }, url)
-      await register(page, server.base + "/sw.js")
+for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review", "Proposal Review"]]) {
+  for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
+    test(`${label} cannot replay stale pages in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+      const server = await fixture(prefix)
+      const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+      try {
+        const page = await context.newPage()
+        const url = server.base + route
+        await page.goto(server.base + "/fixture")
+        await page.evaluate(async url => {
+          for (const bucket of ["nav", "static", "api", "precache"]) {
+            const cache = await caches.open(`meitheal-${bucket}-v0.0.1`)
+            await cache.put(url, new Response("<h1>Stale private page</h1>", {
+              headers: { date: new Date().toUTCString(), "content-type": "text/html" },
+            }))
+          }
+          await caches.open("fixture-other-software")
+        }, url)
+        await register(page, server.base + "/sw.js")
 
-      expect(await cached(page, url)).toBe(false)
-      expect(await page.evaluate(() => caches.keys())).toContain("fixture-other-software")
-      const navigation = await page.goto(url)
-      expect(navigation?.fromServiceWorker()).toBe(false)
-      await expect(page.getByRole("heading")).toHaveText("Live only")
-      expect(await page.evaluate(url => fetch(url).then(response => response.text()), url)).toContain("Live only")
-      expect(await cached(page, url)).toBe(false)
+        expect(await cached(page, url)).toBe(false)
+        expect(await page.evaluate(() => caches.keys())).toContain("fixture-other-software")
+        const navigation = await page.goto(url)
+        expect(navigation?.fromServiceWorker()).toBe(false)
+        await expect(page.getByRole("heading")).toHaveText("Live only")
+        expect(await page.evaluate(url => fetch(url).then(response => response.text()), url)).toContain("Live only")
+        expect(await cached(page, url)).toBe(false)
 
-      await context.setOffline(true)
-      expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
-      await expect(page.reload()).rejects.toThrow(/ERR_INTERNET_DISCONNECTED/)
-    } finally {
-      await context.close()
-      await server.close()
-    }
-  })
+        await context.setOffline(true)
+        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+        await expect(page.reload()).rejects.toThrow(/ERR_INTERNET_DISCONNECTED/)
+      } finally {
+        await context.close()
+        await server.close()
+      }
+    })
+  }
 }
 
 for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {

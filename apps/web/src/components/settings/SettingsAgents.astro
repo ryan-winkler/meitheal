@@ -235,72 +235,12 @@ const { locale } = Astro.props;
   </div>
   <!-- /settings-grid (agents) -->
 
-  <!-- Bot Handoff Settings (T29 — Persona #46 Settings Integration) -->
   <div class="settings-grid mt-4">
-    <SettingsPanelCard
-      title={t("settings.bot_handoff_title", locale)}
-      subtitle={t("settings.bot_handoff_subtitle", locale)}
-    >
-
-      <div class="integration-config">
-        <!-- Allow bot proposals -->
-        <div class="form-group" style="display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
-          <label class="toggle-label">
-            <input type="checkbox" id="bot-allow-proposals" aria-labelledby="bot-allow-proposals-label" checked />
-            <span class="toggle-slider"></span>
-          </label>
-          <div>
-            <strong id="bot-allow-proposals-label" class="settings-text-sm">{t("settings.bot_allow_proposals", locale)}</strong>
-            <div class="settings-caption">
-              {t("settings.bot_allow_proposals_desc", locale)}
-            </div>
-          </div>
-        </div>
-
-        <!-- Auto-accept safe changes -->
-        <div class="form-group" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);">
-          <label class="toggle-label">
-            <input type="checkbox" id="bot-auto-accept" aria-labelledby="bot-auto-accept-label" />
-            <span class="toggle-slider"></span>
-          </label>
-          <div>
-            <strong id="bot-auto-accept-label" class="settings-text-sm">{t("settings.bot_auto_accept", locale)}</strong>
-            <div class="settings-caption">
-              {t("settings.bot_auto_accept_desc", locale)}
-            </div>
-          </div>
-        </div>
-
-        <!-- Lock timeout -->
-        <div class="form-group" style="padding-top: 12px;">
-          <label class="form-label" for="bot-lock-timeout">{t("settings.bot_lock_timeout", locale)}</label>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <input
-              type="number"
-              class="form-input"
-              id="bot-lock-timeout"
-              min="1"
-              max="60"
-              value="5"
-              style="width: 80px;"
-            />
-            <span style="color: var(--text-muted); font-size: 12px;">
-              {t("settings.bot_lock_timeout_desc", locale)}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="btn btn-primary"
-          id="save-bot-settings"
-          style="font-size: 13px; margin-top: 12px;"
-          data-text-saved={t("settings.bot_settings_saved", locale)}
-          data-text-failed={t("settings.bot_settings_failed", locale)}
-        >
-          {t("settings.save_bot_settings", locale)}
-        </button>
-      </div>
+    <SettingsPanelCard title={t("settings.bot_handoff_title", locale)}>
+      <p id="bot-allow-proposals" class="settings-caption" tabindex="-1">
+        {t("settings.bot_handoff_subtitle", locale)}
+      </p>
+      <a class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
     </SettingsPanelCard>
   </div>
 </div>
@@ -352,7 +292,7 @@ const { locale } = Astro.props;
 
 <script>
   import { withAsyncButton } from "@lib/async-button"
-  import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+  import { saveSetting, showSettingsSaveError } from "@lib/settings-utils"
   import { showToast } from "@lib/toast";
   import { pageLifecycle } from "@lib/page-lifecycle";
 
@@ -492,46 +432,7 @@ const { locale } = Astro.props;
     loadHAAgents();
     fixProtocolLinks();
     updateExtAiBadge();
-    loadBotSettings();
   }
-
-  // ── Bot Handoff Settings (T29) ──
-  const botAllowProposals = document.getElementById("bot-allow-proposals") as HTMLInputElement | null;
-  const botAutoAccept = document.getElementById("bot-auto-accept") as HTMLInputElement | null;
-  const botLockTimeout = document.getElementById("bot-lock-timeout") as HTMLInputElement | null;
-  const saveBotBtn = document.querySelector<HTMLButtonElement>("#save-bot-settings");
-
-  async function loadBotSettings() {
-    try {
-      const keys = ["bot_allow_proposals", "bot_auto_accept", "bot_lock_timeout"];
-      const promises = keys.map((key) =>
-        fetch((window.__ingress_path || "") + `/api/settings?key=${key}`).then((r) => r.ok ? r.json() : null)
-      );
-      const [allowRes, autoRes, timeoutRes] = await Promise.all(promises);
-      if (botAllowProposals && allowRes?.value !== undefined) {
-        botAllowProposals.checked = allowRes.value !== "false";
-      }
-      if (botAutoAccept && autoRes?.value !== undefined) {
-        botAutoAccept.checked = autoRes.value === "true";
-      }
-      if (botLockTimeout && timeoutRes?.value !== undefined) {
-        botLockTimeout.value = String(timeoutRes.value);
-      }
-    } catch { /* defaults are fine */ }
-  }
-
-  if (saveBotBtn) pageLifecycle.on(saveBotBtn, "click", withAsyncButton(saveBotBtn, async () => {
-    try {
-      await saveSettings({
-        bot_allow_proposals: String(botAllowProposals?.checked ?? true),
-        bot_auto_accept: String(botAutoAccept?.checked ?? false),
-        bot_lock_timeout: String(botLockTimeout?.value ?? "5"),
-      });
-      showToast(saveBotBtn?.dataset.textSaved || "Bot settings saved.", "success");
-    } catch (error) {
-      showSettingsSaveError(error);
-    }
-  }));
 
   const section = document.getElementById("automation-ai-settings");
   if (!section) {

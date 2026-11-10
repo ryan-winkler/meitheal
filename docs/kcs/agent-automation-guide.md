@@ -8,6 +8,8 @@ description: "Maintain the API, event, and automation contracts."
 
 > KCS runbook for the build-time OpenAPI, AsyncAPI, MCP, and observability pipeline.
 
+Agent handoff status is shown in Settings. Review displays saved proposals and fetches them live. Service workers purge previously cached Review pages during activation.
+
 ## Build Pipeline
 
 ```bash

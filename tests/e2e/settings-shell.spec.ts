@@ -46,6 +46,14 @@ test.describe("Settings Shell", () => {
     await expect(directory.getByRole("link", { name: "Danger Zone" })).toHaveAttribute("aria-current", "location")
   })
 
+  test("agent handoff shows its current status and links to Review", async ({ page }) => {
+    await openSettings(page, "#automation-ai-settings")
+    await expect(page.getByRole("heading", { name: "Agent handoff", exact: true })).toBeVisible()
+    await expect(page.getByText("Agent proposals and approval are planned.", { exact: false })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Open Review" })).toHaveAttribute("href", "/review")
+    await expect(page.getByRole("checkbox", { name: "Allow Bot Proposals" })).toHaveCount(0)
+  })
+
   test("search jumps directly to matching anchors", async ({ page }) => {
     await openSettings(page)
     const search = await openSettingsSearch(page)
