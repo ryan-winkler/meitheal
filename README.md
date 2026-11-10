@@ -92,6 +92,10 @@ Check [installation availability](https://github.com/Coolock-Village/meitheal-ha
 
 Earlier Home Assistant versions call Apps **Add-ons**. See the [setup guide](meitheal-hub/DOCS.md) for more detail.
 
+## Try Meitheal from Source
+
+Follow the [local setup](CONTRIBUTING.md#run-and-verify-locally) to open Meitheal in your browser and create a task with a disposable database. Use Home Assistant for voice, companion app, and automation features.
+
 ## Voice and AI Quick Start
 
 The optional Home Assistant integration adds voice and conversation-agent controls. Set it up separately after the app is running.
