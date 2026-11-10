@@ -90,6 +90,10 @@ Open the task, then choose its **Project** in the details panel. Choose **No pro
 
 Integrations can use `PUT /api/tasks/{id}` or `PATCH /api/tasks/{id}` with `project_id` set to a project ID or `null`. Deleting a project clears its tasks’ project assignment and preserves the tasks.
 
+## Principle ownership
+
+A Principle update or removal through `/api/pillars/{id}/principles` applies within the selected Pillar. A request for a Principle from another Pillar returns `404` and leaves it unchanged.
+
 ## Helper System
 
 Users see inline explainer callouts (`InlineHelper.astro`) on parent pages.
