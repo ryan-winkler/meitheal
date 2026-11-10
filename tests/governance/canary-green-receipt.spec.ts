@@ -12,6 +12,8 @@ const arm = `sha256:${"a".repeat(64)}`
 const amd = `sha256:${"b".repeat(64)}`
 const digest = `sha256:${"c".repeat(64)}`
 const hash = "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549"
+// The 309-second counter window is slightly longer than the driver's timer.
+const timing = "driver_seconds,308.500,11.000,12.000"
 
 function passingReceipt() {
   const installed = `${amd} healthy 0 2026-01-01T00:00:00Z ${"d".repeat(64)}`
@@ -26,11 +28,14 @@ function passingReceipt() {
     "limits,201326592,0,100000 100000",
     '{"synthetic_tasks":2000}',
     "seed=separate_cgroup,same_loopback_namespace,disposable_data_volume,fixed_helper",
-    "driver=separate_cgroup,same_loopback_namespace,fixed_helper",
     "cgroup_fields,phase,epoch,memory_current,swap,cpu_usec,max,oom,oom_kill",
-    ...Array.from({ length: 62 }, (_, index) =>
-      `cgroup,${index < 12 ? "idle" : "active"},${1800000000 + index * 5},${index < 12 ? 67108863 : 100663295},0,${index * 750000},0,0,0`),
-    ...Array.from({ length: 105 }, () => routes.map(route => `http,${route},0.350000`)).flat(),
+    "driver=separate_cgroup,same_loopback_namespace,fixed_helper",
+    timing,
+    ...Array.from({ length: 71 }, (_, index) => {
+      const elapsed = index * 5 + Math.floor(index / 3)
+      return `cgroup,${index < 12 ? "idle" : "active"},${1800000000 + elapsed},${index < 12 ? 67108863 : 100663295},0,${elapsed * 150000},0,0,0`
+    }),
+    ...Array.from({ length: 105 }, () => routes.map(route => `http,${route},0.020000`)).flat(),
     "workload,completed,105",
     "max 0", "oom 0", "oom_kill 0",
     "probe_state=running health=healthy oom=false restarts=0",
@@ -172,12 +177,68 @@ test("receipt metrics and exact ARM64 config must pass before registry action", 
   expect(harness.run(publish("aarch64", arm, harness.receipt)).stderr).toContain("exact ARM64 config ID")
   expect(readFileSync(harness.trace, "utf8")).toBe("")
 
+  let listRequests = 0
   writeFileSync(harness.receipt, passingReceipt().replaceAll(",67108863,", ",67108864,")
-    .replaceAll(",100663295,", ",100663296,").replaceAll("list,200,0.350000", "list,200,0.350001"))
+    .replaceAll(",100663295,", ",100663296,")
+    .replaceAll("list,200,0.020000", line => listRequests++ < 6 ? "list,200,0.350001" : line))
   const result = harness.run(publish("aarch64", arm, harness.receipt))
   expect(result.status).toBe(1)
   expect(result.stderr).toContain("idle below 64 MiB, active below 96 MiB, each route p95 at or below 350 ms")
   expect(readFileSync(harness.trace, "utf8")).toBe("")
+})
+
+test("driver timing must be unique, valid and consistent with the request and sample windows", ({ harness }) => {
+  const args = publish("aarch64", arm, harness.receipt)
+  for (const [record, failure] of [
+    ["", "one valid driver_seconds"],
+    ["driver_seconds,311.000,11.000,NaN", "one valid driver_seconds"],
+    [`${timing}\n${timing}`, "one valid driver_seconds"],
+    ["driver_seconds,262.499,11.000,12.000", "outside the fixed workload bounds"],
+    ["driver_seconds,360.001,11.000,12.000", "outside the fixed workload bounds"],
+    ["driver_seconds,345.000,11.000,12.000", "sample window does not match driver wall time"],
+  ] as const) {
+    writeFileSync(harness.receipt, passingReceipt().replace(timing, record))
+    const result = harness.run(args)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(failure)
+    expect(readFileSync(harness.trace, "utf8")).toBe("")
+  }
+  writeFileSync(harness.receipt, passingReceipt().replaceAll(",0.020000", ",0.350000"))
+  expect(harness.run(args).stderr).toContain("wall time cannot contain the recorded requests and sleeps")
+  expect(readFileSync(harness.trace, "utf8")).toBe("")
+})
+
+test("a final timestamp jump cannot dilute a failing CPU measurement", ({ harness }) => {
+  const args = publish("aarch64", arm, harness.receipt)
+  const busy = passingReceipt().split("\n").map(line => {
+    if (!line.startsWith("cgroup,")) return line
+    const fields = line.split(",")
+    fields[5] = String((Number(fields[2]) - 1800000000) * 200000)
+    return fields.join(",")
+  }).join("\n")
+  writeFileSync(harness.receipt, busy)
+  expect(harness.run(args).stderr).toContain("active CPU at or below 15%")
+  expect(readFileSync(harness.trace, "utf8")).toBe("")
+  writeFileSync(harness.receipt, busy.replace("cgroup,active,1800000373,", "cgroup,active,1800000973,"))
+  const result = harness.run(args)
+  expect(result.status).toBe(1)
+  expect(result.stderr).toContain("samples 5–8 seconds apart")
+  expect(readFileSync(harness.trace, "utf8")).toBe("")
+})
+
+test("cleanup must be the terminal marker after the measured workload and final health", ({ harness }) => {
+  const raw = passingReceipt()
+  for (const malformed of [
+    raw.replace("\nprobe_cleanup=complete", "").replace(timing, `probe_cleanup=complete\n${timing}`),
+    raw.replace("\nworkload,completed,105", "").replace(timing, `${timing}\nworkload,completed,105`),
+    `${raw}\nunexpected output after cleanup`,
+  ]) {
+    writeFileSync(harness.receipt, malformed)
+    const result = harness.run(publish("aarch64", arm, harness.receipt))
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("terminal cleanup follows measurements and final health")
+    expect(readFileSync(harness.trace, "utf8")).toBe("")
+  }
 })
 
 test("an older receipt or sibling image cannot authorize a different source revision", ({ harness }) => {

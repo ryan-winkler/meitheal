@@ -9,6 +9,10 @@ from decimal import Decimal
 
 MIB = 1024**2
 MAX_RECEIPT_BYTES = MIB
+MIN_DRIVER_SECONDS = Decimal("262.5")  # 105 fixed 2.5-second sleeps
+MAX_DRIVER_SECONDS = 360
+MIN_SAMPLE_GAP_SECONDS = 5
+MAX_SAMPLE_GAP_SECONDS = 8  # 5-second interval plus sampling and launch overhead
 WORKLOAD_SHA256 = "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549"
 FIXED_HELPER = (
     "sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f architecture=arm64 "
@@ -29,6 +33,13 @@ def percentile_95(values):
 def verify(lines, config_id, version):
     def matching_lines(prefix):
         return [line.removeprefix(prefix) for line in lines if line.startswith(prefix)]
+
+    timings = matching_lines("driver_seconds,")
+    if len(timings) != 1 or not re.fullmatch(r"[0-9]{1,3}\.[0-9]{3}(?:,[0-9]{1,3}\.[0-9]{3}){2}", timings[0]):
+        raise ValueError("Expected one valid driver_seconds record")
+    driver_seconds = Decimal(timings[0].split(",", 1)[0])
+    if not MIN_DRIVER_SECONDS <= driver_seconds <= MAX_DRIVER_SECONDS:
+        raise ValueError("Driver wall time is outside the fixed workload bounds")
 
     headers = matching_lines("cgroup_fields,")
     if len(headers) != 1:
@@ -52,11 +63,15 @@ def verify(lines, config_id, version):
 
     idle = samples["idle"]
     active = samples["active"]
-    if len(idle) < 12 or len(active) < 50 or idle + active != ordered or any(
-        newer["epoch"] <= older["epoch"] or newer["cpu_usec"] < older["cpu_usec"]
+    if len(idle) != 12 or len(active) < 50 or idle + active != ordered or any(
+        not MIN_SAMPLE_GAP_SECONDS <= newer["epoch"] - older["epoch"] <= MAX_SAMPLE_GAP_SECONDS
+        or newer["cpu_usec"] < older["cpu_usec"]
         for older, newer in zip(ordered, ordered[1:])
     ):
-        raise ValueError("Expected ordered idle and active samples with monotonic counters")
+        raise ValueError("Expected ordered idle and active samples 5–8 seconds apart with monotonic counters")
+    active_seconds = active[-1]["epoch"] - active[0]["epoch"]
+    if abs(active_seconds - driver_seconds) > MAX_SAMPLE_GAP_SECONDS:
+        raise ValueError("Active sample window does not match driver wall time")
 
     latencies = {route: [] for route, _ in EXPECTED_REQUESTS}
     requests = list(csv.reader(matching_lines("http,"), strict=True))
@@ -66,11 +81,13 @@ def verify(lines, config_id, version):
         if (route, status) != expected or not re.fullmatch(r"[0-9]{1,3}(?:\.[0-9]{1,9})?", elapsed):
             raise ValueError("Invalid route, response status, or latency in request cycle")
         latencies[route].append(Decimal(elapsed) * 1000)
+    request_seconds = sum(sum(values) for values in latencies.values()) / 1000
+    if MIN_DRIVER_SECONDS + request_seconds > driver_seconds + Decimal("0.01"):
+        raise ValueError("Driver wall time cannot contain the recorded requests and sleeps")
 
     idle_p95 = percentile_95([sample["memory_current"] for sample in idle])
     active_p95 = percentile_95([sample["memory_current"] for sample in active])
     cpu_usec = active[-1]["cpu_usec"] - active[0]["cpu_usec"]
-    active_seconds = active[-1]["epoch"] - active[0]["epoch"]
     cpu_percent = Decimal(cpu_usec) / (active_seconds * 10_000)
     routes_p95 = {route: percentile_95(values) for route, values in latencies.items()}
 
@@ -78,6 +95,17 @@ def verify(lines, config_id, version):
     health = [json.loads(line) for line in lines if line.startswith('{"status":')]
     before = matching_lines("installed_canary_before=")
     after = matching_lines("installed_canary_after=")
+    terminal_prefixes = (
+        "workload,completed,", *(f"{key} " for key in MEMORY_EVENTS), "probe_state=",
+        "installed_canary_after=", "probe_cleanup=",
+    )
+    terminal_positions = [
+        [index for index, line in enumerate(lines) if line.startswith(prefix)] for prefix in terminal_prefixes
+    ]
+    last_measurement = max(index for index, line in enumerate(lines) if line.startswith(("cgroup,", "http,")))
+    terminal_ordered = all(len(positions) == 1 for positions in terminal_positions) and all(
+        left[0] < right[0] for left, right in zip(terminal_positions, terminal_positions[1:])
+    ) and last_measurement < terminal_positions[0][0]
     conditions = {
         "exact ARM64 config ID": len(images) == 1 and re.fullmatch(
             rf"{config_id} architecture=arm64 bytes=[1-9][0-9]*", images[0]
@@ -100,7 +128,8 @@ def verify(lines, config_id, version):
         "installed Canary unchanged and healthy": before == after and len(before) == 1 and re.fullmatch(
             r"sha256:[a-f0-9]{64} healthy [0-9]+ \S+ [a-f0-9]{64}", before[0]
         ) is not None,
-        "probe cleaned up": matching_lines("probe_cleanup=") == ["complete"],
+        "terminal cleanup follows measurements and final health": terminal_ordered
+        and next((line for line in reversed(lines) if line.strip()), "") == "probe_cleanup=complete",
         "pinned separate helper": matching_lines("helper_image=") == [FIXED_HELPER] and all(
             lines.count(marker) == 1 for marker in (
                 "seed=separate_cgroup,same_loopback_namespace,disposable_data_volume,fixed_helper",
