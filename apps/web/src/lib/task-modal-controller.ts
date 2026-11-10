@@ -39,6 +39,7 @@
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
+        let currentCommentTarget: string | null = null
         let _modalAbortController: AbortController | null = null;
         __signal.addEventListener("abort", () => {
           _modalAbortController?.abort()
@@ -54,10 +55,12 @@
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
 
-        function setTaskLocation(taskId: string | null, replace = false) {
+        function setTaskLocation(taskId: string | null, replace = false, commentTarget: string | null = null) {
           const url = new URL(window.location.href)
           if (taskId) url.searchParams.set("open", taskId)
           else url.searchParams.delete("open")
+          if (taskId && commentTarget !== null) url.searchParams.set("comment", commentTarget)
+          else url.searchParams.delete("comment")
           if (getLegacyTaskId(url.hash) !== null) url.hash = ""
           if (url.href === window.location.href) return
           if (replace) history.replaceState(history.state, "", url)
@@ -69,6 +72,7 @@
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          currentCommentTarget = null
           setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -118,13 +122,14 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
-        async function openTaskDetail(taskId: string) {
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null) {
           if (!tdOverlay) return;
           // P3-4: Store focus origin for restore on close
           if (!tdOverlay.classList.contains("active")) _previouslyFocused = document.activeElement
           currentTaskId = taskId;
+          currentCommentTarget = commentTarget
           const legacyLink = getLegacyTaskId(window.location.hash) === taskId
-          if (!legacyLink) setTaskLocation(taskId)
+          if (!legacyLink) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
@@ -185,7 +190,7 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
-            if (!legacyLink || getLegacyTaskId(window.location.hash) === null) setTaskLocation(taskId, true)
+            if (!legacyLink || getLegacyTaskId(window.location.hash) === null) setTaskLocation(taskId, true, commentTarget)
 
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
@@ -864,12 +869,13 @@
 
             // Load comments for the current task.
             document.getElementById("td-comments")?.replaceChildren()
+            document.getElementById("td-comment-link-status")?.replaceChildren()
             commentError?.setAttribute("hidden", "")
             if (commentInput && commentInput.dataset.taskId !== taskId) {
               commentInput.value = ""
               commentInput.dataset.taskId = taskId
             }
-            void loadComments(taskId, modalSignal)
+            void loadComments(taskId, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
@@ -1546,8 +1552,11 @@
         function checkTaskLocation() {
           const url = new URL(window.location.href)
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD()
-          else if (taskId !== currentTaskId || !tdOverlay.classList.contains("active")) void openTaskDetail(taskId)
+          else if (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active")) {
+            void openTaskDetail(taskId, commentTarget)
+          }
         }
         window.addEventListener("popstate", checkTaskLocation, { signal: __signal })
         window.addEventListener("hashchange", checkTaskLocation, { signal: __signal })

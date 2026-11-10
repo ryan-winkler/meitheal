@@ -11,20 +11,33 @@ import {
 } from "@domains/offline/offline-store"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
+import { buildTaskPermalink } from "@lib/task-detail-handoff"
 
 const log = createClientLogger("tasks", "comments-attachments")
 
 /**
  * Load and render comments for a task.
  */
-export async function loadComments(taskId: string, signal: AbortSignal): Promise<void> {
+export async function loadComments(taskId: string, signal: AbortSignal, commentTarget: string | null = null): Promise<void> {
   const container = document.getElementById("td-comments")
+  const status = document.getElementById("td-comment-link-status")
   if (!container) return
+
+  function showLinkStatus(message: string | undefined) {
+    if (signal.aborted || commentTarget === null || !status || !message) return
+    status.textContent = message
+    status.focus()
+  }
+
   try {
     const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, { signal })
-    if (!res.ok) return
+    if (!res.ok) {
+      showLinkStatus(status?.dataset.loadFailed)
+      return
+    }
     const data = (await res.json()) as {
       comments: Array<{
+        id: number
         content: string
         author: string
         created_at: string
@@ -32,31 +45,44 @@ export async function loadComments(taskId: string, signal: AbortSignal): Promise
     }
     if (signal.aborted) return
     container.replaceChildren()
+    let linkedComment: HTMLElement | undefined
     for (const c of data.comments || []) {
-      const wrapper = document.createElement("div")
-      wrapper.className =
-        "bg-bg-card rounded-md p-3 border border-border"
+      const wrapper = document.createElement("article")
+      wrapper.className = "bg-bg-card rounded-md p-3 border border-border focus:outline-2 focus:outline-accent"
 
       const meta = document.createElement("div")
-      meta.className =
-        "flex justify-between text-xs text-text-muted mb-1"
+      meta.className = "flex flex-wrap justify-between gap-1 text-xs text-text-muted mb-1"
       const authorSpan = document.createElement("span")
       authorSpan.textContent = c.author
-      const dateSpan = document.createElement("span")
-      dateSpan.textContent = new Date(c.created_at).toLocaleString()
-      meta.appendChild(authorSpan)
-      meta.appendChild(dateSpan)
+      const dateLink = document.createElement("a")
+      const timestamp = new Date(c.created_at).toLocaleString()
+      dateLink.textContent = timestamp
+      dateLink.href = buildTaskPermalink(taskId, c.id)
+      dateLink.className = "underline underline-offset-2 hover:text-accent"
+      const linkLabel = container.dataset.linkLabel
+      if (linkLabel) {
+        dateLink.title = linkLabel
+        dateLink.setAttribute("aria-label", `${linkLabel}, ${c.author}, ${timestamp}`)
+      }
+      meta.append(authorSpan, dateLink)
 
       const body = document.createElement("div")
       body.className = "text-sm text-text-primary"
       body.textContent = c.content
 
-      wrapper.appendChild(meta)
-      wrapper.appendChild(body)
+      wrapper.id = `td-comment-${c.id}`
+      wrapper.tabIndex = -1
+      body.id = `td-comment-body-${c.id}`
+      wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
+      wrapper.setAttribute("aria-describedby", body.id)
+      wrapper.append(meta, body)
       container.appendChild(wrapper)
+      if (String(c.id) === commentTarget) linkedComment = wrapper
     }
+    if (linkedComment) linkedComment.focus()
+    else showLinkStatus(status?.dataset.unavailable)
   } catch {
-    // Closing or switching tasks cancels the read.
+    showLinkStatus(status?.dataset.loadFailed)
   }
 }
 

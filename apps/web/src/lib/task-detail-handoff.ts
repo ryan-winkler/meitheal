@@ -4,9 +4,10 @@ import { waitForFn } from "@lib/wait-for-fn"
 
 const log = createClientLogger("tasks", "detail-handoff")
 
-export function buildTaskPermalink(taskId: string): string {
+export function buildTaskPermalink(taskId: string, commentId?: number): string {
   const url = new URL(buildIngressPagePath("/tasks"), window.location.origin)
   url.searchParams.set("open", taskId)
+  if (commentId !== undefined) url.searchParams.set("comment", String(commentId))
   return url.href
 }
 

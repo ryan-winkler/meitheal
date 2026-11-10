@@ -83,8 +83,11 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
       const current = new URL(location.href)
-      if (current.searchParams.has("open")) url.searchParams.set("open", current.searchParams.get("open")!)
-      else url.searchParams.delete("open")
+      for (const key of ["open", "comment"]) {
+        const value = current.searchParams.get(key)
+        if (value === null) url.searchParams.delete(key)
+        else url.searchParams.set(key, value)
+      }
       url.hash = current.hash
       history.replaceState(history.state, "", url)
       board.scrollLeft = horizontal

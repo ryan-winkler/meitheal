@@ -144,3 +144,116 @@ test("a task link preserves simulated ingress and opens in another authorized co
     await rm(work, { recursive: true, force: true })
   }
 })
+test("a comment link focuses the edited comment through ingress and recovers after deletion", async ({ browser, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and a disposable ingress fixture")
+  const work = await mkdtemp(join(tmpdir(), "meitheal-comment-permalink-"))
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    SUPERVISOR_TOKEN: "comment-link-fixture-only",
+    MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+  }
+  const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
+  const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
+  const source = await browser.newContext({ extraHTTPHeaders: {} })
+  const recipient = await browser.newContext({ extraHTTPHeaders: {} })
+  let server: ReturnType<typeof fork> | undefined
+  try {
+    execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
+    const child = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
+    server = child
+    const [info] = await Promise.race([
+      once(child, "message", { signal: AbortSignal.timeout(10_000) }),
+      once(child, "exit").then(([code]) => { throw new Error(`Ingress fixture exited with ${code}`) }),
+    ])
+    const origin = `http://127.0.0.1:${info.port}`
+    const entry = origin + info.configuredPath
+    const headers = { origin, "sec-fetch-site": "same-origin" }
+    await source.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    await recipient.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const createTask = async (title: string) => {
+      const result = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
+      expect(result.status()).toBe(201)
+      return (await result.json()).id as string
+    }
+    const post = async (taskId: string, content: string) => {
+      const result = await source.request.post(`${entry}/api/tasks/${taskId}/comments`, { headers, data: { content } })
+      expect(result.status()).toBe(201)
+      return (await result.json()).id as number
+    }
+    const id = await createTask("Comment link task")
+    const other = await createTask("Unrelated comment task")
+    await post(id, "First visible comment")
+    const comment = await post(id, "The linked comment")
+    const otherComment = await post(other, "Comment belonging to a different task")
+    const taskUrl = `${entry}/tasks?open=${id}`
+    const commentApiPath = `/api/tasks/${id}/comments/${comment}`
+
+    const sourcePage = await source.newPage()
+    await sourcePage.goto(taskUrl)
+    const list = sourcePage.locator("#td-comments")
+    await expect(list).toContainText("The linked comment")
+    const link = list.getByRole("article").filter({ hasText: "The linked comment" }).getByRole("link", { name: /^Comment link,/ })
+    const href = `${taskUrl}&comment=${comment}`
+    await expect(link).toHaveAttribute("href", href)
+
+    const denied = await request.get(origin + commentApiPath)
+    expect(denied.status()).toBe(401)
+    const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers, data: { content: "Wrong author" } })
+    expect(forbiddenEdit.status()).toBe(404)
+    const edited = await source.request.patch(entry + commentApiPath, { headers, data: { content: "Edited linked comment" } })
+    expect(edited.status()).toBe(200)
+
+    const page = await recipient.newPage()
+    await page.goto(href)
+    const target = page.locator(`#td-comment-${comment}`)
+    await expect(target).toContainText("Edited linked comment")
+    await expect(target).toBeFocused()
+    await page.reload()
+    await expect(target).toBeFocused()
+
+    const missing = page.locator("#td-comment-link-status")
+    await page.goto(`${taskUrl}&comment=${otherComment}`)
+    await expect(missing).toContainText("This comment is unavailable")
+    await expect(missing).toBeFocused()
+    await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
+    const deleted = await source.request.delete(entry + commentApiPath, { headers })
+    expect(deleted.status()).toBe(204)
+    await page.goto(href)
+    await expect(missing).toBeFocused()
+    await expect(page.locator("#td-comments")).toContainText("First visible comment")
+    await expect(target).toHaveCount(0)
+
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const search = "Comment link task"
+    await page.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
+      started.resolve()
+      await release.promise
+      await route.continue()
+    })
+    await page.evaluate(search => document.dispatchEvent(new CustomEvent("meitheal:filter-change", {
+      detail: { view: "kanban", search },
+    })), search)
+    try {
+      await started.promise
+      await page.getByRole("button", { name: "Close detail" }).press("Enter")
+      await expect.poll(() => new URL(page.url()).searchParams.has("comment")).toBe(false)
+    } finally {
+      release.resolve()
+    }
+    await expect.poll(() => new URL(page.url()).searchParams.get("search")).toBe(search)
+    expect(new URL(page.url()).searchParams.has("comment")).toBe(false)
+    await page.goBack()
+    await expect(missing).toBeFocused()
+  } finally {
+    await source.close()
+    await recipient.close()
+    if (server && server.exitCode === null && server.signalCode === null) {
+      const exited = once(server, "exit")
+      server.kill()
+      await exited
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})

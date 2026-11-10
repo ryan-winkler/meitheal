@@ -207,6 +207,8 @@ Through Home Assistant, open Meitheal from a session that verifies the user. If 
 
 To retrieve one comment, use `GET /api/tasks/{id}/comments/{commentId}`. To edit or delete it, send `PATCH` with the same JSON body or `DELETE` to that URL. The original verified Home Assistant user or the original automation credential owns the comment. API reads require `tasks:read` and mutations require `tasks:write`. An administrator, a replacement credential with the same name, or a matching display name cannot claim another author's comment. Comments recorded without a verified owner, including existing comments and anonymous standalone comments, remain readable. If an edit or deletion returns 404, check the task and comment IDs and use the original account or credential.
 
+Each comment timestamp is a permanent link. Copy the link from the timestamp and open it in an authorized session. The task detail opens and focuses that comment, even after the author edits it. If the comment was removed or belongs to another task, Meitheal keeps the task open and focuses an unavailable message. Links through Home Assistant keep the current ingress path and still require the recipient’s existing access.
+
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
 
 ## Public link previews

@@ -487,7 +487,12 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="text-text-muted" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path></svg>
                  Comments
               </h3>
-              <div id="td-comments" class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
+              <p id="td-comment-link-status" tabindex="-1" role="status"
+                class="text-sm text-text-primary [&:not(:empty)]:mb-3 focus:outline-2 focus:outline-accent"
+                data-unavailable={t("task_modal.comment_link_unavailable", locale)}
+                data-load-failed={t("task_modal.comment_link_load_failed", locale)}></p>
+              <div id="td-comments" data-link-label={t("task_modal.comment_link", locale)}
+                class="space-y-5 mb-5 pl-2 relative before:absolute before:inset-y-0 before:left-[19px] before:w-px before:bg-border/50"></div>
               <div class="flex gap-3 items-start relative mt-6">
                 <div class="w-9 h-9 rounded-full bg-bg-input flex items-center justify-center shrink-0 border border-border text-xs text-text-muted uppercase font-bold shadow-sm z-10">ME</div>
                 <div class="flex-1">
