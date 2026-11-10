@@ -44,6 +44,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         >
           <option value="">Default Agent</option>
         </select>
+        <button type="button" class="btn-icon" id="refresh-ask-ha-agents" aria-label="Refresh conversation agents" title="Refresh conversation agents">↻</button>
         <button
           type="button"
           class="btn-icon text-lg text-text-muted hover:text-text-primary transition-colors"
@@ -52,6 +53,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         >
       </div>
     </div>
+
+    <p id="ask-ha-agent-status" role="status" aria-live="polite" class="ask-agent-status"></p>
 
     <!-- Chat history -->
     <div
@@ -128,6 +131,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <script>
   import { createClientLogger } from "@lib/client-logger";
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
+
+  pageLifecycle.onPageLoad((pageSignal) => {
+  const runtime = window as unknown as { __meithealAskAssist?: AbortController }
+  runtime.__meithealAskAssist?.abort()
+  runtime.__meithealAskAssist = new AbortController()
+  const signal = AbortSignal.any([pageSignal, runtime.__meithealAskAssist.signal])
 
   const log = createClientLogger("ai", "assist-modal");
   // Toast import removed — errors shown inline in chat bubbles
@@ -148,60 +159,85 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   let isModalOpen = false;
   let opener: HTMLElement | null = null;
   let conversationId: string | null = null;
+  let conversationAgentId = agentSelect.value
+  let loadingAgents = false
+  let sending = false
+  let discoveryVersion = 0
+  const refreshAgents = document.getElementById("refresh-ask-ha-agents") as HTMLButtonElement | null
+  const agentStatus = document.getElementById("ask-ha-agent-status")
+  const boundHints = new WeakSet<Element>()
 
-  // Enable/disable send button based on input
-  input?.addEventListener("input", () => {
-    submitBtn.disabled = !input.value.trim();
-  });
+  function updateControls() {
+    submitBtn.disabled = sending || loadingAgents || !input.value.trim() || agentSelect.dataset.agentUnavailable === "true"
+    agentSelect.disabled = sending || loadingAgents
+    if (refreshAgents) refreshAgents.disabled = sending || loadingAgents
+  }
 
-  // Load available agents
-  async function loadAgents() {
-    try {
-      const res = await fetch("/api/ha/agents");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.agents && data.agents.length > 0) {
-          // Preserve "Default Agent" option
-          agentSelect.innerHTML = '<option value="">Default Agent</option>';
-          for (const agent of data.agents) {
-            const opt = document.createElement("option");
-            opt.value = agent.id;
-            opt.textContent = agent.name;
-            agentSelect.appendChild(opt);
-          }
-          // Restore last-used agent
-          const saved = sessionStorage.getItem("meitheal:assist-agent");
-          if (saved) agentSelect.value = saved;
-        }
-      }
-    } catch {
-      // Silently fail — keep default option
+  function resetConversation() {
+    conversationId = null
+    if (chatContainer) {
+      chatContainer.replaceChildren()
+      if (welcomeEl) chatContainer.appendChild(welcomeEl.cloneNode(true))
+      initHints()
     }
   }
 
-  agentSelect?.addEventListener("change", () => {
-    sessionStorage.setItem("meitheal:assist-agent", agentSelect.value);
-    // Reset conversation on agent change
-    conversationId = null;
-  });
+  pageLifecycle.on(input, "input", updateControls)
+
+  async function loadAgents() {
+    const version = ++discoveryVersion
+    loadingAgents = true
+    updateControls()
+    if (agentStatus) agentStatus.textContent = "Loading Home Assistant agents…"
+    try {
+      const preference = await fetch("/api/settings?key=ha-assist-agent", { signal, cache: "no-store" })
+        .then(response => response.ok ? response.json() : null).catch(() => null)
+      if (signal.aborted || version !== discoveryVersion) return
+      const selected = sessionStorage.getItem("meitheal:assist-agent")
+        ?? (typeof preference?.value === "string" ? preference.value : agentSelect.value)
+      if (selected !== conversationAgentId) resetConversation()
+      conversationAgentId = selected
+      // Keep the selected ID even when discovery fails or the agent was removed.
+      if (selected && !Array.from(agentSelect.options).some(option => option.value === selected)) {
+        agentSelect.add(new Option(selected, selected))
+      }
+      agentSelect.value = selected
+      const agents = await fetchHaAgents(signal)
+      if (signal.aborted || version !== discoveryVersion) return
+      const missing = renderHaAgentOptions(agentSelect, agents, selected)
+      if (agentStatus) agentStatus.textContent = missing
+        ? "The selected agent is unavailable. Choose another agent or refresh after reconnecting it in Home Assistant."
+        : agents.length ? `${agents.length} Home Assistant agents available.` : "No registered conversation agents were returned. Check your Home Assistant Assist configuration."
+    } catch (error) {
+      if (signal.aborted || version !== discoveryVersion) return
+      if (agentStatus) agentStatus.textContent = `${error instanceof Error ? error.message : "Agent discovery failed"}. Refresh to retry; your selection is unchanged.`
+    } finally {
+      if (!signal.aborted && version === discoveryVersion) {
+        loadingAgents = false
+        updateControls()
+      }
+    }
+  }
+
+  if (refreshAgents) pageLifecycle.on(refreshAgents, "click", () => void loadAgents())
+  pageLifecycle.on(agentSelect, "change", () => {
+    sessionStorage.setItem("meitheal:assist-agent", agentSelect.value)
+    agentSelect.dataset.agentUnavailable = String(agentSelect.selectedOptions[0]?.dataset.unavailable === "true")
+    if (agentSelect.value !== conversationAgentId) resetConversation()
+    conversationAgentId = agentSelect.value
+    if (agentStatus) agentStatus.textContent = agentSelect.dataset.agentUnavailable === "true"
+      ? "The selected agent is unavailable. Choose another agent or refresh after reconnecting it in Home Assistant."
+      : `Using ${agentSelect.selectedOptions[0]?.textContent ?? "Default Agent"}.`
+    updateControls()
+  })
 
   function closeAskHaModal() {
     isModalOpen = false;
     if (!overlay || !overlay.classList.contains("active")) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const finishClose = () => {
+      if (isModalOpen || signal.aborted) return
       overlay.classList.remove("active", "closing");
-      form?.reset();
-      input.value = "";
-      submitBtn.disabled = true;
-      conversationId = null;
-      if (chatContainer) {
-        chatContainer.innerHTML = "";
-        if (welcomeEl) {
-          chatContainer.appendChild(welcomeEl.cloneNode(true));
-          initHints();
-        }
-      }
       opener?.focus();
       opener = null;
     };
@@ -210,7 +246,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const content = overlay.querySelector(".modal-content");
     if (content) {
       const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
-      content.addEventListener("animationend", onEnd, { once: true });
+      content.addEventListener("animationend", onEnd, { once: true, signal });
       setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
     } else {
       finishClose();
@@ -287,24 +323,27 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   function initHints() {
     chatContainer?.querySelectorAll(".ask-hint").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      if (boundHints.has(btn)) return
+      boundHints.add(btn)
+      pageLifecycle.on(btn, "click", () => {
         const hint = (btn as HTMLElement).dataset.hint;
         if (hint) {
           input.value = hint;
-          submitBtn.disabled = false;
+          updateControls()
           form?.dispatchEvent(new Event("submit", { cancelable: true }));
         }
       });
     });
   }
 
-  closeBtn?.addEventListener("click", closeAskHaModal);
+  if (closeBtn) pageLifecycle.on(closeBtn, "click", closeAskHaModal);
 
-  overlay?.addEventListener("click", (e) => {
+  if (overlay) pageLifecycle.on(overlay, "click", (e) => {
     if (e.target === overlay) closeAskHaModal();
   });
 
-  document.addEventListener("keydown", (e) => {
+  pageLifecycle.on(document, "keydown", (event) => {
+    const e = event as KeyboardEvent
     if (!isModalOpen) return;
 
     if (e.key === "Escape") {
@@ -317,7 +356,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (e.key === "Tab") {
       if (!overlay) return;
       const focusable = overlay.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
       ) as NodeListOf<HTMLElement>;
       if (!focusable || focusable.length === 0) return;
 
@@ -338,17 +377,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   window.openAskHaModal = (prompt) => {
     if (!isModalOpen && document.activeElement instanceof HTMLElement) opener = document.activeElement;
     isModalOpen = true;
+    overlay?.classList.remove("closing");
     overlay?.classList.add("active");
-    loadAgents();
+    void loadAgents();
     if (prompt && input) {
       input.value = prompt;
-      submitBtn.disabled = false;
+      updateControls()
     }
     initHints();
     setTimeout(() => input?.focus(), 50);
   };
 
-  document.body.addEventListener("click", (e) => {
+  pageLifecycle.on(document.body, "click", (e) => {
     const target = (e.target as HTMLElement).closest("#ask-ha-btn");
     if (target) {
       e.preventDefault();
@@ -356,16 +396,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
   });
 
-  form?.addEventListener("submit", async (e) => {
+  pageLifecycle.on(form, "submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || sending || loadingAgents || agentSelect.dataset.agentUnavailable === "true") return;
+    sending = true
+    updateControls()
 
     appendChat(text, true);
     input.value = "";
     submitBtn.disabled = true;
 
-    const typingEl = showTyping();
+    showTyping();
 
     try {
       const body: Record<string, string> = { text };
@@ -378,9 +420,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          signal,
         },
       );
 
+      if (signal.aborted) return
       hideTyping();
 
       if (res.ok) {
@@ -406,6 +450,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         );
       }
     } catch (err) {
+      if (signal.aborted) return
       hideTyping();
       log.error("Assist network error", err);
       appendChat(
@@ -414,10 +459,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         "error",
       );
     } finally {
-      submitBtn.disabled = false;
-      input.focus();
+      sending = false
+      if (!signal.aborted) {
+        updateControls()
+        if (isModalOpen) input.focus()
+      }
     }
   });
+  })
 </script>
 
 <style>
@@ -430,6 +479,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     max-height: 80vh;
   }
 
+  .ask-agent-status {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin: 0;
+    padding: 8px 16px;
+    overflow-wrap: anywhere;
+  }
+
   /* Agent selector */
   .ask-agent-select {
     background: var(--bg-secondary);
@@ -438,7 +495,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     color: var(--text-secondary);
     font-size: 11px;
     padding: 3px 8px;
-    max-width: 140px;
+    max-width: min(140px, 30vw);
     cursor: pointer;
     transition: border-color 0.2s;
   }

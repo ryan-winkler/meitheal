@@ -305,6 +305,7 @@ const principlesListId = `pillar-principles-${id}`
 /* ── Principles section ─────────────────────────────────────── */
 .pillar-card__principles-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -317,9 +318,10 @@ const principlesListId = `pillar-principles-${id}`
 
 .pillar-card__principles-toggle {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 0.375rem;
-  width: 100%;
   padding: 0.375rem 0;
   min-height: 44px;
   background: none;

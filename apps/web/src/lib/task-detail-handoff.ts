@@ -1,6 +1,7 @@
 import { createClientLogger } from "@lib/client-logger"
 import { buildIngressPagePath } from "@lib/page-shell-links"
 import { waitForFn } from "@lib/wait-for-fn"
+import { taskDetailPath } from "@lib/task-page-url"
 
 const log = createClientLogger("tasks", "detail-handoff")
 
@@ -11,9 +12,7 @@ export interface SearchDetailHandoff {
 }
 
 export function buildTaskPath(taskId: string, commentId?: number): string {
-  const params = new URLSearchParams({ open: taskId })
-  if (commentId !== undefined) params.set("comment", String(commentId))
-  return `/tasks?${params}`
+  return taskDetailPath(taskId, commentId)
 }
 
 export function buildTaskPermalink(taskId: string, commentId?: number): string {

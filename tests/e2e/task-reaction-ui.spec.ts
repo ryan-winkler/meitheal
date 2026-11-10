@@ -86,7 +86,7 @@ test("reactions load on demand through ingress and update only rendered card cou
     const card = page.locator(`.kanban-card[data-id="${id}"]`)
     const badge = card.locator("[data-kanban-reaction-count]")
     await expect(badge).toBeHidden()
-    const openCard = card.getByRole("button", { name: /^Task: Reaction interaction fixture,/ })
+    const openCard = card.getByRole("link", { name: /^Task: Reaction interaction fixture,/ })
     await openCard.press("Enter")
     const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
     const taskPanel = detail.locator('[data-reaction-panel="task"]')

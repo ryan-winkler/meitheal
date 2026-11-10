@@ -1,3 +1,4 @@
+import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
 import { withAsyncButton } from "@lib/async-button"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 /**
@@ -8,9 +9,100 @@ import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
-import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+
+function renderAgentBadge(select: HTMLSelectElement, label?: string) {
+  const badge = document.getElementById("ha-agent-status")
+  if (badge) badge.textContent = label ?? select.selectedOptions[0]?.text ?? select.dataset.default ?? "Default"
+}
+
+function initHaAgentSettings() {
+  const select = document.querySelector<HTMLSelectElement>("#ha-agent-select-settings")
+  if (!select) return
+
+  pageLifecycle.on(select, "change", () => {
+    renderAgentBadge(select)
+    const status = document.getElementById("ha-agent-discovery-status")
+    if (status) status.textContent = select.selectedOptions[0]?.dataset.unavailable === "true"
+      ? "The selected agent is unavailable. Choose another agent or refresh after reconnecting it in Home Assistant."
+      : "Save to use this conversation agent by default."
+  })
+  const refresh = document.getElementById("refresh-ha-agents")
+  if (refresh) pageLifecycle.on(refresh, "click", () => void restoreHaAgent(select.value))
+  const section = select.closest<HTMLElement>("[data-settings-shell-section]")
+  if (section) {
+    const observer = new MutationObserver(() => {
+      if (!section.hidden) void restoreHaAgent(select.value)
+    })
+    observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  }
+  const save = document.querySelector<HTMLButtonElement>("#save-ha-agent")
+  if (save) pageLifecycle.on(save, "click", withAsyncButton(save, async () => {
+    await saveSetting("ha-assist-agent", select.value)
+    sessionStorage.removeItem("meitheal:assist-agent")
+    showToast(save.dataset.textSaved || "Agent setting saved.", "success")
+  }, { loadingText: "Saving…", onError: showSettingsSaveError }))
+
+  const test = document.querySelector<HTMLButtonElement>("#test-ha-agent")
+  const result = document.getElementById("ha-agent-test-result")
+  if (test && result) pageLifecycle.on(test, "click", withAsyncButton(test, async () => {
+    const signal = pageLifecycle.signal
+    result.textContent = test.dataset.textTesting ?? "Testing…"
+    try {
+      const response = await fetch("/api/ha/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello", ...(select.value ? { agent_id: select.value } : {}) }),
+        signal,
+      })
+      const data = response.ok ? await response.json() : null
+      result.textContent = data?.speech
+        ? `${data.response_type === "error" ? "❌" : "✅"} "${data.speech}"`
+        : test.dataset.textUnavailable ?? "Agent unavailable"
+    } catch {
+      if (!signal.aborted) result.textContent = test.dataset.textFailed ?? "Connection failed"
+    }
+  }, { loadingText: test.dataset.textTesting ?? "Testing…" }))
+}
+
+let agentDiscoveryVersion = 0
+
+async function restoreHaAgent(savedAgent: unknown) {
+  const select = document.querySelector<HTMLSelectElement>("#ha-agent-select-settings")
+  if (!select) return
+  const selected = typeof savedAgent === "string" ? savedAgent : select.value
+  // Retain the persisted ID even if HA is disconnected on first load.
+  if (selected && !Array.from(select.options).some(option => option.value === selected)) {
+    select.add(new Option(selected, selected))
+  }
+  select.value = selected
+  const version = ++agentDiscoveryVersion
+  const signal = pageLifecycle.signal
+  const status = document.getElementById("ha-agent-discovery-status")
+  const refresh = document.querySelector<HTMLButtonElement>("#refresh-ha-agents")
+  if (status) status.textContent = "Loading Home Assistant agents…"
+  if (refresh) refresh.disabled = true
+  try {
+    const agents = await fetchHaAgents(signal)
+    if (signal.aborted || version !== agentDiscoveryVersion) return
+    // A selection made while discovery was running wins over the old saved ID.
+    const missing = renderHaAgentOptions(select, agents, select.value)
+    renderAgentBadge(select)
+    if (status) status.textContent = missing
+      ? "The selected agent is unavailable. Choose another agent or refresh after reconnecting it in Home Assistant."
+      : agents.length ? `${agents.length} Home Assistant agents available.` : "No registered conversation agents were returned. Check your Home Assistant Assist configuration."
+  } catch (error) {
+    if (signal.aborted || version !== agentDiscoveryVersion) return
+    renderAgentBadge(select, "Discovery unavailable")
+    if (status) status.textContent = `${error instanceof Error ? error.message : "Agent discovery failed"}. Refresh to retry; your selection is unchanged.`
+  } finally {
+    if (!signal.aborted && version === agentDiscoveryVersion && refresh) refresh.disabled = false
+  }
+}
 
 export function initAISettings(): void {
+  initHaAgentSettings()
   // AI provider custom URL toggle
   const aiProviderEl = document.getElementById("ai-provider")
   if (aiProviderEl) {
@@ -73,6 +165,7 @@ export function initAISettings(): void {
 
 /** Restore AI & agent protocol settings from loaded settings object */
 export function restoreAISettings(s: Record<string, unknown>): void {
+  void restoreHaAgent(s["ha-assist-agent"])
   // AI provider
   if (s["ai-provider"]) {
     const el = document.getElementById("ai-provider") as HTMLSelectElement | null

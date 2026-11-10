@@ -90,7 +90,7 @@ export function setupFocusStack(
 
     // Click card body → open task detail
     const focusCard = target.closest(".focus-card") as HTMLElement | null
-    if (focusCard) {
+    if (focusCard && !e.defaultPrevented && !target.closest("a")) {
       const taskId = focusCard.dataset.id
       if (taskId) {
         openTaskDetailHandoff(taskId)

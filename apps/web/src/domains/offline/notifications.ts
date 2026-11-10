@@ -8,6 +8,7 @@
  */
 
 import { buildIngressPagePath } from "@lib/page-shell-links"
+import { buildTaskPath } from "@lib/task-detail-handoff"
 import { isPwaSupported } from "./sw-register"
 
 function getNotificationPermission(): NotificationPermission | "unsupported" {
@@ -85,7 +86,7 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
         title: "⏰ Overdue Task",
         body: task.title,
         tag: `overdue-${task.id}`,
-        url: `/tasks?open=${encodeURIComponent(task.id)}`,
+        url: buildTaskPath(task.id),
       })
       if (delivered) notified.add(task.id)
     }
@@ -117,7 +118,7 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
         title: "📋 Task Due Soon",
         body: `${task.title} — due in ${minutesUntilDue} minutes`,
         tag: `upcoming-${task.id}`,
-        url: `/tasks?open=${encodeURIComponent(task.id)}`,
+        url: buildTaskPath(task.id),
       })
       if (delivered) notified.add(task.id)
     }

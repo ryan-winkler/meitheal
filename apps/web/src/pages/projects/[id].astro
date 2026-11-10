@@ -26,8 +26,9 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const projectId = Astro.params.id;
+const projectsPath = `${Astro.locals.ingressPath || ""}/projects`
 if (!projectId) {
-  return Astro.redirect("/projects");
+  return Astro.redirect(projectsPath);
 }
 
 let project: Record<string, unknown> | null = null;
@@ -45,7 +46,7 @@ try {
   project = await repo.findProjectById(projectId) as Record<string, unknown> | null;
 
   if (!project) {
-    return Astro.redirect("/projects");
+    return Astro.redirect(projectsPath);
   }
 
   if (project.goal_id) {
@@ -58,7 +59,7 @@ try {
   tasks = await taskRepo.findByProjectId(projectId);
   goals = await repo.findAllGoals({});
 } catch {
-  return Astro.redirect("/projects");
+  return Astro.redirect(projectsPath);
 }
 
 const projTitle = String(project?.title ?? "Project");

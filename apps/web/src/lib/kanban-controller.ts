@@ -247,6 +247,7 @@ export function initKanbanArea(
     // T-1903: Edit button opens inline task detail panel (not redirect)
     board.querySelectorAll<HTMLButtonElement>(".card-open-btn, .card-edit-btn").forEach(btn => {
       btn.addEventListener("click", event => {
+        if (event.defaultPrevented || btn instanceof HTMLAnchorElement) return
         event.stopPropagation()
         if (btn.dataset.id) openTaskDetailHandoff(btn.dataset.id)
       }, { signal: __signal })

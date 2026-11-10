@@ -6,9 +6,11 @@ description: "Understand the Today view and its task controls."
 
 # Today Shell Guide
 
-## What Changed
+## Today overview
 
-The Today cockpit now uses the same mature shell language as Settings, Dashboard, and Habits:
+Today starts with the date, task counts and quick capture. The completion indicator exposes its value to assistive technology.
+
+The shared navigation provides:
 
 - a sticky `UnifiedBar`
 - hash-linked Today sections
@@ -23,10 +25,9 @@ The Today shell sections are:
 - `#today-triage`
 - `#today-work`
 - `#today-habits`
+- `#today-flow`
 
 These anchors stay on the same route, which keeps the page ingress-safe in Home Assistant and companion-safe when reopened from the webview.
-
-The small heading above the Today overview title uses the active palette's accent text color. It stays readable when your personal accent matches the page background.
 
 ## Common Jobs
 
@@ -40,7 +41,8 @@ The small heading above the Today overview title uses the active palette's accen
 
 1. Use the shell `New Task` button when you need the full modal. The title receives focus when the dialog opens. Tab and Shift+Tab stay inside the dialog, and Escape returns focus to the control that opened it. After a successful save, Details opens on the same page with the new task.
 2. Use the inline quick-add field in `Overview` when you want the fastest path.
-3. Stay on the same route so the current Today context is preserved.
+3. Add a date or shopping list when needed, such as “call dentist tomorrow” or “shopping: milk, eggs”.
+4. Stay on the same route so the current Today context is preserved.
 
 ### Triage overdue work without losing the daily view
 

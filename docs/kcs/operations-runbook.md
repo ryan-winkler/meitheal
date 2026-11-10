@@ -85,13 +85,15 @@ Today and Settings keep text and controls at full opacity during their entry mot
 
 ## Task Link Verification
 
-Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. The link opens the same task in the Tasks view for a recipient who can already access the installation and the task.
+Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.
 
 1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number.
-2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access.
-3. Open an old `/tasks#task-MTH-…` link. Confirm it opens the task and the Tasks view remains usable when you close the detail.
+2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
+3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
 5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app.
+
+The main ticket pane includes **Scoring & frameworks**. Choose RICE or another framework, enter estimates and select **Save score**. RICE retains the existing whole-percentage score scale. Reach 10, impact 2, confidence 80 and effort 0.5 produce 3200, matching Planning and task badges. Failed saves retain the estimates for retry. Reload to verify the saved evaluation and confirm other framework values remain intact.
 
 ## Upcoming Shell Verification
 
@@ -347,3 +349,13 @@ Use a disposable dataset. Confirm the shared policy starts Off and a specific Ar
 After enabling a policy, restart the App and allow one five-minute sweep. Verify up to 25 eligible cards move and protected or recently edited cards stay in place. Confirm each move has one system audit event and appears in **Deferred** with the inactivity label. Resume one card and confirm its status is preserved and its next inactivity deadline uses the new activity window. App-only SQLite backups retain the policy, including explicit Area inheritance and its revision.
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
+
+## Checklist edits from multiple sessions
+
+When another session saves a checklist, Meitheal merges compatible edits by item ID. A merge preserves the focused editor, its unsaved text and its selection. Adding an item keeps the placeholder selected so typing replaces it after a background merge. If edits conflict, the app keeps the draft and offers the latest saved version for review. Verify this with `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/checklist-concurrency.spec.ts` after building the web app.
+
+### Triage acknowledgements while a ticket is open
+
+Ticket drawers retain the background queue URL in history state. Match an in-flight decision against that background URL so opening a ticket does not discard its acknowledgement. Returning to Triage revalidates the queue; accepted decisions must not reappear as available actions. The Triage browser suite covers a held acknowledgement, closing the ticket, and changing the queue location.
+
+Ticket drawers keep their canonical URL while editing. On standalone pages, Layout registers the drawer history guard before Astro ClientRouter so Back and Forward restore the existing drawer and queue rather than replacing the page. The guard only handles history entries owned by the currently mounted drawer. Home Assistant ingress retains its native navigation path. If Triage receives a decision acknowledgement while a ticket is open, its background route remains the comparison target; the saved status stays visible after closing the drawer.

@@ -7,13 +7,14 @@
  */
 import { createClientLogger } from "@lib/client-logger"
 import { sanitizeCssColor } from "@lib/safe-html"
+import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban:quick-actions")
 
 /** Quick-action popover API returned by initQuickActions */
 export interface QuickActionApi {
   close: () => void
-  toast: (msg: string, type?: string) => void
+  toast: (msg: string, type?: "success" | "error" | "warning") => void
   open: (btn: HTMLElement, content: HTMLElement, title: string) => HTMLElement
 }
 
@@ -33,17 +34,21 @@ export function initQuickActions(
   // Shared Popover Utility (P4-1)
   // =============================================
   let activePopover: HTMLElement | null = null
+  let activeTrigger: HTMLElement | null = null
   let _scrollCleanup: (() => void) | null = null
 
-  function close() {
+  function close(restoreFocus = false) {
     if (!activePopover) return
     const el = activePopover
+    const trigger = activeTrigger
     activePopover = null
+    activeTrigger = null
     el.inert = true
     el.setAttribute("aria-hidden", "true")
     el.classList.add("popover-exiting")
     setTimeout(() => el.remove(), 150)
     if (_scrollCleanup) { _scrollCleanup(); _scrollCleanup = null }
+    if (restoreFocus) trigger?.focus({ preventScroll: true })
   }
 
   __signal.addEventListener("abort", () => {
@@ -51,9 +56,28 @@ export function initQuickActions(
     _scrollCleanup?.()
   }, { once: true })
 
-  function toast(msg: string, type = "success") {
-    if (window.showToast) window.showToast(msg, type)
-    else log.info(`${type}: ${msg}`)
+  function toast(msg: string, type: "success" | "error" | "warning" = "success") {
+    showToast(msg, type)
+  }
+
+  async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
+    if (__signal.aborted || button.disabled) return
+    close(true)
+    button.disabled = true
+    try {
+      const response = await fetch(buildTaskApiUrl(taskId), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ color }),
+      })
+      if (!response.ok) throw new Error("Color write rejected")
+      await refreshBoard()
+      toast(color ? "Color updated" : "Color cleared", "success")
+    } catch {
+      if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
+    } finally {
+      button.disabled = false
+    }
   }
 
   function open(btn: HTMLElement, content: HTMLElement, title: string) {
@@ -83,33 +107,17 @@ export function initQuickActions(
     document.body.appendChild(popover)
     activePopover = popover
 
-    // Keep in viewport (P1-4)
-    requestAnimationFrame(() => {
-      const popRect = popover.getBoundingClientRect()
-      if (popRect.right > window.innerWidth) {
-        popover.style[INLINE_START_PROP] = `${window.innerWidth - popRect.width - 8}px`
-      }
-      if (popRect.bottom > window.innerHeight) {
-        popover.style.top = `${rect.top - popRect.height - 4}px`
-      }
-    })
-
-    // Close on scroll (P1-4)
-    const board = document.querySelector(".kanban-scroll-area, .kanban-board")
-    const { scrollX, scrollY } = window
-    const boardLeft = board?.scrollLeft
-    const boardTop = board?.scrollTop
-    const onScroll = () => {
-      // Focusing the trigger may have already scrolled before the menu opened.
-      if (window.scrollX !== scrollX || window.scrollY !== scrollY ||
-        board?.scrollLeft !== boardLeft || board?.scrollTop !== boardTop) close()
+    activeTrigger = btn
+    const position = () => {
+      if (activePopover !== popover) return
+      const rect = btn.getBoundingClientRect()
+      const box = popover.getBoundingClientRect()
+      popover.style[INLINE_START_PROP] = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.width - 8))}px`
+      popover.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - box.height - 8))}px`
     }
-    board?.addEventListener("scroll", onScroll, { signal: __signal })
-    window.addEventListener("scroll", onScroll, { signal: __signal })
-    _scrollCleanup = () => {
-      board?.removeEventListener("scroll", onScroll)
-      window.removeEventListener("scroll", onScroll)
-    }
+    requestAnimationFrame(position)
+    window.addEventListener("scroll", position, { capture: true, passive: true, signal: __signal })
+    _scrollCleanup = () => window.removeEventListener("scroll", position, true)
 
     // Focus first interactive element (P1-1)
     requestAnimationFrame(() => {
@@ -130,7 +138,7 @@ export function initQuickActions(
 
   document.addEventListener("keydown", (e) => {
     if (!activePopover) return
-    if (e.key === "Escape") { close(); return }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return }
     // Arrow key navigation within popover items (P1-1)
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault()
@@ -140,7 +148,7 @@ export function initQuickActions(
       const next = e.key === "ArrowDown"
         ? items[(idx + 1) % items.length]
         : items[(idx - 1 + items.length) % items.length]
-      ;(next as HTMLElement)?.focus()
+      ;(next as HTMLElement)?.focus({ preventScroll: true })
     }
   }, { signal: __signal })
 
@@ -337,7 +345,6 @@ export function initQuickActions(
         const taskId = btn.dataset.id
         if (!taskId) return
 
-        const card = btn.closest(".kanban-card")
         const currentColor = btn.dataset.color || ""
 
         const content = document.createElement("div")
@@ -359,21 +366,9 @@ export function initQuickActions(
           swatch.setAttribute("role", "radio")
           swatch.setAttribute("aria-checked", currentColor === color ? "true" : "false")
           swatch.setAttribute("aria-label", `Set color: ${label}`)
-          swatch.addEventListener("click", async () => {
-            // P3-4: Optimistic UI
-            if (card) (card as HTMLElement).style.borderLeft = `5px solid ${color}`
-            btn.dataset.color = color
-            _qa.close()
-            try {
-              const res = await fetch(buildTaskApiUrl(taskId), {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ color }),
-              })
-              if (res.ok) _qa.toast("Color updated", "success")
-              else { if (card) (card as HTMLElement).style.borderLeft = currentColor ? `5px solid ${currentColor}` : ""; _qa.toast("Failed to set color", "error") }
-            } catch { if (card) (card as HTMLElement).style.borderLeft = currentColor ? `5px solid ${currentColor}` : ""; _qa.toast("Failed to set color", "error") }
-          })
+          swatch.addEventListener("click", () => {
+            void saveColor(btn, taskId, color)
+          }, { signal: __signal })
           grid.appendChild(swatch)
         })
 
@@ -382,22 +377,10 @@ export function initQuickActions(
         // Clear color button
         const clearBtn = document.createElement("button")
         clearBtn.className = "popover-item clear-color-btn"
-        clearBtn.setAttribute("role", "menuitem")
         clearBtn.textContent = "✕ Clear color"
-        clearBtn.addEventListener("click", async () => {
-          if (card) (card as HTMLElement).style.borderLeft = ""
-          btn.dataset.color = ""
-          _qa.close()
-          try {
-            const res = await fetch(buildTaskApiUrl(taskId), {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ color: null }),
-            })
-            if (res.ok) _qa.toast("Color cleared", "success")
-            else _qa.toast("Failed to clear color", "error")
-          } catch { _qa.toast("Failed to clear color", "error") }
-        })
+        clearBtn.addEventListener("click", () => {
+          void saveColor(btn, taskId, null)
+        }, { signal: __signal })
         content.appendChild(clearBtn)
 
         _qa.open(btn, content, "Card Color")

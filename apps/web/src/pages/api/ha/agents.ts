@@ -8,7 +8,7 @@ export const GET: APIRoute = async ({ request, locals }) => {
   const denied = await requireAssistAdministrator(request, locals)
   if (denied) return denied
 
-  if (!await getHAConnection()) {
+  if (!(await getHAConnection())?.connected) {
     return Response.json({ agents: [], error: "Home Assistant is disconnected." }, { status: 503, headers })
   }
 

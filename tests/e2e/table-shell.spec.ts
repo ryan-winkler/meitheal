@@ -133,7 +133,7 @@ test.describe("Table Shell", () => {
     const [task] = tableTasks
     await page.goto("/table")
     const row = page.getByRole("row").filter({ hasText: task.title })
-    const opener = row.getByRole("button", { name: new RegExp(task.ticket_key) })
+    const opener = row.getByRole("link", { name: new RegExp(task.ticket_key) })
     await opener.press("Enter")
 
     const detail = page.getByRole("dialog", { name: `Task detail: ${task.title}` })
@@ -235,7 +235,7 @@ test.describe("Table Shell", () => {
     await page.goto("/tasks?view=table")
     await expect(page.getByRole("navigation", { name: "Task views" })).toHaveAttribute("data-switcher-ready", "true")
     const row = page.getByRole("row").filter({
-      has: page.getByRole("button", { name: new RegExp(task.ticket_key) }),
+      has: page.getByRole("link", { name: new RegExp(task.ticket_key) }),
     })
     const title = row.getByRole("textbox", { name: "Title", exact: true })
     await expect(title).toHaveText(task.title)

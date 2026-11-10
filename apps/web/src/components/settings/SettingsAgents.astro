@@ -44,13 +44,14 @@ const { locale } = Astro.props;
             <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)}>
               <option value="" selected>{t("settings.ha_agent_default", locale)}</option>
             </select>
+            <p id="ha-agent-discovery-status" class="settings-hint" role="status" aria-live="polite"></p>
             <small class="settings-hint" style="display: block;">
               {t("settings.ha_agent_help", locale)}
             </small>
           </div>
           <div
             class="form-group"
-            style="display: flex; gap: 8px; align-items: center;"
+            style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;"
           >
             <button
               type="button"
@@ -65,6 +66,7 @@ const { locale } = Astro.props;
               data-text-testing={t("settings.testing", locale)}
               data-text-unavailable={t("settings.agent_unavailable", locale)}
               data-text-failed={t("settings.connection_failed", locale)}>{t("settings.test", locale)}</button>
+            <button type="button" class="btn btn-ghost settings-text-sm" id="refresh-ha-agents">Refresh agents</button>
             <span
               id="ha-agent-test-result"
               style="font-size: 12px; color: var(--text-muted);"></span>
@@ -291,100 +293,7 @@ const { locale } = Astro.props;
 </style>
 
 <script>
-  import { withAsyncButton } from "@lib/async-button"
-  import { saveSetting, showSettingsSaveError } from "@lib/settings-utils"
-  import { showToast } from "@lib/toast";
   import { pageLifecycle } from "@lib/page-lifecycle";
-
-  // ── HA Conversation Agent picker ──
-  const haAgentSelect = document.getElementById(
-    "ha-agent-select-settings",
-  ) as HTMLSelectElement;
-  const haAgentStatus = document.getElementById("ha-agent-status");
-  const saveHaAgentBtn = document.getElementById("save-ha-agent");
-  const testHaAgentBtn = document.getElementById("test-ha-agent");
-  const testResult = document.getElementById("ha-agent-test-result");
-
-  // Load agents on tab show
-  async function loadHAAgents() {
-    try {
-      const res = await fetch((window.__ingress_path || "") + "/api/ha/agents");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.agents?.length > 0) {
-          haAgentSelect.innerHTML =
-            '<option value="">Default (built-in Assist)</option>';
-          for (const agent of data.agents) {
-            const opt = document.createElement("option");
-            opt.value = agent.id;
-            opt.textContent = agent.name;
-            haAgentSelect.appendChild(opt);
-          }
-        }
-      }
-    } catch {
-      // HA not connected — keep default
-    }
-
-    // Restore saved preference
-    try {
-      const res = await fetch((window.__ingress_path || "") + "/api/settings?key=ha-assist-agent");
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.value) {
-          haAgentSelect.value = data.value;
-          updateAgentBadge();
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function updateAgentBadge() {
-    if (haAgentStatus) {
-      const selected = haAgentSelect.options[haAgentSelect.selectedIndex];
-      haAgentStatus.textContent = selected?.text || haAgentSelect.dataset.default || "Default";
-    }
-  }
-
-  pageLifecycle.on(haAgentSelect, "change", updateAgentBadge);
-
-  if (saveHaAgentBtn) pageLifecycle.on(saveHaAgentBtn, "click", async () => {
-    try {
-      await saveSetting("ha-assist-agent", haAgentSelect.value);
-      showToast(saveHaAgentBtn?.dataset.textSaved || "Agent setting saved.", "success");
-      updateAgentBadge();
-    } catch {
-      showToast(saveHaAgentBtn?.dataset.textFailed || "Failed to save agent setting.", "error");
-    }
-  });
-
-  if (testHaAgentBtn) pageLifecycle.on(testHaAgentBtn, "click", async () => {
-    // T10: Clear previous result on next test click
-    if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textTesting || "Testing…";
-    try {
-      const body: Record<string, string> = { text: "Hello" };
-      if (haAgentSelect.value) body.agent_id = haAgentSelect.value;
-
-      const res = await fetch((window.__ingress_path || "") + "/api/ha/assist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (testResult) testResult.textContent = `✅ "${data.speech}"`;
-      } else {
-        if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textUnavailable || "❌ Agent unavailable";
-      }
-    } catch {
-      if (testResult) testResult.textContent = testHaAgentBtn?.dataset.textFailed || "❌ Connection failed";
-    }
-    // T10: Result persists until next user interaction (test or save)
-    // No auto-clear timer — ADHD-friendly
-  });
 
   // ── External AI Provider — UI reactivity only ──
   // Save/restore is handled by settings.astro's restoreIntegrationSettings()
@@ -429,7 +338,6 @@ const { locale } = Astro.props;
   }
 
   function bootAgentsPanel() {
-    loadHAAgents();
     fixProtocolLinks();
     updateExtAiBadge();
   }

@@ -233,6 +233,11 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
           focusedIndex = merged.findIndex(item => item.id === focusedItem.id)
         }
         const typing = active instanceof HTMLTextAreaElement
+        const selection = typing ? {
+          start: active.selectionStart,
+          end: active.selectionEnd,
+          direction: active.selectionDirection,
+        } : null
         const typedValue = typing && focusedItem && active.value !== focusedItem.text ? active.value : undefined
         if (typedValue !== undefined && merged[focusedIndex]?.text !== focusedItem?.text) {
           report("conflict")
@@ -245,12 +250,12 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
         const restored = document.activeElement
-        if (typing && restored instanceof HTMLTextAreaElement) {
+        if (typing && selection && restored instanceof HTMLTextAreaElement) {
           if (typedValue !== undefined) {
             restored.value = typedValue
             restored.parentElement!.dataset.content = typedValue
           }
-          restored.setSelectionRange(active.selectionStart, active.selectionEnd, active.selectionDirection)
+          restored.setSelectionRange(selection.start, selection.end, selection.direction)
         }
       }
     } catch {

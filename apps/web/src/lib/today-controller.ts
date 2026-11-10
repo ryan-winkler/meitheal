@@ -337,7 +337,7 @@ function setupEventDelegation(container: HTMLElement) {
 
     // ── Click on task item → open detail ──
     const taskItem = target.closest(".tli") as HTMLElement | null
-    if (taskItem && !target.closest("button") && !target.closest("input")) {
+    if (taskItem && !e.defaultPrevented && !target.closest("a, button, input")) {
       const id = taskItem.dataset.id
       if (id) {
         openTaskDetailHandoff(id)
@@ -881,7 +881,14 @@ function setupAutoRefresh(container: HTMLElement) {
         const value = counts[counter.dataset.todayCount as keyof TodayTaskCounts]
         if (Number.isFinite(value)) counter.textContent = String(value)
       }
-      if (fill && Number.isFinite(counts.completionPercent)) fill.style.width = `${counts.completionPercent}%`
+      if (fill && Number.isFinite(counts.completionPercent)) {
+        fill.style.width = `${counts.completionPercent}%`
+        fill.closest('[role="progressbar"]')?.setAttribute("aria-valuenow", String(counts.completionPercent))
+      }
+      const summary = container.querySelector("#today-signal-summary")
+      if (summary && Number.isFinite(counts.dueToday) && Number.isFinite(counts.carriedForward)) {
+        summary.textContent = `${counts.dueToday} due today · ${counts.carriedForward} carried forward`
+      }
     } catch {
       /* Keep the last counts if the refresh fails. */
     } finally {

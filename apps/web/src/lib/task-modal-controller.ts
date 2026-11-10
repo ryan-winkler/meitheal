@@ -5,6 +5,8 @@
         import {
           buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
+        import { buildIngressPagePath } from "@lib/page-shell-links"
+        import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -83,6 +85,8 @@
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
+        const drawerSession = crypto.randomUUID()
+        tdOverlay.dataset.ticketHistorySession = drawerSession
 
         function beginScopedWrite() {
           const search = searchSession
@@ -119,21 +123,36 @@
         function setTaskLocation(taskId: string | null, replace = false, commentTarget: string | null = null) {
           if (pinnedSession || searchSession) return
           const url = new URL(window.location.href)
-          if (taskId) url.searchParams.set("open", taskId)
-          else url.searchParams.delete("open")
-          if (taskId && commentTarget !== null) url.searchParams.set("comment", commentTarget)
-          else url.searchParams.delete("comment")
-          if (getLegacyTaskId(url.hash) !== null) url.hash = ""
-          if (url.href === window.location.href) return
-          if (replace) history.replaceState(history.state, "", url)
-          else history.pushState(history.state, "", url)
+          const ticket = ticketIdFromPath(url.pathname, window.__ingress_path)
+          if (taskId) {
+            const target = new URL(buildIngressPagePath(taskDetailPath(taskId)), url.origin)
+            if (commentTarget !== null) target.searchParams.set("comment", commentTarget)
+            if (target.href === url.href) return
+            if (ticket !== null) {
+              history.replaceState(history.state, "", target)
+              return
+            }
+            const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
+            url.searchParams.delete("open")
+            url.searchParams.delete("comment")
+            if (getLegacyTaskId(url.hash) !== null) url.hash = "kanban"
+            const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
+            if (legacy || replace) history.replaceState(state, "", target)
+            else {
+              history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
+              history.pushState(state, "", target)
+            }
+          } else if (ticket !== null) {
+            if (history.state?.ticketDrawer?.pushed) history.back()
+            else history.replaceState(history.state, "", taskBackgroundUrl(url))
+          }
         }
 
-        function closeTD(reason: SearchDetailDismissal = "dismiss") {
+        function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
-          if (!immediate && waitForDetailWrites(() => closeTD(reason))) return
+          if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
           closeTaskReferences()
           search?.lifetime.abort()
@@ -144,7 +163,7 @@
           currentTaskId = null;
           currentCommentTarget = null
           delete tdOverlay.dataset.openTaskId
-          setTaskLocation(null)
+          if (updateLocation) setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -200,14 +219,14 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
-        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff) {
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
           if (search && !newSession) {
             search.onDismiss("history")
             return
           }
-          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search) })) return
+          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
           closeTaskReferences()
@@ -218,8 +237,7 @@
           currentTaskId = taskId;
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
-          const legacyLink = getLegacyTaskId(window.location.hash) === taskId
-          if (!legacyLink) setTaskLocation(taskId, false, commentTarget)
+          if (updateLocation) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
@@ -290,7 +308,7 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
-            if (!legacyLink || getLegacyTaskId(window.location.hash) === null) setTaskLocation(taskId, true, commentTarget)
+            setTaskLocation(taskId, true, commentTarget)
 
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
@@ -887,11 +905,17 @@
 
             // Attach Strategic Lens Evaluator Payload Hook
             if (window.attachStrategicLens) {
+              const lensGeneration = detailGeneration
               window.attachStrategicLens(
                 taskId,
                 String(t.task_type ?? "task"),
                 String(t.framework_payload ?? "{}"),
                 allSettings,
+                {
+                  signal: modalSignal,
+                  save: (payload, updatedAt) => lensGeneration === detailGeneration && currentTaskId === taskId
+                    ? saveTaskField("framework_payload", payload, updatedAt) : Promise.resolve(false),
+                },
               );
             }
 
@@ -1019,18 +1043,18 @@
 
 
 
-        async function saveTaskField(field: string, value: unknown): Promise<boolean> {
+        async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
           const generation = detailGeneration
           const search = searchSession
           const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "project_id"].includes(field) ? beginScopedWrite() : undefined
+          const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
             const response = await fetch(`/api/tasks/${currentTaskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ [field]: value }),
+              body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
               ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
             })
             saved = response.ok
@@ -1736,12 +1760,12 @@
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
           const url = new URL(window.location.href)
-          const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")
-          if (taskId === null) closeTD("discard")
+          if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
-            void openTaskDetail(taskId, commentTarget)
+            void openTaskDetail(taskId, commentTarget, undefined, false)
             if (fromHistory) {
               const generation = detailGeneration
               // The browser can restore a Settings anchor after popstate finishes.
@@ -1757,6 +1781,7 @@
         window.addEventListener("hashchange", discardSearchDetail, { capture: true, signal: __signal })
         window.addEventListener("pagehide", discardSearchDetail, { signal: __signal })
         window.addEventListener("popstate", () => checkTaskLocation(true), { signal: __signal })
+        window.addEventListener("meitheal:ticket-history", () => checkTaskLocation(true), { signal: __signal })
         window.addEventListener("hashchange", () => checkTaskLocation(true), { signal: __signal })
         checkTaskLocation()
 
@@ -1778,6 +1803,17 @@
         function handleTaskActivation(event: Event) {
           const target = event.target
           if (event.defaultPrevented || !(target instanceof Element)) return
+          const link = target.closest<HTMLAnchorElement>("a[data-task-detail-link]")
+          if (link) {
+            if (!(event instanceof MouseEvent) || event.type !== "click" || event.button !== 0 ||
+                event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
+                (link.target && link.target !== "_self") || link.hasAttribute("download")) return
+            const id = link.dataset.taskDetailLink
+            if (!id) return
+            event.preventDefault()
+            void openTaskDetail(id, new URL(link.href).searchParams.get("comment"))
+            return
+          }
           if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return
           if (target.closest("button, a, input, select, textarea, .task-actions, .action-btn")) return
           if (target instanceof HTMLElement && target.isContentEditable) return
@@ -1801,6 +1837,9 @@
             openTaskDetail(taskId);
           }
         }
+        document.body.addEventListener("click", event => {
+          if (event.target instanceof Element && event.target.closest("a[data-task-detail-link]")) handleTaskActivation(event)
+        }, { signal: __signal, capture: true })
         document.body.addEventListener("click", handleTaskActivation, {
           signal: __signal,
         });

@@ -12,6 +12,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import { formatRegionalDate } from "../../lib/date";
 import { formatTicketKey } from "../../lib/ticket-key";
+import { buildTaskPath } from "../../lib/task-detail-handoff"
 import { getTasksForView } from "../../lib/task-queries";
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
 import { readTableFilterParams } from "../../lib/filter-state"
@@ -210,14 +211,15 @@ const priorityClasses: Record<number, string> = {
                       />
                     </td>
                     <td class="col-key">
-                      <button
-                        type="button"
+                      <a
+                        href={buildTaskPath(task.id)}
+                        data-task-detail-link={task.id}
                         class="ticket-key-badge"
                         data-open-table-task
                         aria-label={`${ticketKey} — ${task.title}`}
                       >
                         {ticketKey}
-                      </button>
+                      </a>
                     </td>
                     <td class="col-title">
                       <div class="task-title-cell" style={depth > 0 ? `padding-left: ${depth * 20}px` : undefined}>

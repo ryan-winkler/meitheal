@@ -1124,3 +1124,96 @@ const { locale } = Astro.props
   })();
 </script>
 
+
+<style>
+  :global(.sidebar-config-row) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-config-row .drag-handle) {
+    grid-row: span 2;
+    padding: 0.5rem;
+    cursor: grab;
+    color: var(--text-secondary);
+    user-select: none;
+  }
+
+  :global(.sidebar-config-row__visibility) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.sidebar-config-row__moves) {
+    display: flex;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  :global(.sidebar-config-row__moves .btn),
+  :global(.sidebar-custom-link .btn) {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0.5rem;
+  }
+
+  :global(.sidebar-config-row .sidebar-label-input) {
+    grid-column: 2;
+    min-width: 0;
+    width: 100%;
+  }
+
+  :global(.sidebar-custom-link) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-custom-link .form-input) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(.sidebar-custom-link .custom-item-href) {
+    grid-column: 1;
+  }
+
+  :global(.sidebar-custom-link .remove-custom-link) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  @media (max-width: 480px) {
+    :global(.sidebar-config-row) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    :global(.sidebar-config-row .drag-handle) {
+      display: none;
+    }
+
+    :global(.sidebar-config-row__moves) {
+      grid-column: 2;
+    }
+
+    :global(.sidebar-config-row .sidebar-label-input) {
+      grid-column: 1;
+    }
+  }
+</style>

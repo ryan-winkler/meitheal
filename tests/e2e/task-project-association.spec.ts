@@ -230,7 +230,7 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   const detail = page.locator("#task-detail-overlay")
   const project = detail.getByLabel("Project", { exact: true })
   const openTask = async () => {
-    await page.getByRole("button", { name: /^Task: Reassign this task,/ }).click()
+    await page.getByRole("link", { name: /^Task: Reassign this task,/ }).click()
     await expect(project).toBeEnabled()
   }
   const reloadTask = async () => {

@@ -63,3 +63,6 @@ The build stage bundles Astro and the Node adapter into the server output and em
 Verify each architecture from a clean build. Confirm neither package manager is in the final image. Start the App with an empty data directory and again with a migrated fixture. Check health, SQLite migrations, ingress and task persistence. Fetch a baked font and resize a bundled icon through `/_image` to verify the production dependency split.
 
 Record the installed image size with `podman image inspect --format '{{.Size}}' "$image"`. For download size, export a gzip-compressed OCI manifest to a local directory with `podman push --compress --format oci "$image" "dir:$export_dir"` and sum the layer sizes with `jq '[.layers[].size] | add' "$export_dir/manifest.json"`. Compare the installed image against the 250 MiB Green budget. Keep the measurements and image digests with the release verification evidence.
+
+
+Server output is bundled and minified while retaining function and class names. Preserve named stacks for support diagnostics and the bounded-stream security fixture; renaming `readWithinLimit` hides the fixture's real parser boundary and stalls its held-body acknowledgement. The client keeps Vite's normal minification. After changing server minification, run `task-participant-revocation.spec.ts` against the built output as well as the existing asset budget.

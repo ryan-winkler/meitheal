@@ -45,7 +45,7 @@ interface MeithealWindowExtensions {
 
   // === Strategic Lens ===
   /** Attaches strategic lens evaluator for a task (registered by StrategicEvaluator.astro) */
-  attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>) => void;
+  attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>, session?: import("../lib/strategic-evaluator-controller").StrategicLensSession) => void;
 
   // === Gamification ===
   /** Triggers confetti animation (registered by Confetti.astro) */

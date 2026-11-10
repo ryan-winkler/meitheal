@@ -23,24 +23,25 @@
           const dot = indicator.querySelector(".status-dot");
           const text = indicator.querySelector(".status-text");
           try {
-            const res = await fetch(
-              (window.__ingress_path || "") + "/api/health",
-            );
+            const res = await fetch("/api/health", { cache: "no-store" });
             const data = await res.json();
             if (data.status === "ok") {
               dot?.classList.add("online");
               dot?.classList.remove("offline");
-              if (text) text.textContent = "Connected";
-            } else {
+              if (text) text.textContent = indicator.dataset.ready ?? "Meitheal ready";
+            } else if (data.db_status === "error") {
               dot?.classList.remove("online");
               dot?.classList.add("offline");
-              if (text) text.textContent = "DB Offline";
+              if (text) text.textContent = indicator.dataset.storageOffline ?? "Storage unavailable";
+            } else {
+              throw new Error("Health response unavailable");
             }
           } catch {
             dot?.classList.remove("online");
             dot?.classList.add("offline");
-            if (text) text.textContent = "Disconnected";
+            if (text) text.textContent = indicator.dataset.unreachable ?? "Meitheal unavailable";
           }
+          indicator.title = text?.textContent ?? ""
         }
         checkHealth();
         // P0-4: Clear previous interval before creating new one to prevent

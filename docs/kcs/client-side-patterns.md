@@ -125,6 +125,11 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 | `window.openNewTaskModal` | Modal open function |
 | `window.openTaskDetail` | Detail modal open function |
 
+## Embedded navigation and generated controls
+
+Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. Direct ingress tabs keep their normal page URL.
+
+Controls appended by client code outside an Astro component need global CSS selectors. Check generated menus with real pointer and keyboard input near the viewport edge. Moving focus into a menu should keep its options reachable.
 ## Confirmation and prompt text
 
 `confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.

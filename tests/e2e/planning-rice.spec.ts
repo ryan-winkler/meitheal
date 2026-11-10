@@ -1,5 +1,18 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
 import { parseRiceInputs, readRiceInputs, riceLensScore } from "../../apps/web/src/lib/rice-lens"
+import { evaluateFrameworkFormula } from "../../apps/web/src/lib/framework-score"
+import { taskDetailPath, ticketIdFromPath } from "../../apps/web/src/lib/task-page-url"
+
+test("ticket paths preserve comment targets and scoring uses the existing lens scale", () => {
+  expect(taskDetailPath("task one", 17)).toBe("/tickets/task%20one?comment=17")
+  expect(ticketIdFromPath("/api/hassio_ingress/example/tickets/task%20one", "/api/hassio_ingress/example")).toBe("task one")
+  const values = { reach: 10, impact: 2, confidence: 80, effort: 0.5 }
+  expect(riceLensScore(readRiceInputs({ rice: values })!)).toBe(3200)
+  expect(evaluateFrameworkFormula("(reach * impact * confidence) / effort", values)).toBe(3200)
+  expect(evaluateFrameworkFormula("(business_value + time_criticality + risk_reduction) / job_size", { business_value: 8, time_criticality: 4, risk_reduction: 3, job_size: 3 })).toBe(5)
+  expect(evaluateFrameworkFormula("reach / effort", { reach: 10, effort: 0 })).toBeNull()
+  expect(evaluateFrameworkFormula("globalThis.alert(1)", {})).toBeNull()
+})
 
 test("the shared lens reads numeric legacy fields, nested scores and zero values", () => {
   const legacy = { reach: "10", impact: 2, confidence: 50, effort: 2 }

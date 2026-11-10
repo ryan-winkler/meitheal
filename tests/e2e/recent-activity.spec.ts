@@ -145,7 +145,7 @@ test("verified members see committed task activity and can filter it by current 
     await a.getByRole("button", { name: "Apply filters" }).press("Enter")
     await expect(events).toHaveCount(2)
     await expect(events.filter({ hasText: "Repair the fence" })).toHaveCount(1)
-    await expect(events.first().getByRole("link")).toHaveAttribute("href", new RegExp(`^${prefix}/tasks\\?open=`))
+    await expect(events.first().getByRole("link")).toHaveAttribute("href", new RegExp(`^${prefix}/tickets/`))
     const taskLink = events.filter({ hasText: "Repair the fence" }).getByRole("link")
     await taskLink.press("Enter")
     await expect(a.locator("#task-detail-overlay")).toHaveAttribute("data-open-task-id", first.body.id)

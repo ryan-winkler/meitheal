@@ -96,6 +96,8 @@
     "toggle_menu": "Toggle menu"
   },
   "status": {
+    "app_ready": "Meitheal ready",
+    "app_unreachable": "Meitheal unavailable",
     "connected": "Connected",
     "disconnected": "Disconnected",
     "db_offline": "DB Offline",

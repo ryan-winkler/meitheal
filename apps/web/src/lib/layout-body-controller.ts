@@ -2,7 +2,10 @@
 // Handles: sidebar badge hydration, sync notifications, route cleanup,
 // and ingress state persistence.
 import { TASK_COUNTS_CHANGED } from "./deferral-client"
+import { initIngressNavigation } from "./ingress-navigation"
 import { pageLifecycle } from "./page-lifecycle"
+
+pageLifecycle.onPageLoad(initIngressNavigation)
 
 // ───── Sidebar Badge Hydration ─────
 // SSR renders the badge with server-side count, but it can be stale or 0

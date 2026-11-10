@@ -35,7 +35,16 @@ export default defineConfig({
   output: "server",
   trailingSlash: "never",
   adapter: node({ mode: "standalone" }),
-  integrations: [],
+  integrations: [{
+    name: "compact-server-output",
+    hooks: {
+      "astro:build:setup": ({ target, updateConfig }) => {
+        if (target === "server") updateConfig({
+          build: { minify: "terser", terserOptions: { keep_fnames: true, keep_classnames: true } },
+        })
+      },
+    },
+  }],
   compressHTML: true,
   prefetch: true,
   vite: {
@@ -49,7 +58,7 @@ export default defineConfig({
       // Sharp must resolve its native binary from the target-platform install.
       external: ["sharp"],
       // Let the server build tree-shake date helpers used by Tasks.
-      noExternal: ["date-fns", "date-fns-tz"],
+      noExternal: ["date-fns", "date-fns-tz", "zod", "yaml", "home-assistant-js-websocket", "parse5-html-rewriting-stream", "sanitize-html"],
     },
     plugins: [
       // Tailwind CSS v4 — replaces @astrojs/tailwind integration

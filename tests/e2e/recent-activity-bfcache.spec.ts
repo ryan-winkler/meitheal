@@ -68,7 +68,7 @@ for (const revoked of [false, true]) {
       const cookies = await context.cookies(origin)
       const away = page.waitForNavigation({ waitUntil: "commit" })
       await task.click()
-      expect((await away)?.url()).toContain(prefix + "/tasks?open=")
+      expect((await away)?.url()).toContain(prefix + "/tickets/")
       await page.waitForLoadState("domcontentloaded")
       if (revoked) {
         const changed = once(child, "message", { signal: AbortSignal.timeout(3_000) })
