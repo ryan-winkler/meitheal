@@ -17,6 +17,7 @@ test.describe("Theme accent and keyboard focus", () => {
   for (const [theme, surface] of [["light", "#f8fafc"], ["dark", "#0f172a"]] as const) {
     test(`keeps keyboard focus visible with a ${theme} surface accent`, async ({ page }) => {
       await page.locator("#theme-select").selectOption(theme)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
       const picker = page.locator("#accent-color-custom")
       const tokens = () => page.locator("html").evaluate(root => {
         const style = getComputedStyle(root)
@@ -51,6 +52,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await page.getByRole("link", { name: "Settings", exact: true }).first().click()
       await expect(picker).toHaveValue(surface)
       await page.reload()
+      await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
       await picker.focus()
       await page.keyboard.press("Tab")
