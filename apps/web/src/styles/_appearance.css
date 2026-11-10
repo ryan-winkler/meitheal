@@ -1,0 +1,28 @@
+:root[data-appearance-font="serif"] {
+  --font-sans: Georgia, "Times New Roman", serif;
+  --font-heading: var(--font-sans);
+}
+
+:root[data-appearance-font="mono"] {
+  --font-sans: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --font-heading: var(--font-sans);
+}
+
+:root[data-appearance-radius="0"] { --appearance-radius-scale: 0; }
+:root[data-appearance-radius="0.5"] { --appearance-radius-scale: 0.5; }
+:root[data-appearance-radius="1.5"] { --appearance-radius-scale: 1.5; }
+:root[data-appearance-radius="2"] { --appearance-radius-scale: 2; }
+
+:root[data-appearance-radius]:not([data-appearance-radius="1"]) {
+  --radius-xs: calc(4px * var(--appearance-radius-scale));
+  --radius-sm: calc(6px * var(--appearance-radius-scale));
+  --radius-md: calc(10px * var(--appearance-radius-scale));
+  --radius-lg: calc(16px * var(--appearance-radius-scale));
+  --radius-xl: calc(20px * var(--appearance-radius-scale));
+  --radius-2xl: calc(24px * var(--appearance-radius-scale));
+}
+
+:root[data-appearance-radius]:not([data-appearance-radius="1"])
+  :is(.settings-panel-card, .bento-card, .kanban-card, .integration-card) {
+  border-radius: var(--radius-md);
+}

@@ -73,6 +73,8 @@ Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the
 
 An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent.
 
+Open **Personal → Customize appearance** to choose a typeface and corner roundness. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** selects the original typeface and corners. Save to apply them.
+
 If the theme still resets:
 
 - Check that `/api/settings` writes are not failing in the browser network panel.

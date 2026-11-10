@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsAppearance from "./SettingsAppearance.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
@@ -156,6 +157,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         >
       </div>
     </div>
+    <SettingsAppearance locale={locale} />
     <div class="form-group mt-3">
       <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
       <select

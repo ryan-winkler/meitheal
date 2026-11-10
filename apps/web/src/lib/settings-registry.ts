@@ -163,6 +163,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["theme", "dark", "light", "custom theme", "appearance"],
   },
   {
+    id: "field-appearance-customize",
+    label: "Customize appearance",
+    anchorId: "appearance-settings",
+    sectionId: "personal-settings",
+    keywords: ["font", "typeface", "typography", "corners", "roundness", "radius"],
+  },
+  {
     id: "field-language",
     label: "Display Language",
     anchorId: "locale-select",

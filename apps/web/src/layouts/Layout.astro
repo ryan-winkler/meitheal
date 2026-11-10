@@ -15,6 +15,7 @@ import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
 import JsonLd from "../components/seo/JsonLd.astro";
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
@@ -252,12 +253,20 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </script>
 
     <!-- Restore appearance before a full load or an Astro document swap. -->
-    <script is:inline>
+    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY }}>
       (function () {
         function restoreAppearance(doc) {
           var theme = localStorage.getItem("meitheal-theme");
           var root = doc.documentElement;
           root.dataset.theme = ["light", "auto"].includes(theme) ? theme : "dark";
+          var appearance;
+          try {
+            appearance = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}");
+          } catch { /* Invalid browser preferences fall back to their defaults. */ }
+          for (var [name, preference] of Object.entries(APPEARANCE_PREFERENCES)) {
+            var value = appearance?.[name];
+            root.setAttribute("data-appearance-" + name, preference.options.includes(value) ? value : preference.defaultValue);
+          }
           var accent = localStorage.getItem("meitheal-accent-color");
           if (/^#[0-9a-f]{6}$/i.test(accent || "")) {
             root.style.setProperty("--personal-accent", accent);

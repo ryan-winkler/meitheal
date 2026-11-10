@@ -4,6 +4,7 @@
  * Handles theme selection, custom theme import/export/delete,
  * locale, timezone, week start, and date format preferences.
  */
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { DEFAULT_ACCENT } from "@lib/design-tokens"
 import { showToast } from "@lib/toast"
@@ -84,6 +85,51 @@ function initAccentSettings(): void {
   }
 }
 
+function initAppearanceSettings(): void {
+  const form = document.querySelector<HTMLFormElement>("#appearance-preferences-form")
+  const status = document.getElementById("appearance-save-status")
+  if (!form || !status) return
+
+  const root = document.documentElement
+  const fields = Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => ({
+    name,
+    attribute: `data-appearance-${name}`,
+    select: form.elements.namedItem(name) as HTMLSelectElement,
+    ...preference,
+  }))
+
+  for (const field of fields) field.select.value = root.getAttribute(field.attribute) ?? field.defaultValue
+  pageLifecycle.on(form, "change", () => { status.textContent = "" })
+  pageLifecycle.on(form, "reset", event => {
+    event.preventDefault()
+    for (const field of fields) field.select.value = field.defaultValue
+    status.textContent = status.dataset.reset ?? ""
+  })
+  pageLifecycle.on(form, "submit", event => {
+    event.preventDefault()
+    const selected = fields.map(field => ({
+      ...field,
+      value: field.options.includes(field.select.value) ? field.select.value : field.defaultValue,
+    }))
+    let previous: Record<string, unknown> = {}
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
+    } catch { /* A valid save replaces malformed stored preferences. */ }
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({
+        ...previous,
+        ...Object.fromEntries(selected.map(({ name, value }) => [name, value])),
+      }))
+    } catch {
+      status.textContent = status.dataset.error ?? ""
+      return
+    }
+    for (const { attribute, value } of selected) root.setAttribute(attribute, value)
+    status.textContent = status.dataset.saved ?? ""
+  })
+}
+
 export function initThemeSettings(): void {
   const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")
   if (singleKeys) {
@@ -106,6 +152,7 @@ export function initThemeSettings(): void {
   }
 
   initAccentSettings()
+  initAppearanceSettings()
 
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
