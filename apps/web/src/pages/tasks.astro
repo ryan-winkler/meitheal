@@ -435,6 +435,7 @@ try {
               {/* Flat (non-grouped) card rendering */}
               {colTasks.map((task) => {
                 const p = Number(task.priority ?? 3);
+                const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
                 const fp =
@@ -492,10 +493,10 @@ try {
                           type="button"
                           class="card-open-btn"
                           data-id={String(task.id)}
-                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}`}
+                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}`}
                         >
                           <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
-                          <span class="kanban-ticket-key">{formatTicketKey(Number(task.ticket_number))}</span>
+                          <span class="kanban-ticket-key">{ticketKey}</span>
                         </button>
                         <span
                           class="kanban-title-text"
@@ -1214,7 +1215,8 @@ try {
   }
   .priority-label {
     font-size: 11px;
-    color: var(--prio-color, var(--text-muted));
+    color: var(--text-primary);
+    color: color-mix(in srgb, var(--prio-color, var(--text-primary)) 60%, var(--text-primary));
     font-weight: 500;
   }
   /* Semantic metadata classes */

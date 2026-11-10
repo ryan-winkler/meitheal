@@ -20,6 +20,8 @@ Use **All Areas** above the board to select a specific area. The card and lane c
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
 - You can also drag the card. On touch, hold the card body briefly before moving it. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
 
+The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
+
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.

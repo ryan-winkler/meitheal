@@ -28,6 +28,32 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page.locator("#search-hub-input")).toBeFocused()
   })
 
+  test("card names include the key and only the newest quick action accepts input", async ({ page, request, baseURL }) => {
+    const title = "Check kitchen tap"
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title, priority: 2 } })
+    expect(created.status()).toBe(201)
+    const { id, ticket_key: key } = await created.json()
+    try {
+      await page.reload()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      await expect(card.getByRole("button", { name: `Task: ${title}, Priority: High, ${key}` })).toBeVisible()
+      const menus = await card.getByRole("button", { name: `Assign user to: ${title}` }).evaluate(trigger => {
+        trigger.click()
+        trigger.click()
+        return Array.from(document.querySelectorAll<HTMLElement>(".quick-action-popover"), menu => ({
+          inert: menu.inert,
+          hidden: menu.getAttribute("aria-hidden"),
+        }))
+      })
+      expect(menus).toEqual([{ inert: true, hidden: "true" }, { inert: false, hidden: null }])
+      await expect(page.getByRole("dialog", { name: "Assign User" })).toHaveCount(1)
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("manage lanes opens the lane management panel", async ({ page }) => {
     const panel = page.locator("#lane-mgmt")
 

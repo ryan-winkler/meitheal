@@ -39,6 +39,8 @@ export function initQuickActions(
     if (!activePopover) return
     const el = activePopover
     activePopover = null
+    el.inert = true
+    el.setAttribute("aria-hidden", "true")
     el.classList.add("popover-exiting")
     setTimeout(() => el.remove(), 150)
     if (_scrollCleanup) { _scrollCleanup(); _scrollCleanup = null }
@@ -94,9 +96,16 @@ export function initQuickActions(
 
     // Close on scroll (P1-4)
     const board = document.querySelector(".kanban-scroll-area, .kanban-board")
-    const onScroll = () => close()
-    board?.addEventListener("scroll", onScroll, { once: true, signal: __signal })
-    window.addEventListener("scroll", onScroll, { once: true, signal: __signal })
+    const { scrollX, scrollY } = window
+    const boardLeft = board?.scrollLeft
+    const boardTop = board?.scrollTop
+    const onScroll = () => {
+      // Focusing the trigger may have already scrolled before the menu opened.
+      if (window.scrollX !== scrollX || window.scrollY !== scrollY ||
+        board?.scrollLeft !== boardLeft || board?.scrollTop !== boardTop) close()
+    }
+    board?.addEventListener("scroll", onScroll, { signal: __signal })
+    window.addEventListener("scroll", onScroll, { signal: __signal })
     _scrollCleanup = () => {
       board?.removeEventListener("scroll", onScroll)
       window.removeEventListener("scroll", onScroll)
@@ -105,7 +114,7 @@ export function initQuickActions(
     // Focus first interactive element (P1-1)
     requestAnimationFrame(() => {
       const first = popover.querySelector("button, [tabindex]")
-      if (first) (first as HTMLElement).focus()
+      if (activePopover === popover && first instanceof HTMLElement) first.focus({ preventScroll: true })
     })
 
     return popover
@@ -231,7 +240,7 @@ export function initQuickActions(
       } catch { /* fallback to empty */ }
 
       // Replace skeleton with real content
-      if (!popover.parentNode) return // popover was closed during fetch
+      if (activePopover !== popover) return
       content.replaceChildren()
 
       // Unassign option
