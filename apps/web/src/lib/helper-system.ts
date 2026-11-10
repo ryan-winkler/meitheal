@@ -11,6 +11,8 @@
  *      They can be dismissed individually or restored globally.
  */
 
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+
 const STORAGE_KEY = "meitheal-dismissed-helpers"
 
 /** Get set of dismissed helper IDs */
@@ -68,7 +70,7 @@ function handleHelperClick(event: MouseEvent): void {
 }
 
 function handleHelperRestore(event: KeyboardEvent): void {
-  if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey || !singleKeyShortcutsEnabled()) return
   const target = event.target
   if (target instanceof HTMLElement && (target.matches("input, textarea") || target.isContentEditable)) return
   const count = dismissedCount()

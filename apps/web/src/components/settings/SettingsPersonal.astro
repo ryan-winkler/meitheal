@@ -209,6 +209,10 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     title={t("settings.shortcuts_title", locale)}
     subtitle={t("settings.shortcuts_subtitle", locale)}
   >
+    <label class="flex items-center gap-2">
+      <input id="single-key-shortcuts" type="checkbox" checked />
+      {t("settings.shortcut_single_keys", locale)}
+    </label>
     <div class="shortcut-grid" style="margin-top: 14px;">
       <div class="shortcut-row">
         <kbd>n</kbd><span>{t("settings.shortcut_new_task", locale)}</span>

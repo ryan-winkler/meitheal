@@ -22,6 +22,7 @@
  * dynamic content support.
  */
 
+import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { taskApi, type TaskCreatePayload } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
@@ -650,6 +651,8 @@ function setupKeyboardNav(container: HTMLElement) {
     const e = evt as KeyboardEvent
     const target = e.target
     if (!(target instanceof HTMLElement) || target.closest("input, select, textarea, button, a") || target.isContentEditable) return
+
+    if (isDisabledCharacterShortcut(e.key)) return
 
     const items = getVisibleTasks()
     switch (e.key) {

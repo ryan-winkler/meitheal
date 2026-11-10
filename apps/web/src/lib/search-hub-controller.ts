@@ -1,4 +1,5 @@
 import { createFocusTrap } from "@lib/focus-trap"
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import type {
   SearchResponse,
@@ -418,7 +419,8 @@ pageLifecycle.onPageLoad((signal) => {
 
       if (isEditing) return
 
-      if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+        && singleKeyShortcutsEnabled()) {
         event.preventDefault()
         const scope = document.getElementById("settings-bar")?.dataset.searchScope
         window.openSearchHub?.(scope ? { scope } : undefined)

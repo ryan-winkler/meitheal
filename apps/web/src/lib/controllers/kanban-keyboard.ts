@@ -7,6 +7,7 @@
  *      inline quick-add, search filter, and arrow-key board navigation.
  */
 import { getSelectedAreaId } from "@lib/area-selector-controller"
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 
 const log = createClientLogger("kanban:keyboard")
@@ -25,6 +26,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
     const target = e.target as HTMLElement
     if (e.defaultPrevented || e.isComposing || e.repeat || e.ctrlKey || e.altKey || e.metaKey ||
         target.closest("input, textarea, select, [contenteditable]")) return
+    if (!singleKeyShortcutsEnabled()) return
 
     // N = open quick-add in first visible column
     if (e.key === "n" || e.key === "N") {

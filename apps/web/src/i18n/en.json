@@ -683,6 +683,8 @@
     "save_ai": "Save AI Settings",
     "shortcuts_title": "⌨ Keyboard Shortcuts",
     "shortcuts_subtitle": "Navigate quickly through the app",
+    "shortcut_single_keys": "Enable letter, number and symbol shortcuts on this device",
+    "shortcut_preference_error": "Could not save keyboard preferences on this device.",
     "shortcut_new_task": "New task",
     "shortcut_search": "Search",
     "shortcut_list": "List view",

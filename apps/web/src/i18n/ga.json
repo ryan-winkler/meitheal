@@ -681,6 +681,8 @@
     "save_ai": "Save AI Settings",
     "shortcuts_title": "⌨ Keyboard Shortcuts",
     "shortcuts_subtitle": "Navigate quickly through the app",
+    "shortcut_single_keys": "Cumasaigh aicearraí litreacha, uimhreacha agus siombailí ar an ngléas seo",
+    "shortcut_preference_error": "Níorbh fhéidir sainroghanna méarchláir a shábháil ar an ngléas seo.",
     "shortcut_new_task": "New task",
     "shortcut_search": "Search",
     "shortcut_list": "List view",

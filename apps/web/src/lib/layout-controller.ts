@@ -6,6 +6,7 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { pageLifecycle } from "@lib/page-lifecycle";
+        import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
 
         const log = createClientLogger("app", "layout");
@@ -68,7 +69,12 @@
         // auto-cleanup on ViewTransition navigation (astro:before-swap).
         // DOM refs are re-queried on each page load to avoid stale refs.
         // ============================================================
+        let keyboardSignal: AbortSignal | undefined
         pageLifecycle.onPageLoad((signal) => {
+          // The fallback and initial Astro event can arrive with the same signal.
+          const bindKeyboard = keyboardSignal !== signal
+          keyboardSignal = signal
+
           // Defensive: clear any stale body scroll lock from a previous page's
           // task-detail or modal overlay (MPA nav doesn't run close handlers)
           document.body.style.overflow = "";
@@ -94,6 +100,11 @@
 
           injectShortcutStyles();
           attachShortcutTooltips(document.body);
+          if (bindKeyboard) window.addEventListener("storage", (event) => {
+            if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
+              attachShortcutTooltips(document.body)
+            }
+          }, { signal })
 
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
           const rawPath = window.location.pathname;
@@ -125,7 +136,7 @@
           );
 
           // "/" and Cmd/Ctrl+K launch universal search, "n" creates a task
-          document.addEventListener(
+          if (bindKeyboard) document.addEventListener(
             "keydown",
             (e) => {
               const tag = (e.target as HTMLElement)?.tagName;
@@ -191,15 +202,17 @@
               )
                 return;
 
-              if (e.key === "/" && !e.shiftKey) {
-                e.preventDefault();
-                window.openSearchHub?.();
-              }
               // Ctrl+K / Cmd+K opens universal search
               if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 window.openSearchHub?.();
                 return;
+              }
+              if (!singleKeyShortcutsEnabled()) return
+
+              if (e.key === "/" && !e.shiftKey) {
+                e.preventDefault();
+                window.openSearchHub?.();
               }
               if (e.key === "n") {
                 e.preventDefault();

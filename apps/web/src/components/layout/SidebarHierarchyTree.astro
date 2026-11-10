@@ -910,6 +910,7 @@ const taskKinds = [
 </style>
 
 <script>
+  import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
   import { DropdownController } from "../../lib/dropdown-controller"
   import { escapeHtml, sanitizeCssColor } from "../../lib/safe-html"
   import { showToast } from "../../lib/toast"
@@ -1605,7 +1606,7 @@ const taskKinds = [
       const tag = (e.target as HTMLElement).tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
       if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (e.key !== "n" && e.key !== "N") return
+      if ((e.key !== "n" && e.key !== "N") || !singleKeyShortcutsEnabled()) return
 
       e.preventDefault()
       // Find the active project or first visible project

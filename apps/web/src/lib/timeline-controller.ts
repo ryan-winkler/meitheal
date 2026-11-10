@@ -1,5 +1,6 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controller"
+import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
@@ -2105,6 +2106,7 @@ function renderGantt(
     // Don't capture when user is typing in an input
     const tag = (e.target as HTMLElement).tagName
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+    if (isDisabledCharacterShortcut(e.key)) return
 
     switch (e.key) {
       case "t":

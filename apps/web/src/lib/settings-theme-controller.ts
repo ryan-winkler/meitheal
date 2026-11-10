@@ -11,6 +11,8 @@ import {
   setTheme as importedSetTheme,
   applyCustomTheme as importedApplyCustomTheme,
 } from "@lib/theme-watcher"
+import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
+import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
 import type { ThemeMode } from "@lib/theme-watcher"
 import { saveSetting, saveSettings, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
@@ -83,6 +85,26 @@ function initAccentSettings(): void {
 }
 
 export function initThemeSettings(): void {
+  const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")
+  if (singleKeys) {
+    singleKeys.checked = singleKeyShortcutsEnabled()
+    pageLifecycle.on(singleKeys, "change", () => {
+      try {
+        setSingleKeyShortcuts(singleKeys.checked)
+      } catch {
+        singleKeys.checked = singleKeyShortcutsEnabled()
+        showToast(window.mI18n?.get("settings.shortcut_preference_error") ?? "Could not save keyboard preferences on this device.", "error")
+        return
+      }
+      attachShortcutTooltips(document.body)
+    })
+    window.addEventListener("storage", (event) => {
+      if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
+        singleKeys.checked = singleKeyShortcutsEnabled()
+      }
+    }, { signal: pageLifecycle.signal })
+  }
+
   initAccentSettings()
 
   // Theme Config — init select from localStorage

@@ -1,6 +1,7 @@
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
+        import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { buildTaskPermalink, getLegacyTaskId } from "@lib/task-detail-handoff"
 
         const log = createClientLogger("tasks", "detail-modal");
@@ -1181,7 +1182,7 @@
         document.addEventListener("keydown", (e) => {
           const panel = document.getElementById("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
-          if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
             if (
               active?.tagName === "INPUT" ||
