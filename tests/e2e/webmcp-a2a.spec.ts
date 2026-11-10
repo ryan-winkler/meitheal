@@ -14,16 +14,19 @@ test.describe("A2A Agent Card Discovery", () => {
     const response = await request.get("/api/a2a/agent-card")
     expect(response.ok()).toBeTruthy()
     const card = await response.json()
-    expect(card).toMatchObject({ name: "Meitheal", skills: expect.any(Array) })
-    expect(card.skills.length).toBeGreaterThan(0)
+    expect(card).toMatchObject({
+      name: "Meitheal", skills: [], supportedInterfaces: [], defaultInputModes: [], defaultOutputModes: [],
+    })
+    expect(response.headers()["cache-control"]).toBe("private, no-store")
     for (const alias of ["/.well-known/agent.json", "/.well-known/agent-card.json"]) {
       const discovery = await request.get(alias, { maxRedirects: 0 })
       expect(discovery.ok()).toBeTruthy()
+      expect(discovery.headers()["cache-control"]).toBe("private, no-store")
       expect(await discovery.json()).toEqual(card)
     }
   })
 
-  test("dynamic agent card has required fields", async ({
+  test("the experimental card retains the discovery fields", async ({
     request,
     baseURL,
   }) => {
@@ -31,7 +34,6 @@ test.describe("A2A Agent Card Discovery", () => {
     expect(response.ok()).toBeTruthy();
     const card = await response.json();
 
-    // A2A spec §4.4.1 required fields
     expect(card.name).toBeTruthy();
     expect(card.description).toBeTruthy();
     expect(card.supportedInterfaces).toBeDefined();
@@ -40,22 +42,6 @@ test.describe("A2A Agent Card Discovery", () => {
     expect(card.provider).toBeDefined();
     expect(card.capabilities).toBeDefined();
     expect(card.skills).toBeDefined();
-  });
-
-  test("agent card skills have correct shape", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/api/a2a/agent-card`);
-    const card = await response.json();
-
-    for (const skill of card.skills) {
-      expect(skill.id).toBeTruthy();
-      expect(skill.name).toBeTruthy();
-      expect(skill.description).toBeTruthy();
-      expect(Array.isArray(skill.tags)).toBe(true);
-      expect(Array.isArray(skill.examples)).toBe(true);
-    }
   });
 
   test("the experimental card documents its routes and disables push", async ({
@@ -72,114 +58,120 @@ test.describe("A2A Agent Card Discovery", () => {
   });
 });
 
-test.describe("A2A Message Send", () => {
-  test("accepts valid message with skill", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-001",
-          parts: [
-            {
-              text: "Create a task titled 'Test Task'",
-              data: { skill: "task-management" },
-            },
-          ],
-        },
-      },
-    });
+test.describe("A2A Route Availability", () => {
+  test("reports unavailable execution and never fabricates A2A tasks", async ({ request }) => {
+    const message = await request.post("/api/a2a/message", {
+      data: { message: { role: "user", parts: [{ text: "Create a task" }] } },
+    })
+    expect(message.status()).toBe(501)
+    expect(message.headers()["cache-control"]).toBe("private, no-store")
+    const body = await message.json()
+    expect(body).toMatchObject({ detail: expect.stringContaining("unavailable") })
+    expect(body).not.toHaveProperty("task")
 
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.id).toBeTruthy();
-    expect(body.task.status).toBe("completed");
-    expect(body.task.messages.length).toBeGreaterThanOrEqual(2);
-  });
+    for (const response of [
+      await request.get("/api/a2a/tasks/unknown"),
+      await request.post("/api/a2a/tasks/unknown", { data: {} }),
+      await request.post("/api/a2a/tasks/unknown:cancel", { data: {} }),
+    ]) {
+      expect(response.status()).toBe(404)
+      expect(response.headers()["cache-control"]).toBe("private, no-store")
+      expect(await response.json()).not.toHaveProperty("task")
+    }
+  })
 
-  test("returns input-required when no skill detected", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-002",
-          parts: [{ text: "Hello, what can you do?" }],
-        },
-      },
-    });
+  test("the installed setting controls discovery and execution through managed ingress", async ({ playwright }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and its disposable ingress fixture")
+    const work = await mkdtemp(join(tmpdir(), "meitheal-a2a-availability-"))
+    const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
+    const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
+    const env = {
+      PATH: process.env.PATH,
+      NODE_ENV: "production",
+      MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+      MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+    }
+    const api = await playwright.request.newContext()
+    let server: ReturnType<typeof fork> | undefined
 
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.status).toBe("input-required");
-  });
+    try {
+      execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
+      const child = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
+      server = child
+      const [info] = await Promise.race([
+        once(child, "message", { signal: AbortSignal.timeout(10_000) }),
+        once(child, "exit").then(([code]) => { throw new Error(`Ingress fixture exited with ${code}`) }),
+      ])
+      const origin = `http://127.0.0.1:${info.port}`
+      const ingress = origin + info.configuredPath
+      const cards = ["/.well-known/agent-card.json", "/.well-known/agent.json", "/api/a2a/agent-card"] as const
+      const enroll = async (scope: string) => {
+        const response = await api.post(ingress + "/api/agent-tokens", {
+          headers: { origin, cookie: "feedback-fixture=admin" },
+          data: { name: "A2A availability fixture", scopes: [scope] },
+        })
+        expect(response.status()).toBe(201)
+        const { token } = await response.json()
+        return { origin, authorization: `Bearer ${token}` }
+      }
+      const authorized = await enroll("a2a:execute")
+      const unrelated = await enroll("search:read")
+      const call = (path: string, method: string, headers: Record<string, string> = authorized) =>
+        api.fetch(ingress + path, { method, headers, ...(method === "POST" ? { data: {} } : {}) })
+      const save = (role: string, value: unknown) => api.put(ingress + "/api/settings", {
+        headers: { origin, cookie: `feedback-fixture=${role}` },
+        data: { key: "agent-protocols-a2a-enabled", value },
+      })
 
-  test("rejects invalid message structure", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: { message: {} },
-    });
+      expect((await api.get(origin + cards[0])).status()).toBe(403)
+      expect((await api.post(origin + "/api/a2a/message", {
+        headers: { origin, "A2A-Token": "forged" },
+        data: {},
+      })).status()).toBe(401)
+      expect((await call("/api/a2a/message", "POST", {
+        origin, authorization: `Bearer mth_${"a".repeat(64)}`,
+      })).status()).toBe(401)
+      expect((await call("/api/a2a/message", "POST", unrelated)).status()).toBe(403)
+      for (const path of cards) {
+        const response = await call(path, "GET")
+        expect(response.status()).toBe(200)
+        expect(response.headers()["cache-control"]).toBe("private, no-store")
+        expect(await response.json()).toMatchObject({
+          skills: [], supportedInterfaces: [], documentationUrl: info.configuredPath + "/openapi.yaml",
+        })
+      }
+      expect((await call("/api/a2a/message", "POST")).status()).toBe(501)
+      expect((await save("member", false)).status()).toBe(403)
+      expect((await save("admin", false)).status()).toBe(200)
 
-    expect(response.status()).toBe(400);
-  });
-
-  test("rejects missing message", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {},
-    });
-
-    expect(response.status()).toBe(400);
-  });
-
-  test("task-search skill returns response", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-003",
-          parts: [{ text: "Search for high-priority tasks" }],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task.metadata?.skill).toBe("task-search");
-  });
-
-  test("framework-scoring skill returns response", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-004",
-          parts: [{ text: "Score this task using RICE" }],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task.metadata?.skill).toBe("framework-scoring");
-  });
-});
-
-test.describe("A2A Task Status", () => {
-  test("returns task by ID", async ({ request, baseURL }) => {
-    const response = await request.get(
-      `${baseURL}/api/a2a/tasks/test-task-123`
-    );
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.id).toBe("test-task-123");
-  });
-});
+      for (const [path, method] of [
+        ...cards.map(path => [path, "GET"] as const),
+        ["/api/a2a/message", "POST"],
+        ["/api/a2a/tasks/unknown", "GET"],
+        ["/api/a2a/tasks/unknown", "POST"],
+      ] as const) {
+        const response = await call(path, method)
+        expect(response.status()).toBe(404)
+        expect(response.headers()["cache-control"]).toBe("private, no-store")
+        expect(await response.json()).toMatchObject({ detail: "A2A is disabled." })
+      }
+      expect((await call("/api/a2a/message", "POST", unrelated)).status()).toBe(403)
+      expect((await save("admin", "true")).status()).toBe(200)
+      expect((await call(cards[0], "GET")).status()).toBe(200)
+      expect((await call("/api/a2a/message", "POST")).status()).toBe(501)
+      const unknown = await call("/api/a2a/tasks/unknown", "GET")
+      expect(await unknown.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
+    } finally {
+      if (server && server.exitCode === null && server.signalCode === null) {
+        const exited = once(server, "exit")
+        server.kill()
+        await exited
+      }
+      await api.dispose()
+      await rm(work, { recursive: true, force: true })
+    }
+  })
+})
 
 test.describe("MCP Discovery", () => {
   test("the public manifest points clients to authenticated discovery", async ({ request }) => {
@@ -401,55 +393,3 @@ interface McpTool {
     required?: string[]
   }
 }
-
-test.describe("A2A-Token Spoofing Rejection", () => {
-  test("rejects spoofed A2A-Token header", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      headers: { "A2A-Token": "spoofed-token-value" },
-      data: {
-        message: {
-          role: "user",
-          messageId: "spoofed-msg-001",
-          parts: [{ text: "Create a task" }],
-        },
-      },
-    });
-    // The server should either ignore the spoofed token or reject with 401/403
-    // Since we don't require auth currently, the request should succeed but the
-    // spoofed token should NOT appear in the response context
-    if (response.status() === 401 || response.status() === 403) {
-      // Auth-enforced mode: correct rejection
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-    } else {
-      // Permissive mode: token is ignored, request processes normally
-      expect(response.ok()).toBeTruthy();
-      const body = await response.json();
-      // Verify the spoofed token doesn't leak into the response
-      expect(JSON.stringify(body)).not.toContain("spoofed-token-value");
-    }
-  });
-
-  test("rejects forged Authorization header on A2A endpoint", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      headers: { Authorization: "Bearer forged-jwt-token" },
-      data: {
-        message: {
-          role: "user",
-          messageId: "forged-msg-001",
-          parts: [{ text: "Search tasks" }],
-        },
-      },
-    });
-    // Either rejected or processed without escalated privileges
-    if (response.status() === 401 || response.status() === 403) {
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-    } else {
-      expect(response.ok()).toBeTruthy();
-      const body = await response.json();
-      expect(JSON.stringify(body)).not.toContain("forged-jwt-token");
-    }
-  });
-});

@@ -233,6 +233,7 @@ function isPrivateResource(url) {
 
 function isNetworkOnlyPage(path, params) {
   return path === "/triage" || path === "/deferred" || path === "/.well-known/mcp.json" ||
+    path === "/.well-known/agent.json" || path === "/.well-known/agent-card.json" || path.startsWith("/api/a2a/") ||
     (/^\/api\/tasks\/[^/]+$/.test(path) && params.has("deferralRead")) ||
     (path === "/tasks" && params.has("boardRefresh")) ||
     (path === "/today" && params.has("unscheduledPage"))

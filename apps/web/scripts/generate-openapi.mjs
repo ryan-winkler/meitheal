@@ -1358,8 +1358,8 @@ const paths = {
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get A2A agent card for discovery", responses: { 200: { description: "Agent card" } } } },
-  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Send A2A message", responses: { 200: { description: "Response" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the experimental A2A discovery card", responses: { 200: { description: "Discovery card with no executable bindings" }, 404: { description: "A2A disabled" } } } },
+  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Check A2A message execution availability", responses: { 501: { description: "A2A execution is unavailable" }, 404: { description: "A2A disabled" } } } },
 
   // ── Agent Tokens (Zero-Trust Auth) ──
   "/api/agent-tokens": {

@@ -4015,19 +4015,23 @@ paths:
       operationId: getA2AAgentCard
       tags:
         - Agents
-      summary: Get A2A agent card for discovery
+      summary: Get the experimental A2A discovery card
       responses:
         "200":
-          description: Agent card
+          description: Discovery card with no executable bindings
+        "404":
+          description: A2A disabled
   /api/a2a/message:
     post:
       operationId: sendA2AMessage
       tags:
         - Agents
-      summary: Send A2A message
+      summary: Check A2A message execution availability
       responses:
-        "200":
-          description: Response
+        "404":
+          description: A2A disabled
+        "501":
+          description: A2A execution is unavailable
   /api/agent-tokens:
     post:
       operationId: createAgentToken

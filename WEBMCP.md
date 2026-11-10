@@ -6,7 +6,7 @@ Meitheal exposes a scoped MCP endpoint for external clients. The optional Home A
 | --- | --- |
 | App MCP | Send JSON-RPC to `POST /api/mcp` with a Meitheal bearer token. Run `tools/list` to see which tools the token can call. |
 | Core LLM API | Install the Core integration, then select **Meitheal Tasks** in the Home Assistant conversation agent’s LLM API settings. |
-| A2A | The agent card and protocol endpoints are experimental. They provide discovery and response stubs. |
+| A2A | The experimental agent card describes discovery. Message execution and task management are unavailable. |
 | WebMCP | Browser-side registration remains experimental. |
 
 ## App MCP

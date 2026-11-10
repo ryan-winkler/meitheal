@@ -19,6 +19,8 @@ The endpoint returns a JSON reply per request. Legacy clients that check for a s
 
 ## Experimental protocols
 
-The experimental A2A discovery card is served at `GET /api/a2a/agent-card` and both well-known aliases. It links to the App's OpenAPI contract. The card lists recognised message intents and leaves the interoperable bindings list empty until a conforming implementation is available. `POST /api/a2a/message` and the task routes return sample responses. External calls need `a2a:execute`. Browser WebMCP registration remains experimental.
+The A2A setting in **Settings → Automation & AI → Agent Protocols** controls the experimental discovery card at `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`. The card links to the installed App's OpenAPI contract and lists no executable skills or bindings.
+
+When enabled, `POST /api/a2a/message` returns HTTP 501 and legacy task lookups or cancellation return HTTP 404. When disabled, discovery and authorized A2A requests return HTTP 404. A2A API calls using an agent token still require `a2a:execute`. Browser WebMCP registration remains experimental.
 
 For the Home Assistant conversation LLM API, see [Core credential enrollment](home-assistant-core-credentials.md).
