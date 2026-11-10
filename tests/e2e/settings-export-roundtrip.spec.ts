@@ -20,7 +20,10 @@ test("native Settings exports and historical exports restore decoded values with
     const expected: Record<string, unknown> = {
       theme: "light", "ai-provider": "ha", n8n_events: ["task.completed"], n8n_mode: "webhook",
       notification_preferences: { push: false }, "ha-assist-agent": "conversation.fixture",
-      "calendar-entities": null, completed_auto_hide_days: 21, feature_nfc_tags: false,
+      "calendar-entities": null, completed_auto_hide_days: 21, feature_nfc: false,
+      todo_entities: ["todo.household", "todo.shopping"], calendar_sync_mode: "import",
+      calendar_sync_modes: { "calendar.family": "bidirectional" },
+      grocy_sync_enabled: true, grocy_sync_interval: 300,
       custom_theme_name: '"quoted"',
     }
     const put = async (key: string, value: unknown) => {
@@ -33,6 +36,17 @@ test("native Settings exports and historical exports restore decoded values with
         expect((await response.json()).value, key).toEqual(value)
       }
     }
+    const changeDestination = async () => {
+      for (const [key, value] of Object.entries(expected)) {
+        const changed = value === null ? "previous non-null value"
+          : typeof value === "boolean" ? !value
+          : typeof value === "number" ? value + 1
+          : Array.isArray(value) ? ["todo.different"]
+          : typeof value === "object" ? { previous: true }
+          : "different destination value"
+        await put(key, changed)
+      }
+    }
     for (const [key, value] of Object.entries(expected)) await put(key, value)
     await put("ha_token", "roundtrip-fixture-secret")
     const exported = await api.get(base + "/api/export/settings.json", { headers })
@@ -42,8 +56,7 @@ test("native Settings exports and historical exports restore decoded values with
     expect(bundle).toMatchObject({ _version: 2, _settingsEncoding: "json-values", settings: expected })
     expect(bundle.settings).not.toHaveProperty("ha_token")
     expect(JSON.stringify(bundle)).not.toContain("roundtrip-fixture-secret")
-    await put("theme", "dark")
-    await put("notification_preferences", { push: true })
+    await changeDestination()
     expect((await api.post(base + "/api/import/settings", { headers, data: bundle })).status()).toBe(200)
     await verify(expected)
 
@@ -51,7 +64,7 @@ test("native Settings exports and historical exports restore decoded values with
       _version: 2, _exportedAt: "2026-03-16T10:00:00Z",
       settings: Object.fromEntries(Object.entries(expected).map(([key, value]) => [key, JSON.stringify(value)])),
     }
-    await put("theme", "dark")
+    await changeDestination()
     expect((await api.post(base + "/api/import/settings", { headers, data: legacy })).status()).toBe(200)
     await verify(expected)
     for (const literal of ["true", "null", "123", '"quoted"']) {

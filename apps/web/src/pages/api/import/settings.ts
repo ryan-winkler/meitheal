@@ -18,7 +18,7 @@ const ALLOWED_KEYS = new Set([
     // ── Home Assistant / Connectivity ──
     "ha-url", "ha-token", "ha_url", "ha_token",
     "vikunja-url", "vikunja-token",
-    "calendar-entity", "calendar-entities", "calendar_entity", "cal_entity", "calendar_entities", "caldav_url", "calendar_sync_enabled", "calendar_write_back", "calendar_sync_interval_ms",
+    "calendar-entity", "calendar-entities", "calendar_entity", "cal_entity", "calendar_entities", "caldav_url", "calendar_sync_enabled", "calendar_write_back", "calendar_sync_interval_ms", "calendar_sync_mode", "calendar_sync_modes",
     // ── UI Preferences ──
     "default-area", "theme", "default-view", "wip-limit",
     "show-description", "column-order", "locale",
@@ -36,9 +36,9 @@ const ALLOWED_KEYS = new Set([
     // ── Webhooks & Integrations ──
     "webhook_endpoint", "webhook_secret", "webhook_format",
     "n8n_webhook_url", "n8n_events", "n8n_mode", "n8n_api_key", "n8n_signing_secret",
-    "grocy_url", "grocy_api_key", "grocy_sync_mode",
+    "grocy_url", "grocy_api_key", "grocy_sync_mode", "grocy_sync_enabled", "grocy_sync_interval",
     // ── Todo Sync ──
-    "todo_sync_enabled", "todo_entity", "todo_sync_direction",
+    "todo_sync_enabled", "todo_entity", "todo_entities", "todo_sync_direction",
     // ── Custom Fields ──
     "custom_fields",
     // ── Custom Theme ──
@@ -109,7 +109,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         // ── Import settings (v1 and v2 compatible) ──
         const entries: Array<{ key: string; value: string }> = []
         for (const [key, value] of Object.entries(settingsData)) {
-            if (typeof key !== "string" || value === null || value === undefined) {
+            if (value === undefined) {
                 continue
             }
             if (isSecretSetting(key)) continue
