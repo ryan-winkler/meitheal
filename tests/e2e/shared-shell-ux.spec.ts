@@ -4,6 +4,32 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
+test("Today and Settings content stays opaque during entry motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" })
+  const layers = ".main-content, .content-area, main .card"
+  await page.addInitScript((selector) => {
+    document.addEventListener("animationstart", (event) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement) || !target.matches(selector)) return
+      for (const animation of target.getAnimations()) {
+        if (animation instanceof CSSAnimation && animation.animationName === event.animationName) {
+          animation.pause()
+        }
+      }
+    }, { capture: true })
+  }, layers)
+
+  for (const [path, shell] of [["/today", "#today-overview"], ["/settings#personal-settings", "#settings-shell"]] as const) {
+    await page.goto(path)
+    await expect(page.locator(shell)).toBeVisible()
+    const translucent = await page.locator(layers).evaluateAll((elements) =>
+      elements.filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).opacity !== "1")
+        .map((element) => [element.id || element.className, getComputedStyle(element).opacity]),
+    )
+    expect(translucent, path).toEqual([])
+  }
+})
+
 for (const theme of ["light", "dark"]) {
   for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
     test(`shared shell and work surfaces at ${viewport.width}px in ${theme} theme`, async ({ page }) => {

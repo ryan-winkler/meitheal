@@ -68,6 +68,10 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking a Today task still opens the shared task detail surface.
 
+### Check page entry contrast
+
+Today and Settings keep text and controls at full opacity during their entry motion. When changing shared page or card styles, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` after building the web app. Check both routes with default motion and with reduced motion enabled. Verify readable content from the first frame and a visible outline when tabbing to controls.
+
 ## Task Link Verification
 
 Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. The link opens the same task in the Tasks view for a recipient who can already access the installation and the task.

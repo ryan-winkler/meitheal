@@ -92,24 +92,6 @@
   outline: none;
 }
 
-/* Smooth page transitions */
-/* ===== Smooth Page Transitions (Wave 13) ===== */
-.content-area {
-  animation: page-enter 300ms ease;
-}
-
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* Skeleton shimmer enhancement */
 /* ===== Skeleton Shimmer Enhancement (Wave 13) ===== */
 @keyframes skeleton-shimmer {
