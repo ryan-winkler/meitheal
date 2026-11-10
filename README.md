@@ -2,7 +2,7 @@
 
 > The Home Assistant-native execution hub for your house, your homelab, and the plans that keep both moving.
 
-[Install status](https://github.com/Coolock-Village/meitheal-ha-addon/issues/1) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
+[Install status](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
 
 ## What Meitheal Is
 
@@ -79,7 +79,7 @@ Some older views and integrations use earlier names. The [glossary](docs/kcs/hie
 
 ## Quick Install on Home Assistant
 
-Check [installation availability](https://github.com/Coolock-Village/meitheal-ha-addon/issues/1) before you start. The store can list Meitheal while image downloads are unavailable.
+Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) before you start. The store can list Meitheal while image downloads are unavailable.
 
 1. Open **Settings → Apps → Install app** in Home Assistant.
 2. Open the menu.

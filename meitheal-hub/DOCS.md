@@ -14,14 +14,14 @@ In earlier versions of Home Assistant, the store is under **Settings → Add-ons
 
 ## Install and open
 
-The store can list Meitheal even when it cannot download the image. Check [install status](https://github.com/Coolock-Village/meitheal-ha-addon/issues/1) before you start.
+The store can list Meitheal even when it cannot download the image. Check [install status](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) before you start.
 
 1. Select **Meitheal**.
 2. Select **Install**.
 3. When the installation finishes, select **Start**.
 4. Select **Open web UI**.
 
-If the Supervisor log shows `401` for the image, follow [the install issue](https://github.com/Coolock-Village/meitheal-ha-addon/issues/1).
+If the Supervisor log shows `401` for the image, follow [the install issue](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1).
 
 ## Check your setup
 
