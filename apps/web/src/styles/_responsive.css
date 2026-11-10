@@ -75,13 +75,6 @@
     max-width: 100%;
   }
 
-  /* Mobile: kanban card actions always visible (no hover on touch) */
-  .kanban-card-actions {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: translateY(0) !important;
-  }
-
   /* Mobile: empty state compact */
   .empty-state {
     padding: 2rem 1rem !important;
@@ -501,13 +494,6 @@
     min-height: 44px;
     font-size: 16px;
   }
-/* P2-5: On touch devices, show kanban card actions always (no hover) */
-.kanban-card-actions {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  transform: translateY(0) !important;
-}
-
 /* P3-2: Prevent accidental nav clicks while scrolling sidebar */
 .sidebar-scroll {
   touch-action: pan-y;

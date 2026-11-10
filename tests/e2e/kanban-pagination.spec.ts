@@ -78,6 +78,9 @@ test.describe("Tasks view loading and Kanban pages", () => {
       await expect(lane.locator(".kanban-count")).toHaveText("28")
       await expect(range).toHaveText("1–25 of 28")
       await expect(oldest).toHaveCount(0)
+      await expect.poll(() => cards.evaluateAll(elements => elements.every(card =>
+        card.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom,
+      ))).toBe(true)
 
       await page.goto("/")
       const overdueLink = page.locator("#stat-overdue")

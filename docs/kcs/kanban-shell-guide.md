@@ -22,6 +22,8 @@ Use **All Areas** above the board to select a specific area. The card and lane c
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
+Quick actions sit below the task details and wrap within the card. They stay visible on narrow screens and touch devices. On desktop, hover over the card or move keyboard focus into it to reveal them.
+
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
 ### Promote a card

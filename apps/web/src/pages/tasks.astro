@@ -1111,6 +1111,7 @@ try {
     padding: 12px;
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
     gap: 8px;
     box-shadow: var(--shadow-sm);
     cursor: grab;
@@ -1344,28 +1345,19 @@ try {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin-top: 8px;
-    padding-top: 8px;
     border-top: 1px solid var(--border);
+    padding-block-start: 8px;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 150ms;
-    background: color-mix(in srgb, var(--bg-card) 85%, transparent);
-    backdrop-filter: blur(4px);
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    margin: 8px -12px -12px;
-    padding: 8px 12px;
   }
   .kanban-card:hover .kanban-card-actions,
   .kanban-card:focus-within .kanban-card-actions {
     opacity: 1;
+    pointer-events: auto;
   }
-  @media (max-width: 768px), (hover: none) {
+  @media (max-width: 768px), (hover: none), (pointer: coarse) {
     .kanban-card-actions {
-      position: static;
-      margin: 4px 0 0;
-      padding: 8px 0 0;
-      background: transparent;
-      backdrop-filter: none;
       opacity: 1;
       pointer-events: auto;
     }
@@ -1990,6 +1982,7 @@ try {
     .kanban-assignee-badge,
     .kanban-card-due,
     .kanban-card-header,
+    .kanban-card-actions,
     .kanban-inline-add {
       transition: none !important;
     }
