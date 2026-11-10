@@ -31,12 +31,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       </fieldset>
       <div class="nt-field">
         <label for="new-task-title-input">{t("tasks.title_label", locale)} <span class="nt-hint">({t("task_modal.required_label", locale)})</span></label>
-        <input type="text" class="form-input" id="new-task-title-input" name="title" maxlength="500" required autofocus
+        <textarea rows="1" class="form-input" id="new-task-title-input" name="title" maxlength="500" required autofocus
           placeholder={t("task_modal.title_placeholder", locale)}
           data-placeholder-task={t("task_modal.title_placeholder", locale)}
           data-placeholder-shopping={t("task_modal.title_placeholder_shopping", locale)}
           data-placeholder-checklist={t("task_modal.title_placeholder_checklist", locale)}
-          data-placeholder-event={t("task_modal.title_placeholder_event", locale)} />
+          data-placeholder-event={t("task_modal.title_placeholder_event", locale)}></textarea>
       </div>
       <div class="nt-field">
         <label for="new-task-desc-input">{t("tasks.description", locale)}</label>
@@ -93,11 +93,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <div class="nt-form-grid">
             <div class="nt-field">
               <label for="nt-event-start">{t("task_modal.start_field", locale)}</label>
-              <input type="datetime-local" id="nt-event-start" name="start_date" class="form-input" />
+              <input type="datetime-local" id="nt-event-start" name="start_date" step="any" class="form-input" />
             </div>
             <div class="nt-field">
               <label for="nt-event-end">{t("task_modal.end_field", locale)}</label>
-              <input type="datetime-local" id="nt-event-end" name="end_date" class="form-input" aria-describedby="nt-date-error" />
+              <input type="datetime-local" id="nt-event-end" name="end_date" step="any" class="form-input" aria-describedby="nt-date-error" />
               <p id="nt-date-error" class="nt-error" hidden>{t("task_modal.event_end_error", locale)}</p>
             </div>
           </div>
@@ -119,11 +119,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               <option value="2">{t("task_modal.priority_high", locale)}</option>
               <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
               <option value="4">{t("task_modal.priority_low", locale)}</option>
+              <option value="5">{t("tasks.priority_label", locale)} 5</option>
             </select>
           </div>
           <div id="nt-ctx-due-row" class="nt-field">
-            <label for="nt-contextual-due">{t("tasks.due_date", locale)}</label>
-            <input type="date" id="nt-contextual-due" name="due_date" class="form-input" />
+            <label id="nt-due-label">{t("tasks.due_date", locale)}</label>
+            <input type="hidden" id="nt-contextual-due" name="due_date" />
+            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label"></div>
           </div>
           <div class="nt-field" id="nt-assignee-field">
             <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
@@ -233,6 +235,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </div>
 <script>
   import { showToast } from "@lib/toast";
+  import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
@@ -273,7 +276,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const shoppingDiv = document.getElementById("nt-contextual-shopping");
     const eventDiv = document.getElementById("nt-contextual-event");
     const dueRow = document.getElementById("nt-ctx-due-row");
-    const titleInput = document.getElementById("new-task-title-input") as HTMLInputElement | null;
+    const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
     const pillsContainer = document.getElementById("nt-status-pills")
@@ -292,6 +295,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let editedWhileLoading = false
     let retainedRoutine = false
     let retainedEventDetails = { location: "", allDay: false, calendar: "" }
+
+    function resizeTitle() {
+      if (!titleInput) return
+      titleInput.style.height = "auto"
+      titleInput.style.height = `${Math.min(titleInput.scrollHeight + 2, 120)}px`
+    }
+    titleInput?.addEventListener("input", resizeTitle, { signal })
 
     pillsContainer?.addEventListener("click", event => {
       const pill = (event.target as Element).closest<HTMLElement>("[data-status]")
@@ -614,6 +624,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       document.getElementById("task-detail-overlay")?.classList.remove("active");
 
       clearCapture()
+      const contextualDate = window.__prefillTaskDate
+      delete window.__prefillTaskDate
+      if (contextualDate) restoreDue(contextualDate)
       preserveAssignee = false
       captureSession++
       overlay.classList.add("active")
@@ -703,6 +716,108 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
     }
 
+    const dueInput = document.querySelector<HTMLInputElement>("#nt-contextual-due")
+    const dueMount = document.querySelector<HTMLElement>("#nt-due-date-picker")
+    const dueLabel = document.getElementById("nt-due-label")?.textContent ?? "Due date"
+    let duePicker: InlineDatePicker | undefined
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/
+
+    function displayedDate(raw: string): Date | null {
+      const date = raw ? new Date(dateOnly.test(raw) ? `${raw}T00:00:00` : raw) : null
+      return date && Number.isFinite(date.valueOf()) ? date : null
+    }
+
+    function syncDueControls(focus = false) {
+      const trigger = dueMount?.querySelector<HTMLElement>(".idp-trigger")
+      if (!trigger) return
+      const clear = trigger.querySelector<HTMLButtonElement>(".idp-clear-btn")
+      if (clear) dueMount?.append(clear)
+      dueMount?.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.type = "button" })
+      if (!(trigger instanceof HTMLButtonElement)) {
+        trigger.tabIndex = 0
+        trigger.setAttribute("role", "button")
+      }
+      trigger.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
+      trigger.setAttribute("aria-haspopup", "dialog")
+      if (focus) trigger.focus({ preventScroll: true })
+    }
+
+    function restoreDue(raw: string) {
+      if (dueInput) dueInput.value = raw
+      duePicker?.setValue(displayedDate(raw))
+      syncDueControls()
+    }
+
+    if (dueMount && dueInput) {
+      duePicker = new InlineDatePicker(dueMount, {
+        value: null,
+        formatFn: date => dateOnly.test(dueInput.value) ? date.toLocaleDateString() : date.toLocaleString(),
+        onChange(date) {
+          dueInput.value = date.toISOString()
+          markEdited()
+          queueMicrotask(() => syncDueControls(true))
+        },
+        onClear() {
+          dueInput.value = ""
+          markEdited()
+          queueMicrotask(() => syncDueControls(true))
+        },
+        signal,
+      })
+      syncDueControls()
+      // The shared picker portals to body. Keep this instance inside the modal's focus scope.
+      dueMount.addEventListener("click", () => {
+        const prior = new Set(document.querySelectorAll(".idp-panel"))
+        requestAnimationFrame(() => {
+          const panel = [...document.querySelectorAll<HTMLElement>(".idp-panel")].find(item => !prior.has(item))
+          if (!panel || signal.aborted) return
+          panel.classList.add("nt-due-date-panel")
+          panel.setAttribute("role", "dialog")
+          panel.setAttribute("aria-label", dueLabel)
+          overlay.append(panel)
+          const bounds = panel.getBoundingClientRect()
+          panel.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - bounds.width - 8))}px`
+          panel.style.top = `${Math.max(8, Math.min(bounds.top, innerHeight - bounds.height - 8))}px`
+          panel.style.bottom = ""
+          panel.addEventListener("keydown", event => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            duePicker?.setValue(displayedDate(dueInput.value))
+            syncDueControls(true)
+          }, { signal })
+          panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
+        })
+      }, { capture: true, signal })
+      dueMount.addEventListener("keydown", event => {
+        const target = event.target as HTMLElement
+        if (target.matches(".idp-trigger:not(button)") && ["Enter", " "].includes(event.key)) {
+          event.preventDefault()
+          target.click()
+        }
+      }, { signal })
+      signal.addEventListener("abort", () => duePicker?.destroy(), { once: true })
+    }
+
+    // Preserve saved ISO offsets and precision while native event controls show local wall time.
+    const eventDates = new Map<string, { raw: string; display: string }>()
+    function restoreEventDate(id: string, raw: string) {
+      const control = document.getElementById(id) as HTMLInputElement | null
+      if (!control) return
+      const date = displayedDate(raw)
+      control.value = date ? new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, -1) : ""
+      eventDates.set(id, { raw, display: control.value })
+    }
+    function eventDateValue(id: string): string {
+      const control = document.getElementById(id) as HTMLInputElement | null
+      const saved = eventDates.get(id)
+      if (saved && control?.value === saved.display) return saved.raw
+      return control?.value ? new Date(control.value).toISOString() : ""
+    }
+    function publicationDate(raw: string): string {
+      return dateOnly.test(raw) ? new Date(raw).toISOString() : raw
+    }
+
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
@@ -778,7 +893,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         description: descInput?.value ?? "",
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
         status: statusInput?.value || "pending",
-        priority: Number(value("new-task-priority")) || 3,
+        priority: Number(value("new-task-priority")),
         due: value("nt-contextual-due"),
         labels: JSON.parse(labelValue?.value || "[]"),
         newLabels: JSON.parse(labelValue?.dataset.newLabels || "[]"),
@@ -789,7 +904,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         checklist: { items: [...checklistItems.values()], input: builderInput?.value ?? "" },
         shopping: { items: [...shoppingListItems], input: shoppingItemInput?.value ?? "", quantity: qtyEl?.value ?? "1",
           category: (shoppingCategory?.value ?? "") as ShoppingItem["category"] },
-        event: { start: value("nt-event-start"), end: value("nt-event-end"), ...retainedEventDetails },
+        event: { start: eventDateValue("nt-event-start"), end: eventDateValue("nt-event-end"), ...retainedEventDetails },
         fields: captureFields(),
       }
     }
@@ -802,15 +917,24 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         selectStatus(snapshot.status)
         if (titleInput) {
           titleInput.value = snapshot.title
+          resizeTitle()
         }
         if (descInput) {
           descInput.value = snapshot.description
         }
 
         const priority = input("new-task-priority")
-        const recurrence = input("new-task-recurrence")
+        const recurrence = overlay?.querySelector<HTMLSelectElement>("#new-task-recurrence")
         if (priority) priority.value = String(snapshot.priority)
-        if (recurrence) recurrence.value = snapshot.recurrence
+        recurrence?.querySelector("[data-saved-recurrence]")?.remove()
+        if (recurrence) {
+          if (snapshot.recurrence && ![...recurrence.options].some(option => option.value === snapshot.recurrence)) {
+            const saved = new Option(snapshot.recurrence, snapshot.recurrence)
+            saved.dataset.savedRecurrence = ""
+            recurrence.append(saved)
+          }
+          recurrence.value = snapshot.recurrence
+        }
         selectSavedOption(assignee, snapshot.assignedTo, taskDraftText("assignee_missing"))
         selectSavedOption(goalSelect, snapshot.goal, taskDraftText("goal_missing"))
         preserveAssignee = true
@@ -818,18 +942,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           detail: { labels: snapshot.labels, newLabels: snapshot.newLabels },
         }))
 
-        const dates = {
-          "nt-contextual-due": snapshot.due, "nt-event-start": snapshot.event.start, "nt-event-end": snapshot.event.end,
-        }
-        for (const [id, saved] of Object.entries(dates)) {
-          const control = input(id)
-          const date = saved ? new Date(saved) : null
-          const valid = date && Number.isFinite(date.valueOf()) ? date : null
-          if (control instanceof HTMLInputElement) {
-            control.value = !valid ? "" : control.type === "date" ? saved.slice(0, 10)
-              : new Date(valid.valueOf() - valid.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-          }
-        }
+        restoreDue(snapshot.due)
+        restoreEventDate("nt-event-start", snapshot.event.start)
+        restoreEventDate("nt-event-end", snapshot.event.end)
         // Preserve older private draft metadata without advertising unsupported creation controls.
         retainedRoutine = snapshot.isRoutine
         retainedEventDetails = { location: snapshot.event.location, allDay: snapshot.event.allDay, calendar: snapshot.event.calendar }
@@ -1009,8 +1124,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           showFieldError(taskDraftText("reference_required"))
           return
         }
-        const start = value("nt-event-start")
-        const end = value("nt-event-end")
+        const start = eventDateValue("nt-event-start")
+        const end = eventDateValue("nt-event-end")
         const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && new Date(end) <= new Date(start)
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
@@ -1100,7 +1215,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
           const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
-          const finalDue = explicitDue ? new Date(explicitDue).toISOString() : extractedDue;
+          const finalDue = explicitDue ? publicationDate(explicitDue) : extractedDue;
 
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
@@ -1113,7 +1228,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             title: finalTitle,
             description: descInputEl?.value.trim() || "",
             task_kind: kindInputEl?.value || "standard_action",
-            priority: parseInt(prioritySelectEl?.value || "3", 10),
+            priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
             due_date: finalDue,
@@ -1148,10 +1263,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
           // Event fields
           if (body.task_kind === "calendar_event") {
-            const startEl = document.getElementById("nt-event-start") as HTMLInputElement;
-            const endEl = document.getElementById("nt-event-end") as HTMLInputElement;
-            if (startEl?.value) body.start_date = new Date(startEl.value).toISOString();
-            if (endEl?.value) body.end_date = new Date(endEl.value).toISOString();
+            const start = eventDateValue("nt-event-start")
+            const end = eventDateValue("nt-event-end")
+            if (start) body.start_date = publicationDate(start)
+            if (end) body.end_date = publicationDate(end)
           }
 
           // Custom fields
@@ -1249,5 +1364,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </script>
 
 <style>
+  @import "../../styles/inline-date-picker.css";
+  .nt-due-picker { min-height: 44px; }
+  .nt-due-picker :global(.idp-trigger) { min-width: 44px; min-height: 44px; color: var(--text-primary); opacity: 1; white-space: normal; }
+  .nt-due-picker :global(.idp-date-text) { white-space: normal; overflow-wrap: anywhere; }
+  .nt-due-picker :global(.idp-clear-btn) { display: inline; min-width: 44px; min-height: 44px; }
+  :global(.nt-due-date-panel) { width: min(420px, calc(100vw - 16px)); min-width: 0; max-height: calc(100dvh - 16px); overflow: auto; }
+  @media (max-width: 440px) {
+    :global(.nt-due-date-panel) { flex-direction: column; }
+    :global(.nt-due-date-panel .idp-quick-options) { flex-basis: auto; max-height: 140px; border-right: 0; border-bottom: 1px solid var(--border); }
+    :global(.nt-due-date-panel .idp-calendar) { min-width: 0; }
+  }
   .nt-draft-panel [hidden], .nt-footer [hidden] { display: none !important; }
 </style>
