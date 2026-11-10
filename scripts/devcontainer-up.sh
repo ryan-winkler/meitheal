@@ -102,21 +102,40 @@ run_compose() {
   $COMPOSE_CMD -f "$COMPOSE_FILE" "$@"
 }
 
-start_stack() {
-  local existing
-  if [[ "$COMPOSE_CMD" == *podman* ]]; then
-    # Validate with the selected provider, but use the engine for a fail-closed
-    # listing: podman-compose 1.x discards errors returned by its ps command.
-    run_compose config >/dev/null
-    local project="${COMPOSE_PROJECT_NAME:-devcontainer}"
-    if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
-      project="${COMPOSE_PROJECT_NAME:-meitheal-dev}"
-      existing=$(flatpak-spawn --host podman ps --all --quiet --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=ha-devcontainer")
-    else
-      existing=$(podman ps --all --quiet --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=ha-devcontainer")
-    fi
+run_engine() {
+  if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
+    flatpak-spawn --host podman "$@"
+  elif [[ "$COMPOSE_CMD" == *podman* ]]; then
+    podman "$@"
   else
-    existing=$(run_compose ps --all --quiet ha-devcontainer)
+    docker "$@"
+  fi
+}
+
+start_stack() {
+  local existing project
+  run_compose config >/dev/null
+  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+  else
+    # Editor projects use generated names. Match this workspace before selecting
+    # its project, including when every service is stopped.
+    existing=$(run_engine ps --all --quiet --filter "label=devcontainer.local_folder=$PROJECT_ROOT" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+    if [[ -z "$existing" ]]; then
+      existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project.working_dir=$SCRIPT_DIR" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+    fi
+  fi
+  if [[ "$existing" == *$'\n'* ]]; then
+    err "Multiple editor containers match this workspace. Set COMPOSE_PROJECT_NAME to the intended stack."
+    return 1
+  fi
+  if [[ -n "$existing" ]]; then
+    project=$(run_engine inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$existing") || return
+    if [[ -z "$project" || "$project" == '<no value>' ]]; then
+      err "The existing editor container has no Compose project label. Inspect it before recovery."
+      return 1
+    fi
+    export COMPOSE_PROJECT_NAME="$project"
   fi
   if [[ -n "$existing" ]]; then
     # Starting an existing container preserves its editor-generated image and Features.
