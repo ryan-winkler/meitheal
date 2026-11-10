@@ -99,3 +99,7 @@ A Principle update or removal through `/api/pillars/{id}/principles` applies wit
 Users see inline explainer callouts (`InlineHelper.astro`) on parent pages.
 These are dismissible (persisted in `localStorage` key `meitheal-dismissed-helpers`)
 and restorable via the <kbd>?</kbd> keyboard shortcut.
+
+## Edit a Pillar or save a Principle
+
+Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Details to change the Pillar's identity and weight. **Add principle** opens a form for a boundary. Select **Non-Negotiable** when it should guide supported automation prompts. **Save principle** updates the detail list and card count after the App confirms the write. If saving fails, the form keeps the statement and checkbox for retry.

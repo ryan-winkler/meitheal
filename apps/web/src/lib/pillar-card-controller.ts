@@ -1,107 +1,75 @@
-/**
- * PillarCard controller — client-side interactions for principles section
- *
- * Handles:
- * - Toggle expand/collapse of principles list
- * - "Show all" / "Show less" toggle for overflow principles
- *
- * @phase 19 — Pillars UX Polish
- */
+import type { Principle } from "@domains/pillars/principle-service"
 import { pageLifecycle } from "./page-lifecycle"
 
-function init(signal: AbortSignal) {
-  // ── Pillar detail popup — delegated click handler ──────────────
-  // Must be registered BEFORE the principles guard below, because
-  // cards without principles still need to open the detail modal.
-  document.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement
-    const actionBtn = target.closest<HTMLElement>("[data-action='open-detail']")
-    if (!actionBtn) return
+pageLifecycle.onPageLoad(signal => {
+  document.addEventListener("click", event => {
+    const button = (event.target as Element).closest<HTMLButtonElement>("[data-pillar-json] button")
+    const card = button?.closest<HTMLElement>("[data-pillar-json]")
+    if (!button || !card) return
 
-    const card = actionBtn.closest<HTMLElement>("[data-pillar-json]")
-    if (!card) return
-
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      const pillarData = JSON.parse(card.dataset.pillarJson || "{}")
-      document.dispatchEvent(new CustomEvent("open-pillar-detail", { detail: pillarData }))
-    } catch {
-      // malformed JSON — skip
+    if (button.matches("[data-principles-toggle]")) {
+      const open = button.getAttribute("aria-expanded") !== "true"
+      button.setAttribute("aria-expanded", String(open))
+      card.querySelector("[data-principles-list]")?.setAttribute("aria-hidden", String(!open))
+      return
     }
+
+    if (button.matches("[data-show-all-toggle]")) {
+      const open = button.getAttribute("aria-expanded") !== "true"
+      button.setAttribute("aria-expanded", String(open))
+      for (const row of card.querySelectorAll("[data-overflow-principle]")) row.setAttribute("aria-hidden", String(!open))
+      button.textContent = open ? "Show less" : `Show all ${card.querySelector("[data-principles-count]")?.textContent}`
+      return
+    }
+
+    const action = button.dataset.action
+    if (action !== "open-detail" && action !== "add-principle" && action !== "edit-pillar") return
+    const pillar = JSON.parse(card.dataset.pillarJson ?? "{}")
+    document.dispatchEvent(new CustomEvent(action === "edit-pillar" ? "edit-pillar" : "open-pillar-detail", {
+      detail: { ...pillar, showPrincipleForm: action === "add-principle", opener: button },
+    }))
   }, { signal })
 
-  // ── Add Principle — delegated click handler ─────────────────
-  document.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement
-    const addBtn = target.closest<HTMLElement>("[data-action='add-principle']")
-    if (!addBtn) return
+  document.addEventListener("pillar-principles-saved", ((event: CustomEvent<{ id: string; principles: Principle[] }>) => {
+    const { id, principles } = event.detail
+    const card = document.querySelector<HTMLElement>(`[data-pillar-id="${CSS.escape(id)}"]`)
+    const list = card?.querySelector("[data-principles-list]")
+    const toggle = card?.querySelector<HTMLButtonElement>("[data-principles-toggle]")
+    const showAll = card?.querySelector<HTMLButtonElement>("[data-show-all-toggle]")
+    const count = card?.querySelector("[data-principles-count]")
+    const template = card?.querySelector<HTMLTemplateElement>("[data-principle-row]")
+    if (!card || !list || !toggle || !showAll || !count || !template) return
 
-    const card = addBtn.closest<HTMLElement>("[data-pillar-json]")
-    if (!card) return
-
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      const pillarData = JSON.parse(card.dataset.pillarJson || "{}")
-      document.dispatchEvent(new CustomEvent("open-pillar-detail", {
-        detail: { ...pillarData, showPrincipleForm: true }
-      }))
-    } catch {
-      // malformed JSON — skip
+    const pillar = JSON.parse(card.dataset.pillarJson ?? "{}")
+    card.dataset.pillarJson = JSON.stringify({ ...pillar, principles })
+    count.textContent = String(principles.length)
+    toggle.disabled = principles.length === 0
+    if (toggle.disabled) {
+      toggle.setAttribute("aria-expanded", "false")
+      list.setAttribute("aria-hidden", "true")
     }
-  }, { signal })
 
-  // ── Principles expand/collapse ────────────────────────────────
-  const cards = document.querySelectorAll<HTMLElement>("[data-pillar-principles]")
-  if (!cards.length) return
-
-  for (const card of cards) {
-    const toggle = card.querySelector<HTMLButtonElement>("[data-principles-toggle]")
-    const list = card.querySelector<HTMLUListElement>("[data-principles-list]")
-    const showAllBtn = card.querySelector<HTMLButtonElement>("[data-show-all-toggle]")
-    const overflowItems = card.querySelectorAll<HTMLLIElement>("[data-overflow-principle]")
-    const chevron = toggle?.querySelector<HTMLElement>("[data-principles-chevron]")
-
-    if (!toggle || !list) continue
-
-    // Toggle expand/collapse
-    pageLifecycle.on(toggle, "click", (e: Event) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const expanded = toggle.getAttribute("aria-expanded") === "true"
-      toggle.setAttribute("aria-expanded", String(!expanded))
-      list.setAttribute("aria-hidden", String(expanded))
-      if (chevron) {
-        chevron.style.transform = expanded ? "" : "rotate(90deg)"
+    const showingAll = showAll.getAttribute("aria-expanded") === "true"
+    showAll.hidden = principles.length <= 5
+    showAll.textContent = showingAll ? "Show less" : `Show all ${principles.length}`
+    list.replaceChildren(...principles.map((principle, index) => {
+      const row = template.content.firstElementChild!.cloneNode(true) as HTMLElement
+      row.querySelector(".pillar-card__principle-text")!.textContent = principle.statement
+      if (principle.isNonNegotiable) row.classList.add("pillar-card__principle--non-negotiable")
+      else row.querySelector(".pillar-card__principle-shield")?.remove()
+      if (index >= 5) {
+        row.classList.add("pillar-card__principle--overflow")
+        row.setAttribute("data-overflow-principle", "")
+        row.setAttribute("aria-hidden", String(!showingAll))
       }
-    })
+      return row
+    }))
+  }) as EventListener, { signal })
 
-    // Show all / show less toggle
-    if (showAllBtn && overflowItems.length > 0) {
-      const totalCount = overflowItems.length + list.querySelectorAll("li:not([data-overflow-principle])").length
-      let showingAll = false
-
-      pageLifecycle.on(showAllBtn, "click", (e: Event) => {
-        e.preventDefault()
-        e.stopPropagation()
-        showingAll = !showingAll
-
-        for (const item of overflowItems) {
-          item.setAttribute("aria-hidden", String(!showingAll))
-        }
-
-        showAllBtn.textContent = showingAll
-          ? "Show less"
-          : `Show all ${totalCount}`
-      })
+  requestAnimationFrame(() => {
+    if (signal.aborted) return
+    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-pillar-json] button[data-action]")) {
+      button.disabled = false
     }
-  }
-}
-
-pageLifecycle.onPageLoad((signal) => {
-  try { init(signal) } catch (e) { console.error("[Meitheal][pillars] Boot failed", e) }
+  })
 })
-

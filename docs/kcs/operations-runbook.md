@@ -38,6 +38,7 @@ Use this after changing dashboard shell, search-launcher, or top-level navigatio
 - `#dashboard-recent`
 
 4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
+5. Check **Current signal** at 320 px and on desktop. The label aligns with the greeting. Active and overdue links show keyboard focus and stay inside ingress.
 
 ## Habits Shell Verification
 

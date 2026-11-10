@@ -719,12 +719,21 @@ const heroHintHref =
   }
 
   .dashboard-hero__status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin-top: 18px;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    gap: 4px 12px;
+    margin: 18px 0 0;
     color: var(--text-secondary);
+  }
+
+  .dashboard-hero__status > :last-child {
+    justify-self: start;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 540px) {
+    .dashboard-hero__status { grid-template-columns: minmax(0, 1fr); }
   }
 
   .dashboard-hero__status-label {
@@ -741,10 +750,11 @@ const heroHintHref =
     border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   }
 
-  .dashboard-hero__status-link:hover,
+  .dashboard-hero__status-link:hover { color: var(--accent-text); }
   .dashboard-hero__status-link:focus-visible {
-    color: var(--accent);
-    outline: none;
+    outline: 2px solid var(--accent-text);
+    outline-offset: 3px;
+    border-radius: 2px;
   }
 
   .dashboard-section__title {
