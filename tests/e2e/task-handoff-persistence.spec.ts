@@ -77,4 +77,19 @@ test("request parser rejects oversized, malformed and non-JSON input", async () 
   expect(await readHandoffRequest(request("x".repeat(49 * 1024)))).toBeNull()
   expect(await readHandoffRequest(request("{"))).toBeNull()
   expect(await readHandoffRequest(request('{}', 'text/plain'))).toBeNull()
+  const controller = new AbortController()
+  controller.abort()
+  expect(await readHandoffRequest(new Request("http://local.invalid", { method: "POST", signal: controller.signal,
+    headers: { "content-type": "application/json" }, body: '{"action":"claim"}',
+  }))).toBeNull()
+})
+
+test("cancelled review decisions cannot edit the task or add activity", async () => {
+  const proposal = await propose()
+  if (!proposal.ok) throw new Error(proposal.error)
+  const controller = new AbortController()
+  controller.abort()
+  expect(await service().decide(id, proposal.hash!, "accept", undefined, controller.signal)).toMatchObject({ ok: false, status: 499 })
+  expect((await getPersistenceClient().execute("SELECT title, handoff_state FROM tasks")).rows[0]).toMatchObject({ title: "Original", handoff_state: "proposed" })
+  expect((await getPersistenceClient().execute("SELECT id FROM task_activity_log")).rows).toHaveLength(0)
 })

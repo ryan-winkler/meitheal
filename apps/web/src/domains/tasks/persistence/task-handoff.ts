@@ -22,7 +22,7 @@ type Proposal = z.infer<typeof proposalSchema>
 type Agent = { id: string; name: string }
 type HandoffResult =
   | { ok: true; id: string; lease?: string; expiresAt?: number; hash?: string; reviewUntil?: number; changes?: Changes }
-  | { ok: false; error: string; status: 404 | 409 | 422 }
+  | { ok: false; error: string; status: 404 | 409 | 422 | 499 }
 
 function conflict(error: string): HandoffResult {
   return { ok: false, status: 409, error }
@@ -111,7 +111,9 @@ export class TaskHandoff {
       : conflict("The task or claim changed before the proposal was saved.")
   }
 
-  async decide(identifier: string, hash: string, action: "accept" | "reject", actor: RecentTaskActor = { kind: "system", personKey: null }): Promise<HandoffResult> {
+  async decide(identifier: string, hash: string, action: "accept" | "reject", actor: RecentTaskActor = { kind: "system", personKey: null }, signal?: AbortSignal): Promise<HandoffResult> {
+    const cancelled = (): HandoffResult => ({ ok: false, status: 499, error: "Review request cancelled." })
+    if (signal?.aborted) return cancelled()
     const found = await this.getTask(identifier)
     if (!found) return { ok: false, status: 404, error: "Task not found." }
     const { id, row: task } = found
@@ -123,6 +125,7 @@ export class TaskHandoff {
     }
     const active = "id = ? AND handoff_state = 'proposed' AND proposal_hash = ? AND proposal_json = ? AND lock_expires_at > ?"
     const match = [id, hash, String(task.proposal_json), Date.now()]
+    if (signal?.aborted) return cancelled()
     if (action === "reject") {
       const result = await this.db.execute({ sql: `UPDATE tasks SET ${clearHandoff} WHERE ${active}`, args: match })
       return result.rowsAffected ? { ok: true, id } : conflict("This proposal is no longer pending.")
@@ -134,6 +137,7 @@ export class TaskHandoff {
     const fields: Record<string, InValue> = { title: title?.to ?? task.title ?? null, description: description?.to ?? task.description ?? null }
     const now = Date.now()
     const eventId = crypto.randomUUID()
+    if (signal?.aborted) return cancelled()
     const results = await this.db.batch([
       taskChangedActivity(fields, where, whereArgs, actor, now, eventId),
       { sql: `UPDATE tasks SET ${clearHandoff}, title = ?, description = ?, updated_at = ${nextTaskTimestampMs("updated_at")} ${where}`,

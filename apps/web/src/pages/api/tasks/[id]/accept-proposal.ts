@@ -24,9 +24,6 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
   }
   const user = verifiedIngressUser(locals)
   if (!user?.isAdmin) return apiProblem({ status: 403, detail: "Open the review queue through authenticated Home Assistant ingress.", extraHeaders: headers })
-  const authority = await verifyCurrentHAAdministrator(user.id, request.signal)
-  if (authority !== "allowed") return apiProblem({ status: authority === "unavailable" ? 503 : 403,
-    detail: authority === "unavailable" ? "Home Assistant could not verify administrator access. Try again." : "A current Home Assistant administrator must review the proposal.", extraHeaders: headers })
   const host = request.headers.get("host") ?? ""
   const origin = request.headers.get("origin")
   if (!isCsrfAllowed({
@@ -40,9 +37,14 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
     return apiProblem({ status: 400, detail: "Provide an approval decision and the reviewed proposal hash.", extraHeaders: headers })
   }
 
+  if (request.signal.aborted) return apiProblem({ status: 499, detail: "Review request cancelled.", extraHeaders: headers })
   await ensureSchema()
+  const authority = await verifyCurrentHAAdministrator(user.id, request.signal)
+  if (authority !== "allowed") return apiProblem({ status: authority === "unavailable" ? 503 : 403,
+    detail: authority === "unavailable" ? "Home Assistant could not verify administrator access. Try again." : "A current Home Assistant administrator must review the proposal.", extraHeaders: headers })
+  if (request.signal.aborted) return apiProblem({ status: 499, detail: "Review request cancelled.", extraHeaders: headers })
   const client = getPersistenceClient()
-  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals))
+  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals), request.signal)
   if (!result.ok) return apiProblem({ status: result.status, detail: result.error, extraHeaders: headers })
 
   // Record the activity and dispatch the usual task update event.
