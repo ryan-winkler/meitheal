@@ -14,7 +14,7 @@ export async function launchPinBrowser(work: string, backForwardCache = false) {
   return chromium.launch({
     args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`],
     ...(backForwardCache ? {
-      channel: "chromium", executablePath: process.env.MEITHEAL_BFCACHE_CHROMIUM,
+      channel: "chromium", ...(process.env.MEITHEAL_BFCACHE_CHROMIUM ? { executablePath: process.env.MEITHEAL_BFCACHE_CHROMIUM } : {}),
       ignoreDefaultArgs: ["--disable-back-forward-cache"],
     } : {}),
   })

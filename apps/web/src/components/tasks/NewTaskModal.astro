@@ -1155,7 +1155,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       renderCaptureSubmit()
       try {
         const { connectTaskDrafts } = await import("@lib/task-draft-controller")
-        if (signal.aborted || session !== captureSession) return
+        if (!overlay || signal.aborted || session !== captureSession) return
         drafts = connectTaskDrafts(overlay, draftEditor, signal)
         drafts.open()
         if (editedWhileLoading) drafts.edited()

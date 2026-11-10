@@ -91,7 +91,7 @@ test("draft authorization and exact receipt through browser HTTPS ingress", asyn
     expect(saved).toMatchObject({ status: 200, cache: noStore, cached: null, body: { draft: { snapshot: { title: secret } } } })
     expect(await draftRequest(b, path, "PUT", save, aContext)).toMatchObject({ status: 409, body: { errorCode: "ACCOUNT_CHANGED" } })
     expect(await draftRequest(b, path, "POST", read)).toMatchObject({ body: { draft: null } })
-    const shared = await b.evaluate(async tasks => {
+    const shared = await b.evaluate(async (tasks: string) => {
       const response = await fetch(tasks)
       return { status: response.status, body: await response.text() }
     }, prefix + "/api/tasks")
