@@ -56,3 +56,5 @@ Open Tasks from a fresh browser session and inspect its network requests. JavaSc
 The older Core coordinator calls native task routes without credentials. Direct sibling calls are denied by the new ingress boundary. Verify a credential-backed Core integration path before promoting the App if that integration is required.
 
 For publishing and canary promotion, see the [release runbook](releasing.md).
+
+Recovery matches the workspace before resolving generated editor project names. In Distrobox it checks both `/home` and `/var/home` label aliases, deduplicates the same container, and fails closed if multiple distinct editors match. An engine-listing error never starts a replacement.

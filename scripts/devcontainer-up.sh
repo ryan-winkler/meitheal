@@ -112,18 +112,40 @@ run_engine() {
   fi
 }
 
+# Find every matching editor before choosing a project. Distrobox and the host
+# may label the same workspace through /home and /var/home aliases.
+find_workspace_editors() {
+  local path alternate found id label matches=""
+  local paths=("$PROJECT_ROOT")
+  case "$PROJECT_ROOT" in
+    /var/home/*) alternate="/home/${PROJECT_ROOT#/var/home/}" ;;
+    /home/*) alternate="/var/home/${PROJECT_ROOT#/home/}" ;;
+  esac
+  if [[ -n "${alternate:-}" ]] && { [[ -n "${DISTROBOX_ENTER_PATH:-}" ]] || [[ "$alternate" -ef "$PROJECT_ROOT" ]]; }; then
+    paths+=("$alternate")
+  fi
+  for path in "${paths[@]}"; do
+    for label in "devcontainer.local_folder=$path" "com.docker.compose.project.working_dir=$path/.devcontainer"; do
+      found=$(run_engine ps --all --quiet --filter "label=$label" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+      while IFS= read -r id; do
+        [[ -n "$id" ]] || continue
+        case $'\n'"$matches"$'\n' in
+          *$'\n'"$id"$'\n'*) ;;
+          *) matches="${matches:+$matches$'\n'}$id" ;;
+        esac
+      done <<< "$found"
+    done
+  done
+  printf '%s' "$matches"
+}
+
 start_stack() {
   local existing project
   run_compose config >/dev/null
   if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
     existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter "label=com.docker.compose.service=ha-devcontainer") || return
   else
-    # Editor projects use generated names. Match this workspace before selecting
-    # its project, including when every service is stopped.
-    existing=$(run_engine ps --all --quiet --filter "label=devcontainer.local_folder=$PROJECT_ROOT" --filter "label=com.docker.compose.service=ha-devcontainer") || return
-    if [[ -z "$existing" ]]; then
-      existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project.working_dir=$PROJECT_ROOT/.devcontainer" --filter "label=com.docker.compose.service=ha-devcontainer") || return
-    fi
+    existing=$(find_workspace_editors) || return
   fi
   if [[ "$existing" == *$'\n'* ]]; then
     err "Multiple editor containers match this workspace. Set COMPOSE_PROJECT_NAME to the intended stack."
