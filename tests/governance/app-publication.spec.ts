@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -37,6 +37,47 @@ test("canary image publication cannot advance App Store discovery", () => {
   expect(stable).toContain("ADDON_REPO_TOKEN")
   expect(shared).toMatch(/^  promote:\n    if: inputs\.channel == 'stable'$/m)
   expect(shared).toContain('node scripts/app-release.mjs stage stable "$VERSION" app-repository')
+})
+
+test("image metadata accepts only supported literal architectures and matching bases", () => {
+  for (const arch of ["amd64", "aarch64"]) {
+    const result = spawnSync(process.execPath, ["scripts/app-release.mjs", "image", "canary", arch, revision.slice(0, 12), revision], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main" },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout).base).toContain(`/${arch}-base:`)
+  }
+  for (const arch of [".*", "amd64|aarch64", "(a+)+$", "constructor", "__proto__"]) {
+    const result = release("image", "canary", arch, revision.slice(0, 12), revision)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Expected amd64 or aarch64")
+  }
+})
+
+test("image metadata rejects a supported architecture paired with the other architecture base", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
+  try {
+    mkdirSync(join(fixture, "scripts"))
+    copyFileSync(join(root, "scripts/app-release.mjs"), join(fixture, "scripts/app-release.mjs"))
+    for (const channel of ["meitheal-hub", "meitheal-hub-canary"]) {
+      mkdirSync(join(fixture, channel))
+      copyFileSync(join(root, channel, "config.yaml"), join(fixture, channel, "config.yaml"))
+    }
+    writeFileSync(join(fixture, "meitheal-hub-canary/build.json"), JSON.stringify({
+      build_from: { amd64: "ghcr.io/home-assistant/aarch64-base:3.23" },
+    }))
+    const result = spawnSync(process.execPath, [join(fixture, "scripts/app-release.mjs"), "image", "canary", "amd64", revision.slice(0, 12), revision], {
+      cwd: fixture,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main" },
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Invalid Home Assistant base image")
+  } finally {
+    rmSync(fixture, { recursive: true })
+  }
 })
 
 test("staging one channel preserves the other channel and the source manifest", () => {
