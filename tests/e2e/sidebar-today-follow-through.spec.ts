@@ -4,6 +4,18 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.describe("Sidebar and Today follow-through", () => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
 
+  let sidebarConfig: unknown
+  const createdTaskIds: string[] = []
+  test.beforeEach(async ({ request }) => {
+    sidebarConfig = (await (await request.get("/api/settings")).json()).sidebar_config
+  })
+  test.afterEach(async ({ request }) => {
+    expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
+    for (const id of createdTaskIds.splice(0)) {
+      expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    }
+  })
+
   test("Areas visibility, label and order persist, with one custom link per click", async ({ page }) => {
     await page.goto("/settings#workflow-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
@@ -45,14 +57,17 @@ test.describe("Sidebar and Today follow-through", () => {
     const now = new Date().toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", { headers, data: { title: "Due-today follow-through", due_date: now } })
     expect(created.status(), await created.text()).toBe(201)
+    createdTaskIds.push((await created.json()).id)
     await page.goto("/")
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
     await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible()
     await expect(page.locator("#today-overview .page-hero")).toHaveCount(0)
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
-    await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(0)
-    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(1)
+    await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
+    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(0)
+    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
+    await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })
@@ -68,6 +83,8 @@ test.describe("Sidebar and Today follow-through", () => {
       const data = await response.json()
       return data.tasks?.[0]?.title
     }).toBe(title)
+    const capture = await (await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)).json()
+    createdTaskIds.push(capture.tasks[0].id)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
     await page.locator("#today-bar-switcher-btn").click()

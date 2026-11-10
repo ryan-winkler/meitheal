@@ -639,7 +639,7 @@ const tabs = [
   }
 </style>
 
-<script define:vars={{ projectId }}>
+<script define:vars={{ projectId, projectsPath }}>
   // --- Tab switching ---
   const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
   const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
@@ -792,7 +792,7 @@ const tabs = [
     try {
       const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
       if (res.ok) {
-        window.location.href = "/projects";
+        window.location.href = projectsPath;
       } else {
         const data = await res.json().catch(() => ({}));
         window.showToast?.(data.error || "Failed to delete", "error");

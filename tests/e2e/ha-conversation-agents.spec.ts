@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { fetchHaAgents } from "../../apps/web/src/lib/ha-agent-picker"
 import { readConversationAgents } from "../../apps/web/src/domains/ha/conversation-agents"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -15,6 +16,22 @@ test("HA discovery accepts every registered agent type and deduplicates exact ID
   expect(readConversationAgents({ agents: [{ id: "legacy-entry", name: "Legacy agent" }] })).toEqual([{ id: "legacy-entry", name: "Legacy agent" }])
   expect(() => readConversationAgents({})).toThrow("conversation agent list")
   expect(() => readConversationAgents({ agents: [{ id: "conversation.bad" }] })).toThrow("Invalid Home Assistant")
+})
+
+test("agent discovery gives stable errors for non-JSON and null response bodies", async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    for (const [status, body, expected] of [
+      [502, "<html>Bad Gateway</html>", "Home Assistant agent discovery failed"],
+      [403, "null", "Assist requires an active Home Assistant administrator"],
+      [200, "null", "Home Assistant returned an invalid agent list"],
+    ] as const) {
+      globalThis.fetch = async () => new Response(body, { status })
+      await expect(fetchHaAgents(new AbortController().signal)).rejects.toThrow(expected)
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 async function mockPreference(page: Page, selected: string) {
@@ -35,6 +52,55 @@ async function openAsk(page: Page) {
 test.describe("Dynamic Home Assistant agent pickers", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   test.use({ serviceWorkers: "block" })
+
+  test("refresh retains keyboard focus and ignores repeat activation while discovery is busy", async ({ page }) => {
+    let release: (() => void) | undefined
+    let held = false
+    let reads = 0
+    await mockPreference(page, "conversation.household")
+    await page.route("**/api/ha/agents", async route => {
+      reads += 1
+      if (held) await new Promise<void>(resolve => { release = resolve })
+      await route.fulfill({ json: { agents: registeredAgents } })
+    })
+    for (const [url, refreshId] of [
+      ["/settings#automation-ai-settings", "#refresh-ha-agents"],
+      ["/tasks", "#refresh-ask-ha-agents"],
+    ] as const) {
+      await page.goto(url)
+      if (url === "/tasks") {
+        await expect.poll(() => page.evaluate(() => typeof window.openAskHaModal)).toBe("function")
+        await openAsk(page)
+      }
+      const refresh = page.locator(refreshId)
+      await expect(refresh).toHaveAttribute("aria-busy", "false")
+      held = true
+      const previousReads = reads
+      await refresh.focus()
+      await refresh.press("Enter")
+      await expect(refresh).toHaveAttribute("aria-busy", "true")
+      await expect.poll(() => reads).toBe(previousReads + 1)
+      await expect(refresh).toBeFocused()
+      await refresh.press("Enter")
+      expect(reads).toBe(previousReads + 1)
+      held = false
+      release?.()
+      await expect(refresh).toHaveAttribute("aria-busy", "false")
+      await expect(refresh).toBeFocused()
+    }
+  })
+
+  test("Gaelic settings localize agent refresh and discovery feedback", async ({ page, context, baseURL }) => {
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
+    await page.addInitScript(() => localStorage.setItem("meitheal-locale", "ga"))
+    await mockPreference(page, "conversation.household")
+    await page.route("**/api/ha/agents", route => route.fulfill({ json: { agents: registeredAgents } }))
+    await page.goto("/settings#automation-ai-settings")
+    await expect(page.locator("#refresh-ha-agents")).toHaveText("Athnuaigh gníomhairí")
+    await expect(page.locator("#ha-agent-discovery-status")).toHaveText("3 gníomhaire Home Assistant ar fáil.")
+    await page.locator("#ha-agent-select-settings").selectOption("conversation.home_assistant")
+    await expect(page.locator("#ha-agent-discovery-status")).toContainText("Sábháil chun an gníomhaire comhrá")
+  })
 
   test("Settings refreshes on opening, preserves saved IDs, and shows failures", async ({ page }) => {
     let agents = [...registeredAgents]
@@ -61,7 +127,7 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Workflow", exact: true }).click()
     await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Automation & AI", exact: true }).click()
     await expect.poll(() => reads).toBeGreaterThan(previousReads)
-    await expect(page.locator("#refresh-ha-agents")).toBeEnabled()
+    await expect(page.locator("#refresh-ha-agents")).toHaveAttribute("aria-busy", "false")
     failure = true
     await page.locator("#refresh-ha-agents").click()
     await expect(status).toContainText("WebSocket disconnected")

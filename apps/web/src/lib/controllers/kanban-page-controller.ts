@@ -104,12 +104,13 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
       const current = new URL(location.href)
+      const background = taskBackgroundUrl(current)
       for (const key of ["open", "comment"]) {
-        const value = current.searchParams.get(key)
+        const value = background.searchParams.get(key)
         if (value === null) url.searchParams.delete(key)
         else url.searchParams.set(key, value)
       }
-      url.hash = current.hash
+      url.hash = background.hash
       if (!dataOnly) {
         if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
           history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")

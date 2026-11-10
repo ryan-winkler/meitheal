@@ -2,7 +2,7 @@ import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { frameworkPayloadObject as asFrameworkPayload, riceLensScore, readRiceInputs } from "@lib/rice-lens"
-import { evaluateFrameworkFormula } from "@lib/framework-score"
+import { evaluateFrameworkFormula, isFrameworkFormulaSupported } from "@lib/framework-score"
 
 export interface StrategicLensSession {
   signal: AbortSignal
@@ -47,7 +47,9 @@ function renderField(field: Field, value: unknown, frameworkId: string): string 
       `<option value="${escapeHtml(String(option.value))}" ${String(val) === String(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`
   } else if (field.type === "number") {
     const min = frameworkId === "rice" && field.key === "effort" ? 0.01 : field.min
-    control = `<input type="number" ${attrs} required step="any" ${min === undefined ? "" : `min="${min}"`} ${field.max === undefined ? "" : `max="${field.max}"`} value="${escapeHtml(String(val))}" />`
+    const bounds = [["min", min], ["max", field.max]].flatMap(([name, bound]) =>
+      typeof bound === "number" && Number.isFinite(bound) ? [`${name}="${bound}"`] : []).join(" ")
+    control = `<input type="number" ${attrs} required step="any" ${bounds} value="${escapeHtml(String(val))}" />`
   } else {
     control = `<input type="text" ${attrs} value="${escapeHtml(String(val))}" />`
   }
@@ -96,9 +98,19 @@ pageLifecycle.onPageLoad(signal => {
     return values
   }
 
+  function unsupportedFormula(selected: Framework): boolean {
+    return selected.id !== "rice" && !!selected.data.formula
+      && !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))
+  }
+  const formulaError = "This framework has an unsupported formula. Edit its formula in Settings before scoring."
+
   function preview() {
     const selected = framework()
     if (!selected) return
+    if (unsupportedFormula(selected)) {
+      output!.textContent = formulaError
+      return
+    }
     const score = scoreFields(selected, readFields())
     output!.textContent = selected.data.formula ? score === null ? "Enter valid estimates to calculate a score" : `Score: ${score}`
       : "Save your framework evaluation"
@@ -177,7 +189,12 @@ pageLifecycle.onPageLoad(signal => {
   form.addEventListener("submit", async event => {
     event.preventDefault()
     const selected = framework()
-    if (!selected || !taskId || !form.reportValidity()) return
+    if (!selected || !taskId) return
+    if (unsupportedFormula(selected)) {
+      status.textContent = formulaError
+      return
+    }
+    if (!form.reportValidity()) return
     const values = readFields()
     const score = scoreFields(selected, values)
     if (selected.data.formula && score === null) {
@@ -196,7 +213,8 @@ pageLifecycle.onPageLoad(signal => {
       const latest = parsePayload(task.framework_payload)
       latest[selected.id] = { ...asFrameworkPayload(latest[selected.id]), ...values, ...(score === null ? {} : { score }), _evaluatedAt: new Date().toISOString() }
       const encoded = JSON.stringify(latest)
-      const updatedAt = Number(task.updated_at)
+      const updatedAt = task.task_version
+      if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new Error("Missing task version")
       const saved = saveEvaluation ? await saveEvaluation(encoded, updatedAt)
         : (await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
           method: "PUT", headers: { "content-type": "application/json" }, signal: requestSignal,
@@ -228,8 +246,9 @@ pageLifecycle.onPageLoad(signal => {
       if (requestSignal.aborted) return
       const values = result.scores[selected.id]
       if (values) {
+        if (renderedFrameworkId) payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
         payload[selected.id] = { ...asFrameworkPayload(payload[selected.id]), ...values }
-        render()
+        if (select.value === selected.id) render()
       }
       status.textContent = result.justification
     } catch {

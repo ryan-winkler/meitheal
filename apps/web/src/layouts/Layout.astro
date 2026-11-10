@@ -522,7 +522,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           // Match page name from path
           var page = path.replace(/^\//, "").split("/")[0] || "dashboard";
           if (page === "" || page === "index") page = "dashboard";
-          if (page === "kanban" || page === "table" || page === "timeline") page = "tasks";
+          if (page === "kanban" || page === "table" || page === "timeline" || page === "tickets") page = "tasks";
           if (page === "tasks" && document.querySelector('[data-task-view="calendar"]')) page = "calendar";
           var items = bar.querySelectorAll(".mobile-tab-bar__item");
           for (var i = 0; i < items.length; i++) {

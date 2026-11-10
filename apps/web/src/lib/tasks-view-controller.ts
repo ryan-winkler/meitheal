@@ -56,7 +56,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     const view = TASK_VIEWS[Number(e.key) - 1]
     if (view && view !== rendered) {
       e.preventDefault()
-      location.assign(taskViewUrl(new URL(location.href), view))
+      location.assign(taskViewUrl(taskBackgroundUrl(new URL(location.href)), view))
     }
   }, { signal })
   window.addEventListener("meitheal:open-task", event => {

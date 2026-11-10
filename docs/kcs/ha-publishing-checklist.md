@@ -66,3 +66,5 @@ Record the installed image size with `podman image inspect --format '{{.Size}}' 
 
 
 Server output is bundled and minified while retaining function and class names. Preserve named stacks for support diagnostics and the bounded-stream security fixture; renaming `readWithinLimit` hides the fixture's real parser boundary and stalls its held-body acknowledgement. The client keeps Vite's normal minification. After changing server minification, run `task-participant-revocation.spec.ts` against the built output as well as the existing asset budget.
+
+Server dependency bundling applies only during the production server build. Astro dev keeps CommonJS dependencies external so its SSR loader can resolve their native `require` calls. Keep the production bundle and the default dev server working when changing these options.

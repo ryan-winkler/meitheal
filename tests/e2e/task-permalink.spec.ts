@@ -118,7 +118,7 @@ test("task detail contains Tab while loading and after a nested confirmation", a
 
     detailResponse.resolve()
     const first = detail.getByRole("button", { name: "Favorite" })
-    const last = detail.locator('button:visible:not([disabled]), a[href]:visible, input:visible:not([disabled]), select:visible:not([disabled]), textarea:visible:not([disabled]), summary:visible, [tabindex="0"]:visible').last()
+    const last = detail.getByText("Activity Log", { exact: true })
     await expect(first).toBeVisible()
     await first.focus()
     await page.keyboard.press("Shift+Tab")

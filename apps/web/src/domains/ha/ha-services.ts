@@ -586,10 +586,12 @@ export async function askAssist(
 export async function listConversationAgents(): Promise<ConversationAgent[] | null> {
   const conn = await getHAConnection()
   if (!conn?.connected) return null
+  let failureReason = "websocket_request_failed"
   try {
     const result = await conn.sendMessagePromise<unknown>({
       type: "conversation/agent/list",
     });
+    failureReason = "invalid_agent_payload"
     const agents = readConversationAgents(result)
     logger.log("debug", {
       event: "ha.conversation.agents_listed", domain: "ha", component: "ha-services",
@@ -600,6 +602,7 @@ export async function listConversationAgents(): Promise<ConversationAgent[] | nu
     logger.log("error", {
       event: "ha.conversation.agents_list_failed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: "Home Assistant conversation agent list failed",
+      metadata: { reason: failureReason },
     })
     return null
   }
