@@ -142,6 +142,10 @@ test.describe("New Task Modal", () => {
     expect(checklist).toEqual(texts.map(text => ({ id: expect.any(String), text, done: false })))
     expect(new Set(checklist.map((item: { id: string }) => item.id)).size).toBe(texts.length)
     expect(createdId).toEqual(expect.any(String))
+    const detailName = "Task detail: Checklist creation fixture"
+    await expect(page.getByRole("dialog", { name: detailName })).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe("/today")
+    expect(new URL(page.url()).searchParams.get("open")).toBe(createdId)
     const id = encodeURIComponent(createdId!)
     const taskPath = "/api/tasks/" + id
     const getChecklist = async () => {
@@ -153,7 +157,7 @@ test.describe("New Task Modal", () => {
 
     const detailsPage = await page.context().newPage()
     await detailsPage.goto("/tasks?open=" + id)
-    const detail = detailsPage.getByRole("dialog", { name: "Task detail: Checklist creation fixture" })
+    const detail = detailsPage.getByRole("dialog", { name: detailName })
     await expect(detail).toBeVisible()
     await expect(detail.locator("#td-checklists textarea")).toHaveCount(texts.length)
     const [saved] = await Promise.all([

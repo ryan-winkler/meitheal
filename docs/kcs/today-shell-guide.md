@@ -38,7 +38,7 @@ The small heading above the Today overview title uses the active palette's accen
 
 ### Capture work without leaving Today
 
-1. Use the shell `New Task` button when you need the full modal. The title receives focus when the dialog opens. Tab and Shift+Tab stay inside the dialog, and Escape returns focus to the control that opened it.
+1. Use the shell `New Task` button when you need the full modal. The title receives focus when the dialog opens. Tab and Shift+Tab stay inside the dialog, and Escape returns focus to the control that opened it. After a successful save, Details opens on the same page with the new task.
 2. Use the inline quick-add field in `Overview` when you want the fastest path.
 3. Stay on the same route so the current Today context is preserved.
 

@@ -346,6 +346,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
   import { createFocusTrap } from "@lib/focus-trap"
+  import { getLegacyTaskId } from "@lib/task-detail-handoff"
   import { initGlassDropdowns } from "@lib/glass-dropdown";
   import { InlineDatePicker } from "../shared/InlineDatePicker";
 
@@ -1179,15 +1180,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             );
 
             closeNewTaskModal();
+            if (created.id && created.task_kind !== "quick") {
+              const nextLocation = new URL(window.location.href)
+              nextLocation.searchParams.set("open", created.id)
+              nextLocation.searchParams.delete("comment")
+              if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
+              history.replaceState(history.state, "", nextLocation)
+            }
             document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
               detail: { action: "created" }
             }));
-            
-            // Auto-open detail modal for non-quick tasks
-            if (created.id && created.task_kind !== "quick") {
-              window.setTimeout(() => (window as any).openTaskDetail?.(created.id), 250);
-            }
-            
+
           } else {
             const err = await res.text();
             showToast(form.dataset.toastError || "Failed to create task", "error");
