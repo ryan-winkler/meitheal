@@ -5,10 +5,7 @@ test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
 async function seedGoal(request: APIRequestContext, origin: string, title: string) {
-  // The modal shows the assignment row when at least one user can be assigned.
   const headers = { origin }
-  const user = await request.post("/api/users/custom", { headers, data: { name: title + " assignee" } })
-  expect(user.status()).toBe(201)
   const goal = await request.post("/api/goals", { headers, data: { title } })
   expect(goal.status()).toBe(201)
   const { id }: { id: string } = await goal.json()
@@ -56,6 +53,9 @@ test("Today loads capture options once, when New Task opens", async ({ page, req
   expect(reads).toEqual({ lanes: 1, backlog: 1, goals: 1 })
 
   await active.click()
+  if (!await modal.locator("#nt-options").evaluate((element: HTMLDetailsElement) => element.open)) {
+    await modal.locator("#nt-options > summary").click()
+  }
   await goals.selectOption(goalId)
   await modal.locator("#cancel-new-task").click()
   await expect(modal).toBeHidden()
@@ -67,6 +67,9 @@ test("Today loads capture options once, when New Task opens", async ({ page, req
 
   await title.fill("Deferred options capture fixture")
   await active.click()
+  if (!await modal.locator("#nt-options").evaluate((element: HTMLDetailsElement) => element.open)) {
+    await modal.locator("#nt-options > summary").click()
+  }
   await goals.selectOption(goalId)
   let task: { id: string; goal_id: string } | undefined
   await page.route("**/api/tasks", async route => {
@@ -139,6 +142,9 @@ test("reopening retries failed and cancelled reads while keeping the task form u
     await expect(modal.locator('[data-status="backlog"]')).toHaveCount(0)
     await expect(goals.locator(`option[value="${goalId}"]`)).toHaveCount(1)
     await active.click()
+    if (!await modal.locator("#nt-options").evaluate((element: HTMLDetailsElement) => element.open)) {
+      await modal.locator("#nt-options > summary").click()
+    }
     await goals.selectOption(goalId)
     delayed.resolve()
     await staleResponse.promise

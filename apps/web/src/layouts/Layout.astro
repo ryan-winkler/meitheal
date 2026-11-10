@@ -262,22 +262,32 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY }}>
       (function () {
         function restoreAppearance(doc) {
-          var theme = localStorage.getItem("meitheal-theme");
+          function stored(key) {
+            try { return localStorage.getItem(key); } catch { return null; }
+          }
+          var theme = stored("meitheal-theme");
           var root = doc.documentElement;
           root.dataset.theme = ["light", "auto"].includes(theme) ? theme : "dark";
           var appearance;
           try {
-            appearance = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}");
+            appearance = JSON.parse(stored(APPEARANCE_STORAGE_KEY) ?? "{}");
           } catch { /* Invalid browser preferences fall back to their defaults. */ }
           for (var [name, preference] of Object.entries(APPEARANCE_PREFERENCES)) {
             var value = appearance?.[name];
-            root.setAttribute("data-appearance-" + name, preference.options.includes(value) ? value : preference.defaultValue);
+            root.setAttribute("data-appearance-" + name.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); }), preference.options.includes(value) ? value : preference.defaultValue);
           }
-          var accent = localStorage.getItem("meitheal-accent-color");
+          if (doc.body) {
+            var desktopSidebar = innerWidth > 768 && root.dataset.appearanceNavigation !== "navbar";
+            var sidebarMode = root.dataset.appearanceSidebar;
+            var collapsed = desktopSidebar && (["folded", "hover"].includes(sidebarMode)
+              || (sidebarMode === "remember" && stored("meitheal_sidebar_collapsed") === "true"));
+            doc.body.classList.toggle("sidebar-collapsed", collapsed);
+          }
+          var accent = stored("meitheal-accent-color");
           if (/^#[0-9a-f]{6}$/i.test(accent || "")) {
             root.style.setProperty("--personal-accent", accent);
           }
-          var css = theme === "custom" && localStorage.getItem("meitheal-custom-theme-css");
+          var css = theme === "custom" && stored("meitheal-custom-theme-css");
           if (css) {
             var style = doc.getElementById("meitheal-custom-theme");
             if (!style) {
@@ -451,10 +461,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         if (window.__ingress_path && document.body) {
           document.body.classList.add("ha-ingress");
         }
-        // Restore sidebar collapsed state from localStorage
-        if (localStorage.getItem("meitheal_sidebar_collapsed") === "true") {
-          document.body.classList.add("sidebar-collapsed");
+        var appearance = document.documentElement.dataset;
+        var desktopSidebar = innerWidth > 768 && appearance.appearanceNavigation !== "navbar";
+        var collapsed = desktopSidebar && ["folded", "hover"].includes(appearance.appearanceSidebar);
+        if (desktopSidebar && appearance.appearanceSidebar === "remember") {
+          try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true"; } catch {}
         }
+        document.body.classList.toggle("sidebar-collapsed", collapsed);
       })();
     </script>
     <!-- Ingress URL sync: DISABLED — removed to prevent potential HA panel routing interference -->
@@ -462,7 +475,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <a href="#main-content" class="skip-to-content"
       >{t("nav.skip_to_content", locale)}</a
     >
-    {!privatePageShell && <div transition:persist="sidebar">
+    {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
       <Sidebar locale={locale} taskCounts={taskCounts} />
     </div>}
 
@@ -545,40 +558,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           });
         }
         window.__meithealUpdateMobileTabBar();
-      })();
-    </script>
-
-    <!-- Sidebar toggle logic: click + keyboard shortcut -->
-    <script is:inline>
-      (function () {
-        var btn = document.getElementById("sidebar-toggle-btn");
-        function toggleSidebar() {
-          var collapsed = document.body.classList.toggle("sidebar-collapsed");
-          localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed));
-          // Rotate chevron: points left when expanded (to collapse), right when collapsed (to expand)
-          if (btn) {
-            btn.querySelector("svg").style.transform = collapsed
-              ? "rotate(180deg)"
-              : "";
-          }
-        }
-        // Initialise chevron rotation on load
-        if (btn && document.body.classList.contains("sidebar-collapsed")) {
-          btn.querySelector("svg").style.transform = "rotate(180deg)";
-        }
-        // Click handler
-        if (btn) btn.addEventListener("click", toggleSidebar);
-        // Keyboard shortcut: Ctrl+B / Cmd+B
-        document.addEventListener("keydown", function (e) {
-          if ((e.ctrlKey || e.metaKey) && e.key === "b") {
-            // Don't hijack Ctrl+B (bold) when user is editing text
-            var tag = (e.target || {}).tagName || "";
-            var editable = (e.target || {}).contentEditable === "true";
-            if (["INPUT", "TEXTAREA", "SELECT"].indexOf(tag) !== -1 || editable) return;
-            e.preventDefault();
-            toggleSidebar();
-          }
-        });
       })();
     </script>
 

@@ -5,6 +5,7 @@
         import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
+        import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -73,6 +74,8 @@
           // The fallback and initial Astro event can arrive with the same signal.
           const bindKeyboard = keyboardSignal !== signal
           keyboardSignal = signal
+          applyAppearancePreferences(readAppearancePreferences())
+          if (bindKeyboard) bindAppearanceNavigation(signal)
 
           // Defensive: clear any stale body scroll lock from a previous page's
           // task-detail or modal overlay (MPA nav doesn't run close handlers)

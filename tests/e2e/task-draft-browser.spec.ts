@@ -88,6 +88,7 @@ test("save, resume, edit and publish a private capture with keyboard and a narro
     await title.fill(sentinel)
     await page.locator("#new-task-desc-input").fill("<b>Supplies</b> and a long note")
     await page.locator("#nt-checklist-builder-input").fill("Pack raincoat\nFill flask")
+    await page.locator("#nt-options > summary").click()
     await page.locator("#new-task-label-picker-input").fill(label)
     await page.locator("#new-task-label-picker-input").press("Enter")
     await expect(page.locator("#new-task-label-picker-selected")).toContainText(label)
@@ -203,20 +204,29 @@ test("shopping, custom fields and files respect the saved snapshot boundary", as
       await page.locator("#nt-add-custom-field-btn").click()
       await page.locator(`[data-field-type="${type}"].nt-add-field-type`).click()
     }
+    await page.locator("#nt-options > summary").click()
     await addField("url")
     await page.locator('.nt-custom-field-entry[data-field-type="url"] input').fill("https://example.test/supplies")
     await addField("checkbox")
     const checkbox = page.locator('.nt-custom-field-entry[data-field-type="checkbox"]')
     await checkbox.locator('[type="text"]').fill("Bring bags")
     await checkbox.locator('[type="checkbox"]').check()
-    await addField("attachment")
-    await page.locator('.nt-custom-field-entry[data-field-type="attachment"] input').setInputFiles({
+    await expect(page.locator('.nt-add-field-type[data-field-type="attachment"]')).toHaveCount(0)
+    // Keep the defensive file boundary covered even though creation no longer offers an unsupported attachment action.
+    await page.evaluate(() => {
+      const file = document.createElement("input")
+      file.id = "draft-file-boundary-probe"
+      file.type = "file"
+      file.className = "sr-only"
+      document.getElementById("new-task-form")!.append(file)
+    })
+    await page.locator("#draft-file-boundary-probe").setInputFiles({
       name: "draft-file-must-not-persist.txt", mimeType: "text/plain", buffer: Buffer.from("fixture only"),
     })
     await draftAction(page, "Draft").click()
     await draftAction(page, "Save draft").click()
     await expect(page.locator("#nt-draft-status")).toContainText("Remove the selected file")
-    await page.getByRole("button", { name: "Remove attachment field" }).click()
+    await page.locator("#draft-file-boundary-probe").evaluate(element => element.remove())
     await draftAction(page, "Save draft").click()
     await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
 

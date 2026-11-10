@@ -7,214 +7,66 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 ---
 
-<div
-  id="new-task-overlay"
-  class="modal-overlay z-200"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="new-task-title"
->
-  <div class="modal-content max-w-2xl w-full bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl max-h-[90vh] flex flex-col">
-    <h2 id="new-task-title" class="sr-only">{t("tasks.new_task_modal", locale)}</h2>
-    <div
-      class="modal-header nt-modal-header flex items-center justify-between px-6 pt-5 pb-3"
-    >
-      <div class="flex gap-1" id="nt-kind-tabs">
-        <button type="button" class="nt-kind-pill active" data-kind="standard_action">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-          {t("task_modal.kind_task", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="shopping_item">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
-          {t("task_modal.kind_shopping_list", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="checklist">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-          {t("task_modal.kind_checklist", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="calendar_event">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-          {t("task_modal.kind_event", locale)}
-        </button>
-      </div>
-      <button
-        type="button"
-        class="btn-icon text-xl text-text-muted hover:text-text-primary"
-        id="close-new-task-modal"
-        aria-label="Close">✕</button
-      >
-    </div>
-
-    <form id="new-task-form" class="px-6 space-y-5 overflow-y-auto flex-1 min-h-0"
+<div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+  <div class="modal-content nt-modal">
+    <header class="nt-header">
+      <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">×</button>
+    </header>
+    <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
       data-toast-error={t("task_modal.toast_error", locale)}
       data-toast-unexpected={t("task_modal.toast_unexpected", locale)}
+      data-save-failed={t("task_modal.form_save_failed", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
-      
-      <div class="form-group mt-3">
-        <textarea
-          class="bg-transparent border-none outline-none focus:ring-0 text-xl font-semibold p-0 placeholder:text-text-muted/40 w-full resize-none overflow-hidden leading-snug"
-          id="new-task-title-input"
-          name="title"
+      <fieldset class="nt-group">
+        <legend>{t("task_modal.type_label", locale)}</legend>
+        <div class="nt-kind-grid" id="nt-kind-tabs">
+          <button type="button" class="nt-kind-pill active" data-kind="standard_action" aria-pressed="true">{t("task_modal.kind_task", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="shopping_item" aria-pressed="false">{t("task_modal.kind_shopping_list", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="checklist" aria-pressed="false">{t("task_modal.kind_checklist", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="calendar_event" aria-pressed="false">{t("task_modal.kind_event", locale)}</button>
+        </div>
+      </fieldset>
+      <div class="nt-field">
+        <label for="new-task-title-input">{t("tasks.title_label", locale)} <span class="nt-hint">({t("task_modal.required_label", locale)})</span></label>
+        <input type="text" class="form-input" id="new-task-title-input" name="title" maxlength="500" required autofocus
           placeholder={t("task_modal.title_placeholder", locale)}
           data-placeholder-task={t("task_modal.title_placeholder", locale)}
           data-placeholder-shopping={t("task_modal.title_placeholder_shopping", locale)}
           data-placeholder-checklist={t("task_modal.title_placeholder_checklist", locale)}
-          data-placeholder-event={t("task_modal.title_placeholder_event", locale)}
-          required
-          autofocus
-          rows="1"
-          style="height: 1.8em; max-height: 120px; field-sizing: content;"
-        ></textarea>
-        <textarea
-          class="bg-transparent border-none outline-none focus:ring-0 text-sm w-full p-0 mt-1 resize-none overflow-hidden placeholder:text-text-muted/40"
-          id="new-task-desc-input"
-          name="description"
-          rows="1"
-          placeholder={t("task_modal.description_placeholder", locale)}
-
-        ></textarea>
+          data-placeholder-event={t("task_modal.title_placeholder_event", locale)} />
       </div>
-
-      <!-- STATUS & PRIORITY -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_status_priority", locale)}</div>
-        <div class="flex flex-wrap items-center gap-3">
-          <input type="hidden" id="new-task-status" name="status" value="pending" />
-          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><circle cx="12" cy="12" r="10"/></svg>
-              <span>{t("task_modal.status_todo", locale)}</span>
-            </button>
-          </div>
-
-          <!-- Priority (GlassDropdown) -->
-          <input type="hidden" id="new-task-priority" name="priority" value="3" />
-          <div class="glass-dropdown" id="nt-priority-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-priority-label">{t("task_modal.priority_normal", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
-            </div>
-            <div class="glass-dropdown__content" role="menu" aria-orientation="vertical">
-              <div class="glass-dropdown__label">{t("task_modal.section_status_priority", locale).split("&")[1]?.trim() || "PRIORITY"}</div>
-              <button type="button" class="glass-dropdown__item" data-value="1" role="menuitem">{t("task_modal.priority_urgent", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="2" role="menuitem">{t("task_modal.priority_high", locale)}</button>
-              <button type="button" class="glass-dropdown__item is-active" data-value="3" role="menuitem">{t("task_modal.priority_normal", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="4" role="menuitem">{t("task_modal.priority_low", locale)}</button>
-            </div>
-          </div>
-        </div>
+      <div class="nt-field">
+        <label for="new-task-desc-input">{t("tasks.description", locale)}</label>
+        <textarea class="form-input" id="new-task-desc-input" name="description" rows="2" maxlength="10000"
+          placeholder={t("task_modal.description_placeholder", locale)}></textarea>
       </div>
-
-      <!-- ASSIGNMENT -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_assignment", locale)}</div>
-        <div class="nt-assignment-row flex flex-wrap items-center gap-2">
-          <!-- Assignee -->
-          <select class="filter-toolbar__select" id="new-task-assigned-to">
-            <option value="">{t("task_modal.unassigned", locale)}</option>
-          </select>
-
-          <!-- Goal -->
-          <select class="filter-toolbar__select" id="new-task-goal" name="goal_id">
-            <option value="">{t("task_modal.goal_none", locale)}</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- SCHEDULING & TAGS -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_scheduling", locale) || "SCHEDULING"}</div>
-        <div class="flex flex-wrap items-center gap-3">
-          <!-- Recurrence (GlassDropdown) -->
-          <input type="hidden" id="new-task-recurrence" name="recurrence_rule" value="" />
-          <div class="glass-dropdown" id="nt-recurrence-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-recurrence-label">{t("task_modal.recurrence_none", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
+      <div id="nt-contextual-fields" class="nt-context hidden">
+        <fieldset id="nt-contextual-checklist" class="nt-group hidden">
+          <legend>{t("task_modal.checklist_items", locale)}</legend>
+          <div class="nt-field">
+            <label for="nt-checklist-builder-input">{t("task_modal.checklist_input", locale)}</label>
+            <div class="nt-entry-group">
+              <textarea id="nt-checklist-builder-input" rows="2" class="form-input" aria-describedby="nt-checklist-hint"></textarea>
+              <button type="button" class="btn btn-secondary" id="nt-add-sub-item-btn">{t("task_modal.add_sub_item", locale)}</button>
             </div>
-            <div class="glass-dropdown__content" role="menu" aria-orientation="vertical">
-              <div class="glass-dropdown__label">{t("task_modal.section_recurrence", locale) || "RECURRENCE"}</div>
-              <button type="button" class="glass-dropdown__item is-active" data-value="" role="menuitem">{t("task_modal.recurrence_none", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=DAILY" role="menuitem">{t("task_modal.recurrence_daily", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=WEEKLY" role="menuitem">{t("task_modal.recurrence_weekly", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" role="menuitem">{t("task_modal.recurrence_weekday", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=MONTHLY" role="menuitem">{t("task_modal.recurrence_monthly", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=YEARLY" role="menuitem">{t("task_modal.recurrence_yearly", locale)}</button>
-            </div>
+            <p class="nt-hint" id="nt-checklist-hint">{t("task_modal.checklist_input_hint", locale)}</p>
           </div>
-
-          <!-- Tags (GlassDropdown) -->
-          <div class="glass-dropdown nt-tags-dropdown" id="nt-tags-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-tags-label">{t("task_modal.tags_label", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
+          <ol id="nt-checklist-items-container" class="ticket-item-list" role="list"></ol>
+          <p id="nt-checklist-count" class="sr-only" role="status" data-count-label={t("task_modal.items_count", locale)}></p>
+        </fieldset>
+        <fieldset id="nt-contextual-shopping" class="nt-group hidden">
+          <legend>{t("task_modal.shopping_items", locale)}</legend>
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="nt-shopping-qty">{t("task_modal.quantity_field", locale)}</label>
+              <input type="number" id="nt-shopping-qty" value="1" min="1" max="999" class="form-input" />
             </div>
-            <div class="glass-dropdown__content nt-tags-content" role="dialog" aria-label="Select tags">
-              <div class="glass-dropdown__label">{t("task_modal.select_tags", locale)}</div>
-              <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Contextual UI per Kind -->
-      <div id="nt-contextual-fields" class="hidden mb-4 p-3 bg-bg-input/20 border border-border-dim/50 rounded-xl space-y-3">
-        <!-- Due Date (Checklist / Task) -->
-        <div id="nt-ctx-due-row" class="form-group flex items-center gap-3">
-           <label class="text-xs font-semibold text-text-muted uppercase tracking-wider w-20">{t("task_modal.due_date_label", locale)}</label>
-           <input type="hidden" id="nt-contextual-due" name="due_date" value="" />
-           <div id="nt-due-date-picker" class="idp-mount flex-1"></div>
-        </div>
-
-        <!-- Sub-items (Checklist) -->
-        <div id="nt-contextual-checklist" class="hidden">
-           <div class="form-group flex flex-col gap-2">
-             <div class="flex items-center justify-between">
-               <label for="nt-checklist-builder-input" class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.sub_items_label", locale)}</label>
-               <button type="button" class="text-xs text-accent hover:text-accent/80 font-medium" id="nt-add-sub-item-btn">+ {t("task_modal.add_sub_item", locale)}</button>
-             </div>
-             <div id="nt-checklist-items-container" class="space-y-1"></div>
-             <textarea id="nt-checklist-builder-input" rows="2" class="form-input w-full" placeholder={t("task_modal.sub_item_placeholder", locale)}></textarea>
-           </div>
-        </div>
-
-        <!-- Shopping List Fields -->
-        <div id="nt-contextual-shopping" class="hidden space-y-3">
-          <!-- Shopping item builder input -->
-          <div class="flex items-center gap-2">
-            <input type="text" id="nt-shopping-item-input"
-              class="form-input flex-1 bg-transparent border-none border-b border-border-dim rounded-none px-0 py-1 text-sm focus:ring-0 focus:border-accent placeholder:text-text-muted/50"
-              placeholder={t("task_modal.shopping_item_placeholder", locale) || "Add an item (press Enter)"}
-            />
-            <button type="button" id="nt-add-shopping-item"
-              class="w-8 h-8 flex items-center justify-center bg-accent/20 text-accent rounded-lg hover:bg-accent/30 transition-colors shrink-0"
-              aria-label="Add item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-          </div>
-          <!-- Added items list -->
-          <div id="nt-shopping-items-list" class="space-y-1"></div>
-          <!-- Default quantity & category for new items -->
-          <div class="flex items-center gap-4">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.quantity_label", locale)}</label>
-              <div class="flex items-center gap-1">
-                <button type="button" class="w-8 h-8 flex items-center justify-center bg-bg-input/50 border border-border-dim rounded-lg text-text-primary hover:bg-border-dim/30 transition-colors" id="nt-qty-minus">−</button>
-                <input type="number" id="nt-shopping-qty" value="1" min="1" max="999" class="w-12 text-center bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 focus:ring-accent" />
-                <button type="button" class="w-8 h-8 flex items-center justify-center bg-bg-input/50 border border-border-dim rounded-lg text-text-primary hover:bg-border-dim/30 transition-colors" id="nt-qty-plus">+</button>
-              </div>
-            </div>
-            <div class="flex flex-col gap-1 flex-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.category_label", locale)}</label>
-              <select id="nt-shopping-category" class="form-select bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 px-3">
+            <div class="nt-field">
+              <label for="nt-shopping-category">{t("task_modal.category_field", locale)}</label>
+              <select id="nt-shopping-category" class="form-select">
                 <option value="">{t("task_modal.category_uncategorized", locale)}</option>
                 <option value="produce">{t("task_modal.category_produce", locale)}</option>
                 <option value="dairy">{t("task_modal.category_dairy", locale)}</option>
@@ -227,73 +79,92 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               </select>
             </div>
           </div>
+          <div class="nt-field">
+            <label for="nt-shopping-item-input">{t("task_modal.shopping_input", locale)}</label>
+            <div class="nt-entry-group">
+              <input type="text" id="nt-shopping-item-input" class="form-input" />
+              <button type="button" id="nt-add-shopping-item" class="btn btn-secondary">{t("task_modal.add_item", locale)}</button>
+            </div>
+          </div>
+          <ol id="nt-shopping-items-list" class="ticket-item-list" role="list"></ol>
+        </fieldset>
+        <fieldset id="nt-contextual-event" class="nt-group hidden">
+          <legend>{t("task_modal.event_schedule", locale)}</legend>
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="nt-event-start">{t("task_modal.start_field", locale)}</label>
+              <input type="datetime-local" id="nt-event-start" name="start_date" class="form-input" />
+            </div>
+            <div class="nt-field">
+              <label for="nt-event-end">{t("task_modal.end_field", locale)}</label>
+              <input type="datetime-local" id="nt-event-end" name="end_date" class="form-input" aria-describedby="nt-date-error" />
+              <p id="nt-date-error" class="nt-error" hidden>{t("task_modal.event_end_error", locale)}</p>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+      <fieldset class="nt-group">
+        <legend>{t("task_modal.details_group", locale)}</legend>
+        <div class="nt-field">
+          <input type="hidden" id="new-task-status" name="status" value="pending" />
+          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
+            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">{t("task_modal.status_todo", locale)}</button>
+          </div>
         </div>
-
-        <!-- Event Fields -->
-        <div id="nt-contextual-event" class="hidden space-y-3">
-          <div class="grid grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_start", locale)}</label>
-              <input type="hidden" id="nt-event-start" name="start_date" value="" />
-              <div id="nt-event-start-picker" class="idp-mount"></div>
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_end", locale)}</label>
-              <input type="hidden" id="nt-event-end" name="end_date" value="" />
-              <div id="nt-event-end-picker" class="idp-mount"></div>
-            </div>
+        <div class="nt-form-grid">
+          <div class="nt-field">
+            <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
+            <select id="new-task-priority" name="priority" class="form-select">
+              <option value="1">{t("task_modal.priority_urgent", locale)}</option>
+              <option value="2">{t("task_modal.priority_high", locale)}</option>
+              <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
+              <option value="4">{t("task_modal.priority_low", locale)}</option>
+            </select>
           </div>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              <span class="text-sm text-text-primary">{t("task_modal.event_all_day", locale)}</span>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="nt-event-all-day" class="sr-only peer" />
-              <div class="nt-toggle"></div>
-            </label>
+          <div id="nt-ctx-due-row" class="nt-field">
+            <label for="nt-contextual-due">{t("tasks.due_date", locale)}</label>
+            <input type="date" id="nt-contextual-due" name="due_date" class="form-input" />
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_location_label", locale)}</label>
-            <div class="relative">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-              <input type="text" id="nt-event-location" class="form-input bg-bg-input/50 border-border-dim rounded-lg text-sm pl-9 pr-3 py-1.5 w-full" placeholder={t("task_modal.event_location", locale)} />
-            </div>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_calendar", locale)}</label>
-            <select id="nt-event-calendar" class="form-select bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 px-3">
-              <option value="">{t("task_modal.event_calendar_default", locale)}</option>
+          <div class="nt-field" id="nt-assignee-field">
+            <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
+            <select id="new-task-assigned-to" name="assigned_to" class="form-select">
+              <option value="">{t("task_modal.unassigned", locale)}</option>
             </select>
           </div>
         </div>
-      </div>
-
-      <!-- Mark as Routine -->
-      <div id="nt-routine-toggle" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+      </fieldset>
+      <details class="nt-options" id="nt-options">
+        <summary>{t("task_modal.more_options", locale)}</summary>
+        <div class="nt-options-content">
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
+              <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+            </div>
+            <div class="nt-field">
+              <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
+              <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
+                <option value="">{t("task_modal.recurrence_none", locale)}</option>
+                <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
+                <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
+                <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
+                <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
+                <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <span id="nt-routine-label" class="text-sm font-medium text-text-primary">{t("task_modal.mark_as_routine", locale)}</span>
-            <p class="text-xs text-text-muted">{t("task_modal.routine_description", locale)}</p>
+          <div class="nt-field">
+            <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
+            <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
           </div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-is-routine" class="sr-only peer" aria-labelledby="nt-routine-label" />
-          <div class="nt-toggle"></div>
-        </label>
-      </div>
-
       <!-- Custom Fields (collapsible) -->
-      <div id="nt-custom-fields" class="mb-3">
+      <div id="nt-custom-fields" class="nt-options-section">
         <div class="flex items-center justify-between p-2">
-          <button type="button" id="nt-custom-fields-toggle" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
+          <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
             {t("task_modal.custom_fields_label", locale)}
           </button>
-          <button type="button" id="nt-add-custom-field-btn" class="text-xs font-medium flex items-center gap-1">
+          <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             {t("task_modal.custom_field_add", locale)}
           </button>
@@ -301,7 +172,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
           <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="attachment">📎 {t("task_modal.custom_field_attachment", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url">🔗 {t("task_modal.custom_field_url", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text">📝 {t("task_modal.custom_field_text", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number">🔢 {t("task_modal.custom_field_number", locale)}</button>
@@ -311,9 +181,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         </div>
       </div>
 
-      <p id="nt-capture-validation" class="text-sm" role="status" hidden></p>
+          <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
+          <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
+        </div>
+      </details>
+      <p id="nt-capture-validation" class="nt-error" role="alert" hidden></p>
     </form>
-
     <div id="nt-draft-panel" class="nt-draft-panel" hidden>
       <p id="nt-draft-status" role="status" aria-live="polite"></p>
       <div class="nt-draft-actions">
@@ -336,20 +209,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     <!-- Pinned footer — outside scrollable form -->
     <div
-      class="modal-actions nt-footer px-6 py-4 flex flex-wrap gap-2 items-center justify-between"
+      class="modal-actions nt-footer"
     >
       <button type="button" class="btn btn-ghost text-text-muted hover:text-text-primary text-sm font-semibold px-1 rounded-lg" id="cancel-new-task">{t("task_modal.btn_cancel", locale)}</button>
 
-      <div class="flex items-center gap-2">
+      <div class="nt-footer-actions">
         <button type="button" id="nt-draft-toggle" class="btn btn-ghost text-sm"
           aria-controls="nt-draft-panel" aria-expanded="false" hidden>{t("task_draft.draft", locale)}</button>
-        <button type="button" class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-lg hover:bg-bg-hover" aria-label="Attach file">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-        </button>
         <button
           type="submit"
           form="new-task-form"
-          class="bg-linear-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-white font-semibold rounded-lg px-5 py-2 shadow-lg shadow-accent/20 transition-[background,box-shadow] text-sm"
+          class="btn btn-primary"
           id="submit-new-task-btn"
           data-label-task={t("task_modal.btn_create_task", locale)}
           data-label-shopping={t("task_modal.btn_create_shopping_list", locale)}
@@ -361,7 +231,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     </div>
   </div>
 </div>
-
 <script>
   import { showToast } from "@lib/toast";
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
@@ -373,49 +242,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import type { connectTaskDrafts } from "@lib/task-draft-controller"
   import { getLegacyTaskId } from "@lib/task-detail-handoff"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
-  import { initGlassDropdowns } from "@lib/glass-dropdown";
-  import { InlineDatePicker } from "../shared/InlineDatePicker";
 
   const log = createClientLogger("tasks", "new-task-modal");
-
-  /**
-   * Reset a glass-dropdown-as-select to its default value.
-   * Clears is-active from all items, marks the default one, updates label + hidden input.
-   */
-  function resetGlassDropdown(dropdownId: string, labelId: string, hiddenInputId: string, defaultValue: string) {
-    const dropdown = document.getElementById(dropdownId);
-    const label = document.getElementById(labelId);
-    const hidden = document.getElementById(hiddenInputId) as HTMLInputElement | null;
-    if (!dropdown || !label || !hidden) return;
-    hidden.value = defaultValue;
-    dropdown.querySelectorAll(".glass-dropdown__item").forEach((item) => {
-      const el = item as HTMLElement;
-      const isDefault = el.dataset.value === defaultValue;
-      el.classList.toggle("is-active", isDefault);
-      if (isDefault) label.textContent = el.textContent?.trim() || "";
-    });
-  }
-
-  /**
-   * Wire a glass-dropdown to behave as a <select> replacement.
-   * On item click: update hidden input, update label, mark active item.
-   */
-  function initGlassDropdownSelect(dropdownId: string, labelId: string, hiddenInputId: string, sig?: AbortSignal) {
-    const dropdown = document.getElementById(dropdownId);
-    const label = document.getElementById(labelId);
-    const hidden = document.getElementById(hiddenInputId) as HTMLInputElement | null;
-    if (!dropdown || !label || !hidden) return;
-    dropdown.querySelectorAll(".glass-dropdown__item").forEach((item) => {
-      item.addEventListener("click", () => {
-        const el = item as HTMLElement;
-        hidden.value = el.dataset.value || "";
-        label.textContent = el.textContent?.trim() || "";
-        dropdown.querySelectorAll(".glass-dropdown__item").forEach(i => i.classList.remove("is-active"));
-        el.classList.add("is-active");
-        hidden.dispatchEvent(new Event("change", { bubbles: true }))
-      }, sig ? { signal: sig } : undefined);
-    });
-  }
 
   // Handle smart task extraction mapping
   const nextWeekday = (day: number) => {
@@ -445,7 +273,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const shoppingDiv = document.getElementById("nt-contextual-shopping");
     const eventDiv = document.getElementById("nt-contextual-event");
     const dueRow = document.getElementById("nt-ctx-due-row");
-    const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
+    const titleInput = document.getElementById("new-task-title-input") as HTMLInputElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
     const pillsContainer = document.getElementById("nt-status-pills")
@@ -462,6 +290,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let drafts: ReturnType<typeof connectTaskDrafts> | undefined
     let draftLoading = false
     let editedWhileLoading = false
+    let retainedRoutine = false
+    let retainedEventDetails = { location: "", allDay: false, calendar: "" }
 
     pillsContainer?.addEventListener("click", event => {
       const pill = (event.target as Element).closest<HTMLElement>("[data-status]")
@@ -489,20 +319,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       })
     }
 
-    // ── Textarea auto-resize (replaces inline oninput handlers) ──
-    if (titleInput) {
-      titleInput.addEventListener("input", () => {
-        titleInput.style.height = "1.8em";
-        titleInput.style.height = Math.min(titleInput.scrollHeight, 120) + "px";
-      }, { signal });
-    }
-    if (descInput) {
-      descInput.addEventListener("input", () => {
-        descInput.style.height = "";
-        descInput.style.height = descInput.scrollHeight + "px";
-      }, { signal });
-    }
-
     // Task Kind Tab Switching
     const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
     const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
@@ -517,7 +333,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     function selectKind(kind: string) {
       if (kindInput) kindInput.value = kind
-      kindTabs.forEach(tab => tab.classList.toggle("active", (tab as HTMLElement).dataset.kind === kind))
+      kindTabs.forEach(tab => {
+        const selected = (tab as HTMLElement).dataset.kind === kind
+        tab.classList.toggle("active", selected)
+        tab.setAttribute("aria-pressed", String(selected))
+      })
       const shopping = kind === "shopping_item"
       const checklist = kind === "checklist"
       const event = kind === "calendar_event"
@@ -525,7 +345,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       checklistDiv?.classList.toggle("hidden", !checklist)
       shoppingDiv?.classList.toggle("hidden", !shopping)
       eventDiv?.classList.toggle("hidden", !event)
-      dueRow?.classList.toggle("hidden", !checklist)
+      dueRow?.classList.toggle("hidden", event)
       if (titleInput) {
         const labels = titleInput.dataset
         titleInput.placeholder = (shopping ? labels.placeholderShopping : checklist ? labels.placeholderChecklist
@@ -554,9 +374,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       return draft.items
     }
 
+    function updateChecklistCount() {
+      const count = document.getElementById("nt-checklist-count")
+      if (count) count.textContent = (count.dataset.countLabel || "{count} items").replace("{count}", String(checklistItems.size))
+    }
+
     function appendChecklistItem(item: CaptureChecklistItem) {
-      const row = document.createElement("div")
-      row.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1 px-2 rounded"
+      const row = document.createElement("li")
+      row.className = "ticket-item-row"
       const label = document.createElement("span")
       label.className = "flex-1 min-w-0 break-words"
       label.textContent = item.text
@@ -568,12 +393,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
         row.remove()
+        updateChecklistCount()
         markEdited()
         builderInput?.focus()
       }, { signal })
       row.append(label, remove)
       checklistItems.set(row, item)
       itemsContainer?.append(row)
+      updateChecklistCount()
     }
 
     function stageChecklistItems() {
@@ -594,17 +421,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       stageChecklistItems()
     }, { signal })
 
-    // Shopping Qty +/- buttons
-    const qtyMinus = document.getElementById("nt-qty-minus");
-    const qtyPlus = document.getElementById("nt-qty-plus");
     const qtyEl = document.getElementById("nt-shopping-qty") as HTMLInputElement;
-    function adjustQuantity(change: number) {
-      if (!qtyEl) return
-      const next = Math.min(999, Math.max(1, (Number(qtyEl.value) || 1) + change))
-      if (qtyEl.value !== String(next)) { qtyEl.value = String(next); markEdited() }
-    }
-    qtyMinus?.addEventListener("click", () => adjustQuantity(-1), { signal })
-    qtyPlus?.addEventListener("click", () => adjustQuantity(1), { signal })
 
     const shoppingItemInput = document.querySelector<HTMLInputElement>("#nt-shopping-item-input")
     const shoppingItemsList = document.getElementById("nt-shopping-items-list")
@@ -621,8 +438,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     function appendShoppingItem(item: ShoppingItem) {
       const { name, qty, category } = item
       shoppingListItems.push(item)
-      const pill = document.createElement("div")
-      pill.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1.5 px-3 rounded-lg group"
+      const pill = document.createElement("li")
+      pill.className = "ticket-item-row"
       const label = document.createElement("span")
       label.className = "flex-1 min-w-0 break-words"
       const categoryLabel = Array.from(shoppingCategory?.options ?? []).find(option => option.value === category)?.textContent
@@ -667,6 +484,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const cfContainer = document.getElementById("nt-custom-fields-container");
     cfToggle?.addEventListener("click", () => {
       cfContainer?.classList.toggle("hidden");
+      cfToggle?.setAttribute("aria-expanded", String(!cfContainer?.classList.contains("hidden")))
     }, { signal });
 
     // Add custom field btn → show dropdown
@@ -679,6 +497,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       cfContainer?.classList.remove("hidden")
       cfDropdown.classList.toggle("hidden", !wasClosed)
       cfDropdown.style.display = wasClosed ? "flex" : ""
+      cfToggle?.setAttribute("aria-expanded", "true")
+      cfAddBtn?.setAttribute("aria-expanded", String(wasClosed))
     }, { signal })
 
     // Add field type buttons
@@ -687,11 +507,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       entry.className = "nt-custom-field-entry flex items-center gap-2"
       entry.dataset.fieldType = type
 
+      const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
       const emojiMap: Record<string, string> = { url: "🔗", number: "🔢", date: "📅", attachment: "📎", text: "📝" }
 
       if (type === "checkbox") {
         const cb = document.createElement("input")
         cb.type = "checkbox"
+        cb.setAttribute("aria-label", fieldLabel)
         cb.className = "rounded border-border-dim bg-bg-input/50 focus:ring-accent"
         entry.appendChild(cb)
       } else {
@@ -705,6 +527,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const inputTypeMap: Record<string, string> = { url: "url", number: "number", date: "date", attachment: "file", checkbox: "text" }
       const placeholderMap: Record<string, string> = { url: "https://", number: "0", text: "Enter text...", checkbox: "Label" }
       input.type = inputTypeMap[type] || "text"
+      input.setAttribute("aria-label", fieldLabel)
       input.className = "form-input flex-1 bg-bg-input/50 border-border-dim rounded-lg text-sm px-3 py-1"
       if (placeholderMap[type]) input.placeholder = placeholderMap[type]
       entry.appendChild(input)
@@ -730,6 +553,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         cfContainer?.classList.remove("hidden")
+        cfToggle?.setAttribute("aria-expanded", "true")
+        cfAddBtn?.setAttribute("aria-expanded", "false")
       }, { signal });
     });
     function closeNewTaskModal() {
@@ -818,6 +643,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         const unassigned = select.options[0] ?? new Option("Unassigned", "")
         select.replaceChildren(unassigned, ...users.map((user: { id: string; name: string; source: string }) =>
           new Option(user.name + (user.source === "home_assistant" ? " (HA)" : ""), user.id)))
+        // Only the assignee field can hide; goals stay independently available.
         if (select.parentElement) select.parentElement.style.display = users.length || selected ? "" : "none"
         hint?.classList.toggle("hidden", users.length < 2)
         const fallback = data.default_assignee || (users.length === 1 ? users[0].id : "")
@@ -876,49 +702,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         // Keep the current options and retry on the next open.
       }
     }
-
-    // Initialize glassmorphic dropdowns (priority, recurrence)
-    initGlassDropdowns();
-    initGlassDropdownSelect("nt-priority-dropdown", "nt-priority-label", "new-task-priority", signal);
-    initGlassDropdownSelect("nt-recurrence-dropdown", "nt-recurrence-label", "new-task-recurrence", signal);
-
-    // Initialize InlineDatePicker instances
-    const datePickers = new Map<string, InlineDatePicker>()
-    function mountDatePicker(containerId: string, hiddenId: string) {
-      const container = document.getElementById(containerId);
-      const hidden = document.getElementById(hiddenId) as HTMLInputElement | null;
-      if (!container || !hidden) return;
-      const picker = new InlineDatePicker(container, {
-        value: null,
-        onChange: (date) => { hidden.value = date.toISOString(); markEdited() },
-        onClear: () => { hidden.value = ""; markEdited() },
-        signal,
-      });
-      datePickers.set(hiddenId, picker);
-    }
-    mountDatePicker("nt-due-date-picker", "nt-contextual-due");
-    mountDatePicker("nt-event-start-picker", "nt-event-start");
-    mountDatePicker("nt-event-end-picker", "nt-event-end");
-
-    // Graceful fallback — if InlineDatePicker fails to mount, inject native input
-    window.setTimeout(() => {
-      if (signal.aborted) return
-      document.querySelectorAll(".idp-mount").forEach(mount => {
-        if (mount.children.length === 0) {
-          const hidden = mount.previousElementSibling as HTMLInputElement | null
-          if (!hidden) return
-          const fallback = document.createElement("input")
-          fallback.type = "datetime-local"
-          fallback.className = "form-input bg-bg-input/50 border-border-dim rounded-lg text-sm py-1.5 px-3 w-full"
-          fallback.addEventListener("change", () => {
-            hidden.value = fallback.value ? new Date(fallback.value).toISOString() : ""
-            markEdited()
-          }, { signal })
-          mount.appendChild(fallback)
-          log.warn("InlineDatePicker fallback activated for", mount.id)
-        }
-      })
-    }, 2000);
 
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
@@ -1002,12 +785,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         assignedTo: assignee?.value ?? "",
         goal: goalSelect?.value ?? "",
         recurrence: value("new-task-recurrence"),
-        isRoutine: checked("nt-is-routine"),
+        isRoutine: retainedRoutine,
         checklist: { items: [...checklistItems.values()], input: builderInput?.value ?? "" },
         shopping: { items: [...shoppingListItems], input: shoppingItemInput?.value ?? "", quantity: qtyEl?.value ?? "1",
           category: (shoppingCategory?.value ?? "") as ShoppingItem["category"] },
-        event: { start: value("nt-event-start"), end: value("nt-event-end"), location: value("nt-event-location"),
-          allDay: checked("nt-event-all-day"), calendar: value("nt-event-calendar") },
+        event: { start: value("nt-event-start"), end: value("nt-event-end"), ...retainedEventDetails },
         fields: captureFields(),
       }
     }
@@ -1020,17 +802,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         selectStatus(snapshot.status)
         if (titleInput) {
           titleInput.value = snapshot.title
-          titleInput.style.height = "2.25em"
-          if (snapshot.title) titleInput.dispatchEvent(new Event("input"))
         }
         if (descInput) {
           descInput.value = snapshot.description
-          descInput.style.height = ""
-          if (snapshot.description) descInput.dispatchEvent(new Event("input"))
         }
 
-        resetGlassDropdown("nt-priority-dropdown", "nt-priority-label", "new-task-priority", String(snapshot.priority))
-        resetGlassDropdown("nt-recurrence-dropdown", "nt-recurrence-label", "new-task-recurrence", snapshot.recurrence)
+        const priority = input("new-task-priority")
+        const recurrence = input("new-task-recurrence")
+        if (priority) priority.value = String(snapshot.priority)
+        if (recurrence) recurrence.value = snapshot.recurrence
         selectSavedOption(assignee, snapshot.assignedTo, taskDraftText("assignee_missing"))
         selectSavedOption(goalSelect, snapshot.goal, taskDraftText("goal_missing"))
         preserveAssignee = true
@@ -1042,27 +822,29 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           "nt-contextual-due": snapshot.due, "nt-event-start": snapshot.event.start, "nt-event-end": snapshot.event.end,
         }
         for (const [id, saved] of Object.entries(dates)) {
-          const hidden = input(id)
+          const control = input(id)
           const date = saved ? new Date(saved) : null
           const valid = date && Number.isFinite(date.valueOf()) ? date : null
-          if (hidden) hidden.value = saved
-          datePickers.get(id)?.setValue(valid)
-          const fallback = hidden?.nextElementSibling?.querySelector<HTMLInputElement>("input[type=datetime-local]")
-          if (fallback) fallback.value = valid ? new Date(valid.valueOf() - valid.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : ""
+          if (control instanceof HTMLInputElement) {
+            control.value = !valid ? "" : control.type === "date" ? saved.slice(0, 10)
+              : new Date(valid.valueOf() - valid.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+          }
         }
+        // Preserve older private draft metadata without advertising unsupported creation controls.
+        retainedRoutine = snapshot.isRoutine
+        retainedEventDetails = { location: snapshot.event.location, allDay: snapshot.event.allDay, calendar: snapshot.event.calendar }
         const location = input("nt-event-location")
         if (location) location.value = snapshot.event.location
         const calendar = input("nt-event-calendar")
         if (calendar) calendar.value = snapshot.event.calendar
-        const routine = input("nt-is-routine") as HTMLInputElement | null
         const allDay = input("nt-event-all-day") as HTMLInputElement | null
-        if (routine) routine.checked = snapshot.isRoutine
         if (allDay) allDay.checked = snapshot.event.allDay
 
         checklistItems.clear()
         itemsContainer?.replaceChildren()
         draft = undefined
         snapshot.checklist.items.forEach(appendChecklistItem)
+        updateChecklistCount()
         if (builderInput) builderInput.value = snapshot.checklist.input
         shoppingListItems.length = 0
         shoppingItemsList?.replaceChildren()
@@ -1073,6 +855,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
         customList?.replaceChildren()
         cfContainer?.classList.toggle("hidden", snapshot.fields.length === 0)
+        cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
+        cfAddBtn?.setAttribute("aria-expanded", "false")
+        const options = overlay.querySelector<HTMLDetailsElement>("#nt-options")
+        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length)
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         for (const field of snapshot.fields) {
@@ -1176,6 +962,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     function markEdited() {
       if (!isHydrating) {
         showFieldError()
+        const dateError = document.getElementById("nt-date-error")
+        if (dateError) dateError.hidden = true
         if (drafts) drafts.edited()
         else editedWhileLoading = true
       }
@@ -1219,6 +1007,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             assignee?.selectedOptions[0]?.hasAttribute("data-unavailable") ||
             goalSelect?.selectedOptions[0]?.hasAttribute("data-unavailable"))) {
           showFieldError(taskDraftText("reference_required"))
+          return
+        }
+        const start = value("nt-event-start")
+        const end = value("nt-event-end")
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && new Date(end) <= new Date(start)
+        const dateError = document.getElementById("nt-date-error")
+        if (dateError) dateError.hidden = !invalidDates
+        if (invalidDates) {
+          document.getElementById("nt-event-end")?.focus()
           return
         }
         if (kindInput?.value === "shopping_item" && shoppingQuantity() === null) {
@@ -1307,10 +1104,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
-          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLInputElement | null;
+          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
           const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLInputElement | null;
+          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
 
           const body: Record<string, unknown> = {
             title: finalTitle,
@@ -1330,10 +1127,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (body.task_kind === "checklist") {
             body.checklists = JSON.stringify([...checklistItems.values(), ...currentChecklistDraft()])
           }
-
-          // Routine flag
-          const routineCheck = document.getElementById("nt-is-routine") as HTMLInputElement;
-          if (routineCheck?.checked) body.is_routine = true;
 
           // Shopping list fields
           if (body.task_kind === "shopping_item") {
@@ -1357,12 +1150,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (body.task_kind === "calendar_event") {
             const startEl = document.getElementById("nt-event-start") as HTMLInputElement;
             const endEl = document.getElementById("nt-event-end") as HTMLInputElement;
-            const locEl = document.getElementById("nt-event-location") as HTMLInputElement;
-            const allDay = (document.getElementById("nt-event-all-day") as HTMLInputElement)?.checked;
             if (startEl?.value) body.start_date = new Date(startEl.value).toISOString();
             if (endEl?.value) body.end_date = new Date(endEl.value).toISOString();
-            if (locEl?.value) body.location = locEl.value;
-            if (allDay) body.all_day = true;
           }
 
           // Custom fields
@@ -1433,6 +1222,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
           } else {
             const err = await res.text();
+            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
             showToast(form.dataset.toastError || "Failed to create task", "error");
             log.error("Create task failed:", err);
           }
@@ -1441,6 +1231,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (bound) showFieldError(taskDraftText("invalid_values"))
           else {
             log.error("Form submission error", e)
+            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
             showToast(form.dataset.toastUnexpected || "Unexpected error creating task", "error")
           }
         } finally {
@@ -1458,65 +1249,5 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </script>
 
 <style>
-  @import "../../styles/inline-date-picker.css";
-  .nt-draft-panel {
-    border-top: 1px solid var(--border-dim);
-    padding: 0.625rem clamp(0.75rem, 4vw, 1.5rem);
-    font-size: 0.875rem;
-    overflow-wrap: anywhere;
-  }
   .nt-draft-panel [hidden], .nt-footer [hidden] { display: none !important; }
-  .nt-draft-actions, .nt-draft-confirm {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
-  }
-  .nt-draft-confirm p { width: 100%; }
-  .nt-draft-panel .btn { min-height: 2.75rem; }
-  #nt-capture-validation { color: var(--text-primary); }
-  .nt-kind-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border-radius: 9999px;
-    border: 1px solid var(--border-dim);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-    white-space: nowrap;
-  }
-  .nt-kind-pill:hover {
-    background: color-mix(in srgb, var(--border-dim) 20%, transparent);
-    color: var(--text-primary);
-  }
-  .nt-kind-pill.active {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-    color: var(--accent-text);
-    font-weight: 600;
-  }
-  #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) {
-    opacity: 1;
-  }
-  #nt-add-custom-field-btn {
-    color: var(--accent-text);
-  }
-  #nt-add-custom-field-btn:hover {
-    color: var(--text-primary);
-  }
-  #new-task-form::-webkit-scrollbar {
-    width: 4px;
-  }
-  #new-task-form::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  #new-task-form::-webkit-scrollbar-thumb {
-    background: var(--border-dim);
-    border-radius: 4px;
-  }
 </style>

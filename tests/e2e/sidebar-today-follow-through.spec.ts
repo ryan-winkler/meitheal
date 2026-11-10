@@ -9,10 +9,11 @@ test.describe("Sidebar and Today follow-through", () => {
   test.beforeEach(async ({ request }) => {
     sidebarConfig = (await (await request.get("/api/settings")).json()).sidebar_config
   })
-  test.afterEach(async ({ request }) => {
-    expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
+  test.afterEach(async ({ request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
     for (const id of createdTaskIds.splice(0)) {
-      expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+      expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
     }
   })
 
@@ -50,6 +51,53 @@ test.describe("Sidebar and Today follow-through", () => {
     await page.getByRole("checkbox", { name: "Show Areas in sidebar" }).check()
     await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
     await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(1)
+  })
+
+  test("the entire Areas menu collapses independently and remembers its state without storage dependence", async ({ page }) => {
+    await page.goto("/today", { waitUntil: "domcontentloaded" })
+    const group = page.locator("#sidebar-areas-group")
+    const toggle = page.locator("#project-nav-group-toggle")
+    const home = page.locator("[data-area-toggle]").first()
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __meithealAreasDisclosure?: unknown }).__meithealAreasDisclosure))).toBe(true)
+    await expect(group).toHaveAttribute("open", "")
+    await home.press("Enter")
+    await expect(home).toHaveAttribute("aria-expanded", "false")
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await expect(page.locator("#project-nav-content")).toBeHidden()
+    await expect(page.locator("#project-nav").getByRole("link", { name: "Manage areas & projects" })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("true")
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
+    await expect(home).toHaveAttribute("aria-expanded", "false")
+    await home.press("Enter")
+    await expect(home).toHaveAttribute("aria-expanded", "true")
+
+    await page.setViewportSize({ width: 320, height: 812 })
+    await expect(page.locator("#menu-toggle")).toBeEnabled()
+    await page.locator("#menu-toggle").click()
+    await expect(toggle).toBeInViewport()
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+    await page.locator("#sidebar-toggle-btn").click()
+    await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
+    await page.setViewportSize({ width: 1440, height: 1000 })
+
+    await page.addInitScript(() => {
+      Storage.prototype.getItem = () => { throw new DOMException("Storage blocked", "SecurityError") }
+      Storage.prototype.setItem = () => { throw new DOMException("Storage blocked", "SecurityError") }
+    })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(group).toHaveAttribute("open", "")
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
   })
 
   test("Today stays compact, captures work and native sidebar navigation changes its URL", async ({ page, request, baseURL }) => {

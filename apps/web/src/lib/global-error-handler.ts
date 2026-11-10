@@ -25,6 +25,8 @@ export function initGlobalErrorHandler(): void {
   w[GUARD_KEY] = true
 
   window.addEventListener("error", (event) => {
+    // Match the layout logger: the browser defers these resize notifications without an application failure.
+    if (event.message?.includes("ResizeObserver loop")) return
     // Ignore errors from cross-origin scripts (browser security)
     if (!event.filename || event.filename === "") return
 

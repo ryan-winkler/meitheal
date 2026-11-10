@@ -81,7 +81,13 @@ Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the
 
 An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent.
 
-Open **Personal → Customize appearance** to choose a typeface and corner roundness. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** selects the original typeface and corners. Save to apply them.
+Open **Personal → Customize appearance** to choose all ten layout preferences: navigation layout, navigation color, typeface (including Comic), neutral palette, corner roundness, content width, page headers, navigation edges, panel style, and sidebar behavior. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** stages the original choices; save to apply them. Theme, custom CSS, accent, language, and regional settings keep their existing controls and storage.
+
+Top navigation replaces the desktop sidebar with horizontal, scrollable destination lists. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
+
+Sidebar behavior applies to desktop sidebar navigation. **Remember last state** uses the existing collapse toggle preference. **Start expanded** and **Start folded** set the state each time a page opens; the toggle remains available. **Expand on hover or focus** temporarily opens the rail for pointer or keyboard navigation without moving the page content. These choices do not change per-Area or whole-Areas-group disclosures.
+
+If an appearance save reports a browser storage error, the current appearance and your edited choices stay intact. Retry after allowing site storage. Invalid or old stored choice values use defaults; valid saved and unrelated fields are retained when saving. Appearance preferences are local under `meitheal-appearance`; the remembered sidebar state stays under `meitheal_sidebar_collapsed`. They do not add or rename `/api/settings` fields.
 
 If the theme still resets:
 

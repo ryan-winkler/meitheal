@@ -107,3 +107,7 @@ and restorable via the <kbd>?</kbd> keyboard shortcut.
 ## Edit a Pillar or save a Principle
 
 Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Details to change the Pillar's identity and weight. **Add principle** opens a form for a boundary. Select **Non-Negotiable** when it should guide supported automation prompts. **Save principle** updates the detail list and card count after the App confirms the write. If saving fails, the form keeps the statement and checkbox for retry.
+
+## Collapsing the sidebar Areas menu
+
+The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. The Manage areas link remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it. A folded main sidebar keeps its compact Planning link.

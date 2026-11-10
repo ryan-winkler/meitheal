@@ -4,7 +4,7 @@
  * Handles theme selection, custom theme import/export/delete,
  * locale, timezone, week start, and date format preferences.
  */
-import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "@lib/appearance-preferences"
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { DEFAULT_ACCENT } from "@lib/design-tokens"
 import { showToast } from "@lib/toast"
@@ -93,7 +93,7 @@ function initAppearanceSettings(): void {
   const root = document.documentElement
   const fields = Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => ({
     name,
-    attribute: `data-appearance-${name}`,
+    attribute: appearanceAttribute(name),
     select: form.elements.namedItem(name) as HTMLSelectElement,
     ...preference,
   }))
@@ -125,7 +125,7 @@ function initAppearanceSettings(): void {
       status.textContent = status.dataset.error ?? ""
       return
     }
-    for (const { attribute, value } of selected) root.setAttribute(attribute, value)
+    applyAppearancePreferences(Object.fromEntries(selected.map(({ name, value }) => [name, value])) as AppearancePreferences)
     status.textContent = status.dataset.saved ?? ""
   })
 }
