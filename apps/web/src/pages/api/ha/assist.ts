@@ -1,11 +1,10 @@
 import type { APIRoute } from "astro"
 import { askAssist } from "../../../domains/ha/ha-services"
 import { getHAConnection } from "../../../domains/ha/ha-connection"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
+import { assistResponseHeaders as headers, requireAssistAdministrator } from "../../../lib/assist-access"
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>()
 const rateWindowMs = 60_000
-const headers = { "cache-control": "private, no-store" }
 
 function checkRateLimit(key: string): boolean {
   const now = Date.now()
@@ -25,11 +24,8 @@ function checkRateLimit(key: string): boolean {
 
 /** Conversation commands execute with the App's Home Assistant credential. */
 export const POST: APIRoute = async ({ request, locals }) => {
-  const denied = requireSystemSettingsAdmin(request, locals)
-  if (denied) {
-    denied.headers.set("cache-control", headers["cache-control"])
-    return denied
-  }
+  const denied = await requireAssistAdministrator(request, locals)
+  if (denied) return denied
 
   const body = await request.json().catch(() => null)
   const text = typeof body?.text === "string" ? body.text.trim() : ""

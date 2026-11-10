@@ -124,6 +124,18 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
       expect(await failure.text()).not.toContain(data.text)
     }
     expect((await api.post(assist, { headers, data: { text: "  " } })).status()).toBe(400)
+
+    const beforeRevocation = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "assist-calls" })
+    const [{ calls }] = await beforeRevocation
+    await setDatabaseCoreRole("demoted")
+    expect((await api.get(agents, { headers })).status()).toBe(403)
+    expect((await api.post(assist, { headers, data })).status()).toBe(403)
+    await setDatabaseCoreRole("stalled")
+    expect((await api.post(assist, { headers, data })).status()).toBe(503)
+    const afterRevocation = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "assist-calls" })
+    expect((await afterRevocation)[0].calls).toEqual(calls)
   } finally {
     await api.dispose()
   }

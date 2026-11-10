@@ -1,16 +1,12 @@
 import type { APIRoute } from "astro"
 import { listConversationAgents } from "../../../domains/ha/ha-services"
 import { getHAConnection } from "../../../domains/ha/ha-connection"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
+import { assistResponseHeaders as headers, requireAssistAdministrator } from "../../../lib/assist-access"
 
-const headers = { "cache-control": "private, no-store" }
 
 export const GET: APIRoute = async ({ request, locals }) => {
-  const denied = requireSystemSettingsAdmin(request, locals)
-  if (denied) {
-    denied.headers.set("cache-control", headers["cache-control"])
-    return denied
-  }
+  const denied = await requireAssistAdministrator(request, locals)
+  if (denied) return denied
 
   if (!await getHAConnection()) {
     return Response.json({ agents: [], error: "Home Assistant is disconnected." }, { status: 503, headers })
