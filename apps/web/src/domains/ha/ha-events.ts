@@ -63,7 +63,7 @@ export async function fireHAEvent(
   try {
     await conn.sendMessagePromise({
       type: "fire_event", event_type: eventType,
-      event_data: { ...eventData, source: "meitheal", timestamp: new Date().toISOString() },
+      event_data: { ...eventData, domain: "meitheal", source: "meitheal", timestamp: new Date().toISOString() },
     });
     logger.log("info", {
       event: "ha.event.fired", domain: "ha", component: "ha-events",

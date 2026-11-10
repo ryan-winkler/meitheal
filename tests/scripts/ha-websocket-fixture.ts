@@ -9,6 +9,7 @@ export async function startHAWebSocketFixture(options: {
   entities?: Record<string, Record<string, unknown>>
 } = {}) {
   const tokens: string[] = []
+  const firedEvents: Array<{ event_type: string; event_data: Record<string, unknown> }> = []
   const held = new Map<string, () => void>()
   let events: unknown[] = []
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" })
@@ -29,6 +30,7 @@ export async function startHAWebSocketFixture(options: {
         else accepted()
       } else if (message.type === "ping") send({ id: message.id, type: "pong" })
       else {
+        if (message.type === "fire_event") firedEvents.push({ event_type: message.event_type, event_data: message.event_data })
         const result = message.type === "get_states" ? []
           : message.type === "call_service" && message.domain === "calendar" && message.service === "get_events"
             ? { response: { [message.target.entity_id]: { events } } }
@@ -43,6 +45,7 @@ export async function startHAWebSocketFixture(options: {
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     tokens,
+    firedEvents,
     release(token: string) {
       const release = held.get(token)
       if (!release) throw new Error("No held fixture authentication")

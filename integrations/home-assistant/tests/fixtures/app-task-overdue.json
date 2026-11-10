@@ -1,0 +1,9 @@
+{
+  "event_type": "meitheal_task_overdue",
+  "event_data": {
+    "task_id": "contract-task",
+    "title": "Overdue event contract",
+    "domain": "meitheal",
+    "source": "meitheal"
+  }
+}
