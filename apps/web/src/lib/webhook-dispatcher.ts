@@ -61,7 +61,7 @@ async function getN8nAutoEvents(): Promise<string[]> {
     );
     if (result.rows.length > 0) {
       const parsed = JSON.parse(String(result.rows[0]!.value));
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         _cachedN8nEvents = parsed;
         _n8nEventsCachedAt = now;
         return parsed;
@@ -69,7 +69,7 @@ async function getN8nAutoEvents(): Promise<string[]> {
     }
   } catch { /* fall through to defaults */ }
   // Default: all events enabled
-  const defaults = ["task.created", "task.updated", "task.completed", "task.deleted"];
+  const defaults = ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue"];
   _cachedN8nEvents = defaults;
   _n8nEventsCachedAt = now;
   return defaults;
@@ -178,7 +178,7 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
 
     if (webhookSettings.n8n_webhook_url) {
       let events = ["*"];
-      if (Array.isArray(webhookSettings.n8n_events) && webhookSettings.n8n_events.length > 0) {
+      if (Array.isArray(webhookSettings.n8n_events)) {
         events = webhookSettings.n8n_events;
       }
       const n8nHeaders: Record<string, string> = {};
