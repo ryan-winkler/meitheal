@@ -25,15 +25,19 @@ function taskVersionConflict(serverVersion: number, clientVersion: number): Resp
   })
 }
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, url }) => {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
+  const headers = {
+    "content-type": "application/json",
+    ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
+  }
 
   const row = await repo.findById(params.id!)
   if (!row) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
-      headers: { "content-type": "application/json" },
+      headers,
     })
   }
 
@@ -49,7 +53,7 @@ export const GET: APIRoute = async ({ params }) => {
 
   return new Response(JSON.stringify(enriched), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers,
   })
 }
 

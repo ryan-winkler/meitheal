@@ -51,6 +51,7 @@ interface TimelineTask {
   area_id: string | null
   project_id: string | null
   assigned_to: string | null
+  deferred_at: number | null
   is_overdue: boolean
 }
 
@@ -1124,6 +1125,12 @@ function renderGantt(
     name.textContent = bar.name
     name.title = bar.name
     row.appendChild(name)
+    if (bar.original.deferred_at != null) {
+      const badge = document.createElement("span")
+      badge.style.cssText = "flex:none;margin-inline:6px;color:var(--text-secondary);font-size:11px"
+      badge.textContent = window.mI18n?.get("deferral.title") ?? "Deferred"
+      row.appendChild(badge)
+    }
 
     // Dynamic field cells based on visibleFields
     for (const fieldId of visibleFields) {

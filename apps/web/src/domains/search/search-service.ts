@@ -123,6 +123,7 @@ function buildTaskSearchItem(row: TaskRow, query: string, taskFields: TaskSearch
       score,
       status,
       priority,
+      deferred: row.deferred_at != null,
     },
   }
 

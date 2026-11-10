@@ -288,6 +288,92 @@ for (const secure of [true, false]) {
   })
 }
 
+test("Deferred and cross-page Details wait for the new worker through ingress", async ({ browser }) => {
+  const child = server!
+  async function selectWorker(old: boolean) {
+    const ack = once(child, "message", { signal: AbortSignal.timeout(5000) })
+    child.send({ type: "fixture-worker", old })
+    expect((await ack)[0]).toEqual({ oldWorker: old })
+  }
+  await selectWorker(true)
+  const context = await browser.newContext({ serviceWorkers: "allow", locale: "en-IE", extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const page = await context.newPage()
+    const paths: string[] = []
+    const errors: string[] = []
+    const failed: string[] = []
+    page.on("pageerror", error => errors.push(error.message))
+    page.on("console", entry => { if (entry.type() === "error") errors.push(entry.text()) })
+    page.on("requestfailed", request => failed.push(`${request.failure()?.errorText} ${new URL(request.url()).pathname}`))
+    page.on("response", response => {
+      if (response.status() >= 400) failed.push(`${response.status()} ${new URL(response.url()).pathname}`)
+    })
+    context.on("request", request => {
+      const url = new URL(request.url())
+      if (url.origin === origin) paths.push(url.pathname)
+    })
+    const at = (route: string) => origin + prefix + route
+    const headers = { origin }
+    const created = await context.request.post(at("/api/tasks"), {
+      data: { title: "Deferred older worker fixture", status: "pending" }, headers,
+    })
+    expect(created.status()).toBe(201)
+    const task = await created.json()
+    const detail = await context.request.get(at(`/api/tasks/${task.id}`))
+    expect(detail.status()).toBe(200)
+    expect((await context.request.patch(at(`/api/tasks/${task.id}/deferral`), {
+      data: { deferred: true, updated_at: (await detail.json()).task_version, deferral_revision: null }, headers,
+    })).status()).toBe(200)
+    await page.goto(at("/offline"))
+    await page.evaluate(async path => { await navigator.serviceWorker.register(path + "/sw.js") }, prefix)
+    await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
+
+    let detailReads = 0
+    page.on("request", request => {
+      if (new URL(request.url()).searchParams.has("deferralRead")) detailReads++
+    })
+    await page.goto(at("/tasks?view=table#table"))
+    try {
+      await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+    } catch (error) {
+      const modal = await page.evaluate(() => ({
+        ready: document.getElementById("task-detail-overlay")?.dataset.detailController,
+        scripts: Array.from(document.scripts).map(script => script.src).filter(Boolean),
+      }))
+      throw new Error(JSON.stringify({ modal, errors, failed, paths }, null, 2), { cause: error })
+    }
+    await page.locator(`.table-row[data-id="${task.id}"] [data-open-table-task]`).click()
+    await expect(page.locator("#td-title")).toHaveValue("Deferred older worker fixture")
+    await expect(page.locator("#td-deferral-action")).toBeHidden()
+
+    const deferredUrl = at(`/deferred?open=${task.id}`)
+    await page.goto(deferredUrl)
+    await expect(page.locator("[data-deferred-status]")).toContainText("activate the update")
+    await expect(page.locator("[data-deferred-card]")).toHaveCount(0)
+    expect(detailReads).toBe(0)
+    await expect.poll(() => page.evaluate(async url => Boolean(await caches.match(url)), deferredUrl)).toBe(true)
+
+    await selectWorker(false)
+    await page.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())?.update() })
+    await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true)
+    await page.getByRole("link", { name: "Reload Deferred" }).click()
+    await expect(page.locator("#td-deferral-action")).toHaveText("Resume", { timeout: 10_000 })
+    await expect(page.locator("#td-deferral-action")).toBeVisible()
+    expect(detailReads).toBeGreaterThan(0)
+    expect(paths.filter(path => !path.startsWith(prefix + "/"))).toEqual([])
+    await expect.poll(() => page.evaluate(async url => {
+      const entries = await Promise.all((await caches.keys()).map(async name => {
+        const cache = await caches.open(name)
+        return (await cache.keys()).some(request => request.url === url) ? [name] : []
+      }))
+      return entries.flat()
+    }, deferredUrl)).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 test("ingress loads board dependencies from the app path", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])

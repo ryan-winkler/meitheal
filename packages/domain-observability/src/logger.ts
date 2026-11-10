@@ -204,7 +204,7 @@ export function createLogger(config: LoggerConfig) {
 }
 
 /** Valid actor types — use for API input validation */
-export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm"] as const
+export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm", "agent"] as const
 export const VALID_ACTOR_TYPE_SET: ReadonlySet<string> = new Set(VALID_ACTOR_TYPES)
 
 /** Valid event types — use for API input validation */

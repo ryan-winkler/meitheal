@@ -128,7 +128,15 @@ Use this after changing the Kanban shell or `kanban-controller.ts`.
 
 A task write that returns `TASK_VERSION_CONFLICT` should be checked by reloading the task before retrying. A `TASK_BLOCKED` response identifies the open dependencies preventing activation. Native clients can pass the observed epoch-millisecond `updated_at` to reject stale writes. Intake decisions also pass `expected_status: "backlog"` and require an exact version and status match in SQLite.
 
+The timestamp returned when creating a task is its initial stored version. Use it for an immediate guarded intake decision, or read the latest task version if another client may have edited the task.
+
 In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
+
+## Deferred Work Verification
+
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+
+Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
 ## Table Shell Verification
 

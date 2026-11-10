@@ -23,6 +23,7 @@ const taskRoutes = new Map<string, MethodScopes>([
   ["", { ...taskRead, PUT: "tasks:write", PATCH: "tasks:write", ...taskDelete }],
   ["activity", taskRead],
   ["comments", { ...taskRead, ...taskCreate }],
+  ["deferral", { PATCH: "tasks:write" }],
   ["duplicate", taskCreate],
   ["links", { ...taskRead, ...taskCreate, DELETE: "tasks:write" }],
   ["time", { ...taskRead, ...taskCreate }],

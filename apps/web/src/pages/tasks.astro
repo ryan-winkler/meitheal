@@ -223,6 +223,9 @@ try {
     />
     <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="toolbar" aria-label="Kanban view actions">
+      <a href="/deferred" class="kanban-toolbar-btn" data-astro-prefetch="false">
+        {t("deferral.title", locale)}
+      </a>
       <button
         type="button"
         class="kanban-toolbar-btn"
@@ -481,6 +484,8 @@ try {
                     data-priority={String(p)}
                     data-promoted={String(promoted)}
                     data-status={String(task.status)}
+                    data-deferral-version={task.task_version}
+                    data-deferral-revision={task.deferral_revision ?? ""}
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
                     data-area={String(task.area_id ?? "default")}

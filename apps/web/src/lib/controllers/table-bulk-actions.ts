@@ -12,6 +12,7 @@
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
+import { reconcileTableDeferral } from "./table-deferral"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
           if (field === "status") {
             row.dataset.status = String(value)
             row.classList.toggle("row-done", value === "complete")
+            void reconcileTableDeferral(row, String(value), deps.signal)
             // Gamification + confetti on completion
             if (value === "complete") {
               const priority = Number(row?.dataset.priority ?? 3)

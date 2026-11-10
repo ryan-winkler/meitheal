@@ -137,7 +137,7 @@ const schemas = {
       id: { $ref: "#/components/schemas/TaskId" },
       title: { type: "string", description: "Task title — the primary human-readable label" },
       description: { type: "string", nullable: true, description: "Rich text task description" },
-      status: { type: "string", enum: ["todo", "in_progress", "complete", "archived"], description: "Current task lifecycle state" },
+      status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
       due_date: { type: "string", format: "date-time", nullable: true },
@@ -152,7 +152,10 @@ const schemas = {
       board_name: { type: "string", nullable: true },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
-      updated_at: { type: "integer", description: "Unix timestamp (ms)" },
+      updated_at: { oneOf: [{ type: "integer" }, { type: "string" }], description: "Stored Unix milliseconds or legacy ISO timestamp" },
+      task_version: { type: "integer", minimum: 0, description: "Normalized workflow timestamp used by guarded writes" },
+      deferred_at: { type: "integer", nullable: true, description: "Unix milliseconds when open work was deferred" },
+      deferral_revision: { type: "string", nullable: true, pattern: "^[a-f0-9]{32}$", description: "Opaque deferral concurrency token" },
     },
     required: ["id", "title", "status"],
   },
@@ -189,6 +192,11 @@ const schemas = {
       area_id: { type: "string", nullable: true },
       goal_id: { type: "string", nullable: true },
       status: { type: "string" },
+      task_counts: {
+        type: "object",
+        properties: { active_open: { type: "integer" }, total: { type: "integer" }, complete: { type: "integer" } },
+        required: ["active_open", "total", "complete"],
+      },
     },
     required: ["id", "name"],
   },
@@ -550,6 +558,7 @@ const paths = {
       description: "Retrieve tasks filtered by status, area, project, labels, priority, assignee, board, or due date. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
       parameters: [
         { name: "status", in: "query", schema: { type: "string" }, description: "Filter: todo, in_progress, complete, archived" },
+        { name: "deferred", in: "query", schema: { type: "string", enum: ["0", "1"] }, description: "Use 1 for deferred work and 0 for other work. Omission returns both." },
         { name: "area_id", in: "query", schema: { type: "string" } },
         { name: "project_id", in: "query", schema: { type: "string" } },
         { name: "board_name", in: "query", schema: { type: "string" } },
@@ -562,7 +571,11 @@ const paths = {
         { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
       ],
       responses: {
-        200: jsonContent(arrOf("Task"), "Task list"),
+        200: jsonContent({
+          type: "object",
+          properties: { tasks: arrOf("Task"), total: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" } },
+          required: ["tasks", "total", "limit", "offset"],
+        }, "Task page and matching total"),
         400: problemContent("Invalid task filter"),
         500: err500,
       },
@@ -758,7 +771,7 @@ const paths = {
       operationId: "reorderTasks",
       tags: ["Tasks"],
       summary: "Reorder tasks by position",
-      description: "Set the supplied task positions or move one card before or after another card in the same Kanban lane and promotion group.",
+      description: "Reorder the supplied tasks across their shared rank slots, or move one card relative to another card in the same Kanban lane and promotion group.",
       requestBody: {
         required: true,
         content: { "application/json": { schema: {
@@ -773,11 +786,69 @@ const paths = {
           oneOf: [{ required: ["ordered_ids"] }, { required: ["task_id", "anchor_id", "lane", "before"] }],
         } } },
       },
-      responses: { 200: { description: "Reordered" }, 409: { description: "The card and anchor must still be in the same lane and promotion group" } },
+      responses: {
+        200: { description: "Reordered" },
+        409: jsonContent({
+          type: "object",
+          properties: { error: { type: "string" }, errorCode: { type: "string", const: "TASK_ORDER_CONFLICT" } },
+          required: ["error", "errorCode"],
+        }, "A requested card is missing, deferred, duplicated, or outside the required lane or promotion group"),
+      },
     },
   },
 
   // ── Task Sub-resources ──
+  "/api/tasks/{id}/deferral": {
+    patch: {
+      operationId: "setTaskDeferral",
+      tags: ["Tasks"],
+      summary: "Defer or resume open work",
+      description: "Use the task_version and deferral_revision from the current task read. Resuming preserves the underlying workflow status.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: {
+          type: "object",
+          properties: {
+            deferred: { type: "boolean" },
+            updated_at: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            deferral_revision: { type: "string", nullable: true, pattern: "^[a-f0-9]{32}$" },
+          },
+          required: ["deferred", "updated_at", "deferral_revision"],
+          additionalProperties: false,
+        } } },
+      },
+      responses: {
+        200: jsonContent({
+          type: "object",
+          properties: {
+            id: { type: "string" }, status: { type: "string" }, updated_at: { type: "integer" },
+            deferred_at: { type: "integer", nullable: true },
+            deferral_revision: { type: "string", nullable: true, pattern: "^[a-f0-9]{32}$" },
+          },
+          required: ["id", "status", "updated_at", "deferred_at", "deferral_revision"],
+        }, "Current deferral state"),
+        400: problemContent("Invalid deferral request"),
+        404: problemContent("Task not found"),
+        409: jsonContent({
+          type: "object",
+          properties: {
+            error: { type: "string" },
+            errorCode: { type: "string", enum: ["TASK_VERSION_CONFLICT", "TASK_DEFERRAL_TERMINAL", "TASK_BLOCKED"] },
+            server_updated_at: { type: "integer" }, client_updated_at: { type: "integer" },
+            server_deferral_revision: { type: "string", nullable: true },
+            client_deferral_revision: { type: "string", nullable: true },
+            blocked_by: { type: "array", items: {
+              type: "object",
+              properties: { id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, ticket_key: { type: "string", nullable: true } },
+            } },
+          },
+          required: ["error", "errorCode"],
+        }, "The current task conflicts with the requested change"),
+        413: problemContent("Deferral request exceeds 1 KiB"),
+      },
+    },
+  },
   "/api/tasks/{id}/comments": {
     get: {
       operationId: "getTaskComments",
@@ -929,7 +1000,10 @@ const paths = {
     post: { operationId: "createProject", tags: ["Hierarchy"], summary: "Create a project", requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 201: jsonContent(ref("Project"), "Created") } },
   },
   "/api/projects/{id}": {
-    get: { operationId: "getProject", tags: ["Hierarchy"], summary: "Get project details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Project"), "Project") } },
+    get: { operationId: "getProject", tags: ["Hierarchy"], summary: "Get project details", parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "string" } },
+      { name: "task_counts", in: "query", schema: { type: "string", enum: ["1"] }, description: "Include full-project active, total and completed task counts." },
+    ], responses: { 200: jsonContent(ref("Project"), "Project") } },
     put: { operationId: "updateProject", tags: ["Hierarchy"], summary: "Update a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 200: jsonContent(ref("Project"), "Updated") } },
     delete: { operationId: "deleteProject", tags: ["Hierarchy"], summary: "Delete a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },

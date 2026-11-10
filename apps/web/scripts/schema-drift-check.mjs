@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { openDatabase } from "./database-client.mjs"
+import { validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
 
 const execFileAsync = promisify(execFile);
 
@@ -17,7 +18,9 @@ const expectedSchema = {
     "idempotency_key",
     "request_id",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "deferred_at",
+    "deferral_revision"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
@@ -63,6 +66,7 @@ async function main() {
   const failures = [];
 
   try {
+    await validateTaskDeferralSchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",

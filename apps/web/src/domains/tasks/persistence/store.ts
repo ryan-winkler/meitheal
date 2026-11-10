@@ -7,6 +7,7 @@ import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
 import { openDatabase } from "../../../../scripts/database-client.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
+import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
 
 export interface PersistedTask {
   id: string;
@@ -970,16 +971,20 @@ async function initializeSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  // Schema version tracking (PRA-23): set version after all migrations complete
-  const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
-  const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 12
-  if (storedVersion < targetVersion) {
-    await client.execute({
+  const targetVersion = 13
+  const migration = await client.transaction("write")
+  try {
+    await applyTaskDeferralMigration(migration)
+    // Publish the schema version atomically with the last migration.
+    await migration.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      args: [String(targetVersion), Date.now()],
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            WHERE CAST(app_settings.value AS INTEGER) < ?`,
+      args: [String(targetVersion), Date.now(), targetVersion],
     })
+    await migration.commit()
+  } finally {
+    migration.close()
   }
   currentSchemaVersion = targetVersion
 }

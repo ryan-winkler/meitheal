@@ -34,6 +34,11 @@ export const GET: APIRoute = async ({ url }) => {
   }
   const status = url.searchParams.get("status")
   if (status) findOpts.status = status
+  const deferred = url.searchParams.get("deferred")
+  if (deferred !== null) {
+    if (deferred !== "0" && deferred !== "1") return apiError("deferred must be 0 or 1", 400)
+    findOpts.deferred = deferred === "1"
+  }
   const dueDate = url.searchParams.get("due_date")
   if (dueDate !== null) {
     const parsed = new Date(`${dueDate}T00:00:00.000Z`)
@@ -95,6 +100,9 @@ export const GET: APIRoute = async ({ url }) => {
       eisenhower_override: Number(r.eisenhower_override ?? 0),
       created_at: r.created_at,
       updated_at: r.updated_at,
+      task_version: r.task_version,
+      deferred_at: r.deferred_at,
+      deferral_revision: r.deferral_revision,
     }
   })
 

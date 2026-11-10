@@ -1,3 +1,4 @@
+import { desc, sql } from "drizzle-orm"
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const tasks = sqliteTable(
@@ -13,13 +14,17 @@ export const tasks = sqliteTable(
     idempotencyKey: text("idempotency_key").notNull(),
     requestId: text("request_id").notNull(),
     createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull()
+    updatedAt: integer("updated_at").notNull(),
+    deferredAt: integer("deferred_at"),
+    deferralRevision: text("deferral_revision")
   },
   (table) => ({
     idempotencyUnique: uniqueIndex("tasks_idempotency_unique").on(table.idempotencyKey),
     requestIdx: index("tasks_request_idx").on(table.requestId),
     stateIdx: index("tasks_calendar_sync_state_idx").on(table.calendarSyncState),
-    createdIdx: index("tasks_created_idx").on(table.createdAt)
+    createdIdx: index("tasks_created_idx").on(table.createdAt),
+    deferredOrderIdx: index("tasks_deferred_order_idx").on(desc(table.deferredAt), table.id)
+      .where(sql`${table.deferredAt} IS NOT NULL`)
   })
 );
 

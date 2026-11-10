@@ -40,9 +40,7 @@ export function quadrantPreview(urgency: number, importance: number): string {
 /** Open the triage overlay by fetching unclassified tasks */
 export async function startTriage(): Promise<void> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/tasks?status=open"
-    )
+    const res = await fetch("/api/tasks?status=open&deferred=0")
     if (!res.ok) { showToast("common.failed_update", "error"); return }
     const data = await res.json()
     const raw = Array.isArray(data) ? data : (data.tasks ?? [])

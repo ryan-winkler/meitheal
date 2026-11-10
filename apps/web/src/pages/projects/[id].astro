@@ -199,6 +199,7 @@ const tabs = [
                 />
                 {ticketKey && <span class="task-ticket-key">{ticketKey}</span>}
                 <span class={`task-title-text ${isDone ? "done" : ""}`}>{String(task.title)}</span>
+                {task.deferred_at != null && <span class="task-ticket-key">{t("deferral.title", locale)}</span>}
                 <BotBadge owner={String(task.owner ?? "")} handoffState={String(task.handoff_state ?? "")} />
               </div>
               <div class="task-item-right">

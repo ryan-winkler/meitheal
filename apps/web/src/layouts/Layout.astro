@@ -65,15 +65,16 @@ try {
   await ensureSchema();
   const client = getPersistenceClient();
   const result = await client.execute(
-    "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status",
+    "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks GROUP BY status",
   );
   for (const row of result.rows) {
     const r = row as Record<string, unknown>;
     const s = String(r.status);
     const c = Number(r.cnt);
+    const open = Number(r.open_count)
     taskCounts.total += c;
-    if (s === "active") taskCounts.active += c;
-    if (s === "pending" || s === "backlog") taskCounts.pending += c;
+    if (s === "active") taskCounts.active += open
+    if (s === "pending" || s === "backlog") taskCounts.pending += open
   }
 } catch {
   /* DB not available */

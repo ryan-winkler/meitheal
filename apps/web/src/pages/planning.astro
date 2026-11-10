@@ -43,7 +43,7 @@ for (const task of tasks) {
   }
 }
 
-const backlogCount = tasks.filter(task => normalizeStatus(task.status) === STATUS.BACKLOG).length
+const backlogCount = tasks.filter(task => task.deferred_at === null && normalizeStatus(task.status) === STATUS.BACKLOG).length
 let triageMode: TriageMode = "unavailable"
 
 // RICE-scored tasks

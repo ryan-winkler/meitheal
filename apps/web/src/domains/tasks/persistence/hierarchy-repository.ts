@@ -8,6 +8,8 @@
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 import type { Client } from "@libsql/client"
+import { getStatusDef, STATUS } from "../../../lib/status-config"
+import { deferralTerminalStatusesSql } from "./task-deferral-status"
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -260,6 +262,18 @@ export class HierarchyRepository {
       args: [id],
     })
     return result.rows[0] ? this.mapProject(result.rows[0] as Record<string, unknown>) : null
+  }
+
+  async getProjectTaskCounts(id: string): Promise<{ active_open: number; total: number; complete: number }> {
+    const completed = [STATUS.COMPLETE, ...(getStatusDef(STATUS.COMPLETE)?.aliases ?? [])]
+    const { rows: [counts] } = await this.client.execute({
+      sql: `SELECT COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE deferred_at IS NULL AND lower(status) NOT IN ${deferralTerminalStatusesSql}) AS active_open,
+                  COUNT(*) FILTER (WHERE lower(status) IN (${completed.map(() => "?").join(", ")})) AS complete
+            FROM tasks WHERE project_id = ?`,
+      args: [...completed, id],
+    })
+    return { total: Number(counts?.total), active_open: Number(counts?.active_open), complete: Number(counts?.complete) }
   }
 
   async createProject(data: {

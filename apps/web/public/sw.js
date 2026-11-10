@@ -227,7 +227,8 @@ function isDatabaseExport(url) {
 }
 
 function isNetworkOnlyPage(path, params) {
-  return path === "/triage" ||
+  return path === "/triage" || path === "/deferred" ||
+    (/^\/api\/tasks\/[^/]+$/.test(path) && params.has("deferralRead")) ||
     (path === "/tasks" && params.has("boardRefresh")) ||
     (path === "/today" && params.has("unscheduledPage"))
 }
@@ -445,7 +446,7 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "TRIAGE_NETWORK_ONLY") {
+  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY"].includes(event.data?.type)) {
     event.ports[0]?.postMessage(true)
   }
 

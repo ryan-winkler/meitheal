@@ -5,6 +5,8 @@
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { showToast } from "@lib/toast"
+import { isDeferralTerminalStatus } from "@domains/tasks/persistence/task-deferral-status"
+import { allowsDeferral, notifyTaskCountsChanged, readDeferralGuard, writeDeferral } from "@lib/deferral-client"
 
 export function initContextMenu(
   board: HTMLElement,
@@ -22,6 +24,43 @@ export function initContextMenu(
 
   let trigger: HTMLButtonElement | null = null
   const pendingPromotions = new Set<string>()
+  let deferralBusy = false
+  const workers = navigator.serviceWorker
+  let workerCheck = allowsDeferral()
+
+  workers?.addEventListener("controllerchange", () => {
+    closeMenu(true)
+    workerCheck = allowsDeferral()
+  }, { signal })
+
+  async function deferCard(card: HTMLElement, id: string, trigger: HTMLButtonElement) {
+    const guard = readDeferralGuard(Number(card.dataset.deferralVersion), card.dataset.deferralRevision || null)
+    if (!guard || deferralBusy || card.dataset.deferralStale) return
+    const next = (card.nextElementSibling ?? card.previousElementSibling) as HTMLElement | null
+    const lane = card.closest<HTMLElement>(".kanban-column")?.dataset.status
+    const focus = { lane, taskId: next?.dataset.id }
+    deferralBusy = true
+    card.setAttribute("aria-busy", "true")
+    try {
+      if (!await allowsDeferral() || signal.aborted || !card.isConnected) return
+      const result = await writeDeferral(id, true, guard, signal)
+      if (result.kind === "saved") notifyTaskCountsChanged(card.dataset.areaId)
+      if (signal.aborted || !card.isConnected) return
+      if (result.kind === "saved") {
+        showToast("deferral.deferred")
+        await refreshBoard(focus)
+      } else if (result.kind === "changed" || result.kind === "uncertain") {
+        card.dataset.deferralStale = "true"
+        board.dispatchEvent(new CustomEvent("kanban:deferral-retry", { bubbles: true, detail: { lane, taskId: id } }))
+      } else {
+        showToast("deferral.failed", "error")
+        trigger.focus()
+      }
+    } finally {
+      deferralBusy = false
+      if (card.isConnected) card.removeAttribute("aria-busy")
+    }
+  }
 
   function closeMenu(restoreFocus = false) {
     const previous = trigger
@@ -60,6 +99,7 @@ export function initContextMenu(
       run()
     }, { signal })
     menu.append(button)
+    return button
   }
 
   board.addEventListener("click", (event) => {
@@ -119,7 +159,7 @@ export function initContextMenu(
       if (title) addAction(title, () => { void moveTask(card, lane) })
     }
 
-    addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
+    const deleteAction = addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
       const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete" })
       if (!confirmed) return
       try {
@@ -135,6 +175,14 @@ export function initContextMenu(
       }
       showToast("Failed to delete task", "error")
     }, true)
+    if (card.dataset.deferralVersion && !card.dataset.deferralStale && !isDeferralTerminalStatus(card.dataset.status ?? "")) {
+      void workerCheck.then(allowed => {
+        if (!allowed || signal.aborted || trigger !== btn || !card.isConnected || deleteAction.parentElement !== menu) return
+        const action = addAction(window.mI18n?.get("deferral.defer") ?? "Defer", () => { void deferCard(card, id, btn) })
+        menu.insertBefore(action, deleteAction)
+        positionMenu()
+      })
+    }
 
     menu.hidden = false
     menu.style.maxHeight = ""

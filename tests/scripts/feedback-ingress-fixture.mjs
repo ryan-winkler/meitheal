@@ -5,9 +5,44 @@ import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/sc
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../../apps/web/dist/server/entry.mjs")
 const configuredPath = "/api/hassio_ingress/feedback-fixture"
+let serveOldWorker = false
+process.on("message", message => {
+  if (message?.type !== "fixture-worker") return
+  serveOldWorker = message.old === true
+  process.send({ oldWorker: serveOldWorker })
+})
+
+const oldWorker = `
+self.addEventListener("install", () => self.skipWaiting())
+self.addEventListener("activate", event => event.waitUntil(self.clients.claim()))
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url)
+  if (event.request.method !== "GET") return
+  if (!url.pathname.endsWith("/deferred")) {
+    event.respondWith(fetch(event.request))
+    return
+  }
+  event.respondWith((async () => {
+    const cache = await caches.open("meitheal-nav-v0.0.1")
+    try {
+      const response = await fetch(event.request)
+      if (response.ok) await cache.put(event.request, response.clone())
+      return response
+    } catch {
+      return await cache.match(event.request) ?? Response.error()
+    }
+  })())
+})
+`
 
 const server = http.createServer((request, response) => {
   const fromSupervisor = request.url?.startsWith(`${configuredPath}/`) ?? false
+  if (fromSupervisor && serveOldWorker && request.method === "GET" &&
+      request.url.split("?")[0] === `${configuredPath}/sw.js`) {
+    response.writeHead(200, { "content-type": "application/javascript", "cache-control": "no-store" })
+    response.end(oldWorker)
+    return
+  }
   const user = /(?:^|;\s*)feedback-fixture=(admin|member|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
   if (fromSupervisor) {
     request.url = request.url.slice(configuredPath.length)

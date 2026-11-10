@@ -1,25 +1,8 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { workerAllowsNetworkOnly } from "./network-only-worker"
 
 const cacheModes = new Set(["visible", "hidden", "disabled", "unavailable"])
-
-function workerAllowsFreshQueue(worker: ServiceWorker): Promise<boolean> {
-  return new Promise(resolve => {
-    const channel = new MessageChannel()
-    const timer = window.setTimeout(() => finish(false), 500)
-    function finish(ready: boolean) {
-      window.clearTimeout(timer)
-      channel.port1.close()
-      resolve(ready)
-    }
-    channel.port1.onmessage = event => finish(event.data === true)
-    try {
-      worker.postMessage({ type: "TRIAGE_NETWORK_ONLY" }, [channel.port2])
-    } catch {
-      finish(false)
-    }
-  })
-}
 
 function queueUrl(): URL {
   const url = new URL(location.href)
@@ -97,7 +80,7 @@ function initTriage(signal: AbortSignal) {
     setStatus(message("loading", "Loading intake…"))
     let fragment = ui.initial
     try {
-      if (worker && !await workerAllowsFreshQueue(worker)) {
+      if (worker && !await workerAllowsNetworkOnly(worker, "TRIAGE_NETWORK_ONLY")) {
         if (canApply()) {
           updateRequired = true
           setStatus(message("worker_update", "Reload Triage to activate the update before opening the queue."), true)

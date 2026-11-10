@@ -4,7 +4,7 @@
  * Body: { ordered_ids: string[] }
  *   - ordered_ids: task IDs in the user's desired order
  *
- * Sets kanban_position = index for each task ID in the array.
+ * Reorders the supplied tasks across their existing slots in the shared order.
  * Alternatively, { task_id, anchor_id, lane, before } moves a card relative to a
  * neighbor in the same lane and promotion group, including rows outside the visible page.
  */
@@ -15,6 +15,7 @@ import {
 } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
+import { apiJson } from "../../../lib/api-response"
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -30,15 +31,15 @@ export const POST: APIRoute = async ({ request }) => {
       await ensureSchema()
       const repo = new TaskRepository(getPersistenceClient())
       const ok = await repo.reorderKanbanCard({ id: task_id, anchorId: anchor_id, lane, before })
-      return new Response(JSON.stringify(ok ? { ok } : { error: "The cards must be in the same lane and promotion group" }), {
-        status: ok ? 200 : 409, headers: { "content-type": "application/json" },
-      })
+      return ok ? apiJson({ ok }) :
+        apiJson({ error: "The cards are no longer available in the same lane and promotion group", errorCode: "TASK_ORDER_CONFLICT" }, 409)
     }
 
     if (
       !body?.ordered_ids ||
       !Array.isArray(body.ordered_ids) ||
-      body.ordered_ids.length === 0
+      body.ordered_ids.length === 0 ||
+      !body.ordered_ids.every(id => typeof id === "string" && id.length > 0)
     ) {
       return new Response(
         JSON.stringify({ error: "ordered_ids array required" }),
@@ -49,9 +50,9 @@ export const POST: APIRoute = async ({ request }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
 
-    await repo.reorderTasks(
-      body.ordered_ids.map((id: string, idx: number) => ({ id, position: idx }))
-    )
+    if (!await repo.reorderTasks(body.ordered_ids)) {
+      return apiJson({ error: "The requested cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    }
     apiLogger.log("info", { event: "reorder.success", domain: "tasks", component: "reorder", request_id: "kanban-reorder", message: `Reordered ${body.ordered_ids.length} tasks` })
 
     return new Response(

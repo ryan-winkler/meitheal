@@ -525,6 +525,7 @@ const heroHintHref =
                           class={`task-badge badge-${isDone ? "complete" : String(task.status)}`}
                         >
                           {statusLabels[String(task.status)] ?? String(task.status)}
+                          {task.deferred_at != null && ` · ${t("deferral.title", locale)}`}
                         </span>
                         <span
                           class="bento-area-badge"

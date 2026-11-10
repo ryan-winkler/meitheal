@@ -913,6 +913,8 @@ const taskKinds = [
   import { DropdownController } from "../../lib/dropdown-controller"
   import { escapeHtml, sanitizeCssColor } from "../../lib/safe-html"
   import { showToast } from "../../lib/toast"
+  import { TASK_COUNTS_CHANGED } from "../../lib/deferral-client"
+  import { pageLifecycle } from "../../lib/page-lifecycle"
 
   // ── Sidebar Hierarchy Tree — interactions ──
   ;(function initSidebarTree() {
@@ -1567,21 +1569,19 @@ const taskKinds = [
     })
 
     // ── 10. Project task counts (batched, non-blocking) ──
-    async function updateProjectTaskCount(projectId: string) {
+    async function updateProjectTaskCount(projectId: string, signal?: AbortSignal) {
+      const badge = nav.querySelector<HTMLSpanElement>(`[data-project-task-count="${CSS.escape(projectId)}"]`)
+      if (!badge) return
       try {
-        const res = await fetch(`/api/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`)
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?task_counts=1`, { signal: signal ?? null })
         if (!res.ok) return
         const data = await res.json()
-        const tasks = Array.isArray(data.tasks) ? data.tasks : []
-        const openCount = tasks.filter((t: { status?: string }) => t.status !== "complete").length
-        const badge = document.querySelector<HTMLSpanElement>(`[data-project-task-count="${projectId}"]`)
-        if (badge) {
-          badge.textContent = String(openCount)
+        const counts = data?.task_counts
+        if (badge.isConnected && typeof counts?.active_open === "number") {
+          badge.textContent = String(counts.active_open)
           badge.dataset.loaded = "true"
           // P3-18: Completion celebration — pulse when all tasks done
-          if (openCount === 0 && tasks.length > 0) {
-            badge.classList.add("stree__count--done")
-          }
+          badge.classList.toggle("stree__count--done", counts.total > 0 && counts.complete === counts.total)
         }
       } catch { /* non-critical: task count fetch failed silently */ }
     }
@@ -1591,6 +1591,12 @@ const taskKinds = [
     countBadges.forEach((badge, i) => {
       const projectId = badge.dataset.projectTaskCount
       if (projectId) setTimeout(() => updateProjectTaskCount(projectId), i * 50)
+    })
+    pageLifecycle.onPageLoad(signal => {
+      window.addEventListener(TASK_COUNTS_CHANGED, event => {
+        const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
+        for (const id of ids) void updateProjectTaskCount(id, signal)
+      }, { signal })
     })
 
     // ── 11. Quick-capture shortcut (N key) ──

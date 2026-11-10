@@ -14,12 +14,15 @@ import { logApiError } from "../../../lib/api-logger"
 
 const VALID_STATUSES = ["active", "completed", "paused", "archived"]
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, url }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
     const project = await repo.findProjectById(params.id!)
     if (!project) return apiError("Project not found", 404)
+    if (url.searchParams.get("task_counts") === "1") {
+      return apiJson({ ...project, task_counts: await repo.getProjectTaskCounts(project.id) })
+    }
     return apiJson(project)
   } catch (error) {
     logApiError("projects", "GET detail error", error)

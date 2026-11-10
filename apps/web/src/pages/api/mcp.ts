@@ -56,6 +56,7 @@ const EXCLUDED_OPS = new Set([
   "exportDatabase",    // Large binary download
   "exportSettings",    // File downloads
   "importSettings",    // File upload
+  "setTaskDeferral",   // Requires the exact current workflow and deferral versions
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */

@@ -1,12 +1,13 @@
 import { getSelectedAreaId } from "@lib/area-selector-controller"
+import { DEFERRAL_RECONCILED } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initLaneManagementPanel } from "./kanban-lanes"
 import { initKanbanReactionCounts } from "./kanban-reaction-counts"
 
 export interface KanbanRefreshFocus {
-  lane?: string
-  taskId?: string
+  lane?: string | undefined
+  taskId?: string | undefined
   firstPage?: boolean
 }
 
@@ -144,6 +145,22 @@ export function initKanbanPage(signal: AbortSignal): void {
     void load(new URL(link.href), { lane })
   }, { signal })
   retry.addEventListener("click", () => void load(new URL(desired), lastFocus, resetScroll), { signal })
+  shell.addEventListener("kanban:deferral-retry", event => {
+    lastFocus = (event as CustomEvent<KanbanRefreshFocus>).detail
+    resetScroll = false
+    renderStatus(window.mI18n?.get("deferral.verify") ?? "Reload to check the task before trying again.", true)
+    retry.focus()
+  }, { signal })
+  window.addEventListener(DEFERRAL_RECONCILED, event => {
+    const { taskId, changedIds } = (event as CustomEvent<{ taskId?: string; changedIds?: string[] }>).detail ?? {}
+    const origin = taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(taskId)}"]`) : null
+    const lane = origin?.closest<HTMLElement>(".kanban-column")?.dataset.status
+    const sibling = (origin?.nextElementSibling ?? origin?.previousElementSibling) as HTMLElement | null
+    void refresh({ lane, taskId: taskId && !changedIds?.includes(taskId) ? taskId : sibling?.dataset.id })
+  }, { signal })
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) void refresh()
+  }, { signal })
   document.addEventListener("meitheal:area-changed", () => filter({}), { signal })
   document.addEventListener("meitheal:filter-change", event => {
     const { view, ...values } = (event as CustomEvent).detail ?? {}

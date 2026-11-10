@@ -17,6 +17,8 @@ import type { Client } from "@libsql/client";
 import type { InValue } from "@libsql/client";
 import { getStatusDef, normalizeStatus, STATUS } from "../../../lib/status-config";
 import { logApiError } from "../../../lib/api-logger";
+import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
+import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
 
@@ -45,6 +47,9 @@ export interface TaskRow {
   request_id: string
   created_at: number
   updated_at: number
+  task_version?: number
+  deferred_at: number | null
+  deferral_revision: string | null
   // ── Phase 2 additions ──
   priority: number
   due_date: string | null
@@ -160,16 +165,30 @@ export interface SettingRow {
 
 // ── Repository ─────────────────────────────────────────────────────────────
 
-function taskTimestampMs(column: "created_at" | "updated_at"): string {
-  return `MAX(0, COALESCE(CASE
-    WHEN typeof(${column}) IN ('integer', 'real') AND ${column} <= 9007199254740991
-      THEN CAST(${column} AS INTEGER)
-    WHEN typeof(${column}) = 'text'
-      AND substr(${column}, 1, 10) GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-      AND date(substr(${column}, 1, 10), '+0 days') = substr(${column}, 1, 10)
-      THEN CAST(strftime('%s', ${column}) AS INTEGER) * 1000
-        + CAST(substr(strftime('%f', ${column}), 4, 3) AS INTEGER)
-  END, 0))`
+type TaskBlocker = Pick<TaskRow, "id" | "title" | "status" | "ticket_number">
+type DeferralState = Pick<TaskRow, "id" | "status" | "deferred_at" | "deferral_revision" | "updated_at">
+
+type DeferralResult =
+  | { ok: true; task: DeferralState }
+  | { ok: false; errorCode: "unavailable" | "terminal" }
+  | { ok: false; errorCode: "conflict"; task: DeferralState }
+  | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
+
+// Outbound "blocked_by" and inbound "blocks" describe the same dependency.
+function openTaskDependencies(id: string) {
+  return {
+    sql: `SELECT t.id, t.title, t.status, t.ticket_number
+          FROM (
+            SELECT target_task_id AS blocker_id FROM task_links
+            WHERE source_task_id = ? AND link_type = 'blocked_by'
+            UNION
+            SELECT source_task_id AS blocker_id FROM task_links
+            WHERE target_task_id = ? AND link_type = 'blocks'
+          ) AS dependency
+          JOIN tasks t ON t.id = dependency.blocker_id
+          WHERE t.status NOT IN (?, 'archived')`,
+    args: [id, id, STATUS.COMPLETE],
+  }
 }
 
 /**
@@ -190,7 +209,7 @@ export class TaskRepository {
   /** Recent tasks for dashboard hero section */
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
        FROM tasks ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as unknown as TaskRow[];
@@ -199,7 +218,7 @@ export class TaskRepository {
   /** Tasks belonging to a specific project, ordered by priority */
   async findByProjectId(projectId: string): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at
+      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at, deferred_at
             FROM tasks WHERE project_id = ?
             ORDER BY priority ASC, created_at DESC`,
       args: [projectId],
@@ -211,7 +230,7 @@ export class TaskRepository {
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, is_favorite
-            FROM tasks WHERE is_favorite = 1 AND status != ?
+            FROM tasks WHERE is_favorite = 1 AND status != ? AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
@@ -222,7 +241,7 @@ export class TaskRepository {
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
-            FROM tasks WHERE status NOT IN (?)
+            FROM tasks WHERE status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -233,17 +252,18 @@ export class TaskRepository {
   /** Count tasks grouped by status for dashboard stats */
   async getStatusCounts(): Promise<DashboardStats> {
     const result = await this.client.execute(
-      "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status",
+      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks GROUP BY status",
     );
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
       const r = row as Record<string, unknown>;
       const s = String(r.status);
       const c = Number(r.cnt);
+      const open = Number(r.open_count)
       stats.total += c;
-      if (s === STATUS.ACTIVE) stats.active += c;
+      if (s === STATUS.ACTIVE) stats.active += open
       if (s === STATUS.COMPLETE) stats.completed += c;
-      else stats.open += c;
+      else stats.open += open
     }
     return stats;
   }
@@ -252,7 +272,7 @@ export class TaskRepository {
   async getOverdueCount(): Promise<number> {
     const result = await this.client.execute({
       sql: `SELECT COUNT(*) as cnt FROM tasks
-            WHERE ${OVERDUE_TASK_PREDICATE}`,
+            WHERE ${OVERDUE_TASK_PREDICATE} AND deferred_at IS NULL`,
       args: [new Date().toISOString(), STATUS.COMPLETE],
     });
     return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
@@ -277,19 +297,30 @@ export class TaskRepository {
 
   // ── Kanban (kanban.astro) ───────────────────────────────────────────
 
+  async withKanbanRead<T>(read: (reader: Pick<Client, "execute">) => Promise<T>): Promise<T> {
+    const snapshot = await this.client.transaction("read")
+    try {
+      return await read(snapshot)
+    } finally {
+      snapshot.close()
+    }
+  }
+
   /** Ordered, narrow scan for lane counts and matching before loading card details. */
   async getKanbanIndex(
     statuses: string[],
     cutoff: number,
     { matchText, matchOverdue }: { matchText: boolean; matchOverdue: boolean },
+    reader: Pick<Client, "execute">,
   ): Promise<KanbanIndexRow[]> {
     if (!statuses.length) return []
-    const result = await this.client.execute({
+    const result = await reader.execute({
       sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${matchOverdue ? `, (${OVERDUE_TASK_PREDICATE}) AS overdue` : ""}
             FROM tasks
             WHERE status IN (SELECT value FROM json_each(?))
+              AND deferred_at IS NULL
               AND (? = 0 OR lower(status) != 'complete' OR updated_at >= ?)
             ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
       args: [
@@ -301,18 +332,20 @@ export class TaskRepository {
   }
 
   /** Load full cards and their indexed counts only for the rendered pages. */
-  async getKanbanCards(ids: string[], cutoff: number): Promise<TaskRow[]> {
+  async getKanbanCards(ids: string[], cutoff: number, reader: Pick<Client, "execute">): Promise<TaskRow[]> {
     if (!ids.length) return []
-    const result = await this.client.execute({
+    const result = await reader.execute({
       sql: `SELECT task.id, task.title, task.description, task.status, task.priority, task.due_date,
                    task.labels, task.framework_payload, task.calendar_sync_state, task.area_id,
                    task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
                    task.task_kind, task.project_id, task.owner, task.handoff_state, task.ticket_number,
                    task.assigned_to, task.recurrence_rule, task.checklists,
+                   task.deferred_at, task.deferral_revision, ${taskTimestampMs("task.updated_at")} AS task_version,
                    (SELECT COUNT(*) FROM comments WHERE task_id = task.id) AS comment_count,
                    (SELECT COUNT(*) FROM tasks AS child WHERE child.parent_id = task.id
                       AND (? = 0 OR lower(child.status) != 'complete' OR child.updated_at >= ?)) AS child_count
-            FROM json_each(?) AS wanted JOIN tasks AS task ON task.id = wanted.value`,
+            FROM json_each(?) AS wanted JOIN tasks AS task ON task.id = wanted.value
+            WHERE task.deferred_at IS NULL`,
       args: [cutoff, cutoff, JSON.stringify(ids)],
     })
     return result.rows as unknown as TaskRow[]
@@ -406,7 +439,7 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id
+      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id, deferred_at
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
     return result.rows as unknown as TaskRow[];
@@ -420,6 +453,7 @@ export class TaskRepository {
       sql: `SELECT * FROM tasks
             WHERE due_date IS NOT NULL AND due_date < ?
               AND status NOT IN (?)
+              AND deferred_at IS NULL
             ORDER BY due_date ASC`,
       args: [todayStr, STATUS.COMPLETE],
     });
@@ -430,7 +464,7 @@ export class TaskRepository {
   async getTasksDueOn(dateStr: string): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date = ? AND status NOT IN (?)
+            WHERE due_date = ? AND status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority DESC, created_at ASC`,
       args: [dateStr, STATUS.COMPLETE],
     });
@@ -441,7 +475,7 @@ export class TaskRepository {
   async getUnscheduledTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date IS NULL AND status NOT IN (?)
+            WHERE due_date IS NULL AND status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority DESC, created_at DESC
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -464,6 +498,7 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
             WHERE status NOT IN (?)
+              AND deferred_at IS NULL
               AND (
                 (due_date > ? AND due_date <= ? AND priority <= 2)
                 OR (due_date IS NULL AND priority <= 2)
@@ -496,6 +531,7 @@ export class TaskRepository {
       sql: `SELECT * FROM tasks
             WHERE due_date >= ? AND due_date <= ?
               AND status NOT IN (?)
+              AND deferred_at IS NULL
             ORDER BY due_date ASC, priority DESC, created_at ASC`,
       args: [startDate, endDate, STATUS.COMPLETE],
     });
@@ -535,7 +571,8 @@ export class TaskRepository {
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
                    t.is_favorite, t.is_promoted, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
-                   t.recurrence_rule, t.created_at, t.updated_at,
+                   t.recurrence_rule, t.created_at, t.updated_at, t.deferred_at, t.deferral_revision,
+                   ${taskTimestampMs("t.updated_at")} AS task_version,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
             FROM tasks t
             LEFT JOIN tasks p ON t.parent_id = p.id
@@ -572,14 +609,14 @@ export class TaskRepository {
     const page = Number.isSafeInteger(requestedPage) ? requestedPage : 1
     const result = await this.client.execute({
       sql: `WITH totals AS (
-              SELECT COUNT(*) AS total FROM tasks WHERE status = ?
+              SELECT COUNT(*) AS total FROM tasks WHERE status = ? AND deferred_at IS NULL
             ), bounds AS (
               SELECT total, MAX(1, MIN(?, CAST((total + ? - 1) / ? AS INTEGER))) AS page FROM totals
             ), items AS (
               SELECT id, title, description, ticket_number, due_date,
                      ${taskTimestampMs("created_at")} AS created_ms,
                      ${taskTimestampMs("updated_at")} AS updated_at
-              FROM tasks WHERE status = ?
+              FROM tasks WHERE status = ? AND deferred_at IS NULL
               ORDER BY created_ms ASC, id ASC
               LIMIT ? OFFSET (SELECT (page - 1) * ? FROM bounds)
             )
@@ -603,6 +640,37 @@ export class TaskRepository {
   }
 
   /** List tasks with optional filters, pagination, and sorting. */
+  async findDeferredPage(requestedPage: number): Promise<{
+    page: number
+    total: number
+    tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number">>
+  }> {
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+    const { rows } = await this.client.execute({
+      sql: `WITH totals AS (
+              SELECT COUNT(*) AS total FROM tasks WHERE deferred_at IS NOT NULL
+            ), bounds AS (
+              SELECT total, MAX(1, MIN(?, (total + 24) / 25)) AS page FROM totals
+            ), items AS (
+              SELECT id, title, project_id, status, ticket_number, deferred_at, deferral_revision,
+                     ${taskTimestampMs("updated_at")} AS updated_at
+              FROM tasks WHERE deferred_at IS NOT NULL
+              ORDER BY deferred_at DESC, id ASC
+              LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
+            )
+            SELECT bounds.total, bounds.page, items.*
+            FROM bounds LEFT JOIN items ON TRUE
+            ORDER BY items.deferred_at DESC, items.id ASC`,
+      args: [page],
+    })
+    return {
+      page: Number(rows[0]?.page ?? 1),
+      total: Number(rows[0]?.total ?? 0),
+      tasks: rows.filter(row => row.id !== null) as unknown as Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number">>,
+    }
+  }
+
+  /** List tasks with optional filters, pagination, and sorting. */
   async findAll(opts: {
     status?: string;
     dueDate?: string;
@@ -615,6 +683,7 @@ export class TaskRepository {
     assignedTo?: string;
     label?: string;
     favorite?: boolean;
+    deferred?: boolean
     sort?: string;
     order?: "ASC" | "DESC";
     limit?: number;
@@ -649,6 +718,7 @@ export class TaskRepository {
     if (opts.assignedTo) { conditions.push("assigned_to = ?"); args.push(opts.assignedTo); }
     if (opts.label) { conditions.push("EXISTS (SELECT 1 FROM json_each(tasks.labels) WHERE json_each.value = ?)"); args.push(opts.label); }
     if (opts.favorite) { conditions.push("is_favorite = 1"); }
+    if (opts.deferred !== undefined) conditions.push(opts.deferred ? "deferred_at IS NOT NULL" : "deferred_at IS NULL")
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
@@ -656,18 +726,19 @@ export class TaskRepository {
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                              ticket_number, assigned_to, created_at, updated_at
+                              ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
+                              ${taskTimestampMs("updated_at")} AS task_version
                        FROM tasks${where}
                        ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
-    const [result, countResult] = await Promise.all([
-      this.client.execute({ sql: selectSql, args }),
-      this.client.execute({ sql: countSql, args }),
-    ]);
+    const [result, countResult] = await this.client.batch([
+      { sql: selectSql, args },
+      { sql: countSql, args },
+    ], "read")
 
-    const total = Number((countResult.rows[0] as Record<string, unknown>)?.cnt ?? 0);
-    return { tasks: result.rows as unknown as TaskRow[], total };
+    const total = Number(countResult?.rows[0]?.cnt ?? 0)
+    return { tasks: (result?.rows ?? []) as unknown as TaskRow[], total }
   }
 
   /** Advanced catalog search used by the universal search hub and HA search bridges. */
@@ -759,7 +830,7 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT tasks.id, tasks.ticket_number, tasks.title, tasks.description, tasks.status,
                    tasks.priority, tasks.labels, tasks.custom_fields, tasks.area_id, tasks.task_type,
-                   tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date,
+                   tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date, tasks.deferred_at,
                    comment_index.comment_blob
             FROM tasks
             LEFT JOIN (
@@ -821,7 +892,7 @@ export class TaskRepository {
     recurrence_rule?: string | null;
     urgency?: number; importance?: number;
     effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
-  }, now = Date.now()): Promise<string> {
+  }, createdAt = Date.now()): Promise<string> {
     await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
@@ -839,7 +910,7 @@ export class TaskRepository {
         data.checklists ?? "[]", data.recurrence_rule ?? null,
         data.urgency ?? 0, data.importance ?? 0,
         data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
-        crypto.randomUUID(), crypto.randomUUID(), now, now,
+        crypto.randomUUID(), crypto.randomUUID(), createdAt, createdAt,
       ] as InValue[],
     });
     return data.id;
@@ -858,7 +929,7 @@ export class TaskRepository {
     | { ok: false; errorCode: "unavailable" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "conflict"; updatedAt: number }
-    | { ok: false; errorCode: "blocked"; blockers: Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[] }
+    | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
   > {
     const updates: string[] = []
     const args: InValue[] = []
@@ -870,7 +941,7 @@ export class TaskRepository {
     if (updates.length === 0) return { ok: false, errorCode: "unavailable" }
 
     const storedVersion = taskTimestampMs("updated_at")
-    updates.push(`updated_at = MIN(9007199254740991, MAX(${storedVersion} + 1, ?))`)
+    updates.push(`updated_at = ${nextTaskTimestampMs("updated_at")}`)
     args.push(Date.now(), id)
 
     // Legacy task databases do not have a project foreign key. Check the
@@ -888,25 +959,12 @@ export class TaskRepository {
       predicates.push(`${storedVersion} < 9007199254740991`, `${storedVersion} ${version.expectedStatus ? "=" : "<="} ?`)
       args.push(version.updatedAt)
       if (version.expectedStatus) {
-        predicates.push("tasks.status = ?")
+        predicates.push("tasks.status = ?", "tasks.deferred_at IS NULL")
         args.push(version.expectedStatus)
       }
     }
 
-    // Outbound "blocked_by" and inbound "blocks" describe the same dependency.
-    const dependencies = fields.status === STATUS.ACTIVE ? {
-      sql: `SELECT t.id, t.title, t.status, t.ticket_number
-            FROM (
-              SELECT target_task_id AS blocker_id FROM task_links
-              WHERE source_task_id = ? AND link_type = 'blocked_by'
-              UNION
-              SELECT source_task_id AS blocker_id FROM task_links
-              WHERE target_task_id = ? AND link_type = 'blocks'
-            ) AS dependency
-            JOIN tasks t ON t.id = dependency.blocker_id
-            WHERE t.status NOT IN (?, 'archived')`,
-      args: [id, id, STATUS.COMPLETE],
-    } : null
+    const dependencies = fields.status === STATUS.ACTIVE ? openTaskDependencies(id) : null
     const update = {
       sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}${checklistMatches}
               ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
@@ -922,7 +980,7 @@ export class TaskRepository {
 
     const diagnostics = []
     if (version) {
-      diagnostics.push({ sql: `SELECT status, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
+      diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
     }
     if (expectedChecklists !== undefined) {
       diagnostics.push({
@@ -946,7 +1004,7 @@ export class TaskRepository {
       if (!current) return { ok: false, errorCode: "unavailable" }
       const updatedAt = Number(current.updated_at)
       const changed = version.expectedStatus
-        ? updatedAt !== version.updatedAt || current.status !== version.expectedStatus
+        ? updatedAt !== version.updatedAt || current.status !== version.expectedStatus || current.deferred_at !== null
         : updatedAt > version.updatedAt
       if (changed || updatedAt === Number.MAX_SAFE_INTEGER) {
         return { ok: false, errorCode: "conflict", updatedAt }
@@ -963,10 +1021,63 @@ export class TaskRepository {
       return {
         ok: false,
         errorCode: "blocked",
-        blockers: blockers as unknown as Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[],
+        blockers: blockers as unknown as TaskBlocker[],
       }
     }
     return { ok: false, errorCode: "unavailable" }
+  }
+
+  /** Move open work in or out of deferral without changing its workflow clock. */
+  async setDeferral(
+    id: string,
+    deferred: boolean,
+    guard: { updatedAt: number; revision: string | null },
+    actor: { id: string; type: "agent" | "human"; requestId: string },
+  ): Promise<DeferralResult> {
+    const now = Date.now()
+    const marker = deferred ? now : null
+    const version = taskTimestampMs("updated_at")
+    const columns = `id, status, deferred_at, deferral_revision, ${version} AS updated_at`
+    const dependencies = openTaskDependencies(id)
+    const activeStates = [STATUS.ACTIVE, ...(getStatusDef(STATUS.ACTIVE)?.aliases ?? [])]
+    const activePredicate = `lower(status) IN (${activeStates.map(() => "?").join(", ")})`
+    const eligible = `id = ? AND ${version} = ? AND deferral_revision IS ?
+      AND lower(status) NOT IN ${deferralTerminalStatusesSql}
+      AND deferred_at IS ${deferred ? "" : "NOT "}NULL
+      ${deferred ? "" : `AND (NOT (${activePredicate}) OR NOT EXISTS (${dependencies.sql}))`}`
+    const args = [id, guard.updatedAt, guard.revision, ...(deferred ? [] : [...activeStates, ...dependencies.args])]
+    const [diagnostic, audit, changed, blockers] = await this.client.batch([
+      { sql: `SELECT ${columns} FROM tasks WHERE id = ?`, args: [id] },
+      {
+        sql: `INSERT INTO task_activity_log
+                (task_id, field, old_value, new_value, actor, actor_type, event_type, correlation_id, created_at)
+              SELECT id, 'deferred_at', CAST(deferred_at AS TEXT), ?, ?, ?, 'field_change', ?, ?
+              FROM tasks WHERE ${eligible}`,
+        args: [marker === null ? null : String(marker), actor.id, actor.type, actor.requestId, now, ...args],
+      },
+      {
+        sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))
+              WHERE changes() = 1 AND ${eligible} RETURNING ${columns}`,
+        args: [marker, ...args],
+      },
+      ...(!deferred ? [{ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` }] : []),
+    ], "write")
+    const row = changed?.rows[0] as unknown as DeferralState | undefined
+    if (row && audit?.rowsAffected === 1) return { ok: true, task: row }
+
+    const current = diagnostic?.rows[0] as unknown as DeferralState | undefined
+    if (!current) return { ok: false, errorCode: "unavailable" }
+    if (current.updated_at !== guard.updatedAt || current.deferral_revision !== guard.revision) {
+      return { ok: false, errorCode: "conflict", task: current }
+    }
+    if (isDeferralTerminalStatus(current.status)) {
+      return { ok: false, errorCode: "terminal" }
+    }
+    if ((current.deferred_at !== null) === deferred) return { ok: true, task: current }
+    if (!deferred && normalizeStatus(current.status) === STATUS.ACTIVE && blockers?.rows.length) {
+      return { ok: false, errorCode: "blocked", blockers: blockers.rows as unknown as TaskBlocker[] }
+    }
+    throw new Error("Task deferral write did not match its transaction snapshot")
   }
 
   /** Fetch old field values for activity log diffing before an update */
@@ -1210,13 +1321,41 @@ export class TaskRepository {
     return result.rowsAffected;
   }
 
-  /** Batch update kanban positions */
-  async reorderTasks(updates: Array<{ id: string; position: number }>): Promise<void> {
-    const stmts = updates.map(u => ({
-      sql: "UPDATE tasks SET kanban_position = ?, updated_at = ? WHERE id = ?",
-      args: [u.position, Date.now(), u.id] as InValue[],
-    }));
-    await this.client.batch(stmts);
+  /** Reorder submitted tasks across their existing slots in the shared order. */
+  async reorderTasks(ids: string[]): Promise<boolean> {
+    if (ids.length === 0) return false
+    const result = await this.client.execute({
+      sql: `WITH requested AS MATERIALIZED (
+              SELECT value AS id, key AS ordinal FROM json_each(?)
+            ), allowed AS MATERIALIZED (
+              SELECT COUNT(*) AS total FROM requested
+              JOIN tasks ON tasks.id = requested.id AND tasks.deferred_at IS NULL
+              HAVING total = (SELECT COUNT(*) FROM requested)
+                 AND total = COUNT(DISTINCT requested.id)
+            ), ordered AS MATERIALIZED (
+              SELECT id, ROW_NUMBER() OVER (
+                ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC
+              ) - 1 AS position
+              FROM tasks WHERE EXISTS (SELECT 1 FROM allowed)
+            ), slots AS MATERIALIZED (
+              SELECT position, ROW_NUMBER() OVER (ORDER BY position) - 1 AS ordinal
+              FROM ordered WHERE id IN (SELECT id FROM requested)
+            ), ranks AS MATERIALIZED (
+              SELECT ordered.id, COALESCE(slots.position, ordered.position) AS position,
+                     requested.id IS NOT NULL AS submitted
+              FROM ordered
+              LEFT JOIN requested ON requested.id = ordered.id
+              LEFT JOIN slots ON slots.ordinal = requested.ordinal
+            )
+            UPDATE tasks SET kanban_position = ranks.position,
+              deferral_revision = CASE WHEN ranks.submitted AND ${taskTimestampMs("tasks.updated_at")} = 9007199254740991
+                THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
+              updated_at = CASE WHEN ranks.submitted THEN ${nextTaskTimestampMs("tasks.updated_at")} ELSE updated_at END
+            FROM ranks WHERE tasks.id = ranks.id
+              AND (ranks.submitted OR tasks.kanban_position IS NOT ranks.position)`,
+      args: [JSON.stringify(ids), Date.now()],
+    })
+    return result.rowsAffected > 0
   }
 
   /** Place a card in the shared order while preserving every other card's relative order. */
@@ -1232,6 +1371,7 @@ export class TaskRepository {
               WHERE (
                 SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM tasks
                 WHERE id IN (requested.moved_id, requested.anchor_id)
+                  AND deferred_at IS NULL
                   AND status IN (
                     SELECT value FROM json_each((SELECT includes FROM kanban_lanes WHERE key = requested.lane))
                   )

@@ -216,6 +216,7 @@ const tableSignal =
                     data-id={task.id}
                     data-rice={task.rice !== null ? String(task.rice) : ""}
                     data-area={task.area_id}
+                    data-project-id={task.project_id ?? ""}
                     data-status={task.status}
                     data-priority={String(task.priority)}
                     data-assigned={String(task.assigned_to ?? "")}
@@ -276,6 +277,7 @@ const tableSignal =
                         >
                           {task.title}
                         </span>
+                        {task.deferred_at !== null && <span class="table-deferred-badge" data-table-deferred>{t("deferral.title", locale)}</span>}
                       </div>
                       {task.description && (
                         <div class="cell-description" style={task.depth > 0 ? `margin-left: ${task.depth * 20}px` : undefined}>
@@ -480,6 +482,11 @@ const tableSignal =
 </div>
 
 <style>
+  .table-deferred-badge {
+    color: var(--text-secondary);
+    font-size: .75rem;
+    flex: 0 0 auto;
+  }
   /* Signal bar CSS now in SignalBar.astro */
   .table-filter-bar {
     display: flex;

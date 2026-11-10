@@ -733,6 +733,7 @@ function saveSectionState() {
 
 function setupDragReorder(container: HTMLElement) {
   let dragSource: HTMLElement | null = null
+  let reorderPending = false
 
   // A page of unscheduled rows cannot safely overwrite board-wide positions.
   container.querySelectorAll<HTMLElement>(".today-section__list:not(#today-unscheduled-list)").forEach(list => {
@@ -740,6 +741,10 @@ function setupDragReorder(container: HTMLElement) {
       item.setAttribute("draggable", "true")
 
       lm.on(item, "dragstart", (e: Event) => {
+        if (reorderPending) {
+          e.preventDefault()
+          return
+        }
         const de = e as DragEvent
         dragSource = item
         item.classList.add("tli--dragging")
@@ -771,13 +776,14 @@ function setupDragReorder(container: HTMLElement) {
         e.preventDefault()
         const de = e as DragEvent
         item.classList.remove("tli--drag-over")
-        if (!dragSource || dragSource === item) return
+        if (reorderPending || !dragSource || dragSource === item) return
 
         // Only allow reorder within same section list
         const sourceList = dragSource.closest(".today-section__list")
         const targetList = item.closest(".today-section__list")
-        if (sourceList !== targetList) return
+        if (!sourceList || sourceList !== targetList) return
 
+        const priorOrder = Array.from(sourceList.children)
         // Move DOM element
         const rect = item.getBoundingClientRect()
         const midY = rect.top + rect.height / 2
@@ -792,14 +798,21 @@ function setupDragReorder(container: HTMLElement) {
           (sourceList as HTMLElement).querySelectorAll<HTMLElement>(".tli")
         ).map(el => el.dataset.id).filter(Boolean) as string[]
 
+        reorderPending = true
         try {
-          await taskApi.raw("/api/tasks/reorder", {
+          const result = await taskApi.raw("/api/tasks/reorder", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ ordered_ids: orderedIds }),
           })
+          if (!result.ok) throw new Error("Task order rejected")
         } catch {
-          // Revert silently — reload to fix
+          if (sourceList.isConnected) {
+            sourceList.append(...priorOrder)
+            showToast("common.order_retry", "error")
+          }
+        } finally {
+          reorderPending = false
         }
       })
     })

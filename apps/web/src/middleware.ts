@@ -139,6 +139,7 @@ function applyRateLimitHeaders(response: Response, remaining: number, resetAt: n
 export const onRequest: MiddlewareHandler = async ({ request, locals, routePattern }, next) => {
   const startTime = Date.now();
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
   const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);

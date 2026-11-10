@@ -246,6 +246,7 @@ async function checkDueDates(): Promise<void> {
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
             WHERE status NOT IN ('${STATUS.COMPLETE}')
+              AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
               AND due_date >= ?
@@ -260,6 +261,7 @@ async function checkDueDates(): Promise<void> {
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
             WHERE status NOT IN ('${STATUS.COMPLETE}')
+              AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
               AND CAST(due_date AS INTEGER) >= ?

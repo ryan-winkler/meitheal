@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 import { openDatabase } from "./database-client.mjs"
 import { autoBackupDb } from "./startup-backup.mjs"
 import { splitSqlStatements } from "./split-sql-statements.mjs";
+import { applyTaskDeferralMigration, validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(__dirname, "../drizzle/migrations");
 const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db";
 const checkOnly = process.argv.includes("--check");
+const taskDeferralMigration = "0004_task_deferral.mjs"
 
 if (dbUrl.startsWith("file:")) {
   const dbPath = dbUrl.slice("file:".length);
@@ -28,7 +30,8 @@ async function main() {
     )
   `);
 
-  const files = (await readdir(migrationsDir)).filter((name) => name.endsWith(".sql")).sort();
+  const files = (await readdir(migrationsDir))
+    .filter(name => name.endsWith(".sql") || name === taskDeferralMigration).sort()
   const pending = [];
 
   for (const file of files) {
@@ -46,16 +49,30 @@ async function main() {
       console.error(`Pending migrations: ${pending.join(", ")}`);
       return 1;
     }
+    await validateTaskDeferralSchema(client)
     console.log("Migration check passed (no pending migrations).");
     return 0;
   }
 
   for (const file of pending) {
-    const sql = await readFile(path.join(migrationsDir, file), "utf8");
-    const statements = splitSqlStatements(sql);
+    const isDeferralMigration = file === taskDeferralMigration
+    const statements = isDeferralMigration ? [] :
+      splitSqlStatements(await readFile(path.join(migrationsDir, file), "utf8"))
 
     const tx = await client.transaction("write");
     try {
+      if (isDeferralMigration) {
+        const existing = await tx.execute({
+          sql: "SELECT name FROM __meitheal_migrations WHERE name = ?",
+          args: [file],
+        })
+        if (existing.rows.length > 0) {
+          await validateTaskDeferralSchema(tx)
+          await tx.commit()
+          continue
+        }
+        await applyTaskDeferralMigration(tx)
+      }
       for (const statement of statements) {
         await tx.execute(statement);
       }

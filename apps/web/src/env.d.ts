@@ -76,6 +76,7 @@ declare namespace App {
     behindIngress: boolean;
     hassUserId: string | undefined;
     hassIsAdmin: boolean;
+    requestId: string
     timezone: string;
     weekStart: string;
     dateFormat: import("./lib/date").DateFormat;

@@ -19,6 +19,7 @@
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { mountReactions } from "@lib/controllers/modal-reactions"
+        import { initModalDeferral } from "@lib/controllers/modal-deferral"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -30,6 +31,7 @@
           ) as HTMLDivElement;
         if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
+        const deferral = initModalDeferral(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
@@ -71,6 +73,8 @@
 
         function closeTD() {
           if (!tdOverlay?.classList.contains("active") || tdOverlay.classList.contains("closing")) return
+          if (deferral.waitForWrite(closeTD)) return
+          deferral.opening(false)
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
@@ -93,9 +97,10 @@
                 _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
               _previouslyFocused.focus()
             } else {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading')?.focus()
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading')?.focus()
             }
             _previouslyFocused = null
+            deferral.closed()
           };
 
           if (reducedMotion) {
@@ -127,8 +132,11 @@
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
+          if (deferral.waitForWrite(() => { void openTaskDetail(taskId, commentTarget) })) return
+          const newSession = !tdOverlay.classList.contains("active")
+          deferral.opening(newSession)
           // P3-4: Store focus origin for restore on close
-          if (!tdOverlay.classList.contains("active")) _previouslyFocused = document.activeElement
+          if (newSession) _previouslyFocused = document.activeElement
           currentTaskId = taskId;
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
@@ -188,7 +196,8 @@
             }
             const t = (await res.json()) as Record<string, unknown>
             if (modalSignal.aborted) return
-            if (!t.id) {
+            const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
+            if (!t.id || (requestedTicket && Number(requestedTicket[1]) !== Number(t.ticket_number))) {
               showTaskError(false)
               return
             }
@@ -911,6 +920,7 @@
               if (modalSignal.aborted) return
               _isPopulating = false
               if (projectField) projectField.disabled = !projectFieldReady
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal)
             }, 100)
           } catch (e) {
             if (modalSignal.aborted) return
@@ -923,16 +933,21 @@
 
         async function saveTaskField(field: string, value: unknown): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
+          const completeDeferralWrite = deferral.nativeWrite(field, value)
+          let saved = false
           try {
             const response = await fetch(`/api/tasks/${currentTaskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ [field]: value }),
             })
-            if (response.ok) return true
+            saved = response.ok
+            if (saved) return true
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
+          } finally {
+            completeDeferralWrite(saved)
           }
           const { showToast } = await import("@lib/toast")
           showToast("common.failed_update", "error")
@@ -1499,8 +1514,9 @@
               );
               // Treat 204 (deleted) and 404 (already gone) as success
               if (res.ok || res.status === 404) {
+                const deferred = currentTaskId ? deferral.removing(currentTaskId) : false
                 closeTD();
-                document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
+                if (!deferred) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
               }
             } catch {
               // Network error — still close and refresh to re-sync
@@ -1563,6 +1579,7 @@
         }, { signal: __signal });
 
         function checkTaskLocation() {
+          if (deferral.waitForWrite(checkTaskLocation)) return
           const url = new URL(window.location.href)
           const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")

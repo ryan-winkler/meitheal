@@ -33,6 +33,14 @@ Task detail saves checklist changes against the version it loaded. Independent c
 
 A task API client can use the same protection by sending `expected_checklists` with `checklists` in `PUT /api/tasks/{id}`. Pass the exact previous checklist value from the GET response. Use JSON `null` if the task has a historical null checklist. A stale comparison returns `409` with `code: "checklist_conflict"` and the current checklist value. The rejected update leaves all task fields untouched. Existing API callers can keep using the checklist string without a comparison.
 
+### Defer and Resume Open Work
+
+Choose **Defer** in a Kanban card menu or in Details to set open work aside. Open **Tasks → Deferred** to see the queue and choose **Resume**. Deferral preserves the task's status, position, dates, relationships, and history. The task leaves active work and stays available through search, Table, and scheduled or historical views.
+
+Resuming returns the task to its existing workflow. An Active task with an open prerequisite stays deferred until the dependency is resolved. Completion clears deferral. Reopening a completed task makes it eligible for active views again.
+
+Eisenhower's **Move to Backlog** changes the workflow status to Backlog. Use **Defer** when you want to set a task aside and return it to its current workflow later.
+
 ### Activate a Task with Dependencies
 
 If a task has a **Blocked by** link to a prerequisite, it can move to `active` after that prerequisite is `complete` or `archived`. A **Blocks** link created from the prerequisite has the same effect. Reciprocal links count as one prerequisite. The older free-text `blocked_by` field is a note and does not enforce a dependency.

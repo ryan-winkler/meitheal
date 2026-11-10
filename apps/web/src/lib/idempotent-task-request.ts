@@ -12,6 +12,8 @@ const MAX_RESPONSE_BYTES = 16 * 1024
 export async function taskRetryKey(request: Request, url: URL, principal: string | undefined): Promise<string | Response | undefined> {
   const clientKey = request.headers.get("idempotency-key")
   if (clientKey === null || !principal) return
+  // Deferral retries must compare against the live revision, even with a replay key.
+  if (request.method === "PATCH" && /^\/api\/tasks\/[\w-]+\/deferral$/.test(url.pathname)) return
 
   // Reactions use their database identity so removing and adding one never replays stale data.
   if (isTaskReactionRoute(url.pathname)) return

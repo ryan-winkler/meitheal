@@ -116,6 +116,12 @@ function renderResultItem(
 
   const meta = document.createElement("div")
   meta.className = "search-hub-item-meta"
+  if (item.meta?.deferred === true) {
+    const badge = document.createElement("span")
+    badge.className = "search-hub-badge"
+    badge.textContent = window.mI18n?.get("deferral.title") ?? "Deferred"
+    meta.appendChild(badge)
+  }
   const matchedFields = Array.isArray(item.meta?.matched_fields)
     ? (item.meta?.matched_fields as unknown[]).slice(0, 2).map((value) => String(value))
     : []

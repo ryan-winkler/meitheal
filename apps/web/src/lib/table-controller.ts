@@ -35,6 +35,7 @@ import {
 } from "@lib/filter-state"
 import { setupSortableHeaders } from "@lib/controllers/table-sorting"
 import { setupBulkActions, updateBulkBar } from "@lib/controllers/table-bulk-actions"
+import { reconcileTableDeferral } from "@lib/controllers/table-deferral"
 
 // =============================================================================
 // Types
@@ -914,6 +915,7 @@ function setupInlineEditing() {
           if (row && field === "status") {
             row.dataset.status = sel.value
             row.classList.toggle("row-done", sel.value === "complete")
+            void reconcileTableDeferral(row, sel.value, __signal)
             // Gamification + confetti on completion
             if (sel.value === "complete") {
               const priority = Number(row?.dataset.priority ?? 3)
