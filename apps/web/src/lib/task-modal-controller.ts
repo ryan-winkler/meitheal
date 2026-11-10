@@ -23,6 +23,7 @@
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
         import { isActiveParticipantProblem } from "@lib/task-participant-problem"
         import { mountReactions } from "@lib/controllers/modal-reactions"
         import { initModalDeferral } from "@lib/controllers/modal-deferral"
@@ -399,25 +400,17 @@
                 linkParentDisplay
                   .querySelector(".td-unlink-parent")
                   ?.addEventListener("click", async () => {
-                    if (
-                      await confirmDialog({
-                        message: t.title
-                          ? `Unlink parent from "${t.title}"?`
-                          : "Unlink parent?",
-                        title: "Unlink",
-                      })
-                    ) {
-                      await fetch(
-                        `${window.__ingress_path || ""}/api/tasks/${currentTaskId}`,
-                        {
-                          method: "PUT",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ parent_id: null }),
-                        },
-                      );
-                      openTaskDetail(String(currentTaskId));
+                    const unlinkTaskId = currentTaskId
+                    const confirmed = await confirmDialog({
+                      message: t.title ? `Unlink parent from "${t.title}"?` : "Unlink parent?",
+                      title: "Unlink",
+                      signal: modalSignal,
+                    })
+                    if (!confirmed || !unlinkTaskId || currentTaskId !== unlinkTaskId) return
+                    if (await saveTaskField("parent_id", null) && currentTaskId === unlinkTaskId) {
+                      openTaskDetail(unlinkTaskId)
                     }
-                  });
+                  }, { signal: modalSignal });
               } else {
                 linkParentDisplay.innerHTML =
                   '<span class="text-xs text-text-muted italic">None</span>';
@@ -1047,19 +1040,23 @@
         async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
           const generation = detailGeneration
+          const taskId = currentTaskId
           const search = searchSession
           const completeDeferralWrite = deferral.nativeWrite(field, value)
           const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const response = await fetch(`/api/tasks/${currentTaskId}`, {
+            const response = await fetch(`/api/tasks/${taskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
               ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
             })
             saved = response.ok
-            if (saved) return !search || generation === detailGeneration
+            if (saved) {
+              notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
+              return !search || generation === detailGeneration
+            }
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
@@ -1715,6 +1712,7 @@
               typeof receipt.id !== "number" || !Number.isSafeInteger(receipt.id) || receipt.id < 1) {
               throw new Error("Comment response did not include a valid receipt")
             }
+            notifyInactivityTaskChanged(taskId)
             if (signal.aborted) return
             if (commentInput.value === draft) commentInput.value = ""
             commentAttempt = undefined

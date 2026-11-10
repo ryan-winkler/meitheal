@@ -67,9 +67,9 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (prepared.recipients.length && !attempt) return commentMentionProblem("Start this comment again to send its mentions.", 400)
     if (attempt && actor.owner) {
       return attemptResponse(await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
-        { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }))
+        { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman))
     }
-    const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner)
+    const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner, prepared.verifiedHuman)
     return comment ? commentJson(comment, 201) : apiError("Task not found", 404)
   } catch {
     return commentFailure("post", "Failed to create comment")

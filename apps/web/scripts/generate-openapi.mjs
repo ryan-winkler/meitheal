@@ -915,7 +915,7 @@ const paths = {
           if: { properties: { areaId: { type: "null" } } },
           then: { properties: { days: { minimum: 0 } } }, properties: {
           action: { const: "preview" }, areaId: inactivityArea,
-          page: { type: "integer", minimum: 1, maximum: 100000 }, filter: { enum: ["all", "ready", "upcoming"] },
+          page: { type: "integer", minimum: 1, maximum: 100000 }, filter: { enum: ["all", "ready", "upcoming", "stalled"] },
           days: inactivityDays,
         } },
         { type: "object", required: ["action", "areaId", "days", "expectedRevision", "expectedDefaultRevision", "areaGeneration", "expectedAreaCatalogRevision"],
@@ -946,12 +946,17 @@ const paths = {
             tasks: { type: "array", maxItems: 25, items: inactivityObject({
               id: inactivityId, title: { type: "string" }, area_id: inactivityId,
               status: { type: "string" }, ticket_number: { type: ["integer", "null"] },
-              last_activity: inactivityEpoch, deadline: inactivityEpoch,
+              last_activity: inactivityEpoch, deadline: { ...inactivityEpoch, type: ["integer", "null"] },
+              stall_since: { ...inactivityEpoch, type: ["integer", "null"] },
             }) },
             now: inactivityEpoch, canSave: { type: "boolean" },
           }),
           inactivityObject({ policy: inactivityPolicy }),
-          inactivityObject({ now: inactivityEpoch, cues: { type: "object", additionalProperties: inactivityEpoch } }),
+          inactivityObject({
+            now: inactivityEpoch,
+            cues: { type: "object", additionalProperties: inactivityEpoch },
+            stalled: { type: "object", additionalProperties: inactivityEpoch },
+          }),
         ] }, "Policy preview, saved revision, or current cues for requested cards"),
         400: problemContent("Invalid action or scope"), 403: problemContent("Active browser access or administrator role required"),
         404: problemContent("Area unavailable"), 409: problemContent("Scope, revision, or Area generation changed"),

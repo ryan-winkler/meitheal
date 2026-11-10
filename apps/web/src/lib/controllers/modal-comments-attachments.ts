@@ -10,6 +10,7 @@ import {
 } from "@domains/offline/offline-store"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { createClientLogger } from "@lib/client-logger"
+import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { buildTaskPermalink } from "@lib/task-detail-handoff"
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
 import { commentMentionWriteHeaders, readCommentMentionProblem } from "@lib/comment-mention-client"
@@ -19,7 +20,7 @@ import { mountReactions } from "./modal-reactions"
 const log = createClientLogger("tasks", "comments-attachments")
 
 function attachCommentManagement(
-  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, url: string, signal: AbortSignal,
+  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
 ): void {
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
@@ -78,6 +79,7 @@ function attachCommentManagement(
           : mentionFailure ? template.dataset.mentionFailed : template.dataset.editFailed) ?? ""
         throw new Error("Comment edit failed")
       }
+      notifyInactivityTaskChanged(taskId)
       const updated = await response.json() as { content: string }
       if (!isCurrent()) return
       content = updated.content
@@ -115,6 +117,7 @@ function attachCommentManagement(
         if (isCurrent() && participantDenied) error.textContent = template.dataset.participantRequired ?? ""
         throw new Error("Comment deletion failed")
       }
+      notifyInactivityTaskChanged(taskId)
       if (!isCurrent()) return
       const next = wrapper.nextElementSibling ?? wrapper.previousElementSibling
       wrapper.remove()
@@ -200,7 +203,7 @@ export async function loadComments(
       wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
       wrapper.setAttribute("aria-describedby", body.id)
       wrapper.append(meta, body)
-      if (c.can_manage === true) attachCommentManagement(wrapper, body, c.content, taskLabel, `${url}/${c.id}`, signal)
+      if (c.can_manage === true) attachCommentManagement(wrapper, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
       mountReactions(wrapper, `${url}/${c.id}/reactions`, signal)
       container.appendChild(wrapper)
       if (String(c.id) === commentTarget) linkedComment = wrapper

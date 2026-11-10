@@ -10,6 +10,7 @@ import { validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts
 import { validateCommentMentionsSchema } from "../drizzle/migrations/0007_comment_mentions.mjs"
 
 import { validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
+import { validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +27,7 @@ const expectedSchema = {
     "updated_at",
     "deferred_at",
     "deferral_revision",
-    "inactivity_touched_at"
+    "inactivity_touched_at", "last_activity_spike_at"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
@@ -77,6 +78,7 @@ async function main() {
     await validateTaskDraftsSchema(client)
     await validateCommentMentionsSchema(client)
     await validateTaskInactivitySchema(client)
+    await validateTaskStallSchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",

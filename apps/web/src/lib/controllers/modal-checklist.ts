@@ -1,5 +1,6 @@
 import { escapeHtml } from "@lib/safe-html"
 import { createChecklistItem } from "@lib/checklist-items"
+import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
 type Item = { id?: string; text: string; done: boolean }
@@ -205,6 +206,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
           signal: AbortSignal.timeout(10_000),
         })
         if (response.ok) {
+          notifyInactivityTaskChanged(taskId)
           savedRaw = pending
           saved = JSON.parse(pending) as Item[]
           continue

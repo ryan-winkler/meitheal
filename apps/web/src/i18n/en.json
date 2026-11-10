@@ -1866,6 +1866,8 @@
     "upload_failed": "Failed to process file"
   },
   "inactivity": {
+    "stalled": "Stalled",
+    "stalled_unavailable": "Stalled is unavailable on this version. Showing current inactivity.",
     "title": "Inactivity",
     "description": "See which open tasks are ready to move to Deferred and which are approaching the cutoff.",
     "all_areas": "All Areas · shared default",

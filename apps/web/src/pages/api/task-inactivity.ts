@@ -16,7 +16,7 @@ const revision = z.string().regex(/^[a-f0-9]{32}$/).nullable()
 const actions = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("preview"), areaId, days: days.optional(),
-    page: z.number().int().min(1).max(100_000), filter: z.enum(["all", "ready", "upcoming"]),
+    page: z.number().int().min(1).max(100_000), filter: z.enum(["all", "ready", "upcoming", "stalled"]),
   }),
   z.strictObject({
     action: z.literal("save"), areaId, days,
@@ -100,8 +100,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const repo = new TaskInactivityRepository(getPersistenceClient())
     const now = Date.now()
     if (action.action === "board") {
-      const cues = await repo.boardCues([...new Set(action.ids)], now)
-      return Response.json({ now, cues: Object.fromEntries(cues) }, { headers })
+      const { cues, stalled } = await repo.boardCues([...new Set(action.ids)], now)
+      return Response.json({ now, cues: Object.fromEntries(cues), stalled: Object.fromEntries(stalled) }, { headers })
     }
     if (action.action === "save") {
       const saved = await repo.savePolicy(action)

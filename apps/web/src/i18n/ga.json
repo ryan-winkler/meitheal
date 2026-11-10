@@ -1851,6 +1851,8 @@
     "upload_failed": "Theip ar phróiseáil comhaid"
   },
   "inactivity": {
+    "stalled": "Stoptha",
+    "stalled_unavailable": "Níl an scagaire Stoptha ar fáil sa leagan seo. Tá an neamhghníomhaíocht reatha á taispeáint.",
     "title": "Neamhghníomhaíocht",
     "description": "Féach cé na tascanna oscailte atá réidh lena gcur siar agus cé na cinn atá ag druidim leis an sprioc.",
     "all_areas": "Gach Réimse · réamhshocrú comhroinnte",

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { expect, test, type Browser } from "@playwright/test"
+import { expect, test, type Browser, type Route } from "@playwright/test"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -40,6 +40,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
   let child: ChildProcess | undefined
   let browser: Browser | undefined
   const logs: string[] = []
+  let releaseDenial: (() => void) | undefined
+  let releaseSuccess: (() => void) | undefined
   try {
     child = startCoreFixture(work)
     child.stdout?.on("data", value => logs.push(String(value)))
@@ -51,8 +53,11 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     const origin = `https://127.0.0.1:${info.port}`
     const prefix: string = info.configuredPath
     const api = prefix + path
+    const fetchIntercepted = (route: Route) => route.fetch({
+      headers: { ...route.request().headers(), "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin", "sec-fetch-dest": "empty" },
+    })
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block", viewport: { width: 320, height: 740 }, reducedMotion: "reduce" })
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block", viewport: { width: 320, height: 740 }, reducedMotion: "reduce" })
     await context.setExtraHTTPHeaders({})
     const setOwner = (value: string) => context.addCookies([{ name: "feedback-fixture", value, url: origin }])
     await setOwner("admin")
@@ -177,6 +182,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
     await rows.getByRole("link", { name: "Details" }).click()
     await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
+    await expect(page.locator("#td-deferral-action")).toBeVisible()
     await page.goBack()
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
 
@@ -207,10 +213,187 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await context.setOffline(true)
     await expect(board.locator("[data-inactivity-cue]")).toHaveCount(0)
     await context.setOffline(false)
+
+    const setMemberActive = async (active: boolean) => {
+      const response = once(child!, "message", { signal: AbortSignal.timeout(3000) })
+      child!.send({ type: "fixture-core", user: "member", active })
+      await response
+    }
+    await setMemberActive(true)
+    for (const owner of ["admin", "admin", "member"]) {
+      await setOwner(owner)
+      const added = await pinRequest(page, prefix + "/api/tasks/browser-card/comments", "POST", { content: "A verified household comment" })
+      expect(added.status).toBe(201)
+      expect(added.body).not.toHaveProperty("inactivity_spike_human")
+      expect(added.body).not.toHaveProperty("owner_key")
+    }
+    const spike = new DatabaseSync(join(work, "pins.db"))
+    try {
+      const recorded = spike.prepare("SELECT last_activity_spike_at FROM tasks WHERE id = 'browser-card'").get()
+      expect(recorded?.last_activity_spike_at).toEqual(expect.any(Number))
+      const old = Date.now() - 20 * 86_400_000
+      spike.exec("PRAGMA busy_timeout = 3000")
+      spike.prepare("UPDATE comments SET created_at = ? WHERE task_id = 'browser-card'").run(new Date(old).toISOString())
+      spike.prepare("UPDATE tasks SET created_at = ?, updated_at = ?, inactivity_touched_at = ?, last_activity_spike_at = ? WHERE id = 'browser-card'")
+        .run(old, old, old, old)
+      const addCard = spike.prepare(`INSERT INTO tasks
+        (id,title,request_id,idempotency_key,area_id,status,parent_id,created_at,updated_at,last_activity_spike_at)
+        VALUES (?, ?, ?, ?, 'default', 'pending', ?, ?, ?, ?)`)
+      addCard.run("stall-child", "Stalled child", "stall-child", "stall-child", "browser-card", old, old, old)
+      addCard.run("stall-peer", "Stalled peer", "stall-peer", "stall-peer", null, old, old, old)
+      addCard.run("stall-color", "Stalled color", "stall-color", "stall-color", null, old, old, old)
+      spike.prepare(`INSERT INTO tasks
+        (id,title,request_id,idempotency_key,area_id,status,created_at,updated_at,last_activity_spike_at)
+        VALUES ('stall-blocked','Stalled blocked','stall-blocked','stall-blocked','default','active',?,?,?)`)
+        .run(old, old, old)
+      spike.prepare(`INSERT INTO task_links (id,source_task_id,target_task_id,link_type,created_at)
+        VALUES ('stall-blocker','browser-card','stall-blocked','blocks',?)`).run(old)
+    } finally {
+      spike.close()
+    }
+    await page.goto(base + "?filter=stalled")
+    await expect(rows.getByText(title, { exact: true })).toBeVisible()
+    await expect(rows.getByRole("listitem").filter({ hasText: title }).locator("p")).toContainText("Stalled")
+    let legacyRejections = 0
+    const legacyServer = async (route: Route) => {
+      const body = route.request().postDataJSON()
+      if (body?.action === "preview" && body.filter === "stalled") {
+        legacyRejections++
+        await route.fulfill({ status: 400, json: {} })
+        return
+      }
+      const response = await fetchIntercepted(route)
+      expect(response.status()).toBe(200)
+      const data = await response.json()
+      if (body?.action === "preview") {
+        for (const task of data.tasks) delete task.stall_since
+      }
+      if (body?.action === "board") delete data.stalled
+      await route.fulfill({ response, json: data })
+    }
+    await page.route("**" + api, legacyServer)
+    await page.goto(base + "?filter=stalled")
+    await expect(status).toHaveText("Stalled is unavailable on this version. Showing current inactivity.")
+    await expect(page.locator("[data-inactivity-filter]")).toHaveValue("all")
+    await expect(rows.getByText(title, { exact: true })).toBeVisible()
+    expect(legacyRejections).toBe(1)
+    await page.goto(origin + prefix + "/tasks?area=default")
+    await expect(page.locator('.kanban-card[data-id="browser-card"] [data-inactivity-cue]')).toHaveText("Ready to defer")
+    await page.unroute("**" + api, legacyServer)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("meitheal:inactivity-task-changed")))
+    const cues = page.locator('.kanban-card[data-id="browser-card"] [data-inactivity-cue]')
+    await expect(cues).toHaveText(["Ready to defer", "Stalled"])
+    expect(await cues.first().evaluate(cue => Number.parseFloat(getComputedStyle(cue.parentElement!).columnGap))).toBeGreaterThan(0)
+    const childCues = page.locator('.kanban-card[data-id="stall-child"] [data-inactivity-cue]')
+    const peerCues = page.locator('.kanban-card[data-id="stall-peer"] [data-inactivity-cue]')
+    await expect(childCues).toHaveText(["Ready to defer", "Stalled"])
+    const blockedCues = page.locator('.kanban-card[data-id="stall-blocked"] [data-inactivity-cue]')
+    await expect(blockedCues).toHaveText("Stalled")
+    const colorCard = page.locator('.kanban-card[data-id="stall-color"]')
+    const colorCues = colorCard.locator("[data-inactivity-cue]")
+    await expect(colorCues).toHaveText(["Ready to defer", "Stalled"])
+    await page.evaluate(() => document.querySelector("#kanban-board")?.setAttribute("data-fixture-original-board", "true"))
+    await colorCard.getByRole("button", { name: "Set color for: Stalled color", exact: true }).click()
+    const swatch = page.getByRole("radio", { name: "Set color: Red", exact: true })
+    await expect(swatch).toBeVisible()
+    const colorBounds = await swatch.boundingBox()
+    expect(colorBounds?.width).toBeGreaterThanOrEqual(44)
+    expect(colorBounds?.height).toBeGreaterThanOrEqual(44)
+    const popoverBounds = await page.getByRole("dialog", { name: "Card Color", exact: true }).boundingBox()
+    expect(popoverBounds?.x).toBeGreaterThanOrEqual(0)
+    expect(popoverBounds!.x + popoverBounds!.width).toBeLessThanOrEqual(320)
+    expect(popoverBounds?.y).toBeGreaterThanOrEqual(0)
+    const colorSaved = page.waitForResponse(response =>
+      new URL(response.url()).pathname === prefix + "/api/tasks/stall-color" &&
+      response.request().method() === "PUT" && response.ok())
+    await page.getByRole("radio", { name: "Set color: Red", exact: true }).click()
+    await colorSaved
+    await expect(colorCues).toHaveText("Closing soon")
+    await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
+    await expect(board).toHaveAttribute("data-fixture-original-board", "true")
+    await page.evaluate(() => {
+      document.querySelector("#kanban-board")?.setAttribute("data-fixture-original-board", "true")
+      window.openTaskDetail?.("browser-card")
+    })
+    const modal = page.locator("#task-detail-overlay")
+    await expect(modal).toHaveClass(/active/)
+    await expect(modal.locator("#td-deferral-action")).toBeVisible()
+    await expect(modal.locator("#td-deferral-action")).toBeEnabled()
+    const completed = page.waitForResponse(response =>
+      new URL(response.url()).pathname === prefix + "/api/tasks/browser-card" &&
+      response.request().method() === "PUT" && response.ok())
+    await modal.locator("#td-status").selectOption("complete")
+    await completed
+    await expect(childCues).toHaveCount(0)
+    await expect(blockedCues).toHaveText(["Ready to defer", "Stalled"])
+    await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
+    await expect(board).toHaveAttribute("data-fixture-original-board", "true")
+    const holdDenial = new Promise<void>(resolve => { releaseDenial = resolve })
+    let held = false
+    const delayOneDenial = async (route: Route) => {
+      if (held) return route.continue()
+      held = true
+      await holdDenial
+      await route.fulfill({ status: 403, json: {} })
+    }
+    await page.route("**" + api, delayOneDenial)
+    const invalidatePeer = () => page.evaluate(() => window.dispatchEvent(new CustomEvent(
+      "meitheal:inactivity-task-changed", { detail: "stall-peer" })))
+    await invalidatePeer()
+    await expect.poll(() => held).toBe(true)
+    await invalidatePeer()
+    await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
+    const olderDenial = page.waitForResponse(response =>
+      new URL(response.url()).pathname === api && response.status() === 403)
+    releaseDenial!()
+    await olderDenial
+    await expect(peerCues).toHaveCount(0)
+    await page.unroute("**" + api, delayOneDenial)
+    await invalidatePeer()
+    await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
+    const holdSuccess = new Promise<void>(resolve => { releaseSuccess = resolve })
+    let capturedSuccess = false
+    let staleSuccessFinished = false
+    const denyWithSuccessPending = async (route: Route) => {
+      if (capturedSuccess) {
+        await route.fulfill({ status: 403, json: {} })
+        return
+      }
+      const response = await fetchIntercepted(route)
+      capturedSuccess = true
+      await holdSuccess
+      try {
+        await route.fulfill({ response })
+      } finally {
+        staleSuccessFinished = true
+      }
+    }
+    await page.route("**" + api, denyWithSuccessPending)
+    await invalidatePeer()
+    await expect.poll(() => capturedSuccess).toBe(true)
+    const denialBeforeSuccess = page.waitForResponse(response =>
+      new URL(response.url()).pathname === api && response.status() === 403)
+    await invalidatePeer()
+    await denialBeforeSuccess
+    await expect(peerCues).toHaveCount(0)
+    releaseSuccess!()
+    await expect.poll(() => staleSuccessFinished).toBe(true)
+    await expect(peerCues).toHaveCount(0)
+    await page.unroute("**" + api, denyWithSuccessPending)
+    await invalidatePeer()
+    await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
+    await setMemberActive(false)
+    const rejected = page.waitForResponse(response =>
+      new URL(response.url()).pathname === api && response.status() === 403)
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+    await rejected
+    await expect(peerCues).toHaveCount(0)
   } catch (error) {
     console.error(logs.slice(-12).join(""))
     throw error
   } finally {
+    releaseDenial?.()
+    releaseSuccess?.()
     await browser?.close()
     if (child && child.exitCode === null && child.signalCode === null) {
       const closed = once(child, "exit", { signal: AbortSignal.timeout(3000) })

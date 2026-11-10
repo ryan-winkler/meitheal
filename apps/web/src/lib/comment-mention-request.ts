@@ -66,9 +66,10 @@ export function commentAttempt(request: Request) {
 export async function prepareCommentMentions(
   content: string, mentions: ReturnType<typeof commentMentions>, locals: App.Locals, signal: AbortSignal,
 ) {
-  if (!mentions.length || !verifiedIngressUser(locals)) {
+  const verifiedHuman = Boolean(verifiedIngressUser(locals))
+  if (!mentions.length || !verifiedHuman) {
     if (!await hasCurrentTaskParticipant(locals, signal, true)) return activeParticipantRequired()
-    return { content, recipients: [] as string[] }
+    return { content, recipients: [] as string[], verifiedHuman }
   }
   const people = await commentPeople(locals, signal)
   if (!people) return activeParticipantRequired()
@@ -85,5 +86,5 @@ export async function prepareCommentMentions(
   if (recipients.size > 10) return commentMentionProblem("A comment can mention at most ten people.", 400)
   canonical += content.slice(offset)
   if (canonical.length > 5000) return commentMentionProblem("The comment exceeds 5000 characters with the selected names.", 400)
-  return { content: canonical, recipients: [...recipients] }
+  return { content: canonical, recipients: [...recipients], verifiedHuman }
 }

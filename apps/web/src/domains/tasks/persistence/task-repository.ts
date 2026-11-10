@@ -1579,12 +1579,12 @@ export class TaskRepository {
   }
 
   /** Insert and return this comment while the parent task exists. */
-  async addComment(taskId: string, content: string, author: string, ownerKey: string | null) {
+  async addComment(taskId: string, content: string, author: string, ownerKey: string | null, verifiedHuman = false) {
     const inserted = await this.client.execute({
-      sql: `INSERT INTO comments (task_id, content, author, owner_key)
-            SELECT id, ?, ?, ? FROM tasks WHERE id = ?
+      sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
+            SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ?
             RETURNING id, task_id, content, author, created_at`,
-      args: [content, author, ownerKey, taskId],
+      args: [content, author, ownerKey, verifiedHuman ? 1 : 0, taskId],
     })
     return inserted.rows[0]
   }

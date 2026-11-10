@@ -1,6 +1,9 @@
+import { execFileSync, type ExecFileSyncOptions } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
 import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { inactivityDayMs as day, inactivityRuleActor } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-query"
@@ -63,7 +66,7 @@ async function setPolicy(repo: TaskInactivityRepository, areaId: string | null, 
 }
 
 test("starts off, applies elapsed day boundaries, and honors explicit scope", async ({ db, inactivity }) => {
-  expect(getSchemaVersion()).toBe(17)
+  expect(getSchemaVersion()).toBe(18)
   await insertArea(db, "other")
   await seed(db, "ready", new Date(now - 8 * day).toISOString())
   await seed(db, "upcoming", now - day, "default", "todo")
@@ -90,7 +93,7 @@ test("starts off, applies elapsed day boundaries, and honors explicit scope", as
   expect(await inactivity.hasEnabledPolicy("other")).toBe(false)
   expect((await inactivity.preview({ areaId: null, now, filter: "ready", page: 1 })).total).toBe(1)
   expect((await inactivity.preview({ areaId: null, now, filter: "upcoming", page: 1 })).total).toBe(1)
-  expect([...await inactivity.boardCues(["upcoming", "other-card"], now)]).toEqual([["upcoming", now + 7 * day]])
+  expect([...(await inactivity.boardCues(["upcoming", "other-card"], now)).cues]).toEqual([["upcoming", now + 7 * day]])
 })
 
 test("guards stale defaults, inheritance tombstones, and same-timestamp Area recreation", async ({ db, inactivity }) => {
@@ -267,32 +270,133 @@ test("fails closed for a persisted revision with trailing NUL bytes", async ({ d
 
 test("keeps preview and visible board cues bounded with 1,000 and 2,000 tasks", async ({ db, inactivity }) => {
   await setPolicy(inactivity, null, 1)
-  const when = now - 3 * day
+  const when = now - 20 * day
   for (const size of [1000, 2000]) {
     await db.execute({
       sql: `WITH RECURSIVE batch(n) AS (
         VALUES (CAST(? AS INTEGER)) UNION ALL SELECT n + 1 FROM batch WHERE n + 1 < ?
-      ) INSERT INTO tasks (id, title, request_id, idempotency_key, area_id, status, created_at, updated_at)
-        SELECT 'bench-' || n, 'Synthetic task ' || n, 'bench-' || n, 'bench-' || n, 'default', 'pending', ?, ? FROM batch`,
-      args: [size - 1000, size, when, when],
+      ) INSERT INTO tasks (id, title, request_id, idempotency_key, area_id, status, created_at, updated_at, last_activity_spike_at)
+        SELECT 'bench-' || n, 'Synthetic task ' || n, 'bench-' || n, 'bench-' || n, 'default', 'pending', ?, ?, ? FROM batch`,
+      args: [size - 1000, size, when, when, when],
     })
     const ids = Array.from({ length: 100 }, (_, i) => `bench-${i}`)
     const previewMs: number[] = []
     const cuesMs: number[] = []
     for (let sample = 0; sample < 6; sample++) {
       const start = performance.now()
-      const result = await preview(inactivity)
+      const result = await inactivity.preview({ areaId: null, now, filter: "stalled", page: 1 })
       const previewEnd = performance.now()
-      const cues = await inactivity.boardCues(ids, now)
+      const { cues, stalled } = await inactivity.boardCues(ids, now)
       const cuesEnd = performance.now()
       expect(result.total).toBe(size)
       expect(result.tasks).toHaveLength(25)
       expect(cues.size).toBe(100)
+      expect(stalled.size).toBe(100)
+      expect(result.tasks.every(row => row.stall_since === when + 14 * day)).toBe(true)
+      const ordered = result.tasks.map(row => row.id)
+      expect(ordered).toEqual([...ordered].sort())
       if (sample > 0) {
         previewMs.push(Number((previewEnd - start).toFixed(2)))
         cuesMs.push(Number((cuesEnd - previewEnd).toFixed(2)))
       }
     }
     console.log(JSON.stringify({ taskCount: size, previewRows: 25, cueRows: 100, previewMs, cuesMs }))
+  }
+})
+
+test("qualifying transitions and verified multi-person comment bursts record a spike atomically", async ({ db, inactivity }) => {
+  await setPolicy(inactivity, null, 30)
+  await seed(db, "shared", now - 20 * day)
+  const marker = async () => (await db.execute("SELECT last_activity_spike_at AS value FROM tasks WHERE id = 'shared'")).rows[0]?.value
+  const repo = new TaskRepository(db)
+  expect(await marker()).toBeNull()
+  await repo.addComment("shared", "First verified comment", "Alice", "verified-one", true)
+  await repo.addComment("shared", "Second from the same person", "Alice", "verified-one", true)
+  await repo.addComment("shared", "Agent does not count", "Bot", "automation")
+  expect(await marker()).toBeNull()
+  const received = await repo.addComment("shared", "Third verified comment", "Bob", "verified-two", true)
+  expect(received).not.toHaveProperty("inactivity_spike_human")
+  expect(await marker()).toEqual(expect.any(Number))
+
+  const oldMarker = now - 15 * day
+  await db.execute({ sql: "UPDATE tasks SET last_activity_spike_at = ? WHERE id = 'shared'", args: [oldMarker] })
+  await db.execute("UPDATE tasks SET assigned_to = 'resident' WHERE id = 'shared'")
+  expect(Number(await marker())).toBeGreaterThan(oldMarker)
+  await db.execute({ sql: "UPDATE tasks SET last_activity_spike_at = ? WHERE id = 'shared'", args: [oldMarker] })
+  await db.execute("UPDATE tasks SET assigned_to = ' resident ' WHERE id = 'shared'")
+  expect(await marker()).toBe(oldMarker)
+  await db.execute("UPDATE tasks SET status = 'complete' WHERE id = 'shared'")
+  expect(await marker()).toBe(oldMarker)
+  await db.execute("UPDATE tasks SET status = 'pending' WHERE id = 'shared'")
+  expect(Number(await marker())).toBeGreaterThan(oldMarker)
+})
+
+test("stalled is independent of closing soon and protected work can stall without being deferred", async ({ db, inactivity }) => {
+  await setPolicy(inactivity, null, 30)
+  const boundary = now - 14 * day
+  await seed(db, "protected", boundary)
+  await seed(db, "overlap", now - 24 * day)
+  await seed(db, "later", boundary + 1)
+  await seed(db, "never", now - 28 * day)
+  await db.execute({
+    sql: `UPDATE tasks SET last_activity_spike_at = ? WHERE id IN ('protected', 'overlap', 'later')`,
+    args: [boundary],
+  })
+  await db.execute("UPDATE tasks SET due_date = '2026-12-12' WHERE id = 'protected'")
+  const result = await inactivity.preview({ areaId: null, now, filter: "stalled", page: 1 })
+  expect(result.tasks.map(row => [row.id, row.stall_since, row.deadline])).toEqual([
+    ["overlap", now, now + 6 * day], ["protected", now, null],
+  ])
+  const { cues, stalled } = await inactivity.boardCues(["protected", "overlap", "later", "never"], now)
+  expect(Object.fromEntries(cues)).toEqual({ overlap: now + 6 * day, never: now + 2 * day })
+  expect(Object.fromEntries(stalled)).toEqual({ overlap: now, protected: now })
+  expect(await sweepInactiveTasks(db, now)).toBe(0)
+})
+
+test("an ordinary packaged CLI rerun rejects a CHECK that only appears in a schema comment", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "meitheal-stall-cli-"))
+  const database = join(dir, "tasks.db")
+  const options: ExecFileSyncOptions = {
+    cwd: fileURLToPath(new URL("../../apps/web", import.meta.url)),
+    env: { ...process.env, MEITHEAL_DB_URL: `file:${database}` },
+    stdio: ["ignore", "pipe", "pipe"],
+  }
+  const migrate = () => execFileSync(process.execPath, ["scripts/migrate.mjs"], options)
+  try {
+    expect(migrate().toString()).toContain("0008_task_stall.mjs")
+    expect(migrate().toString()).toContain("No migrations to apply")
+    const local = new DatabaseSync(database)
+    try {
+      const definition = "last_activity_spike_at INTEGER CHECK(last_activity_spike_at IS NULL OR (typeof(last_activity_spike_at) = 'integer' AND last_activity_spike_at BETWEEN 1 AND 9007199254740991))"
+      local.exec("ALTER TABLE tasks DROP COLUMN last_activity_spike_at")
+      local.exec(`ALTER TABLE tasks ADD COLUMN last_activity_spike_at INTEGER /* ${definition} */`)
+    } finally {
+      local.close()
+    }
+    expect(migrate).toThrow(/Unexpected stall column: tasks.last_activity_spike_at/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("the comment burst window includes its exact endpoints and excludes adjacent milliseconds", async ({ db, inactivity }) => {
+  await setPolicy(inactivity, null, 30)
+  const windowMs = 30 * day * 33 / 100
+  for (const [id, lowerOffset, upperOffset, matches] of [
+    ["inclusive", 0, 0, true],
+    ["too-old", -1, 0, false],
+    ["future-comment", 0, 1, false],
+  ] as const) {
+    await seed(db, id, now - 20 * day)
+    await db.execute({
+      sql: `WITH clock(ms) AS (VALUES (unixepoch('now') * 1000 + CAST(substr(strftime('%f','now'), 4, 3) AS INTEGER))),
+        events(seq, owner, delta) AS (VALUES (1, 'alice', ?), (2, 'alice', -1000), (3, 'bob', ?))
+        INSERT INTO comments (task_id, content, author, owner_key, created_at, inactivity_spike_human)
+        SELECT ?, owner, owner, owner, strftime('%Y-%m-%d %H:%M:%f', (ms + delta) / 1000.0, 'unixepoch'), 1
+        FROM events CROSS JOIN clock ORDER BY seq`,
+      args: [-windowMs + lowerOffset, upperOffset, id],
+    })
+    const { rows } = await db.execute({ sql: "SELECT last_activity_spike_at FROM tasks WHERE id = ?", args: [id] })
+    expect(typeof rows[0]?.last_activity_spike_at === "number", id).toBe(matches)
   }
 })

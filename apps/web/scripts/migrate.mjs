@@ -11,6 +11,8 @@ import { applyCommentMentionsMigration, validateCommentMentionsSchema } from "..
 
 import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 
+import { applyTaskStallMigration, validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(__dirname, "../drizzle/migrations");
 const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db";
@@ -21,6 +23,14 @@ const executableMigrations = new Map([
   ["0006_task_drafts.mjs", { apply: applyTaskDraftsMigration, validate: validateTaskDraftsSchema }],
   ["0007_comment_mentions.mjs", { apply: applyCommentMentionsMigration, validate: validateCommentMentionsSchema }],
   ["0007_task_inactivity.mjs", { apply: applyTaskInactivityMigration, validate: validateTaskInactivitySchema }],
+  ["0008_task_stall.mjs", {
+    async apply(tx) {
+      await validateCommentMentionsSchema(tx)
+      await validateTaskInactivitySchema(tx)
+      await applyTaskStallMigration(tx)
+    },
+    validate: validateTaskStallSchema,
+  }],
 ])
 
 if (dbUrl.startsWith("file:")) {
@@ -104,6 +114,9 @@ async function main() {
     }
   }
 
+  await validateCommentMentionsSchema(client)
+  await validateTaskInactivitySchema(client)
+  await validateTaskStallSchema(client)
   if (pending.length === 0) {
     console.log("No migrations to apply.");
   }

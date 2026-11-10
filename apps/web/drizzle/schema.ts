@@ -17,7 +17,8 @@ export const tasks = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     deferredAt: integer("deferred_at"),
     deferralRevision: text("deferral_revision"),
-    inactivityTouchedAt: integer("inactivity_touched_at")
+    inactivityTouchedAt: integer("inactivity_touched_at"),
+    lastActivitySpikeAt: integer("last_activity_spike_at")
   },
   (table) => ({
     idempotencyUnique: uniqueIndex("tasks_idempotency_unique").on(table.idempotencyKey),

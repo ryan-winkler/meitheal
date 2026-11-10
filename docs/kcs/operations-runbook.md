@@ -366,6 +366,10 @@ After enabling a policy, restart the App and allow one five-minute sweep. Verify
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
 
+For the Stalled cue, check the applicable Inactivity policy first. A qualifying assignment, reopen or at least three recent comments from two verified Home Assistant members creates the marker. The comment window is 33% of the configured inactivity period. Existing cards keep their original activity history and begin recording markers when qualifying events occur. On a disposable dataset, verify the Stalled filter, clear a cue by editing its card, and confirm a protected scheduled task stays out of automatic deferral.
+
+Card quick-action menus use viewport-bounded positions and 44-pixel color targets. Check a color change at a 320-pixel viewport when verifying board cues. The menu styles cover elements created by the client controller.
+
 ## Checklist edits from multiple sessions
 
 When another session saves a checklist, Meitheal merges compatible edits by item ID. A merge preserves the focused editor, its unsaved text and its selection. Adding an item keeps the placeholder selected so typing replaces it after a background merge. If edits conflict, the app keeps the draft and offers the latest saved version for review. Verify this with `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/checklist-concurrency.spec.ts` after building the web app.

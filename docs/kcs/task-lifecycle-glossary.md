@@ -150,3 +150,5 @@ The cutoff uses the most recent task activity, including comments and a real Res
 ## Task participation
 
 Comments record shared task context. Reactions add a short acknowledgment to a task or comment. Home Assistant ingress checks current membership for writes and keyed comment retries. Existing comments remain visible to callers with task access. Edit and delete still belong to the original author. For account recovery and API behavior, see the [operations runbook](operations-runbook.md).
+
+**Stalled** identifies open work after a burst of collaboration, a new assignment or a reopen. The cue appears after 14 elapsed days without qualifying activity and clears after a new update. Use the Stalled filter under **Tasks → Inactivity** to review it. Closing soon tracks the separate automatic deferral deadline.

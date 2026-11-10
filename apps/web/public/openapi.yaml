@@ -1871,6 +1871,7 @@ paths:
                         - all
                         - ready
                         - upcoming
+                        - stalled
                     days: &a20
                       type: integer
                       minimum: -1
@@ -2006,6 +2007,7 @@ paths:
                             - ticket_number
                             - last_activity
                             - deadline
+                            - stall_since
                           additionalProperties: false
                           properties:
                             id: *a23
@@ -2022,7 +2024,18 @@ paths:
                               type: integer
                               format: int64
                               description: Epoch milliseconds
-                            deadline: *a25
+                            deadline:
+                              type:
+                                - integer
+                                - "null"
+                              format: int64
+                              description: Epoch milliseconds
+                            stall_since:
+                              type:
+                                - integer
+                                - "null"
+                              format: int64
+                              description: Epoch milliseconds
                       now: *a25
                       canSave:
                         type: boolean
@@ -2036,10 +2049,14 @@ paths:
                     required:
                       - now
                       - cues
+                      - stalled
                     additionalProperties: false
                     properties:
                       now: *a25
                       cues:
+                        type: object
+                        additionalProperties: *a25
+                      stalled:
                         type: object
                         additionalProperties: *a25
         "400":

@@ -13,6 +13,11 @@ import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_ta
 import { applyCommentMentionsMigration } from "../../../../drizzle/migrations/0007_comment_mentions.mjs"
 import { applyTaskInactivityMigration, installTaskInactivityTriggers } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
 
+import { applyTaskStallMigration, installTaskStallTriggers } from "../../../../drizzle/migrations/0008_task_stall.mjs"
+import { STATUS } from "../../../lib/status-config"
+import { acceptedStatusSql, inactivityDaysSql, openStatuses } from "./task-inactivity-query"
+import { taskTimestampMs } from "./task-timestamp"
+
 export interface PersistedTask {
   id: string;
   title: string;
@@ -981,7 +986,7 @@ async function initializeSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  const targetVersion = 17
+  const targetVersion = 18
   const migration = await client.transaction("write")
   try {
     await applyTaskDeferralMigration(migration)
@@ -990,6 +995,14 @@ async function initializeSchema(): Promise<void> {
     await applyCommentMentionsMigration(migration)
     await applyTaskInactivityMigration(migration)
     await installTaskInactivityTriggers(migration)
+    await applyTaskStallMigration(migration)
+    await installTaskStallTriggers(migration, {
+      newTaskDays: inactivityDaysSql(false, "NEW.area_id"),
+      storedTaskDays: inactivityDaysSql(),
+      openStatuses,
+      completeStatuses: acceptedStatusSql(STATUS.COMPLETE),
+      commentClock: taskTimestampMs("comment.created_at"),
+    })
     // Publish the schema version atomically with the last migration.
     await migration.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
