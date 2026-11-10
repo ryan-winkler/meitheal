@@ -133,22 +133,20 @@
             { signal } as AddEventListenerOptions,
           );
 
-          // "/" and Cmd/Ctrl+K launch universal search, "n" creates a task
+          // SearchHub owns Search. Layout owns page navigation and modal shortcuts.
           if (bindKeyboard) document.addEventListener(
             "keydown",
             (e) => {
+              if (e.defaultPrevented) return
               const tag = (e.target as HTMLElement)?.tagName;
               const isEditing =
                 ["INPUT", "TEXTAREA", "SELECT"].includes(tag) ||
                 (e.target as HTMLElement)?.contentEditable === "true";
 
               if (e.key === "Escape") {
-                // Close overlays in priority order: task detail > command palette > search > sidebar
+                // Search owns Escape inside its panel.
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
-                );
-                const searchHubOverlay = document.getElementById(
-                  "search-hub-overlay",
                 );
                 const shortcutModal = document.getElementById("shortcut-modal");
                 const sidebar = document.getElementById("sidebar");
@@ -162,13 +160,6 @@
                 }
                 if (taskOverlay && taskOverlay.classList.contains("active")) {
                   document.getElementById("td-close")?.click()
-                  return;
-                }
-                if (
-                  searchHubOverlay &&
-                  !searchHubOverlay.classList.contains("hidden")
-                ) {
-                  window.closeSearchHub?.();
                   return;
                 }
                 if (sidebar?.classList.contains("open")) {
@@ -200,18 +191,8 @@
               )
                 return;
 
-              // Ctrl+K / Cmd+K opens universal search
-              if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                window.openSearchHub?.();
-                return;
-              }
-              if (!singleKeyShortcutsEnabled()) return
+              if (e.ctrlKey || e.metaKey || !singleKeyShortcutsEnabled()) return
 
-              if (e.key === "/" && !e.shiftKey) {
-                e.preventDefault();
-                window.openSearchHub?.();
-              }
               if (e.key === "n") {
                 e.preventDefault();
                 // If on tasks page, click the create button; otherwise navigate

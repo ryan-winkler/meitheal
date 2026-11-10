@@ -29,7 +29,6 @@ interface Window {
 
   // ── Search ──
   /** Guard: search hub keyboard listener bound */
-  __searchHubKeyboardBound?: boolean
 
   // ── Area / Filter ──
   /** Currently active board ID */

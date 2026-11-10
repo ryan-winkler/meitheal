@@ -140,6 +140,14 @@
   padding: 0.5rem;
 }
 
+.search-hub-results:empty {
+  padding: 0;
+}
+
+.search-hub-empty button {
+  margin-inline-start: 0.5rem;
+}
+
 .search-hub-section {
   padding: 0.5rem;
 }

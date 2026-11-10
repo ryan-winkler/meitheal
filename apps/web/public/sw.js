@@ -207,7 +207,8 @@ const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
 function isPrivateResource(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    return path === "/api/export/database.sqlite" || path === "/api/task-pins" || path === "/pinned"
+    return path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+      path === "/pinned" || path === "/api/search"
   }
 
   if (url.origin !== self.location.origin) return false
@@ -469,11 +470,12 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "TASK_PINS_IMPLEMENTED") {
+  if (["TASK_PINS_IMPLEMENTED", "MEITHEAL_SEARCH_WAITING_CAPABLE"].includes(event.data?.type)) {
     event.ports[0]?.postMessage(true)
   }
 
-  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
+  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY",
+    "MEITHEAL_SEARCH_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
     const port = event.ports[0]
     event.waitUntil(ensureSensitiveCachePurge().then(
       () => port.postMessage(true),

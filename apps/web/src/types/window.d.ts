@@ -83,9 +83,7 @@ interface MeithealWindowExtensions {
   /** Opens the search hub modal, optionally pre-filling and/or pre-scoping */
   openSearchHub?: (options?: string | { prefill?: string; scope?: string }) => void;
   /** Closes the search hub modal */
-  closeSearchHub?: () => void;
   /** Guard to prevent duplicate keyboard listeners for search hub */
-  __searchHubKeyboardBound?: boolean;
 
   // === Intervals / Singleton Guards ===
   /** Health check interval ID (prevents accumulation across navigations) */
