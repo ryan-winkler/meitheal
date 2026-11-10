@@ -51,6 +51,8 @@ Check system library versions in the built images before promotion. The runtime 
 
 Both App directories receive the same profile from `meitheal-hub/apparmor.txt`. Supervisor loads it under each installed App ID. Check the effective profile on a host with AppArmor enforcement and keep Protection mode enabled during qualification. [AppArmor in Home Assistant](https://contributors.home-assistant.io/apps/guides/security/#apparmor).
 
+Distributed App images carry the OCI license label `LicenseRef-Proprietary`; this is separate from the source license files shipped for attribution. Both local and hosted build scripts preserve that label.
+
 Both workflows use standard GitHub-hosted Linux runners on both architectures. GitHub makes these runners available without compute charges for public repositories. Private use draws from the account’s included Actions minutes. [Runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) · [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 
 ## Qualify and promote a canary from a release host

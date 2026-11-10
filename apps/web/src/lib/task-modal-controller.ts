@@ -86,6 +86,7 @@
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
         const drawerSession = crypto.randomUUID()
+        tdOverlay.dataset.ticketHistorySession = drawerSession
 
         function beginScopedWrite() {
           const search = searchSession
@@ -1779,13 +1780,8 @@
         window.addEventListener("popstate", discardSearchDetail, { capture: true, signal: __signal })
         window.addEventListener("hashchange", discardSearchDetail, { capture: true, signal: __signal })
         window.addEventListener("pagehide", discardSearchDetail, { signal: __signal })
-        window.addEventListener("popstate", event => {
-          const state = history.state
-          if (!window.__ingress_path && (state?.ticketBackground === drawerSession || state?.ticketDrawer?.session === drawerSession)) {
-            event.stopImmediatePropagation()
-          }
-          checkTaskLocation(true)
-        }, { signal: __signal, capture: true })
+        window.addEventListener("popstate", () => checkTaskLocation(true), { signal: __signal })
+        window.addEventListener("meitheal:ticket-history", () => checkTaskLocation(true), { signal: __signal })
         window.addEventListener("hashchange", () => checkTaskLocation(true), { signal: __signal })
         checkTaskLocation()
 

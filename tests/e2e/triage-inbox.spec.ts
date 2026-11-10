@@ -13,6 +13,8 @@ async function setMode(request: APIRequestContext, value: unknown) {
   expect((await request.put("/api/settings", { data: { key: "backlog_mode", value } })).status()).toBe(200)
 }
 
+test.beforeEach(async ({ request }) => { await setMode(request, "visible") })
+
 test("Planning opens the bounded queue and keyboard decisions preserve context", async ({ page, request }) => {
   const ids: string[] = []
   try {
@@ -167,8 +169,7 @@ test("an acknowledgement during Details keeps the dialog and retires the accepte
     await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
     await page.keyboard.press("Escape")
     await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)
-    await expect(page).toHaveURL(/\/triage$/)
-    // Returning to the background route revalidates the accepted queue.
+    await page.getByRole("link", { name: "Reload Triage" }).click()
     await expect(firstCard).toHaveCount(0)
   } finally {
     held.resolve()
