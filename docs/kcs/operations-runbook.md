@@ -377,3 +377,5 @@ Assist scoring ignores undeclared fields and non-primitive suggestions. Malforme
 Built-in catalog and field descriptions survive packaged discovery and YAML export. The Settings link exposes the current readiness tooltip while retaining its full click target. Switching tickets resets an aborted Assist action. Both Supervisor build metadata files use the same Proprietary image license label as the Dockerfile.
 
 Search keeps one persistent live announcement region; retry controls remain outside it. Task table controls use the shared table stylesheet, including dynamically created rows. Label names are trimmed after HTML stripping so task creation and the labels API share a stable normalized name. CI action revisions are pinned to verified release commits.
+
+To-do discovery preserves an explicitly disabled sync setting. AI handoff stops when provider settings cannot be read or are invalid; only a successful unset preference defaults to ChatGPT.

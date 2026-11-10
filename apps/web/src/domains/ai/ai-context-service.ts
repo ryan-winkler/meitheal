@@ -144,17 +144,20 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
   }
 
   // Open external provider
-  let provider = "chatgpt";
+  let provider = "chatgpt"
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ai-provider"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value) provider = data.value;
+    const response = await fetch((window.__ingress_path || "") + "/api/settings?key=ai-provider")
+    if (!response.ok) throw new Error("Provider settings unavailable")
+    const data: unknown = await response.json()
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid provider setting")
+    const value = (data as Record<string, unknown>).value
+    if (value != null && value !== "") {
+      if (typeof value !== "string" || !["chatgpt", "claude", "gemini", "ollama", "custom"].includes(value)) throw new Error("Invalid provider setting")
+      provider = value
     }
   } catch {
-    /* default */
+    showToast("settings.ai_handoff_provider_unavailable", "error")
+    return
   }
 
   let targetUrl = "https://chatgpt.com/";

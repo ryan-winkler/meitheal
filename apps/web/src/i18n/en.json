@@ -434,6 +434,7 @@
     "ext_ai_custom_url": "Custom API URL",
     "ai_handoff_url_invalid": "The saved AI URL is invalid. Open Settings → Automation & AI to correct it.",
     "ai_handoff_url_unavailable": "Could not load the saved AI URL. Retry after reconnecting.",
+    "ai_handoff_provider_unavailable": "Could not read a valid AI provider. Check Settings → Automation & AI and retry.",
     "ext_ai_invalid_url": "Enter an HTTP or HTTPS URL without a username or password.",
     "save_ai_settings": "Save AI Settings",
     "agent_protocols_title": "🔗 Agent Protocols",

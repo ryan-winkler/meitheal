@@ -520,7 +520,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
             if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change", { bubbles: true })) }
           })
         })
-        if (autoSelect && enabledCb && !enabledCb.checked) {
+        if (autoSelect && settings.todo_sync_enabled !== false && settings.todo_sync_enabled !== "false" && enabledCb && !enabledCb.checked) {
           enabledCb.checked = true
           if (enabledLabel) enabledLabel.textContent = "On — syncing with HA"
         }
