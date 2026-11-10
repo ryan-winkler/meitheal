@@ -205,3 +205,19 @@ test.describe("framework import API and Settings", () => {
     }
   })
 })
+
+
+test("built-in field descriptions survive a YAML export and re-import", async ({ request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable App server")
+  const exported = await request.get("/api/frameworks/eisenhower/export")
+  expect(exported.status()).toBe(200)
+  const yaml = (await exported.text()).replace(/^name:.*$/m, "name: Roundtrip Eisenhower description")
+  const imported = await request.post("/api/frameworks", { headers: { "content-type": "application/yaml" }, data: yaml })
+  expect(imported.status(), await imported.text()).toBe(201)
+  const config = (await imported.json()).data
+  try {
+    const stored = (await (await request.get(`/api/frameworks/${config.id}`)).json()).data
+    expect(stored.fields.find((field: { key: string }) => field.key === "urgency").description).toBe("How time-sensitive is this task?")
+    expect(await (await request.get(`/api/frameworks/${config.id}/export`)).text()).toContain("How time-sensitive is this task?")
+  } finally { expect((await request.delete(`/api/frameworks/${config.id}`, { data: {} })).status()).toBe(200) }
+})

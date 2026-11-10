@@ -68,7 +68,9 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
     await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
     await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
-    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("title", /ready|unavailable|ar fáil/i)
+    await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
+    await expect(page.locator("#connection-status")).toHaveAttribute("title", "Meitheal ready")
+    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("title", "Meitheal ready")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })

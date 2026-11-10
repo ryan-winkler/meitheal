@@ -130,63 +130,61 @@ async function callAssist(
   };
 }
 
-/**
- * Fall back to clipboard + external provider when HA is unavailable.
- */
-async function fallbackToClipboard(prompt: string): Promise<void> {
-  // Copy to clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(prompt);
-    } catch {
-      /* clipboard denied */
-    }
-  }
+type AiProvider = "chatgpt" | "claude" | "gemini" | "ollama" | "ha_llm" | "custom"
+type AiHandoffTarget = { provider: "ha_llm" } | { provider: Exclude<AiProvider, "ha_llm">; url: URL }
 
-  // Open external provider
-  let provider = "chatgpt"
+/** Resolve the authoritative saved provider before either UI opens a destination. */
+export async function resolveAiHandoffTarget(signal?: AbortSignal): Promise<AiHandoffTarget | null> {
+  if (signal?.aborted) return null
+  let provider: AiProvider = "chatgpt"
   try {
-    const response = await fetch((window.__ingress_path || "") + "/api/settings?key=ai-provider")
+    const response = await fetch("/api/settings?key=ai-provider", { signal: signal ?? null, cache: "no-store" })
     if (!response.ok) throw new Error("Provider settings unavailable")
     const data: unknown = await response.json()
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid provider setting")
     const value = (data as Record<string, unknown>).value
     if (value != null && value !== "") {
       if (typeof value !== "string" || !["chatgpt", "claude", "gemini", "ollama", "ha_llm", "custom"].includes(value)) throw new Error("Invalid provider setting")
-      provider = value
+      provider = value as AiProvider
     }
   } catch {
-    showToast("settings.ai_handoff_provider_unavailable", "error")
-    return
+    if (!signal?.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
+    return null
   }
+  if (signal?.aborted) return null
+  if (provider === "ha_llm") return { provider }
 
-  if (provider === "ha_llm") {
-    showToast("settings.ai_handoff_ha_unavailable", "error")
-    return
-  }
-
-  let targetUrl = "https://chatgpt.com/";
-  if (provider === "claude") targetUrl = "https://claude.ai/new";
-  else if (provider === "gemini") targetUrl = "https://gemini.google.com/";
+  let targetUrl = "https://chatgpt.com/"
+  if (provider === "claude") targetUrl = "https://claude.ai/new"
+  else if (provider === "gemini") targetUrl = "https://gemini.google.com/"
   else if (provider === "ollama" || provider === "custom") {
     let configured: unknown
     try {
-      const response = await fetch((window.__ingress_path || "") + "/api/settings?key=ai-custom-url")
+      const response = await fetch("/api/settings?key=ai-custom-url", { signal: signal ?? null, cache: "no-store" })
       if (!response.ok) throw new Error("Provider settings unavailable")
       configured = (await response.json())?.value
     } catch {
-      showToast("settings.ai_handoff_url_unavailable", "error")
-      return
+      if (!signal?.aborted) showToast("settings.ai_handoff_url_unavailable", "error")
+      return null
     }
     const url = parseAiHandoffUrl(configured)
     if (!url) {
-      showToast("settings.ai_handoff_url_invalid", "error")
-      return
+      if (!signal?.aborted) showToast("settings.ai_handoff_url_invalid", "error")
+      return null
     }
     targetUrl = url.href
   }
+  return signal?.aborted ? null : { provider, url: new URL(targetUrl) }
+}
 
-  window.open(targetUrl, "_blank", "noopener,noreferrer")
+/** Fall back to clipboard and the saved external provider when Assist is unavailable. */
+async function fallbackToClipboard(prompt: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(prompt) } catch { /* clipboard denied */ }
+  }
+  const target = await resolveAiHandoffTarget()
+  if (target?.provider === "ha_llm") showToast("settings.ai_handoff_ha_unavailable", "error")
+  else if (target) window.open(target.url.href, "_blank", "noopener,noreferrer")
 }
 
 /**

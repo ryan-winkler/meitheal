@@ -381,3 +381,5 @@ Search keeps one persistent live announcement region; retry controls remain outs
 To-do discovery preserves an explicitly disabled sync setting. AI handoff stops when provider settings cannot be read or are invalid; only a successful unset preference defaults to ChatGPT.
 
 When Home Assistant-only AI is selected, an unavailable Assist connection reports that state and never opens an external provider.
+
+Today and task-detail AI handoffs use the same authoritative server preference and URL validation. Today opens the HA Assist dialog for HA-only preferences, including with absent or stale browser preferences. Framework YAML re-import preserves field descriptions.
