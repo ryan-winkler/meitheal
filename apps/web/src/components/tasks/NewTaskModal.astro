@@ -437,6 +437,27 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
     const aiDesc = document.getElementById("nt-ai-description");
+    const pillsContainer = document.getElementById("nt-status-pills")
+    const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
+    const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
+    let captureOptionsRequest: AbortController | undefined
+    let lanesLoaded = false
+    let goalsLoaded = false
+
+    pillsContainer?.addEventListener("click", event => {
+      const pill = (event.target as Element).closest<HTMLElement>("[data-status]")
+      if (pill?.dataset.status) selectStatus(pill.dataset.status)
+    }, { signal })
+
+    function selectStatus(status: string) {
+      if (!statusInput) return
+      statusInput.value = status
+      pillsContainer?.querySelectorAll<HTMLElement>("[data-status]").forEach(pill => {
+        const selected = pill.dataset.status === status
+        pill.classList.toggle("active", selected)
+        pill.setAttribute("aria-checked", String(selected))
+      })
+    }
 
     // ── Textarea auto-resize (replaces inline oninput handlers) ──
     if (titleInput) {
@@ -690,9 +711,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }, { signal });
     });
     function closeNewTaskModal() {
-      if (!overlay || !overlay.classList.contains("active")) return;
+      if (!overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
+      captureOptionsRequest?.abort()
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      let finished = false
       const finishClose = () => {
+        if (finished || signal.aborted) return
+        finished = true
         overlay.classList.remove("active", "closing");
         form?.reset();
         
@@ -771,6 +796,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     // Expose global open method
     window.openNewTaskModal = () => {
+      if (signal.aborted || overlay.classList.contains("active")) return
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
       document.getElementById("task-detail-overlay")?.classList.remove("active");
@@ -783,13 +809,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (titleEl) titleEl.style.height = "2.25em";
 
       // Reset status pills to "pending" (To Do)
-      const statusInput = document.getElementById("new-task-status") as HTMLInputElement | null;
-      if (statusInput) statusInput.value = "pending";
-      document.querySelectorAll("#nt-status-pills .filter-toolbar__type-btn").forEach((p) => {
-        const isPending = (p as HTMLElement).dataset.status === "pending";
-        p.classList.toggle("active", isPending);
-        p.setAttribute("aria-checked", isPending ? "true" : "false");
-      });
+      selectStatus("pending")
 
       // Reset priority glass-dropdown
       resetGlassDropdown("nt-priority-dropdown", "nt-priority-label", "new-task-priority", "3");
@@ -798,8 +818,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       
       // Load user list for assignment dropdown
       loadAssigneeDropdown();
+      if (!lanesLoaded || !goalsLoaded) {
+        captureOptionsRequest = new AbortController()
+        const requestSignal = AbortSignal.any([signal, captureOptionsRequest.signal, AbortSignal.timeout(10_000)])
+        if (!lanesLoaded) void loadStatusPills(requestSignal)
+        if (!goalsLoaded) void loadGoals(requestSignal)
+      }
       window.setTimeout(() => {
-        titleEl?.focus();
+        if (!signal.aborted && overlay.classList.contains("active") && !overlay.classList.contains("closing")) {
+          titleEl?.focus()
+        }
       }, 50);
     };
 
@@ -861,68 +889,50 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     // Swimlanes Loader → Status Pills
-    (async function loadStatusPills() {
-      const pillsContainer = document.getElementById("nt-status-pills");
-      const statusHiddenInput = document.getElementById("new-task-status") as HTMLInputElement | null;
-      if (!pillsContainer || !statusHiddenInput) return;
-
-      function activatePill(pill: HTMLElement) {
-        pillsContainer!.querySelectorAll(".filter-toolbar__type-btn").forEach((p) => {
-          p.classList.remove("active");
-          p.setAttribute("aria-checked", "false");
-        });
-        pill.classList.add("active");
-        pill.setAttribute("aria-checked", "true");
-        statusHiddenInput!.value = pill.dataset.status || "pending";
-      }
+    async function loadStatusPills(requestSignal: AbortSignal) {
+      if (!pillsContainer || !statusInput) return
 
       try {
         const [lanesRes, modeRes] = await Promise.all([
-          fetch((window.__ingress_path || "") + "/api/lanes", { signal }),
-          fetch((window.__ingress_path || "") + "/api/settings?key=backlog_mode", { signal })
-        ]);
-        
-        let backlogMode = "visible";
-        if (modeRes.ok) {
-           try {
-             const md = await modeRes.json();
-             backlogMode = md.value;
-           } catch { /* backlog mode JSON parse non-fatal — default visible */ }
+          fetch("/api/lanes", { signal: requestSignal }),
+          fetch("/api/settings?key=backlog_mode", { signal: requestSignal }),
+        ])
+        if (!lanesRes.ok) return
+        const { lanes } = await lanesRes.json()
+        const mode = modeRes.ok ? await modeRes.json().catch(() => null) : null
+        if (requestSignal.aborted || !Array.isArray(lanes)) return
+
+        const hideBacklog = mode?.value === "disabled" || mode?.value === "hidden"
+        const selected = statusInput.value
+        const focused = document.activeElement
+        const focusedStatus = focused instanceof HTMLElement && pillsContainer.contains(focused) ? focused.dataset.status : undefined
+        const options = document.createDocumentFragment()
+        let nextFocus: HTMLButtonElement | undefined
+        for (const lane of lanes) {
+          if (hideBacklog && lane.key === "backlog") continue
+          const pill = document.createElement("button")
+          pill.type = "button"
+          pill.className = "filter-toolbar__type-btn"
+          pill.dataset.status = lane.key
+          pill.setAttribute("role", "radio")
+          const icon = document.createElement("span")
+          icon.className = "nt-status-pill-icon"
+          icon.textContent = lane.icon
+          const label = document.createElement("span")
+          label.textContent = lane.label
+          pill.append(icon, label)
+          options.appendChild(pill)
+          if (lane.key === focusedStatus) nextFocus = pill
         }
-        
-        if (lanesRes.ok) {
-          const data = await lanesRes.json();
-          let lanes = data.lanes || [];
-          if (backlogMode === "disabled" || backlogMode === "hidden") {
-             lanes = lanes.filter((l: any) => l.key !== "backlog");
-          }
-          pillsContainer.replaceChildren();
-          for (const lane of lanes) {
-            const pill = document.createElement("button");
-            pill.type = "button";
-            pill.className = `filter-toolbar__type-btn${lane.key === "pending" ? " active" : ""}`;
-            pill.dataset.status = lane.key;
-            pill.setAttribute("role", "radio");
-            pill.setAttribute("aria-checked", lane.key === "pending" ? "true" : "false");
-            // Build DOM safely — lane data comes from API
-            const iconSpan = document.createElement("span")
-            iconSpan.className = "nt-status-pill-icon"
-            iconSpan.textContent = lane.icon
-            const labelSpan = document.createElement("span")
-            labelSpan.textContent = lane.label
-            pill.appendChild(iconSpan)
-            pill.appendChild(labelSpan)
-            pill.addEventListener("click", () => activatePill(pill), { signal });
-            pillsContainer.appendChild(pill);
-          }
-        }
+        if (!options.childElementCount) return
+        pillsContainer.replaceChildren(options)
+        selectStatus(selected)
+        nextFocus?.focus({ preventScroll: true })
+        lanesLoaded = mode !== null
       } catch {
-        // offline — keep the single fallback pill
-        pillsContainer.querySelector(".filter-toolbar__type-btn")?.addEventListener("click", (e) => {
-          activatePill(e.currentTarget as HTMLElement);
-        }, { signal });
+        // Keep the current options and retry on the next open.
       }
-    })();
+    }
 
     // Initialize glassmorphic dropdowns (priority, recurrence)
     initGlassDropdowns();
@@ -968,30 +978,30 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     (window as unknown as Record<string, unknown>).__ntDatePickers = datePickers;
 
     // Goals Loader
-    (async function loadGoals() {
-      const goalSelect = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-      if (!goalSelect) return;
-
+    async function loadGoals(requestSignal: AbortSignal) {
+      if (!goalSelect) return
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/goals", { signal });
-        if (res.ok) {
-          const data = await res.json();
-          const goals = data.goals || data || [];
-          const noGoalLabel = goalSelect.options[0]?.textContent || "No goal";
-          goalSelect.replaceChildren();
-          const noGoalOpt = document.createElement("option")
-          noGoalOpt.value = ""
-          noGoalOpt.textContent = noGoalLabel
-          goalSelect.appendChild(noGoalOpt)
-          goals.forEach((g: any) => {
-            const opt = document.createElement("option");
-            opt.value = g.id;
-            opt.textContent = `🎯 ${g.title || g.name}`;
-            goalSelect.appendChild(opt);
-          });
-        }
-      } catch (e) { log.warn("goals-fetch error", e) }
-    })();
+        const res = await fetch("/api/goals", { signal: requestSignal })
+        if (!res.ok) return
+        const data = await res.json()
+        const goals = data?.goals ?? data
+        if (requestSignal.aborted || !Array.isArray(goals)) return
+
+        const selected = goalSelect.value
+        const noGoal = goalSelect.options[0]
+        if (!noGoal) return
+        goalSelect.replaceChildren(noGoal, ...goals.map(goal => {
+          const option = document.createElement("option")
+          option.value = goal.id
+          option.textContent = `🎯 ${goal.title || goal.name}`
+          return option
+        }))
+        if (Array.from(goalSelect.options).some(option => option.value === selected)) goalSelect.value = selected
+        goalsLoaded = true
+      } catch (error) {
+        if (!requestSignal.aborted) log.warn("goals-fetch error", error)
+      }
+    }
 
     // Use event delegation on document.body to catch all create-task-btn clicks
     // without cloning DOM nodes (which breaks other scripts' references).

@@ -27,9 +27,15 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Pin a task
+
 A personal pin is a relationship between one household user and one task. It survives changes to the task's workflow, including deferral and completion, and disappears when the task is permanently deleted. Shared favorites continue to drive the existing household views.
 
 Open a task’s Details and choose **Pin task**. Open **Pinned tasks** from the sidebar or mobile menu to find it again. Choose **Unpin** in the list or toggle the Details control again. Use the Home Assistant app panel over HTTPS.
+
+### Choose a Status or Goal When Creating a Task
+
+Open **New Task** to load the available lanes and goals. **To Do** and **No goal** are ready immediately. If the other options fail to load, you can still create a task with the defaults. To retry the options, close and reopen the form.
 
 ### Create a Checklist
 
