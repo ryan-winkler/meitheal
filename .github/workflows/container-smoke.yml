@@ -1,0 +1,64 @@
+name: App container smoke
+
+on:
+  pull_request:
+    paths:
+      - "meitheal-hub/Dockerfile"
+      - "meitheal-hub/build.json"
+      - "meitheal-hub-canary/build.json"
+      - "pnpm-lock.yaml"
+      - "apps/web/astro.config.mjs"
+      - "scripts/smoke-app-release-image.sh"
+      - "scripts/check-app-release-image.sh"
+      - ".github/workflows/container-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Packaged App (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - architecture: aarch64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test the packaged App without publishing
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          version="${revision:0:12}"
+          image="localhost/meitheal-ci:$version"
+          base="$(jq -er --arg arch "$ARCHITECTURE" '.build_from[$arch]' meitheal-hub-canary/build.json)"
+          docker build --platform "$PLATFORM" --file meitheal-hub/Dockerfile \
+            --build-arg "BUILD_FROM=$base" --build-arg "MEITHEAL_VERSION=$version" \
+            --label "org.opencontainers.image.revision=$revision" \
+            --label "io.hass.version=$version" --label "io.hass.arch=$ARCHITECTURE" \
+            --tag "$image" .
+          docker run --rm --network none --entrypoint sh "$image" -e -c '
+            assets=/opt/meitheal/apps/web/dist/client/_astro
+            test -d "$assets"
+            if grep -r "url(/_astro/" "$assets" --include="*.css"; then
+              echo "Absolute font paths in packaged CSS break Home Assistant ingress" >&2
+              exit 1
+            fi
+          '
+          bash scripts/smoke-app-release-image.sh docker "$image" "$revision" "$ARCHITECTURE" "$PLATFORM" "$version"
