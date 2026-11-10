@@ -32,6 +32,13 @@ test("packaged transport denies alternate pin URLs and marks errors no-store", a
   })
   expect(crossOrigin.status()).toBe(403)
   expect(crossOrigin.headers()["cache-control"]).toBe(noStore)
+  let limited
+  for (let i = 0; i < 301; i++) {
+    limited = await request.head(path)
+    if (limited.status() === 429) break
+  }
+  expect(limited?.status()).toBe(429)
+  expect(limited?.headers()["cache-control"]).toBe(noStore)
 })
 
 function startCoreFixture(work: string): ChildProcess {
@@ -132,6 +139,33 @@ test("browser-generated HTTPS requests isolate owners and reject revoked Core id
     expect(await pinRequest(page, path, "HEAD", undefined, contextA)).toMatchObject({ status: 409 })
     expect(await pinRequest(page, path, "PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 409 })
     expect(await pinRequest(page, path, "POST", { action: "list" })).toMatchObject({ body: { total: 0, items: [] } })
+
+    stage = "checking worker cache cleanup"
+    const variants = [path, prefix + "/api/%2574ask-pins/?old=1", prefix + "//pinned", "/api/task-pins"]
+    await page.evaluate(async ({ prefix, variants }) => {
+      const { version } = await (await fetch(prefix + "/version.json")).json()
+      for (const kind of ["api", "nav", "precache", "static"]) {
+        const cache = await caches.open(`meitheal-${kind}-v${version}`)
+        for (const url of variants) await cache.put(url, new Response("synthetic stale payload"))
+      }
+      await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
+    }, { prefix, variants })
+    await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
+    const capability = await page.evaluate(async () => {
+      const channel = new MessageChannel()
+      try {
+        return await new Promise(resolve => {
+          const timeout = setTimeout(() => resolve(false), 2_000)
+          channel.port1.onmessage = event => { clearTimeout(timeout); resolve(event.data) }
+          navigator.serviceWorker.controller?.postMessage({ type: "TASK_PINS_NETWORK_ONLY" }, [channel.port2])
+        })
+      } finally {
+        channel.port1.close()
+      }
+    })
+    expect(capability).toBe(true)
+    expect(await page.evaluate(async variants => Promise.all(variants.map(async url => Boolean(await caches.match(url)))), variants))
+      .toEqual([false, false, false, false])
 
     await setOwner("member")
     stage = "revoking Core user"
