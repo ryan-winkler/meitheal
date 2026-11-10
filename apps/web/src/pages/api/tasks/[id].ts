@@ -91,8 +91,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return taskVersionConflict(storedVersion, clientVersion)
   }
 
+  if ("nfc_tag_id" in body && body.nfc_tag_id !== null &&
+      (typeof body.nfc_tag_id !== "string" || !body.nfc_tag_id.trim() || body.nfc_tag_id.trim().length > 255)) {
+    return apiError("nfc_tag_id must be null or 1-255 characters", 400)
+  }
+
   // Input sanitization — same rules as POST
   const sanitized: Record<string, InValue> = {}
+  if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
   if (typeof body.title === "string" || typeof body.description === "string") {
     const { sanitize } = await import("../../../lib/sanitize")

@@ -979,6 +979,15 @@ export class TaskRepository {
     return Number(result.rows[0]!.ticket_number)
   }
 
+  /** Resolve a physical tag without silently choosing duplicate assignments. */
+  async findByNfcTag(tagId: string): Promise<Array<{ id: string; title: string; status: string }>> {
+    const result = await this.client.execute({
+      sql: "SELECT id, title, status FROM tasks WHERE nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2",
+      args: [tagId],
+    })
+    return result.rows as unknown as Array<{ id: string; title: string; status: string }>
+  }
+
   /** Apply a partial update with atomic dependency, version and checklist guards. */
   async updateTask(
     id: string,
@@ -1041,7 +1050,7 @@ export class TaskRepository {
                       framework_payload, calendar_sync_state, area_id, custom_fields,
                       parent_id, time_tracked, start_date, end_date, progress, color,
                       is_favorite, is_promoted, task_type, task_kind, project_id, owner, handoff_state,
-                      ticket_number, assigned_to, checklists, urgency, importance,
+                      ticket_number, assigned_to, checklists, urgency, importance, nfc_tag_id,
                       eisenhower_override, created_at, updated_at`,
       args: [...args, ...whereArgs],
     }

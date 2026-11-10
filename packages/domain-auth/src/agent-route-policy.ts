@@ -6,6 +6,7 @@ const taskRead = { GET: "tasks:read" } satisfies MethodScopes
 const taskCreate = { POST: "tasks:write" } satisfies MethodScopes
 const taskDelete = { DELETE: "tasks:delete" } satisfies MethodScopes
 const routes = new Map<string, MethodScopes>([
+  ["/api/nfc/complete", { POST: "tasks:write" }],
   ["/api/tasks", { ...taskRead, ...taskCreate, ...taskDelete }],
   ["/api/tasks/create", taskCreate],
   ["/api/tasks/clear-completed", { POST: "tasks:delete" }],

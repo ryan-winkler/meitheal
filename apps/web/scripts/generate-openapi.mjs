@@ -710,6 +710,12 @@ const paths = {
       },
     },
   },
+  "/api/nfc/complete": {
+    post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
+      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+    },
+  },
   "/api/tasks/{id}/handoff": {
     post: {
       operationId: "manageTaskHandoff",
