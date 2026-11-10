@@ -43,6 +43,11 @@ const reactionContent = {
 }
 const reactionCursor = { type: "string", pattern: "^[1-9][0-9]*$" }
 
+const pinContext = { type: "string", pattern: "^[A-Za-z0-9_-]{43}$", description: "Opaque, short-lived browser account binding." }
+const pinTaskIdentifier = { type: "string", minLength: 1, maxLength: 128, description: "Canonical task identifier or MTH ticket key." }
+const pinState = { id: { type: "string" }, pinned: { type: "boolean" }, pinned_at: { type: ["integer", "null"] } }
+const pinContextParameter = { name: "X-Meitheal-Pin-Context", in: "header", required: true, schema: pinContext }
+
 const schemas = {
   TaskReaction: {
     type: "object",
@@ -798,6 +803,71 @@ const paths = {
   },
 
   // ── Task Sub-resources ──
+  "/api/task-pins": {
+    post: {
+      operationId: "readTaskPins",
+      tags: ["Tasks"],
+      summary: "Read your personal pins or check one task",
+      description: "Requires a verified Home Assistant browser session. Private reads use POST to avoid legacy worker caches. Send at most 1 KiB of JSON.",
+      requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
+        { type: "object", required: ["action"], additionalProperties: false,
+          properties: { action: { const: "list" }, page: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, default: 1 } } },
+        { type: "object", required: ["action", "task"], additionalProperties: false,
+          properties: { action: { const: "detail" }, task: pinTaskIdentifier } },
+      ] } } } },
+      responses: {
+        200: jsonContent({ oneOf: [
+          { type: "object", required: ["context", "page", "total", "items"], properties: {
+            context: pinContext, page: { type: "integer" }, total: { type: "integer" },
+            items: { type: "array", maxItems: 25, items: { type: "object",
+              required: ["id", "ticket_key", "title", "status", "deferred_at", "pinned_at"], properties: {
+                id: { type: "string" }, ticket_key: { type: ["string", "null"] }, title: { type: "string" },
+                status: { type: "string" }, deferred_at: { type: ["integer", "null"] }, pinned_at: { type: "integer" },
+              } } },
+          } },
+          { type: "object", required: ["context", ...Object.keys(pinState)], properties: { context: pinContext, ...pinState } },
+        ] }, "Personal results and the account context required for a subsequent HEAD verification"),
+        400: problemContent("Invalid pin request"), 401: problemContent("Ingress authentication required"),
+        403: problemContent("Verified Home Assistant browser session required"), 404: problemContent("Task not found"),
+        413: problemContent("Body exceeds 1 KiB"), 415: problemContent("Expected JSON"),
+        429: problemContent("Rate limited"),
+      },
+    },
+    head: {
+      operationId: "verifyTaskPinContext",
+      tags: ["Tasks"],
+      summary: "Recheck the current Home Assistant account context",
+      parameters: [pinContextParameter],
+      responses: {
+        204: { description: "Account context still matches" },
+        401: { description: "Ingress authentication required" },
+        403: { description: "Verified active Home Assistant account required" },
+        409: { description: "Account context changed or is missing" },
+        429: { description: "Rate limited" },
+      },
+    },
+    put: {
+      operationId: "setTaskPin",
+      tags: ["Tasks"],
+      summary: "Set the desired personal pin state",
+      description: "Requires a verified Home Assistant browser session and the context from a successful private read. Send at most 1 KiB of JSON.",
+      parameters: [pinContextParameter],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["task", "pinned"], additionalProperties: false,
+        properties: { task: pinTaskIdentifier, pinned: { type: "boolean" } },
+      } } } },
+      responses: {
+        200: jsonContent({ type: "object", required: Object.keys(pinState), properties: pinState }, "Saved pin state"),
+        400: problemContent("Invalid pin request"), 401: problemContent("Ingress authentication required"),
+        403: problemContent("Verified Home Assistant browser session required"), 404: problemContent("Task not found"),
+        409: jsonContent({ type: "object", required: ["error", "errorCode"], properties: {
+          error: { type: "string" }, errorCode: { const: "PIN_CONTEXT_CHANGED" },
+        } }, "Account context changed or is missing"),
+        413: problemContent("Body exceeds 1 KiB"), 415: problemContent("Expected JSON"),
+        429: problemContent("Rate limited"),
+      },
+    },
+  },
   "/api/tasks/{id}/deferral": {
     patch: {
       operationId: "setTaskDeferral",

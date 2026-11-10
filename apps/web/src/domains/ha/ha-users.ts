@@ -117,3 +117,44 @@ export async function getHAUserById(userId: string): Promise<HAUser | null> {
   const users = await listHAUsers();
   return users.find((u) => u.id === userId) ?? null;
 }
+
+const activeUserFreshnessMs = 5_000
+const activeUserDeadlineMs = 2_000
+let activeUsers: { ids: Set<string>; expiresAt: number } | undefined
+let checkingActiveUsers: Promise<boolean> | undefined
+
+async function refreshActiveUsers(): Promise<boolean> {
+  const checkedAt = performance.now()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const users = await Promise.race([
+      (async () => {
+        const connection = await getHAConnection()
+        if (!connection?.connected) throw new Error("Core unavailable")
+        return connection.sendMessagePromise<Array<{ id: string; is_active: boolean; system_generated: boolean }>>({
+          type: "config/auth/list",
+        })
+      })(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Core authorization check timed out")), activeUserDeadlineMs)
+      }),
+    ])
+    const ids = new Set(users.filter(user => user.is_active === true && user.system_generated === false).map(user => user.id))
+    activeUsers = { ids, expiresAt: checkedAt + activeUserFreshnessMs }
+    return true
+  } catch {
+    activeUsers = undefined
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Check the exact Core identity for an authorization decision without using discovery fallbacks. */
+export async function isCurrentActiveHAUser(id: string): Promise<boolean> {
+  if (!activeUsers || activeUsers.expiresAt <= performance.now()) {
+    checkingActiveUsers ??= refreshActiveUsers().finally(() => { checkingActiveUsers = undefined })
+    if (!await checkingActiveUsers) return false
+  }
+  return Boolean(activeUsers && activeUsers.expiresAt > performance.now() && activeUsers.ids.has(id))
+}

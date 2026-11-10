@@ -1,6 +1,49 @@
+import { once } from "node:events"
+import { readFileSync } from "node:fs"
 import http from "node:http"
+import https from "node:https"
 import { createRequire } from "node:module"
 import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
+
+const pinFixture = process.env.MEITHEAL_PIN_FIXTURE === "1"
+if (pinFixture) {
+  const require = createRequire(new URL("../../apps/web/package.json", import.meta.url))
+  const { WebSocketServer } = require("ws")
+  const core = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+  await once(core, "listening")
+  const users = ["admin", "member", "member-two"].map(user => ({
+    id: `fixture-${user}`, is_active: true, system_generated: false,
+  }))
+  let unavailable = false
+  core.on("connection", socket => {
+    socket.send(JSON.stringify({ type: "auth_required", ha_version: "2026.11.0" }))
+    socket.on("message", raw => {
+      const message = JSON.parse(raw.toString())
+      if (message.type === "auth") socket.send(JSON.stringify({ type: "auth_ok", ha_version: "2026.11.0" }))
+      else if (message.type === "ping") socket.send(JSON.stringify({ id: message.id, type: "pong" }))
+      else if (message.type === "config/auth/list" && unavailable) return
+      else socket.send(JSON.stringify({
+        id: message.id, type: "result", success: true,
+        result: message.type === "config/auth/list" ? users : [],
+      }))
+    })
+  })
+  const realRequest = http.request
+  http.request = function (options, ...rest) {
+    if (options?.host === "supervisor" && options.path === "/core/api/websocket") {
+      options = { ...options, host: "127.0.0.1", port: core.address().port }
+    }
+    return realRequest.call(this, options, ...rest)
+  }
+  process.env.SUPERVISOR_TOKEN = "synthetic-pin-fixture"
+  process.on("message", message => {
+    if (message?.type !== "fixture-core") return
+    const user = users.find(user => user.id === `fixture-${message.user}`)
+    if (user) user.is_active = message.active
+    unavailable = message.unavailable === true
+    process.send({ coreChanged: true })
+  })
+}
 
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../../apps/web/dist/server/entry.mjs")
@@ -35,15 +78,20 @@ self.addEventListener("fetch", event => {
 })
 `
 
-const server = http.createServer((request, response) => {
+const handle = (request, response) => {
   const fromSupervisor = request.url?.startsWith(`${configuredPath}/`) ?? false
+  if (pinFixture && request.url === configuredPath + "/fixture") {
+    response.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" })
+    response.end("<!doctype html><title>Pin API fixture</title>")
+    return
+  }
   if (fromSupervisor && serveOldWorker && request.method === "GET" &&
       request.url.split("?")[0] === `${configuredPath}/sw.js`) {
     response.writeHead(200, { "content-type": "application/javascript", "cache-control": "no-store" })
     response.end(oldWorker)
     return
   }
-  const user = /(?:^|;\s*)feedback-fixture=(admin|member|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
+  const user = /(?:^|;\s*)feedback-fixture=(admin|member|member-two|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
   if (fromSupervisor) {
     request.url = request.url.slice(configuredPath.length)
     delete request.headers["x-remote-user-id"]
@@ -66,7 +114,11 @@ const server = http.createServer((request, response) => {
     waitForDatabaseDownloadDrain: databaseDownload ? waitForDrain : undefined,
     waitForHtmlDrain: fromSupervisor ? waitForDrain : undefined,
   }, () => handler(request, response))
-})
+}
+const server = pinFixture ? https.createServer({
+  key: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_KEY),
+  cert: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_CERT),
+}, handle) : http.createServer(handle)
 
 if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
   const requireWeb = createRequire(new URL("../../apps/web/package.json", import.meta.url))

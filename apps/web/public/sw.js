@@ -204,15 +204,20 @@ function appRoutePath(pathname) {
 
 const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
 
-function isDatabaseExport(url) {
+function isPrivateResource(url) {
+  const privatePath = pathname => {
+    const path = appRoutePath(pathname)
+    return path === "/api/export/database.sqlite" || path === "/api/task-pins" || path === "/pinned"
+  }
+
   if (url.origin !== self.location.origin) return false
 
   let pathname = url.pathname
   if (!pathname.includes("%") && !pathname.includes("//")) {
-    return appRoutePath(pathname) === "/api/export/database.sqlite"
+    return privatePath(pathname)
   }
 
-  // Old cache entries can contain spellings that reach the export after path normalization.
+  // Old cache entries can contain spellings that reach a private route after normalization.
   for (let i = 0; i < 10 && pathname.includes("%"); i++) {
     try {
       const decoded = decodeURI(pathname).replace(/%2f/gi, "/")
@@ -223,7 +228,7 @@ function isDatabaseExport(url) {
     }
   }
   const normalized = new URL(url.origin + pathname.replace(/[\\/]+/g, "/")).pathname
-  return appRoutePath(normalized) === "/api/export/database.sqlite"
+  return privatePath(normalized)
 }
 
 function isNetworkOnlyPage(path, params) {
@@ -240,9 +245,18 @@ async function purgeSensitiveCacheEntries() {
     const requests = await cache.keys()
     await Promise.all(requests.filter(request => {
       const url = new URL(request.url)
-      return isDatabaseExport(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+      return isPrivateResource(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
     }).map(request => cache.delete(request, { ignoreVary: true })))
   }))
+}
+
+let sensitivePurge
+function ensureSensitiveCachePurge() {
+  sensitivePurge ??= purgeSensitiveCacheEntries().catch(error => {
+    sensitivePurge = undefined
+    throw error
+  })
+  return sensitivePurge
 }
 
 // --- Activate ---
@@ -260,7 +274,7 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
-      .then(() => purgeSensitiveCacheEntries())
+      .then(() => ensureSensitiveCachePurge())
       .then(() => evictAllCaches())
       .then(() => self.clients.claim())
   );
@@ -288,7 +302,7 @@ self.addEventListener("fetch", (event) => {
 
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
-  if (isDatabaseExport(url) || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  if (isPrivateResource(url) || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
   if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
 
@@ -448,6 +462,18 @@ self.addEventListener("notificationclick", (event) => {
 self.addEventListener("message", (event) => {
   if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY"].includes(event.data?.type)) {
     event.ports[0]?.postMessage(true)
+  }
+
+  if (event.data?.type === "TASK_PINS_IMPLEMENTED") {
+    event.ports[0]?.postMessage(true)
+  }
+
+  if (event.data?.type === "TASK_PINS_NETWORK_ONLY" && event.ports[0]) {
+    const port = event.ports[0]
+    event.waitUntil(ensureSensitiveCachePurge().then(
+      () => port.postMessage(true),
+      () => port.postMessage(false),
+    ))
   }
 
   if (event.data && event.data.type === "SKIP_WAITING") {

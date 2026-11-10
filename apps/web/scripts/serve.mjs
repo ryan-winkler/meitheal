@@ -8,26 +8,27 @@ const SUPERVISOR_ADDRESS = "172.30.32.2"
 const supervisorToken = process.env.SUPERVISOR_TOKEN
 const configuredPath = process.env.INGRESS_PATH
 const databaseExportPath = "/api/export/database.sqlite"
+const pinApiPath = "/api/task-pins"
+const pinnedPagePath = "/pinned"
 
-function isDatabaseExportAlias(path, normalizedPath) {
-  if (path === databaseExportPath) return false
-  if (normalizedPath.replace(/\/+$/, "") === databaseExportPath) return true
-  if (!/[%\\]|\/\./.test(normalizedPath)) return false
+// Astro can decode escapes and redirect trailing separators before middleware.
+function privateRoutePath(pathname) {
+  const trimmed = pathname.replace(/\/+$/, "")
+  if (!/[%\\]|\/\./.test(trimmed)) return trimmed
 
-  // Astro can redirect trailing separators before running middleware.
-  let decoded = normalizedPath
+  let decoded = pathname
   for (let i = 0; i < 10 && decoded.includes("%"); i++) {
     try {
       const next = decodeURI(decoded).replace(/%2f/gi, "/")
       if (next === decoded) break
       decoded = next
     } catch {
-      return false
+      return undefined
     }
   }
-  if (!decoded.startsWith("/")) return false
+  if (!decoded.startsWith("/")) return undefined
   const resolved = new URL("http://localhost" + decoded.replace(/[\\/]+/g, "/")).pathname
-  return resolved.replace(/\/+$/, "") === databaseExportPath
+  return resolved.replace(/\/+$/, "")
 }
 
 async function supervisorProtectsIdentityHeaders() {
@@ -76,8 +77,15 @@ const server = http.createServer((req, res) => {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
     const normalizedPath = path.replace(/\/+/g, "/")
-    if (isDatabaseExportAlias(path, normalizedPath)) {
+    const canonical = privateRoutePath(normalizedPath)
+    const isPins = canonical === pinApiPath || canonical === pinnedPagePath
+    if ((isPins || canonical === databaseExportPath) && path !== canonical) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
+      return
+    }
+    if (isPins) res.setHeader("cache-control", "private, no-store")
+    if (canonical === pinApiPath && query !== -1) {
+      res.writeHead(400).end()
       return
     }
     req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))

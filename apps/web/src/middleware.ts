@@ -136,9 +136,26 @@ function applyRateLimitHeaders(response: Response, remaining: number, resetAt: n
   response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
 }
 
-export const onRequest: MiddlewareHandler = async ({ request, locals, routePattern }, next) => {
+function isPinRoute(path: string) {
+  return path === "/api/task-pins" || path === "/pinned"
+}
+
+export const onRequest: MiddlewareHandler = async (context, next) => {
+  const { routePattern, url } = context
+  const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
+  if (!pinRoute) return handleRequest(context, next)
+  if (isPinRoute(routePattern) && routePattern !== url.pathname) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
+  }
+  const response = await handleRequest(context, next, true)
+  response.headers.set("cache-control", "private, no-store")
+  return response
+}
+
+async function handleRequest({ request, locals, routePattern }: Parameters<MiddlewareHandler>[0],
+  next: Parameters<MiddlewareHandler>[1], pinRoute = false) {
   const startTime = Date.now();
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const requestId = (pinRoute ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
@@ -265,7 +282,8 @@ export const onRequest: MiddlewareHandler = async ({ request, locals, routePatte
         domain: "security",
         component: "middleware",
         request_id: requestId,
-        message: `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
+        message: pinRoute ? "Personal pin origin check failed" :
+          `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
       });
       return new Response(
         JSON.stringify({ error: "CSRF origin mismatch" }),
@@ -346,17 +364,18 @@ export const onRequest: MiddlewareHandler = async ({ request, locals, routePatte
         domain: "observability",
         component: "middleware",
         request_id: requestId,
-        trace_id: locals.traceId,
-        span_id: locals.spanId,
+        ...(!pinRoute ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
         message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
         metadata: {
           method: request.method,
           path: url.pathname,
           status: response.status,
           latency_ms: elapsed,
-          automation_source: automationSource,
-          ...(agentId ? { agent_id: agentId } : {}),
-          ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+          ...(!pinRoute ? {
+            automation_source: automationSource,
+            ...(agentId ? { agent_id: agentId } : {}),
+            ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+          } : {}),
         },
       })
     } else if (elapsed > 1000) {

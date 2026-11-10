@@ -34,7 +34,7 @@ components:
         id:
           type: integer
           minimum: 1
-        content: &a24
+        content: &a30
           type: string
           minLength: 1
           maxLength: 16
@@ -60,7 +60,7 @@ components:
           maxItems: 50
         next_cursor:
           anyOf:
-            - &a22
+            - &a28
               type: string
               pattern: ^[1-9][0-9]*$
             - type: "null"
@@ -762,7 +762,7 @@ paths:
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
       security: &a8
-        - &a20
+        - &a26
           haIngressSession: []
       parameters:
         - &a14
@@ -1582,6 +1582,275 @@ paths:
                   - error
                   - errorCode
                 additionalProperties: false
+  /api/task-pins:
+    post:
+      operationId: readTaskPins
+      tags:
+        - Tasks
+      summary: Read your personal pins or check one task
+      description: Requires a verified Home Assistant browser session. Private reads use POST to avoid legacy worker caches.
+        Send at most 1 KiB of JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required:
+                    - action
+                  additionalProperties: false
+                  properties:
+                    action:
+                      const: list
+                    page:
+                      type: integer
+                      minimum: 1
+                      maximum: 9007199254740991
+                      default: 1
+                - type: object
+                  required:
+                    - action
+                    - task
+                  additionalProperties: false
+                  properties:
+                    action:
+                      const: detail
+                    task: &a20
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                      description: Canonical task identifier or MTH ticket key.
+      responses:
+        "200":
+          description: Personal results and the account context required for a subsequent HEAD verification
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - context
+                      - page
+                      - total
+                      - items
+                    properties:
+                      context: &a18
+                        type: string
+                        pattern: ^[A-Za-z0-9_-]{43}$
+                        description: Opaque, short-lived browser account binding.
+                      page:
+                        type: integer
+                      total:
+                        type: integer
+                      items:
+                        type: array
+                        maxItems: 25
+                        items:
+                          type: object
+                          required:
+                            - id
+                            - ticket_key
+                            - title
+                            - status
+                            - deferred_at
+                            - pinned_at
+                          properties:
+                            id:
+                              type: string
+                            ticket_key:
+                              type:
+                                - string
+                                - "null"
+                            title:
+                              type: string
+                            status:
+                              type: string
+                            deferred_at:
+                              type:
+                                - integer
+                                - "null"
+                            pinned_at:
+                              type: integer
+                          additionalProperties: false
+                    additionalProperties: false
+                  - type: object
+                    required:
+                      - context
+                      - id
+                      - pinned
+                      - pinned_at
+                    properties:
+                      context: *a18
+                      id: &a21
+                        type: string
+                      pinned: &a22
+                        type: boolean
+                      pinned_at: &a23
+                        type:
+                          - integer
+                          - "null"
+                    additionalProperties: false
+        "400":
+          description: Invalid pin request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "401":
+          description: Ingress authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Verified Home Assistant browser session required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Task not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Body exceeds 1 KiB
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limited
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+    head:
+      operationId: verifyTaskPinContext
+      tags:
+        - Tasks
+      summary: Recheck the current Home Assistant account context
+      parameters:
+        - &a19
+          name: X-Meitheal-Pin-Context
+          in: header
+          required: true
+          schema: *a18
+      responses:
+        "204":
+          description: Account context still matches
+        "401":
+          description: Ingress authentication required
+        "403":
+          description: Verified active Home Assistant account required
+        "409":
+          description: Account context changed or is missing
+        "429":
+          description: Rate limited
+    put:
+      operationId: setTaskPin
+      tags:
+        - Tasks
+      summary: Set the desired personal pin state
+      description: Requires a verified Home Assistant browser session and the context from a successful private read. Send at
+        most 1 KiB of JSON.
+      parameters:
+        - *a19
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - task
+                - pinned
+              additionalProperties: false
+              properties:
+                task: *a20
+                pinned:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved pin state
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - pinned
+                  - pinned_at
+                properties:
+                  id: *a21
+                  pinned: *a22
+                  pinned_at: *a23
+                additionalProperties: false
+        "400":
+          description: Invalid pin request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "401":
+          description: Ingress authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Verified Home Assistant browser session required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Task not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: Account context changed or is missing
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                  - errorCode
+                properties:
+                  error:
+                    type: string
+                  errorCode:
+                    const: PIN_CONTEXT_CHANGED
+                additionalProperties: false
+        "413":
+          description: Body exceeds 1 KiB
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limited
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
   /api/tasks/{id}/deferral:
     patch:
       operationId: setTaskDeferral
@@ -1748,7 +2017,7 @@ paths:
           required: true
           schema:
             type: string
-      requestBody: &a19
+      requestBody: &a25
         required: true
         content:
           application/json:
@@ -1800,14 +2069,14 @@ paths:
       tags:
         - Tasks
       summary: Get one comment on a task
-      parameters: &a18
-        - &a21
+      parameters: &a24
+        - &a27
           name: id
           in: path
           required: true
           schema:
             type: string
-        - &a28
+        - &a34
           name: commentId
           in: path
           required: true
@@ -1834,8 +2103,8 @@ paths:
       summary: Edit your comment
       description: The same verified Home Assistant user or automation credential that created the comment may edit it. A
         display name does not grant ownership.
-      parameters: *a18
-      requestBody: *a19
+      parameters: *a24
+      requestBody: *a25
       responses:
         "200":
           description: The updated comment
@@ -1874,7 +2143,7 @@ paths:
         - Tasks
       summary: Delete your comment
       description: Permanently remove a comment created by the same verified Home Assistant user or automation credential.
-      parameters: *a18
+      parameters: *a24
       responses:
         "204":
           description: Comment deleted
@@ -1897,14 +2166,14 @@ paths:
         - Tasks
       summary: List reactions on a task card
       description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
-      security: &a23
-        - *a20
+      security: &a29
+        - *a26
         - bearerAuth: []
       parameters:
-        - *a21
+        - *a27
         - name: cursor
           in: query
-          schema: *a22
+          schema: *a28
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -1913,19 +2182,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
         "400": *a10
-        "401": &a25
+        "401": &a31
           description: An ingress session or a valid automation token is required.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "403": &a26
+        "403": &a32
           description: A verified Home Assistant user or an automation token with the required task scope is needed.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "404": &a27
+        "404": &a33
           description: The task or comment does not exist.
           content:
             application/problem+json:
@@ -1939,9 +2208,9 @@ paths:
       summary: React to a task card
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Automation tokens need tasks:write.
-      security: *a23
+      security: *a29
       parameters:
-        - *a21
+        - *a27
       requestBody:
         required: true
         content:
@@ -1951,7 +2220,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a24
+                content: *a30
               additionalProperties: false
       responses:
         "201":
@@ -1961,9 +2230,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
         "400": *a10
-        "401": *a25
-        "403": *a26
-        "404": *a27
+        "401": *a31
+        "403": *a32
+        "404": *a33
         "413":
           description: The request body exceeds 1 KiB.
           content:
@@ -1984,9 +2253,9 @@ paths:
         - Tasks
       summary: Remove your reaction from a task card
       description: Only the creator can remove a reaction. Automation tokens need tasks:write.
-      security: *a23
+      security: *a29
       parameters:
-        - *a21
+        - *a27
         - name: reactionId
           in: path
           required: true
@@ -1996,8 +2265,8 @@ paths:
       responses:
         "204":
           description: Reaction removed
-        "401": *a25
-        "403": *a26
+        "401": *a31
+        "403": *a32
         "404":
           description: The reaction was not found on this target or is owned by a different caller.
           content:
@@ -2012,13 +2281,13 @@ paths:
         - Tasks
       summary: List reactions on a task comment
       description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
-      security: *a23
+      security: *a29
       parameters:
-        - *a21
-        - *a28
+        - *a27
+        - *a34
         - name: cursor
           in: query
-          schema: *a22
+          schema: *a28
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -2027,9 +2296,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
         "400": *a10
-        "401": *a25
-        "403": *a26
-        "404": *a27
+        "401": *a31
+        "403": *a32
+        "404": *a33
         "500": *a12
     post:
       operationId: addTaskCommentReaction
@@ -2038,8 +2307,8 @@ paths:
       summary: React to a task comment
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Automation tokens need tasks:write.
-      security: *a23
-      parameters: *a18
+      security: *a29
+      parameters: *a24
       requestBody:
         required: true
         content:
@@ -2049,7 +2318,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a24
+                content: *a30
               additionalProperties: false
       responses:
         "201":
@@ -2059,9 +2328,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
         "400": *a10
-        "401": *a25
-        "403": *a26
-        "404": *a27
+        "401": *a31
+        "403": *a32
+        "404": *a33
         "413":
           description: The request body exceeds 1 KiB.
           content:
@@ -2082,10 +2351,10 @@ paths:
         - Tasks
       summary: Remove your reaction from a task comment
       description: Only the creator can remove a reaction. Automation tokens need tasks:write.
-      security: *a23
+      security: *a29
       parameters:
-        - *a21
-        - *a28
+        - *a27
+        - *a34
         - name: reactionId
           in: path
           required: true
@@ -2095,8 +2364,8 @@ paths:
       responses:
         "204":
           description: Reaction removed
-        "401": *a25
-        "403": *a26
+        "401": *a31
+        "403": *a32
         "404":
           description: The reaction was not found on this target or is owned by a different caller.
           content:
@@ -2111,7 +2380,7 @@ paths:
         - Tasks
       summary: Count card reactions for a batch of tasks
       description: Returns positive counts keyed by task ID. Comment reactions are excluded. Automation tokens need tasks:read.
-      security: *a23
+      security: *a29
       parameters:
         - name: ids
           in: query
@@ -2128,8 +2397,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaskReactionCounts"
         "400": *a10
-        "401": *a25
-        "403": *a26
+        "401": *a31
+        "403": *a32
         "500": *a12
   /api/tasks/{id}/links:
     get:

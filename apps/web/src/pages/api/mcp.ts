@@ -57,6 +57,7 @@ const EXCLUDED_OPS = new Set([
   "exportSettings",    // File downloads
   "importSettings",    // File upload
   "setTaskDeferral",   // Requires the exact current workflow and deferral versions
+  "readTaskPins", "verifyTaskPinContext", "setTaskPin", // Verified Home Assistant browser only
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */
