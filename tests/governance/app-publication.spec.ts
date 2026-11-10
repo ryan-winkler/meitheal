@@ -65,6 +65,23 @@ test("staging one channel preserves the other channel and the source manifest", 
   }
 })
 
+test("staging both channels uses the reviewed AppArmor policy", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
+  const profile = readFileSync(join(root, "meitheal-hub/apparmor.txt"))
+  try {
+    mkdirSync(join(fixture, ".git"))
+    expect(release("stage", "stable", String(stableVersion), fixture).status).toBe(0)
+    expect(release("stage", "canary", "abcdef123456", fixture).status).toBe(0)
+
+    for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
+      expect(readFileSync(join(fixture, directory, "config.yaml"), "utf8")).toMatch(/^apparmor: true$/m)
+      expect(readFileSync(join(fixture, directory, "apparmor.txt"))).toEqual(profile)
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
 test("staging rejects destination links outside the App repository", () => {
   const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
   try {

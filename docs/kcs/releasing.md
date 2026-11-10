@@ -29,6 +29,8 @@ For stable, a fresh runner with an empty Docker configuration pulls both version
 
 The canary workflow ends after image publication and has no App repository credential. Pull the exact hosted artifacts and record both digests and config IDs. Use the ARM64 artifact for Green qualification, then follow the staging and review steps below.
 
+Both App directories receive the same profile from `meitheal-hub/apparmor.txt`. Supervisor loads it under each installed App ID. Check the effective profile on a host with AppArmor enforcement and keep Protection mode enabled during qualification. [AppArmor in Home Assistant](https://contributors.home-assistant.io/apps/guides/security/#apparmor).
+
 The publication jobs use standard GitHub-hosted Linux runners on both architectures. GitHub makes these runners available without compute charges for public repositories. Private use draws from the account’s included Actions minutes. [Runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) · [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 
 ## Qualify and promote a canary from a release host

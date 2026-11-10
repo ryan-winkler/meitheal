@@ -82,8 +82,9 @@ function stage(channel, config, version, destination) {
     : config.manifest
   writeFileSync(manifestPath, manifest)
   for (const name of ["DOCS.md", "CHANGELOG.md", "icon.png", "logo.png", "apparmor.txt"]) {
-    const source = join(config.source, name)
-    if (name === "apparmor.txt" && !existsSync(source)) continue
+    const source = name === "apparmor.txt"
+      ? join(root, channels.stable.dir, name)
+      : join(config.source, name)
     if (!lstatSync(source).isFile()) fail(`Unexpected App asset: ${name}`)
     const destination = join(directory, name)
     checkDestination(destination)
