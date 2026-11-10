@@ -175,16 +175,27 @@ test.describe("Today Page — Wave 1: Feature Parity", () => {
   })
 
   // G05: Keyboard navigation
-  test("G05: keyboard navigation — j/k keys move focus", async ({ page }) => {
-    const tasks = page.locator(".tli")
-    const count = await tasks.count()
-    if (count < 2) {
-      test.skip(true, "Need 2+ tasks to test keyboard nav")
-      return
+  test("G05: keyboard navigation — j/k keys move focus", async ({ page, request }) => {
+    const ids: string[] = []
+    try {
+      for (const title of ["Keyboard fixture one", "Keyboard fixture two"]) {
+        const created = await request.post("/api/tasks", { data: { title, due_date: new Date().toISOString().slice(0, 10) } })
+        expect(created.status()).toBe(201)
+        ids.push((await created.json()).id)
+      }
+      await page.reload()
+      const tasks = page.locator(".tli")
+      await expect(tasks.filter({ hasText: "Keyboard fixture" })).toHaveCount(2)
+      await page.locator("body").click({ position: { x: 2, y: 2 } })
+      await page.keyboard.press("j")
+      await expect(tasks.first()).toHaveClass(/tli--focused/)
+      await page.keyboard.press("j")
+      await expect(tasks.nth(1)).toHaveClass(/tli--focused/)
+      await page.keyboard.press("k")
+      await expect(tasks.first()).toHaveClass(/tli--focused/)
+    } finally {
+      for (const id of ids) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
     }
-    await page.keyboard.press("j")
-    await page.waitForTimeout(100)
-    await expect(tasks.first()).toHaveClass(/tli--focused/)
   })
 
   // G06: Filter bar

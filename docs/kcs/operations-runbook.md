@@ -78,6 +78,7 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking a Today task still opens the shared task detail surface.
+6. With two tasks visible and focus outside an input or link, press `j`, `j`, then `k`. The highlighted row moves down and back up without leaving Today. The global `k` shortcut still opens Tasks on other pages.
 
 ### Check page entry contrast
 

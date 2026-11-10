@@ -207,7 +207,8 @@
                     (window.__ingress_path || "") + "/tasks";
                 }
               }
-              if (e.key === "k") {
+              // Today owns j/k row navigation; keep its previous-row key local.
+              if (e.key === "k" && !document.getElementById("today-overview")) {
                 window.location.href =
                   (window.__ingress_path || "") + "/tasks";
               }
