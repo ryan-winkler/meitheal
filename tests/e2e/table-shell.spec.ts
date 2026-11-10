@@ -145,4 +145,33 @@ test.describe("Table Shell", () => {
     await row.locator(".td-due").click()
     await expect(detail.locator("#td-title")).toHaveValue(task.title)
   })
+
+  test("a completed row exposes its title and type and remains editable by keyboard", async ({ page, tableTasks }) => {
+    const [, task] = tableTasks
+    await page.goto("/tasks?view=table")
+    await expect(page.getByRole("navigation", { name: "Task views" })).toHaveAttribute("data-switcher-ready", "true")
+    const row = page.getByRole("row").filter({
+      has: page.getByRole("button", { name: new RegExp(task.ticket_key) }),
+    })
+    const title = row.getByRole("textbox", { name: "Title", exact: true })
+    await expect(title).toHaveText(task.title)
+    await expect(row.getByRole("img", { name: "Task Type: task" })).toBeVisible()
+
+    const selection = row.getByRole("checkbox", { name: `Select task: ${task.title}` })
+    await selection.check()
+    await expect(selection).toBeChecked()
+    await expect(page.locator("#bulk-bar")).toBeVisible()
+    await selection.uncheck()
+    await expect(selection).not.toBeChecked()
+
+    const renamed = `${task.title} renamed`
+    await title.fill(renamed)
+    await title.press("Tab")
+    await expect(title).toHaveAttribute("data-original", renamed)
+    await title.fill("Discard this edit")
+    await title.press("Escape")
+    await expect(title).toHaveText(renamed)
+    await page.reload()
+    await expect(title).toHaveText(renamed)
+  })
 })

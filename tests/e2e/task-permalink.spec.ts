@@ -48,6 +48,39 @@ test("copies a stable task link and returns from a deleted task to the task view
   await expect(views.getByRole("link", { name: "Kanban" })).toBeFocused()
 })
 
+test("Table keyboard controls retain their actions beside the task detail shortcut", async ({ page, request, baseURL }) => {
+  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
+  const origin = new URL(baseURL!).origin
+  const title = "Table keyboard task"
+  const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+
+  await page.goto("/tasks?view=table#table")
+  await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+  const row = page.locator(`tr[data-id="${id}"]`)
+  const checkbox = row.getByRole("checkbox", { name: `Select task: ${title}` })
+  await checkbox.press("Space")
+  await expect(checkbox).toBeChecked()
+  await expect(checkbox).toBeFocused()
+  await expect(page).not.toHaveURL(/[?&]open=/)
+  await checkbox.press("Space")
+  await expect(checkbox).not.toBeChecked()
+
+  const editor = row.getByRole("textbox")
+  await editor.fill("A")
+  await editor.press("End")
+  await editor.press("Space")
+  await editor.press("B")
+  await expect(editor).toHaveText("A B")
+  await expect(editor).toBeFocused()
+  await editor.press("Escape")
+  await expect(editor).toHaveText(title)
+
+  await row.getByRole("button", { name: new RegExp(title) }).press("Enter")
+  await expect(page.getByRole("dialog", { name: `Task detail: ${title}` })).toBeVisible()
+})
+
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))

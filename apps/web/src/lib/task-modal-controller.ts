@@ -1670,23 +1670,20 @@
 
         // Delegated click → open task detail for any task element
         // P1-3: Also handles keyboard activation (Enter/Space) for a11y
-        function handleTaskActivation(e: Event) {
-          const target = (e as any).target as HTMLElement;
-          // P1-3: For keydown events, only activate on Enter/Space
-          if (e.type === "keydown") {
-            const ke = e as KeyboardEvent;
-            if (ke.key !== "Enter" && ke.key !== " ") return;
-          }
-          const taskEl = target.closest(
+        function handleTaskActivation(event: Event) {
+          const target = event.target
+          if (event.defaultPrevented || !(target instanceof Element)) return
+          if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return
+          if (target.closest("button, a, input, select, textarea, .task-actions, .action-btn")) return
+          if (target instanceof HTMLElement && target.isContentEditable) return
+
+          const taskEl = target.closest<HTMLElement>(
             ".task-item, .kanban-card, .bento-card, tr[data-id], [data-task-id]",
-          ) as HTMLElement | null;
-          if (!taskEl) return;
-          // Don't intercept action buttons
-          if (target.closest("button, a, .task-actions, .action-btn")) return;
-          const taskId = taskEl.dataset.id || taskEl.dataset.taskId;
-          if (taskId) {
-            e.preventDefault();
-            (e as Event).stopPropagation?.();
+          )
+          const taskId = taskEl && (taskEl.dataset.id || taskEl.dataset.taskId)
+          if (taskEl && taskId) {
+            event.preventDefault()
+            event.stopPropagation()
             // Clean up search dropdown if opened from search results
             if (taskEl.closest("#search-results")) {
               const sr = document.getElementById("search-results");

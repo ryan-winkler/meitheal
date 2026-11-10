@@ -10,6 +10,8 @@ description: "Understand the task table and its controls."
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
 
+On narrow screens, swipe sideways over the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view while the table scrolls sideways.
+
 ## Common Jobs
 
 ### Narrow the table before reading rows
@@ -24,11 +26,18 @@ Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/task
 2. Review the task in the shared detail dialog.
 3. Close the dialog to return keyboard focus to the task key.
 
+### Edit a title or select a row
+
+1. Focus the row's **Title** field and edit the text. Press **Tab** to leave the field and save, or **Escape** to discard the edit.
+2. Select the row's checkbox. The bulk action bar shows how many rows are selected.
+
+The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
+
 ## Troubleshooting
 
 ### Row clicks stop opening task detail
 
-1. Try the task key. Row checkboxes, inline editors and other controls keep their own actions.
+1. Try the task key. Space toggles a focused row checkbox or types a space in the title editor. Each control keeps focus for its own action.
 2. Check for `[Meitheal][tasks/detail-handoff]` warnings in the browser console.
 
 ### Switching to Kanban or Calendar drops the current filters

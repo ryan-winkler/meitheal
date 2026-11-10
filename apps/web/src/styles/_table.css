@@ -24,30 +24,43 @@
 
 /* --- Table view --- */
 .table-container {
-  @apply overflow-x-auto;
-  position: relative;
+  display: contents;
 }
 
-/* Scroll shadow indicator for table overflow */
-.table-container::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(
-    to left,
-    var(--bg-primary) 0%,
-    transparent 100%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 200ms;
-}
+@media (max-width: 768px) {
+  #table-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-.table-container.has-scroll::after {
-  opacity: 1;
+  .table-container {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    position: relative;
+  }
+
+  .table-container:focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: -2px;
+  }
+
+  /* A short edge shadow scrolls out of view as more columns come into view. */
+  .table-container.has-scroll::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 40px;
+    background: linear-gradient(to left, var(--bg-primary), transparent);
+    pointer-events: none;
+  }
+
+  .table-container .data-table th:first-child {
+    z-index: 4;
+  }
+
+  .table-container .data-table tbody tr:nth-child(even):not(:hover) td:first-child {
+    background: var(--bg-primary);
+  }
 }
 
 .data-table {
@@ -146,10 +159,6 @@
 
 .data-table tbody tr:hover {
   background: var(--bg-hover);
-}
-
-.data-table tbody tr.row-done {
-  opacity: 0.55;
 }
 
 .data-table tbody tr.row-done td {

@@ -124,6 +124,7 @@ const tableSignal =
               showUserFilter
             />
           </div>
+          <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0">
           <table class="data-table" id="task-table">
             <thead>
               <tr>
@@ -268,6 +269,7 @@ const tableSignal =
                           contenteditable="true"
                           spellcheck="false"
                           role="textbox"
+                          aria-label={t("table.col_title", locale)}
                           data-field="title"
                           data-id={task.id}
                           data-original={task.title}
@@ -282,7 +284,7 @@ const tableSignal =
                       )}
                     </td>
                     <td class="cell-center">
-                      <TaskTypeIcon type={task.task_type} />
+                      <TaskTypeIcon type={task.task_type} role="img" />
                     </td>
                     <td>
                       <select
@@ -428,6 +430,7 @@ const tableSignal =
               </tr>
             </tbody>
           </table>
+          </div>
         </>
       )
     }
@@ -563,11 +566,6 @@ const tableSignal =
     display: flex;
     gap: 8px;
     align-items: center;
-  }
-  .table-container {
-    overflow-x: auto;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
   }
   .table-row {
     cursor: pointer;
@@ -735,15 +733,6 @@ const tableSignal =
     font-size: 10px;
     color: var(--accent);
     margin-left: 2px;
-  }
-  /* P4 T15: Scroll shadow — visual cue for horizontal overflow */
-  .table-container.has-scroll {
-    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
-  }
-  .table-container.has-scroll:hover {
-    mask-image: none;
-    -webkit-mask-image: none;
   }
   /* P3 T12: Disabled state for bulk bar during operations */
   .bulk-bar button:disabled,
