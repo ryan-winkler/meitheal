@@ -62,7 +62,7 @@ test("pages a large unscheduled queue and filters across every page", async ({ p
     await page.locator('[data-unified-bar-section="today-work"]').click()
     await expect(range).toHaveText("Showing 1–1 of 1")
     await expect(rows).toHaveCount(1)
-    await rows.first().press("Enter")
+    await rows.first().getByRole("link", { name: target, exact: true }).press("Enter")
     await expect(page.locator("#td-title")).toHaveValue(target)
     await page.keyboard.press("Escape")
 

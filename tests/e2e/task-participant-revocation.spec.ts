@@ -356,7 +356,7 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     await page.goto(`${root}/tasks?open=${id}`)
     const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
     await expect(detail).toBeVisible()
-    await expect(page).toHaveURL(url => url.searchParams.get("open") === id && url.hash === "#kanban")
+    await expect(page).toHaveURL(url => url.pathname === `/api/hassio_ingress/feedback-fixture/tickets/${id}`)
     const detailUrl = page.url()
     const row = detail.locator(`#td-comment-${commentId}`)
     const edit = row.getByRole("button", { name: "Edit comment" })

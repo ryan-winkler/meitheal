@@ -4076,6 +4076,8 @@ paths:
       tags:
         - Strategy
       summary: Create a framework
+      description: "Accepts a framework JSON object or { yaml: string } for a YAML import (maximum 64 KiB). Invalid imports
+        return 400 without creating a framework."
       responses:
         "201":
           description: Created

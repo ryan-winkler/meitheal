@@ -1365,7 +1365,7 @@ const paths = {
   // ── Frameworks (RICE, etc.) ──
   "/api/frameworks": {
     get: { operationId: "listFrameworks", tags: ["Strategy"], summary: "List available strategic frameworks", responses: { 200: { description: "Frameworks" } } },
-    post: { operationId: "createFramework", tags: ["Strategy"], summary: "Create a framework", responses: { 201: { description: "Created" } } },
+    post: { operationId: "createFramework", tags: ["Strategy"], summary: "Create a framework", description: "Accepts a framework JSON object or { yaml: string } for a YAML import (maximum 64 KiB). Invalid imports return 400 without creating a framework.", responses: { 201: { description: "Created" } } },
   },
   "/api/frameworks/{id}": {
     get: { operationId: "getFramework", tags: ["Strategy"], summary: "Get framework details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Framework" } } },

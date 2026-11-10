@@ -84,7 +84,22 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
   try {
-    const body = await request.json() as Partial<FrameworkConfig>
+    const input = await request.json()
+    let body: Partial<FrameworkConfig> = input
+    if (input && typeof input === "object" && "yaml" in input) {
+      try {
+        if (typeof input.yaml !== "string" || input.yaml.length > 64 * 1024) throw new Error("Invalid YAML input")
+        const raw: unknown = parseYaml(input.yaml, { maxAliasCount: 50 })
+        if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("name" in raw) ||
+            typeof raw.name !== "string" || !raw.name.trim()) throw new Error("Framework name is required")
+        const id = raw.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+        body = { ...parseFrameworkConfig(id, raw as Record<string, unknown>), source: "imported" }
+      } catch {
+        return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors: ["Invalid YAML framework definition. Check its name and fields."] }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        })
+      }
+    }
 
     // Validate the submitted config
     const errors = validateFrameworkConfig(body)

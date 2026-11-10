@@ -144,8 +144,7 @@ test.describe("New Task Modal", () => {
     expect(createdId).toEqual(expect.any(String))
     const detailName = "Task detail: Checklist creation fixture"
     await expect(page.getByRole("dialog", { name: detailName })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe("/today")
-    expect(new URL(page.url()).searchParams.get("open")).toBe(createdId)
+    expect(new URL(page.url()).pathname).toBe(`/tickets/${createdId}`)
     const id = encodeURIComponent(createdId!)
     const taskPath = "/api/tasks/" + id
     const getChecklist = async () => {

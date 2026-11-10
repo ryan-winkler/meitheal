@@ -139,7 +139,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(cards.nth(1)).toHaveAttribute("data-id", third)
     await expect(menuButton).toBeFocused()
     await expect(lane.locator("[data-kanban-range]")).toHaveText("1–25 of 29")
-    await expect(target.getByRole("button", { name: /Paging card 25.*Promoted/ })).toBeVisible()
+    await expect(target.getByRole("link", { name: /Paging card 25.*Promoted/ })).toBeVisible()
 
     const filter = page.getByRole("button", { name: "Promoted only" })
     await filter.press("Enter")

@@ -365,6 +365,21 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <link rel="preload" href={outfit700Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
+    {!behindIngress && <script is:inline>
+      // Register before ClientRouter: drawer history belongs to the current DOM.
+      if (!window.__meithealTicketHistoryGuard) {
+        window.__meithealTicketHistoryGuard = true
+        const lifetime = new AbortController()
+        window.addEventListener("popstate", event => {
+          const session = document.getElementById("task-detail-overlay")?.dataset.ticketHistorySession
+          const state = history.state
+          if (session && (state?.ticketBackground === session || state?.ticketDrawer?.session === session)) {
+            event.stopImmediatePropagation()
+            window.dispatchEvent(new Event("meitheal:ticket-history"))
+          }
+        }, { signal: lifetime.signal })
+      }
+    </script>}
     {!behindIngress && <ClientRouter fallback="swap" />}
     {!privatePageShell && <JsonLd schema={jsonLd ?? {
       "@type": "SoftwareApplication",

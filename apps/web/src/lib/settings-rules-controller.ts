@@ -676,54 +676,10 @@ export function initRulesSettings(): void {
       }
 
       try {
-        // Send YAML as-is to server for parsing (using parseFrameworkConfig on server)
-        // But we need a simpler approach: parse YAML client-side and POST as JSON
-        const { parse: parseYaml } = await import("yaml")
-        const parsed = parseYaml(yamlText) as Record<string, unknown>
-
-        if (!parsed || !parsed.name) {
-          if (yamlImportErrors) {
-            yamlImportErrors.textContent = "Invalid YAML: 'name' field is required"
-            yamlImportErrors.hidden = false
-          }
-          return
-        }
-
-        // Generate ID from name
-        const id = String(parsed.name)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-
-        const payload = {
-          id,
-          name: parsed.name,
-          version: parsed.version ?? "1.0.0",
-          archetype: parsed.archetype ?? "formula",
-          source: "imported",
-          description: parsed.description,
-          formula: parsed.formula,
-          fields: Array.isArray(parsed.fields) ? parsed.fields.map((f: Record<string, unknown>) => ({
-            key: f.key,
-            label: f.label,
-            type: f.type ?? "number",
-            uiType: f.ui_type ?? "slider",
-            weight: f.weight ?? 1,
-            min: f.min,
-            max: f.max,
-            helpText: f.help_text ?? "",
-          })) : [],
-          badgeThresholds: Array.isArray(parsed.badge_thresholds) ? parsed.badge_thresholds.map((b: Record<string, unknown>) => ({
-            min: b.min ?? 0,
-            label: b.label ?? "",
-            color: b.color ?? "bg-secondary",
-          })) : [],
-        }
-
         const result = await apiFetch("/api/frameworks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ yaml: yamlText }),
         })
 
         if (!result.ok) {

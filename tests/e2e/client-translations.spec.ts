@@ -157,26 +157,25 @@ test.describe("browser catalog and YAML import", () => {
     }
   })
 
-  test("YAML import parses valid documents and reports invalid documents without posting them", async ({ page }) => {
+  test("YAML import validates on the server and retains invalid input", async ({ page, request }) => {
+    expect((await request.post("/api/frameworks", { data: { yaml: "name: Too large\n" + "#".repeat(65536) } })).status()).toBe(400)
     await page.goto("/settings#rules-lenses-settings")
     await page.locator("#fw-import-btn").click()
-    let payload: Record<string, unknown> | undefined
-    await page.route("**/api/frameworks", async route => {
-      if (route.request().method() !== "POST") return route.continue()
-      payload = route.request().postDataJSON()
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) })
-    })
-    await page.locator("#fw-import-yaml").fill("name: [unterminated")
-    await page.locator("#fw-import-submit").click()
-    await expect(page.locator("#fw-import-errors")).toBeVisible()
-    expect(payload).toBeUndefined()
-    await page.locator("#fw-import-yaml").fill("fields: []")
-    await page.locator("#fw-import-submit").click()
-    await expect(page.locator("#fw-import-errors")).toHaveText("Invalid YAML: 'name' field is required")
-    expect(payload).toBeUndefined()
-    await page.locator("#fw-import-yaml").fill("name: Locale YAML fixture\nformula: impact\nfields:\n  - key: impact\n    label: Impact\n    type: number\n")
-    await page.locator("#fw-import-submit").click()
-    await expect(page.locator("#fw-import-dialog")).not.toBeVisible()
-    expect(payload).toMatchObject({ id: "locale-yaml-fixture", name: "Locale YAML fixture", formula: "impact", fields: [{ key: "impact", label: "Impact", type: "number" }] })
+    for (const yaml of ["name: [unterminated", "fields: []"]) {
+      await page.locator("#fw-import-yaml").fill(yaml)
+      await page.locator("#fw-import-submit").click()
+      await expect(page.locator("#fw-import-errors")).toContainText("Invalid YAML framework definition")
+      await expect(page.locator("#fw-import-yaml")).toHaveValue(yaml)
+    }
+    const name = `Locale YAML fixture ${crypto.randomUUID()}`
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    try {
+      await page.locator("#fw-import-yaml").fill(`name: ${name}\nformula: impact\nfields:\n  - key: impact\n    label: Impact\n    type: number\n`)
+      await page.locator("#fw-import-submit").click()
+      await expect(page.locator("#fw-import-dialog")).not.toBeVisible()
+      const result = await request.get(`/api/frameworks/${id}`)
+      expect(result.status()).toBe(200)
+      expect((await result.json()).data).toMatchObject({ id, name, source: "imported", formula: "impact", fields: [{ key: "impact", label: "Impact", type: "number" }] })
+    } finally { await request.delete(`/api/frameworks/${id}`) }
   })
 })
