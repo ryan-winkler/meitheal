@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Meitheal — Devcontainer CLI Launcher
 #
-# Starts the HA Supervisor devcontainer stack via podman-compose.
-# Works from host, ai-vibe distrobox, or any terminal with podman access.
+# Starts or recovers the HA development stack without replacing editor containers.
+# First creation uses the Dev Containers CLI so configured Features are applied.
 #
 # Usage:
 #   ./scripts/devcontainer-up.sh          # Start stack
@@ -50,6 +50,7 @@ load_env_file "$DEVCONTAINER_ENV_FILE"
 load_env_file "$DEVCONTAINER_ENV_LOCAL_FILE"
 
 HA_UI_PORT="${HA_UI_PORT:-7123}"
+HA_CORE_PORT="${HA_CORE_PORT:-80}"
 HA_SUPERVISOR_PORT="${HA_SUPERVISOR_PORT:-7357}"
 GROCY_HOST_PORT="${GROCY_HOST_PORT:-9192}"
 NODERED_HOST_PORT="${NODERED_HOST_PORT:-1880}"
@@ -90,6 +91,7 @@ run_compose() {
       "NODE_RED_CREDENTIAL_SECRET=${NODE_RED_CREDENTIAL_SECRET:-dev-secret}" \
       "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-meitheal-dev}" \
       "HA_UI_PORT=${HA_UI_PORT}" \
+      "HA_CORE_PORT=${HA_CORE_PORT}" \
       "HA_SUPERVISOR_PORT=${HA_SUPERVISOR_PORT}" \
       "GROCY_HOST_PORT=${GROCY_HOST_PORT}" \
       "NODERED_HOST_PORT=${NODERED_HOST_PORT}" \
@@ -100,11 +102,84 @@ run_compose() {
   $COMPOSE_CMD -f "$COMPOSE_FILE" "$@"
 }
 
+run_engine() {
+  if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
+    flatpak-spawn --host podman "$@"
+  elif [[ "$COMPOSE_CMD" == *podman* ]]; then
+    podman "$@"
+  else
+    docker "$@"
+  fi
+}
+
+# Find every matching editor before choosing a project. Distrobox and the host
+# may label the same workspace through /home and /var/home aliases.
+find_workspace_editors() {
+  local path alternate found id label matches=""
+  local paths=("$PROJECT_ROOT")
+  case "$PROJECT_ROOT" in
+    /var/home/*) alternate="/home/${PROJECT_ROOT#/var/home/}" ;;
+    /home/*) alternate="/var/home/${PROJECT_ROOT#/home/}" ;;
+  esac
+  if [[ -n "${alternate:-}" ]] && { [[ -n "${DISTROBOX_ENTER_PATH:-}" ]] || [[ "$alternate" -ef "$PROJECT_ROOT" ]]; }; then
+    paths+=("$alternate")
+  fi
+  for path in "${paths[@]}"; do
+    for label in "devcontainer.local_folder=$path" "com.docker.compose.project.working_dir=$path/.devcontainer"; do
+      found=$(run_engine ps --all --quiet --filter "label=$label" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+      while IFS= read -r id; do
+        [[ -n "$id" ]] || continue
+        case $'\n'"$matches"$'\n' in
+          *$'\n'"$id"$'\n'*) ;;
+          *) matches="${matches:+$matches$'\n'}$id" ;;
+        esac
+      done <<< "$found"
+    done
+  done
+  printf '%s' "$matches"
+}
+
+start_stack() {
+  local existing project
+  run_compose config >/dev/null
+  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+  else
+    existing=$(find_workspace_editors) || return
+  fi
+  if [[ "$existing" == *$'\n'* ]]; then
+    err "Multiple editor containers match this workspace. Set COMPOSE_PROJECT_NAME to the intended stack."
+    return 1
+  fi
+  if [[ -n "$existing" ]]; then
+    project=$(run_engine inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$existing") || return
+    if [[ -z "$project" || "$project" == '<no value>' ]]; then
+      err "The existing editor container has no Compose project label. Inspect it before recovery."
+      return 1
+    fi
+    export COMPOSE_PROJECT_NAME="$project"
+  fi
+  if [[ -n "$existing" ]]; then
+    # Starting an existing container preserves its editor-generated image and Features.
+    run_compose start ha-devcontainer
+    run_compose exec -T ha-devcontainer sh -lc 'command -v node >/dev/null && command -v pnpm >/dev/null' || {
+      err "The existing container is missing Node or pnpm. Rebuild it in the editor; this helper will not replace it."
+      return 1
+    }
+    run_compose up -d --no-recreate grocy nodered
+  elif command -v devcontainer &>/dev/null; then
+    devcontainer up --workspace-folder "$PROJECT_ROOT"
+  else
+    err "Create the environment with Reopen in Container, or install the Dev Containers CLI and run this command again."
+    return 1
+  fi
+}
+
 # ── Commands ──
 case "${1:-up}" in
   up|start)
     log "Starting HA devcontainer stack..."
-    run_compose up -d
+    start_stack
     echo ""
     log "Stack is up! Access points:"
     echo -e "  ${BOLD}HA UI:${RESET}       http://localhost:${HA_UI_PORT}/"
@@ -127,9 +202,8 @@ case "${1:-up}" in
     ;;
   restart)
     log "Restarting devcontainer stack..."
-    run_compose down
-    run_compose up -d
-    log "Stack restarted."
+    run_compose restart
+    log "Stack restarted with its existing images."
     ;;
   *)
     echo "Usage: $0 {up|down|status|logs|restart}"
