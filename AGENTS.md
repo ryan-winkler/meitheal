@@ -190,6 +190,8 @@ Both are logged in structured API request logs (`metadata.automation_source`, `m
 
 ## Deploy Rules
 
+Use the single Canary App entry for feature work and validation. Its directory is `meitheal-hub-canary`, slug is `meitheal_canary`, and image family is `meitheal-canary-{arch}`. Settings and other feature changes belong to that same entry. Release commands enforce the canonical manifests in the source and destination repositories.
+
 Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 
 | Channel | Dir | Trigger | Version | Stage |
