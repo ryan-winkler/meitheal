@@ -412,6 +412,24 @@ async function initializeSchema(): Promise<void> {
   // Composite index for timeline UNION query performance
   await client.execute("CREATE INDEX IF NOT EXISTS comments_task_created_idx ON comments(task_id, created_at DESC)");
 
+  // Reactions belong to either a task or a comment on that same task.
+  await client.batch([
+    "CREATE UNIQUE INDEX IF NOT EXISTS comments_id_task_idx ON comments(id, task_id)",
+    `CREATE TABLE IF NOT EXISTS task_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      comment_id INTEGER CHECK (comment_id > 0),
+      owner_key TEXT NOT NULL,
+      content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 16),
+      author TEXT NOT NULL,
+      FOREIGN KEY (comment_id, task_id) REFERENCES comments(id, task_id) ON DELETE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS task_reactions_owner_content_idx
+      ON task_reactions(task_id, COALESCE(comment_id, 0), owner_key, content)`,
+    "CREATE INDEX IF NOT EXISTS task_reactions_task_page_idx ON task_reactions(task_id, comment_id, id)",
+    "CREATE INDEX IF NOT EXISTS task_reactions_comment_idx ON task_reactions(comment_id, task_id) WHERE comment_id IS NOT NULL",
+  ], "write")
+
   // Kanban swim lanes — server-persisted lane configuration
   await client.execute(`
     CREATE TABLE IF NOT EXISTS kanban_lanes (
@@ -952,7 +970,7 @@ async function initializeSchema(): Promise<void> {
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 10
+  const targetVersion = 11
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

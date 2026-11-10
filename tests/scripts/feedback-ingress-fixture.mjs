@@ -29,6 +29,8 @@ const server = http.createServer((request, response) => {
   }, () => handler(request, response))
 })
 
-server.listen(0, "127.0.0.1", () => {
-  process.send({ port: server.address().port, configuredPath })
+server.listen(Number(process.env.MEITHEAL_INGRESS_FIXTURE_PORT ?? 0), "127.0.0.1", () => {
+  const { port } = server.address()
+  process.env.PORT = String(port)
+  process.send({ port, configuredPath })
 })

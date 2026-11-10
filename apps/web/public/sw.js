@@ -267,6 +267,8 @@ self.addEventListener("fetch", (event) => {
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   if (/^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
+  if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
+
   const pagePath = appRoutePath(url.pathname)
   if (isNetworkOnlyPage(pagePath, url.searchParams)) return
   if (pagePath === "/planning") {

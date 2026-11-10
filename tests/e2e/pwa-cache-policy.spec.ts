@@ -129,3 +129,35 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     }
   })
 }
+
+for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
+  test(`reaction requests bypass Cache Storage in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+    const server = await fixture(prefix)
+    const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+    try {
+      const page = await context.newPage()
+      await page.goto(server.base + "/fixture")
+      await register(page, server.base + "/sw.js")
+      const urls = [
+        "/api/tasks/reaction-counts?ids=fixture-task",
+        "/api/tasks/fixture-task/reactions",
+        "/api/tasks/fixture-task/comments/1/reactions",
+      ].map(path => server.base + path)
+      for (const url of urls) {
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(200)
+        expect(await cached(page, url)).toBe(false)
+      }
+      await page.evaluate(async urls => {
+        const cache = await caches.open("meitheal-api-v0.0.1")
+        for (const url of urls) await cache.put(url, new Response("Stale reaction data"))
+      }, urls)
+      await context.setOffline(true)
+      for (const url of urls) {
+        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+      }
+    } finally {
+      await context.close()
+      await server.close()
+    }
+  })
+}

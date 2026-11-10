@@ -37,7 +37,37 @@ const commentResourceParameters = [
   { name: "commentId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
 ]
 
+const reactionContent = {
+  type: "string", minLength: 1, maxLength: 16,
+  description: "One line of emoji or plain text. Surrounding whitespace is trimmed and the text is normalized to NFC.",
+}
+const reactionCursor = { type: "string", pattern: "^[1-9][0-9]*$" }
+
 const schemas = {
+  TaskReaction: {
+    type: "object",
+    required: ["id", "content", "author", "can_manage"],
+    properties: {
+      id: { type: "integer", minimum: 1 },
+      content: reactionContent,
+      author: { type: "string", description: "Display author recorded when the reaction was added." },
+      can_manage: { type: "boolean", description: "Whether the caller owns and can remove this reaction." },
+    },
+  },
+  TaskReactionPage: {
+    type: "object",
+    required: ["reactions", "next_cursor", "can_react"],
+    properties: {
+      reactions: { type: "array", items: { $ref: "#/components/schemas/TaskReaction" }, maxItems: 50 },
+      next_cursor: { anyOf: [reactionCursor, { type: "null" }], description: "Supply this value as cursor to continue." },
+      can_react: { type: "boolean", description: "Whether the caller may add reactions." },
+    },
+  },
+  TaskReactionCounts: {
+    type: "object",
+    required: ["counts"],
+    properties: { counts: { type: "object", additionalProperties: { type: "integer", minimum: 1 }, maxProperties: 100 } },
+  },
   TaskComment: {
     type: "object",
     required: ["id", "task_id", "content", "author", "created_at"],
@@ -330,6 +360,66 @@ const feedbackJsonErrors = {
   503: feedbackUnavailable,
 }
 const feedbackJsonBody = schema => ({ required: true, content: { "application/json": { schema } } })
+
+const reactionSecurity = [...ingressSession, { bearerAuth: [] }]
+const reactionForbidden = problemContent("A verified Home Assistant user or an automation token with the required task scope is needed.")
+const reactionNotFound = problemContent("The task or comment does not exist.")
+const reactionUnauthenticated = problemContent("An ingress session or a valid automation token is required.")
+const reactionResponseErrors = { 401: reactionUnauthenticated, 403: reactionForbidden, 500: err500 }
+
+function reactionPaths(resource, label, parameters) {
+  return {
+    collection: {
+      get: {
+        operationId: `get${resource}Reactions`,
+        tags: ["Tasks"],
+        summary: `List reactions on a ${label}`,
+        description: "Returns up to 50 reactions, newest first. Automation tokens need tasks:read.",
+        security: reactionSecurity,
+        parameters: [...parameters, { name: "cursor", in: "query", schema: reactionCursor }],
+        responses: { 200: jsonContent(ref("TaskReactionPage"), "Reactions and continuation cursor"), 400: err400,
+          404: reactionNotFound, ...reactionResponseErrors },
+      },
+      post: {
+        operationId: `add${resource}Reaction`,
+        tags: ["Tasks"],
+        summary: `React to a ${label}`,
+        description: "The same reaction by the same caller on the same target returns the existing reaction. The JSON body is limited to 1 KiB. Automation tokens need tasks:write.",
+        security: reactionSecurity,
+        parameters,
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["content"], properties: { content: reactionContent } } } },
+        },
+        responses: {
+          201: jsonContent(ref("TaskReaction"), "Added or already present reaction"),
+          400: err400,
+          404: reactionNotFound,
+          413: problemContent("The request body exceeds 1 KiB."),
+          415: problemContent("The request body must be application/json."),
+          ...reactionResponseErrors,
+        },
+      },
+    },
+    item: {
+      delete: {
+        operationId: `delete${resource}Reaction`,
+        tags: ["Tasks"],
+        summary: `Remove your reaction from a ${label}`,
+        description: "Only the creator can remove a reaction. Automation tokens need tasks:write.",
+        security: reactionSecurity,
+        parameters: [...parameters, { name: "reactionId", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: {
+          204: { description: "Reaction removed" },
+          404: problemContent("The reaction was not found on this target or is owned by a different caller."),
+          ...reactionResponseErrors,
+        },
+      },
+    },
+  }
+}
+const taskReactionPaths = reactionPaths("Task", "task card", commentResourceParameters.slice(0, 1))
+const commentReactionPaths = reactionPaths("TaskComment", "task comment", commentResourceParameters)
 
 const paths = {
   "/api/feedback": {
@@ -749,6 +839,22 @@ const paths = {
         403: problemContent("A verified caller or task-write credential is required."),
         404: problemContent("The comment was not found on this task or does not belong to the caller."),
       },
+    },
+  },
+  "/api/tasks/{id}/reactions": taskReactionPaths.collection,
+  "/api/tasks/{id}/reactions/{reactionId}": taskReactionPaths.item,
+  "/api/tasks/{id}/comments/{commentId}/reactions": commentReactionPaths.collection,
+  "/api/tasks/{id}/comments/{commentId}/reactions/{reactionId}": commentReactionPaths.item,
+  "/api/tasks/reaction-counts": {
+    get: {
+      operationId: "getTaskReactionCounts",
+      tags: ["Tasks"],
+      summary: "Count card reactions for a batch of tasks",
+      description: "Returns positive counts keyed by task ID. Comment reactions are excluded. Automation tokens need tasks:read.",
+      security: reactionSecurity,
+      parameters: [{ name: "ids", in: "query", required: true,
+        schema: { type: "string", maxLength: 12899 }, description: "1 to 100 comma-separated task IDs." }],
+      responses: { 200: jsonContent(ref("TaskReactionCounts"), "Positive card reaction counts"), 400: err400, ...reactionResponseErrors },
     },
   },
   "/api/tasks/{id}/links": {

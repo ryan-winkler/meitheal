@@ -165,4 +165,4 @@ export function verifyLicenseKeyWithPublicKey(
   }
 }
 
-export { resolveAgentRouteScope } from "./agent-route-policy"
+export { isTaskReactionRoute, resolveAgentRouteScope } from "./agent-route-policy"

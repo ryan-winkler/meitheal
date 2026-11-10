@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { resolveAgentRouteScope } from "@meitheal/domain-auth"
+import { isTaskReactionRoute, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { apiProblem } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
 import { idempotencyCache } from "./idempotency-cache"
@@ -12,6 +12,9 @@ const MAX_RESPONSE_BYTES = 16 * 1024
 export async function taskRetryKey(request: Request, url: URL, principal: string | undefined): Promise<string | Response | undefined> {
   const clientKey = request.headers.get("idempotency-key")
   if (clientKey === null || !principal) return
+
+  // Reactions use their database identity so removing and adding one never replays stale data.
+  if (isTaskReactionRoute(url.pathname)) return
 
   const scope = resolveAgentRouteScope(url.pathname, request.method)
   const compatCreate = request.method === "PUT" && /^\/api\/v1\/projects\/\d+\/tasks$/.test(url.pathname)

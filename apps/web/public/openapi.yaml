@@ -23,6 +23,64 @@ servers:
     description: Development server
 components:
   schemas:
+    TaskReaction:
+      type: object
+      required:
+        - id
+        - content
+        - author
+        - can_manage
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        content: &a24
+          type: string
+          minLength: 1
+          maxLength: 16
+          description: One line of emoji or plain text. Surrounding whitespace is trimmed and the text is normalized to NFC.
+        author:
+          type: string
+          description: Display author recorded when the reaction was added.
+        can_manage:
+          type: boolean
+          description: Whether the caller owns and can remove this reaction.
+      additionalProperties: false
+    TaskReactionPage:
+      type: object
+      required:
+        - reactions
+        - next_cursor
+        - can_react
+      properties:
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskReaction"
+          maxItems: 50
+        next_cursor:
+          anyOf:
+            - &a22
+              type: string
+              pattern: ^[1-9][0-9]*$
+            - type: "null"
+          description: Supply this value as cursor to continue.
+        can_react:
+          type: boolean
+          description: Whether the caller may add reactions.
+      additionalProperties: false
+    TaskReactionCounts:
+      type: object
+      required:
+        - counts
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+          maxProperties: 100
+      additionalProperties: false
     TaskComment:
       type: object
       required:
@@ -676,7 +734,8 @@ paths:
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
       security: &a8
-        - haIngressSession: []
+        - &a20
+          haIngressSession: []
       parameters:
         - &a14
           in: header
@@ -1547,12 +1606,14 @@ paths:
         - Tasks
       summary: Get one comment on a task
       parameters: &a18
-        - name: id
+        - &a21
+          name: id
           in: path
           required: true
           schema:
             type: string
-        - name: commentId
+        - &a28
+          name: commentId
           in: path
           required: true
           schema:
@@ -1634,6 +1695,247 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+  /api/tasks/{id}/reactions:
+    get:
+      operationId: getTaskReactions
+      tags:
+        - Tasks
+      summary: List reactions on a task card
+      description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
+      security: &a23
+        - *a20
+        - bearerAuth: []
+      parameters:
+        - *a21
+        - name: cursor
+          in: query
+          schema: *a22
+      responses:
+        "200":
+          description: Reactions and continuation cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReactionPage"
+        "400": *a10
+        "401": &a25
+          description: An ingress session or a valid automation token is required.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403": &a26
+          description: A verified Home Assistant user or an automation token with the required task scope is needed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404": &a27
+          description: The task or comment does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500": *a12
+    post:
+      operationId: addTaskReaction
+      tags:
+        - Tasks
+      summary: React to a task card
+      description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
+        limited to 1 KiB. Automation tokens need tasks:write.
+      security: *a23
+      parameters:
+        - *a21
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content: *a24
+              additionalProperties: false
+      responses:
+        "201":
+          description: Added or already present reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReaction"
+        "400": *a10
+        "401": *a25
+        "403": *a26
+        "404": *a27
+        "413":
+          description: The request body exceeds 1 KiB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: The request body must be application/json.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500": *a12
+  /api/tasks/{id}/reactions/{reactionId}:
+    delete:
+      operationId: deleteTaskReaction
+      tags:
+        - Tasks
+      summary: Remove your reaction from a task card
+      description: Only the creator can remove a reaction. Automation tokens need tasks:write.
+      security: *a23
+      parameters:
+        - *a21
+        - name: reactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Reaction removed
+        "401": *a25
+        "403": *a26
+        "404":
+          description: The reaction was not found on this target or is owned by a different caller.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500": *a12
+  /api/tasks/{id}/comments/{commentId}/reactions:
+    get:
+      operationId: getTaskCommentReactions
+      tags:
+        - Tasks
+      summary: List reactions on a task comment
+      description: Returns up to 50 reactions, newest first. Automation tokens need tasks:read.
+      security: *a23
+      parameters:
+        - *a21
+        - *a28
+        - name: cursor
+          in: query
+          schema: *a22
+      responses:
+        "200":
+          description: Reactions and continuation cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReactionPage"
+        "400": *a10
+        "401": *a25
+        "403": *a26
+        "404": *a27
+        "500": *a12
+    post:
+      operationId: addTaskCommentReaction
+      tags:
+        - Tasks
+      summary: React to a task comment
+      description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
+        limited to 1 KiB. Automation tokens need tasks:write.
+      security: *a23
+      parameters: *a18
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content: *a24
+              additionalProperties: false
+      responses:
+        "201":
+          description: Added or already present reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReaction"
+        "400": *a10
+        "401": *a25
+        "403": *a26
+        "404": *a27
+        "413":
+          description: The request body exceeds 1 KiB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: The request body must be application/json.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500": *a12
+  /api/tasks/{id}/comments/{commentId}/reactions/{reactionId}:
+    delete:
+      operationId: deleteTaskCommentReaction
+      tags:
+        - Tasks
+      summary: Remove your reaction from a task comment
+      description: Only the creator can remove a reaction. Automation tokens need tasks:write.
+      security: *a23
+      parameters:
+        - *a21
+        - *a28
+        - name: reactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Reaction removed
+        "401": *a25
+        "403": *a26
+        "404":
+          description: The reaction was not found on this target or is owned by a different caller.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500": *a12
+  /api/tasks/reaction-counts:
+    get:
+      operationId: getTaskReactionCounts
+      tags:
+        - Tasks
+      summary: Count card reactions for a batch of tasks
+      description: Returns positive counts keyed by task ID. Comment reactions are excluded. Automation tokens need tasks:read.
+      security: *a23
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 12899
+          description: 1 to 100 comma-separated task IDs.
+      responses:
+        "200":
+          description: Positive card reaction counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskReactionCounts"
+        "400": *a10
+        "401": *a25
+        "403": *a26
+        "500": *a12
   /api/tasks/{id}/links:
     get:
       operationId: getTaskLinks
