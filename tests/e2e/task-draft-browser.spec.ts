@@ -420,10 +420,14 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
       // Seed a prior valid snapshot through the real guarded API, independently of current form choices.
       const seeded = await page.evaluate(async ({ prefix, snapshot }) => {
         const path = prefix + "/api/task-drafts"
-        const read = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
+        const transport = { mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error" } as const
+        const read = await fetch(path, { ...transport, method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
+        if (read.status !== 200) throw new Error(`Draft read failed: ${read.status}`)
         const state = await read.json()
+        const verified = await fetch(path, { ...transport, method: "HEAD", headers: { "X-Meitheal-Draft-Context": state.context } })
+        if (verified.status !== 204) throw new Error(`Draft lease verification failed: ${verified.status}`)
         const saved = await fetch(path, {
-          method: "PUT", headers: { "content-type": "application/json", "X-Meitheal-Draft-Context": state.context },
+          ...transport, method: "PUT", headers: { "content-type": "application/json", "X-Meitheal-Draft-Context": state.context },
           body: JSON.stringify({ action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot }),
         })
         return { status: saved.status, body: await saved.json() }
@@ -446,7 +450,11 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
       await draftAction(page, "Save draft").click()
       await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
       const persisted = await page.evaluate(async prefix => {
-        const response = await fetch(prefix + "/api/task-drafts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
+        const response = await fetch(prefix + "/api/task-drafts", {
+          mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }),
+        })
+        if (response.status !== 200) throw new Error(`Draft readback failed: ${response.status}`)
         return (await response.json()).draft.snapshot
       }, prefix)
       expect(persisted).toEqual(edited)
