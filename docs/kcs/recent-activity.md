@@ -11,6 +11,7 @@ Open **Recent activity** from the Meitheal navigation while signed into Home Ass
 Choose a **Current area** or **Person** and apply the filters. When a task moves, its activity appears in the new area. Deleting a task removes it from the view. Person filters use verified Home Assistant identities. Updates with no verified person have a general attribution and remain visible under **Everyone**.
 
 Select a task title to open its details. Use **Older activity** to continue or **Refresh activity** to see new changes.
+Open the task's activity history in Details to inspect its individual field changes.
 
 Recent activity requires an active Home Assistant session and a connection. The web app removes saved copies of the activity page when its service worker activates.
 

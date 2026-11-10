@@ -32,6 +32,9 @@ test("packaged task history preserves JSON and protects successes, errors and en
         field: "description", old_value: oldDescription, new_value: newDescription,
       })]),
     })
+    const allHistory = await (await request.get(path + "/" + name + "?limit=20")).json()
+    expect(allHistory[collection]).not.toContainEqual(expect.objectContaining({ field: "activity" }))
+    expect(allHistory.total).toBe(allHistory[collection].length)
     const escapedId = await request.get(`/api/tasks/${encodedId}/${name}?limit=2&offset=0`)
     expect(escapedId.status()).toBe(200)
     expect(escapedId.headers()["cache-control"]).toBe(noStore)

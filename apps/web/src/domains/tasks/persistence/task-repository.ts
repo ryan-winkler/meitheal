@@ -23,6 +23,7 @@ import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor
 import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
+const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 
 export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "status" | "priority" | "deferred_at"> & {
   score: number
@@ -1065,7 +1066,7 @@ export class TaskRepository {
     if (typeof changedChecklist === "string" || changedChecklist === null) {
       return { ok: false, errorCode: "checklist_conflict", checklists: changedChecklist }
     }
-    const blockers = dependencies ? results.at(-2)?.rows : undefined
+    const blockers = dependencies ? results[diagnostics.length - 1]?.rows : undefined
     if (blockers?.length) {
       return {
         ok: false,
@@ -1566,15 +1567,21 @@ export class TaskRepository {
 
   /** Fetch paginated activity log for a task */
   async getActivityLog(taskId: string, limit: number, offset: number) {
-    const result = await this.client.execute({
-      sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
-            FROM task_activity_log
-            WHERE task_id = ?
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?`,
-      args: [taskId, limit, offset],
-    });
-    return result.rows;
+    const where = `WHERE task_id = ? AND ${taskHistoryPredicate}`
+    const [events, count] = await this.client.batch([
+      {
+        sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+              FROM task_activity_log ${where}
+              ORDER BY created_at DESC
+              LIMIT ? OFFSET ?`,
+        args: [taskId, limit, offset],
+      },
+      {
+        sql: `SELECT COUNT(*) AS total FROM task_activity_log ${where}`,
+        args: [taskId],
+      },
+    ], "read")
+    return { activity: events?.rows ?? [], total: Number(count?.rows[0]?.total ?? 0) }
   }
 
   /**
@@ -1591,7 +1598,7 @@ export class TaskRepository {
     const limit = Math.min(200, Math.max(1, opts?.limit ?? 50))
     const offset = Math.max(0, opts?.offset ?? 0)
 
-    const conditions: string[] = ["task_id = ?"]
+    const conditions = ["task_id = ?", taskHistoryPredicate]
     const args: InValue[] = [taskId]
 
     if (opts?.event_type) {
