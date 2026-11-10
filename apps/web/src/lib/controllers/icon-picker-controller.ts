@@ -9,6 +9,7 @@
  */
 
 import { DropdownController } from "../dropdown-controller"
+import { sanitizeIconSvg } from "../icon-svg"
 
 /** Maximum file size for uploaded icons (64KB) */
 const MAX_FILE_SIZE = 64 * 1024
@@ -18,23 +19,6 @@ const MAX_ICON_DIM = 128
 
 /** Allowed MIME types for icon upload */
 const ALLOWED_MIME_TYPES = ["image/svg+xml", "image/png"]
-
-/** SVG allowlisted tags — all others stripped during sanitization */
-const SVG_SAFE_TAGS = new Set([
-  "svg", "g", "path", "circle", "rect", "ellipse", "line", "polyline",
-  "polygon", "text", "tspan", "defs", "clippath", "mask", "use",
-  "lineargradient", "radialgradient", "stop", "title", "desc",
-])
-
-/** SVG allowlisted attributes — all others stripped */
-const SVG_SAFE_ATTRS = new Set([
-  "viewbox", "xmlns", "width", "height", "fill", "stroke", "stroke-width",
-  "stroke-linecap", "stroke-linejoin", "d", "cx", "cy", "r", "rx", "ry",
-  "x", "y", "x1", "y1", "x2", "y2", "points", "transform", "opacity",
-  "class", "id", "clip-path", "mask", "offset", "stop-color", "stop-opacity",
-  "href", "xlink:href", "font-size", "font-family", "text-anchor",
-  "dominant-baseline", "fill-rule", "clip-rule", "style",
-])
 
 export interface IconPickerOptions {
   /** Callback when an icon is selected (emoji string or data URI) */
@@ -137,13 +121,13 @@ export function initIconPicker(
     try {
       if (file.type === "image/svg+xml") {
         const text = await file.text()
-        const sanitized = sanitizeSvg(text)
+        const sanitized = sanitizeIconSvg(text)
         if (!sanitized) {
           dispatchToast("Invalid SVG file", "error")
           uploadInput.value = ""
           return
         }
-        const dataUri = `data:image/svg+xml;base64,${btoa(sanitized)}`
+        const dataUri = `data:image/svg+xml;base64,${btoa(Array.from(new TextEncoder().encode(sanitized), byte => String.fromCharCode(byte)).join(""))}`
         setIcon(dataUri)
         options.onSelect(dataUri)
       } else {
@@ -221,51 +205,6 @@ function validateImageDimensions(dataUri: string): Promise<boolean> {
     img.onerror = () => resolve(false)
     img.src = dataUri
   })
-}
-
-/** Sanitize SVG by stripping unsafe tags and attributes */
-function sanitizeSvg(raw: string): string | null {
-  try {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(raw, "image/svg+xml")
-    const svg = doc.querySelector("svg")
-    if (!svg) return null
-
-    // Check for parser errors
-    if (doc.querySelector("parsererror")) return null
-
-    stripUnsafe(svg)
-    return new XMLSerializer().serializeToString(svg)
-  } catch {
-    return null
-  }
-}
-
-/** Recursively strip unsafe tags and attributes from an SVG element */
-function stripUnsafe(el: Element): void {
-  // Remove script elements and event handler attributes
-  const children = Array.from(el.children)
-  for (const child of children) {
-    if (!SVG_SAFE_TAGS.has(child.tagName.toLowerCase())) {
-      child.remove()
-      continue
-    }
-    // Strip unsafe attributes
-    const attrs = Array.from(child.attributes)
-    for (const attr of attrs) {
-      const name = attr.name.toLowerCase()
-      if (name.startsWith("on") || !SVG_SAFE_ATTRS.has(name)) {
-        child.removeAttribute(attr.name)
-      }
-    }
-    // Strip javascript: URLs from href
-    const href = child.getAttribute("href") || child.getAttribute("xlink:href")
-    if (href?.toLowerCase().includes("javascript:")) {
-      child.removeAttribute("href")
-      child.removeAttribute("xlink:href")
-    }
-    stripUnsafe(child)
-  }
 }
 
 /** Shared DropdownController instance for icon pickers */

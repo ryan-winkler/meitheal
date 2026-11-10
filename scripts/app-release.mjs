@@ -120,7 +120,10 @@ function main([command, channel, first, second, third]) {
     if (second !== version) fail("Image version does not match the release")
     const build = JSON.parse(readFileSync(join(config.source, "build.json"), "utf8"))
     const base = build.build_from[arch]
-    if (!new RegExp(`^ghcr\\.io/home-assistant/${arch}-base:[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$`).test(base)) {
+    const baseMatch = typeof base === "string"
+      ? /^ghcr\.io\/home-assistant\/(amd64|aarch64)-base:[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.exec(base)
+      : null
+    if (!baseMatch || baseMatch[1] !== arch) {
       fail("Invalid Home Assistant base image")
     }
     console.log(JSON.stringify({

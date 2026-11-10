@@ -6,6 +6,12 @@ description: "Diagnose and recover from operating problems."
 
 # Operations Runbook
 
+## Custom icon uploads
+
+The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
+
+If an SVG is rejected, export a single SVG image and retry. If its appearance changes, replace embedded images or CSS with paths and presentation attributes. Verify with `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/icon-upload-security.spec.ts` after building the web app, or point `E2E_BASE_URL` at a local Astro dev server.
+
 ## Logging Pipeline Health
 
 1. Confirm app emits JSON logs to stdout.

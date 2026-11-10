@@ -39,6 +39,23 @@ test("canary image publication cannot advance App Store discovery", () => {
   expect(shared).toContain('node scripts/app-release.mjs stage stable "$VERSION" app-repository')
 })
 
+test("image metadata accepts only supported literal architectures and matching bases", () => {
+  for (const arch of ["amd64", "aarch64"]) {
+    const result = spawnSync(process.execPath, ["scripts/app-release.mjs", "image", "canary", arch, revision.slice(0, 12), revision], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main" },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout).base).toMatch(new RegExp(`/${arch}-base:`))
+  }
+  for (const arch of [".*", "amd64|aarch64", "(a+)+$", "constructor", "__proto__"]) {
+    const result = release("image", "canary", arch, revision.slice(0, 12), revision)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("Expected amd64 or aarch64")
+  }
+})
+
 test("staging one channel preserves the other channel and the source manifest", () => {
   const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
   const source = join(root, "meitheal-hub-canary/config.yaml")
