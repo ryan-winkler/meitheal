@@ -17,8 +17,8 @@ import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
-import { normalizeStatus, STATUS } from "@lib/status-config"
-import { getTriageMode, type TriageMode } from "@lib/triage-mode"
+import TriageIntake from "../components/planning/TriageIntake.astro"
+import PlanningRice from "../components/planning/PlanningRice.astro"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -43,16 +43,8 @@ for (const task of tasks) {
   }
 }
 
-const backlogCount = tasks.filter(task => task.deferred_at === null && normalizeStatus(task.status) === STATUS.BACKLOG).length
-let triageMode: TriageMode = "unavailable"
-
-// RICE-scored tasks
-const riceScoredCount = tasks.filter(t => !t.is_done && t.rice !== null).length
-const avgRice = riceScoredCount > 0
-  ? Math.round(tasks.filter(t => !t.is_done && t.rice !== null).reduce((sum, t) => sum + (t.rice ?? 0), 0) / riceScoredCount)
-  : 0
-
 // ─── Spaces data: Areas & Projects ─────────────────────────────────
+let taskRepo: TaskRepository | undefined
 let areas: any[] = []
 let projects: any[] = []
 let goalCountByArea = new Map<string, number>()
@@ -63,8 +55,7 @@ try {
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new HierarchyRepository(client)
-  const taskRepo = new TaskRepository(client)
-  triageMode = await getTriageMode(taskRepo)
+  taskRepo = new TaskRepository(client)
 
   areas = await repo.findAllAreas()
   const goals = await repo.findAllGoals({})
@@ -215,34 +206,12 @@ const visibleAreas = areas.filter((a: any) =>
 
     {/* ─── Triage ─── */}
     <section data-parent-section="triage" id="planning-section-triage" hidden>
-      {triageMode === "visible" ? (
-        <SectionHubCard
-          href="/triage"
-          icon="📥"
-          title={t("triage.title", locale)}
-          description={t("triage.description", locale)}
-          prefetch={false}
-        >
-          <div slot="stats" class="stat-card" data-planning-triage-count>
-            <span class="stat-value">{backlogCount}</span>
-            <span class="stat-label">{t("task_status.backlog", locale)}</span>
-          </div>
-        </SectionHubCard>
-      ) : <p data-planning-triage-mode={triageMode}>{t(`triage.mode_${triageMode}`, locale)}</p>}
+      <TriageIntake {locale} />
     </section>
 
     {/* ─── RICE ─── */}
     <section data-parent-section="rice" id="planning-section-rice" hidden>
-      <SectionHubCard
-        href="/rice"
-        icon="📊"
-        title="RICE Scoring"
-        description="Reach × Impact × Confidence ÷ Effort — data-driven prioritisation for your task backlog."
-        comingSoon={true}
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{riceScoredCount}</span><span class="stat-label">Scored Tasks</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{avgRice}</span><span class="stat-label">Avg RICE</span></div>
-      </SectionHubCard>
+      <PlanningRice {tasks} {locale} {taskRepo} />
     </section>
 
   </ParentPageShell>

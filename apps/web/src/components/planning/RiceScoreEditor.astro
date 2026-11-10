@@ -1,0 +1,184 @@
+---
+import type { TaskRow } from "@domains/tasks/persistence/task-repository"
+import { frameworkPayloadObject, readRiceInputs, RICE_FIELDS, riceLensScore } from "@lib/rice-lens"
+import { formatTicketKey } from "@lib/ticket-key"
+import type { Locale } from "@lib/locale"
+import { t } from "../../i18n/translations"
+
+interface Props {
+  task: TaskRow
+  closeHref: string
+  savedHref: string
+  locale: Locale
+}
+
+const { task, closeHref, savedHref, locale } = Astro.props
+let payload: Record<string, unknown> = {}
+try {
+  payload = frameworkPayloadObject(JSON.parse(task.framework_payload))
+} catch {
+  // Older imports may lack a framework payload.
+}
+const nested = frameworkPayloadObject(payload.rice)
+const inputs = readRiceInputs(payload)
+const values = inputs ?? { ...payload, ...nested }
+const score = inputs ? riceLensScore(inputs) : null
+---
+
+<form
+  class="rice-editor"
+  aria-labelledby="rice-editor-heading"
+  data-rice-editor={task.id}
+  data-rice-version={task.task_version}
+  data-rice-payload={JSON.stringify(payload)}
+  data-invalid={t("planning_rice.invalid", locale)}
+  data-conflict={t("planning_rice.conflict", locale)}
+  data-error={t("planning_rice.error", locale)}
+  data-saved={t("planning_rice.saved", locale)}
+>
+  <h3 id="rice-editor-heading" tabindex="-1">
+    {t("planning_rice.edit", locale)} <span>{formatTicketKey(task.ticket_number ?? 0)} {task.title}</span>
+  </h3>
+  <div class="rice-fields">
+    {RICE_FIELDS.map(field => (
+      <label>
+        {t(`planning_rice.${field}`, locale)}
+        <input class="form-input" type="number" name={field} value={String(values[field] ?? "")}
+          min="0" max={field === "confidence" ? 100 : undefined} step="any" required />
+      </label>
+    ))}
+  </div>
+  <p>{t("planning_rice.preview", locale)} <output>{score ?? "—"}</output></p>
+  <p role="status" aria-atomic="true" data-rice-message></p>
+  <div class="rice-editor-actions">
+    <button class="btn btn-primary" type="submit" disabled>{t("planning_rice.save", locale)}</button>
+    <a class="btn btn-outline" href={closeHref} data-astro-prefetch="false">{t("planning_rice.close", locale)}</a>
+    <a class="btn btn-outline" href={savedHref} data-rice-saved-href hidden tabindex="-1"></a>
+    <button class="btn btn-outline" type="button" data-rice-reload hidden>{t("planning_rice.reload", locale)}</button>
+  </div>
+</form>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { frameworkPayloadObject, parseRiceInputs, riceLensScore } from "@lib/rice-lens"
+
+  pageLifecycle.onPageLoad(signal => {
+    const form = document.querySelector<HTMLFormElement>("[data-rice-editor]")
+    const output = form?.querySelector("output")
+    const message = form?.querySelector<HTMLElement>("[data-rice-message]")
+    const save = form?.querySelector<HTMLButtonElement>("[type=submit]")
+    const reload = form?.querySelector<HTMLButtonElement>("[data-rice-reload]")
+    const saved = form?.querySelector<HTMLAnchorElement>("[data-rice-saved-href]")
+    const id = form?.dataset.riceEditor
+    if (!form || !output || !message || !save || !reload || !saved || !id || form.dataset.ready) return
+
+    const payload = frameworkPayloadObject(JSON.parse(form.dataset.ricePayload ?? "{}"))
+    const inputs = () => parseRiceInputs(Object.fromEntries(new FormData(form)))
+    const active = () => !signal.aborted && form.isConnected
+    const version = Number(form.dataset.riceVersion)
+    if (!Number.isSafeInteger(version) || version < 0) return
+    let stale = false
+
+    form.dataset.ready = "true"
+    save.disabled = false
+    if (location.hash === "#rice") requestAnimationFrame(() => {
+      if (active() && location.hash === "#rice") form.querySelector<HTMLElement>("h3")?.focus()
+    })
+
+    form.addEventListener("input", () => {
+      const estimate = inputs()
+      const score = estimate && estimate.confidence <= 100 ? riceLensScore(estimate) : null
+      output.value = String(score ?? "—")
+    }, { signal })
+
+    reload.addEventListener("click", () => location.reload(), { signal })
+    form.addEventListener("submit", async event => {
+      event.preventDefault()
+      if (save.disabled) return
+      const estimates = inputs()
+      const score = estimates && estimates.confidence <= 100 ? riceLensScore(estimates) : null
+      if (!estimates || score === null) {
+        message.textContent = form.dataset.invalid ?? ""
+        return
+      }
+
+      save.disabled = true
+      form.setAttribute("aria-busy", "true")
+      message.textContent = ""
+      const frameworkPayload = JSON.stringify({
+        ...payload,
+        rice: { ...frameworkPayloadObject(payload.rice), ...estimates, score, _evaluatedAt: new Date().toISOString() },
+      })
+      try {
+        const result = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "X-Meitheal-Local-Conflict": "1" },
+          body: JSON.stringify({ updated_at: version, framework_payload: frameworkPayload }),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+        })
+        if (!active()) return
+        if (result.status === 409) {
+          stale = true
+          message.textContent = form.dataset.conflict ?? ""
+          reload.hidden = false
+          reload.focus()
+          return
+        }
+        if (!result.ok) throw new Error("Score write failed")
+        const confirmed = await result.json()
+        if (confirmed?.id !== id || confirmed.framework_payload !== frameworkPayload) throw new Error("Score write unconfirmed")
+        if (!active()) return
+        stale = true
+        if (location.hash === "#rice") location.replace(saved.href)
+        else {
+          message.textContent = form.dataset.saved ?? ""
+          reload.hidden = false
+        }
+      } catch {
+        if (active()) {
+          message.textContent = form.dataset.error ?? ""
+          reload.hidden = false
+        }
+      } finally {
+        if (active()) {
+          form.removeAttribute("aria-busy")
+          save.disabled = stale
+        }
+      }
+    }, { signal })
+  })
+</script>
+
+<style>
+  .rice-editor {
+    margin-block: 1.25rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+  }
+
+  h3 { overflow-wrap: anywhere; }
+  h3 span { display: block; color: var(--text-secondary); }
+  output { font-weight: 700; }
+  [data-rice-message]:empty { margin: 0; }
+
+  .rice-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+    gap: .75rem;
+  }
+
+  .rice-fields label { display: grid; gap: .25rem; min-width: 0; }
+  .rice-fields input { width: 100%; min-height: 2.75rem; }
+
+  .rice-editor-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+
+  .rice-editor-actions > :not([hidden]) { min-height: 2.75rem; }
+  .rice-editor-actions > [hidden] { display: none; }
+</style>

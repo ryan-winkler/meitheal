@@ -22,11 +22,6 @@ test("Planning opens the bounded queue and keyboard decisions preserve context",
     }
     ids.push((await create(request, "Already accepted", "pending")).id)
     await page.goto("/planning#triage")
-    const open = page.locator('#planning-section-triage a[href="/triage"]')
-    await expect(open).toBeVisible()
-    await expect(open).toHaveAttribute("data-astro-prefetch", "false")
-    await expect(page.locator("[data-planning-triage-count]")).toContainText("26")
-    await open.press("Enter")
     const cards = page.locator("[data-triage-card]")
     await expect(cards).toHaveCount(25)
     await expect(page.locator("[data-triage-range]")).toHaveText("1–25 of 26")
@@ -43,6 +38,7 @@ test("Planning opens the bounded queue and keyboard decisions preserve context",
     await expect(details).toBeFocused()
 
     await page.getByRole("link", { name: "Next" }).click()
+    await expect(page).toHaveURL(/\/planning\?triagePage=2#triage$/)
     await expect(cards).toHaveCount(1)
     await expect(page.locator("[data-triage-range]")).toHaveText("26–26 of 26")
     const accepted = await cards.first().getAttribute("data-triage-card")
@@ -87,8 +83,8 @@ test("hidden and invalid modes block URL opening and visible mode fits a small I
       await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)
       expect(detailReads).toBe(0)
       await page.goto("/planning#triage")
-      await expect(page.locator(`[data-planning-triage-mode="${expected}"]`)).toBeVisible()
-      await expect(page.locator("[data-planning-triage-count]")).toHaveCount(0)
+      await expect(page.locator(`[data-triage-mode-message="${expected}"]`)).toBeVisible()
+      await expect(page.locator("[data-triage-count]")).toHaveCount(0)
     }
     await setMode(request, "visible")
     await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])

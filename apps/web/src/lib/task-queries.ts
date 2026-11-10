@@ -12,6 +12,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
 // Types
@@ -67,21 +68,6 @@ export interface TaskViewResult {
     overdue: number;
   };
   customFieldDefs: Array<{ name: string; type: string }>;
-}
-
-// =============================================================================
-// RICE Calculation
-// =============================================================================
-
-function calculateRice(fp: Record<string, unknown>): number | null {
-  const reach = Number(fp.reach);
-  const impact = Number(fp.impact);
-  const confidence = Number(fp.confidence);
-  const effort = Number(fp.effort);
-
-  if (!reach || !impact || !confidence || !effort) return null;
-
-  return Math.round((reach * impact * confidence) / effort);
 }
 
 // =============================================================================
@@ -185,8 +171,9 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
   const dueDate = row.due_date ? String(row.due_date) : null;
-  const fp = safeParseJson<Record<string, unknown>>(row.framework_payload, {}) ?? {};
-  const rice = calculateRice(fp);
+  const fp = frameworkPayloadObject(safeParseJson(row.framework_payload, {}))
+  const riceInputs = readRiceInputs(fp)
+  const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
   const overdue = deferredAt === null && isOverdue(dueDate, isDone);
 

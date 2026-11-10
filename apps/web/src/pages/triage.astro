@@ -2,8 +2,7 @@
 import Layout from "../layouts/Layout.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { formatTicketKey } from "@lib/ticket-key"
-import { formatCalendarDay } from "@lib/calendar-day"
+import TriageIntake from "../components/planning/TriageIntake.astro"
 import { getTriageMode, type TriageMode } from "@lib/triage-mode"
 import { t } from "../i18n/translations"
 
@@ -21,144 +20,8 @@ try {
 } catch {
   mode = "unavailable"
 }
-const page = queue?.page ?? 1
-const total = queue?.total ?? 0
-const tasks = queue?.tasks ?? []
-const first = (page - 1) * 25 + 1
-const last = first + tasks.length - 1
-
-function pageHref(target: number, open?: string): string {
-  const query = new URLSearchParams()
-  if (target > 1) query.set("page", String(target))
-  if (open) query.set("open", open)
-  return query.size ? `/triage?${query}` : "/triage"
-}
-
 ---
 
 <Layout title={t("triage.title", locale)} suppressTaskUrlOpen>
-  <section class="intake" data-triage-root aria-labelledby="triage-heading">
-    <header class="intake-header">
-      <a href="/planning#triage" data-astro-prefetch="false">{t("triage.planning", locale)}</a>
-      <h1 id="triage-heading" tabindex="-1">{t("triage.title", locale)}</h1>
-      <p>{t("triage.description", locale)}</p>
-    </header>
-    <p data-triage-status role="status" aria-atomic="true">{t("triage.loading", locale)}</p>
-    <a href={pageHref(page)} class="btn btn-outline" data-triage-reload data-astro-prefetch="false" hidden>
-      {t("triage.reload", locale)}
-    </a>
-    <div data-triage-content></div>
-    <template data-triage-fragment data-triage-mode={mode}>
-      {mode === "visible" ? (
-        <>
-          <p class="intake-summary" data-triage-count>
-            {t("triage.total", locale, { count: String(total) })}
-          </p>
-          {tasks.length ? (
-            <ul class="intake-list">
-              {tasks.map(task => {
-                const due = formatCalendarDay(task.due_date, locale, true)
-                return (
-                  <li class="intake-card" data-triage-card={task.id} data-triage-version={task.updated_at}>
-                    <div class="intake-card-main">
-                      <p class="intake-ticket">{formatTicketKey(task.ticket_number)}</p>
-                      <h2>{task.title}</h2>
-                      {task.description && <p>{task.description.slice(0, 240)}</p>}
-                      {due && <p>{t("triage.due", locale, { date: due })}</p>}
-                    </div>
-                    <div class="intake-actions">
-                      <a href={pageHref(page, task.id)} class="btn btn-outline" data-triage-details data-astro-prefetch="false">{t("triage.details", locale)}</a>
-                      <button type="button" class="btn btn-primary" data-triage-decision="pending">{t("triage.accept", locale)}</button>
-                      <button type="button" class="btn btn-outline" data-triage-decision="active">{t("triage.start", locale)}</button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : <p data-triage-empty>{t("triage.empty", locale)}</p>}
-          {total > 25 && (
-            <nav class="intake-pages" aria-label={t("triage.pagination", locale)}>
-              <span data-triage-range>{t("triage.range", locale, {
-                first: String(first), last: String(last), total: String(total),
-              })}</span>
-              {page > 1 && <a href={pageHref(page - 1)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
-              {last < total && <a href={pageHref(page + 1)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.next", locale)}</a>}
-            </nav>
-          )}
-        </>
-      ) : (
-        <section data-triage-mode-message={mode}>
-          <p>{t(`triage.mode_${mode}`, locale)}</p>
-          {mode === "hidden" && <a href="/tasks?view=table#table" class="btn btn-outline" data-astro-prefetch="false">{t("triage.table", locale)}</a>}
-          {mode === "disabled" && <a href="/planning#triage" class="btn btn-outline" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
-          {mode === "unavailable" && <a href={pageHref(page)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.reload", locale)}</a>}
-        </section>
-      )}
-    </template>
-  </section>
+  <TriageIntake {locale} {mode} {queue} />
 </Layout>
-
-<script>
-  import "@lib/triage-controller"
-</script>
-
-<style>
-  .intake {
-    max-width: 66rem;
-    margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2.5rem);
-  }
-  .intake-header {
-    margin-bottom: 1.5rem;
-  }
-  .intake-header h1 {
-    margin-block: .5rem;
-  }
-  .intake-summary, .intake-ticket {
-    color: var(--text-secondary);
-  }
-  .intake-list {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    gap: .75rem;
-  }
-  .intake-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: .75rem;
-  }
-  .intake-card-main {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  .intake-card-main h2 {
-    margin: .25rem 0;
-    font-size: 1rem;
-  }
-  .intake-card-main p {
-    margin: .25rem 0;
-  }
-  .intake-actions, .intake-pages {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: .5rem;
-  }
-  .intake-pages {
-    margin-top: 1rem;
-  }
-  .intake-actions > *, .intake-pages > a {
-    min-height: 2.75rem;
-  }
-  @media (max-width: 680px) {
-    .intake-card {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-</style>

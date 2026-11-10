@@ -5,6 +5,7 @@
 - [Upcoming Shell Guide](upcoming-shell-guide.md) - Understand the Upcoming view and its task controls.
 - [Table Shell Guide](table-shell-guide.md) - Understand the task table and its controls.
 - [Kanban Shell Guide](kanban-shell-guide.md) - Understand the board layout and task controls.
+- [Rank work with RICE](planning-rice.md) - Compare estimates and prioritize work.
 - [Triage Household Tasks](triage-workflow.md) - Review the Backlog and decide what to start.
 - [Calendar Shell Guide](calendar-shell-guide.md) - Understand the calendar view and its controls.
 - [Habits Shell Guide](habits-shell-guide.md) - Understand the habit view and cadence controls.

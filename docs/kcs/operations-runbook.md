@@ -137,6 +137,10 @@ The timestamp returned when creating a task is its initial stored version. Use i
 
 In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
 
+## Planning RICE Verification
+
+In a disposable ingress session, open **Planning → RICE**. Edit an open task, check the live estimate, and save it. Confirm the task appears in Ranked work with the new score. Open the editor in two sessions and save in one. Verify the other offers **Reload score** and the first score is retained. See [Rank work with RICE](planning-rice.md).
+
 ## Deferred Work Verification
 
 In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.

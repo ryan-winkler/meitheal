@@ -22,7 +22,8 @@ function initTriage(signal: AbortSignal) {
   const status = root?.querySelector<HTMLElement>("[data-triage-status]")
   const reload = root?.querySelector<HTMLAnchorElement>("[data-triage-reload]")
   const heading = root?.querySelector<HTMLElement>("#triage-heading")
-  if (!root || !initial || !content || !status || !reload || !heading || root.dataset.triageInitialized) return
+  const planningTab = root?.closest<HTMLElement>('[data-parent-section="triage"]')
+  if (!root || (!initial && !planningTab) || !content || !status || !reload || !heading || root.dataset.triageInitialized) return
   const ui = { root, initial, content, status, reload, heading }
   ui.root.dataset.triageInitialized = "true"
 
@@ -34,7 +35,7 @@ function initTriage(signal: AbortSignal) {
   let suspended = false
   let updateRequired = false
 
-  const live = () => !signal.aborted && ui.root.isConnected && !suspended
+  const live = () => !signal.aborted && ui.root.isConnected && !suspended && !planningTab?.hidden
   const message = (key: string, fallback: string) => window.mI18n?.get(`triage.${key}`) ?? fallback
   const setStatus = (text: string, showReload = false) => {
     ui.status.textContent = text
@@ -69,6 +70,7 @@ function initTriage(signal: AbortSignal) {
   }
 
   async function readQueue(forceFresh: boolean) {
+    if (!live()) return
     const generation = ++refreshGeneration
     const worker = workers?.controller ?? null
     const path = queueUrl().href
@@ -89,9 +91,15 @@ function initTriage(signal: AbortSignal) {
       }
       if (!canApply()) return
 
-      if (worker || forceFresh) {
-        const url = new URL(path)
+      if (planningTab || worker || forceFresh) {
+        // Read the same network-only intake as the standalone view. Planning may be cached.
+        const url = new URL(planningTab ? ui.reload.href : path)
         url.hash = ""
+        if (planningTab) {
+          const requestedPage = new URL(path).searchParams.get("triagePage")
+          if (requestedPage) url.searchParams.set("page", requestedPage)
+          url.searchParams.set("triageEmbedded", "1")
+        }
         url.searchParams.set("triageRefresh", `${performance.timeOrigin}-${generation}`)
         const response = await fetch(url, {
           cache: "no-store",
@@ -105,8 +113,18 @@ function initTriage(signal: AbortSignal) {
         fragment = fresh
       }
 
-      if (!canApply()) return
+      if (!canApply() || !fragment) return
       ui.content.replaceChildren(fragment.content.cloneNode(true))
+      if (planningTab) {
+        ui.content.querySelectorAll<HTMLAnchorElement>("[data-triage-page]").forEach(link => {
+          const destination = new URL(path)
+          destination.searchParams.delete("focus")
+          const target = link.dataset.triagePage
+          if (target && target !== "1") destination.searchParams.set("triagePage", target)
+          else destination.searchParams.delete("triagePage")
+          link.href = destination.href
+        })
+      }
       visible = fragment.dataset.triageMode === "visible"
       setStatus("")
       const url = new URL(location.href)
@@ -240,6 +258,18 @@ function initTriage(signal: AbortSignal) {
     suspended = false
     void readQueue(true)
   }, { signal })
+  if (planningTab) {
+    const tabVisibility = new MutationObserver(() => {
+      if (planningTab.hidden) {
+        refreshGeneration++
+        withdrawQueue()
+      } else {
+        void readQueue(true)
+      }
+    })
+    tabVisibility.observe(planningTab, { attributeFilter: ["hidden"] })
+    signal.addEventListener("abort", () => tabVisibility.disconnect(), { once: true })
+  }
   void readQueue(false)
 }
 

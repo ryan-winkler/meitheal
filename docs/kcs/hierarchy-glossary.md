@@ -38,7 +38,7 @@ description: "Find definitions for areas, goals, projects, and other planning te
 | Parent Page | Sub-Views | Route |
 |------------|-----------|-------|
 | **Tasks** | Kanban, Calendar, Table, Timeline | `/tasks#kanban` |
-| **Planning** | Eisenhower, Triage (coming), RICE (coming) | `/planning#eisenhower` |
+| **Planning** | Spaces, Eisenhower, Triage, RICE | `/planning#eisenhower` |
 | **Progress & Growth** | Routines, Goals, Achievements | `/progress#routines` |
 
 ## Deprecated Terms
