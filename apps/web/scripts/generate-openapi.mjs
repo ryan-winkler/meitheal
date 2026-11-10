@@ -21,7 +21,11 @@ const JSON_OUTPUT = resolve(dirname(OUTPUT), ".well-known/jsondoc.json")
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
 const feedbackState = { type: "string", enum: ["open", "in_progress", "resolved", "declined"] }
 const feedbackMessage = { type: "string", minLength: 1, maxLength: 4096, description: "Plain text, at most 4 KiB in UTF-8." }
-const feedbackVersion = { type: "string", description: "App version, when the sender chose to include it." }
+const feedbackVersion = {
+  type: "string", maxLength: 50,
+  pattern: "^(?:\\d{1,5}\\.\\d{1,5}\\.\\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\\s\\S])",
+  description: "Optional bounded release version or exactly 12 lowercase hexadecimal characters for Canary.",
+}
 const feedbackRouteFamily = { type: "string", enum: ["home", "tasks", "calendar", "settings", "other"] }
 const feedbackReceipt = {
   id: { type: "string", format: "uuid" },

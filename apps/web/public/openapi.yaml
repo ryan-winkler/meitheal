@@ -135,7 +135,9 @@ components:
           description: Plain text, at most 4 KiB in UTF-8.
         appVersion: &a3
           type: string
-          description: App version, when the sender chose to include it.
+          maxLength: 50
+          pattern: ^(?:\d{1,5}\.\d{1,5}\.\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\s\S])
+          description: Optional bounded release version or exactly 12 lowercase hexadecimal characters for Canary.
         routeFamily: &a4
           type: string
           enum:

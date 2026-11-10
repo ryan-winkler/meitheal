@@ -8,6 +8,8 @@ description: Submit, review, and share feedback from a Meitheal installation.
 
 Open Meitheal from Home Assistant, then choose **Settings → App & PWA → Report a problem or share feedback**. Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
 
+Optional version context accepts the app's bounded stable or prerelease version, or its exact 12-character lowercase hexadecimal Canary version. Historical 9-character abbreviations and full 40-character source hashes are not the published Canary version format. Context is kept exactly as submitted; whitespace and oversized values are rejected.
+
 If a request fails, keep the form open and retry with the same category, text and context. If the first attempt was saved, the retry returns the original receipt. Changing the draft creates a new submission. The receipt remains valid while the report is in the queue.
 
 For a suspected vulnerability, use the underlined **Report a security vulnerability privately** link below the feedback panel. [Security policy](../../SECURITY.md).
