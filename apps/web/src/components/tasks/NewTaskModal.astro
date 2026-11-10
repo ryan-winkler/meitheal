@@ -310,28 +310,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         </div>
       </div>
 
-      <!-- AI Assist -->
-      <div id="nt-ai-assist" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <span class="text-sm">🤖</span>
-          </div>
-          <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.ai_assign_to_agent", locale)}</span>
-            <p class="text-xs text-text-muted" id="nt-ai-description"
-              data-desc-task={t("task_modal.ai_task_description", locale)}
-              data-desc-shopping={t("task_modal.ai_shopping_description", locale)}
-              data-desc-checklist={t("task_modal.ai_checklist_description", locale)}
-              data-desc-event={t("task_modal.ai_event_description", locale)}
-            >{t("task_modal.ai_task_description", locale)}</p>
-          </div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-ai-handoff" class="sr-only peer" />
-          <div class="nt-toggle"></div>
-        </label>
-      </div>
-
       <!-- Tags panel moved inline to SCHEDULING section glass-dropdown -->
     </form>
 
@@ -436,7 +414,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
-    const aiDesc = document.getElementById("nt-ai-description");
     const pillsContainer = document.getElementById("nt-status-pills")
     const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
     const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
@@ -501,25 +478,21 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           shoppingDiv?.classList.remove("hidden");
           if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderShopping || "Item name";
           if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelShopping || "Create Shopping List";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descShopping || "";
         } else if (kind === "checklist") {
           contextualDiv?.classList.remove("hidden");
           checklistDiv?.classList.remove("hidden");
           dueRow?.classList.remove("hidden");
           if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderChecklist || "Checklist name";
           if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelChecklist || "Create Checklist";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descChecklist || "";
         } else if (kind === "calendar_event") {
           contextualDiv?.classList.remove("hidden");
           eventDiv?.classList.remove("hidden");
           if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderEvent || "Event name";
           if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelEvent || "Create Event";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descEvent || "";
         } else {
           contextualDiv?.classList.add("hidden");
           if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderTask || "Task name";
           if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelTask || "Create Task";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descTask || "";
         }
         
         // Focus title input right away
@@ -743,7 +716,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (qtyInput) qtyInput.value = "1";
         (document.getElementById("nt-shopping-category") as HTMLSelectElement).value = "";
         (document.getElementById("nt-is-routine") as HTMLInputElement).checked = false;
-        (document.getElementById("nt-ai-handoff") as HTMLInputElement).checked = false;
         document.getElementById("nt-custom-fields-container")?.classList.add("hidden");
         const cfList = document.getElementById("nt-custom-fields-list");
         if (cfList) cfList.replaceChildren();
@@ -1138,10 +1110,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           // Routine flag
           const routineCheck = document.getElementById("nt-is-routine") as HTMLInputElement;
           if (routineCheck?.checked) body.is_routine = true;
-
-          // AI Handoff
-          const aiCheck = document.getElementById("nt-ai-handoff") as HTMLInputElement;
-          if (aiCheck?.checked) body.handoff_state = "pending_agent";
 
           // Shopping list fields
           if (body.task_kind === "shopping_item") {

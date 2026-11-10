@@ -48,6 +48,7 @@ test("Today loads capture options once, when New Task opens", async ({ page, req
   const active = modal.locator('[data-status="active"]')
   await open.click()
   await expect(title).toBeFocused()
+  await expect(modal.locator("#nt-ai-handoff")).toHaveCount(0)
   await expect(status).toHaveValue("pending")
   await expect(active).toBeVisible()
   await expect(goals.locator(`option[value="${goalId}"]`)).toHaveCount(1)
@@ -80,6 +81,7 @@ test("Today loads capture options once, when New Task opens", async ({ page, req
     modal.locator("#submit-new-task-btn").click(),
   ])
   expect(created.status()).toBe(201)
+  expect(created.request().postDataJSON()).not.toHaveProperty("handoff_state")
   expect(task).toMatchObject({ id: expect.any(String), goal_id: goalId })
   const readback = await request.get(`/api/tasks/${task!.id}`)
   expect(readback.status()).toBe(200)

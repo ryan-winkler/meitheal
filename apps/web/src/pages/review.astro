@@ -1,16 +1,4 @@
 ---
-/**
- * Review Queue — Bot Proposal Review Page (PRA-05)
- *
- * @domain tasks
- * @bounded-context tasks (presentation)
- *
- * Lists all tasks with handoff_state = 'proposed' for human review.
- * Allows accept/reject of each proposal with diff preview.
- *
- * @kcs This page fetches proposals server-side and renders a review queue.
- * Accept/reject actions call /api/tasks/[id]/accept-proposal.
- */
 import Layout from "../layouts/Layout.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
 import {
@@ -18,14 +6,12 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
 
+Astro.response.headers.set("Cache-Control", "private, no-store")
+
 interface ParsedProposal {
-  id: string
   ticket_number: number | null
   title: string
-  status: string
-  owner: string
   lock_holder: string | null
-  proposal_hash: string | null
   updated_at: number
   agent: string
   summary: string
@@ -33,15 +19,14 @@ interface ParsedProposal {
 }
 
 let proposals: ParsedProposal[] = []
-let fetchError = ""
+let fetchError = false
 
 try {
   await ensureSchema()
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: `SELECT id, ticket_number, title, status, handoff_state,
-                 owner, lock_holder, proposal_json, proposal_hash, updated_at
+    sql: `SELECT ticket_number, title, lock_holder, proposal_json, updated_at
           FROM tasks
           WHERE handoff_state = 'proposed'
           ORDER BY updated_at DESC
@@ -70,46 +55,44 @@ try {
     } catch { /* invalid JSON */ }
 
     return {
-      id: String(row.id),
       ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
       title: String(row.title ?? ""),
-      status: String(row.status ?? "pending"),
-      owner: String(row.owner ?? "human"),
       lock_holder: row.lock_holder ? String(row.lock_holder) : null,
-      proposal_hash: row.proposal_hash ? String(row.proposal_hash) : null,
       updated_at: Number(row.updated_at ?? 0),
       agent,
       summary,
       changes,
     }
   })
-} catch (e) {
-  fetchError = e instanceof Error ? e.message : "Failed to load proposals"
+} catch {
+  fetchError = true
 }
 ---
 
 <Layout title="Meitheal — Review Queue">
   <span slot="page-title">🤖 Review Queue</span>
   <div slot="actions">
-    <button type="button" class="btn btn-sm" id="refresh-btn">🔄 Refresh</button>
+    <a href="/review" class="btn btn-sm" data-astro-reload>Refresh</a>
   </div>
+
+  <p class="review-note">Saved proposals are available to read. Approval and rejection are unavailable.</p>
 
   {fetchError && (
     <div class="review-error">
-      <p>⚠️ {fetchError}</p>
+      <p>Saved proposals could not be loaded.</p>
     </div>
   )}
 
   {proposals.length === 0 && !fetchError && (
     <EmptyState
-      title="No pending proposals"
-      description="All clear! No bot proposals need your review right now."
+      title="No saved proposals"
+      description="This page displays proposals already stored in Meitheal."
     />
   )}
 
   <div class="review-queue" id="review-queue">
     {proposals.map(p => (
-      <div class="review-card" data-task-id={p.id} data-proposal-hash={p.proposal_hash}>
+      <div class="review-card">
         <div class="review-card__header">
           <div class="review-card__title-row">
             <span class="review-card__ticket">
@@ -153,21 +136,17 @@ try {
             </table>
           </div>
         )}
-
-        <div class="review-card__actions">
-          <button type="button" class="btn btn-success review-accept" data-task-id={p.id}>
-            ✅ Accept
-          </button>
-          <button type="button" class="btn btn-danger review-reject" data-task-id={p.id}>
-            ❌ Reject
-          </button>
-        </div>
       </div>
     ))}
   </div>
 </Layout>
 
 <style>
+  .review-note {
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
   .review-error {
     background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
     border: 1px solid var(--danger, #ef4444);
@@ -286,108 +265,4 @@ try {
     color: var(--success, #22c55e);
     font-weight: 500;
   }
-
-  .review-card__actions {
-    padding: 12px 16px;
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.01);
-  }
-
-  .btn-success {
-    background: var(--success, #22c55e);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .btn-success:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
-
-  .btn-danger {
-    background: var(--danger, #ef4444);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .btn-danger:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
 </style>
-
-<script>
-  function initReviewQueue() {
-    const queue = document.getElementById("review-queue")
-    if (!queue) return
-
-    queue.addEventListener("click", async (e) => {
-      const target = e.target as HTMLElement
-      const btn = target.closest(".review-accept, .review-reject") as HTMLElement
-      if (!btn) return
-
-      const card = btn.closest(".review-card") as HTMLElement
-      if (!card) return
-
-      const taskId = card.dataset.taskId
-      const proposalHash = card.dataset.proposalHash
-      const isAccept = btn.classList.contains("review-accept")
-
-      btn.setAttribute("disabled", "true")
-      btn.textContent = isAccept ? "Accepting..." : "Rejecting..."
-
-      try {
-        const res = await fetch("/api/tasks/" + taskId + "/accept-proposal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: isAccept ? "accept" : "reject",
-            proposal_hash: proposalHash,
-          }),
-        })
-
-        if (res.ok) {
-          card.style.opacity = "0.3"
-          card.style.pointerEvents = "none"
-          card.style.transition = "opacity 0.3s ease"
-          setTimeout(() => card.remove(), 500)
-
-          // Check if queue is now empty
-          const remaining = queue.querySelectorAll(".review-card")
-          if (remaining.length <= 1) {
-            setTimeout(() => location.reload(), 600)
-          }
-        } else {
-          const data = await res.json()
-          window.showToast?.(data.error || "Unknown error", "error")
-          btn.removeAttribute("disabled")
-          btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
-        }
-      } catch {
-        window.showToast?.("Network error — please try again", "error")
-        btn.removeAttribute("disabled")
-        btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
-      }
-    })
-
-    // Refresh button
-    document.getElementById("refresh-btn")?.addEventListener("click", () => location.reload())
-  }
-
-  // Initialize on page load
-  document.addEventListener("astro:page-load", initReviewQueue)
-  initReviewQueue()
-</script>

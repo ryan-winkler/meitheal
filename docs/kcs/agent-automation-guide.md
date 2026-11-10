@@ -66,6 +66,10 @@ An invalid, revoked, or expired token returns HTTP 401. A valid token without pe
 
 The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
 
+### Read saved agent proposals
+
+Open `/review` through the installed App to read saved proposals and their proposed changes. New Task agent assignment, proposal approval, and rejection are unavailable. Use the existing scoped task APIs for supported automation.
+
 ### Read or change reactions
 
 Use `GET` or `POST` on `/api/tasks/{id}/reactions` for a task, or `/api/tasks/{id}/comments/{commentId}/reactions` for a comment. A verified Home Assistant user or scoped agent can send a JSON `content` value with up to 16 Unicode code points after normalization. Repeating the same reaction as the same author returns the existing reaction ID. To remove your own reaction, send `DELETE` to the same collection path with the reaction ID appended.
