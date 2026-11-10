@@ -35,6 +35,10 @@ The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and push
 4. For stable, run `node scripts/bump-version.mjs patch` and update the App changelog. Check the edited files with `node scripts/check-version-sync.mjs`. Merge through the normal review process, then push the exact matching version tag after the reviewed commit reaches `main`.
 5. For canary, use the hosted smoke workflow to check native builds from `main`. Build and retain the candidate images on the release host. Qualify those exact images before publication.
 
+## Pull-request image checks
+
+The [App container smoke workflow](../../.github/workflows/container-smoke.yml) lists its covered paths: the Dockerfile, both channel build manifests, the lockfile, root/web/domain package manifests, workspace configuration, root/web TypeScript configuration, Astro configuration, and image smoke helpers. Changes to these files run native amd64 and ARM64 builds against both channel bases. The checks detect absolute font paths in packaged CSS, including quoted and spaced URLs, and run the existing migration, startup, health and task-creation smoke test against the Home Assistant base runtime. Run the workflow manually from `main` to verify the combined result after several merges. The jobs do not publish images or update App Store discovery. This catches builder-version changes that the host Node checks cannot cover; it does not replace Supervisor or physical-device qualification.
+
 ## Hosted builds and stable publication
 
 The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds and tests images on native amd64 and ARM64 runners before pushing to GHCR. The smoke test checks migrations, starts the packaged server with disposable SQLite data, opens Today and creates a task. An existing version tag is accepted only when its image has the expected source revision and App metadata and passes the same smoke test.
