@@ -10,7 +10,7 @@
  * 2. Quick Add (NL-aware + defaults due_date = today)
  * 3. Filter Bar (search, status, priority, RICE, sort)
  * 4. Carried Forward (overdue tasks with triage / snooze)
- * 5. Pinned / MITs (favorited tasks)
+ * 5. Shared favorites
  * 6. Due Today (hard landscape)
  * 7. Unscheduled (no due date)
  * 8. Suggested (smart picks)
@@ -55,7 +55,7 @@ try {
 
   // Partition tasks into sections
   for (const task of tasks) {
-    // Pinned / MITs (favorited and not in another section)
+    // Shared favorites
     if (task.is_favorite) {
       pinnedTasks.push(task)
     }
@@ -483,17 +483,17 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       {pinnedTasks.length > 0 && (
         <div class="today-section" id="section-pinned">
           <div class="today-section__header">
-            <button type="button" class="today-section__toggle" aria-label="Toggle Pinned section">
+            <button type="button" class="today-section__toggle" aria-label="Toggle Shared favorites section">
               <span class="today-section__icon">▶</span>
             </button>
             <span class="today-section__title">
-              ⭐ Pinned / MITs
+              ⭐ Shared favorites
             </span>
             <span class="today-section__count">{pinnedTasks.length}</span>
           </div>
           <div class="today-section__list">
             {pinnedTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Pinned" />
+              <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
             ))}
           </div>
         </div>

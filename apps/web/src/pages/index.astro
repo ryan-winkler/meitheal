@@ -259,14 +259,13 @@ const heroHintHref =
             <div class="card dashboard-card">
               <div class="card-header">
                 <div>
-                  <div class="card-title">Pinned Work</div>
+                  <div class="card-title">{t("dashboard.favorites", locale)}</div>
                   <div class="card-subtitle">
-                    {favorites.length}{" "}
                     {favorites.length !== 1
-                      ? t("dashboard.pinned_tasks_plural", locale, {
+                      ? t("dashboard.favorite_tasks_plural", locale, {
                           count: String(favorites.length),
                         })
-                      : t("dashboard.pinned_tasks", locale, {
+                      : t("dashboard.favorite_tasks", locale, {
                           count: String(favorites.length),
                         })}
                   </div>

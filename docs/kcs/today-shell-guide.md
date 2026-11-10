@@ -50,7 +50,7 @@ The small heading above the Today overview title uses the active palette's accen
 
 ### Read the daily counters
 
-**Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and pinned tasks. **Completed** counts tasks marked complete and updated on the current UTC date, including older records with ISO timestamps.
+**Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts tasks marked complete and updated on the current UTC date, including older records with ISO timestamps. Open **Pinned tasks** from the sidebar to see your personal pins.
 
 While Today is open, the counters and progress bar refresh every 30 seconds. The refresh reads aggregate counts across the full task store. Reload the page to refresh the task rows after an external change.
 
