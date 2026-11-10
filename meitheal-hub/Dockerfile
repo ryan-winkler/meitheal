@@ -47,6 +47,7 @@ RUN pnpm --filter @meitheal/web... install --frozen-lockfile --ignore-scripts --
 FROM ${BUILD_FROM}
 
 LABEL io.hass.type="addon"
+LABEL org.opencontainers.image.licenses="LicenseRef-Proprietary"
 ARG MEITHEAL_VERSION
 ENV MEITHEAL_VERSION=$MEITHEAL_VERSION
 
