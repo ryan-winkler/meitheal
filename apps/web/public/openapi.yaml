@@ -246,7 +246,8 @@ components:
         description:
           type: string
           nullable: true
-          description: Rich text task description
+          maxLength: 10000
+          description: Rich text task description. Oversized create or update requests are rejected without truncation.
         status:
           type: string
           description: Current workflow status. Also supports custom workflow statuses.
@@ -267,6 +268,37 @@ components:
           type: string
           nullable: true
           description: User ID prefixed with 'ha_' or 'custom_'
+        kanban_position:
+          type: number
+          nullable: true
+          description: Persisted shared board position; unranked tasks have null.
+        nfc_tag_id:
+          type: string
+          nullable: true
+        urgency:
+          type: integer
+          minimum: 0
+          maximum: 5
+        importance:
+          type: integer
+          minimum: 0
+          maximum: 5
+        eisenhower_override:
+          type: integer
+          enum:
+            - 0
+            - 1
+        effort_minutes:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 480
+        effort_type:
+          type: string
+          nullable: true
+        blocked_by:
+          type: string
+          nullable: true
         area_id:
           type: string
           nullable: true
@@ -1156,15 +1188,29 @@ paths:
           schema:
             type: string
             enum:
-              - created
-              - updated
+              - created_at
+              - updated_at
+              - title
+              - status
               - priority
               - due_date
+              - kanban_position
+          description: Equal values use task ID ascending; null values sort last.
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
         - name: limit
           in: query
           schema:
             type: integer
-            default: 50
+            minimum: 1
+            maximum: 500
+            default: 100
         - name: offset
           in: query
           schema:

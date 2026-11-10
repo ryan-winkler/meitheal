@@ -117,7 +117,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       sanitized.title = t
     }
     if (typeof body.description === "string") {
-      sanitized.description = sanitize(body.description.slice(0, 10000))
+      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+      sanitized.description = sanitize(body.description)
     }
   }
   if (typeof body.status === "string") {

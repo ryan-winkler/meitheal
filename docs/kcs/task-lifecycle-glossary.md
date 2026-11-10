@@ -27,6 +27,12 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Description limits and integration reads
+
+Task descriptions support up to 10,000 characters. A longer create or update request returns 400 instead of saving a shortened description. Shorten the text and retry; a rejected update preserves the saved task and description.
+
+Task detail and list reads retain saved urgency, importance, effort, NFC tag and board position fields. Integrations can read board order with `GET /api/tasks?sort=kanban_position&order=asc&limit=100&offset=0`. Equal positions use task ID ascending, and tasks without a position sort last. Continue pagination with `offset` when the matching total exceeds the requested limit.
+
 ### Rename or delete a shared label
 
 In **Settings → Workflow → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.

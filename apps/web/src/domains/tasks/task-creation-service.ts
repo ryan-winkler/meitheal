@@ -31,7 +31,10 @@ export async function prepareTaskCreation(
   const priority = Math.min(5, Math.max(1, Math.round(rawPriority)))
 
   // Sanitize description (strip HTML tags like title)
-  const rawDesc = typeof body.description === "string" ? body.description.slice(0, 10000) : ""
+  if (typeof body.description === "string" && body.description.length > 10000) {
+    return { ok: false, error: "description must be 10000 characters or less" }
+  }
+  const rawDesc = typeof body.description === "string" ? body.description : ""
   const description = sanitize(rawDesc)
 
   // Validate status — any non-empty alphanumeric/underscore string up to 50 chars

@@ -422,6 +422,8 @@ export class TaskRepository {
                    task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
                    task.task_kind, task.project_id, task.owner, task.handoff_state, task.ticket_number,
                    task.assigned_to, task.recurrence_rule, task.checklists,
+                   task.urgency, task.importance, task.eisenhower_override,
+                   task.effort_minutes, task.effort_type, task.blocked_by, task.nfc_tag_id, task.kanban_position,
                    task.deferred_at, task.deferral_revision, ${taskTimestampMs("task.updated_at")} AS task_version,
                    (SELECT COUNT(*) FROM comments WHERE task_id = task.id) AS comment_count,
                    (SELECT COUNT(*) FROM tasks AS child WHERE child.parent_id = task.id
@@ -653,6 +655,8 @@ export class TaskRepository {
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
                    t.is_favorite, t.is_promoted, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
+                   t.urgency, t.importance, t.eisenhower_override,
+                   t.effort_minutes, t.effort_type, t.blocked_by, t.nfc_tag_id, t.kanban_position,
                    t.recurrence_rule, t.created_at, t.updated_at, t.deferred_at, t.deferral_revision,
                    ${taskTimestampMs("t.updated_at")} AS task_version,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
@@ -776,7 +780,7 @@ export class TaskRepository {
     limit?: number;
     offset?: number;
   }): Promise<{ tasks: TaskRow[]; total: number }> {
-    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date"];
+    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"];
     const sortCol = validSorts.includes(opts.sort ?? "") ? opts.sort! : "created_at";
     const order = opts.order ?? "DESC";
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
@@ -815,9 +819,10 @@ export class TaskRepository {
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
                               urgency, importance, eisenhower_override,
+                              effort_minutes, effort_type, blocked_by, nfc_tag_id, kanban_position,
                               ${taskTimestampMs("updated_at")} AS task_version
                        FROM tasks${where}
-                       ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
+                       ORDER BY ${sortCol} ${order} NULLS LAST, id ASC LIMIT ${limit} OFFSET ${offset}`;
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
     const [result, countResult] = await this.client.batch([
