@@ -4,7 +4,7 @@ import Confetti from "../components/gamification/Confetti.astro";
 import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { ClientRouter } from "astro:transitions";
-import { clientTranslationJson, t } from "../i18n/translations";
+import { alternateClientTranslationJson, clientTranslationJson, t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
 import Sidebar from "../components/layout/Sidebar.astro";
 import SearchHub from "../components/layout/SearchHub.astro";
@@ -381,15 +381,18 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     }} />}
     <!-- Send only the current locale and keep client translation available during parsing. -->
     <script type="application/json" id="meitheal-client-translations" set:html={clientTranslationJson[locale]} />
+    <script type="application/json" id="meitheal-alternate-translations" set:html={alternateClientTranslationJson[locale]} />
     <script
       is:inline
       define:vars={{ locale, timezone, weekStart, dateFormat }}
     >
       const dict = JSON.parse(document.getElementById("meitheal-client-translations").textContent);
+      const alternate = JSON.parse(document.getElementById("meitheal-alternate-translations").textContent);
       window.mSettings = { timezone, weekStart, dateFormat };
       window.mI18n = {
         locale,
-        get: function (key) {
+        get: function (key, language = locale) {
+          if (language !== locale) return typeof alternate[key] === "string" ? alternate[key] : key;
           if (typeof dict[key] === "string") return dict[key];
           const parts = key.split(".");
           let val = dict;

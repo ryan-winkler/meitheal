@@ -1,5 +1,5 @@
 import type { InactivityFilter } from "@domains/tasks/persistence/task-inactivity-repository"
-import { t, type Locale } from "../i18n/translations"
+import { t, type Locale } from "../i18n/client"
 import { InactivityRequestError, requestInactivity, type InactivityPreview } from "./inactivity-client"
 import { pageLifecycle } from "./page-lifecycle"
 
