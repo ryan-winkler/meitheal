@@ -58,7 +58,6 @@ test("createTask persists project_id and findByProjectId returns it", async () =
     color: null,
     is_favorite: 0,
     task_type: "task",
-    ticket_number: 1,
     assigned_to: null,
   })
 
@@ -93,7 +92,6 @@ test("createTask without project_id defaults to null", async () => {
     color: null,
     is_favorite: 0,
     task_type: "task",
-    ticket_number: 2,
     assigned_to: null,
   })
 
@@ -210,4 +208,25 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   const deletedDestination = await deleteProject(destinationId)
   expect(deletedDestination.status(), await deletedDestination.text()).toBe(200)
   expect(await (await request.get(taskPath)).json()).toMatchObject({ ...properties, project_id: null })
+})
+
+test("concurrent creates and duplicates return their own distinct ticket numbers", async ({ request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+  const sourceResponse = await request.post("/api/tasks", { data: { title: "Ticket allocation fixture" } })
+  expect(sourceResponse.status()).toBe(201)
+  const source = await sourceResponse.json()
+  const writes = Array.from({ length: 12 }, (_, index) => index % 2 === 0
+    ? request.post("/api/tasks", { data: { title: `Concurrent ordinary task ${index}` } })
+    : request.post(`/api/tasks/${source.id}/duplicate`, { data: {} }))
+  const created = await Promise.all((await Promise.all(writes)).map(async response => {
+    expect(response.status()).toBe(201)
+    return response.json()
+  }))
+  expect(new Set(created.map(task => task.ticket_number)).size).toBe(writes.length)
+  await Promise.all(created.map(async task => {
+    const stored = await request.get(`/api/tasks/${task.id}`)
+    expect(stored.status()).toBe(200)
+    expect(await stored.json()).toMatchObject({ id: task.id, ticket_number: task.ticket_number, ticket_key: task.ticket_key })
+  }))
 })

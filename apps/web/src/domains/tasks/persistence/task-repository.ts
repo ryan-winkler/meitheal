@@ -873,12 +873,6 @@ export class TaskRepository {
     return result.rows as unknown as TaskCatalogRow[]
   }
 
-  /** Get the next sequential ticket number for MTH-N key assignment */
-  async getNextTicketNumber(): Promise<number> {
-    const result = await this.client.execute("SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks");
-    return Number((result.rows[0] as Record<string, unknown>)?.next_num ?? 1);
-  }
-
   /** Look up the default assignee from app_settings (nullable) */
   async getDefaultAssignee(): Promise<string | null> {
     try {
@@ -904,7 +898,7 @@ export class TaskRepository {
 
   /**
    * Insert a new task. Caller is responsible for validation and ID generation.
-   * @returns The inserted row ID.
+   * @returns The ticket number allocated by the insert.
    */
   async createTask(data: {
     id: string; title: string; description: string; status: string;
@@ -912,33 +906,35 @@ export class TaskRepository {
     framework_payload: string; parent_id: string | null;
     area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
     end_date: string | null; progress: number; color: string | null;
-    is_favorite: number; task_type: string; task_kind?: string; ticket_number: number;
+    is_favorite: number; task_type: string; task_kind?: string;
     assigned_to: string | null; checklists?: string | null;
     recurrence_rule?: string | null;
     urgency?: number; importance?: number;
     effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
-  }, createdAt = Date.now()): Promise<string> {
-    await this.client.execute({
+  }, createdAt = Date.now()): Promise<number> {
+    const result = await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
                                area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                                task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
                                urgency, importance, effort_minutes, effort_type, blocked_by,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING ticket_number`,
       args: [
         data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
         data.due_date, data.labels, data.framework_payload,
         STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
         data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
-        data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
+        data.task_type, data.task_kind ?? "standard_action", data.assigned_to,
         data.checklists ?? "[]", data.recurrence_rule ?? null,
         data.urgency ?? 0, data.importance ?? 0,
         data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
         crypto.randomUUID(), crypto.randomUUID(), createdAt, createdAt,
       ] as InValue[],
     });
-    return data.id;
+    return Number(result.rows[0]!.ticket_number)
   }
 
   /** Apply a partial update with atomic dependency, version and checklist guards. */
@@ -1262,7 +1258,6 @@ export class TaskRepository {
     recurrenceRule: string,
   ): Promise<{ id: string; ticketNumber: number }> {
     const newId = crypto.randomUUID();
-    const ticketNumber = await this.getNextTicketNumber();
     const now = Date.now();
 
     // Reset checklists — uncheck all items for new occurrence
@@ -1278,13 +1273,15 @@ export class TaskRepository {
 
     // Resolve the project in the insert so legacy references and concurrent
     // project deletion cannot create a dangling reference.
-    await this.client.execute({
+    const result = await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                recurrence_rule, recurrence_anchor, area_id, project_id, parent_id, task_type, assigned_to,
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?,
+                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+            RETURNING ticket_number`,
       args: [
         newId,
         sourceTask.title ? String(sourceTask.title) : "Recurring task",
@@ -1302,12 +1299,11 @@ export class TaskRepository {
         sourceTask.assigned_to ? String(sourceTask.assigned_to) : null,
         freshChecklists,
         sourceTask.custom_fields ? String(sourceTask.custom_fields) : "{}",
-        ticketNumber,
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],
     });
 
-    return { id: newId, ticketNumber };
+    return { id: newId, ticketNumber: Number(result.rows[0]!.ticket_number) }
   }
 
   /** Count open tasks (non-complete) — used for iOS badge count */

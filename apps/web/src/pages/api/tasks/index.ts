@@ -144,9 +144,6 @@ export const POST: APIRoute = async ({ request }) => {
 
   const id = crypto.randomUUID()
 
-  // Assign next sequential ticket_number for human-readable key (MTH-N)
-  const ticket_number = await repo.getNextTicketNumber()
-
   // Validate priority (1-5)
   const rawPriority = typeof body.priority === "number" ? body.priority : 3
   const priority = Math.min(5, Math.max(1, Math.round(rawPriority)))
@@ -293,11 +290,11 @@ export const POST: APIRoute = async ({ request }) => {
     ? rawRecurrence : null
 
   const now = Date.now()
-  await repo.createTask({
+  const ticket_number = await repo.createTask({
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
     start_date, end_date, progress, color, is_favorite,
-    task_type, task_kind, ticket_number, assigned_to, checklists,
+    task_type, task_kind, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
     recurrence_rule,
   }, now)

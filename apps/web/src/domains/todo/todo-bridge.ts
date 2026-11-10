@@ -246,16 +246,12 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
       "SELECT id FROM tasks WHERE ticket_number IS NULL ORDER BY created_at ASC",
     );
     if (orphans.rows.length > 0) {
-      const baseResult = await client.execute(
-        "SELECT COALESCE(MAX(ticket_number), 0) AS max_num FROM tasks",
-      );
-      let nextNum = Number((baseResult.rows[0] as Record<string, unknown>)?.max_num ?? 0) + 1;
       for (const row of orphans.rows) {
         await client.execute({
-          sql: "UPDATE tasks SET ticket_number = ? WHERE id = ?",
-          args: [nextNum, row.id as string],
-        });
-        nextNum++;
+          sql: `UPDATE tasks SET ticket_number = (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks)
+                WHERE id = ? AND ticket_number IS NULL`,
+          args: [row.id as string],
+        })
       }
       logger.log("info", {
         event: "todo.sync.backfill_tickets", domain: "todo", component: "todo-bridge",
@@ -338,21 +334,14 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
         const syncLabel = `synced from ${entityId}`;
 
-        // Assign next sequential ticket_number for clean MTH-N display key
-        const nextNumResult = await client.execute(
-          "SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks",
-        );
-        const ticketNumber = Number(
-          (nextNumResult.rows[0] as Record<string, unknown>)?.next_num ?? 1,
-        );
-
         await client.execute({
           sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
                   labels, framework_payload, calendar_sync_state, area_id,
                   custom_fields, task_type, task_kind, ticket_number, idempotency_key, request_id,
                   created_at, updated_at)
                 VALUES (?, ?, ?, ?, 3, ?, ?, '{}', 'synced', 'default',
-                  '{}', 'task', 'standard_action', ?, ?, ?, ?, ?)`,
+                  '{}', 'task', 'standard_action', (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
+                  ?, ?, ?, ?)`,
           args: [
             taskId,
             cleanTitle,
@@ -360,7 +349,6 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
             meithealStatus,
             item.due ?? null,
             JSON.stringify([syncLabel]),
-            ticketNumber,
             `todo-sync-${uid}`,
             reqId,
             nowMs,

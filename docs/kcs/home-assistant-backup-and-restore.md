@@ -59,7 +59,7 @@ If the restored app cannot start, preserve the backup and check Supervisor and a
 
 ## Verify the draft storage migration
 
-For an upgrade from schema 14, take an App-only checkpoint and use a disposable copy to verify schema 15. Confirm SQLite integrity and read a known ordinary task after the app starts. Run `node scripts/migrate.mjs --check` from `apps/web` with the fixture database URL to verify the draft tables and receipt index. Keep the original checkpoint available for a rollback to the previous App.
+For an upgrade from schema 14, take an App-only checkpoint and use a disposable copy to verify schema 15. Confirm SQLite integrity and read a known ordinary task after the app starts. Run `node scripts/migrate.mjs --check` from `apps/web` with the fixture database URL to verify the draft tables and receipt index. Keep the original checkpoint available for a rollback to the previous App. When checking post-upgrade task creation, verify concurrently created and duplicated tasks each return a distinct ticket number that matches the task details.
 
 ## Tier 2 acceptance
 

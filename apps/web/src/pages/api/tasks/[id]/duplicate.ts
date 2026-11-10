@@ -31,11 +31,10 @@ export const POST: APIRoute = async ({ params }) => {
             return apiError("Task not found", 404)
         }
 
-        const ticket_number = await repo.getNextTicketNumber()
         const newTitle = `${String(row.title)} (copy)`
         const newId = crypto.randomUUID()
 
-        await repo.createTask({
+        const ticket_number = await repo.createTask({
             id: newId,
             title: newTitle,
             description: row.description ? String(row.description) : "",
@@ -53,7 +52,6 @@ export const POST: APIRoute = async ({ params }) => {
             color: row.color ? String(row.color) : null,
             is_favorite: row.is_favorite ? Number(row.is_favorite) : 0,
             task_type: row.task_type ? String(row.task_type) : "task",
-            ticket_number,
             assigned_to: null,
         })
 
