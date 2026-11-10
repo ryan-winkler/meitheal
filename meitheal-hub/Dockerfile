@@ -7,7 +7,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.23
 # Pinned to $BUILDPLATFORM (host arch) to avoid QEMU crashes on aarch64 cross-builds.
 # Output is pure JS — no native addons — so build artifacts are arch-independent.
 # Layer order is optimised for Docker cache: deps change less often than source.
-FROM --platform=$BUILDPLATFORM node:22-alpine3.23 AS builder
+FROM --platform=$BUILDPLATFORM node:26-alpine3.23 AS builder
 
 RUN npm install -g pnpm@10.8.0
 
