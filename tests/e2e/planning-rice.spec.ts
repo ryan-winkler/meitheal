@@ -57,10 +57,19 @@ test.describe("Planning RICE editor", () => {
       await form.getByRole("spinbutton", { name: "Effort" }).fill("0.5")
       await form.getByRole("spinbutton", { name: "Reach" }).fill("0")
       await expect(form.locator("output")).toHaveText("0")
+      let delayedShell = 0
+      await page.route(/\/_astro\/ParentPageShell\..*\.js$/, async route => {
+        delayedShell++
+        // Let the score list initialize before the shell reveals its RICE section.
+        await new Promise(resolve => setTimeout(resolve, 400))
+        await route.continue()
+      })
       await form.getByRole("button", { name: "Save score" }).press("Enter")
       await expect(page.locator("#planning-section-rice").getByRole("status").filter({ hasText: "Score saved." })).toBeVisible()
       await expect(row.locator("[data-rice-score]")).toHaveText("0")
       await expect(link).toBeFocused()
+      expect(delayedShell).toBe(1)
+      await expect(page).toHaveURL(/\/planning#rice$/)
       const saved = await (await request.get(`/api/tasks/${id}`)).json()
       expect(JSON.parse(saved.framework_payload)).toMatchObject({
         ...legacy,

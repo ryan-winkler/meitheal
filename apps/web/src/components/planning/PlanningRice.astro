@@ -113,15 +113,35 @@ const groups = [
   pageLifecycle.onPageLoad(signal => {
     const url = new URL(location.href)
     const id = url.searchParams.get("riceFocus")
-    if (!id || url.hash !== "#rice" || !document.getElementById("planning-rice-heading")) return
-    url.searchParams.delete("riceFocus")
-    url.searchParams.delete("riceSaved")
-    history.replaceState(history.state, "", url)
-    requestAnimationFrame(() => {
-      if (signal.aborted || location.hash !== "#rice") return
-      const link = document.querySelector<HTMLElement>(`[data-rice-task="${CSS.escape(id)}"] a`)
-      ;(link ?? document.getElementById("planning-rice-heading"))?.focus()
+    const section = document.getElementById("planning-section-rice")
+    const heading = document.getElementById("planning-rice-heading")
+    if (!id || url.hash !== "#rice" || !section || !heading) return
+
+    const restoreFocus = () => {
+      if (signal.aborted || !section.isConnected || location.href !== url.href) return true
+      if (section.hidden) return false
+      const link = section.querySelector<HTMLElement>(`[data-rice-task="${CSS.escape(id)}"] a`)
+      const target = link ?? heading
+      target.focus()
+      if (document.activeElement !== target) return false
+
+      url.searchParams.delete("riceFocus")
+      url.searchParams.delete("riceSaved")
+      history.replaceState(history.state, "", url)
+      return true
+    }
+
+    if (restoreFocus()) return
+    // Native navigation can initialize this module before the parent shell reveals RICE.
+    const observer = new MutationObserver(() => {
+      if (restoreFocus()) stop()
     })
+    const stop = () => {
+      observer.disconnect()
+      signal.removeEventListener("abort", stop)
+    }
+    observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+    signal.addEventListener("abort", stop, { once: true })
   })
 </script>
 

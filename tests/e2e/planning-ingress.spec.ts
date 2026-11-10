@@ -50,7 +50,8 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     await context.setOffline(false)
 
     await page.goto(origin + prefix + "/planning#rice")
-    await page.locator(`[data-rice-task="${id}"] a`).click()
+    const scoreLink = page.locator(`[data-rice-task="${id}"] a`)
+    await scoreLink.click()
     await expect(page).toHaveURL(url => url.pathname === prefix + "/planning" && url.searchParams.get("score") === id)
     const editor = page.locator("[data-rice-editor]")
     for (const [field, value] of [["reach", "3"], ["impact", "1"], ["confidence", "50"], ["effort", "2"]] as const) {
@@ -62,6 +63,8 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     expect(new URL(receipt.url()).pathname).toBe(prefix + "/api/tasks/" + id)
     expect(receipt.status()).toBe(200)
     await expect(page.locator(`[data-rice-task="${id}"] [data-rice-score]`)).toHaveText("75")
+    await expect(scoreLink).toBeFocused()
+    await expect(page).toHaveURL(origin + prefix + "/planning#rice")
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
