@@ -107,9 +107,13 @@ export const GET: APIRoute = async ({ url }) => {
     }
   })
 
-  return new Response(JSON.stringify({ tasks, total, limit, offset }), {
+  const body = JSON.stringify({ tasks, total, limit, offset })
+  return new Response(body, {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(Buffer.byteLength(body, "utf8")),
+    },
   })
   } catch (err) {
     if (isDbUnavailable(err)) return db503Response("tasks-get", err)

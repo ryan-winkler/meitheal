@@ -331,6 +331,8 @@ The ingress HTML parser loads on the first HTML response above 5 MiB. Smaller pa
 
 Task list and detail reads do not load the task text sanitizer. It loads when a task is created or its title or description changes. Use a fresh process to distinguish the read-only footprint from a process that already handled a text write.
 
+Successful native task lists send a Content-Length measured in UTF-8 bytes. When diagnosing list latency, compare time to first byte with time to read the complete body and record the framing headers on the app connection.
+
 For calibration, the check accepts these overrides.
 
 - `MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX`

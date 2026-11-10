@@ -479,6 +479,42 @@ test("Deferred and cross-page Details wait for the new worker through ingress", 
   }
 })
 
+test("task list frames the same UTF-8 JSON through standalone and ingress", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const title = "Nótaí 🧪"
+  const description = "Cuir ceist ar an bhfoireann."
+  try {
+    const created = await api.post("/api/tasks", { headers: { origin }, data: { title, description } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    const path = "/api/tasks?limit=50"
+    const direct = await api.get(path)
+    expect(direct.status()).toBe(200)
+    const body = await direct.body()
+    expect(JSON.parse(body.toString("utf8"))).toMatchObject({
+      tasks: [{ id, title, description }], total: 1, limit: 50, offset: 0,
+    })
+    expect(body.length).toBeGreaterThan(body.toString("utf8").length)
+    const framed = { "content-type": "application/json", "content-length": String(body.length) }
+    expect(direct.headers()).toMatchObject(framed)
+    expect(direct.headers()["transfer-encoding"]).toBeUndefined()
+
+    const member = { cookie: "feedback-fixture=member" }
+    const scoped = await api.get(prefix + path, { headers: member })
+    expect(scoped.status()).toBe(200)
+    expect(scoped.headers()).toMatchObject({ ...framed, "x-ingress-path": prefix })
+    expect(scoped.headers()["transfer-encoding"]).toBeUndefined()
+    expect(await scoped.body()).toEqual(body)
+
+    const head = await api.head(prefix + path, { headers: member })
+    expect(head.status()).toBe(200)
+    expect(head.headers()).toMatchObject(framed)
+    expect(await head.body()).toHaveLength(0)
+  } finally {
+    await api.dispose()
+  }
+})
+
 test("ingress loads board dependencies from the app path", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
