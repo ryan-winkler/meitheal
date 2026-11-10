@@ -192,11 +192,17 @@ Use `request_id` or `task_id` to follow lifecycle records:
 4. `calendar_confirmations` stores confirmation IDs and provider event IDs.
 5. `audit_trail` captures human-readable audit entries.
 
-Recommended Loki filter sequence:
+For the native sender, select the actual static service/environment labels,
+then parse the event JSON and filter its `domain` field. For the web App in
+production, start with:
 
-1. `{service=\"meitheal\",domain=\"tasks\"}` for creation lifecycle.
-2. `{service=\"meitheal\",domain=\"integrations\"}` for calendar handoff.
-3. `{service=\"meitheal\",domain=\"audit\"}` for final operator-facing trace.
+1. `{service="meitheal-web",env="production"} | json | domain="tasks"` for creation.
+2. `{service="meitheal-web",env="production"} | json | domain="integrations"` for handoff.
+3. `{service="meitheal-web",env="production"} | json | domain="audit"` for the operator trace.
+
+Use the values emitted by your configured logger. An external Alloy collector
+that explicitly adds a `domain` stream label can instead use selectors such as
+`{service="meitheal",domain="tasks"}`. The native sender does not add that label.
 
 ## HA Ingress Login Failure
 
@@ -290,7 +296,7 @@ Every retention delete is logged to `audit_trail` with event `retention-delete`,
 **Investigation:**
 
 1. Query `audit_trail` for `request_id = 'retention-delete'` to see deletion history.
-2. Check structured logs: `{service="meitheal",domain="tasks"} |= "retention-delete.success"`.
+2. Check structured logs: `{service="meitheal-web",env="production"} | json | domain="tasks" | event="retention-delete.success"`.
 3. Cascaded data: each deletion removes associated `task_activity_log`, `comments`, and `task_links` rows inside a transaction.
 
 **Safety:** Only tasks with `status IN ('complete', 'archived')` and `updated_at < cutoff` are affected. Active work is never touched.
@@ -389,3 +395,54 @@ Label removal confirmations render the count and each selected name as plain tex
 `GET /api/health` reports HTTP 503 and `status: degraded` when the database is reachable but its startup integrity check failed. A successful connection alone does not establish healthy storage. Inspect `db_status` and `db_integrity` separately. Keep a copy of the database and its WAL together before recovery, and restore a verified backup in a disposable installation before replacing live data. `HEAD /api/health` remains a lightweight process/schema liveness check; its 200 response does not override degraded readiness.
 
 MCP tool inputs resolve local OpenAPI component references with bounded expansion. Search uses native `q`, keeps `query` as an alias and remains task-scoped. Native operation responses must contain a valid JSON object without a rejection flag; HTTP204/205 are acknowledged empty success. A malformed or rejected completion response must produce a tool error, including completion by title. Human-only rule and framework settings mutations are not advertised as token tools. Use scoped disposable credentials when checking these paths.
+
+
+## Application logging and optional Loki forwarding
+
+The App's `log_level` and `log_categories` options configure newly created
+loggers. Changing App options requires a restart. An absent global option keeps
+the logger's own defaults. `audit_enabled: false` disables audit events even
+when an individual logger enables them; an individual logger can still opt out.
+Audit events are independent of application-category filtering but follow the
+configured level. The legacy `MEITHEAL_AUDIT_LOGS` environment option is used
+only when `MEITHEAL_AUDIT_ENABLED` is absent.
+
+Default credential/PII patterns and nested sensitive metadata keys are always
+redacted before output. Caller patterns add protection. The retained
+`log_redaction` option cannot disable this minimum protection. Stdout emits one
+JSON event per line and remains the authoritative troubleshooting stream.
+
+An optional `loki_url` must be an HTTP(S) push endpoint without embedded
+credentials. The native sender does not follow redirects. It forwards the same
+redacted lines with only static service/environment labels. It queues at most
+200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
+and uses a 250 ms flush delay with a one-second request timeout. Overflow,
+invalid endpoints, non-success responses and timeouts drop remote logs with a
+generic stderr warning at most once per process per 60 seconds. Changing the
+trimmed `LOKI_URL` clears pending lines on the next enqueue. There are no
+retries, durable queues or guaranteed
+shutdown drains. Stdout continues; remote loss does not imply successful Loki
+ingestion. Check receiver ingestion separately using synthetic data.
+
+## Local image builds
+
+From the repository root, run:
+
+```sh
+npm run build:image -- --tag localhost/meitheal:dev
+```
+
+The pnpm equivalent is `pnpm run build:image --tag localhost/meitheal:dev`.
+Both use the add-on Dockerfile and repository context, and forward extra
+arguments to `podman build`. This builds an image without publishing or replacing
+a running App. If the host provides `meitheal-build`, it selects that host's
+guarded build store; failure stops the command without trying another store.
+Without that launcher, normal Podman configuration applies. Keep existing
+container lifecycle commands on the store where those containers were created.
+
+The performance checker has a separate temporary server. It waits for that
+server to close on both passing and failing measurements and uses SIGKILL after
+two seconds if SIGTERM does not close it. A printed result is complete only
+when the command exits; failures retain a nonzero status. Its version/integrity
+health check, five warmups, 100 validated task writes and existing budgets are
+unchanged by this build-entry command.
