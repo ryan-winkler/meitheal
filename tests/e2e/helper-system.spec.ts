@@ -93,6 +93,8 @@ test.describe("Helper System", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true")
     await expect(page.locator(".helper-restore-flash")).toBeVisible()
 
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeVisible()
     await toggle.click()
     await expect(toggle).toHaveAttribute("aria-expanded", "false")
     await dismiss.click()

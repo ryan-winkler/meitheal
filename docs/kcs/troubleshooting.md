@@ -31,7 +31,7 @@ description: "Diagnose common connection, search, and sync problems."
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. Press `?` outside a text field to restore them. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. Press `?` outside a text field to restore them. Press `Esc` to close the keyboard shortcuts dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 
