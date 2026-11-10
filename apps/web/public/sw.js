@@ -209,7 +209,8 @@ function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
     if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
-        path === "/pinned" || path === "/api/search" || path === "/api/saved-filters" || path === "/api/task-drafts" ||
+        path === "/pinned" || path === "/activity" || path === "/api/search" ||
+        path === "/api/saved-filters" || path === "/api/task-drafts" ||
         taskHistoryPath.test(path)) return path
   }
 

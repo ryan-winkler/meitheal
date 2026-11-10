@@ -54,6 +54,16 @@ test("packaged task history preserves JSON and protects successes, errors and en
   const invalid = await request.get(path + "/timeline?actor_type=not-an-actor")
   expect(invalid.status()).toBe(400)
   expect(invalid.headers()["cache-control"]).toBe(noStore)
+
+  const activity = await request.get("/activity")
+  expect(activity.status()).toBe(403)
+  expect(activity.headers()["cache-control"]).toBe(noStore)
+  for (const alias of ["/%61ctivity", "/%2561ctivity", "/activity/"]) {
+    const response = await request.get(alias, { maxRedirects: 0 })
+    expect(response.status(), alias).toBe(404)
+    expect(response.headers()["cache-control"], alias).toBe(noStore)
+    expect(response.headers()["location"], alias).toBeUndefined()
+  }
 })
 
 test("HTTPS ingress history bypasses offline cache and activation purges legacy entries only", async () => {
@@ -81,6 +91,8 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
       `${prefix}${taskPath}/${name}?offset=2`, `${prefix}/api/%2574asks/${id}/${name}`,
       `${prefix}${taskPath}%2F${name}`, `${prefix}${taskPath}/${name}/`, `${taskPath}/${name}`,
     ])
+    const activityFeed = prefix + "/activity"
+    variants.push(activityFeed, activityFeed + "?area=synthetic", prefix + "/%61ctivity", "/activity/")
     const cacheState = await page.evaluate(async ({ prefix, paths, variants }) => {
       const { version } = await (await fetch(prefix + "/version.json")).json()
       const names = ["api", "nav", "precache", "static"].map(kind => `meitheal-${kind}-v${version}`)
@@ -161,6 +173,19 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
     }, { replayPaths, ordinaryPath: prefix + taskPath })
     expect(offline.reads).toEqual(replayPaths.map(() => [503, noStore, { error: "offline" }]))
     expect(offline.task).toEqual([200, newDescription])
+
+    expect(await page.evaluate(path => fetch(path).then(response => response.status).catch(() => null), activityFeed)).toBeNull()
+    await context.setOffline(false)
+    const feed = await page.evaluate(async path => {
+      const response = await fetch(path)
+      return [response.status, response.headers.get("cache-control"), (await response.text()).includes("Recent activity")]
+    }, activityFeed)
+    expect(feed).toEqual([200, noStore, true])
+    expect(await page.evaluate(async path => {
+      const entries = await Promise.all((await caches.keys()).filter(name => name.startsWith("meitheal-"))
+        .map(async name => (await caches.open(name)).keys()))
+      return entries.flat().some(entry => new URL(entry.url).pathname === path)
+    }, activityFeed)).toBe(false)
 
     const ui = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
     await ui.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])

@@ -140,7 +140,7 @@ function isPinRoute(path: string) {
   return path === "/api/task-pins" || path === "/pinned"
 }
 
-const onlineReadPaths = new Set(["/api/search", "/api/saved-filters"])
+const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity"])
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const draftPath = "/api/task-drafts"
 

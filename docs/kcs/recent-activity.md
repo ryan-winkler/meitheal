@@ -12,6 +12,8 @@ Choose a **Current area** or **Person** and apply the filters. When a task moves
 
 Select a task title to open its details. Use **Older activity** to continue or **Refresh activity** to see new changes.
 
+Recent activity requires an active Home Assistant session and a connection. The web app removes saved copies of the activity page when its service worker activates.
+
 ## Verify a new release
 
 In a disposable App session with two active Home Assistant accounts, create tasks in two areas. Have the second account edit and close one task and the first reopen it. Confirm each action appears once, that the area and person filters work together, and that a moved task appears in its new area. Reopen the page after revoking a test account and check that the account can no longer see the feed.
