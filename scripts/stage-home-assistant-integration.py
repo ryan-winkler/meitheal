@@ -4,7 +4,9 @@
 import argparse
 from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import tarfile
 from zipfile import ZipFile, ZipInfo
@@ -12,9 +14,9 @@ from zipfile import ZipFile, ZipInfo
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "integrations/home-assistant"
 COMPONENT = "custom_components/meitheal"
-ROOT_FILES = ("LICENSE", "README.md", "hacs.json")
+REPOSITORY_FILES = ("LICENSE", "README.md", "hacs.json", ".github/workflows/validate.yaml")
 REQUIRED_FILES = {
-    *ROOT_FILES,
+    *REPOSITORY_FILES,
     f"{COMPONENT}/__init__.py",
     f"{COMPONENT}/manifest.json",
     f"{COMPONENT}/services.yaml",
@@ -30,7 +32,7 @@ def read_files(ref: str) -> dict[str, bytes]:
         text=True,
     ).strip()
     archive = subprocess.check_output(
-        ["git", "archive", "--format=tar", f"{commit}:{SOURCE}", *ROOT_FILES, COMPONENT],
+        ["git", "archive", "--format=tar", f"{commit}:{SOURCE}", *REPOSITORY_FILES, COMPONENT],
         cwd=REPO_ROOT,
     )
     files = {}
@@ -41,10 +43,11 @@ def read_files(ref: str) -> dict[str, bytes]:
             path = PurePosixPath(entry.name)
             if not entry.isfile() or path.is_absolute() or ".." in path.parts:
                 raise ValueError(f"Invalid package entry: {entry.name}")
-            if any(part.startswith(".") for part in path.parts):
-                continue
-            if entry.name not in ROOT_FILES and not entry.name.startswith(f"{COMPONENT}/"):
-                raise ValueError(f"Unexpected package entry: {entry.name}")
+            if entry.name not in REPOSITORY_FILES:
+                if not entry.name.startswith(f"{COMPONENT}/"):
+                    raise ValueError(f"Unexpected package entry: {entry.name}")
+                if any(part.startswith(".") for part in path.parts):
+                    continue
             stream = source.extractfile(entry)
             assert stream is not None
             files[entry.name] = stream.read()
@@ -59,10 +62,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new ZIP file to write")
     parser.add_argument("--ref", default="HEAD", help="Git commit or ref to package")
+    parser.add_argument("--repository", required=True, help="owner/name of the public integration repository")
     args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9_.-]{1,100}", args.repository):
+        parser.error("--repository must be a GitHub owner/name")
+    if args.repository.split("/")[1] in (".", ".."):
+        parser.error("--repository must name a repository")
 
     try:
         files = read_files(args.ref)
+        repository_url = f"https://github.com/{args.repository}"
+        manifest_path = f"{COMPONENT}/manifest.json"
+        manifest = json.loads(files[manifest_path])
+        manifest["documentation"] = repository_url + "#readme"
+        manifest["issue_tracker"] = repository_url + "/issues"
+        files[manifest_path] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
         # The stored bytes, entry order and ZIP metadata are stable across runs.
         with ZipFile(args.output, mode="x") as archive:
             for name, contents in sorted(files.items()):

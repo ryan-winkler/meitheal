@@ -11,15 +11,15 @@ Home Assistant installs the Meitheal Core integration from a separate integratio
 ## Stage a release candidate
 
 1. Run the Core credential tests from `integrations/home-assistant` with Python 3.14. Install `requirements-test.txt` in a fresh environment for Core 2026.11.1 and `requirements-test-2026.10.txt` in a separate environment for Core 2026.10.4. Run `python -m pytest -q` in each environment.
-2. Stage an integration archive from the tested source commit. Choose a new output path.
+2. Stage an integration archive from the tested source commit. Choose a new output path and supply the integration repository's GitHub owner and name.
 
    ```sh
-   python scripts/stage-home-assistant-integration.py /tmp/meitheal-integration.zip --ref HEAD
+   python scripts/stage-home-assistant-integration.py /tmp/meitheal-integration.zip --ref HEAD --repository OWNER/REPOSITORY
    unzip -l /tmp/meitheal-integration.zip
    ```
 
-3. Compare the SHA-256 printed by the script with a second build of the same commit. Stage the extracted tree at the integration repository root. The archive contains the Apache license, README, Marketplace metadata and `custom_components/meitheal` runtime. The manifest version and the integration repository's release tag must agree.
-4. Run hassfest and the HACS validation action with the integration category on the staged repository. A published listing also needs repository description, topics and an enabled issue tracker. Verify the custom install link and a tagged upgrade on a disposable Home Assistant instance before requesting catalog inclusion. [Validation checks](https://contributors.home-assistant.io/marketplace/reference/validation/)
+3. Compare the SHA-256 printed by the script with a second build of the same commit and repository name. The staged manifest links to that repository's README and Issues tab. Check both URLs anonymously before publishing a release. The archive contains the Apache license, README, Marketplace metadata, runtime and validation workflow. Extract it at the integration repository root. Match the GitHub Release tag to the manifest version.
+4. Require both staged jobs to pass on the integration repository. The HACS job checks the integration category with no ignored checks, and hassfest validates the integration. Set the repository description, add relevant topics, and enable Issues. Verify the custom install link and a tagged upgrade on a disposable Home Assistant instance before requesting catalog inclusion. [Validation checks](https://contributors.home-assistant.io/marketplace/reference/validation/)
 
 ## Test an installer handoff
 

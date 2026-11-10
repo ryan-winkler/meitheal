@@ -25,7 +25,11 @@ For an existing installation, back up Home Assistant before switching installers
 
 If Meitheal rejects the token, create a new one and use **Reauthenticate**. Revoke the previous token after the entity and enabled actions work with the replacement. Keep Home Assistant backups private, since config entries store tokens.
 
-See the [Core credentials runbook](https://github.com/ryan-winkler/meitheal/blob/main/docs/kcs/home-assistant-core-credentials.md) for upgrade and recovery steps. Report reproducible integration bugs to the [Meitheal issue tracker](https://github.com/ryan-winkler/meitheal/issues).
+## Recover after an update
+
+If an update fails, reinstall the last working release or restore the previous `custom_components/meitheal` files, then restart Home Assistant. Keep the existing integration entry so its entity IDs and automation references are preserved.
+
+Use this repository’s **Issues** tab for reproducible integration bugs. Include the Home Assistant Core and integration versions and the step that failed. Remove tokens and personal task data from logs or screenshots.
 
 ## License
 
