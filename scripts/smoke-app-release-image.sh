@@ -12,7 +12,7 @@ VERSION=$6
 "$engine" image inspect "$image" |
   bash scripts/check-app-release-image.sh "$revision" "$ARCHITECTURE" "$platform" "$VERSION" "${7:-}"
 
-container="$("$engine" run --detach --platform "$platform" --network none \
+container="$("$engine" run --detach --pull=never --platform "$platform" --network none \
   --env "EXPECTED_VERSION=$VERSION" --env MEITHEAL_DB_URL=file:/data/smoke.db "$image")"
 cleanup() {
   local status=$?

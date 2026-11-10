@@ -195,10 +195,10 @@ Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` fo
 | Channel | Dir | Trigger | Version | Stage |
 |---------|-----|---------|---------|-------|
 | Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Manual workflow from `main` builds images. A reviewed change promotes discovery. | Commit SHA | `experimental` |
+| Canary | `meitheal-hub-canary/` | Manual workflow from `main` smoke-tests images. The release host publishes qualified images. | Commit SHA | `experimental` |
 
 - **Stable**: Push a version tag (`v*`) to trigger CI Docker build. Version in `config.yaml` must match the tag (e.g. `version: "0.0.1"` ↔ `v0.0.1`). Also bump `MEITHEAL_VERSION` in `run.sh` to match. Use `node scripts/bump-version.mjs patch` for atomic bumps.
-- **Canary**: Run the Canary image workflow from `main` when a candidate is ready. Stage discovery with the release-host helper after Green qualification and rollback checks. Do not edit the source manifest version by hand.
+- **Canary**: Use the read-only Canary workflow to check native builds from `main`. Publish exact images with the release-host helper after Green qualification, then stage discovery after rollback checks. The helper manages the advertised version.
 - Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
 - Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 

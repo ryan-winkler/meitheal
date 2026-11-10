@@ -43,4 +43,4 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/build-app-release-image.sh
+        run: bash scripts/build-app-release-image.sh publish

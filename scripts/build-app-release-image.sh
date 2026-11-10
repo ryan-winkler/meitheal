@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mode=${1:-}
+case "$mode:${CHANNEL:-}" in
+  build-only:canary|publish:stable) ;;
+  *)
+    printf '%s\n' 'Expected build-only for Canary or publish for Stable' >&2
+    exit 1
+    ;;
+esac
+
 revision="$(git rev-parse HEAD)"
+if [[ "$mode" == build-only ]]; then
+  VERSION="$(node scripts/app-release.mjs prepare "$CHANNEL" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$revision")"
+  VERSION="${VERSION#version=}"
+fi
 metadata="$(node scripts/app-release.mjs image "$CHANNEL" "$ARCHITECTURE" "$VERSION" "$revision")"
 image="$(jq -er .image <<< "$metadata")"
 platform="$(jq -er .platform <<< "$metadata")"
@@ -11,13 +24,22 @@ repo="${image%:*}"
 export DOCKER_CONFIG
 DOCKER_CONFIG="$(mktemp -d)"
 trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
-printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
 existing=false
-if docker manifest inspect "$image" > /dev/null 2>"$DOCKER_CONFIG/manifest-error"; then
-  docker pull --platform "$platform" "$image"
-  existing=true
-elif grep -Eq '^(manifest unknown|no such manifest:)' "$DOCKER_CONFIG/manifest-error"; then
+if [[ "$mode" == build-only ]]; then
+  image="localhost/${image#ghcr.io/}"
+else
+  printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+  if docker manifest inspect "$image" > /dev/null 2>"$DOCKER_CONFIG/manifest-error"; then
+    docker pull --platform "$platform" "$image"
+    existing=true
+  elif ! grep -Eq '^(manifest unknown|no such manifest:)' "$DOCKER_CONFIG/manifest-error"; then
+    cat "$DOCKER_CONFIG/manifest-error" >&2
+    exit 1
+  fi
+fi
+
+if [[ "$existing" == false ]]; then
   docker buildx build --load --platform "$platform" \
     --file meitheal-hub/Dockerfile --build-arg "BUILD_FROM=$base" --build-arg "MEITHEAL_VERSION=$VERSION" \
     --label "org.opencontainers.image.source=https://github.com/ryan-winkler/meitheal" \
@@ -26,12 +48,12 @@ elif grep -Eq '^(manifest unknown|no such manifest:)' "$DOCKER_CONFIG/manifest-e
     --label "org.opencontainers.image.licenses=LicenseRef-Meitheal-Source-Available-1.0" \
     --label "io.hass.version=$VERSION" --label "io.hass.arch=$ARCHITECTURE" \
     --tag "$image" .
-else
-  cat "$DOCKER_CONFIG/manifest-error" >&2
-  exit 1
 fi
 
 bash scripts/smoke-app-release-image.sh docker "$image" "$revision" "$ARCHITECTURE" "$platform" "$VERSION"
+if [[ "$mode" == build-only ]]; then
+  exit 0
+fi
 
 if [[ "$existing" == true ]]; then
   digest="$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$image" | awk -v repo="$repo" 'index($0, repo "@") == 1 {print substr($0, length(repo) + 2)}')"

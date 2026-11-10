@@ -27,14 +27,21 @@ test("release preparation accepts only the expected event, version tag and branc
   expect(release("prepare", "canary", "push", "refs/heads/main", "invalid").status).toBe(1)
 })
 
-test("canary image publication cannot advance App Store discovery", () => {
+test("hosted canary checks cannot publish packages or advance App Store discovery", () => {
   const workflows = join(root, ".github/workflows")
   const canary = readFileSync(join(workflows, "publish-canary-images.yml"), "utf8")
   const stable = readFileSync(join(workflows, "publish-addon-images.yml"), "utf8")
   const shared = readFileSync(join(workflows, "publish-app.yml"), "utf8")
+  const builder = readFileSync(join(workflows, "build-app-image.yml"), "utf8")
 
-  expect(canary).not.toContain("ADDON_REPO_TOKEN")
+  expect(canary).toMatch(/^permissions:\n  contents: read\n  packages: none$/m)
+  expect(canary).toContain("architecture: amd64\n            runner: ubuntu-24.04\n")
+  expect(canary).toContain("architecture: aarch64\n            runner: ubuntu-24.04-arm\n")
+  expect(canary).toContain("run: bash scripts/build-app-release-image.sh build-only")
+  expect(canary).not.toMatch(/packages: write|publish-app\.yml|build-app-image\.yml|secrets\.|GH_TOKEN/)
   expect(stable).toContain("ADDON_REPO_TOKEN")
+  expect(builder).toContain("run: bash scripts/build-app-release-image.sh publish")
+  expect(shared).toContain("&& inputs.channel == 'stable'")
   expect(shared).toMatch(/^  promote:\n    if: inputs\.channel == 'stable'$/m)
   expect(shared).toContain('node scripts/app-release.mjs stage stable "$VERSION" app-repository')
 })
