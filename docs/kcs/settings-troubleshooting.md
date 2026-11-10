@@ -41,6 +41,10 @@ Settings downloads exclude credential values. Settings imports also skip credent
 - If a save reports that some changes were saved, its form keeps your entries. Retry the save to finish, or reload Settings to see the stored values. For Calendar and To-do, the save also checks whether the sync service accepted the request.
 - The accent picker is a browser preference. Reset in Personal to use the default accent again.
 
+### A household member is missing
+
+**Workflow** uses the same user list for **Users & Assignment** and notification overrides. Adding or removing a custom user refreshes both lists. If Home Assistant users could not load, custom users and their preferences are still available when the local database responds. Check the Home Assistant connection under **Integrations**, then reopen Settings.
+
 ### Reopen Settings in Home Assistant Companion
 
 1. Go to `Settings → App & PWA`.
