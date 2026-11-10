@@ -82,6 +82,12 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
     await page.locator(".toast-dismiss").last().click()
     await expect(page.locator(".toast")).toHaveCount(0)
     providerFailure = false
+    provider = "ha_llm"
+    await page.locator("#td-ask-ai").click()
+    await expect(page.getByText("Níl Assist Home Assistant ar fáil. Athcheangail é agus bain triail eile as.", { exact: true })).toBeVisible()
+    expect(await handoffs()).toEqual([])
+    await page.locator(".toast-dismiss").last().click()
+    await expect(page.locator(".toast")).toHaveCount(0)
     provider = null
     await page.locator("#td-ask-ai").click()
     await expect.poll(handoffs).toEqual(["https://chatgpt.com/"])

@@ -379,3 +379,5 @@ Built-in catalog and field descriptions survive packaged discovery and YAML expo
 Search keeps one persistent live announcement region; retry controls remain outside it. Task table controls use the shared table stylesheet, including dynamically created rows. Label names are trimmed after HTML stripping so task creation and the labels API share a stable normalized name. CI action revisions are pinned to verified release commits.
 
 To-do discovery preserves an explicitly disabled sync setting. AI handoff stops when provider settings cannot be read or are invalid; only a successful unset preference defaults to ChatGPT.
+
+When Home Assistant-only AI is selected, an unavailable Assist connection reports that state and never opens an external provider.

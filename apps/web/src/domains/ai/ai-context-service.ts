@@ -152,11 +152,16 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid provider setting")
     const value = (data as Record<string, unknown>).value
     if (value != null && value !== "") {
-      if (typeof value !== "string" || !["chatgpt", "claude", "gemini", "ollama", "custom"].includes(value)) throw new Error("Invalid provider setting")
+      if (typeof value !== "string" || !["chatgpt", "claude", "gemini", "ollama", "ha_llm", "custom"].includes(value)) throw new Error("Invalid provider setting")
       provider = value
     }
   } catch {
     showToast("settings.ai_handoff_provider_unavailable", "error")
+    return
+  }
+
+  if (provider === "ha_llm") {
+    showToast("settings.ai_handoff_ha_unavailable", "error")
     return
   }
 
