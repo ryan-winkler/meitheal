@@ -49,6 +49,12 @@ function stripMeithealAttribution(desc: string | null | undefined): string | nul
 
 /** Sync direction — matches Grocy bridge pattern */
 export type CalendarSyncMode = "import" | "export" | "bidirectional";
+export interface CalendarSyncCounts {
+  created: number
+  updated: number
+  total: number
+  skipped?: string
+}
 
 export interface CalendarSyncConfig {
   entityId: string;
@@ -196,7 +202,14 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
         event: "calendar.sync.entity_changed", domain: "calendar", component: "calendar-bridge",
         request_id: SYS_REQ, message: `Calendar entity ${config.entityId} changed — syncing (debounced)`,
       });
-      await syncEntityFromHA(config.entityId);
+      try {
+        await syncEntityFromHA(config.entityId)
+      } catch (err) {
+        logger.log("error", {
+          event: "calendar.sync.entity_change_failed", domain: "calendar", component: "calendar-bridge",
+          request_id: SYS_REQ, message: `Calendar change sync failed for ${config.entityId}: ${err}`,
+        })
+      }
     }, 10_000, `entity-change-${config.entityId}`);
     const unsub = onEntityChange(config.entityId, debouncedSync);
     // Store cancel function so stopSingleEntitySync can clean up the pending timer
@@ -239,7 +252,7 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
  * Sync events FROM all configured HA calendars TO Meitheal.
  * Returns aggregated results across all entities.
  */
-export async function syncFromHA(overrideEntityId?: string): Promise<{ created: number; updated: number; total: number }> {
+export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyncCounts> {
   // If a specific entity is requested, sync just that one
   if (overrideEntityId) {
     return syncEntityFromHA(overrideEntityId);
@@ -251,7 +264,7 @@ export async function syncFromHA(overrideEntityId?: string): Promise<{ created: 
       event: "calendar.sync.no_entities", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: "syncFromHA called with no entities configured",
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw new Error("No active calendar sync is configured");
   }
 
   // Sync ALL configured entities in parallel
@@ -259,6 +272,8 @@ export async function syncFromHA(overrideEntityId?: string): Promise<{ created: 
     Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId)),
   );
 
+  const failure = results.find(result => result.status === "rejected")
+  if (failure?.status === "rejected") throw failure.reason
   const aggregated = { created: 0, updated: 0, total: 0 };
   for (const result of results) {
     if (result.status === "fulfilled") {
@@ -282,7 +297,7 @@ export async function syncFromHA(overrideEntityId?: string): Promise<{ created: 
  * Merges calendar events into the tasks table with deduplication
  * via the calendar_confirmations table (keyed by provider_event_id).
  */
-async function syncEntityFromHA(entityId: string): Promise<{ created: number; updated: number; total: number }> {
+async function syncEntityFromHA(entityId: string): Promise<CalendarSyncCounts> {
   // Mode guard — export-only calendars skip inbound sync
   const state = activeSyncs.get(entityId);
   if (state?.config.syncMode === "export") {
@@ -291,7 +306,7 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       request_id: SYS_REQ, message: `Inbound sync skipped for ${entityId} — export-only mode`,
       metadata: { sync_mode: "export" },
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "export-only calendar" };
   }
 
   // Concurrency guard — skip if already syncing this entity
@@ -300,16 +315,17 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       event: "calendar.sync.skipped_concurrent", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Sync already in progress for ${entityId} — skipping`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "sync already running" };
   }
   syncingEntities.add(entityId);
+  let timeout: ReturnType<typeof setTimeout> | undefined
 
   try {
     // Wrap in timeout to prevent hung syncs from blocking indefinitely
     const result = await Promise.race([
       _syncEntityFromHAInner(entityId, state ?? null),
-      new Promise<{ created: number; updated: number; total: number }>((_, reject) =>
-        setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
+      new Promise<CalendarSyncCounts>((_, reject) =>
+        timeout = setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
       ),
     ]);
     return result;
@@ -324,14 +340,15 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       event: "calendar.sync.timeout_or_error", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Sync failed for ${entityId}: ${err}`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw err;
   } finally {
+    clearTimeout(timeout)
     syncingEntities.delete(entityId);
   }
 }
 
 /** Inner sync logic — always called within concurrency guard */
-async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<{ created: number; updated: number; total: number }> {
+async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<CalendarSyncCounts> {
 
   // Backoff: skip sync after 5 consecutive failures (reset via stopSingleEntitySync or manual)
   if (state && state.consecutiveFailures >= 5) {
@@ -340,7 +357,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       request_id: SYS_REQ,
       message: `Sync backoff for ${entityId} — ${state.consecutiveFailures} consecutive failures (last: ${state.lastSyncError})`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "calendar sync is in failure backoff" };
   }
 
   const now = new Date();
@@ -358,6 +375,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       state.lastSyncAt = Date.now();
       state.lastSyncEventCount = 0;
       state.lastSyncError = null;
+      state.consecutiveFailures = 0;
     }
     return { created: 0, updated: 0, total: 0 };
   }
@@ -541,6 +559,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       }
     }
 
+    if (errors > 0) throw new Error(`${errors} calendar event(s) failed to merge`)
+
     if (state) {
       state.lastSyncAt = Date.now();
       state.lastSyncEventCount = events.length;
@@ -577,7 +597,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       event: "calendar.sync.merge_failed", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Failed to merge calendar events from ${entityId}: ${err}`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw err;
   }
 }
 
@@ -973,7 +993,7 @@ export function stopCalDAVSync(): void {
  * Sync events from CalDAV server into Meitheal.
  * Independent of HA calendar sync — uses separate error boundary.
  */
-export async function syncCalDAVEvents(): Promise<{ created: number; updated: number; total: number }> {
+export async function syncCalDAVEvents(): Promise<CalendarSyncCounts> {
   if (!caldavSyncState) {
     return { created: 0, updated: 0, total: 0 };
   }

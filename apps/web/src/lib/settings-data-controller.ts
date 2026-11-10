@@ -10,7 +10,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { saveSetting, settingsRequest, log } from "@lib/settings-utils"
 
 export function initDataSettings(): void {
   // JSON export
@@ -110,13 +110,13 @@ export function initDataSettings(): void {
 
     const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
     const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
-    typeSelect?.addEventListener("change", () => {
+    pageLifecycle.on(typeSelect, "change", () => {
       optionsInput.style.display = typeSelect.value === "select" ? "block" : "none"
     })
 
     row.querySelector("input")?.focus()
 
-    row.querySelector(".custom-field-save")?.addEventListener("click", async function () {
+    pageLifecycle.on(row.querySelector(".custom-field-save")!, "click", async function () {
       const nameInput = row.querySelector("input") as HTMLInputElement
       const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
       const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
@@ -137,17 +137,12 @@ export function initDataSettings(): void {
       }
 
       try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-        const settings = settingsRes.ok ? await settingsRes.json() : {}
+        const settingsRes = await settingsRequest((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
+        const settings = await settingsRes.json()
         const existing = settings.custom_fields ? JSON.parse(settings.custom_fields) : []
         existing.push(fieldDef)
 
-        await fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(existing) }),
-          signal: pageLifecycle.signal,
-        })
+        await saveSetting("custom_fields", JSON.stringify(existing))
 
         nameInput.disabled = true
         typeSelect.disabled = true
@@ -189,18 +184,13 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
             <span style="color: var(--text-muted); font-size: 12px;">Saved</span>
             <button type="button" class="btn btn-ghost" style="padding: 4px 8px; color: var(--danger);" title="Remove field definition (data on existing tasks is preserved)">×</button>
           `
-          row.querySelector("button")?.addEventListener("click", async () => {
+          pageLifecycle.on(row.querySelector("button")!, "click", async () => {
             try {
-              const curRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-              const curSettings = curRes.ok ? await curRes.json() : {}
+              const curRes = await settingsRequest((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
+              const curSettings = await curRes.json()
               const curFields = curSettings.custom_fields ? JSON.parse(curSettings.custom_fields) : []
               const updated = curFields.filter((f: { name: string }) => f.name !== field.name)
-              await fetch((window.__ingress_path || "") + "/api/settings", {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(updated) }),
-                signal: pageLifecycle.signal,
-              })
+              await saveSetting("custom_fields", JSON.stringify(updated))
               row.remove()
               showToast("settings.field_removed")
             } catch {

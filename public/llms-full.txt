@@ -1,161 +1,490 @@
+# Meitheal — Full System Context for AI Agents
+
+> Generated: 2026-11-10T19:09:21.449Z
+> This file is auto-generated at build time. Do not edit manually.
+
+---
+## Project Overview
+
 # Meitheal
 
-Meitheal is a Home Assistant-native execution hub for households and homelabs.
-It sits between task capture, daily planning, Home Assistant automations,
-calendar and todo sync, companion flows, voice assistants, and agent tooling.
+> The Home Assistant-native execution hub for your house, your homelab, and the plans that keep both moving.
 
-It is intentionally local-first, Astro-first, and Home Assistant-native.
+[![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
 
-## Deployment model
+## What Meitheal Is
 
-- Primary runtime: Home Assistant add-on
-- Web runtime: Astro SSR
-- Persistence: SQLite-backed repositories
-- Auth model: Home Assistant ingress and Home Assistant integration surfaces
-- Cloud requirement: none
+Meitheal (pronounced "meh-hal") takes its name from the old Irish idea of neighbors showing up together to get real work done.
 
-## Current user-facing surfaces
+That is the product idea here too.
 
-- Dashboard
-- Today
-- Kanban
-- Table
-- Upcoming
-- Calendar
-- Projects
-- Goals
-- Habits
-- Gamification
-- Review
-- Gantt
-- Settings
-- Offline fallback
+Meitheal started as a task list inside Home Assistant. It has grown into a local-first coordination layer for the practical work of running a home, a family, or a homelab: capturing tasks, deciding what matters now, connecting work to calendars and automations, and keeping that context available through the Home Assistant dashboard, companion app, voice assistants, and AI agents.
 
-## Core product jobs
+If Grocy helps answer "what do I have?" and "what needs tracking?", Meitheal helps answer "what should happen next?", "who owns it?", and "how do we keep it moving without more overhead?"
+
+## Why It Lives Inside Home Assistant
+
+- It works where many self-hosters already live: the Home Assistant sidebar, companion app, automations, and voice stack.
+- It stays local-first: Astro SSR, SQLite, Home Assistant ingress, and no required cloud service.
+- It can connect work to the rest of the house: todo entities, calendars, notifications, sensors, services, webhooks, and companion shortcuts.
+- It supports both human and agent workflows without asking you to leave your Home Assistant environment.
+
+## What You Can Do With It
 
 ### Capture and clarify work
 
-- quick-add and full task modal
-- descriptions, labels, due dates, favorites, recurrence, checklists
-- task links and saved filters
-- carried-forward triage and Today-focused workflows
+- Capture tasks quickly from the dashboard, Today view, task modal, templates, Assist, or automation flows.
+- Use descriptions, checklists, recurrence, labels, due dates, favorites, saved filters, and task links to keep work actionable instead of vague.
+- Triage carried-forward work, pin the most important tasks, and surface suggested work for the day.
 
-### Work across multiple views
+### Work the way your brain works
 
-- dashboard and Today planning
-- Kanban and Table management
-- Upcoming, Calendar, Gantt, Projects, Goals, Habits, and Review surfaces
-- shared SearchHub for tasks, views, settings, saved filters, and actions
+- Move between Dashboard, Today, Kanban, Table, Upcoming, Calendar, Projects, Goals, Habits, Pillars, Gamification, Review, Timeline, and Settings.
+- Use the shared SearchHub to jump between tasks, views, settings, saved filters, and high-value actions.
+- Keep daily work simple when you want it simple, or go deep with strategy lenses, custom fields, rules, and review flows when you want more structure.
 
-### Connect work to the home
+### Keep plans connected to the home
 
-- Home Assistant todo entity and calendar sync
-- Home Assistant services, sensors, notifications, and companion flows
-- optional Grocy, Node-RED, n8n, webhook, and compatibility integrations
+- Sync with Home Assistant todo entities and calendar entities.
+- Trigger HA automations from task events and push overdue reminders through Home Assistant notifications.
+- Bring companion app shortcuts, x-callback-url flows, and installable PWA behavior into the same system.
+- Connect to Grocy, Node-RED, n8n, and compatibility layers without turning Meitheal into a cloud SaaS clone.
 
 ### Stay available everywhere
 
-- searchable Settings shell
-- PWA installability and offline support
-- export and backup surfaces
+- Use the searchable Settings shell to manage integrations, AI, PWA, automation, and system trust surfaces from one place.
+- Install it as a PWA, keep working offline, and sync back when connectivity returns.
+- Export your data as JSON, CSV, or SQLite, and use built-in backup flows so your planning system stays portable.
 
 ### Work with voice and agents
 
-- built-in Assist intents
-- Home Assistant LLM API
-- Astro MCP
-- Home Assistant MCP
-- A2A discovery and message routes
-- experimental WebMCP direction
+- Use Home Assistant Assist for built-in task actions.
+- Expose Meitheal to conversation agents through the Home Assistant LLM API.
+- Use Astro MCP for agent workflows and the Home Assistant LLM API for conversation tools. Use gated A2A for synchronous task-title search and WebMCP where the browser supports registration. Proposal-only tokens can submit task edits for administrator review.
+- Keep human control in the loop while the repo evolves toward richer review and handoff semantics.
 
-## Ubiquitous language
+## Ubiquitous Language
 
-Canonical vocabulary:
+Meitheal is in a transitional language phase.
 
-- `Area` — life or operating domain
-- `Goal` — desired outcome
-- `Project` — bounded work in service of a goal
-- `Task` — concrete unit of work
-- `Routine` — repeatable work that spawns routine instances
+The canonical model is:
+
+| Term | Meaning |
+|------|---------|
+| Pillar | A permanent, identity-based motivational anchor — the WHY behind Goals and Routines (e.g. Physical Longevity, Financial Independence) |
+| Principle | A behavioral boundary within a Pillar — the Non-Negotiable rules (e.g. "No screens after 9 PM") |
+| Area | A life or operating domain such as Home, Work, Family, or Homelab |
+| Goal | An outcome you are trying to move toward |
+| Project | A bounded body of work in service of a goal |
+| Task | A concrete unit of work |
+| Routine | Repeatable work that spawns routine instances over time |
 
 Compatibility note:
 
-- Some current UI, compatibility APIs, and integrations still expose legacy board, `task_type`, or `Epic/Story` language.
-- Public docs use the newer model as canonical and call legacy language out only where it affects the reader.
+- Some current UI, API, and integration surfaces still expose legacy board, `task_type`, or `Epic/Story` language.
+- Vikunja compatibility and older task views still carry some of that vocabulary by design.
+- This README uses the newer model as the clearest way to explain Meitheal today, and calls out compatibility terms only where they matter.
 
-## Web app and API surface
+## Screenshots
 
-High-value routes:
+| Dashboard | Work View | Settings |
+|-----------|-----------|----------|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Work View](docs/screenshots/table.png) | ![Settings](docs/screenshots/settings.png) |
 
-- `GET /api/tasks`
-- `POST /api/tasks/create`
-- `PUT /api/tasks/:id`
-- `DELETE /api/tasks/:id`
-- `GET /api/tasks/:id/links`
-- `POST /api/tasks/:id/links`
-- `DELETE /api/tasks/:id/links?link_id=...`
-- `GET /api/search`
-- `GET /api/settings`
-- `GET /api/health`
-- `GET /api/ha/calendars`
-- `POST /api/ha/assist`
+## Quick Install on Home Assistant
 
-## A2A surface
+1. Open **Settings** → **Add-ons** → **Add-on Store** → **⋮** → **Repositories**
+2. Add `https://github.com/Coolock-Village/meitheal`
+3. Install **Meitheal**
+4. Start the add-on
+5. Open the Web UI
 
-Discovery and routes:
+If you want the detailed add-on flow, companion setup, and automation notes, start with `meitheal-hub/DOCS.md`.
 
-- `GET /.well-known/agent-card.json` — static fallback agent card
-- `GET /api/a2a/agent-card` — dynamic agent card
-- `POST /api/a2a/message` — receive A2A messages
-- `GET /api/a2a/tasks/{id}` — task status
-- `POST /api/a2a/tasks/{id}:cancel` — cancel task
+## Voice and AI Quick Start
 
-Dynamic skill model:
+1. Install and start the add-on so Home Assistant can discover the Meitheal integration.
+2. In **Settings → Devices & Services**, confirm the Meitheal integration is loaded.
+3. In **Settings → Voice Assistants → [Your Agent] → Configure → LLM APIs**, select **Meitheal Tasks** if you want conversation-agent tooling.
+4. In **Settings → Voice Assistants → Expose**, expose `todo.meitheal_tasks` so built-in Assist intents can see your task list.
 
-- 9 core skills: task management, task search, framework scoring, data export, areas, labels, today summary, habits, weekly review
-- 2 HA skills when configured: calendar sync and entity state
+Built-in Assist commands work even without an LLM. The LLM API adds a richer task, hierarchy, and planning surface on top.
 
-Important limitation:
+## Architecture at a Glance
 
-- The A2A routes are live but lightweight. Task-status and cancel routes currently return scaffolding rather than persisted long-running task state.
+| Layer | Stack |
+|-------|-------|
+| Runtime | Home Assistant add-on + Astro SSR |
+| Persistence | SQLite via libSQL + Drizzle-backed repositories |
+| Architecture | Domain-driven monorepo with package domains and in-app domains |
+| Frontend | Astro-first UI with client controllers, PWA support, and ingress-safe behavior |
+| Integrations | Home Assistant, calendars, todo, Grocy, webhooks, companion, MCP/HA LLM API |
+| Principles | Local-first, Home Assistant-native, Astro-first, KCS-aware |
 
-## Astro MCP
+## Documentation Map
 
-Astro MCP is exposed at `POST /api/mcp`.
+- `meitheal-hub/DOCS.md` — install, add-on behavior, voice, security, publishing notes
+- `WEBMCP.md` — agent protocol overview and route surface
+- `docs/companion-app-setup.md` — mobile, Siri, shortcuts, widgets, and companion flows
+- `docs/kcs/pwa-offline-guide.md` — offline behavior, caching, installability, ingress-safe PWA notes
+- `docs/kcs/search-hub-guide.md` — SearchHub scopes and task-search parity
+- `public/llms.txt` and `public/llms-full.txt` — machine-readable product and protocol summaries
 
-Verified tool count: 18
+## Non-Negotiables
 
-Tools:
+- Astro-first architecture
+- Home Assistant add-on compatibility
+- Strict DDD boundaries and ubiquitous language
+- KCS updates alongside behavior changes
+- Local-first operation and no required cloud dependency
 
-- `createTask`
-- `searchTasks`
-- `completeTask`
-- `updateTask`
-- `deleteTask`
-- `getTask`
-- `getCalendarEvents`
-- `getUpcoming`
-- `syncCalendar`
-- `getOverdueTasks`
-- `getTodaysTasks`
-- `getTaskSummary`
-- `batchComplete`
-- `assignTask`
-- `listUsers`
-- `linkTask`
-- `unlinkTask`
-- `getTaskLinks`
+## Legal and Licensing
 
-## Home Assistant custom component
+Meitheal uses a dual-licensing model.
 
-Primary HA entities:
+| Scope | License |
+|-------|---------|
+| Core application (`apps/`, `packages/`, `meitheal-hub/`) | [AGPL-3.0](LICENSE) + commercial option |
+| Home Assistant integration | [Apache 2.0](integrations/home-assistant/LICENSE) |
+| Node-RED integration | [Apache 2.0](integrations/nodered/LICENSE) |
+| Vikunja compatibility layer | AGPL-3.0 only |
+
+If you are embedding Meitheal in commercial or proprietary software, see [COMMERCIAL.md](COMMERCIAL.md).
+
+---
+## Agent Guidelines (AGENTS.md)
+
+# AGENTS
+
+> This file defines mandatory behavior for human and AI contributors working in Meitheal.
+> Extends the shared rules in `~/.gemini/agents/agent-template.md`.
+
+## Project Identity
+
+Meitheal is a **Home Assistant-native household and homelab execution hub** that turns capture, planning, follow-through, automation, and agent workflows into one local-first system. It runs as a **Home Assistant add-on** (HA Supervisor) and is built with Astro SSR, SQLite/Drizzle repositories, and domain-driven design.
+
+Think of Meitheal as the coordination layer that sits between daily work, Home Assistant entities and automations, companion flows, voice assistants, and AI agents. It is intentionally not a generic corporate project-management clone.
+
+## Hard Requirements
+
+- Preserve **Astro-first** architecture decisions
+- Prefer official/open Astro integrations before custom implementations
+- Consider existing [Tabler admin-template](https://tabler.io/admin-template) patterns before custom UI; check the installed stack and reuse current primitives when they already fit.
+- Audit UI against Gestalt principles, Nielsen heuristics, DRY and YAGNI, including worst-case content and truthful failure states.
+- Maintain strict **DDD bounded contexts** and ubiquitous language
+- Maintain **KCS artifacts** in the same change set as code behavior updates
+- Keep **Home Assistant add-on compatibility** as a first-class constraint
+- Keep HA publishing compatibility aligned with
+- Maintain `repository.yaml` and add-on `config.yaml` `image` contract (`...-{arch}`) for publish readiness
+
+## Automation Review
+
+- CodeRabbitAI is enabled for PR review on this repository
+- Treat CodeRabbit findings as required triage items (accept, fix, or explicitly document reject rationale)
+
+## Architecture
+
+**DDD monorepo** with Astro SSR + domain packages + event-driven integration.
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
+| Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
+| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, `integrations/`, `search/` |
+| Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
+| API Layer | `apps/web/src/pages/api/` | Native + Vikunja v1 compat routes |
+| Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
+| Ingress Wrapper | `apps/web/scripts/serve.mjs` | HTTP server normalizing `//` → `/` for HA |
+
+## DDD Context Boundaries
+
+| Context | Path | Responsibility |
+|---------|------|---------------|
+| `domain-auth` | `packages/domain-auth/` | Ingress detection, CSRF, session policy, **license key verification** |
+| `domain-tasks` | `packages/domain-tasks/` | Task CRUD, persistence, sync, domain events |
+| `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
+| `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
+| `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
+| `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
+| `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
+| `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
+| `domains/pillars/` | `apps/web/src/domains/pillars/` | Pillar CRUD, Principles/Non-Negotiables, associations, inheritance |
+
+Cross-context imports must occur through public package APIs, not deep path imports.
+
+## Dual-Repo Architecture
+
+Source code is private. A public repo hosts HA add-on discovery manifests.
+
+| Repo | Visibility | Purpose |
+|------|-----------|---------|
+| `Coolock-Village/meitheal` | **Private** | Source code, CI, tests, domain packages |
+| `Coolock-Village/meitheal-ha-addon` | **Public** | Add-on manifests, docs, icons, LICENSE, COMMERCIAL.md |
+
+- `sync-addon-repo.yml` copies manifests/docs/icons/translations from private → public on relevant pushes
+- Requires `ADDON_REPO_TOKEN` secret (fine-grained PAT scoped to `meitheal-ha-addon`)
+- HA users add `https://github.com/Coolock-Village/meitheal-ha-addon` as their repository URL
+- Community: [org-level Discussions](https://github.com/orgs/Coolock-Village/discussions)
+- Bug reports: [meitheal-ha-addon Issues](https://github.com/Coolock-Village/meitheal-ha-addon/issues)
+
+## License Key System
+
+Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly.
+
+| Component | Location |
+|-----------|----------|
+| Key generation | `scripts/generate-license.mjs` |
+| Verification | `packages/domain-auth/src/index.ts` → `verifyLicenseKey()` |
+| Public key | Embedded in `domain-auth` as `LICENSE_PUBLIC_KEY_PEM` |
+| Private key | `.keys/meitheal-license.pem` (**gitignored**, back up to gopass) |
+| Config | `license_key: str?` in both `config.yaml` files |
+| API | `GET /api/license/status` |
+| Tests | `tests/e2e/license-key.spec.ts` (11 tests) |
+
+- **Grace mode**: app runs fully without a key. No features gated until enforcement is added.
+- Plans: `personal`, `household`, `commercial` — type `LicensePlan` in domain-auth
+- **⚠️ CRITICAL**: losing `.keys/meitheal-license.pem` means ALL existing keys become unverifiable
+
+## Ingress Patterns (Critical)
+
+- `serve.mjs` normalizes `//` paths before Astro routing (prevents 301 redirect loops)
+- `ingress-policy.ts` determines ingress context from `X-Ingress-Path` header
+- `Layout.astro` monkey-patches `fetch()` to prefix API calls with ingress path
+- `middleware.ts` rewrites HTML attributes (`href`, `src`) with ingress prefix
+- ClientRouter/view transitions are **disabled** behind ingress to prevent redirect loops
+- All client-side fetch calls must work behind HA ingress (global fetch wrapper in `Layout.astro`)
+- **Never** issue server-side redirects to bare `/` paths — they escape the ingress iframe
+
+### ⚠️ Gotchas
+
+- **Do NOT wrap client-side `fetch()` with `apiUrl()`** — `Layout.astro` already monkey-patches `window.fetch` to auto-prefix. Using `apiUrl()` double-prefixes the path
+- **`getHAConnectionStatus()` is passive** — it only reads in-memory state. Call `await getHAConnection()` first to ensure WebSocket is established
+- **Vite HMR listener accumulation** — HMR re-evaluates `` blocks without aborting the previous Astro lifecycle signal. When adding `addEventListener` on long-lived DOM elements (forms, overlays), either: (1) use `element.cloneNode(true)` + `replaceWith()` to strip old listeners before registering, or (2) use a window-scoped guard flag. Module-scoped guards do NOT survive HMR since each re-eval creates a new scope.
+- **Task API POST response is FLAT** — `POST /api/tasks` returns `{ id, ticket_key, title, ... }`, NOT `{ task: { id, ... } }`. Wrapping access like `res.task?.id` will silently fail.
+- **Custom fields may contain non-primitives** — Shopping items store `items: [{name, qty, category}]` in `custom_fields`. Always filter with `typeof v !== "object"` before rendering with `String()`, or display `[object Object]`.
+- **Always pass `AbortSignal` to `addEventListener`** — Astro `pageLifecycle.onPageLoad(signal)` provides the signal. Listeners without `{ signal }` accumulate across navigations (memory leak).
+
+## Settings Shell Patterns (Critical)
+
+- `apps/web/src/lib/settings-registry.ts` is the canonical source for settings section ids, labels, and settings-search metadata
+- Keep Settings navigation hash-based (`#personal-settings`, `#app-pwa-settings`, etc.) so the page stays ingress-safe inside HA and PWA scopes
+- Bootstrap Settings via `apps/web/src/lib/settings-page.ts` and `pageLifecycle`; do not add long-lived component-owned `astro:page-load` listeners back into settings panels
+- `apps/web/src/lib/settings-store.ts` preserves the flat `/api/settings` contract; do not change persisted setting keys in UI refactors
+- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsSystem.astro` and must preserve ingress-scoped paths
+
+## Search Patterns
+
+- Use the shared `apps/web/src/components/layout/SearchHub.astro` + `apps/web/src/lib/search-hub-controller.ts` path for launcher/UI behavior
+- Extend `apps/web/src/domains/search/` and `/api/search` instead of adding page-local search endpoints or duplicate result registries
+- Settings results in search should come from `settings-registry.ts`, not from a second settings-specific search source
+
+## Coding Conventions
+
+| Category | Convention | Example |
+|----------|-----------|---------|
+| Files | kebab-case | `task-sync-service.ts` |
+| Functions | camelCase | `createTask()`, `resolveIntegrationOutcome()` |
+| Types/Interfaces | PascalCase | `TaskAggregate`, `CalendarSyncState` |
+| Test specs | `.spec.ts` | `ha-calendar-adapter.spec.ts` |
+
+- No semicolons, double quotes, 2-space indent
+- Named exports only — no default exports
+- Import order: Node builtins → Framework → External → Workspace → Relative
+- Path alias: `@domains/` → `apps/web/src/domains/`
+- Discriminated unions for API results: `{ ok: true } | { ok: false, errorCode }`
+
+## Testing
+
+| Command | What |
+|---------|------|
+| `pnpm --filter @meitheal/tests test` | All tests |
+| `pnpm --filter @meitheal/tests test ` | Specific spec |
+| `pnpm check` | Typecheck all packages |
+
+- Tests import domain logic directly from workspace packages
+- HA tests use local HTTP server harness to simulate HA API
+- Persistence tests use temp SQLite (`file:${tmpdir}/...`)
+- No shared state between specs — no external mocking framework
+
+## Logging
+
+- Single JSON object per line to stdout (Loki-compatible)
+- Schema: `{ ts, level, event, domain, component, request_id, message, metadata }`
+- Redact secrets by default via `defaultRedactionPatterns`
+- Do not introduce high-cardinality Loki labels (user IDs, task IDs, URLs)
+- `ActorType` includes: `human`, `bot`, `system`, `webhook`, `calendar_sync`, `llm`, `n8n`, `nodered`, `agent`
+- `trace_id` and `span_id` fields on `LogEvent` enable Grafana Alloy OTel trace correlation
+
+## Agent & Automation Infrastructure
+
+Build-time generators produce zero-drift documentation served as static files.
+
+| Artifact | Generator | Output |
+|----------|-----------|--------|
+| OpenAPI 3.1 spec | `apps/web/scripts/generate-openapi.mjs` | `public/openapi.yaml` |
+| AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
+| LLM context (router) | `apps/web/scripts/generate-llms.mjs` | `public/llms.txt` |
+| LLM context (full) | `apps/web/scripts/generate-llms.mjs` | `public/llms-full.txt` |
+| AI plugin manifest | Static file | `public/.well-known/ai-plugin.json` |
+
+- `prebuild` runs `generate:openapi` → `generate:llms` → `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- Agent-accessible routes also require an explicit `resolveRouteScope()` policy. Unknown routes fail closed for tokens, and explicit token authority never inherits HA administrator headers.
+- Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
+- Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
+
+### MCP Dynamic Tools
+
+- `apps/web/src/pages/api/mcp.ts` reads `openapi.yaml` at startup, caches tool list
+- Tools are auto-generated from `operationId` → tool name, parameters → input schema
+- Custom handlers in `customHandlers` Map override specific tools (e.g., `completeTask`, `searchTasks`, `dailyBriefing`)
+- `EXCLUDED_OPS` set prevents internal endpoints from becoming tools
+- Dev mode: 30s cache TTL. Production: infinite cache
+
+### Agent Traceability Headers
+
+External callers (n8n, Node-RED, AI agents) should send:
+
+| Header | Purpose | Validation |
+|--------|---------|------------|
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+
+Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
+
+## Git Commit Policy
+
+- No `Co-authored-by` trailers — commits come from the user's git identity
+- Commit with descriptive messages, never generic "update" messages
+- PRs opened by an AI agent should be **squash-merged** by the human owner so the final commit lands under the human author's identity
+- Do not push force-authored bot commits directly to `main`
+
+## Deploy Rules
+
+Release through Canary until the owner explicitly requests Stable. Use one Canary App entry, `meitheal-hub-canary`, with slug `meitheal_canary` and image family `meitheal-canary-{arch}`. Settings and other feature work use this same entry. Verify Supervisor has one installed Meitheal Canary before changing discovery or installing an update.
+
+Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
+
+| Channel | Dir | Trigger | Version | Stage |
+|---------|-----|---------|---------|-------|
+| Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
+| Canary | `meitheal-hub-canary/` | Push to `main` | Commit SHA | `experimental` |
+
+- **Stable**: Push a version tag (`v*`) to trigger CI Docker build. Version in `config.yaml` must match the tag (e.g. `version: "0.0.1"` ↔ `v0.0.1`). Also bump `MEITHEAL_VERSION` in `run.sh` to match. Use `node scripts/bump-version.mjs patch` for atomic bumps.
+- **Canary**: Auto-publishes on every push to `main`. Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed by `scripts/update-canary-version.mjs`.
+- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
+- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
+
+## Verification Tiers (Mandatory)
+
+Changes **must** be verified in the correct environment tier before completion.
+
+| Change touches… | Required Tier | How to start |
+|-----------------|---------------|--------------|
+| CSS, layout, UI components, client JS | 🔧 Tier 1: `npm run dev` in `apps/web/` | Local Astro dev server |
+| Ingress, middleware, `serve.mjs` | 🏠 Tier 2: `./scripts/devcontainer-up.sh` | HA devcontainer |
+| HA API, WebSocket, `domains/ha/` | 🏠 Tier 2 | HA devcontainer |
+| Supervisor API, `run.sh`, `config.yaml` | 🏠 Tier 2 | HA devcontainer |
+| Calendar/Todo sync, entity exposure | 🏠 Tier 2 | HA devcontainer |
+| LLM API (`llm_api.py`, `__init__.py`) | 🏠 Tier 2 | HA devcontainer |
+| Addon lifecycle (start/stop/build) | 🏠 Tier 2 | HA devcontainer |
+| Final acceptance on real data | 🌐 Tier 3 | Production HA (`ha.internal`) |
+
+> **⚠️ AGENTS**: Do NOT mark HA integration work as verified using only Tier 1. The canonical Tier 2 path is reopening the checked-in `.devcontainer/devcontainer.json` in Antigravity or VS Code and running `Start Home Assistant`. Use `./scripts/devcontainer-up.sh` for status, recovery, and logs around that environment. See `.agents/workflows/devcontainer.md` for details.
+
+## KCS Rules
+
+- New behavior requires updated docs and a runbook touchpoint
+- ADRs capture architectural and legal/security decisions
+- Error messages should support self-service debugging
+
+## Licensing Boundaries
+
+Meitheal uses a **dual-licensing + proprietary distribution** strategy:
+
+| Scope | License | Notes |
+|-------|---------|-------|
+| Source code (`apps/`, `packages/`, `meitheal-hub/`) | AGPL-3.0 + Commercial | Dual-licensed; see `COMMERCIAL.md` |
+| Distributed binaries (Docker images) | Proprietary | Free for personal/homelab; see public repo LICENSE |
+| `integrations/home-assistant/` | Apache 2.0 | API client boundary — no AGPL contamination |
+| `integrations/nodered/` | Apache 2.0 | API client boundary — no AGPL contamination |
+| `apps/web/src/domains/integrations/vikunja-compat/` | AGPL-3.0 only | Third-party copyright — cannot be commercially relicensed |
+
+**Rules:**
+
+- All PRs require a signed CLA (enforced by `.github/workflows/cla.yml`)
+- Do not move AGPL-only code (e.g. vikunja-compat) into directories covered by the commercial license
+- Integration code in `integrations/` must only communicate with the core via network APIs (REST/WebSocket/MCP)
+- When creating new integration directories, include an explicit `LICENSE` file
+- Docker image OCI labels must use `LicenseRef-Proprietary` (not MIT or AGPL)
+- The `.keys/` directory is gitignored — never commit private signing keys
+
+## Required Files (CI Enforced)
+
+- `README.md`, `AGENTS.md`, `SKILL.md`, `WEBMCP.md`
+- `COMMERCIAL.md`
+- `.coderabbit.yaml`
+- `.skills/core-workflows/SKILL.md`
+- `.zeroclaw/soul.md`
+- `docs/decisions/*.md`, `docs/kcs/*.md`
+- `public/.well-known/mcp.json`, `public/.well-known/jsondoc.json`
+
+---
+## Documentation
+
+# Meitheal Add-on Docs
+
+Meitheal is the Home Assistant-native execution hub for the practical work of running a home or homelab. It brings tasks, daily planning, routines, calendar-linked work, companion flows, voice control, and agent tooling into one local-first system.
+
+## What You Get
+
+- A Home Assistant add-on with an Astro SSR web app
+- A bundled custom component that exposes todo, sensors, services, intents, and agent surfaces inside Home Assistant
+- Search, Settings, PWA, companion, and offline flows that are aware of Home Assistant ingress
+- Optional integrations for calendars, Grocy, Node-RED, n8n, webhooks, and agent protocols
+
+## Installation
+
+### Home Assistant add-on repository
+
+1. Open **Settings** → **Add-ons** → **Add-on Store**
+2. Open **⋮** → **Repositories**
+3. Add `https://github.com/Coolock-Village/meitheal-ha-addon`
+4. Install **Meitheal**
+5. Start the add-on
+6. Open the Web UI
+
+### Local testing without Home Assistant
+
+```bash
+# Build from repo root
+podman build --build-arg BUILD_FROM="ghcr.io/home-assistant/amd64-base:3.23" \
+  -f meitheal-hub/Dockerfile -t local/meitheal .
+
+# Run standalone (no Supervisor)
+podman run --rm -p 3333:3000 -v /tmp/meitheal-data:/data \
+  local/meitheal /run-local.sh
+
+# Verify
+curl http://localhost:3333/api/health
+```
+
+## First Run Inside Home Assistant
+
+1. Confirm Home Assistant discovers the bundled Meitheal integration in **Settings → Devices & Services**
+2. Open the add-on UI and confirm the dashboard loads behind ingress
+3. Visit **Settings** in Meitheal to check integrations, companion guidance, App & PWA status, and agent protocol settings
+
+## Home Assistant Surfaces
+
+### Entities
 
 - `todo.meitheal_tasks`
 - `sensor.meitheal_active_tasks`
 - `sensor.meitheal_overdue_tasks`
 - `sensor.meitheal_total_tasks`
 
-Primary HA services:
+### Services
 
 - `meitheal.create_task`
 - `meitheal.complete_task`
@@ -165,76 +494,295 @@ Primary HA services:
 - `meitheal.complete_task_by_tag`
 - `meitheal.notify_overdue`
 
-Voice and Assist:
+### Built-in voice support
 
-- built-in Assist intents are registered without requiring an LLM
-- `todo.meitheal_tasks` can be exposed to Assist
-- the custom component auto-registers the `Meitheal Tasks` LLM API when supported by Home Assistant
+Meitheal registers Home Assistant intents so core voice flows work even without an LLM. Exposing `todo.meitheal_tasks` to Assist gives you a fast path for common commands like adding tasks, completing tasks, checking what is overdue, and getting today-oriented summaries.
 
-## Home Assistant LLM API
+## Voice, LLM, and Agent Surfaces
 
-Surface name: `Meitheal Tasks`
+When the custom component is available on HA 2026.3+, Home Assistant registers **Meitheal Tasks** as an LLM API.
 
-Verified tool count: 21
+Surface-specific counts matter here:
 
-Tools:
+- Astro MCP: generated tool inventory at `/api/mcp` (`tools/list`)
+- Home Assistant agent access: services and the HA LLM API; no separate MCP server
+- Home Assistant LLM API: 21 tools
+- A2A: gated synchronous task-title search; WebMCP: gated registration in supported browsers
 
-- `meitheal_search_tasks`
-- `meitheal_get_task`
-- `meitheal_create_task`
-- `meitheal_complete_task`
-- `meitheal_update_task`
-- `meitheal_get_overdue`
-- `meitheal_get_todays_tasks`
-- `meitheal_task_summary`
-- `meitheal_get_calendar_events`
-- `meitheal_get_upcoming`
-- `meitheal_daily_briefing`
-- `meitheal_delete_task`
-- `meitheal_batch_complete`
-- `meitheal_link_task`
-- `meitheal_unlink_task`
-- `meitheal_get_task_links`
-- `meitheal_remove_from_todo_list`
-- `meitheal_list_areas`
-- `meitheal_list_goals`
-- `meitheal_move_task`
-- `meitheal_set_goal_progress`
+The Home Assistant LLM API includes task CRUD, search, daily briefing, link management, remove-from-todo-list, area and goal listing, move-to-project, and goal progress updates.
 
-## Home Assistant MCP
+## Calendar and Todo Sync
 
-The custom component also exposes a separate MCP surface.
+Meitheal includes bidirectional task syncing with Home Assistant todo and calendar surfaces.
 
-Verified tool count: 16
+### Calendar sync
 
-Tools:
+When running as an HA add-on with `homeassistant_api: true`, Meitheal can:
 
-- `createTask`
-- `searchTasks`
-- `completeTask`
-- `updateTask`
-- `deleteTask`
-- `getTask`
-- `getOverdueTasks`
-- `getTodaysTasks`
-- `getTaskSummary`
-- `dailyBriefing`
-- `getCalendarEvents`
-- `getUpcoming`
-- `batchComplete`
-- `linkTask`
-- `unlinkTask`
-- `getTaskLinks`
+1. Detect calendar entities
+2. Pull calendar events into Meitheal task context
+3. Push eligible task due dates back to HA calendars
+4. Deduplicate repeated syncs safely
 
-## WebMCP
+### Todo sync
 
-WebMCP is currently an experimental product direction. Treat it as documented
-forward-looking protocol work, not as a mainstream runtime capability on stable
-browsers today.
+The bundled custom component exposes `todo.meitheal_tasks`, which makes Meitheal visible in Home Assistant dashboards, Assist, and automation flows.
 
-## Important operational notes
+## Companion App and PWA
 
-- Meitheal is designed for Home Assistant add-on deployment first.
-- Do not assume one shared count or one shared tool list across all agent surfaces.
-- Some legacy task and board terminology is still present in compatibility layers.
-- Use Home Assistant auth and ingress expectations when describing access patterns.
+Meitheal is designed to stay usable through Home Assistant companion flows and as an installable PWA.
+
+- **Settings → App & PWA** explains installability, update state, and HTTPS requirements
+- companion-safe deep links use ingress-scoped paths
+- x-callback-url and URL handler flows are surfaced directly in Settings
+- offline support keeps the app shell and queued task changes available when connectivity drops
+
+See `docs/companion-app-setup.md` and `docs/kcs/pwa-offline-guide.md` for deeper setup guidance.
+
+## Runtime Notes
+
+- Default database path: `/data/meitheal.db`
+- Startup runs schema and migration checks
+- Supervisor/API access uses `SUPERVISOR_TOKEN` when available
+- Health endpoint: `GET /api/health`
+- Ingress behavior is first-class: Meitheal is designed to stay inside the Home Assistant iframe and companion webviews
+
+## Security
+
+### AppArmor and container isolation
+
+The add-on ships with a restrictive AppArmor profile and uses Home Assistant's add-on isolation model.
+
+### Auth model
+
+- Primary auth path: Home Assistant ingress and Supervisor identity headers
+- No separate cloud auth is required
+- Mutating routes use CSRF and origin/referer validation where applicable
+
+### Additional protections
+
+- structured logging with redaction
+- rate limiting
+- security headers
+- backup and export surfaces
+
+## Publishing Requirements
+
+- `image` in `config.yaml` must keep the `{arch}` suffix
+- published version tags must match the add-on version
+- `repository.yaml` must remain present for repository publishing
+- add-on assets such as `apparmor.txt`, `icon.png`, and `logo.png` must remain present
+
+## Where To Read Next
+
+- `README.md` — product story and quick orientation
+- `WEBMCP.md` — agent protocol breakdown
+- `docs/companion-app-setup.md` — mobile and companion details
+- `docs/kcs/pwa-offline-guide.md` — offline and installability behavior
+- `docs/kcs/search-hub-guide.md` — SearchHub and search parity
+
+---
+## API Endpoints (0.2.35)
+
+### Agents
+- `POST /api/mcp` — mcpEndpoint: Model Context Protocol JSON-RPC endpoint
+- `GET /api/a2a/agent-card` — getA2AAgentCard: Get A2A agent card for discovery
+- `POST /api/a2a/message` — sendA2AMessage: Search task titles through A2A 1.0 JSON-RPC
+
+### Auth
+- `POST /api/agent-tokens` — createAgentToken: Create a scoped API token for an agent or automation
+- `GET /api/agent-tokens` — listAgentTokens: List all agent tokens (metadata only)
+- `PATCH /api/agent-tokens` — updateAgentToken: Update a token's name or scopes
+- `DELETE /api/agent-tokens` — deleteAgentToken: Revoke or permanently delete a token
+
+### Automation
+- `PUT /api/rules/{id}` — updateRule: Update a rule
+- `DELETE /api/rules/{id}` — deleteRule: Delete a rule
+- `POST /api/rules/resolve` — resolveRules: Test rule resolution against a task payload
+
+### Events
+- `GET /api/sse` — subscribeSSE: Subscribe to server-sent events
+
+### Export
+- `GET /api/export/tasks.json` — exportTasksJson: Export all tasks as JSON
+- `GET /api/export/tasks.csv` — exportTasksCsv: Export all tasks as CSV
+- `GET /api/export/tasks.ics` — exportTasksIcs: Export tasks as iCalendar feed
+- `GET /api/export/database.sqlite` — exportDatabase: Download full SQLite database backup
+- `GET /api/export/settings.json` — exportSettings: Export settings as JSON
+- `POST /api/import/settings` — importSettings: Import settings from JSON
+
+### Focus
+- `GET /api/pomodoro` — getPomodoroState: Get current pomodoro timer state
+- `POST /api/pomodoro` — startPomodoro: Start or control a pomodoro session
+
+### Habits
+- `GET /api/habits` — listHabits: List all habits and routines
+- `POST /api/habits` — createHabit: Create a habit template
+- `PUT /api/habits` — updateHabit: Update a habit or record completion
+- `DELETE /api/habits` — deleteHabit: Delete a habit
+
+### Hierarchy
+- `GET /api/areas` — listAreas: List all areas
+- `POST /api/areas` — createArea: Create an area
+- `GET /api/areas/{id}` — getArea: Get area details
+- `PUT /api/areas/{id}` — updateArea: Update an area
+- `DELETE /api/areas/{id}` — deleteArea: Delete an area
+- `GET /api/goals` — listGoals: List all goals
+- `POST /api/goals` — createGoal: Create a goal
+- `GET /api/goals/{id}` — getGoal: Get goal details
+- `PUT /api/goals/{id}` — updateGoal: Update a goal, including progress metrics
+- `DELETE /api/goals/{id}` — deleteGoal: Delete a goal
+- `GET /api/projects` — listProjects: List all projects
+- `POST /api/projects` — createProject: Create a project
+- `GET /api/projects/{id}` — getProject: Get project details
+- `PUT /api/projects/{id}` — updateProject: Update a project
+- `DELETE /api/projects/{id}` — deleteProject: Delete a project
+
+### HomeAssistant
+- `GET /api/ha/connection` — getHAConnection: Get HA WebSocket connection status
+- `GET /api/ha/calendars` — getHACalendars: List HA calendar entities
+- `GET /api/ha/events` — getHAEvents: List recent HA events
+- `GET /api/ha/services` — getHAServices: List HA services
+- `GET /api/ha/addons` — getHAAddons: List HA add-ons
+- `GET /api/ha/agents` — getHAAgents: List HA Assist agents
+- `POST /api/ha/assist` — sendHAAssist: Send a message to HA Assist
+- `GET /api/todo` — listTodoLists: List HA todo list entities
+- `GET /api/todo/items` — getTodoItems: Get items from a HA todo list
+- `POST /api/todo/sync` — syncTodo: Sync tasks with HA todo lists
+
+### Integrations
+- `GET /api/integrations/status` — getIntegrationsStatus: Get status of all integrations
+- `POST /api/integrations/test-webhook` — testWebhook: Fire a test webhook event
+- `POST /api/integrations/test-event` — testEvent: Fire a test HA event bus event
+- `POST /api/integrations/calendar/sync` — syncCalendar: Sync calendars or manage background sync
+- `GET /api/integrations/calendar/status` — getCalendarSyncStatus: Get calendar sync status
+- `GET /api/integrations/n8n/health` — getN8nHealth: Check n8n connectivity
+- `GET /api/integrations/n8n/workflows` — listN8nWorkflows: List n8n workflows
+- `GET /api/integrations/nodered/status` — getNodeRedStatus: Check Node-RED connectivity
+- `GET /api/integrations/nodered/flows` — listNodeRedFlows: List Node-RED flows
+- `POST /api/grocy/sync` — syncGrocy: Sync shopping list with Grocy
+- `GET /api/grocy/settings` — getGrocySettings: Get Grocy integration settings
+- `POST /api/grocy/test` — testGrocy: Test Grocy connectivity
+
+### Labels
+- `GET /api/labels` — listLabels: List all labels
+- `POST /api/labels` — createLabel: Create a label
+- `PUT /api/labels/{id}` — updateLabel: Update a label
+- `DELETE /api/labels/{id}` — deleteLabel: Delete a label
+
+### Pillars
+- `GET /api/pillars` — listPillars: List all identity pillars
+- `POST /api/pillars` — createPillar: Create a pillar
+- `GET /api/pillars/{id}` — getPillar: Get pillar details
+- `PUT /api/pillars/{id}` — updatePillar: Update a pillar
+- `DELETE /api/pillars/{id}` — deletePillar: Delete a pillar
+- `GET /api/pillars/{id}/principles` — listPillarPrinciples: List principles for a pillar
+- `POST /api/pillars/{id}/principles` — addPillarPrinciple: Add a principle to a pillar
+- `GET /api/pillars/{id}/associations` — listPillarAssociations: List goals/habits associated with a pillar
+- `POST /api/pillars/{id}/associations` — addPillarAssociation: Associate a goal or habit with a pillar
+
+### Progress
+- `GET /api/gamification` — getGamificationStats: Get gamification stats and achievements
+
+### Review
+- `GET /api/review/weekly` — getWeeklyReview: Get weekly review summary
+- `GET /api/review/velocity` — getVelocity: Get task completion velocity
+
+### Search
+- `GET /api/search` — searchMeitheal: Universal search across tasks, views, settings, and actions
+
+### Settings
+- `GET /api/settings` — getSettings: Get all application settings
+- `POST /api/settings` — updateSettings: Update settings
+
+### Strategy
+- `GET /api/frameworks` — listFrameworks: List available strategic frameworks
+- `POST /api/frameworks` — createFramework: Create a framework
+- `GET /api/frameworks/{id}` — getFramework: Get framework details
+- `PUT /api/frameworks/{id}` — updateFramework: Update a framework
+- `GET /api/frameworks/{id}/export` — exportFramework: Export framework data
+- `GET /api/rules` — listRules: List strategic rules
+- `POST /api/rules` — createRule: Create a strategic rule
+- `PUT /api/rules` — replaceRules: Atomically replace strategic rules
+- `POST /api/rules/defaults` — restoreRuleDefaults: Atomically restore Strategic preset and reset framework overrides
+
+### System
+- `GET /api/health` — getHealth: Health and readiness probe
+- `HEAD /api/health` — healthPing: Lightweight liveness ping
+- `GET /api/features` — getFeatureFlags: Get runtime feature flags
+- `GET /api/license/status` — getLicenseStatus: Get license key verification status
+
+### Tasks
+- `POST /api/tasks` — createTask: Create a task
+- `GET /api/tasks` — listTasks: List all tasks with optional filters
+- `POST /api/nfc/complete` — completeTaskByNfcTag: Complete the uniquely assigned incomplete task for an NFC tag
+- `POST /api/tasks/create` — createTaskLegacy: Create a new task
+- `POST /api/tasks/{id}/handoff` — manageTaskHandoff: Claim, release, or propose edits to a task
+- `POST /api/tasks/{id}/accept-proposal` — reviewTaskProposal: Approve or reject a pending task proposal
+- `GET /api/tasks/{id}` — getTask: Get a single task by ID
+- `PUT /api/tasks/{id}` — updateTask: Update a task
+- `DELETE /api/tasks/{id}` — deleteTask: Delete a task
+- `POST /api/tasks/clear-completed` — clearCompletedTasks: Archive all completed tasks
+- `DELETE /api/tasks/delete-completed` — deleteCompletedTasks: Permanently delete all completed tasks
+- `POST /api/tasks/reorder` — reorderTasks: Reorder tasks by position
+- `GET /api/tasks/{id}/comments` — getTaskComments: List comments on a task
+- `POST /api/tasks/{id}/comments` — addTaskComment: Add a comment to a task
+- `GET /api/tasks/{id}/links` — getTaskLinks: Get linked tasks
+- `POST /api/tasks/{id}/links` — linkTask: Link two tasks
+- `DELETE /api/tasks/{id}/links` — unlinkTask: Remove a task link
+- `GET /api/tasks/{id}/activity` — getTaskActivity: Get task activity timeline
+- `GET /api/tasks/{id}/timeline` — getTaskTimeline: Get task timeline entries
+- `GET /api/tasks/{id}/time` — getTaskTimeEntries: Get time tracking entries
+- `POST /api/tasks/{id}/time` — addTaskTimeEntry: Log time against a task
+- `POST /api/tasks/{id}/duplicate` — duplicateTask: Duplicate a task
+- `GET /api/templates` — listTemplates: List task templates
+- `POST /api/templates` — createTemplate: Create a task template
+- `GET /api/reminders` — listReminders: List all active reminders
+- `POST /api/reminders` — createReminder: Create a reminder
+- `POST /api/unfurl` — unfurlUrl: Unfurl a URL for link preview metadata
+
+### Users
+- `GET /api/users` — listUsers: List all users (HA + custom)
+- `POST /api/users/custom` — createCustomUser: Create a custom user
+
+### Views
+- `GET /api/lanes` — listLanes: List kanban board lanes
+- `POST /api/lanes` — createLane: Create a kanban lane
+- `PUT /api/lanes/{id}` — updateLane: Update a kanban lane
+- `DELETE /api/lanes/{id}` — deleteLane: Delete a kanban lane
+- `GET /api/saved-filters` — listSavedFilters: List saved filter presets
+- `POST /api/saved-filters` — createSavedFilter: Create a saved filter
+- `PUT /api/saved-filters` — updateSavedFilter: Update a saved filter
+- `DELETE /api/saved-filters` — deleteSavedFilter: Delete a saved filter
+
+### Webhook Events
+- `task.created` — Fires when a new task is created
+- `task.updated` — Fires when a task is updated
+- `task.completed` — Fires when a task is marked complete
+- `task.deleted` — Fires when a task is permanently deleted
+- `task.overdue` — Fires when a task passes its due date without completion
+- `area.updated` — Fires when an area is modified
+
+---
+## Key Integration Points
+
+- **MCP Endpoint**: POST `/api/mcp` — JSON-RPC 2.0 server for AI tool calling
+- **A2A Agent Card**: GET `/api/a2a/agent-card` — gated read-only task-title search
+- **SSE Stream**: GET `/api/sse` — Real-time event subscription
+- **Webhooks**: Configure via PUT `/api/settings` with keys: webhook_endpoint, n8n_webhook_url
+- **HA Event Bus**: Events fired as meitheal_task_* on the Home Assistant event bus
+- **OpenAPI Spec**: GET `/openapi.yaml` — Full API specification
+- **AI Plugin**: GET `/.well-known/ai-plugin.json` — AI plugin manifest
+
+## Ubiquitous Language
+
+| Term | Meaning |
+|------|---------|
+| Area | Top-level organizational container (WHERE) |
+| Goal | Desired outcome with optional metrics (WHAT) |
+| Project | Container for tasks within an area |
+| Task | Individual action item with lifecycle |
+| Pillar | Identity anchor — permanent WHY layer |
+| Routine | Repeating habit template |
+| task_kind | Behavioral variant: standard_action, shopping_item, checklist, routine_instance |
+| Lens | Strategic framework (RICE scoring, etc.) |

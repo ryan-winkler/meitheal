@@ -12,7 +12,8 @@
  * @bounded-context event-dispatch
  */
 import { writeFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { stringify } from "yaml"
 
 const spec = {
@@ -312,7 +313,7 @@ const spec = {
   },
 }
 
-const output = resolve(process.cwd(), "public/asyncapi.yaml")
+const output = resolve(dirname(fileURLToPath(import.meta.url)), "../public/asyncapi.yaml")
 writeFileSync(output, stringify(spec), "utf-8")
 
 const sseChannels = Object.keys(spec.channels).filter(c => c.startsWith("sse/")).length

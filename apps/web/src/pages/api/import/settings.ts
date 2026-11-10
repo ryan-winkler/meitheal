@@ -1,11 +1,12 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
-import { deleteAllRules, createRule } from "@domains/strategy/rule-repository"
-import { saveOverrides, resetOverrides, getAllOverrides } from "@domains/strategy/framework-repository"
+import { replaceRules } from "@domains/strategy/rule-repository"
+import { saveOverrides, resetOverrides, getAllOverrides, loadBuiltInFramework } from "@domains/strategy/framework-repository"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
-import type { TaskRule, FrameworkOverrides } from "@meitheal/domain-strategy"
-import { DEFAULT_AI_SCOPE } from "@meitheal/domain-strategy"
+import type { FrameworkOverrides } from "@meitheal/domain-strategy"
+import { validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import { parseRuleInput } from "@domains/strategy/rule-input"
 
 /** Known safe setting keys — only these will be imported.
  * IMPORTANT: Update this set when adding new saveSetting() calls.
@@ -42,7 +43,7 @@ const ALLOWED_KEYS = new Set([
 ])
 
 export const POST: APIRoute = async ({ request, locals }) => {
-    if (!locals.hassIsAdmin && !locals.agentToken?.scopes.includes("settings:write")) {
+    if (locals.agentToken ? !locals.agentToken.scopes.includes("settings:write") : !locals.hassIsAdmin) {
         return new Response(JSON.stringify({ error: "Admin access required for settings import" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
     try {
@@ -72,6 +73,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
         // Detect v2 format (has settings, rules, frameworkOverrides keys)
         const isV2 = "_version" in payload && payload._version === 2
         const settingsData = isV2 ? (payload.settings as Record<string, unknown> ?? {}) : payload
+        // Reject malformed framework imports before writing settings/rules or clearing overrides.
+        if (isV2 && payload.frameworkOverrides !== undefined) {
+            const invalid = (message: string) => new Response(JSON.stringify({ error: message }), { status: 400, headers: { "Content-Type": "application/json" } })
+            if (!Array.isArray(payload.frameworkOverrides)) return invalid("frameworkOverrides must be an array")
+            for (const entry of payload.frameworkOverrides) {
+                if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid("Each framework override must be an object")
+                const frameworkId = entry.frameworkId ?? entry.framework_id
+                const base = typeof frameworkId === "string" ? await loadBuiltInFramework(frameworkId) : null
+                if (!base) return invalid("Framework override requires a known built-in framework ID")
+                const errors = validateFrameworkOverrides(entry.overrides, base.fields.map((field) => field.key))
+                if (errors) return invalid(errors.join(". "))
+            }
+        }
+        let importedRules
+        try {
+            if (isV2 && payload.rules !== undefined) {
+                if (!Array.isArray(payload.rules) || payload.rules.length > 1000) throw new Error("Invalid rules list")
+                importedRules = payload.rules.map(parseRuleInput)
+            }
+        } catch (error) {
+            return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Invalid rules" }), { status: 400, headers: { "Content-Type": "application/json" } })
+        }
 
         // ── Import settings (v1 and v2 compatible) ──
         const entries: Array<{ key: string; value: string }> = []
@@ -84,7 +107,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
                 continue
             }
 
-            const stringValue = typeof value === "string" ? value : JSON.stringify(value)
+            const stringValue = JSON.stringify(value)
             entries.push({ key, value: stringValue })
         }
 
@@ -95,29 +118,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
         // ── Import rules (v2 only) ──
         let rulesCount = 0
-        if (isV2 && Array.isArray(payload.rules)) {
-            await deleteAllRules()
-            for (const rule of payload.rules as Array<Record<string, unknown>>) {
-                const taskRule: TaskRule = {
-                    id: crypto.randomUUID(),
-                    name: String(rule.name ?? "Imported Rule"),
-                    description: String(rule.description ?? ""),
-                    ruleType: String(rule.ruleType ?? "strategic-lens") as TaskRule["ruleType"],
-                    taskTypes: Array.isArray(rule.taskTypes) ? rule.taskTypes as string[] : [],
-                    tags: Array.isArray(rule.tags) ? rule.tags as string[] : [],
-                    lensIds: Array.isArray(rule.lensIds) ? rule.lensIds as string[] : [],
-                    aiScope: typeof rule.aiScope === "object" && rule.aiScope !== null
-                        ? rule.aiScope as TaskRule["aiScope"]
-                        : { ...DEFAULT_AI_SCOPE },
-                    constraints: String(rule.constraints ?? ""),
-                    priority: Number(rule.priority ?? 100),
-                    enabled: rule.enabled !== false,
-                    createdAt: "",
-                    updatedAt: "",
-                }
-                await createRule(taskRule)
-                rulesCount++
-            }
+        if (importedRules) {
+            rulesCount = (await replaceRules(importedRules)).length
         }
 
         // ── Import framework overrides (v2 only) ──

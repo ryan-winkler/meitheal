@@ -88,7 +88,8 @@ async def async_attach_trigger(
 
     event_config = {
         CONF_PLATFORM: "event",
-        "event_type": event_type,
+        # The event attachment helper expects the schema-normalized list.
+        "event_type": [event_type],
         "event_data": {"domain": DOMAIN},
     }
 

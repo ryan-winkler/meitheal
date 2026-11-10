@@ -166,8 +166,7 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
             row.classList.toggle("row-done", value === "complete")
             // Gamification + confetti on completion
             if (value === "complete") {
-              const priority = Number(row?.dataset.priority ?? 3)
-              onTaskCompleted(priority)
+              onTaskCompleted(await res.json())
             }
             // Update inline select
             const sel = row.querySelector<HTMLSelectElement>(`select[data-field="status"]`)

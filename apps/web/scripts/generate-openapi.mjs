@@ -25,22 +25,61 @@ const schemas = {
       id: { $ref: "#/components/schemas/TaskId" },
       title: { type: "string", description: "Task title — the primary human-readable label" },
       description: { type: "string", nullable: true, description: "Rich text task description" },
-      status: { type: "string", enum: ["todo", "in_progress", "complete", "archived"], description: "Current task lifecycle state" },
-      priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
-      due_date: { type: "string", format: "date-time", nullable: true },
+      status: { type: "string", description: "Configured status key; complete is the canonical completed state" },
+      priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority: 1=urgent, 2=high, 3=medium, 4=low, 5=lowest" },
+      due_date: { type: "string", nullable: true, description: "ISO date or date-time" },
+      nfc_tag_id: { type: "string", nullable: true, description: "Assigned NFC tag; set through task update" },
+      kanban_position: { type: "number", description: "Persisted task ordering" },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       area_id: { type: "string", nullable: true },
       goal_id: { type: "string", nullable: true },
       project_id: { type: "string", nullable: true },
       parent_id: { type: "string", nullable: true, description: "Parent task ID for subtask hierarchy" },
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
-      labels: { type: "string", nullable: true, description: "Comma-separated label names" },
+      labels: { type: "string", nullable: true, description: "JSON-encoded array of label strings" },
       board_name: { type: "string", nullable: true },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
       updated_at: { type: "integer", description: "Unix timestamp (ms)" },
     },
     required: ["id", "title", "status"],
+  },
+  TaskCreate: {
+    type: "object",
+    required: ["title"],
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 500 },
+      description: { type: "string", maxLength: 10000 },
+      urgency: { type: "integer", minimum: 0, maximum: 5, default: 0 },
+      importance: { type: "integer", minimum: 0, maximum: 5, default: 0 },
+      status: { type: "string", default: "pending" },
+      priority: { type: "integer", minimum: 1, maximum: 5, default: 3 },
+      due_date: { type: "string", nullable: true, description: "ISO date or date-time" },
+      labels: { type: "string", description: "JSON-encoded string array", default: "[]" },
+      assigned_to: { type: "string", nullable: true },
+      area_id: { type: "string", nullable: true },
+      project_id: { type: "string", nullable: true },
+      goal_id: { type: "string", nullable: true },
+      parent_id: { type: "string", nullable: true },
+      task_kind: { type: "string" },
+      custom_fields: { type: "string", description: "JSON-encoded object string" },
+    },
+  },
+  TaskRule: {
+    type: "object",
+    required: ["name"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 500 },
+      description: { type: "string", maxLength: 10000 },
+      ruleType: { type: "string", enum: ["strategic-lens", "ai-scope", "custom"], default: "strategic-lens" },
+      taskTypes: { type: "array", items: { type: "string", enum: ["epic", "story", "task", "documentation"] } },
+      tags: { type: "array", items: { type: "string" } },
+      lensIds: { type: "array", items: { type: "string" } },
+      aiScope: { type: "object", description: "Advisory AI context; these values are not enforced authorization" },
+      constraints: { type: "string", maxLength: 10000 },
+      priority: { type: "number" },
+      enabled: { type: "boolean" },
+    },
   },
   Area: {
     type: "object",
@@ -64,6 +103,7 @@ const schemas = {
       metric_type: { type: "string", nullable: true },
       metric_target: { type: "number", nullable: true },
       metric_current: { type: "number", nullable: true },
+      progress: { type: "number", minimum: 0, maximum: 100, description: "Goal completion percentage" },
     },
     required: ["id", "title"],
   },
@@ -164,7 +204,7 @@ const schemas = {
   },
   AgentScope: {
     type: "string",
-    enum: ["tasks:read", "tasks:write", "projects:read", "projects:write", "pillars:read", "pillars:write", "search:read", "settings:read", "settings:write", "webhooks:manage", "admin:*"],
+    enum: ["tasks:read", "tasks:write", "tasks:propose", "tasks:delete", "projects:read", "projects:write", "search:read", "settings:read", "settings:write", "webhooks:write", "mcp:execute", "a2a:execute"],
     description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs.",
   },
   AgentToken: {
@@ -229,6 +269,19 @@ const err500 = problemContent("Internal server error (RFC 9457)")
 // ─── Route Catalog ────────────────────────────────────────────────────────────
 // Each route has AI-prompt-engineered descriptions that guide agent usage.
 
+// A task response requires identity/state; a partial update does not.
+schemas.TaskUpdate = {
+  type: "object",
+  properties: {
+    ...schemas.TaskCreate.properties,
+    nfc_tag_id: schemas.Task.properties.nfc_tag_id,
+    start_date: { type: "string", nullable: true },
+    end_date: { type: "string", nullable: true },
+    progress: { type: "integer", minimum: 0, maximum: 100 },
+    is_favorite: { type: "boolean" },
+  },
+}
+
 const paths = {
   // ── Health ──
   "/api/health": {
@@ -253,32 +306,45 @@ const paths = {
 
   // ── Tasks CRUD ──
   "/api/tasks": {
+    post: {
+      operationId: "createTask", tags: ["Tasks"], summary: "Create a task",
+      description: "Canonical task creation. Accepts first-class description, priority and due date; returns the task as a flat object.",
+      requestBody: { required: true, content: { "application/json": { schema: ref("TaskCreate") } } },
+      responses: { 201: jsonContent(ref("Task"), "Created task"), 400: err400, 500: err500 },
+    },
     get: {
       operationId: "listTasks",
       tags: ["Tasks"],
       summary: "List all tasks with optional filters",
-      description: "Retrieve tasks filtered by status, area, project, labels, priority, assignee, or board. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
+      description: "Retrieve tasks filtered by status, area, project, label, priority or assignee. Returns a paginated object with tasks, total, limit and offset.",
       parameters: [
         { name: "status", in: "query", schema: { type: "string" }, description: "Filter: todo, in_progress, complete, archived" },
         { name: "area_id", in: "query", schema: { type: "string" } },
         { name: "project_id", in: "query", schema: { type: "string" } },
-        { name: "board_name", in: "query", schema: { type: "string" } },
+        { name: "label", in: "query", schema: { type: "string" } },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
-        { name: "sort", in: "query", schema: { type: "string", enum: ["created", "updated", "priority", "due_date"] } },
-        { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] } },
+        { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 100, minimum: 1, maximum: 500 } },
         { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
       ],
       responses: {
-        200: jsonContent(arrOf("Task"), "Task list"),
+        200: jsonContent({ type: "object", required: ["tasks", "total", "limit", "offset"], properties: { tasks: arrOf("Task"), total: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" } } }, "Paginated task list"),
         500: err500,
       },
     },
   },
+  "/api/nfc/complete": {
+    post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
+      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+    },
+  },
   "/api/tasks/create": {
     post: {
-      operationId: "createTask",
+      operationId: "createTaskLegacy",
       tags: ["Tasks"],
       summary: "Create a new task",
       description: "Create a task with optional calendar sync, assignment, and framework payload. Supports idempotency via Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
@@ -328,6 +394,59 @@ const paths = {
       },
     },
   },
+  "/api/tasks/{id}/handoff": {
+    post: {
+      operationId: "manageTaskHandoff",
+      tags: ["Tasks"],
+      summary: "Claim, release, or propose edits to a task",
+      description: "Requires tasks:propose. Claim returns a five-minute lease. Release and propose require that lease and the issuing token. Propose sends title or description changes to the administrator review queue without changing the task.",
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "Task ID or ticket key" }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action"],
+        properties: {
+          action: { type: "string", enum: ["claim", "release", "propose"] },
+          lease: { type: "string", format: "uuid", description: "Required for release and propose" },
+          summary: { type: "string", maxLength: 500, description: "Required for propose" },
+          updates: { type: "object", description: "Required for propose. Include at least one field.", properties: {
+            title: { type: "string", minLength: 1, maxLength: 500 },
+            description: { type: "string", maxLength: 10000 },
+          }, additionalProperties: false },
+        },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Claim returns lease and expiresAt. Proposal returns hash and reviewUntil. Times are Unix milliseconds." },
+        400: { description: "Invalid handoff request" },
+        401: { description: "An active agent token is required" },
+        403: { description: "The agent token lacks tasks:propose" },
+        404: { description: "Task not found" },
+        409: { description: "The task, claim, or proposal is unavailable or changed" },
+        422: { description: "The proposal does not change the task" },
+      },
+    },
+  },
+  "/api/tasks/{id}/accept-proposal": {
+    post: {
+      operationId: "reviewTaskProposal",
+      tags: ["Tasks"],
+      summary: "Approve or reject a pending task proposal",
+      description: "Home Assistant administrator session and same-site request required. A proposal hash ties the decision to the reviewed content. Agent tokens cannot review proposals.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action", "proposal_hash"],
+        properties: { action: { type: "string", enum: ["accept", "reject"] }, proposal_hash: { type: "string", pattern: "^[a-f0-9]{64}$" } },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Review decision applied" },
+        403: { description: "A same-site Home Assistant administrator session is required" },
+        409: { description: "The proposal expired, was already reviewed, or its task changed" },
+      },
+    },
+  },
   "/api/tasks/{id}": {
     get: {
       operationId: "getTask",
@@ -341,9 +460,9 @@ const paths = {
       operationId: "updateTask",
       tags: ["Tasks"],
       summary: "Update a task",
-      description: "Partial update — only send fields you want to change. Setting status to 'complete' triggers webhook events and optional calendar cleanup. An empty body returns 200 (tolerant reader pattern).",
+      description: "Partial update — only send fields you want to change. Setting status to 'complete' triggers webhook events and optional calendar cleanup. An empty body is rejected with 400. NFC assignment uses nfc_tag_id (or null to clear).",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-      requestBody: { content: { "application/json": { schema: ref("Task") } } },
+      requestBody: { content: { "application/json": { schema: ref("TaskUpdate") } } },
       responses: { 200: jsonContent(ref("Task"), "Updated"), 400: err400, 404: jsonContent(ref("ProblemDetail"), "Not found") },
     },
     delete: {
@@ -381,7 +500,7 @@ const paths = {
       description: "Update sort positions for a list of tasks. Used by drag-and-drop UI but also useful for agents that want to prioritize task order.",
       requestBody: {
         required: true,
-        content: { "application/json": { schema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, position: { type: "integer" } } } } } } } },
+        content: { "application/json": { schema: { type: "object", required: ["ordered_ids"], properties: { ordered_ids: { type: "array", minItems: 1, items: { type: "string" } } } } } },
       },
       responses: { 200: { description: "Reordered" } },
     },
@@ -596,18 +715,24 @@ const paths = {
 
   // ── Rules Engine ──
   "/api/rules": {
-    get: { operationId: "listRules", tags: ["Automation"], summary: "List automation rules", description: "Rules engine for automatic task mutations (e.g., auto-assign, auto-label, auto-prioritize).", responses: { 200: { description: "Rules" } } },
-    post: { operationId: "createRule", tags: ["Automation"], summary: "Create an automation rule", responses: { 201: { description: "Created" } } },
+    get: { operationId: "listRules", tags: ["Strategy"], summary: "List strategic rules", description: "Strategic lenses and advisory AI context. These rules do not enforce agent mutation permissions.", responses: { 200: { description: "Rules" } } },
+    post: { operationId: "createRule", tags: ["Strategy"], summary: "Create a strategic rule", requestBody: { content: { "application/json": { schema: ref("TaskRule") } } }, responses: { 201: { description: "Created" } } },
+    put: {
+      operationId: "replaceRules", tags: ["Strategy"], summary: "Atomically replace strategic rules",
+      description: "Validates all rules before one transaction. Omit replaceIds for an explicit full replacement; provide IDs to replace only editor-owned defaults and preserve custom rules.",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["rules"], properties: { rules: { type: "array", maxItems: 1000, items: ref("TaskRule") }, replaceIds: { type: "array", maxItems: 1000, items: { type: "string", maxLength: 128 } } } } } } },
+      responses: { 200: { description: "Replacement committed" }, 400: err400, 500: err500 },
+    },
   },
   "/api/rules/{id}": {
     put: { operationId: "updateRule", tags: ["Automation"], summary: "Update a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteRule", tags: ["Automation"], summary: "Delete a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/rules/defaults": {
-    get: { operationId: "getRuleDefaults", tags: ["Automation"], summary: "Get default rule configuration", responses: { 200: { description: "Defaults" } } },
+    post: { operationId: "restoreRuleDefaults", tags: ["Strategy"], summary: "Atomically restore Strategic preset and reset framework overrides", responses: { 200: { description: "Defaults restored" }, 500: err500 } },
   },
   "/api/rules/resolve": {
-    post: { operationId: "resolveRules", tags: ["Automation"], summary: "Test rule resolution against a task payload", description: "Dry-run: shows what rules would fire for a given task payload without applying changes.", responses: { 200: { description: "Resolution result" } } },
+    post: { operationId: "resolveRules", tags: ["Automation"], summary: "Test rule resolution against a task payload", description: "Dry-run: shows matching lenses and advisory AI context without applying changes.", responses: { 200: { description: "Resolution result" } } },
   },
 
   // ── Features ──
@@ -641,7 +766,18 @@ const paths = {
   "/api/integrations/status": { get: { operationId: "getIntegrationsStatus", tags: ["Integrations"], summary: "Get status of all integrations", responses: { 200: { description: "Status map" } } } },
   "/api/integrations/test-webhook": { post: { operationId: "testWebhook", tags: ["Integrations"], summary: "Fire a test webhook event", description: "Sends a test event to configured webhook endpoints. Use this to verify webhook connectivity.", responses: { 200: { description: "Test result" } } } },
   "/api/integrations/test-event": { post: { operationId: "testEvent", tags: ["Integrations"], summary: "Fire a test HA event bus event", responses: { 200: { description: "Test result" } } } },
-  "/api/integrations/calendar/sync": { post: { operationId: "syncCalendar", tags: ["Integrations"], summary: "Trigger calendar sync", responses: { 200: { description: "Sync result" } } } },
+  "/api/integrations/calendar/sync": { post: {
+    operationId: "syncCalendar", tags: ["Integrations"], summary: "Sync calendars or manage background sync",
+    description: "Use action=sync for an immediate import, enable to configure background sync, or disable to stop it. Provider failures are returned explicitly.",
+    requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["action"], properties: {
+      action: { type: "string", enum: ["sync", "enable", "disable"] },
+      entity_id: { type: "string" }, entities: { type: "array", items: { type: "string" } },
+      write_back: { type: "boolean" }, interval_ms: { type: "integer" },
+      sync_mode: { type: "string", enum: ["import", "export", "bidirectional"] },
+      sync_modes: { type: "object", additionalProperties: { type: "string", enum: ["import", "export", "bidirectional"] } },
+    } } } } },
+    responses: { 200: { description: "Sync result" }, 400: err400, 502: { description: "One or more calendar providers failed" }, 500: err500 },
+  } },
   "/api/integrations/calendar/status": { get: { operationId: "getCalendarSyncStatus", tags: ["Integrations"], summary: "Get calendar sync status", responses: { 200: { description: "Status" } } } },
   "/api/integrations/n8n/health": { get: { operationId: "getN8nHealth", tags: ["Integrations"], summary: "Check n8n connectivity", responses: { 200: { description: "Health" } } } },
   "/api/integrations/n8n/workflows": { get: { operationId: "listN8nWorkflows", tags: ["Integrations"], summary: "List n8n workflows", responses: { 200: { description: "Workflows" } } } },
@@ -673,7 +809,14 @@ const paths = {
 
   // ── A2A ──
   "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get A2A agent card for discovery", responses: { 200: { description: "Agent card" } } } },
-  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Send A2A message", responses: { 200: { description: "Response" } } } },
+  "/api/a2a/message": { post: {
+    operationId: "sendA2AMessage", tags: ["Agents"], summary: "Search task titles through A2A 1.0 JSON-RPC",
+    description: "Requires a2a:execute and search:read. Supports synchronous SendMessage task-title search only; returns a message, not a background task. Streaming, push notifications and task tracking are unsupported.",
+    parameters: [{ name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } }],
+    requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["jsonrpc", "method", "id", "params"], properties: {
+      jsonrpc: { type: "string", enum: ["2.0"] }, method: { type: "string", enum: ["SendMessage", "GetTask", "CancelTask", "ListTasks"] }, id: { type: "string" }, params: { type: "object", additionalProperties: true },
+    } } } } }, responses: { 200: { description: "JSON-RPC result or error; unknown tasks are never fabricated" }, 401: { description: "Agent token required" }, 403: { description: "Required scopes missing" }, 404: { description: "Protocol disabled" } },
+  } },
 
   // ── Agent Tokens (Zero-Trust Auth) ──
   "/api/agent-tokens": {

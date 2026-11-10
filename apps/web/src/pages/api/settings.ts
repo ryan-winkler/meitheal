@@ -13,6 +13,8 @@ const logger = createLogger({
   auditEnabled: true,
 })
 
+const isSensitiveKey = (key: string): boolean => /(?:token|password|secret|api_key|license_key)$/i.test(key)
+
 /**
  * Settings API — persists user preferences (framework scoring config, etc.)
  * Stores key-value pairs in a `settings` table.
@@ -31,17 +33,17 @@ export const GET: APIRoute = async ({ url }) => {
       if (!setting) {
         return apiJson({ key, value: null })
       }
-      return apiJson(setting)
+      return apiJson(isSensitiveKey(key) ? { key, value: null, configured: Boolean(setting.value) } : setting)
     }
 
     // P3.1: Return all settings (filter sensitive keys from bulk response)
-    const SENSITIVE_KEYS = new Set(["grocy_api_key", "webhook_secret"])
     const rows = await repo.getAll()
     const settings: Record<string, unknown> = {}
     for (const row of rows) {
       const k = String(row.key)
-      if (SENSITIVE_KEYS.has(k)) {
-        settings[k] = "••••••••"
+      if (isSensitiveKey(k)) {
+        settings[k] = null
+        settings[`${k}_configured`] = Boolean(row.value && row.value !== "null" && row.value !== '""')
         continue
       }
       try {
@@ -83,7 +85,7 @@ export const PUT: APIRoute = async ({ request }) => {
     }
 
     await repo.upsert(key, value)
-    return apiJson({ key, value: body.value, updated_at: Date.now() })
+    return apiJson({ key, value: isSensitiveKey(key) ? null : body.value, updated_at: Date.now() })
   } catch (err) {
     logger.log("error", {
       event: "api.settings.put.failed",

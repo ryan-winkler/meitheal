@@ -535,7 +535,10 @@ export function closeWizard(): void {
   dialog?.close()
 }
 
-export function initFrameworkWizard(onCreated?: () => void): void {
+export function initFrameworkWizard(
+  onCreated?: () => void,
+  mutate: (action: () => Promise<boolean>) => Promise<boolean> = (action) => action(),
+): void {
   const dialog = document.getElementById("framework-wizard-dialog") as HTMLDialogElement | null
   if (!dialog) return
 
@@ -622,7 +625,7 @@ export function initFrameworkWizard(onCreated?: () => void): void {
       saveBtn.setAttribute("disabled", "")
       saveBtn.textContent = "Saving…"
 
-      const success = await saveFramework()
+      const success = await mutate(saveFramework)
       if (success) {
         closeWizard()
         onCreated?.()

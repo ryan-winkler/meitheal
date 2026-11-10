@@ -14,3 +14,21 @@ docs
 *.md
 !apps/web/README.md
 !packages/*/README.md
+
+# Keep local credentials, signing material and runtime databases out of builds.
+.keys
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+**/.data
+**/*.db
+**/*.db-*
+
+# Inputs used by build-time agent documentation.
+!README.md
+!AGENTS.md
+!meitheal-hub/DOCS.md
+
+**/__pycache__
+**/*.pyc

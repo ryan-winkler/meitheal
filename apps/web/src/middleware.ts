@@ -1,5 +1,4 @@
 import type { MiddlewareHandler } from "astro";
-import { ingressPolicy, type IngressContext } from "./lib/ingress-policy";
 import { apiProblem, apiRateLimited } from "./lib/api-response";
 import {
   getHassUserId,
@@ -92,7 +91,7 @@ if (typeof _rateLimitCleanup?.unref === "function") _rateLimitCleanup.unref();
 const botRateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const BOT_RATE_LIMIT = 60;
 const BOT_RATE_WINDOW_MS = 60_000;
-const BOT_PATH_PATTERNS = ["/accept-proposal", "/api/mcp"];
+const BOT_PATH_PATTERNS = ["/accept-proposal", "/handoff", "/api/mcp"];
 
 function isBotEndpoint(pathname: string): boolean {
   // Use segment-boundary matching to avoid false positives
@@ -206,8 +205,8 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
   locals.hassioTokenPresent = hasHassioToken(request.headers);
 
   // Extract authenticated HA user identity from Supervisor ingress headers
-  locals.hassUserId = getHassUserId(request.headers);
-  locals.hassIsAdmin = isHassAdmin(request.headers);
+  locals.hassUserId = getHassUserId(request.headers, !supervisorTokenPresent)
+  locals.hassIsAdmin = isHassAdmin(request.headers, !supervisorTokenPresent)
 
   // ── Agent/Automation source identification ──
   // n8n, Node-RED, and AI agents should send these headers to identify themselves.
@@ -311,7 +310,7 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
 
   // ── Agent Token Authorization (zero-trust, opt-in) ──
   // Resolve Bearer token from Authorization header.
-  // HA ingress sessions bypass this entirely (X-Hass-User-Id present).
+  // Explicit tokens retain their own permissions even inside HA ingress.
   let resolvedAgent: ResolvedAgent | null = null
   if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/health")) {
     try {
@@ -319,7 +318,7 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
     } catch (authError) {
       // resolveAgentAuth throws a Response for invalid/revoked/expired tokens
       if (authError instanceof Response) return authError
-      // Unexpected error — log and continue (fail-open for safety)
+      // Credential verification errors must not turn an explicit token into anonymous access.
       logger.log("warn", {
         event: "http.agent_auth_error",
         domain: "security",
@@ -327,20 +326,24 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
         request_id: requestId,
         message: `Agent auth error: ${authError instanceof Error ? authError.message : "unknown"}`,
       })
+      return apiProblem({ status: 503, detail: "Agent authentication is temporarily unavailable." })
     }
 
     // Scope enforcement — check route-level permissions for agent tokens
+    const requiredScope = resolveRouteScope(url.pathname, request.method)
     if (resolvedAgent) {
-      const requiredScope = resolveRouteScope(url.pathname, request.method)
-      if (requiredScope) {
-        const scopeError = requireScope(resolvedAgent, requiredScope)
-        if (scopeError) return scopeError
-      }
+      if (!requiredScope) return apiProblem({ status: 403, detail: "This operation is not available to agent tokens." })
+      const scopeError = requireScope(resolvedAgent, requiredScope)
+      if (scopeError) return scopeError
+    } else if (requiredScope === "settings:write" &&
+      (supervisorTokenPresent || locals.hassUserId) && !locals.hassIsAdmin) {
+      return apiProblem({ status: 403, detail: "A Home Assistant administrator must change household settings." })
     }
   }
 
   // Attach agent info to locals for downstream route access
   locals.agentToken = resolvedAgent ?? undefined
+  if (resolvedAgent) locals.hassIsAdmin = false // Explicit token authority never inherits browser-admin headers.
 
   // CSRF origin check for mutating API requests (defense-in-depth)
   const method = request.method.toUpperCase();

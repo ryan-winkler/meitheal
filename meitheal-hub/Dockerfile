@@ -25,6 +25,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY apps/web/ apps/web/
 COPY integrations/ integrations/
 COPY meitheal-hub/ meitheal-hub/
+COPY README.md AGENTS.md ./
 
 # Layer 4: Build the Astro app
 RUN pnpm --filter @meitheal/web build
@@ -34,6 +35,7 @@ RUN pnpm --filter @meitheal/web build
 FROM ${BUILD_FROM}
 
 LABEL io.hass.type="addon"
+LABEL org.opencontainers.image.licenses="LicenseRef-Proprietary"
 
 RUN apk add --no-cache nodejs npm curl ca-certificates bash
 RUN npm install -g pnpm@10.8.0

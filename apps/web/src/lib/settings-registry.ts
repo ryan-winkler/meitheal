@@ -255,7 +255,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
   },
   {
     id: "field-bot-proposals",
-    label: "Bot Proposals",
+    label: "Agent approvals",
     anchorId: "bot-allow-proposals",
     sectionId: "automation-ai-settings",
     keywords: ["bot", "proposals", "handoff", "agent", "accept", "lock"],

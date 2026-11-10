@@ -498,8 +498,9 @@ export class TaskRepository {
                    t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
                    t.is_favorite, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
-                   t.ticket_number, t.assigned_to, t.checklists,
-                   t.recurrence_rule, t.created_at, t.updated_at,
+                   t.ticket_number, t.assigned_to, t.checklists, t.nfc_tag_id, t.kanban_position,
+                   t.recurrence_rule, t.urgency, t.importance, t.eisenhower_override,
+                   t.effort_minutes, t.effort_type, t.blocked_by, t.created_at, t.updated_at,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
             FROM tasks t
             LEFT JOIN tasks p ON t.parent_id = p.id
@@ -544,7 +545,7 @@ export class TaskRepository {
     limit?: number;
     offset?: number;
   }): Promise<{ tasks: TaskRow[]; total: number }> {
-    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date"];
+    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"];
     const sortCol = validSorts.includes(opts.sort ?? "") ? opts.sort! : "created_at";
     const order = opts.order ?? "DESC";
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
@@ -570,9 +571,10 @@ export class TaskRepository {
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                              ticket_number, assigned_to, created_at, updated_at
+                              ticket_number, assigned_to, kanban_position, nfc_tag_id, urgency, importance,
+                              eisenhower_override, effort_minutes, effort_type, blocked_by, created_at, updated_at
                        FROM tasks${where}
-                       ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
+                       ORDER BY ${sortCol} ${order} NULLS LAST, id ASC LIMIT ${limit} OFFSET ${offset}`;
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
     const [result, countResult] = await Promise.all([
@@ -691,6 +693,15 @@ export class TaskRepository {
     return result.rows as unknown as TaskRow[];
   }
 
+  /** Resolve a physical tag without silently choosing between duplicate assignments. */
+  async findByNfcTag(tagId: string): Promise<Array<{ id: string; title: string; status: string }>> {
+    const result = await this.client.execute({
+      sql: "SELECT id, title, status FROM tasks WHERE nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2",
+      args: [tagId],
+    })
+    return result.rows as unknown as Array<{ id: string; title: string; status: string }>
+  }
+
   /** Get the next sequential ticket number for MTH-N key assignment */
   async getNextTicketNumber(): Promise<number> {
     const result = await this.client.execute("SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks");
@@ -764,7 +775,7 @@ export class TaskRepository {
    * Dynamic update: only SET the columns present in `fields`.
    * @returns The full updated row (re-fetched after update).
    */
-  async updateTask(id: string, fields: Record<string, InValue>): Promise<TaskRow | null> {
+  async updateTask(id: string, fields: Record<string, InValue>, expectedStatus?: string): Promise<TaskRow | null> {
     const updates: string[] = [];
     const args: InValue[] = [];
     const now = Date.now();
@@ -779,10 +790,12 @@ export class TaskRepository {
     args.push(now);
     args.push(id);
 
-    await this.client.execute({
-      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`,
+    if (expectedStatus !== undefined) args.push(expectedStatus)
+    const updateResult = await this.client.execute({
+      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${expectedStatus !== undefined ? " AND status = ?" : ""}`,
       args,
     });
+    if (!updateResult.rowsAffected) return null
 
     // Re-fetch the updated row
     const result = await this.client.execute({
@@ -790,7 +803,7 @@ export class TaskRepository {
                    framework_payload, calendar_sync_state, area_id, custom_fields,
                    parent_id, time_tracked, start_date, end_date, progress, color,
                    is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                   ticket_number, assigned_to, checklists, urgency, importance,
+                   ticket_number, assigned_to, checklists, urgency, importance, nfc_tag_id,
                    eisenhower_override, created_at, updated_at
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],

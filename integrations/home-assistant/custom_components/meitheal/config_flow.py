@@ -9,6 +9,7 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
 from .const import DEFAULT_HOST, DEFAULT_PORT, DOMAIN, HOSTNAME_CANDIDATES
 
@@ -37,7 +38,7 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
     # ── Supervisor addon discovery (zero-touch) ──────────────────────────
 
     async def async_step_hassio(
-        self, discovery_info: dict[str, Any]
+        self, discovery_info: HassioServiceInfo | dict[str, Any]
     ) -> ConfigFlowResult:
         """Handle Supervisor addon discovery.
 
@@ -54,8 +55,13 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
-        host = discovery_info.get(CONF_HOST, DEFAULT_HOST)
-        port = int(discovery_info.get(CONF_PORT, DEFAULT_PORT))
+        payload = (
+            discovery_info.config
+            if hasattr(discovery_info, "config")
+            else (discovery_info if isinstance(discovery_info, dict) else {})
+        )
+        host = payload.get(CONF_HOST, DEFAULT_HOST)
+        port = int(payload.get(CONF_PORT, DEFAULT_PORT))
 
         # Normalize hostname — Supervisor uses underscores, DNS uses hyphens
         self._discovered_host = _hyphenate(host)

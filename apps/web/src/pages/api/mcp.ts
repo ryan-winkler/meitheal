@@ -1,3 +1,5 @@
+import { guardAgentProtocol } from "../../lib/agent-protocol-policy"
+import { resolveMcpSchema } from "../../lib/mcp-schema"
 import type { APIRoute } from "astro"
 import { apiJson, apiError } from "../../lib/api-response"
 import { readFileSync, existsSync } from "node:fs"
@@ -50,7 +52,12 @@ type CustomToolHandler = (
 
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
+  "sendA2AMessage",    // Protocol transport; use domain tools directly
+  "getA2AAgentCard",   // Discovery transport, not a domain tool
+  "reviewTaskProposal", // Human administrator decision only
+  "acceptTaskProposal", // Legacy name of the human-only decision
   "mcpEndpoint",       // Self-reference
+  "createTaskLegacy",  // Canonical task creation is /api/tasks
   "healthPing",        // HEAD-only liveness
   "subscribeSSE",      // SSE streaming, not callable
   "exportDatabase",    // Large binary download
@@ -143,7 +150,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       if (op.parameters) {
         for (const param of op.parameters) {
           if (param.in === "header") continue // Skip headers
-          const paramSchema = param.schema ?? { type: "string" }
+          const paramSchema = resolveMcpSchema(param.schema ?? { type: "string" }, spec)
           properties[param.name] = {
             ...paramSchema,
             description: param.description ?? `${param.name} parameter`,
@@ -157,7 +164,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       // Extract request body properties
       const hasBody = method === "post" || method === "put" || method === "patch"
       if (hasBody && op.requestBody?.content?.["application/json"]?.schema) {
-        const bodySchema = op.requestBody.content["application/json"].schema
+        const bodySchema = resolveMcpSchema(op.requestBody.content["application/json"].schema, spec)
         if (bodySchema.properties) {
           for (const [propName, propSchema] of Object.entries(bodySchema.properties as Record<string, Record<string, unknown>>)) {
             properties[propName] = propSchema
@@ -170,9 +177,14 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
         }
       }
 
+      if (toolName === "searchTasks") {
+        properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
+      }
       tools.push({
         name: toolName,
-        description: op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`,
+        description: toolName === "searchTasks"
+          ? "Search tasks by text with optional status, priority and assignee filters."
+          : op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`,
         inputSchema: {
           type: "object",
           properties,
@@ -209,6 +221,10 @@ function extractAuthHeaders(request: Request): Record<string, string> {
   if (hassUserId) headers["x-hass-user-id"] = hassUserId
   const hassAdmin = request.headers.get("x-hass-is-admin")
   if (hassAdmin) headers["x-hass-is-admin"] = hassAdmin
+  for (const name of ["x-remote-user-id", "x-remote-user-name", "x-remote-user-display-name", "x-remote-user-groups"]) {
+    const value = request.headers.get(name)
+    if (value) headers[name] = value
+  }
   return headers
 }
 
@@ -231,13 +247,17 @@ customHandlers.set("completeTask", async (args, baseUrl, authHeaders) => {
       headers: jsonHeaders(authHeaders),
       body: JSON.stringify({ status: "complete" }),
     })
-    return { status: "completed", ...(await res.json().catch(() => ({}))) }
+    const data = await res.json().catch(() => null)
+    if (!res.ok) return { error: `Task completion failed (HTTP ${res.status})`, detail: data }
+    if (!data || typeof data !== "object") return { error: "Task completion returned an invalid response" }
+    return { ...data, status: "completed" }
   }
   if (args.title) {
     const searchRes = await fetch(`${baseUrl}/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`, {
       headers: authHeaders,
     })
-    const data = (await searchRes.json().catch(() => ({ sections: [] }))) as {
+    if (!searchRes.ok) return { error: `Task search failed (HTTP ${searchRes.status})` }
+    const data = (await searchRes.json()) as {
       sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
     }
     const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -246,12 +266,13 @@ customHandlers.set("completeTask", async (args, baseUrl, authHeaders) => {
     )
     if (match) {
       const taskId = match.taskId ?? match.id
-      await fetch(`${baseUrl}/api/tasks/${taskId}`, {
+      const response = await fetch(`${baseUrl}/api/tasks/${encodeURIComponent(String(taskId))}`, {
         method: "PUT",
         headers: jsonHeaders(authHeaders),
         body: JSON.stringify({ status: "complete" }),
       })
-      return { status: "completed", id: taskId, title: match.title }
+      if (!response.ok) return { error: `Task completion failed (HTTP ${response.status})`, id: taskId }
+      return { ...await checkedJson(response), status: "completed", id: taskId, title: match.title }
     }
     return { status: "not_found", title: args.title }
   }
@@ -261,14 +282,19 @@ customHandlers.set("completeTask", async (args, baseUrl, authHeaders) => {
 // searchTasks: reshape search response for cleaner AI consumption
 customHandlers.set("searchTasks", async (args, baseUrl, authHeaders) => {
   const params = new URLSearchParams()
-  if (args.query) params.set("q", String(args.query))
-  if (args.status) params.set("status", String(args.status))
-  if (args.priority) params.set("priority", String(args.priority))
-  if (args.assigned_to) params.set("assigned_to", String(args.assigned_to))
-  if (args.include_completed) params.set("include_completed", "1")
+  // The generated tool schema uses the native search parameter names.
+  // Keep query as a compatibility alias for existing MCP callers.
+  const query = args.q ?? args.query
+  if (query !== undefined) params.set("q", String(query))
+  for (const key of ["status", "priority", "assigned_to", "limit", "sort", "task_fields"]) {
+    if (args[key] !== undefined) params.set(key, String(args[key]))
+  }
+  for (const key of ["include_completed", "include_archived"]) {
+    if (args[key] === true) params.set(key, "1")
+  }
   params.set("scope", "tasks")
   const res = await fetch(`${baseUrl}/api/search?${params}`, { headers: authHeaders })
-  const data = (await res.json().catch(() => ({ sections: [] }))) as {
+  const data = (await checkedJson(res)) as {
     sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
   }
   const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -284,26 +310,14 @@ customHandlers.set("searchTasks", async (args, baseUrl, authHeaders) => {
   }
 })
 
-// dailyBriefing: composite endpoint for agent daily planning
+// Composite reads fail explicitly when any required source is unavailable.
 customHandlers.set("dailyBriefing", async (_args, baseUrl, authHeaders) => {
-  const [tasksRes, habitsRes, reviewRes] = await Promise.allSettled([
-    fetch(`${baseUrl}/api/tasks?status=todo&sort=priority&limit=10`, { headers: authHeaders }).then(r => r.json()),
-    fetch(`${baseUrl}/api/habits`, { headers: authHeaders }).then(r => r.json()),
-    fetch(`${baseUrl}/api/review/weekly`, { headers: authHeaders }).then(r => r.json()),
+  const [today_tasks, habits, weekly_review] = await Promise.all([
+    fetch(`${baseUrl}/api/tasks?status=pending&sort=priority&limit=10`, { headers: authHeaders }).then(checkedJson),
+    fetch(`${baseUrl}/api/habits`, { headers: authHeaders }).then(checkedJson),
+    fetch(`${baseUrl}/api/review/weekly`, { headers: authHeaders }).then(checkedJson),
   ])
-  return {
-    today_tasks: tasksRes.status === "fulfilled" ? tasksRes.value : { error: "unavailable" },
-    habits: habitsRes.status === "fulfilled" ? habitsRes.value : { error: "unavailable" },
-    weekly_review: reviewRes.status === "fulfilled" ? reviewRes.value : { error: "unavailable" },
-  }
-})
-
-// getEntityState: HA entity state lookup
-customHandlers.set("getEntityState", async (args, baseUrl, authHeaders) => {
-  const res = await fetch(`${baseUrl}/api/ha/events?entity_id=${encodeURIComponent(String(args.entity_id ?? ""))}`, {
-    headers: authHeaders,
-  })
-  return await res.json().catch(() => ({ error: "Entity not found" }))
+  return { today_tasks, habits, weekly_review }
 })
 
 // ─── Dynamic Tool Executor ────────────────────────────────────────────────────
@@ -313,7 +327,11 @@ async function executeTool(
   args: Record<string, unknown>,
   request: Request
 ): Promise<Record<string, unknown>> {
-  const baseUrl = new URL(request.url).origin
+  // Ingress preserves HA's external Host; internal tools must call this app,
+  // not the HA frontend origin. Dev uses its actual Vite server port.
+  const baseUrl = import.meta.env.DEV
+    ? new URL(request.url).origin
+    : `http://127.0.0.1:${process.env.PORT ?? "3000"}`
   const authHeaders = extractAuthHeaders(request)
 
   // Check custom handlers first
@@ -365,13 +383,24 @@ async function executeTool(
   }
 
   const res = await fetch(fullUrl, fetchOpts)
-  const data = await res.json().catch(() => ({}))
-  return { status: res.status, ...data }
+  return { status: res.status, ...await checkedJson(res) }
+}
+
+async function checkedJson(response: Response): Promise<Record<string, unknown>> {
+  if (!response.ok) throw new Error(`Operation failed (HTTP ${response.status})`)
+  if (response.status === 204 || response.status === 205) return { ok: true }
+  const data: unknown = await response.json()
+  if (!data || typeof data !== "object") throw new Error("Operation returned an invalid response")
+  const result = data as Record<string, unknown>
+  if (result.ok === false || result.error) throw new Error("Operation was rejected")
+  return result
 }
 
 // ─── JSON-RPC 2.0 Handler ────────────────────────────────────────────────────
 
 export const POST: APIRoute = async ({ request }) => {
+  const blocked = await guardAgentProtocol("mcp")
+  if (blocked) return blocked
   try {
     const body = await request.json().catch(() => null)
 
@@ -390,7 +419,6 @@ export const POST: APIRoute = async ({ request }) => {
 
     // Initialize handshake
     if (method === "initialize") {
-      const { tools } = loadOpenAPISpec()
       return apiJson({
         jsonrpc: "2.0",
         id: reqId,
@@ -399,8 +427,8 @@ export const POST: APIRoute = async ({ request }) => {
           capabilities: { tools: { listChanged: false } },
           serverInfo: {
             name: "meitheal",
-            version: "0.3.0",
-            toolCount: tools.length + customHandlers.size,
+            version: process.env.MEITHEAL_VERSION ?? "unknown",
+            toolCount: getMcpToolCount(),
             generatedFrom: "openapi",
           },
         },
@@ -411,7 +439,7 @@ export const POST: APIRoute = async ({ request }) => {
     if (method === "tools/list") {
       const { tools } = loadOpenAPISpec()
 
-      // Add custom-only tools not in OpenAPI (dailyBriefing, getEntityState, completeTask)
+      // Add custom-only tools not in OpenAPI (dailyBriefing, completeTask)
       const customOnlyTools: McpTool[] = []
       for (const [name] of customHandlers) {
         if (!tools.find(t => t.name === name)) {
@@ -448,13 +476,12 @@ export const POST: APIRoute = async ({ request }) => {
           },
         })
       } catch (toolError) {
-        // Return JSON-RPC error format — never raw 500
         return apiJson({
           jsonrpc: "2.0",
           id: reqId,
-          error: {
-            code: -32603,
-            message: toolError instanceof Error ? toolError.message : "Tool execution failed",
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ error: toolError instanceof Error ? toolError.message : "Tool execution failed" }) }],
+            isError: true,
           },
         })
       }
@@ -476,10 +503,9 @@ export const POST: APIRoute = async ({ request }) => {
 
 function getCustomToolDescription(name: string): string {
   const descriptions: Record<string, string> = {
-    completeTask: "Mark a task as complete by ID or title. Supports fuzzy title matching — search for the task first, then complete it.",
+    completeTask: "Mark a task as complete by ID or exact title (case-insensitive). Search for the task first when its title is uncertain.",
     searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
     dailyBriefing: "Get a comprehensive daily briefing including today's tasks, habits due, and weekly review summary. Perfect for morning automation workflows.",
-    getEntityState: "Get the current state of a Home Assistant entity by entity_id. Useful for checking sensors, switches, or other HA devices.",
   }
   return descriptions[name] ?? `Custom tool: ${name}`
 }
@@ -490,7 +516,7 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
       type: "object",
       properties: {
         id: { type: "string", description: "Task ID to complete (preferred)" },
-        title: { type: "string", description: "Task title for fuzzy matching (fallback)" },
+        title: { type: "string", description: "Exact task title, matched case-insensitively (fallback)" },
       },
     },
     searchTasks: {
@@ -508,13 +534,15 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
       type: "object",
       properties: {},
     },
-    getEntityState: {
-      type: "object",
-      properties: {
-        entity_id: { type: "string", description: "HA entity ID (e.g., sensor.temperature)" },
-      },
-      required: ["entity_id"],
-    },
+
   }
   return schemas[name] ?? { type: "object", properties: {} }
+}
+
+/** Discovery uses the same generated tool inventory as tools/list. */
+export function getMcpToolCount(): number {
+  const { tools } = loadOpenAPISpec()
+  const names = new Set(tools.map((tool) => tool.name))
+  for (const name of customHandlers.keys()) names.add(name)
+  return names.size
 }

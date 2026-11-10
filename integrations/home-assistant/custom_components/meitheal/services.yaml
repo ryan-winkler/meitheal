@@ -16,6 +16,35 @@ create_task:
       selector:
         text:
           multiline: true
+    priority:
+      name: Priority
+      description: Priority from 1 (urgent) to 5 (lowest)
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+    due_date:
+      name: Due date
+      description: ISO date or date-time, for example 2026-12-01
+      selector:
+        text:
+    urgency:
+      name: Urgency
+      description: Eisenhower urgency from 0 (unclassified) to 5 (critical)
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 1
+    importance:
+      name: Importance
+      description: Eisenhower importance from 0 (unclassified) to 5 (critical)
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 1
 
 complete_task:
   name: Complete Task
@@ -37,6 +66,17 @@ complete_task:
 sync_todo:
   name: Sync Tasks
   description: Trigger a manual refresh of task data from Meitheal.
+
+complete_task_by_tag:
+  name: Complete Task by NFC Tag
+  description: Complete the unique task assigned this NFC tag. Assign nfc_tag_id through the task API first.
+  fields:
+    tag_id:
+      name: Tag ID
+      description: The NFC tag ID assigned to the task
+      required: true
+      selector:
+        text:
 
 search_tasks:
   name: Search Tasks

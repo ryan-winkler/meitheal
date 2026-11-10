@@ -52,7 +52,7 @@ If Grocy helps answer "what do I have?" and "what needs tracking?", Meitheal hel
 
 - Use Home Assistant Assist for built-in task actions.
 - Expose Meitheal to conversation agents through the Home Assistant LLM API.
-- Use the Astro MCP surface, the Home Assistant custom-component MCP surface, A2A discovery, and the experimental WebMCP track for agent workflows.
+- Use Astro MCP for agent workflows and the Home Assistant LLM API for conversation tools. Use gated A2A for synchronous task-title search and WebMCP where the browser supports registration. Proposal-only tokens can submit task edits for administrator review.
 - Keep human control in the loop while the repo evolves toward richer review and handoff semantics.
 
 ## Ubiquitous Language
@@ -110,7 +110,7 @@ Built-in Assist commands work even without an LLM. The LLM API adds a richer tas
 | Persistence | SQLite via libSQL + Drizzle-backed repositories |
 | Architecture | Domain-driven monorepo with package domains and in-app domains |
 | Frontend | Astro-first UI with client controllers, PWA support, and ingress-safe behavior |
-| Integrations | Home Assistant, calendars, todo, Grocy, webhooks, companion, MCP/A2A/LLM |
+| Integrations | Home Assistant, calendars, todo, Grocy, webhooks, companion, MCP/HA LLM API |
 | Principles | Local-first, Home Assistant-native, Astro-first, KCS-aware |
 
 ## Documentation Map

@@ -956,7 +956,9 @@
               log.warn(`Failed to save ${field}:`, res.status);
               const { showToast } = await import("@lib/toast");
               showToast("common.failed_update", "error");
+              return;
             }
+            return await res.json();
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err);
           }
@@ -1109,13 +1111,12 @@
           }, { signal: __signal });
 
           document.getElementById("td-status")
-          ?.addEventListener("change", (e) => {
+          ?.addEventListener("change", async (e) => {
             const newVal = (e.target as HTMLSelectElement).value;
-            saveTD("status", newVal);
+            const completed = await saveTD("status", newVal);
             const isDone = newVal === "complete";
             if (isDone) {
-              const pri = Number((document.getElementById("td-priority") as HTMLSelectElement)?.value ?? 3);
-              onTaskCompleted(pri);
+              onTaskCompleted(completed);
             }
             const doneBtn = document.getElementById("td-toggle-done");
             if (doneBtn)
@@ -1364,14 +1365,14 @@
         // Toggle done
         document
           .getElementById("td-toggle-done")
-          ?.addEventListener("click", () => {
+          ?.addEventListener("click", async () => {
             const statusEl = document.getElementById(
               "td-status",
             ) as HTMLSelectElement;
             const newStatus =
               statusEl.value === "complete" ? "pending" : "complete";
             statusEl.value = newStatus;
-            saveTD("status", newStatus);
+            const completed = await saveTD("status", newStatus);
             const tdDoneBtn = document.getElementById("td-toggle-done");
             if (tdDoneBtn)
               tdDoneBtn.textContent =
@@ -1380,8 +1381,7 @@
                   : "✓ Mark as Done";
             // Gamification + confetti on completion
             if (newStatus === "complete") {
-              const priorityEl = document.getElementById("td-priority") as HTMLSelectElement | null;
-              onTaskCompleted(Number(priorityEl?.value ?? 3));
+              onTaskCompleted(completed);
             }
           }, { signal: __signal });
 

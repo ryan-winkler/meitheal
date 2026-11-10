@@ -1,393 +1,170 @@
 ---
-/**
- * Review Queue — Bot Proposal Review Page (PRA-05)
- *
- * @domain tasks
- * @bounded-context tasks (presentation)
- *
- * Lists all tasks with handoff_state = 'proposed' for human review.
- * Allows accept/reject of each proposal with diff preview.
- *
- * @kcs This page fetches proposals server-side and renders a review queue.
- * Accept/reject actions call /api/tasks/[id]/accept-proposal.
- */
 import Layout from "../layouts/Layout.astro"
-import EmptyState from "../components/ui/EmptyState.astro"
-import {
-  ensureSchema,
-  getPersistenceClient,
-} from "@domains/tasks/persistence/store"
+import Icon from "../components/ui/Icon.astro"
+import { t } from "../i18n/translations"
+import type { Locale } from "../lib/locale"
+import { formatTicketKey } from "../lib/ticket-key"
+import { TaskHandoff } from "@domains/tasks/persistence/task-handoff"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 
-interface ParsedProposal {
-  id: string
-  ticket_number: number | null
-  title: string
-  status: string
-  owner: string
-  lock_holder: string | null
-  proposal_hash: string | null
-  updated_at: number
-  agent: string
-  summary: string
-  changes: Array<{ field: string; from: string; to: string }>
+const locale: Locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const canReview = Astro.locals.hassIsAdmin === true
+Astro.response.headers.set("Cache-Control", "no-store")
+if (!canReview) Astro.response.status = 403
+
+const pageSize = 25
+const requestedPage = Number(Astro.url.searchParams.get("page") ?? 1)
+const page = Number.isInteger(requestedPage) && requestedPage > 0 && requestedPage <= 100_000 ? requestedPage : 1
+let proposals: Awaited<ReturnType<TaskHandoff["queue"]>> = []
+let loadFailed = false
+if (canReview) {
+  try {
+    await ensureSchema()
+    proposals = await new TaskHandoff(getPersistenceClient()).queue((page - 1) * pageSize, pageSize + 1)
+  } catch {
+    loadFailed = true
+    Astro.response.status = 503
+  }
 }
-
-let proposals: ParsedProposal[] = []
-let fetchError = ""
-
-try {
-  await ensureSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT id, ticket_number, title, status, handoff_state,
-                 owner, lock_holder, proposal_json, proposal_hash, updated_at
-          FROM tasks
-          WHERE handoff_state = 'proposed'
-          ORDER BY updated_at DESC
-          LIMIT 50`,
-    args: [],
-  })
-
-  proposals = result.rows.map(row => {
-    let agent = ""
-    let summary = ""
-    let changes: Array<{ field: string; from: string; to: string }> = []
-
-    try {
-      if (row.proposal_json) {
-        const parsed = JSON.parse(String(row.proposal_json))
-        agent = parsed.agent ?? ""
-        summary = parsed.summary ?? ""
-        if (parsed.changes && typeof parsed.changes === "object") {
-          changes = Object.entries(parsed.changes).map(([field, val]) => ({
-            field,
-            from: String((val as Record<string, unknown>)?.from ?? ""),
-            to: String((val as Record<string, unknown>)?.to ?? ""),
-          }))
-        }
-      }
-    } catch { /* invalid JSON */ }
-
-    return {
-      id: String(row.id),
-      ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
-      title: String(row.title ?? ""),
-      status: String(row.status ?? "pending"),
-      owner: String(row.owner ?? "human"),
-      lock_holder: row.lock_holder ? String(row.lock_holder) : null,
-      proposal_hash: row.proposal_hash ? String(row.proposal_hash) : null,
-      updated_at: Number(row.updated_at ?? 0),
-      agent,
-      summary,
-      changes,
-    }
-  })
-} catch (e) {
-  fetchError = e instanceof Error ? e.message : "Failed to load proposals"
-}
+const hasNextPage = proposals.length > pageSize
+const reviewPage = page === 1 ? "/review" : `/review?page=${page}`
+const expires = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", {
+  dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+})
 ---
 
-<Layout title="Meitheal — Review Queue">
-  <span slot="page-title">🤖 Review Queue</span>
-  <div slot="actions">
-    <button type="button" class="btn btn-sm" id="refresh-btn">🔄 Refresh</button>
-  </div>
-
-  {fetchError && (
-    <div class="review-error">
-      <p>⚠️ {fetchError}</p>
-    </div>
-  )}
-
-  {proposals.length === 0 && !fetchError && (
-    <EmptyState
-      title="No pending proposals"
-      description="All clear! No bot proposals need your review right now."
-    />
-  )}
-
-  <div class="review-queue" id="review-queue">
-    {proposals.map(p => (
-      <div class="review-card" data-task-id={p.id} data-proposal-hash={p.proposal_hash}>
-        <div class="review-card__header">
-          <div class="review-card__title-row">
-            <span class="review-card__ticket">
-              {p.ticket_number ? "#" + p.ticket_number : "—"}
-            </span>
-            <h3 class="review-card__title">{p.title}</h3>
-          </div>
-          <div class="review-card__meta">
-            <span class="review-card__agent">{p.agent || p.lock_holder || "unknown agent"}</span>
-            <span class="review-card__time">
-              {new Date(p.updated_at).toLocaleString()}
-            </span>
-          </div>
-        </div>
-
-        {p.summary && (
-          <div class="review-card__summary">
-            <strong>Summary:</strong> {p.summary}
-          </div>
-        )}
-
-        {p.changes.length > 0 && (
-          <div class="review-card__diff">
-            <table class="diff-table">
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Current</th>
-                  <th>Proposed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {p.changes.map(c => (
-                  <tr>
-                    <td class="diff-field">{c.field}</td>
-                    <td class="diff-from">{c.from || "—"}</td>
-                    <td class="diff-to">{c.to || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div class="review-card__actions">
-          <button type="button" class="btn btn-success review-accept" data-task-id={p.id}>
-            ✅ Accept
-          </button>
-          <button type="button" class="btn btn-danger review-reject" data-task-id={p.id}>
-            ❌ Reject
-          </button>
-        </div>
+<Layout title={`Meitheal — ${t("review.title", locale)}`}>
+  <span slot="page-title">{t("review.title", locale)}</span>
+  <section class="review">
+    <a class="review-back" href="/settings#bot-allow-proposals"><Icon name="settings" size={16} /> {t("review.back", locale)}</a>
+    <header class="review-header">
+      <div>
+        <h1>{t("review.title", locale)}</h1>
+        <p>{t("review.intro", locale)}</p>
       </div>
-    ))}
-  </div>
+      {canReview && <a class="btn btn-secondary" data-astro-reload href={reviewPage}>{t("review.refresh", locale)}</a>}
+    </header>
+
+    {!canReview ? <p class="review-panel">{t("review.admin_required", locale)}</p> : (
+      loadFailed ? <p class="review-panel" role="alert">{t("review.load_failed", locale)}</p> : (
+        <div id="review-queue"
+          data-approved={t("review.approved", locale)}
+          data-rejected={t("review.rejected", locale)}
+          data-conflict={t("review.conflict", locale)}
+          data-failure={t("review.failure", locale)}>
+          <p id="review-feedback" class="review-feedback" role="status" tabindex="-1"></p>
+          <p id="review-empty" class="review-panel" hidden={proposals.length > 0}>{t("review.empty", locale)}</p>
+          <ul class="review-list" aria-label={t("review.pending", locale)}>
+            {proposals.slice(0, pageSize).map(proposal => (
+              <li class="review-panel" data-proposal={proposal.hash} data-review-task-id={proposal.id}>
+                <details>
+                  <summary>
+                    <span class="review-heading">
+                      <small>{formatTicketKey(proposal.ticketNumber)}</small>
+                      <strong>{proposal.title}</strong>
+                      <span>{proposal.agent}</span>
+                    </span>
+                  </summary>
+                  <div class="review-detail">
+                    <p class="review-summary">{proposal.summary}</p>
+                    <p class="review-expiry">{t("review.expires", locale)} <time datetime={new Date(proposal.expiresAt).toISOString()}>{expires.format(proposal.expiresAt)} UTC</time></p>
+                    {proposal.stale && <p class="review-warning">{t("review.conflict", locale)}</p>}
+                    <dl class="review-changes">
+                      {proposal.fields.map(change => (
+                        <div class="review-change">
+                          <dt>{t(change.field === "title" ? "review.field_title" : "review.field_description", locale)}</dt>
+                          <dd class="review-values">
+                            <div><strong>{t("review.current", locale)}</strong><p>{change.current || "—"}</p></div>
+                            <div><strong>{t("review.proposed", locale)}</strong><p>{change.to || "—"}</p></div>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div class="review-actions">
+                      <button type="button" class="btn btn-primary" data-decision="accept" disabled={proposal.stale}>{t("review.approve", locale)}</button>
+                      <button type="button" class="btn btn-secondary" data-decision="reject">{t("review.reject", locale)}</button>
+                    </div>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ul>
+          {(page > 1 || hasNextPage) && <nav class="review-actions" aria-label={t("review.pages", locale)}>
+            {page > 1 && <a class="btn btn-secondary" href={page === 2 ? "/review" : `/review?page=${page - 1}`}>{t("review.previous", locale)}</a>}
+            {hasNextPage && <a class="btn btn-secondary" href={`/review?page=${page + 1}`}>{t("review.next", locale)}</a>}
+          </nav>}
+        </div>
+      )
+    )}
+  </section>
 </Layout>
 
 <style>
-  .review-error {
-    background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
-    border: 1px solid var(--danger, #ef4444);
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    color: var(--danger, #ef4444);
-    font-size: 13px;
-  }
-
-  .review-queue {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .review-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  }
-  .review-card:hover {
-    border-color: color-mix(in srgb, var(--border) 60%, var(--accent, #6366f1) 40%);
-    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.15);
-  }
-
-  .review-card__header {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .review-card__title-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .review-card__ticket {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent, #6366f1);
-    background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
-    padding: 2px 8px;
-    border-radius: 10px;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .review-card__title {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .review-card__meta {
-    display: flex;
-    gap: 12px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .review-card__agent {
-    font-weight: 600;
-    color: var(--info, #60a5fa);
-  }
-
-  .review-card__summary {
-    padding: 12px 16px;
-    font-size: 13px;
-    color: var(--text);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .review-card__diff {
-    padding: 0;
-    overflow-x: auto;
-  }
-
-  .diff-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .diff-table th {
-    text-align: left;
-    padding: 8px 16px;
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-  .diff-table td {
-    padding: 8px 16px;
-    border-top: 1px solid var(--border);
-    vertical-align: top;
-  }
-  .diff-field {
-    font-weight: 600;
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .diff-from {
-    color: var(--danger, #ef4444);
-    text-decoration: line-through;
-    opacity: 0.7;
-  }
-  .diff-to {
-    color: var(--success, #22c55e);
-    font-weight: 500;
-  }
-
-  .review-card__actions {
-    padding: 12px 16px;
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.01);
-  }
-
-  .btn-success {
-    background: var(--success, #22c55e);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .btn-success:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
-
-  .btn-danger {
-    background: var(--danger, #ef4444);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .btn-danger:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
+  .review { display: grid; gap: 16px; max-width: 860px; margin-inline: auto; min-width: 0; }
+  .review-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; width: fit-content; color: var(--accent-text); }
+  .review-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; justify-content: space-between; }
+  .review-header p, .review-expiry, .review-heading span, .review-heading small { color: var(--text-secondary); }
+  .review-list, .review-changes { margin: 0; padding: 0; }
+  .review-list { display: grid; gap: 12px; list-style: none; }
+  .review-panel { border: 1px solid var(--border); background: var(--bg-card); border-radius: var(--radius); padding: 12px 16px; overflow-wrap: anywhere; }
+  .review-panel summary { cursor: pointer; min-height: 44px; }
+  .review-heading { display: inline-grid; gap: 2px; vertical-align: top; max-width: calc(100% - 28px); }
+  .review-detail { display: grid; gap: 12px; border-block-start: 1px solid var(--border); margin-block-start: 12px; padding-block-start: 12px; }
+  .review-detail p { margin: 0; white-space: pre-wrap; }
+  .review-warning { padding: 8px 12px; border-inline-start: 3px solid var(--accent); background: var(--bg-hover); }
+  .review-change { padding: 8px 0; border-block-end: 1px solid var(--border); }
+  .review-change dt { font-weight: 700; margin-block-end: 6px; }
+  .review-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 8px; margin: 0; }
+  .review-values > div { padding: 8px; background: var(--bg-hover); border-radius: var(--radius); min-width: 0; }
+  .review-values strong { display: block; margin-block-end: 4px; }
+  .review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px; }
+  .review .btn { min-height: 44px; }
+  .review-feedback:empty { margin: 0; }
+  .review-feedback:not(:empty) { margin-block: 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 </style>
 
 <script>
-  function initReviewQueue() {
-    const queue = document.getElementById("review-queue")
-    if (!queue) return
+  import { pageLifecycle } from "@lib/page-lifecycle"
 
-    queue.addEventListener("click", async (e) => {
-      const target = e.target as HTMLElement
-      const btn = target.closest(".review-accept, .review-reject") as HTMLElement
-      if (!btn) return
+  pageLifecycle.onPageLoad(signal => {
+    const previousQueue = document.getElementById("review-queue")
+    if (!previousQueue) return
+    const queue = previousQueue.cloneNode(true) as HTMLElement
+    previousQueue.replaceWith(queue)
+    const feedback = queue.querySelector<HTMLElement>("#review-feedback")
+    if (!queue || !feedback) return
 
-      const card = btn.closest(".review-card") as HTMLElement
-      if (!card) return
-
-      const taskId = card.dataset.taskId
-      const proposalHash = card.dataset.proposalHash
-      const isAccept = btn.classList.contains("review-accept")
-
-      btn.setAttribute("disabled", "true")
-      btn.textContent = isAccept ? "Accepting..." : "Rejecting..."
+    queue.addEventListener("click", async event => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("button[data-decision]")
+      const card = button?.closest<HTMLElement>("[data-proposal]")
+      if (!button || !card || button.disabled) return
+      const previouslyEnabled = [...card.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]
+      previouslyEnabled.forEach(action => { action.disabled = true })
+      card.setAttribute("aria-busy", "true")
 
       try {
-        const res = await fetch("/api/tasks/" + taskId + "/accept-proposal", {
+        const response = await fetch("/api/tasks/" + encodeURIComponent(card.dataset.reviewTaskId!) + "/accept-proposal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: isAccept ? "accept" : "reject",
-            proposal_hash: proposalHash,
-          }),
+          body: JSON.stringify({ action: button.dataset.decision, proposal_hash: card.dataset.proposal }),
+          signal,
         })
-
-        if (res.ok) {
-          card.style.opacity = "0.3"
-          card.style.pointerEvents = "none"
-          card.style.transition = "opacity 0.3s ease"
-          setTimeout(() => card.remove(), 500)
-
-          // Check if queue is now empty
-          const remaining = queue.querySelectorAll(".review-card")
-          if (remaining.length <= 1) {
-            setTimeout(() => location.reload(), 600)
-          }
-        } else {
-          const data = await res.json()
-          window.showToast?.(data.error || "Unknown error", "error")
-          btn.removeAttribute("disabled")
-          btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
+        if (response.ok) {
+          card.remove()
+          if (!queue.querySelector("[data-proposal]")) document.getElementById("review-empty")?.removeAttribute("hidden")
+          feedback.textContent = (button.dataset.decision === "accept" ? queue.dataset.approved : queue.dataset.rejected) ?? ""
+          feedback.focus()
+          return
         }
+        feedback.textContent = (response.status === 409 ? queue.dataset.conflict : queue.dataset.failure) ?? ""
       } catch {
-        window.showToast?.("Network error — please try again", "error")
-        btn.removeAttribute("disabled")
-        btn.textContent = isAccept ? "✅ Accept" : "❌ Reject"
+        if (signal.aborted) return
+        feedback.textContent = queue.dataset.failure ?? ""
       }
-    })
-
-    // Refresh button
-    document.getElementById("refresh-btn")?.addEventListener("click", () => location.reload())
-  }
-
-  // Initialize on page load
-  document.addEventListener("astro:page-load", initReviewQueue)
-  initReviewQueue()
+      card.removeAttribute("aria-busy")
+      previouslyEnabled.forEach(action => { action.disabled = false })
+      feedback.focus()
+    }, { signal })
+    queue.dataset.reviewReady = "true"
+  })
 </script>

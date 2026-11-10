@@ -34,10 +34,9 @@ async function ensureReady(): Promise<void> {
 
 /** Check admin access: HA admin or admin-scoped agent token */
 function isAdmin(locals: App.Locals): boolean {
-  if (locals.hassIsAdmin) return true
-  // Agent tokens with settings:write scope can manage tokens
-  if (locals.agentToken?.scopes.includes("settings:write")) return true
-  return false
+  // An explicit token keeps its own authority even alongside HA identity headers.
+  if (locals.agentToken) return locals.agentToken.scopes.includes("settings:write")
+  return locals.hassIsAdmin === true
 }
 
 /** Return a validation error with invalidParams for self-correcting agents */

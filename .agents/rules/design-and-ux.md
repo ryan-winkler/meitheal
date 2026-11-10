@@ -56,3 +56,12 @@ There may be other Areas, but these are definitely most, so pay attenton to them
 Do not move onto new page until the first is complete, UNLESS scope or dependency counts on it and should be included (you can break this constraint if it makes sense)
 
 You MUST use GSD and planning personas several times @beautifulMention @beautifulMention@beautifulMention @beautifulMention @beautifulMention (and others where relevant) before moving on or considering your work complete
+
+## UI repair and review baseline
+
+Consider the existing Tabler admin-template patterns before introducing a custom
+component or dependency: https://tabler.io/admin-template. Check whether Tabler
+is actually installed; reuse existing local primitives when they already solve
+the problem. Audit changes against Gestalt grouping, Nielsen usability
+heuristics, DRY and YAGNI. Controls and saved indicators must represent actual
+supported behavior, including failure and unavailable states.

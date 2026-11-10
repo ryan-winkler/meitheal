@@ -81,6 +81,8 @@ export const GET: APIRoute = async ({ url }) => {
       task_type: r.task_type ?? "task",
       task_kind: r.task_kind ?? "standard_action",
       assigned_to: r.assigned_to ?? null,
+      kanban_position: r.kanban_position ?? null,
+      nfc_tag_id: r.nfc_tag_id ?? null,
       urgency: Number(r.urgency ?? 0),
       importance: Number(r.importance ?? 0),
       eisenhower_quadrant: deriveEisenhowerQuadrant(Number(r.urgency ?? 0), Number(r.importance ?? 0)),
@@ -135,7 +137,10 @@ export const POST: APIRoute = async ({ request }) => {
   const priority = Math.min(5, Math.max(1, Math.round(rawPriority)))
 
   // Sanitize description (strip HTML tags like title)
-  const rawDesc = typeof body.description === "string" ? body.description.slice(0, 10000) : ""
+  if (typeof body.description === "string" && body.description.length > 10000) {
+    return new Response(JSON.stringify({ error: "description must be 10000 characters or less" }), { status: 400, headers: { "content-type": "application/json" } })
+  }
+  const rawDesc = typeof body.description === "string" ? body.description : ""
   const description = sanitize(rawDesc)
 
   // Validate status — any non-empty alphanumeric/underscore string up to 50 chars

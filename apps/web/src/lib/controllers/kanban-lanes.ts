@@ -78,6 +78,7 @@ export function initLaneManagementPanel(): void {
 
   async function renderLaneList(): Promise<void> {
     const lanes = await fetchLanes()
+    if (!laneList) return
     laneList.innerHTML = lanes
       .map(
         (lane) => `
@@ -101,7 +102,7 @@ export function initLaneManagementPanel(): void {
   }
 
   function closeLaneMgmt(): void {
-    laneMgmt.classList.add("hidden")
+    laneMgmt?.classList.add("hidden")
   }
 
   pageLifecycle.on(manageLanesBtn, "click", () => {

@@ -1,3 +1,4 @@
+import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
 /**
  * Calendar Sync API — Manual Sync Trigger & Status
  *
@@ -101,24 +102,10 @@ export const POST: APIRoute = async ({ request }) => {
             resolvedEntities.map((eid) => syncFromHA(eid)),
           );
 
-          const aggregated = { created: 0, updated: 0, total: 0 };
-          for (const r of results) {
-            if (r.status === "fulfilled") {
-              aggregated.created += r.value.created;
-              aggregated.updated += r.value.updated;
-              aggregated.total += r.value.total;
-            }
-          }
-
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              message: `Calendar sync complete: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${resolvedEntities.length} calendar(s)`,
-              ...aggregated,
-              entities: resolvedEntities,
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          );
+          const outcome = calendarSyncResult(resolvedEntities, results)
+          return new Response(JSON.stringify(outcome), {
+            status: outcome.ok ? 200 : 502, headers: { "Content-Type": "application/json" },
+          })
         } catch (err) {
           return new Response(
             JSON.stringify({ ok: false, error: `Sync failed: ${err}` }),

@@ -2,12 +2,9 @@ import type { APIRoute } from "astro"
 import {
   getStats,
   getWeeklyData,
-  recordTaskCompletion,
-  getXpForPriority,
   getLevel,
   getProgressToNextLevel,
   getXpToNextLevel,
-  checkAchievements,
   getAllAchievements,
   getYearlyHeatmapData,
 } from "@domains/gamification"
@@ -17,7 +14,7 @@ import { isFeatureEnabled } from "../../lib/feature-flags"
 /**
  * Gamification API
  * GET /api/gamification — Get stats, level, achievements, heatmap
- * POST /api/gamification — Record a task completion, check achievements
+ * POST /api/gamification — Retired; complete the task through its ordinary API
  *
  * Gated behind the `gamification` feature flag.
  */
@@ -48,6 +45,7 @@ export const GET: APIRoute = async ({ url }) => {
       stats,
       weekly,
       daily_goal: 5,
+      confetti: await isFeatureEnabled("confetti"),
       level,
       progressToNext,
       xpToNext,
@@ -67,31 +65,5 @@ export const GET: APIRoute = async ({ url }) => {
   }
 }
 
-export const POST: APIRoute = async ({ request }) => {
-  const guardResult = await featureGuard()
-  if (guardResult) return guardResult
-  try {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-    const priority = typeof body.priority === "number" ? body.priority : 3
-    const points = getXpForPriority(priority)
-    const stats = await recordTaskCompletion(points)
-
-    // Check for newly unlocked achievements
-    const achievementResult = await checkAchievements(stats)
-
-    const level = getLevel(stats.totalPoints)
-    const progressToNext = getProgressToNextLevel(stats.totalPoints)
-
-    return apiJson({
-      stats,
-      confetti: await isFeatureEnabled("confetti"),
-      xp: points,
-      level,
-      progressToNext,
-      newAchievements: achievementResult.newlyUnlocked,
-    })
-  } catch (err) {
-    return apiError("Failed to record completion")
-  }
-}
-
+/** Legacy client-side recording cannot prove a task transition and would double count. */
+export const POST: APIRoute = async () => apiError("Complete a task through /api/tasks/{id}; completion statistics are recorded automatically", 410)

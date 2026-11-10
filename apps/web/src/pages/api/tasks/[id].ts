@@ -71,8 +71,16 @@ export const PUT: APIRoute = async ({ params, request }) => {
     }
   }
 
+  if ("nfc_tag_id" in body && body.nfc_tag_id !== null &&
+      (typeof body.nfc_tag_id !== "string" || !body.nfc_tag_id.trim() || body.nfc_tag_id.trim().length > 255)) {
+    return new Response(JSON.stringify({ error: "nfc_tag_id must be null or 1-255 characters" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    })
+  }
+
   // Input sanitization — same rules as POST
   const sanitized: Record<string, InValue> = {}
+  if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
   if (typeof body.title === "string") {
     const t = sanitize(body.title.trim())
@@ -89,7 +97,8 @@ export const PUT: APIRoute = async ({ params, request }) => {
     sanitized.title = t
   }
   if (typeof body.description === "string") {
-    sanitized.description = sanitize(body.description.slice(0, 10000))
+    if (body.description.length > 10000) return new Response(JSON.stringify({ error: "description must be 10000 characters or less" }), { status: 400, headers: { "content-type": "application/json" } })
+    sanitized.description = sanitize(body.description)
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -315,7 +324,11 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const oldTask = await repo.getFieldsForDiff(resolvedId)
 
   // Perform the update via repository
-  const updatedRow = await repo.updateTask(resolvedId, sanitized)
+  const updatedRow = await repo.updateTask(resolvedId, sanitized,
+    sanitized.status !== undefined && oldTask ? String(oldTask.status) : undefined)
+  if (!updatedRow) return new Response(JSON.stringify({ error: "Task changed during update; reload and retry" }), {
+    status: 409, headers: { "content-type": "application/json" },
+  })
 
   // Record activity log entries for each changed field
   if (oldTask) {
@@ -332,7 +345,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 
   const updTicketNum = updatedRow?.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const taskPayload = { ...updatedRow, ticket_key: formatTicketKey(updTicketNum) }
+  const taskPayload: Record<string, unknown> = { ...updatedRow, ticket_key: formatTicketKey(updTicketNum) }
 
   dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 
@@ -495,6 +508,20 @@ export const PUT: APIRoute = async ({ params, request }) => {
   // Phase 1 + Phase 6: Recurrence auto-create — clone task with next due date on completion
   // Rolling recurrence: uses completion date (today) as base instead of original due date
   if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+    // Completion history is recorded at the canonical mutation boundary, including HA/MCP/NFC.
+    try {
+      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
+      if (await isFeatureEnabled("gamification")) {
+        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
+        const stats = await recordTaskCompletion(xp)
+        const achievements = await checkAchievements(stats)
+        taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+      }
+    } catch (error) {
+      logApiError("task-completion-stats", "Task saved but completion statistics failed", error)
+      taskPayload.gamification = { error: "Task saved; completion statistics unavailable" }
+    }
     try {
       const recTask = await repo.getRecurrenceData(resolvedId)
       if (recTask?.recurrence_rule && typeof recTask.recurrence_rule === "string" && recTask.recurrence_rule.length > 0) {

@@ -79,17 +79,22 @@ export function getMissingRequiredIngressHeaders(requiredHeaders: string[], head
 
 /**
  * Extract the authenticated Home Assistant user ID from ingress headers.
- * The Supervisor injects `X-Hass-User-Id` on every proxied ingress request
- * after validating the user's session token.
+ * Supervisor owns X-Remote-User-* headers. Legacy headers are supported only
+ * by standalone trusted proxies, never as an add-on identity fallback.
  */
-export function getHassUserId(headers: Headers): string | undefined {
-  return headers.get("x-hass-user-id") ?? undefined;
+export function getHassUserId(headers: Headers, allowLegacy = true): string | undefined {
+  if (headers.has("x-remote-user-id")) return headers.get("x-remote-user-id")?.trim() || undefined
+  return allowLegacy ? headers.get("x-hass-user-id") ?? undefined : undefined
 }
 
 /**
  * Check whether the authenticated HA user has admin privileges.
- * The Supervisor injects `X-Hass-Is-Admin` as "true" or "false".
+ * Current Supervisor sends comma-separated effective group IDs.
  */
-export function isHassAdmin(headers: Headers): boolean {
-  return headers.get("x-hass-is-admin") === "true";
+export function isHassAdmin(headers: Headers, allowLegacy = true): boolean {
+  if (headers.has("x-remote-user-id") || headers.has("x-remote-user-groups")) {
+    return Boolean(headers.get("x-remote-user-id")?.trim()) &&
+      (headers.get("x-remote-user-groups") ?? "").split(",").map(group => group.trim()).includes("system-admin")
+  }
+  return allowLegacy && headers.get("x-hass-is-admin") === "true"
 }

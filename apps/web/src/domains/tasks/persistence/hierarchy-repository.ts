@@ -8,6 +8,7 @@
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 import type { Client } from "@libsql/client"
+import { goalProgress } from "@meitheal/domain-tasks"
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ export interface GoalRow {
   metric_target: number | null
   /** Current progress value toward metric_target */
   metric_current: number
+  progress: number
   created_at: number
   updated_at: number
 }
@@ -191,7 +193,7 @@ export class HierarchyRepository {
 
   async updateGoal(id: string, data: {
     title?: string; area_id?: string | null; description?: string | null; status?: string; target_date?: string | null
-    metric_type?: string | null; metric_target?: number | null; metric_current?: number
+    metric_type?: string | null; metric_target?: number | null; metric_current?: number; progress?: number
   }): Promise<boolean> {
     const sets: string[] = []
     const args: (string | number | null)[] = []
@@ -203,7 +205,12 @@ export class HierarchyRepository {
     if (data.target_date !== undefined) { sets.push("target_date = ?"); args.push(data.target_date) }
     if (data.metric_type !== undefined) { sets.push("metric_type = ?"); args.push(data.metric_type) }
     if (data.metric_target !== undefined) { sets.push("metric_target = ?"); args.push(data.metric_target) }
-    if (data.metric_current !== undefined) { sets.push("metric_current = ?"); args.push(data.metric_current) }
+    if (data.progress !== undefined) {
+      sets.push("metric_current = ? * CASE WHEN metric_target > 0 THEN metric_target ELSE 100 END / 100.0")
+      args.push(data.progress)
+      sets.push("metric_type = CASE WHEN metric_target > 0 THEN metric_type ELSE 'percentage' END")
+      sets.push("metric_target = CASE WHEN metric_target > 0 THEN metric_target ELSE 100 END")
+    } else if (data.metric_current !== undefined) { sets.push("metric_current = ?"); args.push(data.metric_current) }
 
     if (sets.length === 0) return false
 
@@ -362,6 +369,7 @@ export class HierarchyRepository {
       metric_type: row.metric_type ? String(row.metric_type) : null,
       metric_target: row.metric_target != null ? Number(row.metric_target) : null,
       metric_current: Number(row.metric_current ?? 0),
+      progress: goalProgress(Number(row.metric_current ?? 0), row.metric_target != null ? Number(row.metric_target) : null),
       created_at: Number(row.created_at),
       updated_at: Number(row.updated_at),
     }

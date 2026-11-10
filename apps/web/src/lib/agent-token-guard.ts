@@ -3,14 +3,14 @@
  *
  * Extracts and validates Bearer tokens from API requests.
  * Enforces scoped authorization per route.
- * HA ingress sessions bypass token auth entirely.
+ * Explicit agent tokens are checked on every transport.
  *
  * @domain shared-infrastructure
  * @bounded-context agent-authorization
  * @kcs Token auth is opt-in. System functions without any tokens.
  */
 import { hashToken, hasScope, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
-import { getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
+import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
 import { apiProblem } from "./api-response"
 
 // ── Token Resolution ─────────────────────────────────────────────────────────
@@ -21,75 +21,42 @@ export interface ResolvedAgent {
   scopes: AgentScope[]
 }
 
-/**
- * Resolve an agent token from the Authorization header.
- * Returns null if no Bearer token is present (HA ingress or browser session).
- * Returns the resolved agent info if token is valid.
- * Throws a Response if token is invalid/expired/revoked.
- *
- * @kcs HA ingress bypass: if X-Hass-User-Id is present, skip token auth.
- */
+let schemaReady: Promise<void> | undefined
+
+/** Resolve explicitly presented Meitheal credentials before evaluating the transport. */
 export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent | null> {
-  // HA ingress bypass — users authenticated via Supervisor don't need tokens
-  if (request.headers.get("x-hass-user-id")) {
-    return null
-  }
+  const header = request.headers.get("authorization")
+  if (!header || !/^Bearer\s+mth_/i.test(header)) return null
 
-  const authHeader = request.headers.get("authorization")
-  if (!authHeader) return null
-
-  const match = authHeader.match(/^Bearer\s+(mth_[a-f0-9]+)$/i)
-  if (!match) return null  // Not an agent token (could be other auth)
-
-  const plaintext = match[1]!
-  const tokenHash = hashToken(plaintext)
+  const plaintext = /^Bearer\s+(mth_[a-f0-9]{64})$/i.exec(header)?.[1]
+  const unauthorized = () => apiProblem({
+    status: 401,
+    detail: "Use a valid, active Meitheal agent token.",
+    extraHeaders: { "WWW-Authenticate": 'Bearer error="invalid_token"', "Cache-Control": "no-store" },
+  })
+  if (!plaintext) throw unauthorized()
 
   let record: AgentTokenRecord | null
   try {
-    record = await getAgentTokenByHash(tokenHash)
+    schemaReady ??= ensureAgentTokenSchema()
+    await schemaReady
+    record = await getAgentTokenByHash(hashToken(plaintext))
   } catch {
-    // DB not ready yet or schema not bootstrapped — allow through
-    return null
+    schemaReady = undefined
+    throw apiProblem({ status: 503, detail: "Agent credentials are temporarily unavailable." })
   }
 
-  if (!record) {
-    throw apiProblem({
-      status: 401,
-      title: "Invalid Token",
-      detail: "The provided agent token is not recognized",
-      type: "https://meitheal.local/problems/invalid-token",
-    })
+  const active = record && !record.revoked &&
+    (record.expiresAt === null || Date.parse(record.expiresAt) > Date.now())
+  if (!record || !active) throw unauthorized()
+
+  // Avoid writing SQLite on every polling request.
+  if (!record.lastUsedAt || Date.now() - Date.parse(record.lastUsedAt) >= 60_000) {
+    updateAgentTokenLastUsed(record.id).catch(() => {})
   }
 
-  if (record.revoked) {
-    throw apiProblem({
-      status: 401,
-      title: "Token Revoked",
-      detail: "This agent token has been revoked",
-      type: "https://meitheal.local/problems/token-revoked",
-    })
-  }
-
-  if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
-    throw apiProblem({
-      status: 401,
-      title: "Token Expired",
-      detail: `This agent token expired at ${record.expiresAt}`,
-      type: "https://meitheal.local/problems/token-expired",
-    })
-  }
-
-  // Update last-used timestamp (fire-and-forget, don't block response)
-  updateAgentTokenLastUsed(record.id).catch(() => {})
-
-  return {
-    tokenId: record.id,
-    tokenName: record.name,
-    scopes: record.scopes,
-  }
+  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes }
 }
-
-// ── Scope Enforcement ────────────────────────────────────────────────────────
 
 /**
  * Check if the resolved agent has the required scope.
@@ -116,43 +83,24 @@ export function requireScope(agent: ResolvedAgent | null, scope: AgentScope): Re
  * Route-level scope mapping.
  * Maps API path patterns to required scopes for automated enforcement.
  */
-export const ROUTE_SCOPE_MAP: ReadonlyMap<string, AgentScope> = new Map([
-  // Tasks
-  ["/api/tasks/create", "tasks:write"],
-  ["/api/tasks/update", "tasks:write"],
-  ["/api/tasks/delete", "tasks:delete"],
-  ["/api/tasks/batch-update", "tasks:write"],
-  ["/api/tasks/batch-delete", "tasks:delete"],
-  ["/api/tasks", "tasks:read"],
-  // Projects
-  ["/api/projects", "projects:read"],
-  // Search
-  ["/api/search", "search:read"],
-  // Settings
-  ["/api/settings", "settings:read"],
-  // Protocols
-  ["/api/mcp", "mcp:execute"],
-  ["/api/a2a", "a2a:execute"],
-])
-
-/**
- * Resolve the required scope for a given API path and method.
- * Returns null if no scope is required (e.g., public endpoints).
- */
+/** Explicit token permissions; unknown routes are denied by middleware. */
 export function resolveRouteScope(pathname: string, method: string): AgentScope | null {
-  // Write operations on settings need settings:write
-  if (pathname === "/api/settings" && (method === "PUT" || method === "PATCH")) {
-    return "settings:write"
+  const read = method === "GET" || method === "HEAD"
+  const at = (prefix: string) => pathname === prefix || pathname.startsWith(prefix + "/")
+  if (method === "POST" && /^\/api\/tasks\/[^/]+\/handoff$/.test(pathname)) return "tasks:propose"
+  if (at("/api/agent-tokens") || pathname === "/api/import/settings") return "settings:write"
+  if (pathname === "/api/nfc/complete") return "tasks:write"
+  if (at("/api/tasks")) {
+    if (method === "DELETE" || ["/api/tasks/delete", "/api/tasks/batch-delete", "/api/tasks/clear-completed", "/api/tasks/delete-completed"].includes(pathname)) return "tasks:delete"
+    return read ? "tasks:read" : "tasks:write"
   }
-
-  // Check exact matches first
-  const exact = ROUTE_SCOPE_MAP.get(pathname)
-  if (exact) return exact
-
-  // Check prefix matches (e.g., /api/tasks/123 → tasks:read)
-  for (const [pattern, scope] of ROUTE_SCOPE_MAP) {
-    if (pathname.startsWith(pattern + "/")) return scope
-  }
-
+  if (at("/api/mcp")) return "mcp:execute"
+  if (at("/api/a2a")) return "a2a:execute"
+  if (at("/api/search") || at("/api/unfurl")) return "search:read"
+  if (["projects", "goals", "areas", "pillars"].some(group => at(`/api/${group}`))) return read ? "projects:read" : "projects:write"
+  if (["settings", "rules", "frameworks", "features", "import", "export", "integrations", "todo", "ha", "grocy", "license"].some(group => at(`/api/${group}`))) return read ? "settings:read" : "settings:write"
+  if (["labels", "lanes", "habits", "templates", "task-templates", "checklists", "links", "focus", "gamification", "summary", "review", "calendar", "time", "pomodoro", "reminders", "saved-filters", "sse"].some(group => at(`/api/${group}`))) return read ? "tasks:read" : "tasks:write"
+  if (at("/api/users")) return read ? "tasks:read" : "settings:write"
+  if (at("/api/webhooks")) return "webhooks:write"
   return null
 }

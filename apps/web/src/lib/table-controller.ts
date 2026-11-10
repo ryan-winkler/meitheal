@@ -932,8 +932,7 @@ function setupInlineEditing() {
             row.classList.toggle("row-done", sel.value === "complete")
             // Gamification + confetti on completion
             if (sel.value === "complete") {
-              const priority = Number(row?.dataset.priority ?? 3)
-              onTaskCompleted(priority)
+              onTaskCompleted(await res.json())
             }
           }
           if (row && field === "priority") {

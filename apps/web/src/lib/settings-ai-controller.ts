@@ -1,3 +1,4 @@
+import { settingsAction } from "@lib/settings-utils"
 /**
  * AI & Agent settings controller.
  *
@@ -7,6 +8,46 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting } from "@lib/settings-utils"
+import { AGENT_PROTOCOLS, agentProtocolEnabled, agentProtocolSettingKey } from "@lib/agent-protocol-options"
+import { settingsStore } from "@lib/settings-store"
+import { configureWebMcp, notifyWebMcpPreferenceChanged } from "@lib/webmcp-controller"
+
+let protocolRender = 0
+
+async function renderProtocolSettings(settings: Record<string, unknown>, hydrateSwitches = true) {
+  const signal = pageLifecycle.signal
+  const render = ++protocolRender
+  await Promise.all(AGENT_PROTOCOLS.map(async protocol => {
+    const enabled = agentProtocolEnabled(protocol, settings[agentProtocolSettingKey(protocol)])
+    const input = document.querySelector<HTMLInputElement>(`#agent-${protocol}-enabled`)
+    if (input && hydrateSwitches) input.checked = enabled
+    if (protocol === "webmcp") {
+      await configureWebMcp(enabled)
+      return
+    }
+    const status = document.getElementById(`agent-${protocol}-runtime-status`)
+    const link = document.querySelector<HTMLAnchorElement>(`[data-protocol-link="${protocol}"]`)
+    if (!status || !link) return
+    link.hidden = true
+    status.textContent = enabled ? "Checking discovery…" : "Disabled."
+    if (!enabled) return
+    let available = false
+    try {
+      const path = protocol === "a2a" ? "/.well-known/agent-card.json" : "/.well-known/mcp.json"
+      const response = await fetch(path, { signal, cache: "no-store" })
+      if (response.ok) available = typeof (await response.json())?.name === "string"
+    } catch { /* Display unavailable; keep the preference for retry. */ }
+    if (signal.aborted || render !== protocolRender) return
+    status.textContent = available ? "Discovery is available." : "Discovery is unavailable. Check the connection and retry."
+    link.hidden = !available
+  }))
+  const badge = document.getElementById("agent-protocols-status")
+  if (badge && !signal.aborted && render === protocolRender) {
+    const count = AGENT_PROTOCOLS.filter(protocol => agentProtocolEnabled(protocol, settings[agentProtocolSettingKey(protocol)])).length
+    badge.textContent = `${count} protocols enabled`
+    badge.className = count ? "badge badge-active" : "badge badge-pending"
+  }
+}
 
 export function initAISettings(): void {
   // AI provider custom URL toggle
@@ -23,7 +64,7 @@ export function initAISettings(): void {
   // Save AI settings
   const saveAiBtn = document.getElementById("save-ai")
   if (saveAiBtn) {
-    pageLifecycle.on(saveAiBtn, "click", async () => {
+    pageLifecycle.on(saveAiBtn, "click", settingsAction(async () => {
     const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
     const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value
 
@@ -43,39 +84,36 @@ export function initAISettings(): void {
     saveBtn.textContent = origText
     saveBtn.disabled = false
     showToast("settings.ai_saved")
-    })
+    }))
   }
 
   // Save agent protocols
   const saveProtocolsBtn = document.getElementById("save-agent-protocols")
   if (saveProtocolsBtn) {
-    pageLifecycle.on(saveProtocolsBtn, "click", async () => {
-    const a2a = (document.getElementById("agent-a2a-enabled") as HTMLInputElement)?.checked ?? true
-    const webmcp = (document.getElementById("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
-    const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
-
+    pageLifecycle.on(saveProtocolsBtn, "click", settingsAction(async () => {
     const saveBtn = document.getElementById("save-agent-protocols") as HTMLButtonElement
     if (!saveBtn) return
     const origText = saveBtn.textContent
-    saveBtn.textContent = "💾 Saving..."
+    saveBtn.textContent = "Saving…"
     saveBtn.disabled = true
-
-    await saveSetting("agent-protocols-a2a-enabled", a2a)
-    await saveSetting("agent-protocols-webmcp-enabled", webmcp)
-    await saveSetting("agent-protocols-mcp-enabled", mcp)
-
-    // Update status badge
-    const statusEl = document.getElementById("agent-protocols-status")
-    if (statusEl) {
-      const anyEnabled = a2a || webmcp || mcp
-      statusEl.textContent = anyEnabled ? "Active" : "Disabled"
-      statusEl.className = anyEnabled ? "badge badge-active" : "badge badge-pending"
+    const changes = Object.fromEntries(AGENT_PROTOCOLS.map(protocol => [
+      agentProtocolSettingKey(protocol), document.querySelector<HTMLInputElement>(`#agent-${protocol}-enabled`)?.checked ?? false,
+    ]))
+    try {
+      for (const [key, value] of Object.entries(changes)) await saveSetting(key, value)
+    } catch (error) {
+      settingsStore.invalidate()
+      const persisted = await settingsStore.load().catch(() => null)
+      if (persisted) await renderProtocolSettings(persisted, false)
+      notifyWebMcpPreferenceChanged()
+      throw error
     }
-
+    notifyWebMcpPreferenceChanged()
+    await renderProtocolSettings(changes)
     saveBtn.textContent = origText
     saveBtn.disabled = false
     showToast("settings.agent_protocols_saved")
-    })
+    }))
   }
 }
 
@@ -93,28 +131,6 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     if (el) el.value = String(s["ai-custom-url"])
   }
 
-  // Agent Protocols
-  const a2aEnabled = s["agent-protocols-a2a-enabled"]
-  const webmcpEnabled = s["agent-protocols-webmcp-enabled"]
-  const mcpEnabled = s["agent-protocols-mcp-enabled"]
-  if (a2aEnabled !== undefined)
-    (document.getElementById("agent-a2a-enabled") as HTMLInputElement).checked =
-      a2aEnabled === true || a2aEnabled === "true"
-  if (webmcpEnabled !== undefined)
-    (document.getElementById("agent-webmcp-enabled") as HTMLInputElement).checked =
-      webmcpEnabled === true || webmcpEnabled === "true"
-  if (mcpEnabled !== undefined)
-    (document.getElementById("agent-mcp-enabled") as HTMLInputElement).checked =
-      mcpEnabled === true || mcpEnabled === "true"
-
-  const anyConfigured = a2aEnabled !== undefined || webmcpEnabled !== undefined || mcpEnabled !== undefined
-  const anyActive =
-    a2aEnabled === true || a2aEnabled === "true" ||
-    webmcpEnabled === true || webmcpEnabled === "true" ||
-    mcpEnabled === true || mcpEnabled === "true"
-  const statusEl = document.getElementById("agent-protocols-status")
-  if (statusEl && anyConfigured) {
-    statusEl.textContent = anyActive ? "Active" : "Disabled"
-    statusEl.className = anyActive ? "badge badge-active" : "badge badge-pending"
-  }
+  // Agent Protocols: one default and persistence policy shared with the API.
+  void renderProtocolSettings(s)
 }

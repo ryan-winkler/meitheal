@@ -27,7 +27,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
@@ -38,6 +37,7 @@ from homeassistant.helpers.llm import (
     Tool,
     ToolInput,
 )
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util.json import JsonObjectType
 
 from .const import DOMAIN
@@ -63,15 +63,13 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
 
 
 class SearchTasksTool(Tool):
-    """Search Meitheal tasks by keyword, status, priority, urgency/importance."""
+    """Search Meitheal tasks through the supported native search filters."""
 
     name = "meitheal_search_tasks"
     description = (
         "Search tasks in Meitheal, the household task manager. "
         "You can filter by keyword (matches title, description, labels, custom fields, comments, and task IDs), "
-        "status (backlog, todo, in_progress, or done), priority (1=urgent, 5=low), "
-        "urgency (0-5, Eisenhower x-axis), importance (0-5, Eisenhower y-axis), "
-        "or Eisenhower quadrant (do-first, schedule, delegate, not-now). "
+        "status (backlog, todo, in_progress, or done), and priority (1=urgent, 5=low). "
         "Use this when the user asks about their tasks, to-do list, or task list."
     )
     parameters = vol.Schema(
@@ -85,18 +83,6 @@ class SearchTasksTool(Tool):
                 "priority",
                 description="Filter by priority (1 = highest/urgent, 5 = lowest)",
             ): vol.All(int, vol.Range(min=1, max=5)),
-            vol.Optional(
-                "urgency",
-                description="Filter by urgency (Eisenhower x-axis: 0=unclassified, 5=critical)",
-            ): vol.All(int, vol.Range(min=0, max=5)),
-            vol.Optional(
-                "importance",
-                description="Filter by importance (Eisenhower y-axis: 0=unclassified, 5=critical)",
-            ): vol.All(int, vol.Range(min=0, max=5)),
-            vol.Optional(
-                "eisenhower_quadrant",
-                description="Filter by Eisenhower quadrant: do-first, schedule, delegate, or not-now",
-            ): vol.In(["do-first", "schedule", "delegate", "not-now"]),
             vol.Optional(
                 "include_completed",
                 description="Include completed tasks in the results",
@@ -178,7 +164,7 @@ class CreateTaskTool(Tool):
     description = (
         "Create a new task in Meitheal, the household task manager. "
         "Provide at minimum a title. Optionally include a description, "
-        "urgency (0-5 Eisenhower), and importance (0-5 Eisenhower). "
+        "priority (1-5), due_date (ISO date), urgency (0-5 Eisenhower), and importance (0-5 Eisenhower). "
         "Use this when the user says things like 'add a task', 'remind me to', "
         "'create a todo', or 'I need to'."
     )
@@ -186,6 +172,8 @@ class CreateTaskTool(Tool):
         {
             vol.Required("title", description="Task title"): str,
             vol.Optional("description", description="Task description or notes"): str,
+            vol.Optional("priority", description="Priority 1 (urgent) to 5 (lowest)"): vol.All(int, vol.Range(min=1, max=5)),
+            vol.Optional("due_date", description="Due date in ISO 8601 format"): str,
             vol.Optional(
                 "urgency",
                 description="Urgency 0-5 (Eisenhower x-axis: 0=unclassified, 5=critical)",
@@ -212,6 +200,10 @@ class CreateTaskTool(Tool):
             await coordinator.async_create_task(
                 title=tool_input.tool_args["title"],
                 description=tool_input.tool_args.get("description"),
+                priority=tool_input.tool_args.get("priority"),
+                due_date=tool_input.tool_args.get("due_date"),
+                urgency=tool_input.tool_args.get("urgency"),
+                importance=tool_input.tool_args.get("importance"),
             )
         except Exception as err:
             raise HomeAssistantError(f"Failed to create task: {err}") from err
@@ -443,12 +435,7 @@ class GetTaskSummaryTool(Tool):
         """Return task summary."""
         coordinator = _get_coordinator(hass)
         if not coordinator or not coordinator.data:
-            return {
-                "total": 0,
-                "active": 0,
-                "overdue": 0,
-                "done": 0,
-            }
+            return {"error": "Task data unavailable"}
 
         data = coordinator.data
         done = sum(1 for t in data.tasks if t.status == "done")
@@ -794,16 +781,18 @@ class BatchCompleteTasksTool(Tool):
             targets.append(t)
 
         completed = []
+        failed = []
         for t in targets:
             try:
                 await coordinator.async_complete_task(task_id=t.id)
                 completed.append(t.title)
-            except Exception:
-                pass
+            except UpdateFailed as err:
+                failed.append({"id": t.id, "error": str(err)})
 
         return {
             "completed": completed,
             "count": len(completed),
+            "failed": failed,
             "message": f"Completed {len(completed)} tasks",
         }
 
@@ -815,9 +804,8 @@ API_PROMPT = (
     "running as a Home Assistant addon. Meitheal manages the household's tasks, "
     "to-do lists, projects, and calendar events synced from Home Assistant.\n\n"
     "## What You Can Do\n"
-    "- **Search tasks** by keyword, status (backlog/todo/in_progress/done), priority (1-5), "
-    "urgency (0-5), importance (0-5), or Eisenhower quadrant (do-first/schedule/delegate/not-now)\n"
-    "- **Create tasks** with title, description, urgency, and importance\n"
+    "- **Search tasks** by keyword, status (backlog/todo/in_progress/done), or priority (1-5)\n"
+    "- **Create tasks** with title, description, priority, due date, urgency, and importance\n"
     "- **Complete tasks** by ID or title\n"
     "- **Delete tasks** permanently\n"
     "- **Update tasks** — change priority, urgency, importance, due date, status, title, or description\n"
@@ -967,7 +955,7 @@ class RemoveFromTodoListTool(Tool):
         "This deletes the task from Meitheal and removes it from all synced HA todo entities. "
         "Use when the user says 'take X off my list', 'remove X from the shopping list', "
         "'clear X from my todo', or 'take that off the list'. "
-        "Provide task_id (UUID) or title (fuzzy match) to identify the task."
+        "Provide task_id (UUID) or a unique exact title to identify the task."
     )
     parameters = vol.Schema(
         {
@@ -995,10 +983,10 @@ class RemoveFromTodoListTool(Tool):
 
         # Resolve by title if no ID given
         if not task_id and title:
-            tasks = await coordinator.async_search_tasks(title)
-            if not tasks:
-                return {"error": f"No task found matching '{title}'"}
-            task_id = tasks[0].get("id")
+            try:
+                task_id = coordinator.resolve_task_title(title)
+            except UpdateFailed as err:
+                return {"error": str(err)}
 
         if not task_id:
             return {"error": "Could not resolve task"}
@@ -1009,7 +997,7 @@ class RemoveFromTodoListTool(Tool):
 
         return {
             "success": True,
-            "message": f"Removed task from Meitheal and all synced todo lists",
+            "message": "Removed task from Meitheal and all synced todo lists",
             "task_id": task_id,
         }
 
@@ -1212,7 +1200,7 @@ def async_register_llm_api(hass: HomeAssistant, entry_id: str) -> callable:
     """
     api = MeithealLLMAPI(
         hass=hass,
-        api_id=f"meitheal_tasks-{entry_id}",
+        id=f"meitheal_tasks-{entry_id}",
         name="Meitheal Tasks",
     )
     unreg = llm.async_register_api(hass, api)

@@ -26,6 +26,7 @@ export interface PersistedTaskResponse {
 let clientSingleton: Client | null = null;
 let dbSingleton: ReturnType<typeof drizzle> | null = null;
 let ensured = false;
+let ensuring: Promise<void> | null = null
 
 /** Latest DB integrity check result — exposed via /api/health */
 let dbIntegrityOk = true
@@ -181,10 +182,15 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
  * Safe to call on every request; short-circuits after first successful run.
  */
 export async function ensureSchema(): Promise<void> {
-  if (ensured) {
-    return;
-  }
+  if (ensured) return
+  ensuring ??= bootstrapSchema().catch((error) => {
+    ensuring = null
+    throw error
+  })
+  return ensuring
+}
 
+async function bootstrapSchema(): Promise<void> {
   const client = getClient();
 
   // Auto-backup before any migrations (PRA-25)
@@ -1339,6 +1345,7 @@ export async function persistManualCalendarConfirmation(params: {
 }
 
 export function resetPersistenceForTests(): void {
+  ensuring = null
   clientSingleton = null;
   dbSingleton = null;
   ensured = false;

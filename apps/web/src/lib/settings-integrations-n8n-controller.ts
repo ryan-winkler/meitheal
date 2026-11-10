@@ -1,3 +1,4 @@
+import { showSettingsError } from "@lib/settings-utils"
 /**
  * n8n & Node-RED integration settings controller.
  *
@@ -29,7 +30,7 @@ export function initN8nSettings(): void {
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   // ───── Test Event Bus ─────
@@ -173,7 +174,7 @@ export function initN8nSettings(): void {
     const statusEl = document.getElementById("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   // ───── Test Webhook (Standalone) ─────
@@ -355,8 +356,8 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
       (cb as HTMLInputElement).checked = (s.n8n_events as string[]).includes((cb as HTMLInputElement).value)
     })
   }
-  if (s.n8n_api_key) (document.getElementById("n8n-api-key") as HTMLInputElement).value = String(s.n8n_api_key)
-  if (s.n8n_signing_secret) (document.getElementById("n8n-secret") as HTMLInputElement).value = String(s.n8n_signing_secret)
+  if (s.n8n_api_key_configured) (document.getElementById("n8n-api-key") as HTMLInputElement).placeholder = "Key saved — leave blank to keep"
+  if (s.n8n_signing_secret_configured) (document.getElementById("n8n-secret") as HTMLInputElement).placeholder = "Secret saved — leave blank to keep"
 
   // Last delivery
   if (s.n8n_last_delivery) {

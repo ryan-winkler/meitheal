@@ -1,3 +1,5 @@
+import { settingsAction } from "@lib/settings-utils"
+import { navigate } from "astro:transitions/client"
 /**
  * Settings Rules Controller
  *
@@ -17,6 +19,7 @@ import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controlle
 
 interface RuleApiResponse {
   ok: boolean
+  status?: number
   data?: unknown
   errorCode?: string
   message?: string
@@ -87,25 +90,38 @@ const PRESET_DEFINITIONS: Record<string, {
 
 /**
  * Fetch helper — wraps native fetch with pageLifecycle signal
- * and graceful error handling (catches network errors, non-JSON responses).
- * Returns { ok: false } on any failure instead of throwing.
+ * and checked transport/application outcomes.
+ * Mutations reject on transport or application failure; reads return a checked result.
  */
 async function apiFetch(path: string, options?: RequestInit): Promise<RuleApiResponse> {
   try {
-    const res = await fetch(path, {
-      ...options,
-      signal: pageLifecycle.signal,
-    })
-    // Guard: if response is not JSON (e.g. HA login page redirect, HTML error),
-    // don't let it bubble up as "session expired" via the 403 handler in Layout.astro
-    const contentType = res.headers.get("content-type") ?? ""
-    if (!contentType.includes("application/json")) {
-      return { ok: false, errorCode: "NON_JSON_RESPONSE", message: `Status ${res.status}` }
+    const res = await fetch(path, { ...options, signal: pageLifecycle.signal })
+    const payload = await res.json() as RuleApiResponse
+    if (!res.ok || payload.ok !== true) {
+      if (!options?.method || options.method === "GET") {
+        return { ...payload, ok: false, status: res.status, errorCode: payload.errorCode ?? "REQUEST_FAILED" }
+      }
+      throw new Error(payload.message || `Request failed: ${res.status}`)
     }
-    return res.json() as Promise<RuleApiResponse>
-  } catch {
-    return { ok: false, errorCode: "NETWORK_ERROR", message: "Failed to reach API" }
+    return payload
+  } catch (error) {
+    if (options?.method && options.method !== "GET") throw error
+    return { ok: false, errorCode: "REQUEST_FAILED", message: "Could not load configuration" }
   }
+}
+
+let defaultRuleIds: string[] = []
+let rulesLoaded = false
+let loadGeneration = 0
+const DEFAULT_NAMES = new Set(["Epic Default", "Story Default", "Task Default", "Doc Default", "Documentation Default", "Epic WSJF", "Story ICE", "Epic MoSCoW", "Story RICE"])
+
+async function replaceRuleSet(rules: unknown[], replaceIds?: string[]): Promise<void> {
+  const result = await apiFetch("/api/rules", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rules, ...(replaceIds === undefined ? {} : { replaceIds }) }),
+  })
+  if (replaceIds !== undefined) defaultRuleIds = (result.data as Array<{ id: string }>).map((rule) => rule.id)
 }
 
 
@@ -124,12 +140,14 @@ function downloadJson(data: unknown, label: string): void {
 
 /**
  * Load current rules from the API and reflect them in the UI.
- * If no rules exist (first load), auto-seeds the "Strategic" preset.
+ * An empty configuration remains empty until the user explicitly applies a preset.
  */
 async function loadRulesIntoUI(): Promise<void> {
+  const generation = ++loadGeneration
   try {
     const result = await apiFetch("/api/rules")
-    if (!result.ok || !Array.isArray(result.data)) return
+    if (generation !== loadGeneration) return
+    if (!result.ok || !Array.isArray(result.data)) throw new Error("Could not load rules")
 
     const rules = result.data as Array<{
       id: string
@@ -137,13 +155,14 @@ async function loadRulesIntoUI(): Promise<void> {
       taskTypes: string[]
       lensIds: string[]
       aiScope: Record<string, boolean | string>
+      tags: string[]
+      ruleType: string
     }>
 
-    // Auto-seed: if no rules exist on first load, apply the Strategic preset
-    if (rules.length === 0) {
-      await applyPresetDirect("strategic")
-      return // applyPresetDirect calls loadRulesIntoUI recursively
-    }
+    // This editor owns per-type defaults; tagged and custom rules remain untouched.
+    const defaults = rules.filter((rule) => rule.ruleType === "strategic-lens" && rule.tags.length === 0 && rule.taskTypes.length === 1 && DEFAULT_NAMES.has(rule.name))
+    defaultRuleIds = defaults.map((rule) => rule.id)
+    rulesLoaded = true
 
     // Clear all checkboxes first
     document.querySelectorAll<HTMLInputElement>(".rules-fw-check").forEach((cb) => { cb.checked = false })
@@ -151,7 +170,7 @@ async function loadRulesIntoUI(): Promise<void> {
     document.querySelectorAll<HTMLTextAreaElement>(".rules-ai-textarea").forEach((ta) => { ta.value = "" })
 
     // Apply rules to the UI
-    for (const rule of rules) {
+    for (const rule of defaults) {
       for (const taskType of rule.taskTypes) {
         // Framework assignment checkboxes
         for (const lensId of rule.lensIds) {
@@ -183,7 +202,8 @@ async function loadRulesIntoUI(): Promise<void> {
     // Highlight active preset
     highlightActivePreset()
   } catch {
-    // Silently fail — rules may not exist yet
+    rulesLoaded = false
+    showToast("Could not load rules. Reload before editing them.", "error")
   }
 }
 
@@ -227,27 +247,84 @@ function highlightActivePreset(): void {
 /** Debounce timer and saving guard for saveRulesFromUI */
 let _saveTimer: ReturnType<typeof setTimeout> | null = null
 let _isSaving = false
+let _saveAgain = false
+let savePromise: Promise<void> | null = null
+let saveFailed = false
+let replacing = false
+let configurationMutation: Promise<unknown> = Promise.resolve()
+let frameworkLoadGeneration = 0
+
+/** All rule/framework writes share one ordering, including destructive resets. */
+function withConfigurationMutation<T>(action: () => Promise<T>): Promise<T> {
+  const signal = pageLifecycle.signal
+  const result = configurationMutation.then(() => {
+    if (signal.aborted) throw new DOMException("Page changed", "AbortError")
+    return action()
+  })
+  configurationMutation = result.catch(() => {})
+  return result
+}
+
+/** Full replacements wait for autosave and prevent edits against deleted IDs. */
+async function withRulesReplacement(action: () => Promise<void>, preserveRuleEdits = false): Promise<void> {
+  if (replacing) return
+  replacing = true
+  const saveAfterReplacement = preserveRuleEdits && (_saveTimer !== null || _saveAgain)
+  if (_saveTimer) clearTimeout(_saveTimer)
+  _saveTimer = null
+  _saveAgain = false
+  const controls = Array.from(document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("#rules-lenses-settings input, #rules-lenses-settings button, #rules-lenses-settings textarea, #rules-lenses-settings select"))
+  const previous = controls.map((control) => control.disabled)
+  controls.forEach((control) => { control.disabled = true })
+  try {
+    await savePromise
+    await withConfigurationMutation(action)
+  } finally {
+    controls.forEach((control, index) => { control.disabled = previous[index]! })
+    replacing = false
+    if (saveAfterReplacement) debouncedSave()
+  }
+}
+
+function saveRulesFromUI(): Promise<void> {
+  if (replacing) return Promise.resolve()
+  if (savePromise) { _saveAgain = true; return savePromise }
+  savePromise = performRulesSave().finally(() => { savePromise = null })
+  return savePromise
+}
 
 /** Debounced save — coalesces rapid changes into a single API call */
 function debouncedSave(): void {
   if (_saveTimer) clearTimeout(_saveTimer)
-  _saveTimer = setTimeout(() => { saveRulesFromUI() }, 400)
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null
+    saveRulesFromUI()
+  }, 400)
+}
+
+/** Export/navigation must include edits still waiting in the debounce window. */
+async function flushRulesSave(): Promise<void> {
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer)
+    _saveTimer = null
+    await saveRulesFromUI()
+  } else {
+    await savePromise
+  }
+  if (saveFailed) throw new Error("Rule changes have not been saved")
 }
 
 /** Save current UI state as rules to the API */
-async function saveRulesFromUI(): Promise<void> {
-  if (_isSaving) return
+async function performRulesSave(): Promise<void> {
+  if (!document.getElementById("rules-lenses-settings")) return
+  if (_isSaving) { _saveAgain = true; return }
+  if (!rulesLoaded) { showToast("Rules have not loaded. Reload before saving.", "error"); return }
   _isSaving = true
+  saveFailed = false
+  _saveAgain = false
   try {
-    // Delete all existing rules first (full replace)
-    const existing = await apiFetch("/api/rules")
-    if (existing.ok && Array.isArray(existing.data)) {
-      for (const rule of existing.data as Array<{ id: string }>) {
-        await apiFetch(`/api/rules/${rule.id}`, { method: "DELETE" })
-      }
-    }
-
     // Collect state from UI
+    const rules: unknown[] = []
     const taskTypes = ["epic", "story", "task", "documentation"]
     for (const taskType of taskTypes) {
       const lensIds: string[] = []
@@ -269,24 +346,20 @@ async function saveRulesFromUI(): Promise<void> {
         aiScope.customInstructions = textarea.value.trim()
       }
 
-      await apiFetch("/api/rules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} Default`,
-          taskTypes: [taskType],
-          lensIds,
-          aiScope,
-          ruleType: "strategic-lens",
-        }),
+      rules.push({
+        name: `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} Default`,
+        taskTypes: [taskType], lensIds, aiScope, ruleType: "strategic-lens",
       })
     }
+    await withConfigurationMutation(() => replaceRuleSet(rules, defaultRuleIds))
 
     showToast("settings.rules_saved")
   } catch {
+    saveFailed = true
     showToast("settings.rules_save_failed", "error")
   } finally {
     _isSaving = false
+    if (_saveAgain && !replacing) await performRulesSave()
   }
 }
 
@@ -298,30 +371,10 @@ async function applyPresetDirect(presetId: string): Promise<void> {
   const preset = PRESET_DEFINITIONS[presetId]
   if (!preset) return
 
-  // Clear existing
-  const existing = await apiFetch("/api/rules")
-  if (existing.ok && Array.isArray(existing.data)) {
-    for (const rule of existing.data as Array<{ id: string }>) {
-      await apiFetch(`/api/rules/${rule.id}`, { method: "DELETE" })
-    }
-  }
-
-  // Create new rules from preset
-  for (const rule of preset.rules) {
-    await apiFetch("/api/rules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: rule.name,
-        taskTypes: rule.taskTypes,
-        lensIds: rule.lensIds,
-        aiScope: rule.aiScope,
-        ruleType: "strategic-lens",
-      }),
-    })
-  }
-
-  await loadRulesIntoUI()
+  await withRulesReplacement(async () => {
+    await replaceRuleSet(preset.rules.map((rule) => ({ ...rule, ruleType: "strategic-lens" })))
+    await loadRulesIntoUI()
+  })
 }
 
 /** Apply a preset with user confirmation when changing from an existing config */
@@ -338,7 +391,8 @@ async function applyPreset(presetId: string): Promise<void> {
 
   // Confirm when switching presets (existing rules will be replaced)
   const existing = await apiFetch("/api/rules")
-  const hasExisting = existing.ok && Array.isArray(existing.data) && existing.data.length > 0
+  if (!existing.ok || !Array.isArray(existing.data)) throw new Error("Could not load existing rules")
+  const hasExisting = existing.data.length > 0
 
   if (hasExisting) {
     const confirmed = await confirmDialog({
@@ -356,9 +410,11 @@ async function applyPreset(presetId: string): Promise<void> {
 
 /** Load framework configs into the config editor */
 async function loadFrameworkConfigs(): Promise<void> {
+  const generation = ++frameworkLoadGeneration
   try {
     const result = await apiFetch("/api/frameworks")
-    if (!result.ok || !Array.isArray(result.data)) return
+    if (generation !== frameworkLoadGeneration) return
+    if (!result.ok || !Array.isArray(result.data)) throw new Error("Could not load frameworks")
 
     for (const fw of result.data as Array<{
       id: string
@@ -416,24 +472,33 @@ async function loadFrameworkConfigs(): Promise<void> {
           const display = slider.parentElement?.querySelector(".weight-display")
           if (display) display.textContent = `${Number(slider.value).toFixed(1)}×`
         })
-        pageLifecycle.on(slider, "change", async () => {
+        pageLifecycle.on(slider, "change", settingsAction(async () => {
           const frameworkId = slider.dataset.framework
           const fieldKey = slider.dataset.field
-          if (!frameworkId || !fieldKey) return
+          if (!frameworkId || !fieldKey || replacing) return
+          const weight = Number(slider.value)
+          frameworkLoadGeneration++
 
-          await apiFetch(`/api/frameworks/${frameworkId}`, {
+          await withConfigurationMutation(() => apiFetch(`/api/frameworks/${frameworkId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              fields: { [fieldKey]: { weight: Number(slider.value) } },
+              fields: { [fieldKey]: { weight } },
             }),
-          })
+          }))
           showToast("settings.framework_updated")
-        })
+        }))
       })
     }
   } catch {
-    // Silently fail
+    if (generation !== frameworkLoadGeneration) return
+    document.querySelectorAll<HTMLElement>(".rules-fw-config-fields").forEach((container) => {
+      const message = document.createElement("p")
+      message.className = "text-muted text-xs"
+      message.setAttribute("role", "status")
+      message.textContent = "Framework settings could not load. Reload this page to retry."
+      container.replaceChildren(message)
+    })
   }
 }
 
@@ -442,17 +507,48 @@ async function loadFrameworkConfigs(): Promise<void> {
  * Called by settings-page.ts on the appropriate lifecycle event.
  */
 export function initRulesSettings(): void {
+  const signal = pageLifecycle.signal
+  signal.addEventListener("abort", () => {
+    if (_saveTimer !== null) clearTimeout(_saveTimer)
+    _saveTimer = null
+    _saveAgain = false
+    rulesLoaded = false
+    ++loadGeneration
+    ++frameworkLoadGeneration
+  }, { once: true })
+  rulesLoaded = false
+  saveFailed = false
+  // Astro waits for the preparation loader before replacing this page's DOM.
+  pageLifecycle.on(document, "astro:before-preparation", (rawEvent) => {
+    const event = rawEvent as Event & { loader: () => Promise<void>; from: URL }
+    const load = event.loader
+    event.loader = async () => {
+      try {
+        await flushRulesSave()
+        await configurationMutation
+      } catch {
+        // Astro treats preventDefault alone as a full-page fallback. Supersede
+        // that navigation with a same-page hash move, preserving this editor.
+        const stay = new URL(event.from)
+        if (!stay.hash) stay.hash = "rules-lenses-settings"
+        await navigate(stay.href, { history: "replace" })
+        event.preventDefault()
+        return
+      }
+      await load()
+    }
+  })
   // Load current state
   loadRulesIntoUI()
   loadFrameworkConfigs()
 
   // Preset buttons
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {
-    pageLifecycle.on(btn, "click", async () => {
+    pageLifecycle.on(btn, "click", settingsAction(async () => {
       const presetId = btn.dataset.preset
       if (!presetId) return
       await applyPreset(presetId)
-    })
+    }))
   })
 
   // Framework assignment checkboxes — auto-save on change (debounced)
@@ -472,15 +568,15 @@ export function initRulesSettings(): void {
 
   // AI instruction textareas — save on blur
   document.querySelectorAll<HTMLTextAreaElement>(".rules-ai-textarea").forEach((ta) => {
-    pageLifecycle.on(ta, "blur", async () => {
+    pageLifecycle.on(ta, "blur", settingsAction(async () => {
       await saveRulesFromUI()
-    })
+    }))
   })
 
   // Restore defaults
   const restoreBtn = document.getElementById("rules-restore-defaults")
   if (restoreBtn) {
-    pageLifecycle.on(restoreBtn, "click", async () => {
+    pageLifecycle.on(restoreBtn, "click", settingsAction(async () => {
       const confirmed = await confirmDialog({
         message: "This will delete all custom rules and restore the default Strategic preset. All framework weight overrides will also be reset. This cannot be undone.",
         title: "Restore Default Rules",
@@ -490,16 +586,18 @@ export function initRulesSettings(): void {
       if (!confirmed) return
 
       // Use server-side defaults endpoint — also accessible by HA LLM API and agents
-      await apiFetch("/api/rules/defaults", { method: "POST" })
-      await loadRulesIntoUI()
-      await loadFrameworkConfigs()
-      showToast("settings.defaults_restored")
-    })
+      await withRulesReplacement(async () => {
+        await apiFetch("/api/rules/defaults", { method: "POST" })
+        await loadRulesIntoUI()
+        await loadFrameworkConfigs()
+        showToast("settings.defaults_restored")
+      })
+    }))
   }
 
   // Per-framework reset buttons
   document.querySelectorAll<HTMLButtonElement>(".rules-fw-reset").forEach((btn) => {
-    pageLifecycle.on(btn, "click", async () => {
+    pageLifecycle.on(btn, "click", settingsAction(async () => {
       const frameworkId = btn.dataset.framework
       if (!frameworkId) return
 
@@ -511,21 +609,26 @@ export function initRulesSettings(): void {
       })
       if (!confirmed) return
 
-      await apiFetch(`/api/frameworks/${frameworkId}`, { method: "DELETE" })
-      await loadFrameworkConfigs()
-      showToast("settings.framework_reset")
-    })
+      await withRulesReplacement(async () => {
+        await apiFetch(`/api/frameworks/${frameworkId}`, { method: "DELETE" })
+        await loadFrameworkConfigs()
+        showToast("settings.framework_reset")
+      }, true)
+    }))
   })
 
   // Export rules (v3 format — includes custom framework definitions)
   const exportBtn = document.getElementById("rules-export-btn")
   if (exportBtn) {
-    pageLifecycle.on(exportBtn, "click", async () => {
+    pageLifecycle.on(exportBtn, "click", settingsAction(async () => {
       try {
+        await flushRulesSave()
+        await configurationMutation
         const [rulesRes, frameworksRes] = await Promise.all([
           apiFetch("/api/rules"),
           apiFetch("/api/frameworks"),
         ])
+        if (!rulesRes.ok || !frameworksRes.ok) throw new Error("Could not export configuration")
         const frameworks = (frameworksRes.data ?? []) as Array<{ id: string, source?: string, [key: string]: unknown }>
         const customFrameworks = frameworks.filter(f => f.source === "user" || f.source === "imported")
         const builtInOverrides = frameworks.filter(f => f.source === "built-in" || !f.source)
@@ -541,13 +644,13 @@ export function initRulesSettings(): void {
       } catch {
         showToast("settings.export_failed", "error")
       }
-    })
+    }))
   }
 
   // Import rules
   const importInput = document.getElementById("rules-import-input") as HTMLInputElement | null
   if (importInput) {
-    pageLifecycle.on(importInput, "change", async () => {
+    pageLifecycle.on(importInput, "change", settingsAction(async () => {
       const file = importInput.files?.[0]
       if (!file) return
 
@@ -562,7 +665,9 @@ export function initRulesSettings(): void {
         return
       }
 
+      let rulesReplaced = false
       try {
+        await withRulesReplacement(async () => {
         const text = await file.text()
         const payload = JSON.parse(text) as {
           _version?: number
@@ -576,31 +681,30 @@ export function initRulesSettings(): void {
           return
         }
 
-        // Delete existing rules
-        const existing = await apiFetch("/api/rules")
-        if (existing.ok && Array.isArray(existing.data)) {
-          for (const rule of existing.data as Array<{ id: string }>) {
-            await apiFetch(`/api/rules/${rule.id}`, { method: "DELETE" })
-          }
-        }
-
-        // Import rules
-        for (const rule of payload.rules) {
-          await apiFetch("/api/rules", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(rule),
-          })
-        }
+        // Validation and replacement run atomically on the server.
+        await replaceRuleSet(payload.rules)
+        rulesReplaced = true
+        await loadRulesIntoUI()
 
         // Import framework overrides if present (v1/v2/v3 compat)
         if (Array.isArray(payload.frameworks)) {
-          for (const fw of payload.frameworks as Array<{ id?: string; fields?: Record<string, unknown> }>) {
-            if (fw.id && fw.fields) {
+          for (const fw of payload.frameworks) {
+            if (typeof fw.id === "string") {
+              const fields = Array.isArray(fw.fields)
+                ? Object.fromEntries(fw.fields.map((field: { key: string; weight?: number; label?: string; helpText?: string }) => [field.key, {
+                  ...(field.weight !== undefined ? { weight: field.weight } : {}),
+                  ...(field.label !== undefined ? { label: field.label } : {}),
+                  ...(field.helpText !== undefined ? { helpText: field.helpText } : {}),
+                }]))
+                : fw.fields
               await apiFetch(`/api/frameworks/${fw.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ fields: fw.fields }),
+                body: JSON.stringify({
+                  ...(fields !== undefined ? { fields } : {}),
+                  ...(fw.formula !== undefined ? { formula: fw.formula } : {}),
+                  ...(fw.badgeThresholds !== undefined ? { badgeThresholds: fw.badgeThresholds } : {}),
+                }),
               })
             }
           }
@@ -609,8 +713,11 @@ export function initRulesSettings(): void {
         // Import custom frameworks if present (v3 format)
         if (Array.isArray(payload.customFrameworks)) {
           for (const fw of payload.customFrameworks) {
-            await apiFetch("/api/frameworks", {
-              method: "POST",
+            if (typeof fw.id !== "string") throw new Error("Custom framework ID is required")
+            const existing = await apiFetch(`/api/frameworks/${fw.id}`)
+            if (!existing.ok && (existing.status !== 404 || existing.errorCode !== "FRAMEWORK_NOT_FOUND")) throw new Error("Could not check custom framework")
+            await apiFetch(existing.ok ? `/api/frameworks/${fw.id}` : "/api/frameworks", {
+              method: existing.ok ? "PUT" : "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(fw),
             })
@@ -620,12 +727,13 @@ export function initRulesSettings(): void {
         await loadRulesIntoUI()
         await loadFrameworkConfigs()
         showToast("settings.rules_imported")
+        })
       } catch {
-        showToast("settings.import_failed", "error")
+        showToast(rulesReplaced ? "Rules were imported, but a framework update failed. Review the configuration before retrying." : "settings.import_failed", "error")
       } finally {
         importInput.value = ""
       }
-    })
+    }))
   }
 
   // ── Framework Creation Wizard ──
@@ -633,7 +741,7 @@ export function initRulesSettings(): void {
     // Refresh framework configs after wizard creates a new framework
     loadFrameworkConfigs()
     showToast("settings.framework_created")
-  })
+  }, withConfigurationMutation)
 
   const createBtn = document.getElementById("fw-create-btn")
   if (createBtn) {
@@ -665,7 +773,7 @@ export function initRulesSettings(): void {
   }
 
   if (yamlImportSubmit && yamlImportTextarea && yamlImportDialog) {
-    pageLifecycle.on(yamlImportSubmit, "click", async () => {
+    pageLifecycle.on(yamlImportSubmit, "click", settingsAction(async () => {
       const yamlText = yamlImportTextarea.value.trim()
       if (!yamlText) {
         if (yamlImportErrors) {
@@ -720,11 +828,11 @@ export function initRulesSettings(): void {
           })) : [],
         }
 
-        const result = await apiFetch("/api/frameworks", {
+        const result = await withConfigurationMutation(() => apiFetch("/api/frameworks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-        })
+        }))
 
         if (!result.ok) {
           const msg = (result as unknown as { errors?: string[] }).errors?.join(". ") || result.message || "Import failed"
@@ -744,6 +852,6 @@ export function initRulesSettings(): void {
           yamlImportErrors.hidden = false
         }
       }
-    })
+    }))
   }
 }

@@ -1,97 +1,58 @@
-# Meitheal Agent Protocols
+# Meitheal agent protocols
 
-Meitheal exposes several agent-facing surfaces, but they are not all the same thing and they do not all expose the same tool set.
+## Available surfaces
 
-This document separates them so the public story stays accurate.
+| Surface | Status | Contract |
+| --- | --- | --- |
+| Astro MCP | Available | `POST /api/mcp`; tool inventory generated from the current OpenAPI operations |
+| Home Assistant LLM API | Available | `Meitheal Tasks` conversation-agent tools through the HA custom component |
+| A2A | Available | A2A 1.0 JSON-RPC scoped task-title search; direct messages, no asynchronous tasks |
+| WebMCP | Browser dependent | Opt-in task search and task-view navigation using the current browser session |
 
-## Current Protocol Surface
+The Home Assistant component provides services, sensors, todo entities and LLM
+API tools. It does not register a second MCP server. Agents use Astro's existing
+MCP endpoint rather than a duplicate integration server.
 
-| Surface | Status | Notes |
-|--------|--------|-------|
-| Astro MCP | Live | `POST /api/mcp`, 18 tools in the Astro app |
-| Home Assistant MCP | Live | 16-tool MCP surface exposed by the HA custom component |
-| Home Assistant LLM API | Live | `Meitheal Tasks`, 21 tools for HA conversation agents |
-| A2A | Live, lightweight | Dynamic agent card plus message/task routes |
-| WebMCP | Experimental | Product direction documented, runtime registration not currently active in stable browsers |
+## Discovery and MCP
 
-## Discovery Endpoints
+`GET /.well-known/mcp.json` reports the current endpoint and generated tool count.
+Use JSON-RPC `tools/list` at `/api/mcp` for actual names and input schemas.
+The MCP setting gates discovery, initialization, listing and execution. Disabled
+requests return 404; unreadable configuration returns 503.
 
-| Endpoint | Purpose |
-|---------|---------|
-| `/.well-known/agent-card.json` | Static A2A agent card fallback |
-| `/api/a2a/agent-card` | Dynamic A2A agent card shaped by current configuration |
-| `/.well-known/mcp.json` | MCP discovery manifest |
-| `/.well-known/jsondoc.json` | OpenAPI/JSON documentation |
-| `/llms.txt` | LLM-readable product summary |
+Home Assistant ingress sessions use Supervisor authentication. Supplied agent
+tokens need `mcp:execute` and the underlying operation's scopes. Standalone
+access follows the configured deployment boundary. Discovery does not promise
+anonymous access or mandatory bearer authentication in every installation.
 
-## A2A
+Task creation uses `POST /api/tasks`, with first-class `description`, `priority`
+and `due_date`. Task responses are flat objects. Completion reports success only
+after the underlying task update succeeds. Underlying operation scopes remain enforced for supplied agent tokens.
 
-Meitheal acts as an A2A server using HTTP+JSON.
+Other documentation: `/openapi.yaml`, `/.well-known/jsondoc.json`, `/llms.txt`
+and `/llms-full.txt`.
 
-### Dynamic skills
+## A2A and WebMCP
 
-The agent card includes core skills such as task management, task search, framework scoring, data export, areas, labels, today summary, habits, and weekly review. When Home Assistant is configured, HA-specific skills such as calendar sync and entity-state access are added dynamically.
+Agent Card aliases `/.well-known/agent.json`, `/.well-known/agent-card.json` and
+`/api/a2a/agent-card` serve identical discovery with ingress-scoped URLs. The
+only A2A skill is `task-search`. `POST /api/a2a/message` requires a valid agent
+token with `a2a:execute` and `search:read`, plus `A2A-Version: 1.0`. It accepts
+JSON-RPC `SendMessage` with one text or JSON query part and returns active task
+titles and links in a direct agent message. It does not create or delegate tasks,
+retain asynchronous task state, stream, or send push notifications. Unknown
+task and cancel requests are explicitly refused.
 
-### Routes
+WebMCP is disabled by default. Supported browsers can register the read-only
+`meitheal_search_tasks` and `meitheal_open_tasks` tools. Settings distinguishes
+saved preference, missing browser support, registration success and failure.
+Disabling removes registered tools from the browser; every invocation checks
+the saved preference.
+Page lifecycle and HMR cleanup retire previous registrations. Browser tools use
+the signed-in session; the A2A token requirement is separate.
 
-```text
-GET  /api/a2a/agent-card
-POST /api/a2a/message
-GET  /api/a2a/tasks/{id}
-POST /api/a2a/tasks/{id}:cancel
-```
-
-### Important limitation
-
-The A2A routes are currently protocol-compliant scaffolding, not a full long-running task engine. The message route is live, but task-status and cancel routes currently return lightweight task stubs rather than persisted background execution state.
-
-## Astro MCP
-
-The Astro app exposes 18 tools at `POST /api/mcp`:
-
-- `createTask`
-- `searchTasks`
-- `completeTask`
-- `updateTask`
-- `deleteTask`
-- `getTask`
-- `getCalendarEvents`
-- `getUpcoming`
-- `syncCalendar`
-- `getOverdueTasks`
-- `getTodaysTasks`
-- `getTaskSummary`
-- `batchComplete`
-- `assignTask`
-- `listUsers`
-- `linkTask`
-- `unlinkTask`
-- `getTaskLinks`
-
-This is the richest browser/app-side MCP surface and includes user assignment plus manual calendar sync.
-
-## Home Assistant MCP
-
-The bundled Home Assistant custom component exposes a separate 16-tool MCP surface for HA-native agent access:
-
-- `createTask`
-- `searchTasks`
-- `completeTask`
-- `updateTask`
-- `deleteTask`
-- `getTask`
-- `getOverdueTasks`
-- `getTodaysTasks`
-- `getTaskSummary`
-- `dailyBriefing`
-- `getCalendarEvents`
-- `getUpcoming`
-- `batchComplete`
-- `linkTask`
-- `unlinkTask`
-- `getTaskLinks`
-
-It intentionally overlaps with Astro MCP, but it is not identical.
+See [agent protocol setup](docs/kcs/webmcp-a2a-setup.md) for request examples,
+error semantics and troubleshooting.
 
 ## Home Assistant LLM API
 
@@ -121,22 +82,9 @@ When the custom component is loaded on HA 2026.3+, `Meitheal Tasks` exposes 21 t
 
 This is the best surface for voice-adjacent and conversational planning flows inside Home Assistant.
 
-## WebMCP
+## Verification and operation
 
-WebMCP remains an experimental product direction. The repo documents the intended browser-agent story, but runtime browser registration is not currently active in stable browsers.
-
-Treat WebMCP as a documented forward path, not a currently shipped mainstream capability.
-
-## Settings
-
-Agent protocol settings live in **Settings → Agent Protocols** in Meitheal.
-
-Use that section to understand which surfaces are enabled and what discovery manifests are active.
-
-## Design Rules
-
-1. Meitheal is HA-first and local-first.
-2. Capability counts are surface-specific.
-3. Dynamic A2A skills depend on configured integrations.
-4. Experimental WebMCP should be described honestly as experimental.
-5. Protocol docs should stay synchronized with `llms.txt`, `llms-full.txt`, and the custom-component docs.
+Follow [agent protocol setup](docs/kcs/webmcp-a2a-setup.md) for protocol checks and
+[Home Assistant integration](docs/kcs/home-assistant-integration.md) for HA setup.
+A local API or fixture pass does not establish HA ingress or live integration
+acceptance; use the required HA devcontainer tier before claiming those results.

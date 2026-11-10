@@ -70,10 +70,10 @@ When the custom component is available on HA 2026.3+, Home Assistant registers *
 
 Surface-specific counts matter here:
 
-- Astro MCP: 18 tools
-- Home Assistant MCP: 16 tools
+- Astro MCP: generated tool inventory at `/api/mcp` (`tools/list`)
+- Home Assistant agent access: services and the HA LLM API; no separate MCP server
 - Home Assistant LLM API: 21 tools
-- A2A: dynamic skills via the Meitheal agent card
+- A2A: gated synchronous task-title search; WebMCP: gated registration in supported browsers
 
 The Home Assistant LLM API includes task CRUD, search, daily briefing, link management, remove-from-todo-list, area and goal listing, move-to-project, and goal progress updates.
 

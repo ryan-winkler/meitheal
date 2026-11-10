@@ -212,30 +212,20 @@ const visibleAreas = areas.filter((a: any) =>
 
     {/* ─── Triage ─── */}
     <section data-parent-section="triage" id="planning-section-triage" hidden>
-      <SectionHubCard
-        href="/triage"
-        icon="📥"
-        title="Triage"
-        description="Classify incoming tasks quickly — review unscored and uncategorised work that needs attention."
-        comingSoon={true}
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{unscoredCount}</span><span class="stat-label">Needs Scoring</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
-      </SectionHubCard>
+      <div class="parent-section-hub">
+        <h2 class="parent-section-hub__title">Triage</h2>
+        <p class="parent-section-hub__desc">This view is unavailable. Use the task list to review work and task details to edit strategic scores.</p>
+        <a href="/tasks" class="btn btn-secondary">Open tasks</a>
+      </div>
     </section>
 
     {/* ─── RICE ─── */}
     <section data-parent-section="rice" id="planning-section-rice" hidden>
-      <SectionHubCard
-        href="/rice"
-        icon="📊"
-        title="RICE Scoring"
-        description="Reach × Impact × Confidence ÷ Effort — data-driven prioritisation for your task backlog."
-        comingSoon={true}
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{riceScoredCount}</span><span class="stat-label">Scored Tasks</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{avgRice}</span><span class="stat-label">Avg RICE</span></div>
-      </SectionHubCard>
+      <div class="parent-section-hub">
+        <h2 class="parent-section-hub__title">RICE Scoring</h2>
+        <p class="parent-section-hub__desc">This view is unavailable. Use the task list to review work and task details to edit strategic scores.</p>
+        <a href="/tasks" class="btn btn-secondary">Open tasks</a>
+      </div>
     </section>
 
   </ParentPageShell>

@@ -4,11 +4,11 @@ description: >
   Use Meitheal when work lives inside Home Assistant: household tasks, homelab
   operations, daily planning, routines, projects, goals, calendar-linked work,
   and agent-assisted coordination. Manage tasks through the Astro app, Home
-  Assistant services, the HA LLM API, MCP, and A2A surfaces.
+  Assistant services, the HA LLM API, and Astro MCP.
 license: Apache-2.0
 compatibility: >
   Requires a running Meitheal addon instance inside Home Assistant.
-  Astro MCP endpoint at /api/mcp, REST API at /api/tasks, dynamic A2A routes
+  Astro MCP endpoint at /api/mcp, REST API at /api/tasks, read-only A2A task search
   under /api/a2a, and Home Assistant companion surfaces when the custom
   component is loaded.
 metadata:
@@ -56,26 +56,9 @@ Send JSON-RPC 2.0 to `POST /api/mcp`:
 }
 ```
 
-Available Astro MCP tools (18):
-
-- `createTask` — title (required), description, priority (1-5), due_date
-- `searchTasks` — query, status (backlog/todo/in_progress/done), priority
-- `completeTask` — id or title
-- `updateTask` — id (required), title, status, priority, due_date, description
-- `deleteTask` — id (required)
-- `getTask` — id (required) — returns full details including labels, timestamps
-- `getOverdueTasks` — no params — all tasks past due date
-- `getTodaysTasks` — no params — today's tasks + overdue
-- `getTaskSummary` — no params — counts: total, active, overdue, done
-- `dailyBriefing` — no params — greeting, tasks, weather, who's home
-- `getCalendarEvents` — days_ahead (default: 7)
-- `getUpcoming` — days_ahead (default: 7) — combined tasks + calendar
-- `batchComplete` — label, max_priority, or titles array
-- `assignTask` — id, assigned_to (HA or custom user)
-- `listUsers` — no params — list all available users
-- `linkTask` — source_task_id, target_task_id, link_type (related_to/blocked_by/blocks/duplicates/duplicated_by)
-- `unlinkTask` — task_id, link_id
-- `getTaskLinks` — task_id — get outbound + inbound relationships
+Use JSON-RPC `tools/list` for the generated tool inventory and input schemas.
+The MCP setting gates initialization, discovery and calls. Tool counts are not
+fixed: they follow the checked-in OpenAPI generator and excluded internal ops.
 
 ### Home Assistant LLM API
 
@@ -84,16 +67,15 @@ LLM API exposes 21 tools to conversation agents, including task CRUD, calendar
 events, daily briefing, link management, area/goal listing, move-to-project,
 goal progress updates, and remove-from-todo-list actions.
 
-### Home Assistant MCP
+### Home Assistant agent access
 
-The bundled Home Assistant custom component also exposes a separate MCP surface
-with 16 tools. It overlaps with Astro MCP, but the tool set is not identical.
-Do not assume one global MCP count across all Meitheal surfaces.
+The component exposes HA services and the LLM API, not a separate MCP server.
+Use the existing Astro `/api/mcp` endpoint for MCP clients.
 
 ### REST API (Alternative)
 
 - `GET /api/tasks` — list all tasks
-- `POST /api/tasks/create` — `{ title, frameworkPayload: { description } }`
+- `POST /api/tasks` — `{ title, description, priority, due_date }`; flat task response
 - `PUT /api/tasks/:id` — `{ status, priority, due_date, description }`
 - `DELETE /api/tasks/:id`
 - `GET /api/tasks/:id/links` — get task links (outbound + inbound)
@@ -103,10 +85,10 @@ Do not assume one global MCP count across all Meitheal surfaces.
 ### Discovery
 
 - `GET /.well-known/mcp.json` — MCP server discovery
-- `GET /.well-known/agent-card.json` — static A2A agent card fallback
-- `GET /api/a2a/agent-card` — dynamic A2A agent card
-- `POST /api/a2a/message` — A2A message ingress
-- `GET /api/a2a/tasks/{id}` — A2A task status stub
+- `GET /.well-known/agent-card.json` — A2A card alias (404 when disabled)
+- `GET /api/a2a/agent-card` — A2A task-search card (404 when disabled)
+- `POST /api/a2a/message` — A2A 1.0 synchronous task-title search; requires both agent scopes
+- `GET /api/a2a/tasks/{id}` — unsupported task tracking; unknown tasks return not found
 
 ## Domain Language
 

@@ -1,5 +1,7 @@
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
+import { onTaskCompleted } from "@lib/gamification-hook"
+import { showToast } from "@lib/toast"
 import { createClientLogger } from "@lib/client-logger";
 // No direct safe-html imports — moved to extracted modules
 import { initLaneManagementPanel } from "@lib/controllers/kanban-lanes";
@@ -142,26 +144,28 @@ export function initKanbanArea(__signal: AbortSignal): void {
         }
       });
 
-      // Toast feedback — positioned near the dropped card
-      const toast = document.createElement("div");
-      toast.className = "toast success kanban-contextual-toast";
-      toast.textContent = `Moved to ${newStatus}`;
-      const cardRect = (card as HTMLElement).getBoundingClientRect();
-      toast.style.cssText = `position:fixed;top:${Math.max(cardRect.top - 40, 8)}px;left:${cardRect.left}px;z-index:100;pointer-events:none;`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 2000);
-
       // Persist to API (background, no reload)
       try {
         const payload: Record<string, string | undefined> = { status: newStatus };
         if (targetSwimlane) {
           payload.task_type = (targetSwimlane as HTMLElement).dataset.swimlaneType;
         }
-        await fetch(buildTaskApiUrl(taskId), {
+        const response = await fetch(buildTaskApiUrl(taskId), {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         });
+        if (!response.ok) throw new Error(`Task move failed (HTTP ${response.status})`)
+        const completed = await response.json()
+
+        // Toast feedback — positioned near the dropped card
+        const toast = document.createElement("div");
+        toast.className = "toast success kanban-contextual-toast";
+        toast.textContent = `Moved to ${newStatus}`;
+        const cardRect = (card as HTMLElement).getBoundingClientRect();
+        toast.style.cssText = `position:fixed;top:${Math.max(cardRect.top - 40, 8)}px;left:${cardRect.left}px;z-index:100;pointer-events:none;`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
 
         // WIP limit warning toast (soft limit — allows drop but warns)
         const wipLimit = parseInt((col as HTMLElement).dataset?.wipLimit || "0", 10)
@@ -173,36 +177,11 @@ export function initKanbanArea(__signal: AbortSignal): void {
           }
         }
 
-        // Gamification: priority-aware celebrations + record completion when dropped to complete
-        if (newStatus === "complete") {
-          const ff = window.__featureFlags || {};
-          if (ff.confetti !== false) {
-            const cardPriority = parseInt((card as HTMLElement).dataset.priority ?? "3", 10) || 3;
-            const cardTitle = card.querySelector(".kanban-title-text")?.textContent?.trim() || "Task";
-            // Use celebrations module for priority-aware confetti
-            import("@lib/celebrations").then(({ celebrateHighPriorityComplete, fireConfetti }) => {
-              if (cardPriority <= 1) {
-                celebrateHighPriorityComplete(cardTitle)
-              } else {
-                fireConfetti({ particleCount: 32, duration: 1200 })
-              }
-            }).catch(() => {
-              // Fallback to window.triggerConfetti for legacy compat
-              if (typeof window.triggerConfetti === "function") window.triggerConfetti()
-            })
-          }
-          if (ff.gamification !== false) {
-            const gamPriority = parseInt((card as HTMLElement).dataset.priority ?? "3", 10) || 3;
-            fetch("/api/gamification", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ priority: gamPriority }),
-            }).catch(function() {});
-          }
-        }
+        if (newStatus === "complete") onTaskCompleted(completed)
+
       } catch {
         // Show error feedback before reverting
-        if (window.showToast) window.showToast("Failed to move task — reverting", "error")
+        showToast("Failed to move task — reverting", "error")
         // Revert on failure — refresh to get server state
         setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-revert" } })), 800)
       }

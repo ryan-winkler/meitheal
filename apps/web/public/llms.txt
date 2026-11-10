@@ -8,7 +8,7 @@
 - [OpenAPI Specification](/openapi.yaml) — 120+ operations
 - [AI Plugin Manifest](/.well-known/ai-plugin.json) — Plugin discovery
 - [MCP Protocol](/api/mcp) — JSON-RPC 2.0 for AI tool calling
-- [A2A Agent Card](/api/a2a/agent-card) — Agent-to-Agent discovery
+- [A2A task search](/api/a2a/agent-card) — synchronous, read-only; WebMCP in supported browsers
 - [SSE Events](/api/sse) — Real-time event stream
 
 ## Core Facts
@@ -20,7 +20,7 @@
 - Pillars: Identity anchors (the WHY layer)
 - 120+ API operations with AI-optimized descriptions
 - 6 webhook events for n8n/Node-RED automation
-- MCP + A2A protocol support for autonomous agents
+- Astro MCP and Home Assistant LLM API; gated A2A task search and browser-supported WebMCP
 
 ## Quick Start for Agents
 

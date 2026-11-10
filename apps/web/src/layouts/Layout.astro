@@ -160,7 +160,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             // Stale ingress token: HA Supervisor returns 403 when the
             // addon restarted and got a new ingress token. Auto-reload
             // to fetch the new token from the server-rendered HTML.
-            if (response.status === 403 && ip) {
+            // Application JSON permission errors must retain the editor.
+            // Only a proxy-level rejection can justify refreshing ingress.
+            var responseType = response.headers.get("content-type") || "";
+            if (response.status === 403 && ip && !responseType.includes("json")) {
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
               var now = Date.now();
@@ -601,6 +604,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
       <script>
         import "@lib/search-hub-controller";
+        import "@lib/webmcp-controller";
       </script>
 
       <script>

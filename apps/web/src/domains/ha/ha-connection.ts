@@ -19,6 +19,8 @@ import {
   type HassConfig,
 } from "home-assistant-js-websocket";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { createHash } from "node:crypto"
+import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket from "ws";
@@ -39,6 +41,17 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 // ── State ──
 
 let connection: Connection | null = null;
+let configurationFingerprint: string | null = null
+
+export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+  if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
+  const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
+  const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
+  await ensureSchema()
+  const repo = new SettingsRepository(getPersistenceClient())
+  await repo.ensureSettingsTable()
+  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+}
 let connecting = false;
 let lastError: string | null = null;
 let reconnectAttempts = 0;
@@ -70,6 +83,22 @@ function emitStatus(state: HAConnectionState, detail?: string): void {
 // ── Public API ──
 
 export async function getHAConnection(): Promise<Connection | null> {
+  let config: HAConfiguration | null
+  try { config = await getHAConfiguration() } catch {
+    lastError = "HA_CONFIGURATION_UNAVAILABLE"
+    closeHAConnection()
+    return null
+  }
+  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  if (connection && configurationFingerprint !== fingerprint) {
+    closeHAConnection()
+    invalidateBaseUrlCache()
+    cachedIngressEntry = null
+  }
+  if (!config) {
+    lastError = "HA_NOT_CONFIGURED"
+    return null
+  }
   if (connection) return connection;
   if (connecting) {
     // Wait for in-flight connection with timeout — both branches clear both timers
@@ -89,19 +118,12 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
   }
 
-  const token = process.env.SUPERVISOR_TOKEN;
-  if (!token) {
-    logger.log("info", {
-      event: "ha.connection.skipped", domain: "ha", component: "ha-connection",
-      request_id: SYS_REQ, message: "SUPERVISOR_TOKEN not set — standalone mode",
-    });
-    return null;
-  }
-
   connecting = true;
   try {
-    const auth = createLongLivedTokenAuth("http://supervisor/core", token);
+    const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
     connection = await createConnection({ auth });
+    configurationFingerprint = fingerprint
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
     reconnectAttempts = 0;
     lastError = null;
 
@@ -223,6 +245,10 @@ export async function getHAConnection(): Promise<Connection | null> {
       }, eventType);
     }
 
+    const establishedConnection = connection
+    import("./ha-entities").then(mod => {
+      if (connection === establishedConnection) return mod.initEntitySubscription(establishedConnection)
+    }).catch(() => {})
     return connection;
   } catch (err) {
     const errorCode = err === ERR_CANNOT_CONNECT ? "CANNOT_CONNECT"
@@ -308,6 +334,8 @@ export async function getHAConfig(): Promise<HassConfig | null> {
 
 export function closeHAConnection(): void {
   stopHeartbeat();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  configurationFingerprint = null
   if (connection) {
     connection.close();
     connection = null;

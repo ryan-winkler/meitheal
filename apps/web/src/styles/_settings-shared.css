@@ -23,7 +23,7 @@
 }
 
 .badge-active {
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 
@@ -46,8 +46,8 @@
 }
 
 .badge-success {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: color-mix(in srgb, var(--success, #10b981) 15%, transparent);
+  color: var(--success, #10b981);
 }
 
 /* ═══════ Form Validation States ═══════ */
@@ -101,7 +101,7 @@
 .form-select:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
   transition:
     border-color 200ms ease,
     box-shadow 200ms ease;

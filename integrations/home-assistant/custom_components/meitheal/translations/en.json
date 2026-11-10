@@ -1,0 +1,203 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Meitheal",
+        "description": "Enter your Meitheal addon connection details. If running as an HA addon, the defaults should work.",
+        "data": {
+          "host": "Hostname",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "Docker hostname of the Meitheal addon (auto-discovered at boot, typically 'local-meitheal')",
+          "port": "Port the Meitheal web server listens on"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Meitheal Discovered",
+        "description": "The Meitheal addon was automatically detected at {host}:{port}.\n\nClick **Submit** to finish setup.\n\nAfter setup, select \"Meitheal Tasks\" in your conversation agent settings (Settings → Voice Assistants → [Agent] → LLM APIs) to enable voice task management."
+      },
+      "reconfigure": {
+        "title": "Reconfigure Meitheal",
+        "description": "Update the connection settings for the Meitheal addon.",
+        "data": {
+          "host": "Hostname",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "Docker hostname of the Meitheal addon",
+          "port": "Port the Meitheal web server listens on"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Meitheal is already configured",
+      "cannot_connect": "Cannot reach the Meitheal addon. Make sure the addon is running.",
+      "reconfigure_successful": "Connection settings updated successfully."
+    },
+    "error": {
+      "cannot_connect": "Cannot reach Meitheal at the specified address. Check that the addon is started and the hostname is correct."
+    }
+  },
+  "entity": {
+    "todo": {
+      "task_list": {
+        "name": "Tasks"
+      }
+    },
+    "sensor": {
+      "active_tasks": {
+        "name": "Active Tasks"
+      },
+      "overdue_tasks": {
+        "name": "Overdue Tasks"
+      },
+      "total_tasks": {
+        "name": "Total Tasks"
+      },
+      "due_today": {
+        "name": "Due Today"
+      },
+      "completed_today": {
+        "name": "Completed Today"
+      },
+      "streak": {
+        "name": "Streak"
+      }
+    },
+    "binary_sensor": {
+      "all_clear": {
+        "name": "All Clear"
+      }
+    }
+  },
+  "services": {
+    "create_task": {
+      "name": "Create Task",
+      "description": "Create a new task in Meitheal.",
+      "fields": {
+        "title": {
+          "name": "Title",
+          "description": "The title of the task to create"
+        },
+        "description": {
+          "name": "Description",
+          "description": "Optional description or notes for the task"
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Priority from 1 (urgent) to 5 (lowest)"
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "ISO date or date-time"
+        },
+        "urgency": {
+          "name": "Urgency",
+          "description": "Eisenhower urgency from 0 to 5"
+        },
+        "importance": {
+          "name": "Importance",
+          "description": "Eisenhower importance from 0 to 5"
+        }
+      }
+    },
+    "complete_task": {
+      "name": "Complete Task",
+      "description": "Mark a task as done by ID or title.",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "The task ID to complete (use either this or title)"
+        },
+        "title": {
+          "name": "Title",
+          "description": "Find and complete a task by title (use either this or task_id)"
+        }
+      }
+    },
+    "sync_todo": {
+      "name": "Sync Tasks",
+      "description": "Trigger a manual refresh of task data from Meitheal."
+    },
+    "search_tasks": {
+      "name": "Search Tasks",
+      "description": "Search tasks by keyword. Returns matching tasks from Meitheal.",
+      "fields": {
+        "query": {
+          "name": "Search Query",
+          "description": "Keyword to search in task titles and descriptions"
+        },
+        "status": {
+          "name": "Status Filter",
+          "description": "Filter by task status (backlog, todo, in_progress, or done)"
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Filter by task priority, 1 to 5"
+        },
+        "include_completed": {
+          "name": "Include completed",
+          "description": "Include completed tasks in search results"
+        }
+      }
+    },
+    "get_overdue_tasks": {
+      "name": "Get Overdue Tasks",
+      "description": "Get a list of all tasks that are past their due date and not yet completed."
+    },
+    "notify_overdue": {
+      "name": "Notify Overdue",
+      "description": "Push a notification about overdue tasks to HA persistent notifications."
+    },
+    "complete_task_by_tag": {
+      "name": "Complete Task by NFC Tag",
+      "description": "Complete the unique task assigned to this NFC tag.",
+      "fields": {
+        "tag_id": {
+          "name": "Tag ID",
+          "description": "The NFC tag ID assigned through the task API"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "task_not_found": {
+      "message": "Task not found. Make sure the task ID or title is correct."
+    },
+    "addon_unavailable": {
+      "message": "Cannot reach the Meitheal addon. Make sure it is running."
+    },
+    "create_failed": {
+      "message": "Failed to create task: {error}"
+    },
+    "complete_failed": {
+      "message": "Failed to complete task: {error}"
+    },
+    "nfc_complete_failed": {
+      "message": "Failed to complete task by NFC tag: {error}. Check that the tag is assigned to one task."
+    },
+    "update_failed": {
+      "message": "Failed to update task: {error}"
+    },
+    "delete_failed": {
+      "message": "Failed to delete task: {error}"
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "task_created": "Task was created in Meitheal",
+      "task_completed": "Task was completed in Meitheal",
+      "task_updated": "Task was updated in Meitheal",
+      "task_deleted": "Task was deleted from Meitheal",
+      "task_overdue": "Task became overdue in Meitheal",
+      "board_updated": "Meitheal board data changed"
+    }
+  },
+  "issues": {
+    "addon_unreachable": {
+      "title": "Meitheal addon is unreachable",
+      "description": "Cannot connect to the Meitheal addon: {error}\n\nPlease check:\n1. The Meitheal addon is running (Settings → Add-ons → Meitheal)\n2. The hostname and port are correct (Settings → Integrations → Meitheal → Configure)\n3. The addon container is healthy (`ha addons info local_meitheal`)"
+    }
+  }
+}

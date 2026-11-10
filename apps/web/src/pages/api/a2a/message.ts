@@ -1,213 +1,192 @@
-import type { APIRoute } from "astro";
-import { apiJson, apiError } from "../../../lib/api-response";
-import {
-  createA2ATask,
-  extractSkillFromMessage,
-  A2A_ERRORS,
-  type A2AMessage,
+import type { APIRoute } from "astro"
+import { z } from "zod"
+import { hasScope } from "@meitheal/domain-auth"
+import { A2A_ERRORS, A2A_PROTOCOL_VERSION, A2A_TASK_SEARCH_SKILL } from "@meitheal/integration-core"
+import { searchMeithealCatalog } from "@domains/search/search-service"
+import { ensureSchema } from "@domains/tasks/persistence/store"
+import { getA2ALinkOrigin } from "@lib/a2a-urls"
+import { guardAgentProtocol } from "@lib/agent-protocol-policy"
+import { apiProblem } from "@lib/api-response"
+import { readWithinLimit } from "@lib/bounded-body"
+import { logApiError } from "@lib/api-logger"
 
-} from "@meitheal/integration-core";
+const MAX_BODY_BYTES = 16 * 1024
+const taskNotFound = "A2A task not found."
+const rpcRequest = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.string().min(1),
+  id: z.union([z.string(), z.number().int(), z.null()]).optional(),
+  params: z.unknown().optional(),
+})
+const taskRequest = z.object({ id: z.string().min(1) })
+const listRequest = z.object({
+  pageSize: z.number().int().min(1).max(100).optional(),
+  pageToken: z.literal("").optional(),
+  historyLength: z.number().int().nonnegative().optional(),
+  includeArtifacts: z.boolean().optional(),
+  contextId: z.string().optional(),
+  status: z.string().optional(),
+  statusTimestampAfter: z.string().optional(),
+})
+const messageRequest = z.object({
+  message: z.object({
+    messageId: z.string().min(1).max(200),
+    role: z.literal("ROLE_USER"),
+    parts: z.array(z.object({
+      text: z.string().optional(),
+      data: z.unknown().optional(),
+      mediaType: z.string().optional(),
+      raw: z.unknown().optional(),
+      url: z.unknown().optional(),
+    })).length(1),
+    contextId: z.string().max(200).optional(),
+    taskId: z.string().optional(),
+    referenceTaskIds: z.array(z.string()).optional(),
+  }),
+  configuration: z.object({
+    acceptedOutputModes: z.array(z.string()).optional(),
+    taskPushNotificationConfig: z.unknown().optional(),
+    historyLength: z.number().int().nonnegative().optional(),
+    returnImmediately: z.boolean().optional(),
+  }).optional(),
+})
+const dataQuery = z.object({
+  query: z.string(),
+  skill: z.string().optional(),
+})
 
-/**
- * POST /api/a2a/message — A2A Message Send
- *
- * Receives an agent message per A2A spec §11.3.1, routes to skill handler,
- * and returns an A2A Task with status.
- *
- * KCS: Messages are validated, skill-routed, and logged. Unsupported skills
- * return structured A2A errors per spec §9.5.
- */
-export const POST: APIRoute = async ({ request }) => {
+const noStore = { "Cache-Control": "no-store" }
+type RequestId = string | number | null
+function rpcError(id: RequestId, code: number, message: string): Response {
+  return Response.json({ jsonrpc: "2.0", id, error: { code, message } }, { headers: noStore })
+}
+
+function rpcResult(id: RequestId, result: unknown): Response {
+  return Response.json({ jsonrpc: "2.0", id, result }, { headers: noStore })
+}
+
+export const POST: APIRoute = async ({ request, locals, url }) => {
+  const blocked = await guardAgentProtocol("a2a")
+  if (blocked) return blocked
+  const token = locals.agentToken
+  if (!token) {
+    return apiProblem({
+      status: 401,
+      detail: "Use a valid, active Meitheal agent token.",
+      extraHeaders: { ...noStore, "WWW-Authenticate": "Bearer" },
+    })
+  }
+  if (!hasScope(token.scopes, "a2a:execute") || !hasScope(token.scopes, "search:read")) {
+    return apiProblem({ status: 403, detail: "A2A task search requires a2a:execute and search:read.", extraHeaders: noStore })
+  }
+
+  let id: RequestId = null
   try {
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+      return apiProblem({ status: 415, detail: "Send A2A JSON-RPC requests as application/json.", extraHeaders: noStore })
+    }
+    const tooLarge = () => apiProblem({ status: 413, detail: "The A2A request exceeds 16 KiB.", extraHeaders: noStore })
+    if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return tooLarge()
 
-    if (!body || !body.message) {
-      return apiJson(
-        { error: A2A_ERRORS.INVALID_REQUEST },
-        400
-      );
+    let body: unknown
+    try {
+      const bytes = await readWithinLimit(request.body, MAX_BODY_BYTES, request.signal)
+      if (!bytes) return tooLarge()
+      body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+    } catch {
+      return rpcError(null, A2A_ERRORS.PARSE_ERROR, "Invalid JSON payload.")
     }
 
-    const message = body.message as A2AMessage;
-
-    // Validate message structure
-    if (!message.role || !message.parts || !Array.isArray(message.parts)) {
-      return apiJson(
-        { error: { ...A2A_ERRORS.INVALID_REQUEST, data: "Message must have role and parts array" } },
-        400
-      );
+    const rpc = rpcRequest.safeParse(body)
+    if (!rpc.success) return rpcError(null, A2A_ERRORS.INVALID_REQUEST, "Invalid JSON-RPC request.")
+    if (rpc.data.id === undefined) return new Response(null, { status: 204, headers: noStore })
+    id = rpc.data.id
+    const version = request.headers.get("A2A-Version") ?? url.searchParams.get("A2A-Version")
+    if ((version?.trim() || "0.3") !== A2A_PROTOCOL_VERSION) {
+      return rpcError(id, A2A_ERRORS.VERSION_NOT_SUPPORTED, `Use A2A-Version: ${A2A_PROTOCOL_VERSION}.`)
     }
 
-    // Ensure messageId
-    if (!message.messageId) {
-      message.messageId = crypto.randomUUID();
+    switch (rpc.data.method) {
+      case "GetTask":
+      case "CancelTask":
+        return taskRequest.safeParse(rpc.data.params).success
+          ? rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
+          : rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
+      case "ListTasks": {
+        const list = listRequest.safeParse(rpc.data.params ?? {})
+        if (!list.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
+        return rpcResult(id, { tasks: [], nextPageToken: "", pageSize: list.data.pageSize ?? 50, totalSize: 0 })
+      }
+      case "SendStreamingMessage":
+      case "SubscribeToTask":
+      case "GetExtendedAgentCard":
+        return rpcError(id, A2A_ERRORS.UNSUPPORTED_OPERATION, "This operation is unavailable on Meitheal.")
+      case "CreateTaskPushNotificationConfig":
+      case "GetTaskPushNotificationConfig":
+      case "ListTaskPushNotificationConfigs":
+      case "DeleteTaskPushNotificationConfig":
+        return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
+      case "SendMessage":
+        return await searchTasks(id, rpc.data.params, getA2ALinkOrigin(request, url) + (locals.ingressPath ?? ""))
+      default:
+        return rpcError(id, A2A_ERRORS.METHOD_NOT_FOUND, "Method not found.")
     }
-
-    // Extract skill intent
-    const skillId = extractSkillFromMessage(message);
-
-    if (!skillId) {
-      // Return task requiring input — agent should specify skill
-      const task = createA2ATask(message, "input-required");
-      task.messages.push({
-        role: "agent",
-        messageId: crypto.randomUUID(),
-        parts: [
-          {
-            text: "I couldn't determine which skill to use. Please specify a skill: task-management, task-search, framework-scoring, data-export, ha-calendar-sync, ha-entity-state, areas, labels, today-summary, or habits.",
-          },
-        ],
-      });
-      return apiJson({ task });
-    }
-
-    // Create task and route to skill
-    const task = createA2ATask(message, "working");
-
-    // For now, acknowledge receipt and return task with skill metadata.
-    // Detailed skill execution will be wired to existing API routes.
-    const responseMessage: A2AMessage = {
-      role: "agent",
-      messageId: crypto.randomUUID(),
-      parts: [
-        {
-          text: `Task received and routed to skill '${skillId}'. Processing...`,
-          data: {
-            skill: skillId,
-            taskId: task.id,
-            status: "working",
-          },
-        },
-      ],
-    };
-
-    task.messages.push(responseMessage);
-    task.status = "completed";
-
-    // Add skill-specific structured output
-    const skillResponse = await handleSkill(skillId, message);
-    if (skillResponse) {
-      task.artifacts = [
-        {
-          name: `${skillId}-result`,
-          parts: [{ data: skillResponse, mediaType: "application/json" }],
-        },
-      ];
-    }
-
-    return apiJson({ task });
   } catch (error) {
-    return apiError(
-      error instanceof Error ? error.message : "Internal A2A error",
-      500
-    );
+    logApiError("a2a", "A2A request failed", error)
+    return rpcError(id, A2A_ERRORS.INTERNAL, "Could not process the A2A request.")
   }
-};
+}
 
-/**
- * Simple skill handler — maps A2A skills to response shapes.
- * In production, these would call through to actual API handlers.
- */
-async function handleSkill(
-  skillId: string,
-  message: A2AMessage
-): Promise<Record<string, unknown> | null> {
-  // Extract structured data if present
-  const dataPart = message.parts.find((p: { data?: unknown }) => p.data);
-  const textPart = message.parts.find((p: { text?: string }) => p.text);
+async function searchTasks(id: RequestId, input: unknown, base: string): Promise<Response> {
+  const parsed = messageRequest.safeParse(input)
+  if (!parsed.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Send a user message with a messageId and one search part.")
 
-  switch (skillId) {
-    case "task-management":
-      return {
-        skill: "task-management",
-        description: "Task management operations are available via POST /api/tasks",
-        supported_actions: ["create", "read", "update", "delete"],
-        api_endpoint: "/api/tasks",
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
+  const { message, configuration } = parsed.data
+  if (message.taskId || message.referenceTaskIds?.length) return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
+  if (configuration?.taskPushNotificationConfig) return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
 
-    case "task-search":
-      return {
-        skill: "task-search",
-        description: "Search tasks by status, priority, labels, or free text",
-        api_endpoint: "/api/tasks?q={query}",
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    case "framework-scoring":
-      return {
-        skill: "framework-scoring",
-        description: "Apply RICE/DRICE/HEART/KCS/DDD scoring frameworks",
-        supported_frameworks: ["rice", "drice", "heart", "kcs", "ddd", "custom"],
-        api_endpoint: "/api/tasks/{id}",
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    case "data-export":
-      return {
-        skill: "data-export",
-        description: "Export tasks in JSON or CSV format",
-        supported_formats: ["json", "csv", "sqlite"],
-        api_endpoints: {
-          json: "/api/export/tasks.json",
-          csv: "/api/export/tasks.csv",
-          sqlite: "/api/export/database.sqlite",
-        },
-      };
-
-    case "ha-calendar-sync":
-      return {
-        skill: "ha-calendar-sync",
-        description: "Sync tasks with Home Assistant calendar",
-        api_endpoint: "/api/ha/calendar",
-        requires: "Home Assistant connection configured in Settings",
-      };
-
-    case "ha-entity-state":
-      return {
-        skill: "ha-entity-state",
-        description: "Read Home Assistant entity states",
-        api_endpoint: "/api/ha/calendars",
-        requires: "Home Assistant connection configured in Settings",
-      };
-
-    case "areas":
-      return {
-        skill: "areas",
-        description: "List kanban areas with column configurations and task counts",
-        api_endpoint: "/api/areas",
-        supported_actions: ["list", "get"],
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    case "labels":
-      return {
-        skill: "labels",
-        description: "List available task labels with colors and usage counts",
-        api_endpoint: "/api/labels",
-        supported_actions: ["list", "create", "update", "delete"],
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    case "today-summary":
-      return {
-        skill: "today-summary",
-        description: "Get today's task overview — due today, overdue, completed, stats",
-        api_endpoint: "/api/tasks?due=today",
-        includes: ["due_today", "overdue", "completed_today", "daily_stats"],
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    case "habits":
-      return {
-        skill: "habits",
-        description: "Habit tracker — streaks, completion rates, today's habits",
-        api_endpoint: "/api/habits",
-        supported_actions: ["list", "log", "get-streaks"],
-        input_received: dataPart?.data ?? textPart?.text ?? null,
-      };
-
-    default:
-      return null;
+  const part = message.parts[0]!
+  const modes = configuration?.acceptedOutputModes
+  const outputJson = !modes?.length || modes.includes("application/json")
+  if (!outputJson && !modes?.includes("text/plain")) {
+    return rpcError(id, A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED, "Accept application/json or text/plain.")
   }
+
+  const isText = part.text !== undefined && !("data" in part) && (!part.mediaType || part.mediaType === "text/plain")
+  const isData = part.text === undefined && "data" in part && (!part.mediaType || part.mediaType === "application/json")
+  if (("raw" in part) || ("url" in part) || (!isText && !isData)) {
+    return rpcError(id, A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED, "Send one text/plain or application/json search part.")
+  }
+  const data = isData ? dataQuery.safeParse(part.data) : null
+  if (data?.success && data.data.skill && data.data.skill !== A2A_TASK_SEARCH_SKILL) {
+    return rpcError(id, A2A_ERRORS.UNSUPPORTED_OPERATION, "A2A supports task-search only.")
+  }
+  const query = (isText ? part.text : data?.success ? data.data.query : "")?.trim()
+  if (!query || query.length > 160) {
+    return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide a task title search term of 1 to 160 characters.")
+  }
+
+  await ensureSchema()
+  const { sections } = await searchMeithealCatalog({
+    query,
+    scope: "tasks",
+    limit: 8,
+    includeCompleted: false,
+    includeArchived: false,
+    sort: "relevance",
+    taskFields: ["title"],
+  })
+  const tasks = sections.flatMap(section => section.items)
+    .filter(item => item.kind === "task" && item.taskId)
+    .map(item => ({ id: item.taskId, title: item.title, url: `${base}/tasks?open=${encodeURIComponent(item.taskId!)}` }))
+  return rpcResult(id, {
+    message: {
+      role: "ROLE_AGENT",
+      messageId: crypto.randomUUID(),
+      contextId: message.contextId || crypto.randomUUID(),
+      parts: [outputJson
+        ? { data: { tasks }, mediaType: "application/json" }
+        : { text: tasks.map(task => `${task.title} — ${task.url}`).join("\n") || "No matching tasks.", mediaType: "text/plain" }],
+    },
+  })
 }

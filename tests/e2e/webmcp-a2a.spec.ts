@@ -1,333 +1,131 @@
-import { expect, test } from "@playwright/test";
-import { shouldSkipBrowserSpecs } from "./_helpers";
+import { expect, test, type APIRequestContext } from "@playwright/test"
+import { shouldSkipBrowserSpecs } from "./_helpers"
 
-test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run A2A/WebMCP checks");
+test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run protocol checks")
+test.describe.configure({ mode: "serial" })
+const admin = { "x-hass-is-admin": "true", "x-hass-user-id": "local-protocol-tests" }
+const envelope = (method: string, params?: unknown) => ({ jsonrpc: "2.0", id: "protocol-check", method, params })
+const tokenIds: string[] = []
 
-test.describe("A2A Agent Card Discovery", () => {
-  test("agent.json exists at well-known path", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(
-      `${baseURL}/.well-known/agent.json`
-    );
-    expect(response.ok()).toBeTruthy();
-    const card = await response.json();
-    expect(card.name).toBe("Meitheal");
-    expect(card.skills).toBeDefined();
-    expect(Array.isArray(card.skills)).toBe(true);
-    expect(card.skills.length).toBeGreaterThanOrEqual(1);
-  });
+async function issueToken(request: APIRequestContext, scopes: string[]) {
+  const response = await request.post("/api/agent-tokens", { headers: admin, data: { name: "Local protocol acceptance", scopes } })
+  expect(response.status()).toBe(201)
+  const { token, id } = await response.json()
+  tokenIds.push(id)
+  return { authorization: `Bearer ${token}`, "A2A-Version": "1.0" }
+}
 
-  test("dynamic agent card has required fields", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/api/a2a/agent-card`);
-    expect(response.ok()).toBeTruthy();
-    const card = await response.json();
+test.beforeEach(async ({ request }) => {
+  for (const protocol of ["a2a", "mcp"]) {
+    expect((await request.put("/api/settings", { headers: admin, data: { key: `agent-protocols-${protocol}-enabled`, value: true } })).ok()).toBe(true)
+  }
+})
 
-    // A2A spec §4.4.1 required fields
-    expect(card.name).toBeTruthy();
-    expect(card.description).toBeTruthy();
-    expect(card.supportedInterfaces).toBeDefined();
-    expect(Array.isArray(card.supportedInterfaces)).toBe(true);
-    expect(card.supportedInterfaces.length).toBeGreaterThanOrEqual(1);
-    expect(card.provider).toBeDefined();
-    expect(card.capabilities).toBeDefined();
-    expect(card.skills).toBeDefined();
-  });
+test.afterAll(async ({ request }) => {
+  for (const id of tokenIds) await request.delete("/api/agent-tokens", { headers: admin, data: { id, hard: true } })
+})
 
-  test("agent card skills have correct shape", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/api/a2a/agent-card`);
-    const card = await response.json();
+test("A2A aliases advertise only supported search and preserve ingress links", async ({ request, baseURL }) => {
+  for (const path of ["/.well-known/agent.json", "/.well-known/agent-card.json", "/api/a2a/agent-card"]) {
+    const response = await request.get(path, { maxRedirects: 0 })
+    expect(response.status()).toBe(200)
+    expect(response.headers()["cache-control"]).toBe("no-store")
+    const card = await response.json()
+    expect(card).toMatchObject({
+      supportedInterfaces: [{ url: `${baseURL}/api/a2a/message`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
+      skills: [{ id: "task-search", tags: ["tasks", "search", "read-only"] }],
+      capabilities: { streaming: false, pushNotifications: false },
+    })
+    expect(card.skills).toHaveLength(1)
+  }
+  const ingressPath = "/api/hassio_ingress/local-protocol-fixture"
+  const response = await request.get("/.well-known/agent-card.json", { headers: { "X-Ingress-Path": ingressPath } })
+  expect((await response.json()).supportedInterfaces[0].url).toBe(`${baseURL}${ingressPath}/api/a2a/message`)
+})
 
-    for (const skill of card.skills) {
-      expect(skill.id).toBeTruthy();
-      expect(skill.name).toBeTruthy();
-      expect(skill.description).toBeTruthy();
-      expect(Array.isArray(skill.tags)).toBe(true);
-      expect(Array.isArray(skill.examples)).toBe(true);
-    }
-  });
+test("A2A searches real active titles without inventing asynchronous tasks", async ({ request, baseURL }) => {
+  const headers = await issueToken(request, ["a2a:execute", "search:read"])
+  const title = `ProtocolHeating${crypto.randomUUID().replaceAll("-", "")}`
+  const created = await request.post("/api/tasks", { headers: admin, data: { title, description: "Private description must not appear in protocol output" } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  try {
+    const input = { message: { role: "ROLE_USER", messageId: "search-check", contextId: "test-context", parts: [{ text: title }] } }
+    const response = await request.post("/api/a2a/message", { headers, data: envelope("SendMessage", input) })
+    expect(response.status()).toBe(200)
+    const json = await response.json()
+    expect(json).toMatchObject({
+      result: { message: { role: "ROLE_AGENT", contextId: "test-context", parts: [{ data: { tasks: [{ id, title, url: `${baseURL}/tasks?open=${id}` }] } }] } },
+    })
+    expect(json.result).not.toHaveProperty("task")
+    expect(JSON.stringify(json)).not.toContain("Private description")
+    const text = await request.post("/api/a2a/message", { headers, data: envelope("SendMessage", {
+      ...input, configuration: { acceptedOutputModes: ["text/plain"] },
+    }) })
+    expect(await text.json()).toMatchObject({ result: { message: { parts: [{ text: expect.stringContaining(title), mediaType: "text/plain" }] } } })
+    const list = await request.post("/api/a2a/message", { headers, data: envelope("ListTasks") })
+    expect(await list.json()).toMatchObject({ result: { tasks: [], totalSize: 0 } })
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers: admin })
+  }
+})
 
-  test("agent card declares HTTP+JSON binding", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/api/a2a/agent-card`);
-    const card = await response.json();
+test("A2A enforces both scopes, bounded requests and explicit unsupported operations", async ({ request }) => {
+  const reader = await issueToken(request, ["a2a:execute", "search:read"])
+  for (const scopes of [["a2a:execute"], ["search:read"]]) {
+    const headers = await issueToken(request, scopes)
+    expect((await request.post("/api/a2a/message", { headers, data: envelope("ListTasks") })).status()).toBe(403)
+  }
+  const forged = await request.post("/api/a2a/message", { headers: { "A2A-Token": "fixture-forged", authorization: "Bearer fixture-forged" }, data: {} })
+  expect(forged.status()).toBe(401)
+  expect(await forged.text()).not.toContain("fixture-forged")
+  for (const [method, params, code] of [
+    ["GetTask", { id: "unknown" }, -32001],
+    ["CancelTask", { id: "unknown" }, -32001],
+    ["SendStreamingMessage", {}, -32004],
+    ["CreateTaskPushNotificationConfig", {}, -32003],
+    ["Unknown", {}, -32601],
+    ["SendMessage", {}, -32602],
+    ["SendMessage", { message: { role: "ROLE_USER", messageId: "unsupported", parts: [{ data: { query: "heating", skill: "task-management" } }] } }, -32004],
+  ] as const) {
+    const response = await request.post("/api/a2a/message", { headers: reader, data: envelope(method, params) })
+    expect(await response.json()).toMatchObject({ error: { code } })
+  }
+  const wrongVersion = await request.post("/api/a2a/message", { headers: { ...reader, "A2A-Version": "0.3" }, data: envelope("ListTasks") })
+  expect(await wrongVersion.json()).toMatchObject({ error: { code: -32009 } })
+  const tooLarge = await request.post("/api/a2a/message", { headers: reader, data: { padding: "x".repeat(16 * 1024) } })
+  expect(tooLarge.status()).toBe(413)
+  const invalid = await request.post("/api/a2a/message", { headers: { ...reader, "content-type": "application/json" }, data: Buffer.from("{") })
+  expect(await invalid.json()).toMatchObject({ error: { code: -32700 } })
+  for (const response of [await request.get("/api/a2a/tasks/unknown", { headers: reader }), await request.post("/api/a2a/tasks/unknown:cancel", { headers: reader, data: {} })]) {
+    expect(response.status()).toBe(404)
+    expect(await response.json()).not.toHaveProperty("task")
+  }
+})
 
-    const httpInterface = card.supportedInterfaces.find(
-      (i: Record<string, unknown>) => i.protocolBinding === "HTTP+JSON"
-    );
-    expect(httpInterface).toBeDefined();
-    expect(httpInterface.protocolVersion).toBe("1.0");
-  });
-});
+test("A2A setting disables discovery and execution", async ({ request }) => {
+  const headers = await issueToken(request, ["a2a:execute", "search:read"])
+  await request.put("/api/settings", { headers: admin, data: { key: "agent-protocols-a2a-enabled", value: false } })
+  try {
+    for (const path of ["/.well-known/agent-card.json", "/.well-known/agent.json", "/api/a2a/agent-card"]) expect((await request.get(path)).status()).toBe(404)
+    expect((await request.post("/api/a2a/message", { headers, data: envelope("ListTasks") })).status()).toBe(404)
+  } finally {
+    await request.put("/api/settings", { headers: admin, data: { key: "agent-protocols-a2a-enabled", value: true } })
+  }
+})
 
-test.describe("A2A Message Send", () => {
-  test("accepts valid message with skill", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-001",
-          parts: [
-            {
-              text: "Create a task titled 'Test Task'",
-              data: { skill: "task-management" },
-            },
-          ],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.id).toBeTruthy();
-    expect(body.task.status).toBe("completed");
-    expect(body.task.messages.length).toBeGreaterThanOrEqual(2);
-  });
-
-  test("returns input-required when no skill detected", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-002",
-          parts: [{ text: "Hello, what can you do?" }],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.status).toBe("input-required");
-  });
-
-  test("rejects invalid message structure", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: { message: {} },
-    });
-
-    expect(response.status()).toBe(400);
-  });
-
-  test("rejects missing message", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {},
-    });
-
-    expect(response.status()).toBe(400);
-  });
-
-  test("task-search skill returns response", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-003",
-          parts: [{ text: "Search for high-priority tasks" }],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task.metadata?.skill).toBe("task-search");
-  });
-
-  test("framework-scoring skill returns response", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      data: {
-        message: {
-          role: "user",
-          messageId: "test-msg-004",
-          parts: [{ text: "Score this task using RICE" }],
-        },
-      },
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task.metadata?.skill).toBe("framework-scoring");
-  });
-});
-
-test.describe("A2A Task Status", () => {
-  test("returns task by ID", async ({ request, baseURL }) => {
-    const response = await request.get(
-      `${baseURL}/api/a2a/tasks/test-task-123`
-    );
-    expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.task).toBeDefined();
-    expect(body.task.id).toBe("test-task-123");
-  });
-});
-
-test.describe("MCP Discovery", () => {
-  test("mcp.json has tools array", async ({ request, baseURL }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    expect(response.ok()).toBeTruthy();
-    const mcp = await response.json();
-    expect(mcp.tools).toBeDefined();
-    expect(Array.isArray(mcp.tools)).toBe(true);
-    expect(mcp.tools.length).toBeGreaterThanOrEqual(3);
-  });
-
-  test("mcp.json tools have input schemas", async ({ request, baseURL }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    const mcp = await response.json();
-
-    for (const tool of mcp.tools) {
-      expect(tool.name).toBeTruthy();
-      expect(tool.description).toBeTruthy();
-      expect(tool.inputSchema).toBeDefined();
-      expect(tool.inputSchema.type).toBe("object");
-    }
-  });
-
-  test("mcp.json references a2a agent card", async ({ request, baseURL }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    const mcp = await response.json();
-    expect(mcp.agent_protocols?.a2a).toBeDefined();
-    expect(mcp.agent_protocols.a2a.agent_card).toBe(
-      "/.well-known/agent.json"
-    );
-  });
-});
-
-test.describe("A2A-Token Spoofing Rejection", () => {
-  test("rejects spoofed A2A-Token header", async ({ request, baseURL }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      headers: { "A2A-Token": "spoofed-token-value" },
-      data: {
-        message: {
-          role: "user",
-          messageId: "spoofed-msg-001",
-          parts: [{ text: "Create a task" }],
-        },
-      },
-    });
-    // The server should either ignore the spoofed token or reject with 401/403
-    // Since we don't require auth currently, the request should succeed but the
-    // spoofed token should NOT appear in the response context
-    if (response.status() === 401 || response.status() === 403) {
-      // Auth-enforced mode: correct rejection
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-    } else {
-      // Permissive mode: token is ignored, request processes normally
-      expect(response.ok()).toBeTruthy();
-      const body = await response.json();
-      // Verify the spoofed token doesn't leak into the response
-      expect(JSON.stringify(body)).not.toContain("spoofed-token-value");
-    }
-  });
-
-  test("rejects forged Authorization header on A2A endpoint", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.post(`${baseURL}/api/a2a/message`, {
-      headers: { Authorization: "Bearer forged-jwt-token" },
-      data: {
-        message: {
-          role: "user",
-          messageId: "forged-msg-001",
-          parts: [{ text: "Search tasks" }],
-        },
-      },
-    });
-    // Either rejected or processed without escalated privileges
-    if (response.status() === 401 || response.status() === 403) {
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-    } else {
-      expect(response.ok()).toBeTruthy();
-      const body = await response.json();
-      expect(JSON.stringify(body)).not.toContain("forged-jwt-token");
-    }
-  });
-});
-
-test.describe("WebMCP JSON-RPC Validation", () => {
-  test("mcp.json tool schemas validate as JSON Schema objects", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    expect(response.ok()).toBeTruthy();
-    const mcp = await response.json();
-
-    for (const tool of mcp.tools) {
-      // Every tool must have required JSON-RPC fields
-      expect(typeof tool.name).toBe("string");
-      expect(tool.name.length).toBeGreaterThan(0);
-      expect(typeof tool.description).toBe("string");
-      expect(tool.description.length).toBeGreaterThan(0);
-
-      // inputSchema must be a valid JSON Schema object
-      expect(tool.inputSchema).toBeDefined();
-      expect(tool.inputSchema.type).toBe("object");
-
-      // If properties exist, they must be objects
-      if (tool.inputSchema.properties) {
-        expect(typeof tool.inputSchema.properties).toBe("object");
-        for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
-          const p = prop as Record<string, unknown>;
-          expect(typeof key).toBe("string");
-          expect(p.type || p.$ref).toBeTruthy();
-        }
-      }
-    }
-  });
-
-  test("mcp.json has valid metadata structure", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    const mcp = await response.json();
-
-    // Validate top-level structure
-    expect(mcp.tools).toBeDefined();
-    expect(Array.isArray(mcp.tools)).toBe(true);
-
-    // Agent protocols section
-    if (mcp.agent_protocols) {
-      expect(typeof mcp.agent_protocols).toBe("object");
-    }
-
-    // No duplicate tool names
-    const toolNames = mcp.tools.map((t: { name: string }) => t.name);
-    const uniqueNames = new Set(toolNames);
-    expect(uniqueNames.size).toBe(toolNames.length);
-  });
-
-  test("mcp.json tool names follow naming conventions", async ({
-    request,
-    baseURL,
-  }) => {
-    const response = await request.get(`${baseURL}/.well-known/mcp.json`);
-    const mcp = await response.json();
-
-    for (const tool of mcp.tools) {
-      // Tool names should be camelCase or snake_case, no spaces
-      expect(tool.name).not.toContain(" ");
-      expect(tool.name.length).toBeGreaterThan(0);
-      expect(tool.name.length).toBeLessThan(64);
-    }
-  });
-});
+test("MCP discovery inventory matches tools/list", async ({ request }) => {
+  const discovery = await request.get("/.well-known/mcp.json")
+  expect(discovery.ok()).toBe(true)
+  const metadata = await discovery.json()
+  const list = await request.post("/api/mcp", { data: envelope("tools/list") })
+  expect(list.ok()).toBe(true)
+  const tools = (await list.json()).result.tools
+  expect(metadata.toolCount).toBe(tools.length)
+  expect(metadata.endpoint).toBe("/api/mcp")
+  expect(new Set(tools.map((tool: { name: string }) => tool.name)).size).toBe(tools.length)
+  for (const tool of tools) {
+    expect(tool.name).toMatch(/^[a-zA-Z0-9_]+$/)
+    expect(tool.inputSchema.type).toBe("object")
+  }
+})

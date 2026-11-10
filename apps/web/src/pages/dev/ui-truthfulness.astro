@@ -1,0 +1,68 @@
+---
+// A development-only harness using the actual Settings page and global task modal.
+import SettingsPage from "../settings.astro"
+
+if (!import.meta.env.DEV) return new Response("Not found", { status: 404 })
+---
+
+<script is:inline>
+  (() => {
+    const params = new URLSearchParams(location.search)
+    const mode = params.get("data") || "demo"
+    const worst = mode === "worst" || mode === "1284"
+    const names = worst ? ["Aleksandra Wiśniewska-Kowalczyk", "Jo", "Đặng Thị Ngọc Hân", "نور الهدى عبد الرحمن"] : ["Emma", "Seán"]
+    const count = mode === "empty" ? 0 : mode === "one" ? 1 : mode === "1284" ? 1284 : names.length
+    const users = Array.from({ length: count }, (_, i) => ({ id: `fixture-user-${i}`, name: names[i % names.length] + (i > 3 ? ` ${i + 1}` : ""), source: "custom" }))
+    const goals = mode === "empty" ? [] : [{ id: "fixture-goal", title: worst ? "Replace the downstairs heating controller before the winter service appointment" : "Prepare for winter" }]
+    const settings = { "ha-assist-agent": "", backlog_mode: "visible" }
+    const nativeFetch = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input.url || input.toString(), location.origin)
+      if (!url.pathname.startsWith("/api/")) return nativeFetch(input, init)
+      const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase()
+      const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
+      if (method !== "GET") {
+        if (params.get("save") === "fail") return json({ error: "Fixture: service unavailable. Retry when connected." }, 503)
+        if (url.pathname === "/api/settings") {
+          const body = JSON.parse(init?.body || "{}")
+          settings[body.key] = body.value
+          return json({ ok: true })
+        }
+        if (url.pathname === "/api/tasks") return json({ id: "fixture-created-task", ticket_key: "DEMO-1", task_kind: "quick" }, 201)
+        return json({ error: "This action is unavailable in the UI demo." }, 503)
+      }
+      if (url.pathname === "/api/users") return json({ users, default_assignee: null })
+      if (url.pathname === "/api/users/default") return json({ user_id: null })
+      if (url.pathname === "/api/users/custom") return json({ users: [] })
+      if (url.pathname === "/api/goals") return json({ goals })
+      if (url.pathname === "/api/rules") return json({ ok: true, data: [] })
+      if (url.pathname === "/api/settings") return json(url.searchParams.has("key") ? { value: settings[url.searchParams.get("key")] ?? null } : settings)
+      if (url.pathname === "/api/lanes") return json({ lanes: [{ key: "pending", label: "To Do", icon: "○" }, { key: "active", label: worst ? "Waiting for household maintenance approval" : "In Progress", icon: "◔" }] })
+      if (url.pathname === "/api/ha/agents") return json({ agents: [{ id: "fixture-assist", name: worst ? "Household heating and maintenance conversation assistant" : "Household Assist" }] })
+      if (url.pathname === "/api/features") return json({ features: [] })
+      return json({ error: "Unavailable in the UI demo" }, 503)
+    }
+    document.addEventListener("DOMContentLoaded", () => {
+      const controls = document.createElement("nav")
+      controls.setAttribute("aria-label", "Development fixture data")
+      controls.id = "ui-fixture-controls"
+      Object.assign(controls.style, { position: "fixed", bottom: "2px", left: "50%", transform: "translateX(-50%)", display: "flex", flexWrap: "nowrap", overflowX: "auto", gap: "3px", zIndex: "9999", padding: "3px", borderRadius: "8px", background: "#ddd", color: "#111", width: "min(96vw, 540px)", font: "11px system-ui" })
+      for (const [value, label] of [["demo", "Demo data"], ["worst", "Worst case"], ["empty", "Empty"], ["one", "One"], ["1284", "1,284"]]) {
+        const link = document.createElement("a")
+        const next = new URL(location.href)
+        next.searchParams.set("data", value)
+        link.href = next.toString()
+        link.textContent = label
+        link.setAttribute("aria-current", mode === value ? "true" : "false")
+        Object.assign(link.style, { flexShrink: "0", padding: "5px", background: mode === value ? "white" : "transparent", color: "#111", borderRadius: "5px", textDecoration: "none" })
+        controls.append(link)
+      }
+      const task = document.createElement("button")
+      task.textContent = "New task"
+      task.addEventListener("click", () => window.openNewTaskModal?.())
+      controls.append(task)
+      document.body.append(controls)
+    }, { once: true })
+  })()
+</script>
+<SettingsPage />

@@ -20,12 +20,16 @@ IQS: Platinum tier compliance.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
@@ -56,6 +60,10 @@ CREATE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("title"): cv.string,
         vol.Optional("description"): cv.string,
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("due_date"): cv.string,
+        vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
     }
 )
 
@@ -70,6 +78,8 @@ SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
         vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("include_completed"): cv.boolean,
     }
 )
 
@@ -123,6 +133,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
+                priority=call.data.get("priority"),
+                due_date=call.data.get("due_date"),
+                urgency=call.data.get("urgency"),
+                importance=call.data.get("importance"),
             )
         except Exception as err:
             raise HomeAssistantError(
@@ -243,7 +257,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 "[Agent] → Configure → LLM APIs) to enable voice control"
             )
         except Exception:
-            _LOGGER.warning("Could not register Meitheal LLM API — feature disabled")
+            _LOGGER.exception("Could not register Meitheal LLM API — feature disabled")
     else:
         _LOGGER.info("Meitheal LLM API not available (requires HA 2026.3+)")
 
@@ -254,12 +268,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         from homeassistant.components.homeassistant.exposed_entities import (
             async_expose_entity,
         )
+        from homeassistant.helpers import entity_registry as er
 
         # Expose todo entity to all conversation agents
-        entity_id = f"todo.meitheal_tasks"
-        async_expose_entity(hass, "conversation", entity_id, True)
-        _LOGGER.debug("Auto-exposed %s to Assist", entity_id)
-    except (ImportError, Exception):
+        entity_id = er.async_get(hass).async_get_entity_id(
+            "todo", DOMAIN, f"{entry.entry_id}_todo"
+        )
+        if entity_id:
+            async_expose_entity(hass, "conversation", entity_id, True)
+            _LOGGER.debug("Auto-exposed %s to Assist", entity_id)
+    except Exception:
         _LOGGER.debug(
             "Could not auto-expose entities to Assist — "
             "manually expose via Settings → Voice Assistants → Expose"

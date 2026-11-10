@@ -12,9 +12,9 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import MeithealCoordinator
-from .helpers import PARALLEL_UPDATES as PARALLEL_UPDATES, device_info
+from .helpers import PARALLEL_UPDATES as PARALLEL_UPDATES
+from .helpers import device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -224,8 +224,12 @@ class MeithealCompletedTodaySensor(
         """Return count of tasks completed today."""
         if not self.coordinator.data:
             return None
-        # Count done tasks — coordinator refreshes every 30s
-        return sum(1 for t in self.coordinator.data.tasks if t.status == "done")
+        return self.coordinator.data.completed_today
+
+    @property
+    def available(self) -> bool:
+        """Daily counts require the authoritative gamification statistics."""
+        return super().available and self.coordinator.data.completed_today is not None
 
 
 class MeithealStreakSensor(
@@ -252,11 +256,17 @@ class MeithealStreakSensor(
         return self.coordinator.data.streak
 
     @property
+    def available(self) -> bool:
+        """Disabled or failed gamification must not report a measured zero."""
+        return super().available and self.coordinator.data.streak is not None
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose gamification details."""
         if not self.coordinator.data:
             return None
         return {
             "total_points": self.coordinator.data.total_points,
+            "gamification_error": self.coordinator.data.gamification_error,
         }
 

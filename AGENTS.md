@@ -13,6 +13,8 @@ Think of Meitheal as the coordination layer that sits between daily work, Home A
 
 - Preserve **Astro-first** architecture decisions
 - Prefer official/open Astro integrations before custom implementations
+- Consider existing [Tabler admin-template](https://tabler.io/admin-template) patterns before custom UI; check the installed stack and reuse current primitives when they already fit.
+- Audit UI against Gestalt principles, Nielsen heuristics, DRY and YAGNI, including worst-case content and truthful failure states.
 - Maintain strict **DDD bounded contexts** and ubiquitous language
 - Maintain **KCS artifacts** in the same change set as code behavior updates
 - Keep **Home Assistant add-on compatibility** as a first-class constraint
@@ -171,6 +173,7 @@ Build-time generators produce zero-drift documentation served as static files.
 
 - `prebuild` runs `generate:openapi` → `generate:llms` → `generate:asyncapi` before `astro build`
 - Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- Agent-accessible routes also require an explicit `resolveRouteScope()` policy. Unknown routes fail closed for tokens, and explicit token authority never inherits HA administrator headers.
 - Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
 - Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
 
@@ -201,6 +204,8 @@ Both are logged in structured API request logs (`metadata.automation_source`, `m
 - Do not push force-authored bot commits directly to `main`
 
 ## Deploy Rules
+
+Release through Canary until the owner explicitly requests Stable. Use one Canary App entry, `meitheal-hub-canary`, with slug `meitheal_canary` and image family `meitheal-canary-{arch}`. Settings and other feature work use this same entry. Verify Supervisor has one installed Meitheal Canary before changing discovery or installing an update.
 
 Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 

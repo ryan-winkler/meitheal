@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { askAssist, type AssistResponse } from "../../../domains/ha/ha-services";
-import { getHAConnectionStatus } from "../../../domains/ha/ha-connection";
+import { getHAConnection, getHAConnectionStatus } from "../../../domains/ha/ha-connection";
 import { logApiError } from "../../../lib/api-logger";
 
 /**
@@ -32,6 +32,7 @@ function checkRateLimit(key: string): boolean {
 }
 
 export const POST: APIRoute = async ({ request }) => {
+  await getHAConnection()
   const status = getHAConnectionStatus();
   if (!status.connected) {
     return new Response(

@@ -36,17 +36,20 @@ export interface AIResult {
  */
 async function getAgentId(): Promise<string | undefined> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ha-agent-id"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value && typeof data.value === "string") return data.value;
+    const res = await fetch("/api/settings?key=ha-assist-agent")
+    if (!res.ok) return undefined
+    const data = await res.json()
+    // Empty is an intentional selection of built-in Assist, not a missing key.
+    if (data?.value !== null && data?.value !== undefined) {
+      return typeof data.value === "string" && data.value ? data.value : undefined
     }
-  } catch {
-    /* use default */
-  }
-  return undefined;
+    const legacy = await fetch("/api/settings?key=ha-agent-id")
+    if (legacy.ok) {
+      const old = await legacy.json()
+      if (typeof old?.value === "string" && old.value) return old.value
+    }
+  } catch { /* use HA's default */ }
+  return undefined
 }
 
 /**

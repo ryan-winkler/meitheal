@@ -1,3 +1,4 @@
+import { settingsAction, showSettingsError } from "@lib/settings-utils"
 /**
  * Sidebar settings controller.
  *
@@ -77,27 +78,23 @@ export function initSidebarSettings(): void {
     settingsStore.invalidate()
     // Dispatch event so Layout can reactively update sidebar without full reload
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   // Reset sidebar to defaults
   const resetSidebarBtn = document.getElementById("reset-sidebar")
   if (resetSidebarBtn) {
-    pageLifecycle.on(resetSidebarBtn, "click", async () => {
+    pageLifecycle.on(resetSidebarBtn, "click", settingsAction(async () => {
     const confirmed = await confirmDialog({
       message: "Reset sidebar to default configuration? Custom links and reordering will be lost.",
       variant: "warning",
     })
     if (!confirmed) return
-    await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=sidebar_config",
-      { method: "DELETE", signal: pageLifecycle.signal },
-    ).catch(() => {})
     await saveSetting("sidebar_config", null)
     showToast("Sidebar reset to defaults")
     settingsStore.invalidate()
     window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-    })
+    }))
   }
 
   // Add custom link

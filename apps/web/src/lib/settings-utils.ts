@@ -6,6 +6,7 @@
  */
 import { createClientLogger } from "@lib/client-logger"
 import { settingsStore } from "@lib/settings-store"
+import { showToast } from "@lib/toast"
 
 export const log = createClientLogger("settings")
 
@@ -13,11 +14,39 @@ export const log = createClientLogger("settings")
 
 /** Save a single setting to the API via settingsStore */
 export async function saveSetting(key: string, value: unknown): Promise<void> {
-  try {
-    await settingsStore.saveSetting(key, value)
-  } catch {
-    /* ignore */
+  await settingsStore.saveSetting(key, value)
+}
+
+export function showSettingsError(): void {
+  showToast("Could not save changes. Your edits are still here; try again.", "error")
+}
+
+/** Catch settings action failures without losing the form or its retry control. */
+export function settingsAction(handler: (event: Event) => unknown): (event: Event) => Promise<void> {
+  return async (event) => {
+    const target = event.currentTarget
+    const button = target instanceof HTMLButtonElement ? target
+      : event instanceof SubmitEvent && event.submitter instanceof HTMLButtonElement ? event.submitter : null
+    const original = button?.innerHTML
+    try {
+      await handler(event)
+    } catch {
+      showSettingsError()
+      if (button) {
+        button.disabled = false
+        if (original !== undefined) button.innerHTML = original
+      }
+    }
   }
+}
+
+/** Check transport and application failures for settings-related mutations. */
+export async function settingsRequest(path: string, options?: RequestInit): Promise<Response> {
+  const response = await fetch(path, options)
+  if (!response.ok) throw new Error(`Settings request failed: ${response.status}`)
+  const payload = await response.clone().json()
+  if (payload?.ok === false) throw new Error("Settings request was rejected")
+  return response
 }
 
 /** Load all settings from the API */

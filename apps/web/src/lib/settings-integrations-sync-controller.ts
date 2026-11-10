@@ -1,3 +1,5 @@
+import { settingsRequest } from "@lib/settings-utils"
+import { showSettingsError } from "@lib/settings-utils"
 /**
  * Calendar & Todo sync integration settings controller.
  *
@@ -117,17 +119,14 @@ export function initCalendarTodoSettings(): void {
     await saveSetting("calendar_sync_mode", globalMode)
     await saveSetting("calendar_sync_modes", syncModes)
     if (caldavUrl && caldavUsername && caldavPassword) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword }), signal: pageLifecycle.signal }) }
-      catch (err) { log.error("Failed to save CalDAV credentials", err) }
+      await settingsRequest((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword }), signal: pageLifecycle.signal })
     } else if (caldavUrl && !caldavUsername && !caldavPassword) {
       await saveSetting("caldav_url", caldavUrl)
     }
     if (enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
+      await settingsRequest((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }), signal: pageLifecycle.signal })
     } else {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
+      await settingsRequest((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal })
     }
     const statusEl = document.getElementById("cal-status")
     if (statusEl) {
@@ -136,7 +135,7 @@ export function initCalendarTodoSettings(): void {
     }
     showToast("settings.calendar_saved")
     updateCalCountBadge()
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   // ───── Calendar Sync Now ─────
@@ -152,8 +151,8 @@ export function initCalendarTodoSettings(): void {
       })
       const data = (await res.json()) as { ok: boolean; message?: string; created?: number; updated?: number; total?: number }
       if (resultEl) resultEl.textContent = data.message ?? "Sync triggered"
-      showToast(data.ok ? `✅ ${data.message ?? "Calendar sync triggered"}` : "❌ Calendar sync failed", data.ok ? "success" : "error")
-      if (data.ok) {
+      showToast(res.ok && data.ok ? `✅ ${data.message ?? "Calendar sync triggered"}` : "❌ Calendar sync failed", res.ok && data.ok ? "success" : "error")
+      if (res.ok && data.ok) {
         const lastSynced = document.getElementById("cal-last-synced")
         if (lastSynced) {
           const evtCount = data.total ?? 0
@@ -248,11 +247,9 @@ export function initCalendarTodoSettings(): void {
     await saveSetting("todo_entity", enabledEntities[0] || "")
     await saveSetting("todo_sync_direction", direction)
     if (enabled && enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
+      await settingsRequest((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }), signal: pageLifecycle.signal })
     } else {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
+      await settingsRequest((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal })
     }
     const statusEl = document.getElementById("todo-status")
     if (statusEl) {
@@ -260,7 +257,7 @@ export function initCalendarTodoSettings(): void {
       statusEl.className = enabled ? "badge badge-active" : "badge badge-pending"
     }
     showToast("settings.todo_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   const syncTodoBtn = document.getElementById("sync-todo") as HTMLButtonElement
@@ -280,7 +277,7 @@ export function initCalendarTodoSettings(): void {
       if (resultEl) resultEl.textContent = msg
       const isOk = data.ok && data.ha_connected !== false
       showToast(isOk ? `✅ ${msg}` : `⚠️ ${msg}`, isOk ? "success" : "error")
-      if (data.ok) {
+      if (res.ok && data.ok) {
         const lastSynced = document.getElementById("todo-last-synced")
         if (lastSynced) lastSynced.textContent = `Last synced: ${new Date().toLocaleTimeString()}${data.synced ? ` — ${data.synced} item(s)` : ""}`
       }

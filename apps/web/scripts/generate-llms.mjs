@@ -32,13 +32,14 @@ function tokenOptimize(md) {
     .replace(/```mermaid[\s\S]*?```/g, "[mermaid diagram removed]")
     .replace(/```[\s\S]{500,}?```/g, "[large code block removed]")
     .replace(/<[^>]+>/g, "")
+    .replace(/[ \t]+$/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
 
 // ─── Read sources ─────────────────────────────────────────────────────────────
 
-const projectMd = readOptional(resolve(ROOT, ".planning/PROJECT.md"))
+const projectMd = readOptional(resolve(ROOT, "README.md")) ?? readOptional(resolve(ROOT, ".planning/PROJECT.md"))
 const agentsMd = readOptional(resolve(ROOT, "AGENTS.md"))
 const docsMd = readOptional(resolve(ROOT, "meitheal-hub/DOCS.md"))
 const openapiPath = resolve(PUBLIC, "openapi.yaml")
@@ -115,9 +116,9 @@ fullParts.push(
   "## Key Integration Points",
   "",
   "- **MCP Endpoint**: POST `/api/mcp` — JSON-RPC 2.0 server for AI tool calling",
-  "- **A2A Agent Card**: GET `/api/a2a/agent-card` — Agent-to-Agent discovery",
+  "- **A2A Agent Card**: GET `/api/a2a/agent-card` — gated read-only task-title search",
   "- **SSE Stream**: GET `/api/sse` — Real-time event subscription",
-  "- **Webhooks**: Configure via POST `/api/settings` with keys: webhook_endpoint, n8n_webhook_url",
+  "- **Webhooks**: Configure via PUT `/api/settings` with keys: webhook_endpoint, n8n_webhook_url",
   "- **HA Event Bus**: Events fired as meitheal_task_* on the Home Assistant event bus",
   "- **OpenAPI Spec**: GET `/openapi.yaml` — Full API specification",
   "- **AI Plugin**: GET `/.well-known/ai-plugin.json` — AI plugin manifest",
@@ -151,7 +152,7 @@ const routerContent = `# Meitheal
 - [OpenAPI Specification](/openapi.yaml) — ${apiSummary ? "120+ operations" : "API spec"}
 - [AI Plugin Manifest](/.well-known/ai-plugin.json) — Plugin discovery
 - [MCP Protocol](/api/mcp) — JSON-RPC 2.0 for AI tool calling
-- [A2A Agent Card](/api/a2a/agent-card) — Agent-to-Agent discovery
+- [A2A task search](/api/a2a/agent-card) — synchronous, read-only; WebMCP in supported browsers
 - [SSE Events](/api/sse) — Real-time event stream
 
 ## Core Facts
@@ -163,7 +164,7 @@ const routerContent = `# Meitheal
 - Pillars: Identity anchors (the WHY layer)
 - 120+ API operations with AI-optimized descriptions
 - 6 webhook events for n8n/Node-RED automation
-- MCP + A2A protocol support for autonomous agents
+- Astro MCP and Home Assistant LLM API; gated A2A task search and browser-supported WebMCP
 
 ## Quick Start for Agents
 
@@ -175,8 +176,11 @@ const routerContent = `# Meitheal
 // ─── Write output ─────────────────────────────────────────────────────────────
 
 mkdirSync(PUBLIC, { recursive: true })
-writeFileSync(resolve(PUBLIC, "llms-full.txt"), fullContent, "utf-8")
-writeFileSync(resolve(PUBLIC, "llms.txt"), routerContent, "utf-8")
+for (const outputDir of [PUBLIC, resolve(ROOT, "public")]) {
+  mkdirSync(outputDir, { recursive: true })
+  writeFileSync(resolve(outputDir, "llms-full.txt"), fullContent, "utf-8")
+  writeFileSync(resolve(outputDir, "llms.txt"), routerContent, "utf-8")
+}
 
 console.log(`✅ Generated llms.txt → ${resolve(PUBLIC, "llms.txt")}`)
 console.log(`✅ Generated llms-full.txt → ${resolve(PUBLIC, "llms-full.txt")}`)

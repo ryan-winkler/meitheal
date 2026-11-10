@@ -17,7 +17,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
+import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
 import { STATUS_LABELS } from "../../lib/status-config";
@@ -34,7 +34,7 @@ let project: Record<string, unknown> | null = null;
 let goal: Record<string, unknown> | null = null;
 let area: Record<string, unknown> | null = null;
 let tasks: Record<string, unknown>[] = [];
-let goals: Record<string, unknown>[] = [];
+let goals: GoalRow[] = [];
 
 try {
   await ensureSchema();
@@ -229,9 +229,9 @@ const tabs = [
       <div class="fields-placeholder-icon">🏷️</div>
       <h3 class="fields-placeholder-title">Custom Fields</h3>
       <p class="fields-placeholder-desc">
-        Configure custom fields for tasks in this project. Custom fields allow you to add structured metadata like estimates, categories, or priorities specific to this project.
+        Project-specific custom field configuration is unavailable. You can add supported custom field values when creating a task.
       </p>
-      <p class="fields-placeholder-coming">Coming soon in Phase 15.</p>
+
     </div>
   </section>
 
@@ -276,7 +276,7 @@ const tabs = [
           {goals.map((g) => (
             <option
               value={String(g.id)}
-              selected={project?.goal_id && String(project.goal_id) === String(g.id)}
+              selected={Boolean(project?.goal_id) && String(project?.goal_id) === String(g.id)}
             >
               🎯 {String(g.title)}
             </option>

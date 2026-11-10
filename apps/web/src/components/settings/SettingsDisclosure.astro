@@ -2,24 +2,36 @@
 interface Props {
   id?: string
   title: string
+  subtitle?: string
   open?: boolean
 }
 
 const {
   id,
   title,
+  subtitle,
   open = false,
 } = Astro.props
 ---
 
 <details id={id} class="settings-disclosure" open={open}>
-  <summary class="settings-disclosure__summary">{title}</summary>
+  <summary class="settings-disclosure__summary">
+    <span>{title}{subtitle && <small class="settings-disclosure__subtitle">{subtitle}</small>}</span>
+  </summary>
   <div class="settings-disclosure__body">
     <slot />
   </div>
 </details>
 
 <style>
+  .settings-disclosure__subtitle {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
   .settings-disclosure {
     border: 1px solid var(--border);
     border-radius: 14px;

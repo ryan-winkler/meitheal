@@ -403,6 +403,9 @@ const { locale } = Astro.props
 
 <script is:inline>
   (function () {
+    function notify(message, type) {
+      document.dispatchEvent(new CustomEvent("meitheal:settings-feedback", { detail: { message: message, type: type || "success" } }));
+    }
     var bp = window.__ingress_path || "";
 
     /** Create a styled element without innerHTML */
@@ -576,11 +579,13 @@ const { locale } = Astro.props
             fetch(bp + "/api/users/custom?id=" + encodeURIComponent(u.id), {
               method: "DELETE",
             })
-              .then(function () {
+              .then(function (response) {
+                if (!response.ok) throw new Error("Remove user failed: " + response.status);
                 initUsersCard();
               })
               .catch(function (err) {
                 ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Delete custom user error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
               });
           });
           row.appendChild(delBtn);
@@ -589,6 +594,11 @@ const { locale } = Astro.props
         });
       }
 
+      // Refresh controls before binding so a refreshed user list has one handler.
+      for (var buttonId of ["save-default-assignee", "add-custom-user-btn"]) {
+        var existingButton = document.getElementById(buttonId);
+        if (existingButton) existingButton.replaceWith(existingButton.cloneNode(true));
+      }
       // Save default assignee
       document
         .getElementById("save-default-assignee")
@@ -599,12 +609,14 @@ const { locale } = Astro.props
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ user_id: val || null }),
           })
-            .then(function () {
-              if (typeof window.showToast === "function")
-                window.showToast("Default assignee saved");
+            .then(function (response) {
+              if (!response.ok) throw new Error("Save failed: " + response.status);
+              if (typeof notify === "function")
+                notify("Default assignee saved");
             })
             .catch(function (err) {
               ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save default assignee error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
             });
         });
 
@@ -624,6 +636,7 @@ const { locale } = Astro.props
             body: JSON.stringify({ name: name }),
           })
             .then(function (res) {
+              if (!res.ok) throw new Error("Add user failed: " + res.status);
               if (res.ok) {
                 input.value = "";
                 initUsersCard();
@@ -631,6 +644,7 @@ const { locale } = Astro.props
             })
             .catch(function (err) {
               ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Add custom user error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
             });
         });
     }
@@ -641,6 +655,9 @@ const { locale } = Astro.props
 
 <script is:inline>
   (function () {
+    function notify(message, type) {
+      document.dispatchEvent(new CustomEvent("meitheal:settings-feedback", { detail: { message: message, type: type || "success" } }));
+    }
     var bp = window.__ingress_path || "";
     var select = document.getElementById("backlog-mode-select");
     var saveBtn = document.getElementById("save-backlog-mode");
@@ -686,13 +703,15 @@ const { locale } = Astro.props
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ key: "backlog_mode", value: val }),
       })
-        .then(function () {
+        .then(function (response) {
+          if (!response.ok) throw new Error("Save failed: " + response.status);
           window.__backlog_mode = val;
-          if (typeof window.showToast === "function")
-            window.showToast("Backlog mode saved — reload Kanban to apply");
+          if (typeof notify === "function")
+            notify("Backlog mode saved — reload Kanban to apply");
         })
         .catch(function (err) {
           ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save backlog mode error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
         });
     });
   })();
@@ -700,6 +719,9 @@ const { locale } = Astro.props
 
 <script is:inline>
   (function () {
+    function notify(message, type) {
+      document.dispatchEvent(new CustomEvent("meitheal:settings-feedback", { detail: { message: message, type: type || "success" } }));
+    }
     var bp = window.__ingress_path || "";
     var select = document.getElementById("completed-retention-select");
     var saveBtn = document.getElementById("save-completed-retention");
@@ -727,14 +749,16 @@ const { locale } = Astro.props
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ key: "completed_auto_hide_days", value: val }),
       })
-        .then(function () {
-          if (typeof window.showToast === "function")
-            window.showToast(
+        .then(function (response) {
+          if (!response.ok) throw new Error("Save failed: " + response.status);
+          if (typeof notify === "function")
+            notify(
               "Retention setting saved — reload Kanban to apply",
             );
         })
         .catch(function (err) {
           ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save retention error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
         });
     });
   })();
@@ -742,6 +766,9 @@ const { locale } = Astro.props
 
 <script is:inline>
   (function () {
+    function notify(message, type) {
+      document.dispatchEvent(new CustomEvent("meitheal:settings-feedback", { detail: { message: message, type: type || "success" } }));
+    }
     var bp = window.__ingress_path || "";
     var globalToggle = document.getElementById("notif-global-toggle");
     var sidebarCb = document.getElementById("notif-channel-sidebar");
@@ -1013,10 +1040,11 @@ const { locale } = Astro.props
           value: payload,
         }),
       })
-        .then(function () {
+        .then(function (response) {
+          if (!response.ok) throw new Error("Save failed: " + response.status);
           saveBtn.textContent = "✓ Saved";
-          if (typeof window.showToast === "function")
-            window.showToast("Notification preferences saved");
+          if (typeof notify === "function")
+            notify("Notification preferences saved");
           setTimeout(function () {
             saveBtn.textContent = origText;
             saveBtn.disabled = false;
@@ -1025,6 +1053,7 @@ const { locale } = Astro.props
         })
         .catch(function (err) {
           ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save notification prefs error:", err);
+          if (typeof notify === "function") notify("Could not save changes. Check your connection and permissions, then retry.", "error");
           saveBtn.textContent = "✗ Failed";
           setTimeout(function () {
             saveBtn.textContent = origText;
@@ -1039,6 +1068,9 @@ const { locale } = Astro.props
 <script is:inline>
   // Feature toggles
   (function () {
+    function notify(message, type) {
+      document.dispatchEvent(new CustomEvent("meitheal:settings-feedback", { detail: { message: message, type: type || "success" } }));
+    }
     const container = document.getElementById("feature-toggles-container");
     if (!container) return;
 
@@ -1098,10 +1130,10 @@ const { locale } = Astro.props
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ feature: featureName, enabled: enabled }),
               })
-                .then(function (r) { return r.json(); })
+                .then(function (r) { if (!r.ok) throw new Error("Feature update failed: " + r.status); return r.json(); })
                 .then(function () {
-                  if (typeof window.showToast === "function") {
-                    window.showToast((enabled ? "Enabled" : "Disabled") + ": " + f.label);
+                  if (typeof notify === "function") {
+                    notify((enabled ? "Enabled" : "Disabled") + ": " + f.label);
                   }
                   // Update client-side flags
                   if (window.__featureFlags) {
@@ -1109,8 +1141,9 @@ const { locale } = Astro.props
                   }
                 })
                 .catch(function () {
-                  if (typeof window.showToast === "function") {
-                    window.showToast("Failed to update feature", "error");
+                  checkbox.checked = !enabled;
+                  if (typeof notify === "function") {
+                    notify("Failed to update feature", "error");
                   }
                 });
             });
@@ -1133,3 +1166,18 @@ const { locale } = Astro.props
   })();
 </script>
 
+
+<script>
+  import { showToast } from "@lib/toast"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad((signal) => {
+    const owner = window as Window & { __meithealSettingsFeedbackSignal?: AbortSignal }
+    if (owner.__meithealSettingsFeedbackSignal === signal) return
+    owner.__meithealSettingsFeedbackSignal = signal
+    document.addEventListener("meitheal:settings-feedback", (event) => {
+      const { message, type } = (event as CustomEvent).detail
+      showToast(message, type)
+    }, { signal })
+  })
+</script>

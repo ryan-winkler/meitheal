@@ -37,8 +37,8 @@ language during the transition. Match the vocabulary of the called surface.
 ## Integration Points
 
 - Home Assistant services: `meitheal.create_task`, `meitheal.complete_task`, `meitheal.sync_todo`, `meitheal.search_tasks`, `meitheal.get_overdue_tasks`, `meitheal.complete_task_by_tag`, `meitheal.notify_overdue`
-- Astro MCP: 18 tools via `/api/mcp`
-- HA MCP: 16 tools via the custom component
+- Astro MCP: generated tool inventory via `/api/mcp` (`tools/list`)
+- HA agent access: services and the custom-component LLM API; no separate MCP server
 - HA LLM API: 21 tools through `Meitheal Tasks`
-- A2A: dynamic agent card plus `/api/a2a/message`
-- Voice: built-in Assist intents plus LLM-backed conversation agent tooling
+- A2A: gated, synchronous task-title search; no background tasks or streaming
+- Voice: Assist intents plus LLM-backed conversation tooling; custom sentence YAML requires the documented HA configuration install

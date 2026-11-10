@@ -10,10 +10,10 @@ configuration:
       Categories to include in log output (e.g. auth, tasks, integrations,
       observability). Only events matching these categories are emitted.
   log_redaction:
-    name: Log Redaction
+    name: Secret Redaction (Always Enabled)
     description: >-
-      When enabled, tokens, passwords, and PII are redacted from log output
-      before it leaves the add-on.
+      Compatibility setting: credentials and secret metadata are always redacted
+      before stdout or Loki forwarding, even when this legacy option is false.
   audit_enabled:
     name: Audit Logging
     description: >-

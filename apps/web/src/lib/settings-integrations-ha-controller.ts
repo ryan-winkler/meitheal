@@ -1,3 +1,4 @@
+import { settingsAction, showSettingsError } from "@lib/settings-utils"
 /**
  * HA connection & webhook integration settings controller.
  *
@@ -65,7 +66,7 @@ export function initHASettings(): void {
   // Save HA settings (standalone mode only)
   const haForm = document.getElementById("ha-form")
   if (haForm) {
-    pageLifecycle.on(haForm, "submit", async (e) => {
+    pageLifecycle.on(haForm, "submit", settingsAction(async (e) => {
     e.preventDefault()
     const haUrl = (document.getElementById("ha-url") as HTMLInputElement).value
     const haToken = (document.getElementById("ha-token") as HTMLInputElement).value
@@ -81,7 +82,7 @@ export function initHASettings(): void {
     saveBtn.innerHTML = origText
     saveBtn.disabled = false
     showToast("settings.ha_saved")
-    })
+    }))
   }
 
   // Webhook Save
@@ -101,7 +102,7 @@ export function initHASettings(): void {
     if (secret) await saveSetting("webhook_secret", secret)
     await saveSetting("webhook_format", format)
     showToast("settings.webhook_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…" , onError: showSettingsError }))
   }
 
   // Webhook Test

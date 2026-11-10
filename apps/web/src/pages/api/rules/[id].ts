@@ -1,3 +1,5 @@
+import { RuleInputError } from "@domains/strategy/rule-input"
+import { apiJson } from "@lib/api-response"
 /**
  * Single Rule API — get, update, or delete a specific rule.
  *
@@ -63,6 +65,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    if (error instanceof RuleInputError) return apiJson({ ok: false, errorCode: "VALIDATION_ERROR", message: error.message }, 400)
     logApiError("rules", "Failed to update rule", error)
     return new Response(
       JSON.stringify({ ok: false, errorCode: "RULE_UPDATE_FAILED" }),

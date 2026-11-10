@@ -1202,7 +1202,7 @@ const { locale } = Astro.props
         });
       }
     } catch {
-      ;(window.__mLog ? window.__mLog("settings", "integrations") : console).warn("Grocy auto-detect failed");
+      ;(typeof window.__mLog === "function" ? window.__mLog("settings", "integrations") : console).warn("Grocy auto-detect failed");
     }
   }
   /**
@@ -1257,7 +1257,7 @@ const { locale } = Astro.props
         }
       }
     } catch {
-      ;(window.__mLog ? window.__mLog("settings", "integrations") : console).warn("Node-RED/n8n auto-detect failed");
+      ;(typeof window.__mLog === "function" ? window.__mLog("settings", "integrations") : console).warn("Node-RED/n8n auto-detect failed");
     }
   }
   initIntegrationCards();

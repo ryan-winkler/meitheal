@@ -82,6 +82,37 @@ export interface FrameworkOverrideRecord {
   updatedAt: string
 }
 
+/** Validate the JSON override contract before persistence or merging. */
+export function validateFrameworkOverrides(value: unknown, fieldKeys?: readonly string[]): string[] | null {
+  const record = (item: unknown): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item)
+  if (!record(value)) return ["Overrides must be an object"]
+  const errors: string[] = []
+  for (const key of Object.keys(value)) {
+    if (!["fields", "formula", "badgeThresholds"].includes(key)) errors.push(`Unsupported override: ${key}`)
+  }
+  if ("fields" in value) {
+    if (!record(value.fields)) errors.push("fields must be a dictionary keyed by field key")
+    else for (const [key, field] of Object.entries(value.fields)) {
+      if (!key || ["__proto__", "prototype", "constructor"].includes(key) || (fieldKeys && !fieldKeys.includes(key))) errors.push(`Unknown field: ${key}`)
+      if (!record(field)) { errors.push(`Field ${key} overrides must be an object`); continue }
+      for (const property of Object.keys(field)) {
+        if (!["weight", "label", "helpText"].includes(property)) errors.push(`Unsupported field override: ${key}.${property}`)
+      }
+      if ("weight" in field && (typeof field.weight !== "number" || !Number.isFinite(field.weight) || field.weight < 0)) errors.push(`Field ${key} weight must be a finite non-negative number`)
+      if ("label" in field && (typeof field.label !== "string" || !field.label.trim())) errors.push(`Field ${key} label must be a non-empty string`)
+      if ("helpText" in field && typeof field.helpText !== "string") errors.push(`Field ${key} helpText must be a string`)
+    }
+  }
+  if ("formula" in value && (typeof value.formula !== "string" || !value.formula.trim())) errors.push("formula must be a non-empty string")
+  if ("badgeThresholds" in value) {
+    if (!Array.isArray(value.badgeThresholds)) errors.push("badgeThresholds must be an array")
+    else for (const badge of value.badgeThresholds) {
+      if (!record(badge) || typeof badge.min !== "number" || !Number.isFinite(badge.min) || typeof badge.label !== "string" || typeof badge.color !== "string" || Object.keys(badge).some((key) => !["min", "label", "color"].includes(key))) errors.push("Each badge requires a finite min, string label and string color")
+    }
+  }
+  return errors.length ? errors : null
+}
+
 /**
  * Parse a raw YAML object into a typed FrameworkConfig.
  * Normalizes the snake_case YAML keys to camelCase.

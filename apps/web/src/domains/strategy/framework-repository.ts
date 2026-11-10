@@ -6,9 +6,17 @@
  * and provides merged configs at runtime.
  */
 
-import { getPersistenceClient } from "../tasks/persistence/store"
+import { getEntry } from "astro:content"
 import type { FrameworkConfig, FrameworkOverrides, FrameworkOverrideRecord } from "@meitheal/domain-strategy"
-import { mergeFrameworkConfig, parseFrameworkConfig } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, parseFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import { getPersistenceClient } from "../tasks/persistence/store"
+
+/** Shared default lookup keeps override validation aligned with the actual YAML fields. */
+export async function loadBuiltInFramework(id: string): Promise<FrameworkConfig | null> {
+  if (!/^[a-z0-9-]+$/.test(id)) return null
+  const entry = await getEntry("frameworks", id)
+  return entry ? parseFrameworkConfig(id, entry.data) : null
+}
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -52,10 +60,24 @@ export async function saveOverrides(
   frameworkId: string,
   overrides: FrameworkOverrides,
 ): Promise<FrameworkOverrideRecord> {
+  const base = await loadBuiltInFramework(frameworkId)
+  if (!base) throw new TypeError(`Unknown built-in framework: ${frameworkId}`)
+  const errors = validateFrameworkOverrides(overrides, base.fields.map((field) => field.key))
+  if (errors) throw new TypeError(errors.join(". "))
   const client = getPersistenceClient()
   const now = new Date().toISOString()
 
   const existing = await getOverrides(frameworkId)
+  const previous = existing && !validateFrameworkOverrides(existing.overrides) ? existing.overrides : {}
+  // A slider changes one field; preserve all other field and config overrides.
+  overrides = {
+    ...previous,
+    ...overrides,
+    ...((previous.fields || overrides.fields) ? { fields: {
+      ...previous.fields,
+      ...Object.fromEntries(Object.entries(overrides.fields ?? {}).map(([key, field]) => [key, { ...previous.fields?.[key], ...field }])),
+    } } : {}),
+  }
   if (existing) {
     await client.execute({
       sql: "UPDATE framework_configs SET overrides = ?, updated_at = ? WHERE framework_id = ?",

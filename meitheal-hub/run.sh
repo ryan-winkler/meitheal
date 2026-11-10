@@ -4,9 +4,9 @@ set -euo pipefail
 export MEITHEAL_VERSION="0.0.1"
 export NODE_ENV="production"
 STARTUP_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-echo "{\"event\":\"addon.startup\",\"version\":\"${MEITHEAL_VERSION}\",\"time\":\"${STARTUP_TS}\"}"
 
 export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
+export MEITHEAL_LOG_CATEGORIES="$(bashio::config 'log_categories | join(",")')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
 export LOKI_URL="$(bashio::config 'loki_url')"
@@ -30,6 +30,11 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   #   2. Addon hostname for integration discovery
   ADDON_SELF_INFO=$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
     http://supervisor/addons/self/info 2>/dev/null || true)
+
+  if [ -n "${ADDON_SELF_INFO:-}" ]; then
+    ADDON_VERSION=$(echo "$ADDON_SELF_INFO" | jq -r '.data.version // empty')
+    if [ -n "$ADDON_VERSION" ]; then export MEITHEAL_VERSION="$ADDON_VERSION"; fi
+  fi
 
   # ── Discover ingress path ──
   # HA Supervisor is supposed to inject X-Ingress-Path on proxied requests,
@@ -73,6 +78,7 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   echo "{\"event\":\"addon.hostname.discovered\",\"hostname_raw\":\"${ADDON_HOSTNAME_RAW}\",\"hostname\":\"${ADDON_HOSTNAME}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
 fi
 
+echo "{\"event\":\"addon.startup\",\"version\":\"${MEITHEAL_VERSION}\",\"time\":\"${STARTUP_TS}\"}"
 export HOST="${HOST:-0.0.0.0}"
 export PORT="${PORT:-3000}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=128}"
@@ -82,12 +88,15 @@ HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 COMPONENT_SRC="/opt/meitheal/custom_components/meitheal"
 COMPONENT_DST="/homeassistant/custom_components/meitheal"
 if [ -d "$COMPONENT_SRC" ] && [ -d "/homeassistant" ]; then
-  mkdir -p /homeassistant/custom_components
-  if [ ! -f "$COMPONENT_DST/manifest.json" ] || \
-     ! diff -q "$COMPONENT_SRC/manifest.json" "$COMPONENT_DST/manifest.json" >/dev/null 2>&1; then
-    cp -r "$COMPONENT_SRC" /homeassistant/custom_components/
-    COMP_VER=$(grep '"version"' "$COMPONENT_DST/manifest.json" 2>/dev/null | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
-    echo "{\"event\":\"component.installed\",\"version\":\"${COMP_VER:-unknown}\",\"path\":\"$COMPONENT_DST\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  mkdir -p "$COMPONENT_DST"
+  # Canary builds can change source without changing the integration manifest version.
+  COMPONENT_HASH=$(cd "$COMPONENT_SRC" && find . -type f ! -name '*.pyc' ! -path '*/__pycache__/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+  INSTALLED_HASH=$(cat "$COMPONENT_DST/.meitheal-package.sha256" 2>/dev/null || true)
+  if [ "$COMPONENT_HASH" != "$INSTALLED_HASH" ]; then
+    cp -r "$COMPONENT_SRC/." "$COMPONENT_DST/"
+    rm -f "$COMPONENT_DST/mcp_server.py" "$COMPONENT_DST/custom_sentences/en/sentences.json" "$COMPONENT_DST/custom_sentences/ga/sentences.json"
+    printf '%s\n' "$COMPONENT_HASH" > "$COMPONENT_DST/.meitheal-package.sha256"
+    echo "{\"event\":\"component.updated\",\"package_hash\":\"${COMPONENT_HASH}\",\"message\":\"Component files updated; restart Home Assistant to load changed Python code\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
   fi
 fi
 
@@ -165,10 +174,9 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   fi
 fi
 
-# Placeholder for Alloy sidecar integration path.
-# In production add-on packaging, run alloy with config below.
-if [ -f /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river ]; then
-  echo "Alloy config present at /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river"
+# This is configuration evidence, not a claim that the receiver accepted logs.
+if [ -n "${LOKI_URL:-}" ] && [ -f /opt/meitheal/packages/domain-observability/src/loki-sink.ts ]; then
+  echo '{"level":"info","event":"logging.loki.configured","message":"Optional native Loki forwarding configured; delivery is best-effort and unverified"}'
 fi
 
 # ── Graceful shutdown ──

@@ -55,7 +55,10 @@ test.describe("Phase 27: HA Security Hardening", () => {
             expect(content).toContain("panel_admin: false");
             expect(content).toContain("tmpfs: true");
             expect(content).toContain("ingress: true");
-            expect(content).toContain("stage: experimental");
+            expect(content).toContain("stage: stable");
+            const canary = await fs.readFile(configPath.replace("meitheal-hub/", "meitheal-hub-canary/"), "utf-8")
+            expect(canary).toContain("stage: experimental")
+            for (const flag of ["auth_api: true", "panel_admin: false", "tmpfs: true", "ingress: true"]) expect(canary).toContain(flag)
         });
     });
 
@@ -129,3 +132,14 @@ test.describe("Phase 27: HA Security Hardening", () => {
         });
     });
 });
+
+
+test("official Supervisor identity overrides legacy claims and unknown add-on users cannot inherit admin", () => {
+  const member = new Headers({ "x-remote-user-id": "member", "x-remote-user-groups": "system-users", "x-hass-user-id": "spoofed", "x-hass-is-admin": "true" })
+  expect(getHassUserId(member, false)).toBe("member")
+  expect(isHassAdmin(member, false)).toBe(false)
+  expect(isHassAdmin(new Headers({ "x-remote-user-id": "owner", "x-remote-user-groups": "system-users,system-admin" }), false)).toBe(true)
+  expect(isHassAdmin(new Headers({ "x-remote-user-groups": "system-admin" }), false)).toBe(false)
+  expect(isHassAdmin(new Headers({ "x-hass-is-admin": "true" }), false)).toBe(false)
+  expect(getHassUserId(new Headers({ "x-hass-user-id": "legacy" }), false)).toBeUndefined()
+})

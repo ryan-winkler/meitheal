@@ -26,7 +26,7 @@ import { taskApi, type TaskCreatePayload } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
-import { parseTaskInput } from "./nl-task-parser"
+import { parseTaskInput, type ParsedTask } from "./nl-task-parser"
 import {
   saveFilterState,
   loadFilterState,
@@ -154,9 +154,9 @@ function setupEventDelegation(container: HTMLElement) {
       }
 
       try {
-        await taskApi.updateTask(id, { status: newStatus })
+        const completed = await taskApi.updateTask(id, { status: newStatus })
         showToast(cb.checked ? "common.task_completed" : "common.task_reopened")
-        if (cb.checked) onTaskCompleted()
+        if (cb.checked) onTaskCompleted(completed)
       } catch {
         cb.checked = !cb.checked
         item?.classList.toggle("tli--done", cb.checked)
@@ -432,6 +432,13 @@ function handleAskAi(el: HTMLElement) {
   if (url) window.open(url, "_blank")
 }
 
+function parseQuickTask(input: string): ParsedTask {
+  if (window.__featureFlags?.nlp_parser === false) {
+    return { title: input.trim(), dueDate: null, priority: null, labels: [], assignee: null, hasExtractions: false }
+  }
+  return parseTaskInput(input)
+}
+
 // ── Quick Add ─────────────────────────────────────────────────────────────
 
 function setupQuickAdd(container: HTMLElement) {
@@ -447,7 +454,7 @@ function setupQuickAdd(container: HTMLElement) {
     if (!text) return
 
     // Parse NL input
-    const parsed = parseTaskInput(text)
+    const parsed = parseQuickTask(text)
     const todayStr = new Date().toISOString().split("T")[0]!
 
     // Detect shopping list: "shopping: item1, item2"
@@ -508,7 +515,7 @@ function setupQuickAdd(container: HTMLElement) {
         return
       }
 
-      const parsed = parseTaskInput(val)
+      const parsed = parseQuickTask(val)
       const parts: string[] = []
 
       if (parsed.dueDate) parts.push(`📅 Due: ${parsed.dueDate}`)

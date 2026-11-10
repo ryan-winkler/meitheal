@@ -14,6 +14,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   aria-modal="true"
   aria-labelledby="new-task-title"
 >
+  <h2 id="new-task-title" class="sr-only">{t("task_modal.btn_create_task", locale)}</h2>
   <div class="modal-content max-w-2xl w-full bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl max-h-[90vh] flex flex-col">
     <div
       class="modal-header nt-modal-header flex items-center justify-between px-6 pt-5 pb-3"
@@ -62,6 +63,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           data-placeholder-checklist={t("task_modal.title_placeholder_checklist", locale)}
           data-placeholder-event={t("task_modal.title_placeholder_event", locale)}
           required
+          maxlength="500"
+          aria-label={t("task_modal.title_placeholder", locale)}
           autofocus
           rows="1"
           style="height: 1.8em; max-height: 120px; field-sizing: content;"
@@ -69,7 +72,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <textarea
           class="bg-transparent border-none outline-none focus:ring-0 text-sm w-full p-0 mt-1 resize-none overflow-hidden placeholder:text-text-muted/40"
           id="new-task-desc-input"
+          maxlength="10000"
           name="description"
+          aria-label={t("task_modal.description_placeholder", locale)}
           rows="1"
           placeholder={t("task_modal.description_placeholder", locale)}
 
@@ -113,15 +118,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div class="nt-section-label">{t("task_modal.section_assignment", locale)}</div>
         <div class="nt-assignment-row flex flex-wrap items-center gap-2">
           <!-- Assignee -->
-          <select class="filter-toolbar__select" id="new-task-assigned-to">
+          <select class="filter-toolbar__select" id="new-task-assigned-to" aria-label="Assignee">
             <option value="">{t("task_modal.unassigned", locale)}</option>
           </select>
 
           <!-- Goal -->
-          <select class="filter-toolbar__select" id="new-task-goal" name="goal_id">
+          <select class="filter-toolbar__select" id="new-task-goal" name="goal_id" aria-label="Goal">
             <option value="">{t("task_modal.goal_none", locale)}</option>
           </select>
         </div>
+        <p id="nt-assignment-status" class="text-xs text-text-muted" role="status" hidden></p>
       </div>
 
       <!-- SCHEDULING & TAGS -->
@@ -230,7 +236,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
         <!-- Event Fields -->
         <div id="nt-contextual-event" class="hidden space-y-3">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_start", locale)}</label>
               <input type="hidden" id="nt-event-start" name="start_date" value="" />
@@ -248,7 +254,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               <span class="text-sm text-text-primary">{t("task_modal.event_all_day", locale)}</span>
             </div>
             <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="nt-event-all-day" class="sr-only peer" />
+              <input type="checkbox" id="nt-event-all-day" class="sr-only peer" aria-label={t("task_modal.event_all_day", locale)} />
               <div class="nt-toggle"></div>
             </label>
           </div>
@@ -268,22 +274,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         </div>
       </div>
 
-      <!-- Mark as Routine -->
-      <div id="nt-routine-toggle" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
-          </div>
-          <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.mark_as_routine", locale)}</span>
-            <p class="text-xs text-text-muted">{t("task_modal.routine_description", locale)}</p>
-          </div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-is-routine" class="sr-only peer" />
-          <div class="nt-toggle"></div>
-        </label>
-      </div>
+      <p class="text-xs text-text-muted">For a routine, use <a href="/habits" class="text-accent underline">Habits &amp; Routines</a> to create a template. Agent assignment is unavailable here.</p>
 
       <!-- Custom Fields (collapsible) -->
       <div id="nt-custom-fields" class="mb-3">
@@ -300,7 +291,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
           <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="attachment">📎 {t("task_modal.custom_field_attachment", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url">🔗 {t("task_modal.custom_field_url", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text">📝 {t("task_modal.custom_field_text", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number">🔢 {t("task_modal.custom_field_number", locale)}</button>
@@ -308,28 +298,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox">☑️ {t("task_modal.custom_field_checkbox", locale)}</button>
           </div>
         </div>
-      </div>
-
-      <!-- AI Assist -->
-      <div id="nt-ai-assist" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <span class="text-sm">🤖</span>
-          </div>
-          <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.ai_assign_to_agent", locale)}</span>
-            <p class="text-xs text-text-muted" id="nt-ai-description"
-              data-desc-task={t("task_modal.ai_task_description", locale)}
-              data-desc-shopping={t("task_modal.ai_shopping_description", locale)}
-              data-desc-checklist={t("task_modal.ai_checklist_description", locale)}
-              data-desc-event={t("task_modal.ai_event_description", locale)}
-            >{t("task_modal.ai_task_description", locale)}</p>
-          </div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-ai-handoff" class="sr-only peer" />
-          <div class="nt-toggle"></div>
-        </label>
       </div>
 
       <!-- Tags panel moved inline to SCHEDULING section glass-dropdown -->
@@ -342,9 +310,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       <button type="button" class="btn btn-ghost text-text-muted hover:text-text-primary text-sm font-semibold px-1 rounded-lg" id="cancel-new-task">{t("task_modal.btn_cancel", locale)}</button>
 
       <div class="flex items-center gap-3">
-        <button type="button" class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-lg hover:bg-bg-hover" aria-label="Attach file">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-        </button>
         <button
           type="submit"
           form="new-task-form"
@@ -365,6 +330,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { showToast } from "@lib/toast";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
+  import { createFocusTrap } from "@lib/focus-trap";
   import { initGlassDropdowns } from "@lib/glass-dropdown";
   import { InlineDatePicker } from "../shared/InlineDatePicker";
 
@@ -417,7 +383,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   };
 
   pageLifecycle.onPageLoad((signal) => {
+    // Strip stale HMR handlers before any descendant references or listeners exist.
+    const previousForm = document.getElementById("new-task-form");
+    if (previousForm) previousForm.replaceWith(previousForm.cloneNode(true));
+    document.querySelectorAll<HTMLElement>("#new-task-form .glass-dropdown").forEach(dropdown => {
+      dropdown.dataset.initialized = "false";
+    });
     const overlay = document.getElementById("new-task-overlay");
+    const focusTrap = overlay ? createFocusTrap(overlay) : null;
     const closeBtn = document.getElementById("close-new-task-modal");
     const cancelBtn = document.getElementById("cancel-new-task");
     const form = document.getElementById("new-task-form") as HTMLFormElement | null;
@@ -438,6 +411,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       titleInput.addEventListener("input", () => {
         titleInput.style.height = "1.8em";
         titleInput.style.height = Math.min(titleInput.scrollHeight, 120) + "px";
+        titleInput.style.overflowY = titleInput.scrollHeight > 120 ? "auto" : "hidden";
       }, { signal });
     }
     if (descInput) {
@@ -536,12 +510,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             iconSvg.appendChild(circle)
             pill.appendChild(iconSvg)
             const labelSpan = document.createElement("span")
-            labelSpan.className = "flex-1"
+            labelSpan.className = "flex-1 min-w-0 [overflow-wrap:anywhere]"
             labelSpan.textContent = val
             pill.appendChild(labelSpan)
             const removeBtn = document.createElement("button")
             removeBtn.type = "button"
-            removeBtn.className = "text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+            removeBtn.className = "text-text-muted hover:text-red-400 shrink-0 transition-opacity"
+            removeBtn.setAttribute("aria-label", "Remove item");
             removeBtn.textContent = "✕"
             removeBtn.addEventListener("click", () => { pill.remove(); (window as any)._removeNTCItem(val) }, { signal })
             pill.appendChild(removeBtn)
@@ -560,7 +535,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (qtyEl && parseInt(qtyEl.value) > 1) qtyEl.value = String(parseInt(qtyEl.value) - 1);
     }, { signal });
     qtyPlus?.addEventListener("click", () => {
-      if (qtyEl) qtyEl.value = String(parseInt(qtyEl.value) + 1);
+      if (qtyEl) qtyEl.value = String(Math.min(999, (parseInt(qtyEl.value) || 1) + 1));
     }, { signal });
 
     // Shopping List Item Builder
@@ -585,15 +560,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       pill.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1.5 px-3 rounded-lg group";
 
       const label = document.createElement("span");
-      label.className = "flex-1";
+      label.className = "flex-1 min-w-0 [overflow-wrap:anywhere]";
       const catLabel = category ? ` · ${catEl?.options[catEl.selectedIndex]?.textContent || category}` : "";
       label.textContent = qty > 1 ? `${qty}× ${name}${catLabel}` : `${name}${catLabel}`;
       pill.appendChild(label);
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
-      removeBtn.className = "text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs";
-      removeBtn.textContent = "✕";
+      removeBtn.className = "text-text-muted hover:text-red-400 shrink-0 transition-opacity text-xs";
+      removeBtn.setAttribute("aria-label", "Remove item");
+            removeBtn.textContent = "✕";
       const itemRef = { name, qty, category };
       removeBtn.addEventListener("click", () => {
         pill.remove();
@@ -671,7 +647,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
       removeBtn.className = "text-text-muted hover:text-red-400 text-xs"
-      removeBtn.textContent = "✕"
+      removeBtn.setAttribute("aria-label", "Remove item");
+            removeBtn.textContent = "✕"
       removeBtn.addEventListener("click", () => entry.remove(), { signal })
       entry.appendChild(removeBtn)
 
@@ -693,6 +670,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const finishClose = () => {
         overlay.classList.remove("active", "closing");
+        focusTrap?.deactivate();
         form?.reset();
         
         // Reset tabs
@@ -716,8 +694,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         const qtyInput = document.getElementById("nt-shopping-qty") as HTMLInputElement;
         if (qtyInput) qtyInput.value = "1";
         (document.getElementById("nt-shopping-category") as HTMLSelectElement).value = "";
-        (document.getElementById("nt-is-routine") as HTMLInputElement).checked = false;
-        (document.getElementById("nt-ai-handoff") as HTMLInputElement).checked = false;
         document.getElementById("nt-custom-fields-container")?.classList.add("hidden");
         const cfList = document.getElementById("nt-custom-fields-list");
         if (cfList) cfList.replaceChildren();
@@ -774,6 +750,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       form?.reset();
       overlay?.classList.add("active");
+      focusTrap?.activate();
 
       // Reset title textarea height after form.reset()
       const titleEl = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
@@ -806,8 +783,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const hint = document.getElementById("new-task-assignee-hint");
       if (!select) return;
 
+      select.disabled = false;
+      const assignmentStatus = document.getElementById("nt-assignment-status");
+      if (assignmentStatus) assignmentStatus.hidden = true;
       // Reset to just "Unassigned"
-      const unassignedLabel = select.options[0]?.textContent || "Unassigned";
+      const unassignedLabel = "Unassigned";
       select.replaceChildren();
       const defaultOpt = document.createElement("option")
       defaultOpt.value = ""
@@ -816,17 +796,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       try {
         const res = await fetch((window.__ingress_path || "") + "/api/users", { signal });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error("Assignees unavailable");
         const data = await res.json();
         const users = data.users || [];
 
         if (users.length === 0) {
           // No users discovered — hide dropdown, show link to settings
-          if (select.parentElement) select.parentElement.style.display = "none";
+          select.disabled = true;
+          defaultOpt.textContent = "No assignees available";
           return;
         }
 
-        if (select.parentElement) select.parentElement.style.display = "";
+        select.disabled = false;
         if (hint) {
           if (users.length > 1) hint.classList.remove("hidden")
           else hint.classList.add("hidden")
@@ -853,7 +834,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         // Store users for @mention matching
         (window as any).__meitheal_users = users;
       } catch {
-        // Standalone/offline — leave just "Unassigned"
+        select.disabled = true;
+        defaultOpt.textContent = "Assignees unavailable";
+        const status = document.getElementById("nt-assignment-status");
+        if (status) { status.hidden = false; status.textContent = "Could not load assignees. Reopen to retry; goals remain available."; }
       }
     }
 
@@ -986,8 +970,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             opt.textContent = `🎯 ${g.title || g.name}`;
             goalSelect.appendChild(opt);
           });
-        }
-      } catch (e) { log.warn("goals-fetch error", e) }
+        } else throw new Error("Goals unavailable");
+      } catch (e) {
+        goalSelect.disabled = true;
+        goalSelect.options[0]!.textContent = "Goals unavailable";
+        log.warn("goals-fetch error", e);
+      }
     })();
 
     // Use event delegation on document.body to catch all create-task-btn clicks
@@ -1000,13 +988,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
     }, { signal });
 
-    // Form Submission — nuclear guard against HMR-accumulated duplicate handlers:
-    // Clone the form element to strip ALL previously registered listeners, then re-attach.
+    // The current form already has lifecycle-scoped control handlers.
     if (form) {
-      const freshForm = form.cloneNode(true) as HTMLFormElement;
-      form.replaceWith(freshForm);
-      // Re-bind reference for the rest of this scope
-      const activeForm = freshForm;
+      const activeForm = form;
       activeForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         if ((window as any).__ntFormSubmitting) return;
@@ -1129,14 +1113,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             body.checklists = contextualChecklists;
           }
 
-          // Routine flag
-          const routineCheck = document.getElementById("nt-is-routine") as HTMLInputElement;
-          if (routineCheck?.checked) body.is_routine = true;
-
-          // AI Handoff
-          const aiCheck = document.getElementById("nt-ai-handoff") as HTMLInputElement;
-          if (aiCheck?.checked) body.handoff_state = "pending_agent";
-
           // Shopping list fields
           if (body.task_kind === "shopping_item") {
             const qty = (document.getElementById("nt-shopping-qty") as HTMLInputElement)?.value || "1";
@@ -1212,8 +1188,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             }
             
           } else {
-            const err = await res.text();
-            showToast(form.dataset.toastError || "Failed to create task", "error");
+            const err = await res.json().catch(() => ({}));
+            const message = typeof err.error === "string" ? err.error : typeof err.detail === "string" ? err.detail : form.dataset.toastError || "Failed to create task";
+            showToast(message, "error");
             log.error("Create task failed:", err);
             if (submitBtn) {
               submitBtn.disabled = false;
@@ -1235,6 +1212,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     // ── Memory cleanup on signal abort (page navigation) ──
     signal.addEventListener('abort', () => {
+      focusTrap?.deactivate();
       delete (window as any)._removeNTCItem;
       delete (window as any).__ntShoppingItems;
       delete (window as any).__meitheal_users;
@@ -1247,6 +1225,20 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 <style>
   @import "../../styles/inline-date-picker.css";
+  .nt-modal-header { gap: 8px; }
+  #nt-kind-tabs { flex-wrap: wrap; min-width: 0; }
+  #close-new-task-modal { flex-shrink: 0; }
+  #new-task-form { padding-bottom: 12px; }
+  #nt-status-pills { flex-wrap: wrap; }
+  #nt-status-pills :global(.filter-toolbar__type-btn) { white-space: normal; min-width: 0; max-width: 100%; text-align: left; }
+  .nt-assignment-row > select { min-width: 0; max-width: 100%; }
+  @media (max-width: 480px) {
+    .nt-modal-header, #new-task-form, .nt-footer { padding-left: 12px; padding-right: 12px; }
+    .nt-footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .nt-footer > div { min-width: 0; width: 100%; }
+    #cancel-new-task { grid-row: 2; width: 100%; }
+    #submit-new-task-btn { white-space: normal; width: 100%; max-width: 100%; padding-left: 12px; padding-right: 12px; }
+  }
   .nt-kind-pill {
     display: inline-flex;
     align-items: center;

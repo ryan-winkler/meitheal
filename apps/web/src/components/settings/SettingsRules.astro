@@ -60,6 +60,7 @@ const presets = [
 <div id="rules-lenses-settings">
   <!-- Preset Quick-Apply -->
   <SettingsPanelCard title={t("settings.rules_presets_title", locale)} subtitle={t("settings.rules_presets_subtitle", locale)}>
+    <p class="text-muted">Editing the per-type defaults preserves tagged and custom rules. Applying a preset or importing rules replaces the full rule set after confirmation.</p>
     <div class="rules-presets" id="rules-presets">
       {presets.map((preset) => (
         <button
@@ -126,7 +127,7 @@ const presets = [
   </SettingsPanelCard>
 
   <!-- AI Scope Configuration -->
-  <SettingsDisclosure title={t("settings.rules_ai_scope_title", locale)} subtitle={t("settings.rules_ai_scope_subtitle", locale)} id="ai-scope-disclosure">
+  <SettingsDisclosure title="AI scope reference" subtitle="These values are advisory context. Use scoped agent tokens for operation permissions and proposal-only review." id="ai-scope-disclosure">
     <div class="rules-ai-scope" id="rules-ai-scope">
       {taskTypes.map((type) => (
         <div class="rules-ai-type-block" data-task-type={type.id}>
@@ -145,6 +146,8 @@ const presets = [
                   <input
                     type="checkbox"
                     class="rules-ai-check"
+                    disabled
+                    aria-label={`${type.label}: ${cap.label} (advisory only)`}
                     data-task-type={type.id}
                     data-capability={cap.key}
                   />
