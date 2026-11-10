@@ -77,7 +77,7 @@ test("Today and Dashboard label shared favorites separately from personal pins",
 
     await page.goto("/")
     const card = page.locator(".dashboard-card").filter({ has: page.getByText("Favorites", { exact: true }) })
-    await expect(card.locator(".card-subtitle")).toHaveText(/^\d+ favorite tasks?$/)
+    await expect(card.locator(".card-subtitle")).toHaveText("1 favorite task")
     await expect(card.getByText(title, { exact: true })).toBeVisible()
   } finally {
     const removed = await request.delete(`/api/tasks/${id}`, { headers })
