@@ -9,28 +9,29 @@ import type { TaskRule, FrameworkOverrides } from "@meitheal/domain-strategy"
 import { validateFrameworkOverrides } from "@meitheal/domain-strategy"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
 import { readWithinLimit } from "../../../lib/bounded-body"
+import { FEATURE_DEFAULTS } from "../../../lib/feature-flags"
 
 /** Known safe setting keys — only these will be imported.
  * IMPORTANT: Update this set when adding new saveSetting() calls.
- * Last audited: 2026-03-16 (Rules Engine) */
+ */
 const ALLOWED_KEYS = new Set([
     // ── Home Assistant / Connectivity ──
     "ha-url", "ha-token", "ha_url", "ha_token",
     "vikunja-url", "vikunja-token",
-    "calendar-entity", "calendar_entity", "cal_entity", "calendar_entities", "caldav_url", "calendar_sync_enabled", "calendar_write_back", "calendar_sync_interval_ms",
+    "calendar-entity", "calendar-entities", "calendar_entity", "cal_entity", "calendar_entities", "caldav_url", "calendar_sync_enabled", "calendar_write_back", "calendar_sync_interval_ms",
     // ── UI Preferences ──
     "default-area", "theme", "default-view", "wip-limit",
     "show-description", "column-order", "locale",
     "sidebar-collapsed", "sidebar_config",
     "timezone", "week_start", "date_format",
-    "kanban-group-by", "task-detail-width",
+    "kanban-group-by", "task-detail-width", "backlog_mode", "completed_auto_hide_days",
     // ── Notifications ──
-    "enable-notifications", "notification-sound", "notification-vibrate",
+    "enable-notifications", "notification-sound", "notification-vibrate", "notification_preferences",
     // ── Scoring Frameworks ──
     "rice-scoring-enabled", "heart-scoring-enabled", "kcs-scoring-enabled",
     "framework_mapping",
     // ── AI & Agent Protocols ──
-    "ai-provider", "ai-custom-url",
+    "ai-provider", "ai-custom-url", "ha-agent-id", "ha-assist-agent",
     "agent-protocols-a2a-enabled", "agent-protocols-webmcp-enabled", "agent-protocols-mcp-enabled",
     // ── Webhooks & Integrations ──
     "webhook_endpoint", "webhook_secret", "webhook_format",
@@ -42,6 +43,7 @@ const ALLOWED_KEYS = new Set([
     "custom_fields",
     // ── Custom Theme ──
     "custom_theme_css", "custom_theme_name", "accent-color",
+    ...Object.keys(FEATURE_DEFAULTS).map(name => `feature_${name}`),
 ])
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -70,7 +72,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
         const payload = data as Record<string, unknown>
         const isV2 = payload._version === 2
+        const legacyEncoded = isV2 && payload._settingsEncoding === undefined && typeof payload._exportedAt === "string"
         const invalid = (error: string) => new Response(JSON.stringify({ error }), { status: 400, headers: { "Content-Type": "application/json" } })
+        if (payload._settingsEncoding !== undefined && payload._settingsEncoding !== "json-values") return invalid("Unsupported settings encoding")
         let rules: TaskRule[] | undefined
         let frameworks: Array<{ frameworkId: string; overrides: FrameworkOverrides }> | undefined
         const settingsData = isV2 ? payload.settings ?? {} : payload
@@ -114,8 +118,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
                 continue
             }
 
-            const stringValue = JSON.stringify(value)
-            entries.push({ key, value: stringValue })
+            let decoded = value
+            // Historical native exports contain serialized database values. Typed API
+            // payloads and explicitly marked exports retain literal JSON-looking strings.
+            if (legacyEncoded && typeof value === "string") {
+                try { decoded = JSON.parse(value) } catch { /* Preserve legacy plain text. */ }
+            }
+            entries.push({ key, value: JSON.stringify(decoded) })
         }
 
         await ensureSchema()

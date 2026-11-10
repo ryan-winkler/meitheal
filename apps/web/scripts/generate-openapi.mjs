@@ -1603,8 +1603,8 @@ const paths = {
       },
     },
   },
-  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", responses: { 200: { description: "Settings JSON" } } } },
-  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", responses: { 200: { description: "Imported" } } } },
+  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", description: "Exports a version-2 configuration bundle with decoded JSON values marked _settingsEncoding: json-values. Credentials are omitted. This is not an App database backup.", responses: { 200: { description: "Settings JSON" } } } },
+  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", description: "Imports known non-secret settings with atomic rule and built-in framework override replacement. Accepts typed values and historical native version-2 exports containing serialized values.", responses: { 200: { description: "Imported" } } } },
 
   // ── License ──
   "/api/license/status": {
