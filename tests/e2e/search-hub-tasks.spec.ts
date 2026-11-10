@@ -328,6 +328,11 @@ test("Enter cannot select a stale result while the next query loads", async ({ r
   const context = await browser.newContext({ baseURL: baseURL!, serviceWorkers: "block" })
   try {
     const page = await context.newPage()
+    let freshReads = 0
+    page.on("request", outgoing => {
+      const url = new URL(outgoing.url())
+      if (url.pathname === "/api/search" && url.searchParams.get("q") === "Fresh lantern") freshReads++
+    })
     await page.addInitScript(() => {
       // Exercise the generation check even when a superseded fetch cannot be cancelled.
       const original = window.fetch.bind(window)
@@ -359,6 +364,8 @@ test("Enter cannot select a stale result while the next query loads", async ({ r
     })
 
     await page.goto("/settings")
+    await page.waitForFunction(() => typeof window.openSearchHub === "function")
+    await page.evaluate(() => document.dispatchEvent(new Event("astro:page-load")))
     await page.getByRole("button", { name: "Search settings…", exact: true }).click()
     await page.getByRole("tab", { name: "Tasks" }).click()
     const input = page.getByRole("combobox", { name: "Search tasks, views, settings, and actions" })
@@ -375,6 +382,7 @@ test("Enter cannot select a stale result while the next query loads", async ({ r
     await delivered
     await expect(page.getByRole("option", { name: /Fresh lantern query fixture/ })).toHaveAttribute("aria-selected", "true")
     await expect(page.getByRole("option", { name: /Obsolete search result/ })).toHaveCount(0)
+    expect(freshReads).toBe(1)
     await input.press("Escape")
     await expect(page.getByRole("button", { name: "Search settings…", exact: true })).toBeFocused()
   } finally {

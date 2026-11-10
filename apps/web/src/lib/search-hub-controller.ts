@@ -224,9 +224,10 @@ pageLifecycle.onPageLoad((signal) => {
   // The SearchHub modal must initialize even without a launcher input.
   // Pages using custom-header slot (e.g. settings) don't render TopNavigation,
   // so #global-search doesn't exist — but window.openSearchHub must still work.
-  if (!overlay || !panel || !input || !results || !status || !closeButton) {
+  if (!overlay || !panel || !input || !results || !status || !closeButton || overlay.dataset.searchController === "ready") {
     return
   }
+  overlay.dataset.searchController = "ready"
 
   const launcherEl = launcher  // nullable — may not exist on custom-header pages
   const overlayEl = overlay
@@ -639,6 +640,8 @@ pageLifecycle.onPageLoad((signal) => {
     closeHub(false)
   }, { signal })
   signal.addEventListener("abort", () => {
+    delete overlayEl.dataset.searchController
+    if (window.openSearchHub === openHub) delete window.openSearchHub
     detailReturn = undefined
     focusTrap.deactivate(false)
     invalidateResults()
