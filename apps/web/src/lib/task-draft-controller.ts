@@ -439,8 +439,12 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     if (event.persisted && opened && expanded && foreground() && !operation) void load()
   }, { signal })
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
+    if (!opened) return
+    // A fresh install can claim the page during the first verified read.
+    const firstClaim = expanded && !bound && !marker && !updateNeeded && !lease?.worker
     updateNeeded = false
-    if (opened) withdraw(true, taskDraftText("updated"))
+    withdraw(true, taskDraftText("updated"))
+    if (firstClaim && foreground()) void load()
   }, { signal })
 
   function close() {
