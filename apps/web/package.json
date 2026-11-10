@@ -60,6 +60,6 @@
     "astro": "^7.4.8",
     "drizzle-kit": "^0.31.11",
     "tailwindcss": "^4.3.5",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }
