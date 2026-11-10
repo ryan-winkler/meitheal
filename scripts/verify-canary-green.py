@@ -163,7 +163,14 @@ def evaluate_receipt(lines, config_id, version):
     terminal_positions = [
         [index for index, line in enumerate(lines) if line.startswith(prefix)] for prefix in terminal_prefixes
     ]
-    last_measurement = max(index for index, line in enumerate(lines) if line.startswith(("cgroup,", "http,")))
+    measurements = [index for index, line in enumerate(lines) if line.startswith(("cgroup,", "http,"))]
+    prerequisite_positions = [
+        [index for index, line in enumerate(lines) if line.startswith(prefix)]
+        for prefix in ('{"synthetic_tasks":', "installed_canary_before=", '{"status":')
+    ]
+    prerequisites_ordered = all(len(positions) == 1 and positions[0] < min(measurements)
+                                for positions in prerequisite_positions)
+    last_measurement = max(measurements)
     terminal_ordered = all(len(positions) == 1 for positions in terminal_positions) and all(
         left[0] < right[0] for left, right in zip(terminal_positions, terminal_positions[1:])
     ) and last_measurement < terminal_positions[0][0]
@@ -180,6 +187,7 @@ def evaluate_receipt(lines, config_id, version):
         and sum(re.fullmatch(rf"{WORKLOAD_SHA256}  .+/seed-and-run\.sh", line) is not None for line in lines) == 1,
         "192 MiB, one CPU, zero swap": matching_lines("limits,") == ["201326592,0,100000 100000"],
         "seeded 2,000 tasks": lines.count('{"synthetic_tasks":2000}') == 1,
+        "seed, installed snapshot and initial health precede measurements": prerequisites_ordered,
         "105 complete cycles": matching_lines("workload,completed,") == ["105"],
         "idle below 128 MiB": idle_memory["p95"] < IDLE_LIMIT_BYTES,
         "active below 160 MiB": active_memory["p95"] < ACTIVE_LIMIT_BYTES,

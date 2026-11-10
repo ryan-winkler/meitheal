@@ -440,3 +440,20 @@ test("v2 retains the fixed seed, ordered complete cycles, helper and App resourc
     expect(readFileSync(harness.trace, "utf8")).toBe("")
   }
 })
+
+test("seed completion, installed-before snapshot and initial health must precede the first measurement", ({ harness }) => {
+  const args = publish("aarch64", arm, harness.receipt)
+  expect(harness.run(args).status).toBe(0)
+  for (const prefix of ['{"synthetic_tasks":', "installed_canary_before=", '{"status":']) {
+    for (const marker of ["cgroup,idle,", "workload,completed,105"]) {
+      const lines = passingReceipt().split("\n")
+      const prerequisite = lines.splice(lines.findIndex(line => line.startsWith(prefix)), 1)[0]!
+      lines.splice(lines.findIndex(line => line.startsWith(marker)) + 1, 0, prerequisite)
+      writeFileSync(harness.receipt, lines.join("\n"))
+      const result = harness.run(args)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("seed, installed snapshot and initial health precede measurements")
+      expect(readFileSync(harness.trace, "utf8")).toBe("")
+    }
+  }
+})

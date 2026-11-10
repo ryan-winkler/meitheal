@@ -37,7 +37,7 @@ Before `--rm` can remove the cgroup, the surviving parent reads and emits its ac
 
 Start a new raw receipt with `benchmark_profile=green-2000-task-v2`. Retain exactly one `seed_and_driver_script_sha256=` record and one `driver_parent_script_sha256=` record with the hashes above, plus their checksum-command output. The workload checksum line must end in `/seed-and-run.sh`; the parent line must end in `/green-canary-driver-parent.sh` or `/driver-parent-wrapper.sh`.
 
-Keep the existing exact App config ID, source version, helper identity, health, seed count, resource limits, samples, ordered response records and unchanged installed-Canary identity. After the measured HTTP/sample records, the terminal order is:
+Keep the existing exact App config ID, source version, helper identity, health, seed count, resource limits, samples, ordered response records and unchanged installed-Canary identity. The single 2,000-task seed completion, installed-Canary-before snapshot and matching initial health record must each precede the first cgroup sample or HTTP measurement. A prerequisite recorded during or after measurement cannot qualify the run. After the measured HTTP/sample records, the terminal order is:
 
 1. `workload,completed,105`
 2. `driver_clock,v1,...` with monotonic uptime centiseconds and user/system microsecond snapshots
