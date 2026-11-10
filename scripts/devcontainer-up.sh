@@ -122,7 +122,7 @@ start_stack() {
     # its project, including when every service is stopped.
     existing=$(run_engine ps --all --quiet --filter "label=devcontainer.local_folder=$PROJECT_ROOT" --filter "label=com.docker.compose.service=ha-devcontainer") || return
     if [[ -z "$existing" ]]; then
-      existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project.working_dir=$SCRIPT_DIR" --filter "label=com.docker.compose.service=ha-devcontainer") || return
+      existing=$(run_engine ps --all --quiet --filter "label=com.docker.compose.project.working_dir=$PROJECT_ROOT/.devcontainer" --filter "label=com.docker.compose.service=ha-devcontainer") || return
     fi
   fi
   if [[ "$existing" == *$'\n'* ]]; then

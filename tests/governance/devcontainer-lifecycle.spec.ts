@@ -58,6 +58,7 @@ for (const backend of ["docker", "podman", "podman-provider"]) {
     expect(fresh.status, fresh.error).toBe(0)
     expect(fresh.calls).toContainEqual(expect.arrayContaining(["devcontainer", "up", "--workspace-folder"]))
     expect(fresh.calls.some(args => args[0] !== "devcontainer" && args.includes("up"))).toBe(false)
+    expect(fresh.calls.some(args => args.some(arg => arg.startsWith("label=com.docker.compose.project.working_dir=") && arg.endsWith("/.devcontainer")))).toBe(true)
     const failed = launch("up", false, true, true, backend, true)
     expect(failed.status).toBe(125)
     expect(failed.calls).toContainEqual(expect.arrayContaining(["ps", "--all", "--quiet", "label=com.docker.compose.service=ha-devcontainer"]))
