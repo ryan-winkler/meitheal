@@ -19,10 +19,11 @@ test.describe("New Task Modal", () => {
   })
 
   test("New Task modal has correct accessibility attributes", async ({ page }) => {
-    const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveAttribute("role", "dialog")
+    await page.getByRole("button", { name: "New Task", exact: true }).click()
+    const overlay = page.getByRole("dialog", { name: "New Task", exact: true })
+    await expect(overlay).toBeVisible()
     await expect(overlay).toHaveAttribute("aria-modal", "true")
-    await expect(overlay).toHaveAttribute("aria-labelledby", "new-task-title")
+    await expect(overlay.getByRole("checkbox", { name: "Mark as Routine" })).toBeVisible()
   })
 
   test("New Task modal has all required form fields", async ({ page }) => {
@@ -59,15 +60,24 @@ test.describe("New Task Modal", () => {
     await expect(overlay).not.toHaveClass(/active/)
   })
 
-  test("New Task modal closes on Escape key", async ({ page }) => {
-    await page.getByRole("button", { name: "New Task", exact: true }).click()
-
+  test("New Task keeps Tab inside and returns focus after Escape", async ({ page }) => {
+    const trigger = page.getByRole("button", { name: "New Task", exact: true })
+    await trigger.focus()
+    await page.keyboard.press("Enter")
     const overlay = page.locator("#new-task-overlay")
-    await expect(overlay).toHaveClass(/active/)
+    const first = overlay.locator("[data-kind]").first()
+    const last = overlay.locator("#submit-new-task-btn")
+    await expect(overlay.locator("#new-task-title-input")).toBeFocused()
+    await last.focus()
+    await page.keyboard.press("Tab")
+    await expect(first).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    await expect(last).toBeFocused()
 
     await page.keyboard.press("Escape")
 
     await expect(overlay).not.toHaveClass(/active/)
+    await expect(trigger).toBeFocused()
   })
 
   test("New Task modal closes on backdrop click", async ({ page }) => {

@@ -15,6 +15,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   aria-labelledby="new-task-title"
 >
   <div class="modal-content max-w-2xl w-full bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl max-h-[90vh] flex flex-col">
+    <h2 id="new-task-title" class="sr-only">{t("tasks.new_task_modal", locale)}</h2>
     <div
       class="modal-header nt-modal-header flex items-center justify-between px-6 pt-5 pb-3"
     >
@@ -275,12 +276,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
           </div>
           <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.mark_as_routine", locale)}</span>
+            <span id="nt-routine-label" class="text-sm font-medium text-text-primary">{t("task_modal.mark_as_routine", locale)}</span>
             <p class="text-xs text-text-muted">{t("task_modal.routine_description", locale)}</p>
           </div>
         </div>
         <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-is-routine" class="sr-only peer" />
+          <input type="checkbox" id="nt-is-routine" class="sr-only peer" aria-labelledby="nt-routine-label" />
           <div class="nt-toggle"></div>
         </label>
       </div>
@@ -292,7 +293,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
             {t("task_modal.custom_fields_label", locale)}
           </button>
-          <button type="button" id="nt-add-custom-field-btn" class="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1">
+          <button type="button" id="nt-add-custom-field-btn" class="text-xs font-medium flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             {t("task_modal.custom_field_add", locale)}
           </button>
@@ -344,6 +345,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
+  import { createFocusTrap } from "@lib/focus-trap"
   import { initGlassDropdowns } from "@lib/glass-dropdown";
   import { InlineDatePicker } from "../shared/InlineDatePicker";
 
@@ -399,7 +401,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const overlay = document.getElementById("new-task-overlay");
     if (!overlay || overlay.dataset.newTaskController === "ready") return
     overlay.dataset.newTaskController = "ready"
-    signal.addEventListener("abort", () => { delete overlay.dataset.newTaskController }, { once: true })
+    const focusTrap = createFocusTrap(overlay)
+    signal.addEventListener("abort", () => {
+      focusTrap.deactivate(false)
+      delete overlay.dataset.newTaskController
+    }, { once: true })
 
     const closeBtn = document.getElementById("close-new-task-modal");
     const cancelBtn = document.getElementById("cancel-new-task");
@@ -692,6 +698,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (finished || signal.aborted) return
         finished = true
         overlay.classList.remove("active", "closing");
+        focusTrap.deactivate()
         form?.reset();
         
         // Reset tabs
@@ -796,11 +803,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (!lanesLoaded) void loadStatusPills(requestSignal)
         if (!goalsLoaded) void loadGoals(requestSignal)
       }
-      window.setTimeout(() => {
-        if (!signal.aborted && overlay.classList.contains("active") && !overlay.classList.contains("closing")) {
-          titleEl?.focus()
-        }
-      }, 50);
+      focusTrap.activate()
     };
 
     // Fetch users and populate the Assign To dropdown
@@ -1242,8 +1245,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   .nt-kind-pill.active {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
+  }
+  #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) {
+    opacity: 1;
+  }
+  #nt-add-custom-field-btn {
+    color: var(--accent-text);
+  }
+  #nt-add-custom-field-btn:hover {
+    color: var(--text-primary);
   }
   #new-task-form::-webkit-scrollbar {
     width: 4px;
