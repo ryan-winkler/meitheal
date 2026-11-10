@@ -11,3 +11,5 @@ Dependencies installed during setup or included in a build retain their own lice
 The Irish calendar abbreviations use the Gregorian calendar data for Irish in Unicode CLDR 46.1 under the Unicode License v3. See apps/web/public/licenses/unicode-cldr.txt and https://github.com/unicode-org/cldr-json/tree/46.1.0.
 
 The earlier compatibility API and alternate runtime are separately maintained in the private historical source under their existing terms. This release contains neither implementation. Earlier license grants continue to apply to copies already received under those grants.
+
+Selected outline glyphs in apps/web/src/components/ui/Icon.astro are from Tabler Icons (MIT), copyright (c) 2020-2026 Paweł Kuna. The pinned source and full license are retained in apps/web/public/licenses/tabler-icons.txt.

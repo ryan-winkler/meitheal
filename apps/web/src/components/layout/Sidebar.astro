@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarNavList from "./SidebarNavList.astro";
+import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
@@ -281,7 +282,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     </div>
   </div>
 
-  <div class="sidebar-scroll">
+  <div class="sidebar-scroll" data-nav-overflow="sidebar">
     {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
     {areaPosition >= 0 && (
       <div id="sidebar-hierarchy-panel">
@@ -292,6 +293,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       </div>
     )}
     {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
+    <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
   </div>
 
   {gamificationEnabled && (

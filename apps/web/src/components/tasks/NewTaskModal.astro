@@ -857,7 +857,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         cfContainer?.classList.toggle("hidden", snapshot.fields.length === 0)
         cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
         cfAddBtn?.setAttribute("aria-expanded", "false")
-        const options = overlay.querySelector<HTMLDetailsElement>("#nt-options")
+        const options = overlay?.querySelector<HTMLDetailsElement>("#nt-options")
         if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length)
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""

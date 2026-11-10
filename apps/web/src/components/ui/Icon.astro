@@ -1,4 +1,30 @@
 ---
+/*
+ * Selected outline paths from Tabler Icons
+ * https://github.com/tabler/tabler-icons/tree/58f60538fe2fab2e1459a09198f9bd3b033bf90e/icons/outline
+ *
+ * MIT License
+ *
+ * Copyright (c) 2020-2026 Paweł Kuna
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 export interface Props {
   name:
     | "dashboard"
@@ -22,7 +48,17 @@ export interface Props {
     | "folder"
     | "pin"
     | "target"
-    | "eisenhower";
+    | "eisenhower"
+    | "person"
+    | "sliders"
+    | "automation"
+    | "plug"
+    | "phone"
+    | "warning"
+    | "home"
+    | "bell"
+    | "cart"
+    | "info";
   class?: string;
   size?: number;
 }
@@ -149,14 +185,12 @@ const { name, class: className = "", size = 20 } = Astro.props;
       </>
     )
   }
-  {
-    name === "settings" && (
-      <>
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-        <circle cx="12" cy="12" r="3" />
-      </>
-    )
-  }
+  {name === "settings" && (
+    <>
+      <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065" />
+      <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+    </>
+  )}
   {
     name === "empty" && (
       <>
@@ -251,4 +285,82 @@ const { name, class: className = "", size = 20 } = Astro.props;
       </>
     )
   }
+  {name === "person" && (
+    <>
+      <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" />
+      <path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" />
+    </>
+  )}
+  {name === "sliders" && (
+    <>
+      <path d="M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M4 6l8 0" />
+      <path d="M16 6l4 0" />
+      <path d="M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M4 12l2 0" />
+      <path d="M10 12l10 0" />
+      <path d="M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M4 18l11 0" />
+      <path d="M19 18l1 0" />
+    </>
+  )}
+  {name === "automation" && (
+    <>
+      <path d="M3 17a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2" />
+      <path d="M15 17a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2" />
+      <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2" />
+      <path d="M6 15v-1a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v1" />
+      <path d="M12 9l0 3" />
+    </>
+  )}
+  {name === "plug" && (
+    <>
+      <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054" />
+      <path d="M4 20l3.5 -3.5" />
+      <path d="M15 4l-3.5 3.5" />
+      <path d="M20 9l-3.5 3.5" />
+    </>
+  )}
+  {name === "phone" && (
+    <>
+      <path d="M6 5a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2v-14" />
+      <path d="M11 4h2" />
+      <path d="M12 17v.01" />
+    </>
+  )}
+  {name === "warning" && (
+    <>
+      <path d="M12 9v4" />
+      <path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0" />
+      <path d="M12 16h.01" />
+    </>
+  )}
+  {name === "home" && (
+    <>
+      <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
+      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+      <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
+    </>
+  )}
+  {name === "bell" && (
+    <>
+      <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+      <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
+    </>
+  )}
+  {name === "cart" && (
+    <>
+      <path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M17 17h-11v-14h-2" />
+      <path d="M6 5l14 1l-1 7h-13" />
+    </>
+  )}
+  {name === "info" && (
+    <>
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+      <path d="M12 9h.01" />
+      <path d="M11 12h1v4h1" />
+    </>
+  )}
 </svg>

@@ -115,8 +115,7 @@
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2'),
-    url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff') format('woff');
+  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
 }
 
 @font-face {
@@ -124,8 +123,7 @@
   font-style: normal;
   font-display: swap;
   font-weight: 500;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2') format('woff2'),
-    url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff') format('woff');
+  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2') format('woff2');
 }
 
 /* ===== Design Tokens — Hearth Slate + Electric Indigo ===== */

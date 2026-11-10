@@ -32,6 +32,8 @@
   "settings.enable_all": "Cumasaigh uile",
   "settings.disable_all": "Díchumasaigh uile",
   "nav": {
+    "more": "Tuilleadh",
+    "more_views": "Tuilleadh amharc tascanna",
     "dashboard": "Deais",
     "tasks": "Tascanna",
     "kanban": "Kanban",

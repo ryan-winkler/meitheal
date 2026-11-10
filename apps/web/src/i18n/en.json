@@ -32,6 +32,8 @@
   "settings.enable_all": "Enable all",
   "settings.disable_all": "Disable all",
   "nav": {
+    "more": "More",
+    "more_views": "More task views",
     "dashboard": "Dashboard",
     "tasks": "Tasks",
     "kanban": "Kanban",

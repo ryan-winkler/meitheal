@@ -266,6 +266,7 @@
     border: 0;
   }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-scroll {
+    --nav-overflow-enabled: 1;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -275,14 +276,19 @@
   }
   :root[data-appearance-navigation="navbar"] #sidebar .nav-list {
     flex-direction: row;
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-width: 0;
     width: auto;
-    overflow-x: auto;
-    scrollbar-width: thin;
+    overflow: visible;
     padding-block: 4px;
   }
   :root[data-appearance-navigation="navbar"] #sidebar .nav-list > li { flex: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar .sidebar-scroll:not([data-nav-overflow-active]) .nav-list {
+    flex: 1 1 0;
+    overflow-x: auto;
+  }
+  :root[data-appearance-navigation="navbar"] #sidebar .nav-overflow__menu .nav-link { white-space: normal; }
+
   :root[data-appearance-navigation="navbar"] #sidebar .nav-link {
     gap: 6px;
     padding: 8px;
