@@ -136,7 +136,7 @@ function applyRateLimitHeaders(response: Response, remaining: number, resetAt: n
   response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
 }
 
-export const onRequest: MiddlewareHandler = async ({ request, locals }, next) => {
+export const onRequest: MiddlewareHandler = async ({ request, locals, routePattern }, next) => {
   const startTime = Date.now();
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
@@ -144,6 +144,15 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
   const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
   const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
   const url = new URL(request.url);
+  const databaseExportPath = "/api/export/database.sqlite"
+  // Older workers bypass caching only for the canonical export path.
+  if (routePattern === databaseExportPath && url.pathname !== databaseExportPath) {
+    return apiProblem({
+      status: 404,
+      detail: "Database download not found.",
+      extraHeaders: { "cache-control": "private, no-store" },
+    })
+  }
   const method = request.method.toUpperCase();
   const isHealthCheck = url.pathname === "/api/health" && (method === "GET" || method === "HEAD");
 

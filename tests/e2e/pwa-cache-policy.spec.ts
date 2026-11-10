@@ -131,6 +131,58 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
 }
 
 for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
+  test(`private database export aliases are purged and never replayed in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+    const server = await fixture(prefix)
+    const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+    try {
+      const page = await context.newPage()
+      const aliases = [
+        server.base + "/api/export/database.sqlite",
+        server.base + "//api/export/database.sqlite?download=1",
+        server.base + "/api/%2565xport/database.sqlite/",
+        server.base + "/api%2Fexport/database.sqlite",
+        new URL("/api/hassio_ingress/retired-worker/api/export/database.sqlite", server.base).href,
+      ]
+      const unrelated = server.base + ordinaryPath
+      const cacheNames = ["api", "nav", "precache", "static"].map(bucket => `meitheal-${bucket}-v0.0.1`)
+      await page.goto(server.base + "/fixture")
+      await page.evaluate(async ({ aliases, unrelated, cacheNames }) => {
+        const headers = { date: new Date().toUTCString(), vary: "Accept-Language" }
+        for (const name of cacheNames) {
+          const cache = await caches.open(name)
+          for (const url of aliases) await cache.put(url, new Response("Old private export", { headers }))
+          await cache.put(unrelated, new Response("Keep unrelated entries", { headers }))
+        }
+        await caches.open("fixture-other-software")
+      }, { aliases, unrelated, cacheNames })
+      await register(page, server.base + "/sw.js")
+      for (const url of aliases) {
+        expect(await cached(page, url)).toBe(false)
+        expect(await page.evaluate(url => fetch(url).then(response => response.text()), url)).toContain("Ordinary offline page")
+        expect(await cached(page, url)).toBe(false)
+      }
+      const preserved = await page.evaluate(async ({ unrelated, cacheNames }) => {
+        return Promise.all(cacheNames.map(async name => (await (await caches.open(name)).match(unrelated))?.text()))
+      }, { unrelated, cacheNames })
+      expect(preserved).toEqual(cacheNames.map(() => "Keep unrelated entries"))
+      expect(await page.evaluate(() => caches.keys())).toContain("fixture-other-software")
+
+      await page.evaluate(async ({ aliases, cacheNames }) => {
+        for (const name of cacheNames) {
+          const cache = await caches.open(name)
+          for (const url of aliases) await cache.put(url, new Response("Late private export"))
+        }
+      }, { aliases, cacheNames })
+      await context.setOffline(true)
+      for (const url of aliases) {
+        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+      }
+    } finally {
+      await context.close()
+      await server.close()
+    }
+  })
+
   test(`reaction requests bypass Cache Storage in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
     const server = await fixture(prefix)
     const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })

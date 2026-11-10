@@ -20,6 +20,8 @@ The **Download database** action under **Settings → App & PWA** is available t
 
 Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
 
+The download needs an online connection. If an edited download URL fails, open it again from **Settings → App & PWA**. Reload Meitheal and activate the app update on browsers that used an older build to remove old cached export URLs.
+
 ## Automatic startup database snapshots
 
 For an existing nonempty local SQLite database, the migration runner saves a consistent snapshot before applying SQL changes. If you start the web server directly, its first schema initialization takes the snapshot instead. The packaged launchers coordinate so each successful startup makes one backup attempt.

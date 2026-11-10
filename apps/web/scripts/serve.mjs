@@ -7,6 +7,28 @@ import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transpo
 const SUPERVISOR_ADDRESS = "172.30.32.2"
 const supervisorToken = process.env.SUPERVISOR_TOKEN
 const configuredPath = process.env.INGRESS_PATH
+const databaseExportPath = "/api/export/database.sqlite"
+
+function isDatabaseExportAlias(path, normalizedPath) {
+  if (path === databaseExportPath) return false
+  if (normalizedPath.replace(/\/+$/, "") === databaseExportPath) return true
+  if (!/[%\\]|\/\./.test(normalizedPath)) return false
+
+  // Astro can redirect trailing separators before running middleware.
+  let decoded = normalizedPath
+  for (let i = 0; i < 10 && decoded.includes("%"); i++) {
+    try {
+      const next = decodeURI(decoded).replace(/%2f/gi, "/")
+      if (next === decoded) break
+      decoded = next
+    } catch {
+      return false
+    }
+  }
+  if (!decoded.startsWith("/")) return false
+  const resolved = new URL("http://localhost" + decoded.replace(/[\\/]+/g, "/")).pathname
+  return resolved.replace(/\/+$/, "") === databaseExportPath
+}
 
 async function supervisorProtectsIdentityHeaders() {
   if (!supervisorToken) return false
@@ -54,6 +76,10 @@ const server = http.createServer((req, res) => {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
     const normalizedPath = path.replace(/\/+/g, "/")
+    if (isDatabaseExportAlias(path, normalizedPath)) {
+      res.writeHead(404, { "cache-control": "private, no-store" }).end()
+      return
+    }
     req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
     if (req.method === "GET" && normalizedPath === "/api/export/database.sqlite") {

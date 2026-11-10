@@ -27,7 +27,7 @@ If SQLite remains busy, retry shortly with the same submission. If the queue is 
 
 Feedback requires Supervisor 2026.10.4 or later and a verified Home Assistant ingress user. The queue and its review actions require a verified administrator. Feedback responses bypass the service worker cache and report contents stay out of search, MCP tools and automation exports. The API checks the same-origin request marker on writes and limits the JSON request to 8 KiB before decoding it.
 
-The raw SQLite download in **Settings → App & PWA** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
+The raw SQLite download in **Settings → App & PWA** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Reopen the download from Settings if an old or edited URL returns 404. The download stays outside offline caches, and activating an app update removes older cached export URLs. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
 
 ## Verification
 

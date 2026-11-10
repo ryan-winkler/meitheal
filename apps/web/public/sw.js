@@ -204,21 +204,43 @@ function appRoutePath(pathname) {
 
 const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
 
+function isDatabaseExport(url) {
+  if (url.origin !== self.location.origin) return false
+
+  let pathname = url.pathname
+  if (!pathname.includes("%") && !pathname.includes("//")) {
+    return appRoutePath(pathname) === "/api/export/database.sqlite"
+  }
+
+  // Old cache entries can contain spellings that reach the export after path normalization.
+  for (let i = 0; i < 10 && pathname.includes("%"); i++) {
+    try {
+      const decoded = decodeURI(pathname).replace(/%2f/gi, "/")
+      if (decoded === pathname) break
+      pathname = decoded
+    } catch {
+      return false
+    }
+  }
+  const normalized = new URL(url.origin + pathname.replace(/[\\/]+/g, "/")).pathname
+  return appRoutePath(normalized) === "/api/export/database.sqlite"
+}
+
 function isNetworkOnlyPage(path, params) {
   return path === "/triage" ||
     (path === "/tasks" && params.has("boardRefresh")) ||
     (path === "/today" && params.has("unscheduledPage"))
 }
 
-async function purgeNetworkOnlyPages() {
+async function purgeSensitiveCacheEntries() {
   const names = (await caches.keys()).filter(name => meithealCacheName.test(name))
   await Promise.all(names.map(async name => {
     const cache = await caches.open(name)
     const requests = await cache.keys()
     await Promise.all(requests.filter(request => {
       const url = new URL(request.url)
-      return isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
-    }).map(request => cache.delete(request)))
+      return isDatabaseExport(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+    }).map(request => cache.delete(request, { ignoreVary: true })))
   }))
 }
 
@@ -237,7 +259,7 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
-      .then(() => purgeNetworkOnlyPages())
+      .then(() => purgeSensitiveCacheEntries())
       .then(() => evictAllCaches())
       .then(() => self.clients.claim())
   );
@@ -265,7 +287,7 @@ self.addEventListener("fetch", (event) => {
 
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
-  if (/^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  if (isDatabaseExport(url) || /^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
   if (/^\/api\/tasks\/(?:reaction-counts|[\w-]+(?:\/comments\/[\w-]+)?\/reactions(?:\/[\w-]+)?)(?:\/|$)/.test(apiPath)) return;
 
