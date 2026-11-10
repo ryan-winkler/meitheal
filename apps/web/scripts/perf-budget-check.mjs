@@ -200,6 +200,14 @@ async function main() {
       JSON.stringify(
         {
           budgets,
+          measurement: {
+            operation: "POST /api/tasks",
+            fixture: "fresh local SQLite database",
+            requestTiming: "send through validated response body",
+            percentileMethod: "nearest-rank",
+            p95Rank: Math.ceil(requests * 0.95),
+            rssTiming: "web process after warmup writes"
+          },
           observed: {
             clientBytes,
             distClientBytes,

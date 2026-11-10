@@ -125,7 +125,7 @@ jobs:
         include:
           - core: "2026.10.4"
             requirements: requirements-test-2026.10.txt
-          - core: "2026.11.0"
+          - core: "2026.11.1"
             requirements: requirements-test.txt
     steps:
       - uses: actions/checkout@v6

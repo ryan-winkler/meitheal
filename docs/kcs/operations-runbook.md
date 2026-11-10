@@ -264,9 +264,9 @@ The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` comma
 
 - Up to 1.5 MiB for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
 - Up to 256 MiB of web process RSS after five warmup writes. This is a single process measurement on the CI host.
-- Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. Output also includes p50, p99, maximum and the number of requests over the threshold.
+- Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. The nearest-rank p95 is observation 95 of 100 after sorting. Read it alongside p50, p99, maximum and the number of requests over the threshold. A p95 pass permits up to five requests above the threshold. The job fails on an unexpected response or readback.
 
-Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for image size and actual Green qualification. The CI smoke measures a local production build.
+Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for image size and actual Green qualification. Use Green route timings, raw App cgroup memory, and host coexistence observations as separate release evidence. The CI smoke measures a local production build.
 
 For calibration, the check accepts these overrides.
 

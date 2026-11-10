@@ -10,7 +10,7 @@ Home Assistant installs the Meitheal Core integration from a separate integratio
 
 ## Stage a release candidate
 
-1. Run the Core credential tests from `integrations/home-assistant` with Python 3.14. Install `requirements-test.txt` in a fresh environment for Core 2026.11.0 and `requirements-test-2026.10.txt` in a separate environment for Core 2026.10.4. Run `python -m pytest -q` in each environment.
+1. Run the Core credential tests from `integrations/home-assistant` with Python 3.14. Install `requirements-test.txt` in a fresh environment for Core 2026.11.1 and `requirements-test-2026.10.txt` in a separate environment for Core 2026.10.4. Run `python -m pytest -q` in each environment.
 2. Stage an integration archive from the tested source commit. Choose a new output path.
 
    ```sh
