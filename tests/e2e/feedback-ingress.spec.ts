@@ -73,6 +73,8 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
 })
 
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
+  // Two entry points, three themes, and two contrast scans per theme.
+  test.setTimeout(90_000)
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
