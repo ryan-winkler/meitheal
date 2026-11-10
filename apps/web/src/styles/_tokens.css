@@ -216,6 +216,7 @@
         --palette-accent-hover: #4338CA;
         --palette-accent-light: rgba(79, 70, 229, 0.1);
         --warning: #D97706;
+        --warning-text: #92400E;
         --danger: #DC2626;
         --info: #2563EB;
         --border: #CBD5E1;
@@ -273,6 +274,7 @@
           --palette-accent-hover: #4338CA;
           --palette-accent-light: rgba(79, 70, 229, 0.1);
           --warning: #D97706;
+          --warning-text: #92400E;
           --danger: #DC2626;
           --info: #2563EB;
           --border: #CBD5E1;
