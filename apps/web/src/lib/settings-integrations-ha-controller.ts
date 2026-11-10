@@ -1,12 +1,11 @@
 /**
  * HA connection & webhook integration settings controller.
  *
- * Handles: HA connection test, HA standalone form save,
+ * Handles: HA connection status, HA standalone form save,
  * webhook save/test, n8n mode tabs, expand integration cards.
  */
 import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
 
@@ -19,48 +18,73 @@ export function readEntityValue(id: string): string {
   return select?.value || manual?.value || ""
 }
 
-export function initHASettings(): void {
-  // Test HA connection
-  const testConnBtn = document.getElementById("test-connection")
-  if (testConnBtn) {
-    pageLifecycle.on(testConnBtn, "click", async () => {
-    const statusEl = document.getElementById("ha-status")
-    if (statusEl) statusEl.innerHTML = '<span style="color: var(--accent);">Testing HA connection...</span>'
-    try {
-      const res = await fetch((window.__ingress_path || "") + "/api/ha/connection", { signal: pageLifecycle.signal })
-      const data = (await res.json()) as Record<string, unknown>
-      if (statusEl) {
-        if (data.connected) {
-          const comps = Array.isArray(data.components) ? (data.components as string[]) : []
-          const SHOW_LIMIT = 5
-          const compId = `ha-comp-list-${Date.now()}`
-          let compHtml = ""
-          if (comps.length > 0) {
-            const preview = comps.slice(0, SHOW_LIMIT)
-            const remaining = comps.length - SHOW_LIMIT
-            compHtml = `<div style="margin-top: 8px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; max-width: 100%; overflow: hidden;">
-              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px;">Components (${comps.length})</div>
-              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                ${preview.map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${escapeHtml(c)}</span>`).join("")}
-              </div>
-              ${remaining > 0 ? `<button type="button" onclick="const el=document.getElementById('${compId}');if(el){el.style.display=el.style.display==='none'?'flex':'none';this.textContent=el.style.display==='none'?'Show all ${comps.length}':'Collapse'}" style="margin-top: 6px; font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;">Show all ${comps.length}</button><div id="${compId}" style="display: none; flex-wrap: wrap; gap: 4px; margin-top: 4px;">${comps.slice(SHOW_LIMIT).map((c) => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);">${escapeHtml(c)}</span>`).join("")}</div>` : ""}
-            </div>`
-          }
-          statusEl.innerHTML =
-            `<span style="color: var(--accent); font-weight: 500;">✓ Connected</span> <span style="color: var(--text-secondary);">HA ${escapeHtml(data.version)} (${escapeHtml(data.mode)})</span>` +
-            `<div style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">${escapeHtml(data.location_name)} · ${escapeHtml(data.time_zone)}</div>` +
-            compHtml
-        } else {
-          statusEl.innerHTML =
-            `<span style="color: var(--danger);">⚠ ${escapeHtml(data.message ?? "HA not reachable")}</span>` +
-            `<br><small style="color: var(--text-muted);">Mode: ${escapeHtml(data.mode ?? "unknown")}</small>`
-        }
-      }
-    } catch {
-      if (statusEl) statusEl.innerHTML = '<span style="color: var(--danger);">Connection test failed</span>'
+type ConnectionCheckState = "checking" | "connected" | "standalone" | "denied" | "disconnected" | "failed"
+
+export async function refreshHAConnection(expandOnConnect = false): Promise<void> {
+  const indicator = document.getElementById("ha-indicator")
+  const mode = document.getElementById("ha-mode-label")
+  const detail = document.getElementById("ha-detail-label")
+  const badge = document.getElementById("ha-connection-badge")
+  const info = document.getElementById("ha-info-panel")
+  const button = document.getElementById("test-connection")
+  if (!indicator || !mode || !detail || !badge || !info || !button || button.hasAttribute("aria-busy")) return
+
+  function setStatus(state: ConnectionCheckState): void {
+    const message = (part: string) => {
+      const key = `settings.ha_check.${state}.${part}`
+      const value = window.mI18n?.get(key)
+      return value === key ? "" : value ?? ""
     }
-    })
+    const tone = state === "connected" ? "active" : state === "failed" || state === "denied" ? "error" : "pending"
+    mode!.textContent = message("title")
+    detail!.textContent = message("detail")
+    badge!.textContent = message("badge")
+    badge!.className = `badge badge-${tone}`
+    indicator!.classList.toggle("ha-status-indicator--checking", state === "checking")
+    indicator!.classList.toggle("ha-status-indicator--connected", state === "connected")
+    info!.hidden = state !== "connected"
   }
+
+  const signal = pageLifecycle.signal
+  button.setAttribute("aria-busy", "true")
+  button.setAttribute("aria-disabled", "true")
+  setStatus("checking")
+
+  try {
+    const response = await fetch("/api/ha/connection", {
+      cache: "no-store",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    })
+    if (!response.ok) throw new Error(`Connection check returned ${response.status}`)
+    const data = await response.json()
+    if (signal.aborted) return
+    if (typeof data?.connected !== "boolean" || !["standalone", "ha-addon"].includes(data.mode)) throw new Error("Invalid connection check response")
+
+    if (!data.connected) {
+      const state = data.mode === "standalone" ? "standalone" : data.message === "INVALID_AUTH" ? "denied" : "disconnected"
+      setStatus(state)
+      return
+    }
+
+    for (const [id, value] of Object.entries({
+      version: data.version, location: data.location_name, timezone: data.time_zone, mode: data.mode,
+    })) {
+      const element = document.getElementById(`ha-info-${id}`)
+      if (element) element.textContent = typeof value === "string" && value ? value : "—"
+    }
+    setStatus("connected")
+    if (expandOnConnect) window.expandIntegrationCard?.("integration-ha-body")
+  } catch {
+    if (!signal.aborted) setStatus("failed")
+  } finally {
+    button.removeAttribute("aria-busy")
+    button.removeAttribute("aria-disabled")
+  }
+}
+
+export function initHASettings(): void {
+  const testConnection = document.getElementById("test-connection")
+  if (testConnection) pageLifecycle.on(testConnection, "click", () => { void refreshHAConnection() })
 
   // Save HA settings (standalone mode only)
   const haForm = document.getElementById("ha-form")

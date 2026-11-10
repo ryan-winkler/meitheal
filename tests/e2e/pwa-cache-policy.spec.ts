@@ -183,7 +183,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     }
   })
 
-  test(`Settings and reaction requests bypass Cache Storage in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+  test(`Settings, HA status, and reaction requests bypass Cache Storage in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
     const server = await fixture(prefix)
     const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
     try {
@@ -193,6 +193,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       const urls = [
         "/api/settings",
         "/api/settings?key=locale",
+        "/api/ha/connection",
         "/api/tasks/reaction-counts?ids=fixture-task",
         "/api/tasks/fixture-task/reactions",
         "/api/tasks/fixture-task/comments/1/reactions",

@@ -606,18 +606,6 @@ const { locale } = Astro.props
     color: var(--text-primary);
   }
 
-  .ha-test-result {
-    font-size: 13px;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    margin-top: 8px;
-  }
-
-  .ha-test-result small {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
   .ha-advanced-section {
     margin-top: 12px;
     border-top: 1px solid var(--border);
@@ -819,71 +807,10 @@ const { locale } = Astro.props
 
 <script>
   import { createClientLogger } from "@lib/client-logger"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { refreshHAConnection } from "@lib/settings-integrations-ha-controller"
 
   const log = createClientLogger("settings", "integrations")
-  /**
-   * HA Connection Status Detection
-   *
-   * Auto-detects HA connection on page load. Updates status indicator,
-   * info panel, and badge. Auto-expands the HA card when connected.
-   *
-   * Bounded context: integrations / ha-connection
-   */
-  async function initHAConnectionStatus() {
-    const indicator = document.getElementById("ha-indicator");
-    const modeLabel = document.getElementById("ha-mode-label");
-    const detailLabel = document.getElementById("ha-detail-label");
-    const badge = document.getElementById("ha-connection-badge");
-    const infoPanel = document.getElementById("ha-info-panel");
-    if (!indicator || !modeLabel || !badge) return;
-    if (indicator.dataset.haInit) return;
-    indicator.dataset.haInit = "true";
-
-    try {
-      const res = await fetch(
-        (window.__ingress_path || "") + "/api/ha/connection",
-      );
-      const data = (await res.json()) as Record<string, unknown>;
-
-      if (data.connected) {
-        indicator.className =
-          "ha-status-indicator ha-status-indicator--connected";
-        modeLabel!.textContent = `✓ Connected as HA Addon`;
-        if (detailLabel) detailLabel.textContent = `HA ${data.version}`;
-        badge!.textContent = "Connected";
-        badge!.className = "badge badge-active";
-
-        if (infoPanel) {
-          infoPanel.style.display = "block";
-          const setVal = (id: string, val: unknown) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = String(val ?? "—");
-          };
-          setVal("ha-info-version", data.version);
-          setVal("ha-info-location", data.location_name);
-          setVal("ha-info-timezone", data.time_zone);
-          setVal("ha-info-mode", data.mode);
-        }
-
-        // Auto-expand HA card when connected
-        if (window.expandIntegrationCard) {
-          window.expandIntegrationCard("integration-ha-body");
-        }
-      } else {
-        indicator.className = "ha-status-indicator";
-        modeLabel!.textContent = "Not connected";
-        if (detailLabel)
-          detailLabel.textContent = String(data.mode ?? "Standalone");
-        badge!.textContent = "Disconnected";
-        badge!.className = "badge badge-pending";
-      }
-    } catch {
-      indicator.className = "ha-status-indicator";
-      modeLabel!.textContent = "Connection check failed";
-      badge!.textContent = "Error";
-      badge!.className = "badge badge-error";
-    }
-  }
   /**
    * Integration Explainer Dialog
    *
@@ -895,7 +822,7 @@ const { locale } = Astro.props
       title: "🏠 Home Assistant",
       body: `<p>Meitheal connects to Home Assistant via <strong>WebSocket</strong>, allowing it to consume and provide data automatically.</p>
              <p>When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token.</p>
-             <p>For standalone installs, enter your HA URL and a Long-Lived Access Token in the Advanced section.</p>`,
+             <p>The connection test checks the Supervisor connection. The Advanced section stores standalone settings separately.</p>`,
     },
     calendar: {
       title: "📅 Calendar Sync",
@@ -1178,7 +1105,7 @@ const { locale } = Astro.props
   initExplainerDialog();
 
   function bootIntegrationsDiagnostics() {
-    initHAConnectionStatus();
+    void refreshHAConnection(true);
     initCalendarDropdown();
     initGrocyAutoDetect();
     initNodeRedAutoDetect();
@@ -1198,5 +1125,6 @@ const { locale } = Astro.props
     );
 
     observer.observe(integrationsSection);
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true });
   }
 </script>

@@ -20,6 +20,14 @@ In **Settings → Integrations**, Tab to an integration and press Enter or Space
 
 Save notifications use the selected theme's text and card colors. A colored edge distinguishes the result, and the message stays readable from the moment it appears.
 
+## Check Home Assistant
+
+Open **Settings → Integrations → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.
+
+- **Access denied** means Home Assistant rejected the App’s credentials. Check its Core API access and retry.
+- **Disconnected** means there is no live connection. Check the Meitheal App logs in Home Assistant and retry.
+- **Check failed** means Meitheal could not read the connection state. Retry to get the latest state.
+
 ## Administrator access
 
 Manage integration credentials, outbound integration tests, Node-RED deployment, custom CSS and factory reset through a verified Home Assistant administrator session. For standalone development, open the app on the machine running it using the loopback address. A Meitheal HTTP 403 can indicate either a regular user session or an installed Supervisor without the required trusted identity headers. Settings stays open so you can read the error and keep any work in progress. An expired Supervisor ingress session may reload to recover its connection.

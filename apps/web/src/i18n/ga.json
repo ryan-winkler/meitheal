@@ -356,6 +356,36 @@
     "reminder": "Meabhrúchán"
   },
   "settings": {
+    "ha_check": {
+      "checking": {
+        "badge": "Ag seiceáil",
+        "title": "Home Assistant á sheiceáil…"
+      },
+      "connected": {
+        "badge": "Nasctha",
+        "title": "Tá Home Assistant nasctha"
+      },
+      "standalone": {
+        "badge": "Neamhspleách",
+        "title": "Ag rith go neamhspleách",
+        "detail": "Níl nasc le Supervisor anseo. Oscail an aip Meitheal suiteáilte in Home Assistant chun a nasc a thástáil."
+      },
+      "denied": {
+        "badge": "Rochtain diúltaithe",
+        "title": "Diúltaíodh rochtain ar Home Assistant",
+        "detail": "Dhiúltaigh Home Assistant do dhintiúir na haipe. Seiceáil rochtain na haipe ar Core API agus bain triail eile as."
+      },
+      "disconnected": {
+        "badge": "Dínasctha",
+        "title": "Tá Home Assistant dícheangailte",
+        "detail": "Seiceáil logaí Meitheal in Home Assistant agus bain triail eile as."
+      },
+      "failed": {
+        "badge": "Theip ar an tseiceáil",
+        "title": "Níorbh fhéidir Home Assistant a sheiceáil",
+        "detail": "Bain triail eile as chun an nasc a sheiceáil."
+      }
+    },
     "agents_title": "Agents & AI",
     "agents_subtitle": "Configure Home Assistant conversation agents, external AI providers, and agent-to-agent protocols.",
     "ha_agent_title": "🏠 HA Conversation Agent",

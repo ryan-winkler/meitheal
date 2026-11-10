@@ -292,7 +292,7 @@ function stopHeartbeat(): void {
 
 export function getHAConnectionStatus() {
   return {
-    connected: connection !== null,
+    connected: connection?.connected ?? false,
     haVersion: connection?.haVersion ?? null,
     lastError,
     reconnectAttempts,

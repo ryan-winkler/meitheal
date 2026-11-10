@@ -358,6 +358,36 @@
     "reminder": "Reminder"
   },
   "settings": {
+    "ha_check": {
+      "checking": {
+        "badge": "Checking",
+        "title": "Checking Home Assistant…"
+      },
+      "connected": {
+        "badge": "Connected",
+        "title": "Home Assistant connected"
+      },
+      "standalone": {
+        "badge": "Standalone",
+        "title": "Running standalone",
+        "detail": "This instance has no Supervisor connection. Open the installed Meitheal App in Home Assistant to test its connection."
+      },
+      "denied": {
+        "badge": "Access denied",
+        "title": "Home Assistant access denied",
+        "detail": "Home Assistant rejected the App’s credentials. Check the App’s Core API access and retry."
+      },
+      "disconnected": {
+        "badge": "Disconnected",
+        "title": "Home Assistant disconnected",
+        "detail": "Check the Meitheal App logs in Home Assistant, then retry."
+      },
+      "failed": {
+        "badge": "Check failed",
+        "title": "Could not check Home Assistant",
+        "detail": "Try again to check the connection."
+      }
+    },
     "agents_title": "Agents & AI",
     "agents_subtitle": "Configure Home Assistant conversation agents, external AI providers, and agent-to-agent protocols.",
     "ha_agent_title": "🏠 HA Conversation Agent",

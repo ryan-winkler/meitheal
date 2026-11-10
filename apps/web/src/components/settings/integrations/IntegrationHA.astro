@@ -22,25 +22,25 @@ const locale = Astro.props.locale || "en"
     description={t("settings.ha_desc", locale)}
     helpLabel={t("settings.ha_explainer", locale)}
   >
-    <span class="badge badge-pending" id="ha-connection-badge">{t("settings.status_checking", locale)}</span>
+    <span class="badge badge-pending" id="ha-connection-badge">{t("settings.ha_check.checking.badge", locale)}</span>
   </IntegrationCardHeader>
 
   <div class="integration-card__body" id="integration-ha-body" inert>
     <!-- Connection Status Display -->
-    <div id="ha-connection-status" class="ha-status-row">
+    <div id="ha-connection-status" class="ha-status-row" role="status">
       <div class="ha-status-row__left">
         <div class="ha-status-indicator ha-status-indicator--checking" id="ha-indicator">
           <span class="ha-status-indicator__dot"></span>
         </div>
         <div class="ha-status-row__info">
-          <span class="ha-status-row__mode" id="ha-mode-label">{t("settings.ha_detecting", locale)}</span>
+          <span class="ha-status-row__mode" id="ha-mode-label">{t("settings.ha_check.checking.title", locale)}</span>
           <span class="ha-status-row__detail" id="ha-detail-label"></span>
         </div>
       </div>
     </div>
 
     <!-- HA Info Panel — shown when connected -->
-    <div id="ha-info-panel" class="ha-info-panel" style="display: none;">
+    <div id="ha-info-panel" class="ha-info-panel" hidden>
       <div class="ha-info-grid">
         <div class="ha-info-item">
           <span class="ha-info-item__label">{t("settings.ha_version", locale)}</span>
@@ -68,7 +68,6 @@ const locale = Astro.props.locale || "en"
           {t("settings.test_connection", locale)}
         </button>
       </div>
-      <div id="ha-status" class="ha-test-result"></div>
     </div>
 
     <!-- Advanced / Standalone Mode -->
@@ -111,3 +110,9 @@ const locale = Astro.props.locale || "en"
     </details>
   </div>
 </div>
+
+<style>
+  #ha-connection-badge.badge-error {
+    color: var(--text-primary);
+  }
+</style>
