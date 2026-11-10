@@ -65,9 +65,16 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
   const earlier = await createTask(request, "deferral-reorder-earlier")
   const hidden = await createTask(request, "deferral-reorder-hidden")
   const later = await createTask(request, "deferral-reorder-later")
+  // Establish stable slots before deferral so even the deferred card's raw
+  // position can be compared across the ordinary-only reorder.
+  expect((await request.post("/api/tasks/reorder", {
+    data: { ordered_ids: [earlier.id, hidden.id, later.id] },
+  })).status()).toBe(200)
+  const hiddenBefore = await (await request.get(`/api/tasks/${hidden.id}`)).json()
   expect((await request.patch(`/api/tasks/${hidden.id}/deferral`, {
-    data: { deferred: true, updated_at: hidden.updated_at, deferral_revision: null },
+    data: { deferred: true, updated_at: hiddenBefore.task_version, deferral_revision: null },
   })).ok()).toBe(true)
+  const deferredSnapshot = await (await request.get(`/api/tasks/${hidden.id}`)).json()
   for (const data of [
     { ordered_ids: [earlier.id, hidden.id, later.id] },
     { ordered_ids: [earlier.id, earlier.id] },
@@ -77,8 +84,20 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
     expect(rejected.status()).toBe(409)
     expect(await rejected.json()).toMatchObject({ errorCode: "TASK_ORDER_CONFLICT" })
   }
-  const reordered = await request.post("/api/tasks/reorder", { data: { ordered_ids: [earlier.id, later.id] } })
-  expect(reordered.status()).toBe(200)
+  // Pair the Core adapter's exact nullness filter with the real native API.
+  const inventory = await (await request.get("/api/tasks?q=deferral-reorder-&limit=100")).json()
+  const allowed = inventory.tasks.filter((row: { deferred_at: number | null }) => row.deferred_at === null)
+    .map((row: { id: string }) => row.id)
+  expect([...allowed].sort()).toEqual([earlier.id, later.id].sort())
+  const orderedIds = [later.id, ...allowed.filter((id: string) => id !== later.id)]
+  const reordered = await request.post("/api/tasks/reorder", { data: { ordered_ids: orderedIds } })
+  expect(reordered.status(), await reordered.text()).toBe(200)
+  const hiddenAfter = await (await request.get(`/api/tasks/${hidden.id}`)).json()
+  expect(hiddenAfter).toEqual(deferredSnapshot)
+  const earlierAfter = await (await request.get(`/api/tasks/${earlier.id}`)).json()
+  const laterAfter = await (await request.get(`/api/tasks/${later.id}`)).json()
+  expect(laterAfter.kanban_position).toBeLessThan(hiddenAfter.kanban_position)
+  expect(hiddenAfter.kanban_position).toBeLessThan(earlierAfter.kanban_position)
   for (const id of [earlier.id, hidden.id, later.id]) {
     const deleted = await request.delete(`/api/tasks/${id}`, { data: {} })
     expect(deleted.status(), await deleted.text()).toBe(204)

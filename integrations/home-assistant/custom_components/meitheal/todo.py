@@ -85,7 +85,7 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
         """Return todo items from coordinator data."""
         if not self.coordinator.data:
             return None
-        return [self._task_to_item(t) for t in self.coordinator.data.tasks]
+        return [self._task_to_item(t) for t in self.coordinator.data.todo_tasks]
 
     @staticmethod
     def _task_to_item(task: MeithealTask) -> TodoItem:
@@ -143,7 +143,7 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
         """Reorder a task in the list."""
         if not self.coordinator.data:
             raise HomeAssistantError("No task data available")
-        ordered_ids = [task.id for task in self.coordinator.data.tasks]
+        ordered_ids = [task.id for task in self.coordinator.data.todo_tasks]
         if uid not in ordered_ids:
             raise HomeAssistantError("Task not found")
         ordered_ids.remove(uid)

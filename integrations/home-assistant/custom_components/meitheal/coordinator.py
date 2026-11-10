@@ -57,6 +57,9 @@ class MeithealTask:
             [label for label in labels if isinstance(label, str)]
             if isinstance(labels, list) else []
         )
+        # Preserve native nullness: reorder permits only deferred_at IS NULL.
+        self.deferred_at: Any = data.get("deferred_at")
+        self.deferral_revision: str | None = data.get("deferral_revision")
         self.position: int | None = data.get("kanban_position", data.get("position"))
         self.calendar_sync_state: str | None = data.get("calendar_sync_state")
         self.urgency: int = data.get("urgency", 0)
@@ -82,6 +85,7 @@ class MeithealCoordinatorData:
 
     def __init__(self, tasks: list[MeithealTask]) -> None:
         self.tasks = tasks
+        self.todo_tasks = [task for task in tasks if task.deferred_at is None]
         self.active_count = sum(1 for t in tasks if t.status != "done")
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)

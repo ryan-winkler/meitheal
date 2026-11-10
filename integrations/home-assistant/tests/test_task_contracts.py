@@ -305,3 +305,86 @@ def test_nfc_metadata_matches_existing_runtime_service_schema():
     assert COMPLETE_TASK_BY_TAG_SCHEMA({"tag_id": "tag"}) == {"tag_id": "tag"}
     strings = json.loads((COMPONENT / "strings.json").read_text())
     assert strings["services"]["complete_task_by_tag"]["fields"]["tag_id"]["name"]
+
+
+async def test_todo_inventory_excludes_deferred_without_changing_sensors(coordinator):
+    rows = [task("first"), task("deferred", deferred_at=1_800_000_000_000, deferral_revision="held-revision"), task("last")]
+    coordinator.data = MeithealCoordinatorData([MeithealTask(row) for row in rows])
+    todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="test"))
+    assert [item.uid for item in todo.todo_items] == ["first", "last"]
+    assert coordinator.data.total_count == coordinator.data.active_count == 3
+    assert [item.id for item in coordinator.data.tasks] == ["first", "deferred", "last"]
+    assert coordinator.data.tasks[1].deferred_at == 1_800_000_000_000
+    assert coordinator.data.tasks[1].deferral_revision == "held-revision"
+
+
+async def test_todo_move_filters_deferred_ids(coordinator):
+    coordinator.data = MeithealCoordinatorData([MeithealTask(task("first")),
+        MeithealTask(task("deferred", deferred_at=1_800_000_000_000)), MeithealTask(task("last"))])
+    coordinator.api.async_request.return_value = {"ok": True}
+    coordinator.async_request_refresh = AsyncMock()
+    await MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="test")).async_move_todo_item("last")
+    coordinator.api.async_request.assert_awaited_once_with("POST", "/api/tasks/reorder",
+        payload={"ordered_ids": ["last", "first"]}, read_json=True)
+
+
+@pytest.mark.parametrize("moved,previous", [("deferred", None), ("ordinary", "deferred")])
+async def test_todo_deferred_move_or_anchor_never_writes(coordinator, moved, previous):
+    coordinator.data = MeithealCoordinatorData([MeithealTask(task("ordinary")), MeithealTask(task("deferred", deferred_at=1))])
+    coordinator.api.async_request.return_value = {"ok": True}
+    coordinator.async_request_refresh = AsyncMock()
+    with pytest.raises(HomeAssistantError):
+        await MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="test")).async_move_todo_item(moved, previous)
+    coordinator.api.async_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize("deferred_at", [0, "", False, "not-a-timestamp"])
+async def test_todo_deferral_filter_uses_native_nullness(coordinator, deferred_at):
+    coordinator.data = MeithealCoordinatorData([MeithealTask(task("ordinary")), MeithealTask(task("held", deferred_at=deferred_at))])
+    todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="test"))
+    assert [item.uid for item in todo.todo_items] == ["ordinary"]
+    assert coordinator.data.total_count == 2
+
+
+async def test_todo_reorder_does_not_add_a_2000_task_cap(coordinator):
+    rows = [task(f"task-{i}") for i in range(2001)]
+    rows.insert(100, task("deferred", deferred_at=1))
+    coordinator.data = MeithealCoordinatorData([MeithealTask(row) for row in rows])
+    coordinator.api.async_request.return_value = {"ok": True}
+    coordinator.async_request_refresh = AsyncMock()
+    await MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="test")).async_move_todo_item("task-2000")
+    ids = coordinator.api.async_request.call_args.kwargs["payload"]["ordered_ids"]
+    assert len(ids) == 2001 and "deferred" not in ids and ids[0] == "task-2000"
+    assert coordinator.data.total_count == 2002
+
+
+async def test_actual_core_device_trigger_consumes_namespaced_app_overdue_event(hass):
+    """Use Core's real event trigger attachment, not a configuration-only mock."""
+    contract = json.loads((Path(__file__).parent / "fixtures/app-task-overdue.json").read_text())
+    delivered = []
+
+    async def action(variables, context):
+        delivered.append(variables["trigger"])
+
+    detach = await async_attach_trigger(hass, {"type": "task_overdue"}, action, {
+        "trigger_data": {"id": "app-overdue-contract"}, "variables": {},
+    })
+    try:
+        # A similarly named event without the namespace metadata is not this
+        # device contract. Keep the consumer filter instead of weakening it.
+        missing_domain = {key: value for key, value in contract["event_data"].items() if key != "domain"}
+        hass.bus.async_fire(contract["event_type"], missing_domain)
+        await hass.async_block_till_done()
+        assert delivered == []
+        hass.bus.async_fire(contract["event_type"], contract["event_data"])
+        await hass.async_block_till_done()
+        assert len(delivered) == 1
+        assert delivered[0]["platform"] == "device"
+        assert delivered[0]["id"] == "app-overdue-contract"
+        assert delivered[0]["event"].event_type == contract["event_type"]
+        assert dict(delivered[0]["event"].data) == contract["event_data"]
+    finally:
+        detach()
+    hass.bus.async_fire(contract["event_type"], contract["event_data"])
+    await hass.async_block_till_done()
+    assert len(delivered) == 1
