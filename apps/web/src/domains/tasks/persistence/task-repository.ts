@@ -58,6 +58,7 @@ export interface TaskRow {
   progress: number
   color: string | null
   is_favorite: number
+  is_promoted: number
   task_type: string
   summary: string | null
   // ── Phase 3 (recurrence, checklists, NFC) ──
@@ -148,7 +149,7 @@ export interface KanbanLane {
 }
 
 /** Narrow projection used to filter and count all eligible cards before pagination. */
-export type KanbanIndexRow = Pick<TaskRow, "id" | "status" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to"> &
+export type KanbanIndexRow = Pick<TaskRow, "id" | "status" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" | "is_promoted"> &
   Partial<Pick<TaskRow, "title" | "labels">> & { overdue?: number }
 
 /** Setting key-value pair */
@@ -284,13 +285,13 @@ export class TaskRepository {
   ): Promise<KanbanIndexRow[]> {
     if (!statuses.length) return []
     const result = await this.client.execute({
-      sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to
+      sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${matchOverdue ? `, (${OVERDUE_TASK_PREDICATE}) AS overdue` : ""}
             FROM tasks
             WHERE status IN (SELECT value FROM json_each(?))
               AND (? = 0 OR lower(status) != 'complete' OR updated_at >= ?)
-            ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
+            ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
       args: [
         ...(matchOverdue ? [new Date().toISOString(), STATUS.COMPLETE] : []),
         JSON.stringify(statuses), cutoff, cutoff,
@@ -305,7 +306,7 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT task.id, task.title, task.description, task.status, task.priority, task.due_date,
                    task.labels, task.framework_payload, task.calendar_sync_state, task.area_id,
-                   task.custom_fields, task.progress, task.color, task.is_favorite, task.task_type,
+                   task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
                    task.task_kind, task.project_id, task.owner, task.handoff_state, task.ticket_number,
                    task.assigned_to, task.recurrence_rule, task.checklists,
                    (SELECT COUNT(*) FROM comments WHERE task_id = task.id) AS comment_count,
@@ -532,7 +533,7 @@ export class TaskRepository {
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
                    t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
-                   t.is_favorite, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
+                   t.is_favorite, t.is_promoted, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
                    t.recurrence_rule, t.created_at, t.updated_at,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
@@ -913,7 +914,7 @@ export class TaskRepository {
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
                       parent_id, time_tracked, start_date, end_date, progress, color,
-                      is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+                      is_favorite, is_promoted, task_type, task_kind, project_id, owner, handoff_state,
                       ticket_number, assigned_to, checklists, urgency, importance,
                       eisenhower_override, created_at, updated_at`,
       args: dependencies ? [...args, ...dependencies.args] : args,
@@ -974,7 +975,7 @@ export class TaskRepository {
       sql: `SELECT title, description, status, priority, due_date, labels,
                    framework_payload, area_id, custom_fields, parent_id,
                    task_type, task_kind, project_id, owner, handoff_state,
-                   start_date, end_date, progress, color, is_favorite, assigned_to,
+                   start_date, end_date, progress, color, is_favorite, is_promoted, assigned_to,
                    urgency, importance, eisenhower_override
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
@@ -1220,8 +1221,8 @@ export class TaskRepository {
 
   /** Place a card in the shared order while preserving every other card's relative order. */
   async reorderKanbanCard(input: { id: string; anchorId: string; lane: string; before: boolean }): Promise<boolean> {
-    // Lane membership is checked before ranking the full board. A shared order
-    // keeps overlapping lanes and area filters consistent with each other.
+    // Lane membership and promotion group are checked before ranking the full
+    // board. The underlying order is shared across lanes, filters and groups.
     // Leave the unranked suffix alone; it still sorts by the same tie-breaks.
     const result = await this.client.execute({
       sql: `WITH requested(moved_id, anchor_id, lane, after_anchor) AS (VALUES (?, ?, ?, ?)),
@@ -1229,12 +1230,12 @@ export class TaskRepository {
               SELECT requested.*
               FROM requested
               WHERE (
-                SELECT COUNT(*) FROM tasks
+                SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM tasks
                 WHERE id IN (requested.moved_id, requested.anchor_id)
                   AND status IN (
                     SELECT value FROM json_each((SELECT includes FROM kanban_lanes WHERE key = requested.lane))
                   )
-              ) = 2
+              )
             ),
             ordered AS MATERIALIZED (
               SELECT id, kanban_position, ROW_NUMBER() OVER (

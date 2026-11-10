@@ -139,6 +139,7 @@ const schemas = {
       description: { type: "string", nullable: true, description: "Rich text task description" },
       status: { type: "string", enum: ["todo", "in_progress", "complete", "archived"], description: "Current task lifecycle state" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
+      is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
       due_date: { type: "string", format: "date-time", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       area_id: { type: "string", nullable: true },
@@ -663,6 +664,7 @@ const paths = {
           description: { type: "string", description: "Task text. The server keeps the first 10,000 characters." },
           status: { type: "string", description: "Canonical task status, a supported alias, or a custom status. Backlog decisions require exactly pending or active." },
           priority: { type: "number", description: "The server rounds and clamps this to 1 through 5." },
+          is_promoted: { type: "boolean", description: "Show the task above regular cards in its Kanban lane." },
           due_date: { type: ["string", "null"] },
           assigned_to: { type: ["string", "null"] },
           project_id: { type: ["string", "null"] },
@@ -756,7 +758,7 @@ const paths = {
       operationId: "reorderTasks",
       tags: ["Tasks"],
       summary: "Reorder tasks by position",
-      description: "Set the supplied task positions or move one card before or after another card in the same Kanban lane.",
+      description: "Set the supplied task positions or move one card before or after another card in the same Kanban lane and promotion group.",
       requestBody: {
         required: true,
         content: { "application/json": { schema: {
@@ -771,7 +773,7 @@ const paths = {
           oneOf: [{ required: ["ordered_ids"] }, { required: ["task_id", "anchor_id", "lane", "before"] }],
         } } },
       },
-      responses: { 200: { description: "Reordered" }, 409: { description: "The card and anchor must still be in the same lane" } },
+      responses: { 200: { description: "Reordered" }, 409: { description: "The card and anchor must still be in the same lane and promotion group" } },
     },
   },
 

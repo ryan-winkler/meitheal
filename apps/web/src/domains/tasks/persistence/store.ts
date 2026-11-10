@@ -345,6 +345,9 @@ async function initializeSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "is_favorite"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
   }
+  if (!(await hasColumn(client, "tasks", "is_promoted"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN is_promoted INTEGER NOT NULL DEFAULT 0 CHECK (is_promoted IN (0, 1))")
+  }
 
   // Phase 20: Agile hierarchy — epic/story/task type
   if (!(await hasColumn(client, "tasks", "task_type"))) {
@@ -970,7 +973,7 @@ async function initializeSchema(): Promise<void> {
   // Schema version tracking (PRA-23): set version after all migrations complete
   const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
   const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 11
+  const targetVersion = 12
   if (storedVersion < targetVersion) {
     await client.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

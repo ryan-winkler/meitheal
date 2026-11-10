@@ -260,6 +260,9 @@ components:
           minimum: 0
           maximum: 5
           description: "Priority level: 0=none, 1=lowest, 5=critical"
+        is_promoted:
+          type: boolean
+          description: Shared Kanban promotion, returned for task detail and updates.
         due_date:
           type: string
           format: date-time
@@ -1272,6 +1275,9 @@ paths:
                 priority:
                   type: number
                   description: The server rounds and clamps this to 1 through 5.
+                is_promoted:
+                  type: boolean
+                  description: Show the task above regular cards in its Kanban lane.
                 due_date:
                   type:
                     - string
@@ -1478,7 +1484,8 @@ paths:
       tags:
         - Tasks
       summary: Reorder tasks by position
-      description: Set the supplied task positions or move one card before or after another card in the same Kanban lane.
+      description: Set the supplied task positions or move one card before or after another card in the same Kanban lane and
+        promotion group.
       requestBody:
         required: true
         content:
@@ -1512,7 +1519,7 @@ paths:
         "200":
           description: Reordered
         "409":
-          description: The card and anchor must still be in the same lane
+          description: The card and anchor must still be in the same lane and promotion group
   /api/tasks/{id}/comments:
     get:
       operationId: getTaskComments

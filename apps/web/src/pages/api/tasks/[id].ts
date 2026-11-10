@@ -42,6 +42,7 @@ export const GET: APIRoute = async ({ params }) => {
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
   const enriched = {
     ...row,
+    is_promoted: Boolean(row.is_promoted),
     ticket_key: formatTicketKey(ticketNum),
     parent_ticket_key: formatTicketKey(parentTicketNum),
   }
@@ -182,6 +183,10 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
   if (body.is_favorite !== undefined) {
     sanitized.is_favorite = body.is_favorite ? 1 : 0
+  }
+  if (body.is_promoted !== undefined) {
+    if (typeof body.is_promoted !== "boolean") return apiError("is_promoted must be a boolean", 400)
+    sanitized.is_promoted = body.is_promoted ? 1 : 0
   }
   if (typeof body.parent_id === "string" || body.parent_id === null) {
     sanitized.parent_id = body.parent_id
@@ -364,7 +369,11 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const taskPayload = { ...updatedRow, ticket_key: formatTicketKey(updTicketNum) }
+  const taskPayload = {
+    ...updatedRow,
+    is_promoted: Boolean(updatedRow.is_promoted),
+    ticket_key: formatTicketKey(updTicketNum),
+  }
 
   dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
 

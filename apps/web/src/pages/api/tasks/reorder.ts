@@ -6,7 +6,7 @@
  *
  * Sets kanban_position = index for each task ID in the array.
  * Alternatively, { task_id, anchor_id, lane, before } moves a card relative to a
- * neighbor in the full lane, including rows outside the visible page.
+ * neighbor in the same lane and promotion group, including rows outside the visible page.
  */
 import type { APIRoute } from "astro"
 import {
@@ -30,7 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
       await ensureSchema()
       const repo = new TaskRepository(getPersistenceClient())
       const ok = await repo.reorderKanbanCard({ id: task_id, anchorId: anchor_id, lane, before })
-      return new Response(JSON.stringify(ok ? { ok } : { error: "The cards are no longer in the same lane" }), {
+      return new Response(JSON.stringify(ok ? { ok } : { error: "The cards must be in the same lane and promotion group" }), {
         status: ok ? 200 : 409, headers: { "content-type": "application/json" },
       })
     }
