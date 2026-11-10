@@ -105,20 +105,15 @@ run_compose() {
 start_stack() {
   local existing
   if [[ "$COMPOSE_CMD" == *podman* ]]; then
-    # podman-compose 1.x lists stopped containers, but accepts no service filter.
-    if existing=$(run_compose ps --all --quiet ha-devcontainer 2>/dev/null); then
-      : # Docker Compose providers accept service and stopped-container filters.
+    # Validate with the selected provider, but use the engine for a fail-closed
+    # listing: podman-compose 1.x discards errors returned by its ps command.
+    run_compose config >/dev/null
+    local project="${COMPOSE_PROJECT_NAME:-devcontainer}"
+    if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
+      project="${COMPOSE_PROJECT_NAME:-meitheal-dev}"
+      existing=$(flatpak-spawn --host podman ps --all --quiet --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=ha-devcontainer")
     else
-      existing=""
-      local container service
-      for container in $(run_compose ps -q); do
-      if [[ "$COMPOSE_CMD" == "flatpak-spawn --host podman-compose" ]]; then
-        service=$(flatpak-spawn --host podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
-      else
-        service=$(podman inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container")
-      fi
-        if [[ "$service" == ha-devcontainer ]]; then existing="$container"; break; fi
-      done
+      existing=$(podman ps --all --quiet --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=ha-devcontainer")
     fi
   else
     existing=$(run_compose ps --all --quiet ha-devcontainer)

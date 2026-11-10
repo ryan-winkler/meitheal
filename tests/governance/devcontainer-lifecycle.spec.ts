@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test"
 const root = fileURLToPath(new URL("../..", import.meta.url))
 
 /** Run the launcher against isolated engine/CLI fixtures without accessing real containers. */
-function launch(command: string, existing: boolean, cli = false, tools = true, backend = "docker") {
+function launch(command: string, existing: boolean, cli = false, tools = true, backend = "docker", listFail = false) {
   const fixture = mkdtempSync(join(tmpdir(), "meitheal-container-launch-"))
   try {
     const bin = join(fixture, "bin")
@@ -31,8 +31,10 @@ if (args.includes("ps")) {
 `, { mode: 0o700 })
       writeFileSync(join(bin, "podman"), `#!/usr/bin/env node
 const args = process.argv.slice(2)
-if (args[0] !== "inspect") process.exit(1)
-console.log(args.at(-1) === "stopped-editor" ? "ha-devcontainer" : "grocy")
+if (args[0] === "ps") {
+  if (process.env.LAUNCH_LIST_FAIL === "1") process.exit(125)
+  if (process.env.LAUNCH_EXISTING === "1") console.log("stopped-editor")
+}
 `, { mode: 0o700 })
     }
     if (backend === "podman-provider") {
@@ -40,7 +42,10 @@ console.log(args.at(-1) === "stopped-editor" ? "ha-devcontainer" : "grocy")
 const fs = require("node:fs")
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.LAUNCH_CALLS, JSON.stringify(["podman", ...args]) + "\\n")
-if (args.includes("ps")) console.log(args.includes("--all") && process.env.LAUNCH_EXISTING === "1" ? "stopped-editor" : "")
+if (args.includes("ps")) {
+  if (process.env.LAUNCH_LIST_FAIL === "1") process.exit(125)
+  if (process.env.LAUNCH_EXISTING === "1") console.log("stopped-editor")
+}
 `, { mode: 0o700 })
     }
     const calls = join(fixture, "calls.jsonl")
@@ -58,7 +63,7 @@ require("node:fs").appendFileSync(process.env.LAUNCH_CALLS, JSON.stringify(["dev
 `, { mode: 0o700 })
     const result = spawnSync("/bin/bash", [join(fixture, "scripts/devcontainer-up.sh"), command], {
       encoding: "utf8",
-      env: { PATH: bin, LAUNCH_BACKEND: backend, LAUNCH_CALLS: calls, LAUNCH_EXISTING: existing ? "1" : "0", LAUNCH_TOOLS: tools ? "1" : "0" },
+      env: { PATH: bin, LAUNCH_BACKEND: backend, LAUNCH_LIST_FAIL: listFail ? "1" : "0", LAUNCH_CALLS: calls, LAUNCH_EXISTING: existing ? "1" : "0", LAUNCH_TOOLS: tools ? "1" : "0" },
     })
     return {
       status: result.status,
@@ -118,6 +123,19 @@ test("Podman recovery identifies a stopped editor among sidecars without unsuppo
 test("Podman with a Docker Compose provider includes its stopped editor", () => {
   const stopped = launch("up", true, false, true, "podman-provider")
   expect(stopped.status, stopped.error).toBe(0)
-  expect(stopped.calls).toContainEqual(expect.arrayContaining(["ps", "--all", "--quiet", "ha-devcontainer"]))
+  expect(stopped.calls).toContainEqual(expect.arrayContaining(["ps", "--all", "--quiet", "label=com.docker.compose.service=ha-devcontainer"]))
   expect(stopped.calls).toContainEqual(expect.arrayContaining(["start", "ha-devcontainer"]))
+})
+
+
+test("Podman providers distinguish a successful empty listing from an engine failure", () => {
+  for (const backend of ["podman", "podman-provider"]) {
+    const fresh = launch("up", false, true, true, backend)
+    expect(fresh.status, fresh.error).toBe(0)
+    expect(fresh.calls).toContainEqual(expect.arrayContaining(["devcontainer", "up"]))
+    expect(fresh.calls.some(args => args[0] !== "devcontainer" && args.includes("up"))).toBe(false)
+    const failed = launch("up", false, true, true, backend, true)
+    expect(failed.status).not.toBe(0)
+    expect(failed.calls.some(args => args[0] === "devcontainer" || args.includes("up"))).toBe(false)
+  }
 })
