@@ -36,7 +36,7 @@ function isExternal(href: string): boolean {
             data-page={item.key}
             title={item.label}
             data-tooltip={item.label}
-            data-astro-prefetch={item.key === "system-pinned" ? "false" : external ? undefined : "viewport"}
+            data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" ? "false" : external ? undefined : "viewport"}
             aria-current={item.isActive ? "page" : undefined}
             aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
             {...(external

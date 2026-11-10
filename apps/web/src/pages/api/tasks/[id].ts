@@ -6,6 +6,7 @@ import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
@@ -57,7 +58,7 @@ export const GET: APIRoute = async ({ params, url }) => {
   })
 }
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = async ({ params, request, locals }) => {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -323,6 +324,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
     ...(body.expected_status === STATUS.BACKLOG ? { expectedStatus: STATUS.BACKLOG } : {}),
   }
   const update = await repo.updateTask(resolvedId, sanitized, {
+    activity: resolveRecentActivityActor(locals),
     ...(version ? { version } : {}),
     ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
   })

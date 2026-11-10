@@ -11,6 +11,7 @@
 - [Habits Shell Guide](habits-shell-guide.md) - Understand the habit view and cadence controls.
 - [Search Hub Guide](search-hub-guide.md) - Find work, views, and settings.
 - [PWA & Offline-First Guide](pwa-offline-guide.md) - Install the web app and understand offline behavior.
+- [Review recent activity](recent-activity.md) - Find committed task changes by area and person.
 - [Task Lifecycle Glossary](task-lifecycle-glossary.md) - Find task status definitions and transition rules.
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.

@@ -12,6 +12,7 @@ import {
   type TaskDraftVersion,
   type TaskDraftWrite,
 } from "../../../lib/task-draft-state"
+import { recentActivityPersonKey } from "./recent-activity"
 import { taskInsertStatement, type TaskCreationData } from "./task-repository"
 
 type Save = Extract<TaskDraftWrite, { action: "save" }>
@@ -209,9 +210,11 @@ export class TaskDraftRepository {
         args: [...versionArgs(ownerId, expected), attemptId, digest, eventId, now, prepared.id, eventId],
       },
       {
-        sql: `INSERT INTO task_activity_log (task_id, field, actor, actor_type, event_type, summary, correlation_id, created_at)
-              SELECT id, 'created', ?, 'user', 'created', 'Task published from a draft', ?, ? FROM tasks WHERE id = ? AND request_id = ?`,
-        args: [ownerId, eventId, now, prepared.id, eventId],
+        sql: `INSERT INTO task_activity_log
+                (task_id, field, actor, actor_type, event_type, summary, correlation_id, created_at, feed_action, feed_person_key)
+              SELECT id, 'created', ?, 'user', 'created', 'Task published from a draft', ?, ?, 'added', ?
+              FROM tasks WHERE id = ? AND request_id = ?`,
+        args: [ownerId, eventId, now, recentActivityPersonKey(ownerId), prepared.id, eventId],
       },
       {
         sql: `INSERT INTO domain_events (event_id, event_type, task_id, request_id, idempotency_key, payload, created_at)

@@ -19,6 +19,7 @@ import { logApiError } from "../../../lib/api-logger";
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
+import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
 import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
@@ -957,9 +958,10 @@ export class TaskRepository {
   async updateTask(
     id: string,
     fields: Record<string, InValue>,
-    { version, expectedChecklists }: {
+    { version, expectedChecklists, activity }: {
       version?: { updatedAt: number; expectedStatus?: "backlog" }
       expectedChecklists?: string | null
+      activity?: RecentTaskActor
     } = {},
   ): Promise<
     { ok: true; task: TaskRow }
@@ -979,7 +981,9 @@ export class TaskRepository {
 
     const storedVersion = taskTimestampMs("updated_at")
     updates.push(`updated_at = ${nextTaskTimestampMs("updated_at")}`)
-    args.push(Date.now(), id)
+    const now = Date.now()
+    args.push(now)
+    const whereArgs: InValue[] = [id]
 
     // Legacy task databases do not have a project foreign key. Check the
     // destination in the write so project deletion cannot race reassignment.
@@ -987,32 +991,34 @@ export class TaskRepository {
     const destinationExists = typeof projectId === "string"
       ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ?)"
       : ""
-    if (typeof projectId === "string") args.push(projectId)
+    if (typeof projectId === "string") whereArgs.push(projectId)
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
-    if (expectedChecklists !== undefined) args.push(expectedChecklists)
+    if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
 
     const predicates: string[] = []
     if (version) {
       predicates.push(`${storedVersion} < 9007199254740991`, `${storedVersion} ${version.expectedStatus ? "=" : "<="} ?`)
-      args.push(version.updatedAt)
+      whereArgs.push(version.updatedAt)
       if (version.expectedStatus) {
         predicates.push("tasks.status = ?", "tasks.deferred_at IS NULL")
-        args.push(version.expectedStatus)
+        whereArgs.push(version.expectedStatus)
       }
     }
 
     const dependencies = fields.status === STATUS.ACTIVE ? openTaskDependencies(id) : null
+    if (dependencies) whereArgs.push(...dependencies.args)
+    const where = `WHERE id = ?${destinationExists}${checklistMatches}
+      ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
+      ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}`
     const update = {
-      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}${checklistMatches}
-              ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
-              ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}
+      sql: `UPDATE tasks SET ${updates.join(", ")} ${where}
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
                       parent_id, time_tracked, start_date, end_date, progress, color,
                       is_favorite, is_promoted, task_type, task_kind, project_id, owner, handoff_state,
                       ticket_number, assigned_to, checklists, urgency, importance,
                       eisenhower_override, created_at, updated_at`,
-      args: dependencies ? [...args, ...dependencies.args] : args,
+      args: [...args, ...whereArgs],
     }
 
     const diagnostics = []
@@ -1029,11 +1035,17 @@ export class TaskRepository {
       diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
     }
 
-    // Take the diagnostic snapshots and perform the write in one SQLite transaction.
-    const results = diagnostics.length
-      ? await this.client.batch([...diagnostics, update], "write")
+    // Capture the old state and commit the event and update in the same writer batch.
+    const eventId = activity ? crypto.randomUUID() : null
+    const statements: InStatement[] = [...diagnostics]
+    if (activity && eventId) statements.push(taskChangedActivity(fields, where, whereArgs, activity, now, eventId))
+    const writeIndex = statements.length
+    statements.push(update)
+    if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
+    const results = statements.length > 1
+      ? await this.client.batch(statements, "write")
       : [await this.client.execute(update)]
-    const row = results.at(-1)?.rows[0]
+    const row = results[writeIndex]?.rows[0]
     if (row) return { ok: true, task: row as unknown as TaskRow }
 
     if (version) {

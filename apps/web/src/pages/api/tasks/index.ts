@@ -2,6 +2,7 @@ import type { APIRoute } from "astro"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
 import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { dispatchTaskCreation, prepareTaskCreation, taskCreationPayload } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
@@ -9,6 +10,7 @@ import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
+import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
@@ -128,7 +130,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
   const now = Date.now()
-  let ticketNumber: number
+  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals), now)
+  const statements = [taskInsertStatement(prepared.task, now), activity]
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
     const labels: unknown = body.new_labels
@@ -138,14 +141,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )) return apiError("Provide the new labels selected for this task.", 400)
 
     const requestId = crypto.randomUUID()
-    const [inserted] = await client.batch([
-      taskInsertStatement(prepared.task, now, { requestId }),
-      ...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)),
-    ], "write")
-    ticketNumber = Number(inserted!.rows[0]!.ticket_number)
-  } else {
-    ticketNumber = await repo.createTask(prepared.task, now)
+    statements[0] = taskInsertStatement(prepared.task, now, { requestId })
+    statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
   }
+  const [inserted] = await client.batch(statements, "write")
+  const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
   dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined)
   return Response.json(payload, { status: 201 })

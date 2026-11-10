@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { expect, test } from "@playwright/test"
+import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 
 import {
   ensureSchema,
@@ -160,7 +161,9 @@ test("draft publication is atomic and replays only the same owner and frozen tas
     expect((await drafts.publish("owner-a", action, prepared.task)).eventId).toBeNull()
     expect((await db.execute("SELECT event_id, json_extract(payload, '$.ticket_number') AS ticket FROM domain_events")).rows)
       .toEqual([{ event_id: created.eventId, ticket: 1 }])
-    expect((await db.execute("SELECT correlation_id FROM task_activity_log")).rows).toEqual([{ correlation_id: created.eventId }])
+    expect((await db.execute("SELECT correlation_id, feed_action, feed_person_key FROM task_activity_log")).rows).toEqual([{
+      correlation_id: created.eventId, feed_action: "added", feed_person_key: recentActivityPersonKey("owner-a"),
+    }])
     expect((await db.execute("SELECT title FROM vikunja_labels WHERE title = 'new-draft-label'")).rows).toHaveLength(1)
     expect((await drafts.abandon("owner-a", { action: "abandon-publish", expected: action.expected, attemptId: action.attemptId })).receipt)
       .toEqual(created.receipt)

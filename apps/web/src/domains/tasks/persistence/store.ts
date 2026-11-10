@@ -392,6 +392,12 @@ async function initializeSchema(): Promise<void> {
   if (!(await hasColumn(client, "task_activity_log", "correlation_id"))) {
     await client.execute("ALTER TABLE task_activity_log ADD COLUMN correlation_id TEXT")
   }
+  if (!(await hasColumn(client, "task_activity_log", "feed_action"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_action TEXT")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "feed_person_key"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_person_key TEXT")
+  }
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_event_type_idx ON task_activity_log(event_type)")
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_actor_type_idx ON task_activity_log(actor_type)")
 
