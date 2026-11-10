@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: Import a framework from YAML
+description: Import a framework and diagnose validation or size errors.
+---
 # Import a framework from YAML
 
 Open Settings → Rules & Lenses → Import YAML. Paste one YAML document with a `name`, the required fields, and a formula when the archetype is `formula`. Settings sends the document to the existing `POST /api/frameworks` endpoint as `application/yaml`. The server parses it, generates the ID from the name, maps the existing snake_case YAML fields, and applies the same validation and ID collision checks as JSON framework creation. A successful response is `201`; imported frameworks retain `source: imported`.

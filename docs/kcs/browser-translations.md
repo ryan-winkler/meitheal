@@ -1,3 +1,8 @@
+---
+type: Runbook
+title: Browser translations
+description: Maintain browser locale behavior and avoid duplicate translation catalogs.
+---
 # Browser translations
 
 The server resolves the locale cookie and renders translated text. `i18n/translations.ts` owns the complete English and Irish catalogs and resolves missing Irish strings through English, including legacy locale-wrapped settings keys.
