@@ -59,3 +59,4 @@ That means search parity now covers:
 1. If the hub opens but task results look incomplete, check the selected task fields and the completed/archive toggles.
 2. If view or settings results are missing, switch to the matching scope instead of staying on `Tasks`.
 3. If a Home Assistant caller returns fewer results than the UI, confirm it is calling the current add-on version and not a stale cached endpoint.
+4. API clients should use the canonical `GET /api/search` path. Use the normal Home Assistant ingress prefix in a browser. Encoded aliases and trailing slashes return 404. Agent tokens need `search:read`. Search responses are marked private and no-store.
