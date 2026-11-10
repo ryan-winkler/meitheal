@@ -17,7 +17,7 @@ Settings now uses a grouped shell instead of hidden tabs. The top-level groups a
 - App & PWA
 - Danger Zone
 
-All navigation is hash-based so it stays inside Home Assistant ingress, companion webviews, and the PWA scope.
+Settings sections use hashes so they stay inside Home Assistant ingress, companion webviews, and the PWA scope. Moving between Settings sections keeps the current browser history entry. Back and Forward still work between Settings and other pages.
 
 Save notifications use the selected theme's text and card colors. A colored edge distinguishes the result, and the message stays readable from the moment it appears.
 

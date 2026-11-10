@@ -32,7 +32,7 @@ function scrollToAnchor(anchorId: string, behavior: ScrollBehavior = "smooth"): 
   setShellDetailView(Boolean(sectionId))
 
   target.scrollIntoView({ behavior, block: "start" })
-  history.replaceState(null, "", `#${anchorId}`)
+  history.replaceState(history.state, "", `#${anchorId}`)
 
   if (sectionId) {
     updateActiveSectionState(sectionId)
@@ -322,7 +322,7 @@ function initGoToTop(): void {
   pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
 
   pageLifecycle.on(btn, "click", () => {
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+    history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`)
     window.scrollTo({ top: 0, behavior: "smooth" })
     syncActiveSectionFromHash()
   })
@@ -331,7 +331,7 @@ function initGoToTop(): void {
     const e = event as KeyboardEvent
     if (e.key !== "Home" || e.target !== document.body) return
     e.preventDefault()
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
+    history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`)
     window.scrollTo({ top: 0, behavior: "smooth" })
     syncActiveSectionFromHash()
   })
@@ -366,7 +366,7 @@ export function initSettingsShell(): void {
   })
 
   const hash = window.location.hash.replace("#", "")
-  const hashTargetId = hash ? document.getElementById(hash)?.id || null : null
+  const hashTarget = hash ? document.getElementById(hash) : null
   const activeSectionId = hash ? resolveSectionId(hash) : null
 
   if (hash) {
@@ -379,19 +379,16 @@ export function initSettingsShell(): void {
     updateActiveSectionState("personal-settings")
   }
 
-  if (hashTargetId) {
+  if (hashTarget) {
+    const initialUrl = window.location.href
+    const signal = pageLifecycle.signal
+    const restoreAnchor = () => {
+      if (signal.aborted || !shell.isConnected || window.location.href !== initialUrl) return
+      hashTarget.scrollIntoView({ behavior: "auto", block: "start" })
+    }
     requestAnimationFrame(() => {
-      scrollToAnchor(hashTargetId, "auto")
-      if (activeSectionId) {
-        updateActiveSectionState(activeSectionId)
-      }
-
-      setTimeout(() => {
-        scrollToAnchor(hashTargetId, "auto")
-        if (activeSectionId) {
-          updateActiveSectionState(activeSectionId)
-        }
-      }, 200)
+      restoreAnchor()
+      setTimeout(restoreAnchor, 200)
     })
   }
 

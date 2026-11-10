@@ -92,6 +92,7 @@ export function initPageShellNavigation<SectionId extends string>({
   function scrollToAnchor(
     anchorId: string,
     behavior: ScrollBehavior = "smooth",
+    updateLocation = true,
   ): void {
     const target = document.getElementById(anchorId)
     if (!target) {
@@ -100,7 +101,7 @@ export function initPageShellNavigation<SectionId extends string>({
     }
 
     target.scrollIntoView({ behavior, block: "start" })
-    history.replaceState(null, "", `#${anchorId}`)
+    if (updateLocation) history.replaceState(history.state, "", `#${anchorId}`)
 
     const sectionId = resolveSectionId(anchorId)
     if (sectionId) {
@@ -189,7 +190,7 @@ export function initPageShellNavigation<SectionId extends string>({
 
     pageLifecycle.on(goTopButton, "click", () => {
       history.replaceState(
-        null,
+        history.state,
         "",
         `${window.location.pathname}${window.location.search}`,
       )
@@ -253,9 +254,12 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   const hash = window.location.hash.replace("#", "")
-  if (hash) {
+  if (hash && document.getElementById(hash)) {
+    const signal = pageLifecycle.signal
+    const initialUrl = window.location.href
     requestAnimationFrame(() => {
-      scrollToAnchor(hash, "auto")
+      if (signal.aborted || (bar && !bar.isConnected) || window.location.href !== initialUrl) return
+      scrollToAnchor(hash, "auto", false)
     })
   }
 
