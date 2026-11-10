@@ -23,7 +23,7 @@ Home Assistant discovers both channels through the [current Meitheal add-on repo
 
 ## Pull-request image checks
 
-Changes to the Dockerfile, lockfile, build configuration or image smoke helpers run the App container smoke workflow on native amd64 and ARM64 runners. It checks the CSS in the packaged image for absolute font paths and runs the existing migration, startup, health and task-creation smoke test against the Home Assistant base runtime. The jobs do not publish images or update App Store discovery. This catches builder-version changes that the host Node checks cannot cover; it does not replace Supervisor or physical-device qualification.
+The [App container smoke workflow](../../.github/workflows/container-smoke.yml) lists its covered paths: the Dockerfile, both channel build manifests, the lockfile, root/web/domain package manifests, workspace configuration, root/web TypeScript configuration, Astro configuration, and image smoke helpers. Changes to these files run native amd64 and ARM64 builds against both channel bases. The checks detect absolute font paths in packaged CSS, including quoted and spaced URLs, and run the existing migration, startup, health and task-creation smoke test against the Home Assistant base runtime. The jobs do not publish images or update App Store discovery. This catches builder-version changes that the host Node checks cannot cover; it does not replace Supervisor or physical-device qualification.
 
 ## How CI publishes
 
