@@ -22,6 +22,12 @@ Keep the previous App running while staging the updated Core integration. If the
 
 A new discovery flow also asks for the token. Supervisor discovery supplies the address. Credentials are entered in the Home Assistant form. On Home Assistant OS, Core can use HTTP on the internal network after Supervisor confirms the exact installed Meitheal App hostname on port 3000. For a manual server address outside that path, use HTTPS with a certificate trusted by Home Assistant. Enter the hostname or IP separately from the port.
 
+## Review Assist permissions
+
+Open **Settings → Voice assistants → Expose** and review the Meitheal to-do entity. An earlier integration may have exposed the entity automatically. Home Assistant keeps the existing choice on upgrade and uses its own preferences for new entities. Set the exposure that fits this installation.
+
+Use **Read Tasks** and **Create & Update Tasks** for built-in voice capture and completion. Leave **Delete Tasks** off the Core token unless authenticated Core actions need to delete Meitheal tasks. Core's built-in Todo removal uses the same token through the entity, and a direct authenticated Core intent call can reach that action separately from voice exposure. Use Meitheal to delete tasks when the Core token carries only read and write. Configured Meitheal custom sentences check for an active Home Assistant administrator on each request.
+
 ## Rotate or recover
 
 When access to the task list is rejected, **Settings → Devices & services** offers **Reauthenticate**. Create a replacement at the existing Meitheal address, submit it, and verify the task entity and any required action. Then revoke the previous token. If only a write, search or delete action receives HTTP 403, use **Reconfigure** with a token that carries the missing scope.

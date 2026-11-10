@@ -50,10 +50,8 @@ async def async_setup_entry(
 class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEntity):
     """Meitheal task list exposed as HA todo entity.
 
-    Exposed to HA Assist/Voice by default so users can manage tasks via
-    voice commands (e.g. "add buy groceries to Meitheal tasks").
-    The built-in HassListAddItem / HassListCompleteItem intents route
-    to this entity when it is exposed.
+    Home Assistant controls whether Assist can target this entity. When it
+    is exposed, the built-in Todo intents can act on the task list.
     """
 
     _attr_has_entity_name = True

@@ -249,24 +249,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         except HomeAssistantError:
             _LOGGER.warning("Could not register Meitheal's read-only LLM API")
 
-    # Auto-expose Meitheal entities to Assist voice assistants
-    # This makes the todo entity visible to the built-in Assist API
-    # so voice commands like "add X to Meitheal tasks" work immediately.
-    try:
-        from homeassistant.components.homeassistant.exposed_entities import (
-            async_expose_entity,
-        )
-
-        # Expose todo entity to all conversation agents
-        entity_id = f"todo.meitheal_tasks"
-        async_expose_entity(hass, "conversation", entity_id, True)
-        _LOGGER.debug("Auto-exposed %s to Assist", entity_id)
-    except (ImportError, Exception):
-        _LOGGER.debug(
-            "Could not auto-expose entities to Assist — "
-            "manually expose via Settings → Voice Assistants → Expose"
-        )
-
     # Register custom intents — accent-friendly voice commands that work
     # WITHOUT an LLM. Uses HA's built-in sentence matching engine.
     # Triggers: "add X to my tasks", "done with X", "show my tasks",
