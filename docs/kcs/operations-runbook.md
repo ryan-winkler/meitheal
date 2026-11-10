@@ -370,4 +370,4 @@ Framework creation accepts finite numeric bounds and formulas using declared fie
 
 The OpenAPI comment-list schema includes comment fields and `can_manage` in one object so schema validation accepts actual API responses.
 
-Keep CommonJS `sanitize-html` external in the Astro dev server; bundle it only in the production server build. Forcing it through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
+Keep CommonJS dependencies such as `sanitize-html` and `yaml` external in the Astro dev server; bundle them only in the production server build. Forcing them through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
