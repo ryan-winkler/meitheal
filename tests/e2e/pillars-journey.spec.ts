@@ -222,7 +222,7 @@ test("Current signal aligns at 320 px and desktop and its links stay in ingress"
       await expect(link).toHaveCSS("outline-style", "solid")
     }
     await link.press("Enter")
-    await expect(page).toHaveURL(ingress + "/tasks?status=overdue")
+    await expect(page).toHaveURL(ingress + "/tasks?status=overdue#kanban")
   } finally {
     await context.close()
   }
