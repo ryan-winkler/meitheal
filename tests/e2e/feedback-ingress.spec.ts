@@ -144,7 +144,11 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
 coreTest("Today lets a verified administrator review an Assist prompt before sending", async ({ page }) => {
   await page.context().setExtraHTTPHeaders({})
   await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
-  await page.addInitScript(() => localStorage.setItem("meitheal-ai-provider", "ha_llm"))
+  const preference = await page.request.put(origin + prefix + "/api/settings", {
+    headers: { origin },
+    data: { key: "ai-provider", value: "ha_llm" },
+  })
+  expect(preference.status(), await preference.text()).toBe(200)
   const title = "Review this synthetic task"
   const created = await page.request.post(origin + prefix + "/api/tasks", {
     headers: { origin },
