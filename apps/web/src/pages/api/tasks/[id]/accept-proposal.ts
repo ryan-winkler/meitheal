@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
+import { resolveRecentActivityActor } from "@lib/recent-activity-actor"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { TaskHandoff } from "@domains/tasks/persistence/task-handoff"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -41,7 +42,7 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
 
   await ensureSchema()
   const client = getPersistenceClient()
-  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action)
+  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals))
   if (!result.ok) return apiProblem({ status: result.status, detail: result.error, extraHeaders: headers })
 
   // Record the activity and dispatch the usual task update event.

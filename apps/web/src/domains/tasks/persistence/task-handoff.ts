@@ -1,6 +1,7 @@
-import type { Client } from "@libsql/client"
+import type { Client, InValue } from "@libsql/client"
 import { z } from "zod"
 import { computeProposalHash, HANDOFF_CLAIM_TTL_MS } from "@meitheal/domain-tasks"
+import { taskChangedActivity, discardUnappliedTaskActivity, type RecentTaskActor } from "./recent-activity"
 import { nextTaskTimestampMs, canAdvanceTaskTimestampMs } from "./task-timestamp"
 import { TaskRepository } from "./task-repository"
 
@@ -110,7 +111,7 @@ export class TaskHandoff {
       : conflict("The task or claim changed before the proposal was saved.")
   }
 
-  async decide(identifier: string, hash: string, action: "accept" | "reject"): Promise<HandoffResult> {
+  async decide(identifier: string, hash: string, action: "accept" | "reject", actor: RecentTaskActor = { kind: "system", personKey: null }): Promise<HandoffResult> {
     const found = await this.getTask(identifier)
     if (!found) return { ok: false, status: 404, error: "Task not found." }
     const { id, row: task } = found
@@ -128,12 +129,18 @@ export class TaskHandoff {
     }
 
     const { title, description } = proposal.changes
-    const result = await this.db.execute({
-      sql: `UPDATE tasks SET ${clearHandoff}, title = ?, description = ?, updated_at = ${nextTaskTimestampMs("updated_at")}
-            WHERE ${active} AND ${canAdvanceTaskTimestampMs("updated_at")} AND status <> 'archived' AND title IS ? AND description IS ?`,
-      args: [title?.to ?? task.title ?? null, description?.to ?? task.description ?? null, Date.now(),
-        ...match, title ? title.from : task.title ?? null, description ? description.from : task.description ?? null],
-    })
+    const where = `WHERE ${active} AND ${canAdvanceTaskTimestampMs("updated_at")} AND status <> 'archived' AND title IS ? AND description IS ?`
+    const whereArgs: InValue[] = [...match, title ? title.from : task.title ?? null, description ? description.from : task.description ?? null]
+    const fields: Record<string, InValue> = { title: title?.to ?? task.title ?? null, description: description?.to ?? task.description ?? null }
+    const now = Date.now()
+    const eventId = crypto.randomUUID()
+    const results = await this.db.batch([
+      taskChangedActivity(fields, where, whereArgs, actor, now, eventId),
+      { sql: `UPDATE tasks SET ${clearHandoff}, title = ?, description = ?, updated_at = ${nextTaskTimestampMs("updated_at")} ${where}`,
+        args: [fields.title!, fields.description!, now, ...whereArgs] },
+      discardUnappliedTaskActivity(eventId),
+    ], "write")
+    const result = results[1]!
     return result.rowsAffected ? { ok: true, id, changes: proposal.changes }
       : conflict("The task changed. Reload the queue to review its current values or reject the proposal.")
   }

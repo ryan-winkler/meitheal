@@ -68,6 +68,7 @@ test("content hash rejects tampering and concurrent decisions apply once", async
   const decisions = await Promise.all([service().decide(id, proposal.hash!, "accept"), service().decide(id, proposal.hash!, "accept")])
   expect(decisions.filter(result => result.ok)).toHaveLength(1)
   expect((await getPersistenceClient().execute("SELECT title FROM tasks")).rows[0]!.title).toBe("New title")
+  expect((await getPersistenceClient().execute("SELECT feed_action FROM task_activity_log WHERE feed_action = 'edited'")).rows).toHaveLength(1)
 })
 
 test("request parser rejects oversized, malformed and non-JSON input", async () => {

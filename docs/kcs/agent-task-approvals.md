@@ -19,7 +19,7 @@ A proposal can contain a title, a description, or both. An empty description cle
 1. Open Meitheal through authenticated Home Assistant ingress as a current administrator. Authority is rechecked with Core for every decision.
 2. Open **Settings → Automation & AI → Agent approvals → Open review queue**.
 3. Expand a proposal and compare the current and proposed values.
-4. Choose **Approve changes** to apply those fields or **Reject proposal** to dismiss it. The queue reports the result and the task activity records applied field changes.
+4. Choose **Approve changes** to apply those fields or **Reject proposal** to dismiss it. The queue reports the result and the task activity records applied field changes. Accepted changes also record the verified human in Recent Activity in the same database transaction as the edit.
 
 If the relevant task text changed after submission, refresh the queue. The earlier proposal cannot overwrite those edits. You can reject it and ask the automation to submit a fresh proposal. An expired proposal drops out of the queue and no longer holds the task. Revoking a token stops new calls. Pending proposals remain available for an administrator's decision until they expire.
 
