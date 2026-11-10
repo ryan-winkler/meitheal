@@ -254,8 +254,10 @@ test("Deferred data reconciles after Search Details closes without stealing inpu
 })
 
 test("All selects an exact task ahead of a static match and keeps the active option in view", async () => {
-  await withSearchIngress(async (page, root, _prefix, work) => {
+  await withSearchIngress(async (page, root, prefix, work) => {
     const title = "Exact imported ID fixture"
+    const health = await page.evaluate(async path => (await fetch(path)).status, prefix + "/api/health")
+    expect(health).toBe(200)
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
       const insert = db.prepare("INSERT INTO tasks (id,title,idempotency_key,request_id,created_at,updated_at) VALUES (?,?,?,?,?,?)")
