@@ -179,9 +179,10 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             >
               <button
                 type="button"
-                id="pwa-push-notif-btn"
+                id="pwa-test-notification"
+                aria-describedby="pwa-notification-help"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_push_notif", locale)}</button
+                >{t("settings.pwa_test_notification", locale)}</button
               >
               <button
                 type="button"
@@ -190,6 +191,19 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 >{t("settings.pwa_reset_hints", locale)}</button
               >
             </div>
+            <p id="pwa-notification-help" class="settings-companion-card__hint">{t("settings.pwa_notification_help", locale)}</p>
+            <p
+              id="pwa-notification-result"
+              class="settings-companion-card__hint"
+              role="status"
+              data-sending={t("settings.pwa_notification_sending", locale)}
+              data-unsupported={t("settings.pwa_notification_unsupported", locale)}
+              data-denied={t("settings.pwa_notification_blocked", locale)}
+              data-declined={t("settings.pwa_notification_declined", locale)}
+              data-body={t("settings.pwa_notification_test_body", locale)}
+              data-sent={t("settings.pwa_notification_sent", locale)}
+              data-unavailable={t("settings.pwa_notification_unavailable", locale)}
+            ></p>
             <div
               id="pwa-troubleshoot-result"
               style="display: none; margin-top: 6px; font-size: 11px; padding: 6px 10px; border-radius: 6px; background: var(--bg-secondary); border: 1px solid var(--border);"
@@ -444,7 +458,6 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 
 <script>
   import { pageLifecycle } from "../../lib/page-lifecycle"
-  import { buildIngressPagePath } from "../../lib/page-shell-links"
 
   function initPwaCompact() {
     const dot = document.getElementById("pwa-compact-dot")
@@ -607,7 +620,6 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     const clearCacheBtn = document.getElementById("pwa-clear-cache-btn")
     const forceUpdateBtn = document.getElementById("pwa-force-update-btn")
     const clearOfflineBtn = document.getElementById("pwa-clear-offline-btn")
-    const pushBtn = document.getElementById("pwa-push-notif-btn")
     const resetHintsBtn = document.getElementById("pwa-reset-hints-btn")
     if (!clearCacheBtn) return
 
@@ -686,50 +698,6 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           )
         } catch {
           showTroubleshootResult("✗ Failed to clear offline data.", false)
-        }
-      })
-    }
-
-    if (pushBtn) {
-      pageLifecycle.on(pushBtn, "click", async () => {
-        if (!("Notification" in window)) {
-          showTroubleshootResult(
-            "Notifications not supported in this browser.",
-            false,
-          )
-          return
-        }
-        const current = Notification.permission
-        if (current === "granted") {
-          showTroubleshootResult("✓ Push notifications already enabled.")
-          return
-        }
-        if (current === "denied") {
-          showTroubleshootResult(
-            "✗ Notifications blocked. Reset in browser settings → Site permissions.",
-            false,
-          )
-          return
-        }
-        try {
-          const result = await Notification.requestPermission()
-          if (result === "granted") {
-            showTroubleshootResult("✓ Push notifications enabled!")
-            new Notification("Meitheal", {
-              body: "Push notifications are now active.",
-              icon: buildIngressPagePath("/icon-192.png"),
-            })
-          } else {
-            showTroubleshootResult(
-              "Notifications dismissed. You can enable later in browser settings.",
-              false,
-            )
-          }
-        } catch {
-          showTroubleshootResult(
-            "✗ Failed to request notification permission.",
-            false,
-          )
         }
       })
     }

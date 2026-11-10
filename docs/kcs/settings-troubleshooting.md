@@ -92,6 +92,12 @@ Recommended paths:
 - DuckDNS + Let's Encrypt
 - Reverse proxy with TLS
 
+### Check browser and installed app notifications
+
+Open **Settings → App & PWA → Troubleshooting** and choose **Send a test notification**. Allow notifications if prompted. Check this device’s notification center and open the test notification to return to **App & PWA**.
+
+If permission is blocked, allow notifications in the browser’s site settings and try again. If the test cannot send, reload the HTTPS app to give its service worker time to start. Home Assistant Companion alert recipients are configured under **Settings → Workflow → Notifications**.
+
 ### Delete old completed tasks
 
 1. Go to `Settings → Danger Zone`.

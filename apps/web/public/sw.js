@@ -418,7 +418,19 @@ self.addEventListener("sync", (event) => {
   }
 });
 
-// --- Push Notifications ---
+// --- System notifications ---
+
+function notificationTarget(path) {
+  const scope = new URL(self.registration.scope)
+  if (typeof path === "string") {
+    try {
+      const target = new URL(path, scope)
+      if (target.origin === scope.origin && !target.username && !target.password &&
+          target.pathname.startsWith(scope.pathname)) return target
+    } catch { /* Open this installation's root if the target is invalid. */ }
+  }
+  return scope
+}
 
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {
@@ -427,32 +439,28 @@ self.addEventListener("push", (event) => {
     url: "/",
   };
 
+  const icon = new URL("icon-192.png", self.registration.scope).href
+  const target = notificationTarget(typeof data.url === "string" ? data.url.replace(/^\/+/, "") : "")
   event.waitUntil(
     self.registration.showNotification(data.title || "Meitheal", {
       body: data.body || "",
-      icon: `${ingressPath}/icon-192.png`,
-      badge: `${ingressPath}/icon-192.png`,
+      icon,
+      badge: icon,
       tag: data.tag || "meitheal-push",
-      data: { url: `${ingressPath}${data.url || "/"}` },
+      data: { url: target.href },
       requireInteraction: data.requireInteraction || false,
     })
   );
 });
 
-// --- Notification Click ---
-
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || `${ingressPath}/`;
+  const url = notificationTarget(event.notification.data?.url).href
 
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes(url) && "focus" in client) {
-          return client.focus();
-        }
-      }
-      return self.clients.openWindow(url);
+      const current = clients.find(client => client.url === url && "focus" in client)
+      return current ? current.focus() : self.clients.openWindow(url)
     })
   );
 });
