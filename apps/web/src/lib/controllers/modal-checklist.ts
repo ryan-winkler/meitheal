@@ -245,10 +245,12 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
         const restored = document.activeElement
-        if (typedValue !== undefined && typing && restored instanceof HTMLTextAreaElement) {
-          restored.value = typedValue
-          restored.parentElement!.dataset.content = typedValue
-          restored.setSelectionRange(active.selectionStart, active.selectionEnd)
+        if (typing && restored instanceof HTMLTextAreaElement) {
+          if (typedValue !== undefined) {
+            restored.value = typedValue
+            restored.parentElement!.dataset.content = typedValue
+          }
+          restored.setSelectionRange(active.selectionStart, active.selectionEnd, active.selectionDirection)
         }
       }
     } catch {

@@ -58,7 +58,7 @@ Choose **Checklist** in the task form and enter one item per line. Use **Add Ite
 
 ### Edit a Checklist in Two Sessions
 
-In Details, select a checklist item's checkbox to mark it done. Long items wrap to fit the editor. Press Enter or leave the field to save an edit. If you reopen the same task while a save is in progress, Details waits for that save before reading the checklist.
+In Details, select a checklist item's checkbox to mark it done. Long items wrap to fit the editor. Press Enter or leave the field to save an edit. If a separate session changes the checklist while you are typing, an automatic merge preserves the focused editor’s selection and caret, including the selected placeholder of a newly added item. If you reopen the same task while a save is in progress, Details waits for that save before reading the checklist.
 
 Task detail saves checklist changes against the version it loaded. Independent changes to different identified steps and new steps can be combined automatically. If a newer save changes the same step differently or the editor cannot identify the changed steps safely, it keeps your draft visible. Choose **Load latest checklist** to review the saved version alongside your draft, then make any remaining edits.
 

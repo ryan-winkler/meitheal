@@ -399,3 +399,57 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
     await rm(work, { recursive: true, force: true })
   }
 })
+
+test("a checklist rebase preserves the selected new-item placeholder before typing", async ({ page, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const original = [{ id: "first", text: "First step", done: false }]
+  const created = await request.post("/api/tasks", {
+    data: { title: "Checklist selected replacement", checklists: JSON.stringify(original) },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const path = "/api/tasks/" + encodeURIComponent(id)
+  let release!: () => void
+  const deliverConflict = new Promise<void>(resolve => { release = resolve })
+  let held = false
+  await page.route("**" + path, async route => {
+    if (route.request().method() !== "PUT" || held) return route.continue()
+    const response = await route.fetch()
+    expect(response.status()).toBe(409)
+    held = true
+    await deliverConflict
+    await route.fulfill({ response })
+  })
+  try {
+    await page.goto("/tasks?open=" + encodeURIComponent(id))
+    await expect(page.locator("#td-checklists textarea")).toHaveCount(1)
+    expect((await request.put(path, {
+      data: { checklists: JSON.stringify([{ ...original[0], done: true }]) },
+    })).status()).toBe(200)
+    await page.getByRole("button", { name: "Add Item" }).click()
+    await expect.poll(() => held).toBe(true)
+    const text = page.locator("#td-checklists textarea").last()
+    const selection = () => text.evaluate(element => {
+      const input = element as HTMLTextAreaElement
+      return [input.selectionStart, input.selectionEnd]
+    })
+    expect(await selection()).toEqual([0, "New Item".length])
+    const previous = await text.elementHandle()
+    release()
+    await expect.poll(() => previous!.evaluate(element => element.isConnected)).toBe(false)
+    await expect(text).toBeFocused()
+    expect(await selection()).toEqual([0, "New Item".length])
+    // Type into the preserved selection, rather than fill() selecting it again.
+    await page.keyboard.insertText("Keep this replacement")
+    await text.press("Enter")
+    await expect.poll(async () => {
+      const response = await request.get(path)
+      return JSON.parse((await response.json()).checklists)
+    }).toEqual([
+      { ...original[0], done: true },
+      { id: expect.any(String), text: "Keep this replacement", done: false },
+    ])
+  } finally {
+    release()
+  }
+})
