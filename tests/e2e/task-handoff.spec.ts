@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
+test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL for disposable local API/browser acceptance")
+
 const admin = { "x-hass-is-admin": "true", "x-hass-user-id": "approval-regression" }
 const member = { "x-hass-is-admin": "false", "x-hass-user-id": "approval-member" }
 test.use({ extraHTTPHeaders: { "x-forwarded-for": "198.51.100.216" } })

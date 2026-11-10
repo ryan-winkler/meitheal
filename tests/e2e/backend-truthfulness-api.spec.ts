@@ -1,4 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { shouldSkipBrowserSpecs } from "./_helpers"
+
+test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL for disposable local API/browser acceptance")
 
 test.describe.configure({ mode: "serial" })
 const admin = { "x-hass-is-admin": "true", "x-hass-user-id": "truthfulness-local-test" }

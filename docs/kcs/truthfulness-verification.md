@@ -67,3 +67,12 @@ nonblocking known gap; corrected MCP input discovery is unaffected.
 
 Raw logs, screenshots, source hashes and runtime receipts remain in the owner's
 private dated local evidence archive, outside source control.
+
+## PR CI discovery
+
+Live API/browser specs require an explicit disposable `E2E_BASE_URL`, and skip
+at collection before Playwright resolves browser fixtures when it is absent.
+The source-status guard recognizes overdue terminal aliases as an explicit
+legacy compatibility boundary; the todo route policy names the API path rather
+than a task-status literal. Neither change alters runtime permission or SQL
+semantics. Existing repository-wide CI failures remain separately triaged.

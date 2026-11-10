@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test"
+import { shouldSkipBrowserSpecs } from "./_helpers"
+
+test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL for disposable local API/browser acceptance")
 
 test("Today quick capture honors the persisted NLP flag in its submitted task", async ({ page, request }) => {
   const headers = { "x-hass-is-admin": "true", "x-hass-user-id": "nlp-local-test" }

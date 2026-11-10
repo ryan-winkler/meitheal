@@ -12,7 +12,8 @@ const DUE_MS = `CASE
   ELSE CAST(ROUND((julianday(due_date) - 2440587.5) * 86400000) AS INTEGER)
 END`
 const EVENT_ID = "'overdue:' || length(id) || ':' || id || ':' || due_date"
-const OPEN_TASK = "status NOT IN ('complete', 'done', 'archived', 'cancelled', 'canceled')"
+// Existing stores may retain terminal aliases from before status normalization.
+const OPEN_TASK_LEGACY_COMPAT = "status NOT IN ('complete', 'done', 'archived', 'cancelled', 'canceled')"
 
 /**
  * Record observed overdue transitions once per task/due-date value, then route
@@ -57,7 +58,7 @@ export async function checkOverdueTaskEvents(
     const result = await client.execute({
       sql: `SELECT *, ${DUE_MS} AS overdue_due_ms, ${EVENT_ID} AS overdue_event_id
             FROM tasks
-            WHERE (${range.where}) AND ${OPEN_TASK}
+            WHERE (${range.where}) AND ${OPEN_TASK_LEGACY_COMPAT}
               AND due_date IS NOT NULL AND due_date != ''
               AND ${DUE_MS} <= ?
               AND (${DUE_MS} > ? OR updated_at > ?)
@@ -84,7 +85,7 @@ export async function checkOverdueTaskEvents(
       sql: `INSERT INTO domain_events
               (event_id, event_type, task_id, request_id, idempotency_key, payload, created_at)
             SELECT ?, 'task.overdue', id, ?, ?, ?, ? FROM tasks
-            WHERE id = ? AND due_date = ? AND ${OPEN_TASK}
+            WHERE id = ? AND due_date = ? AND ${OPEN_TASK_LEGACY_COMPAT}
             ON CONFLICT(event_id) DO NOTHING`,
       args: [eventId, eventId, eventId, JSON.stringify(payload), now, String(task.id), String(task.due_date)],
     })

@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
+test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL for disposable local API/browser acceptance")
+
 test.use({ extraHTTPHeaders: { "x-forwarded-for": "198.51.100.215" } })
 
 test("Today celebrates the acknowledged completion result without another counter write", async ({ page, request }) => {
