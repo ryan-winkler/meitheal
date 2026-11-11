@@ -327,10 +327,13 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     }, prefix)).toBe("ready")
     const refresh = page.locator("#sw-update-btn")
     await expect(refresh).toBeVisible()
-    await Promise.all([
-      page.waitForEvent("framenavigated", frame => frame === page.mainFrame() && frame.url() === settingsUrl),
-      refresh.click(),
-    ])
+    const previousDocument = await page.evaluate(() => performance.timeOrigin)
+    await refresh.click()
+    await page.waitForFunction(previous => performance.timeOrigin !== previous &&
+      performance.getEntriesByType("navigation").some(entry =>
+        entry instanceof PerformanceNavigationTiming && entry.type === "reload"), previousDocument)
+    await expect(page).toHaveURL(settingsUrl)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => { channel.port1.close(); resolve(false) }, 500)
