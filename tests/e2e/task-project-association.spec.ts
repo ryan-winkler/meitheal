@@ -6,7 +6,6 @@
  *
  * @domain domain-tasks (project association)
  */
-import { execFileSync } from "node:child_process"
 import { test, expect } from "@playwright/test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -165,13 +164,7 @@ for (const { label, rule, nextDueDate } of [
 
 test("rolling recurrence creates an empty checklist when omitted or empty", async ({ request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal API fixture")
-  // The production fixture evaluates recurrence calendar days in Europe/Dublin.
-  const scheduledNextDate = (timestamp: number) => execFileSync(process.execPath, ["-p", `
-    const day = new Date(Number(process.argv[1])).toISOString().slice(0, 10)
-    const next = new Date(day)
-    next.setDate(next.getDate() + 1)
-    next.toISOString().slice(0, 10)
-  `, String(timestamp)], { env: { ...process.env, TZ: "Europe/Dublin" }, encoding: "utf8" }).trim()
+  const scheduledNextDate = (timestamp: number) => new Date(timestamp + 86_400_000).toISOString().slice(0, 10)
   for (const [label, checklist] of [["omitted", {}], ["empty", { checklists: "[]" }]] as const) {
     const title = `Rolling recurrence with ${label} checklist`
     const created = await request.post("/api/tasks", {

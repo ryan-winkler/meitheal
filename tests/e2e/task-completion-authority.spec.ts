@@ -16,10 +16,10 @@ interface CompletionFixture {
   path: (value: string) => string
 }
 
-const test = base.extend<{ completion: CompletionFixture }>({
-  completion: async ({ playwright }, use) => {
+const test = base.extend<{ completion: CompletionFixture; timeZone: string }>({
+  timeZone: ["Europe/Dublin", { option: true }],
+  completion: async ({ playwright, timeZone }, use) => {
     const work = await mkdtemp(join(tmpdir(), "meitheal-completion-api-"))
-    const timeZone = "Europe/Dublin"
     const child = startCoreFixture(work, true, undefined, timeZone)
     const previousTimeZone = process.env.TZ
     child.stdout?.resume()
@@ -87,6 +87,39 @@ test("canonical transitions award once across concurrent and repeated writes and
 const weekdayRule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 const friday = "2031-02-14"
 const monday = "2031-02-17"
+
+for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati"]) {
+  test.describe(`calendar dates in ${timeZone}`, () => {
+    test.use({ timeZone })
+
+    test("completion advances the written calendar day across offsets and clock changes", async ({ completion }) => {
+      const { api, db, path } = completion
+      const cases = [
+        { due: friday, rule: weekdayRule, next: monday },
+        { due: "2031-02-14T23:30:00-08:00", rule: `${weekdayRule};UNTIL=20310217`, next: monday },
+        { due: "2031-02-14 00:30:00+14:00", rule: weekdayRule, next: monday },
+        { due: "2031-02-14T18:00:00", rule: weekdayRule, next: monday },
+        { due: "2026-03-07t16:30:00-08:00", rule: "FREQ=DAILY;UNTIL=20260309", next: "2026-03-08" },
+        { due: "2026-03-07\t16:30:00-08:00", rule: "FREQ=DAILY;UNTIL=20260309", next: "2026-03-08" },
+        { due: "2026-03-08", rule: "FREQ=DAILY", next: "2026-03-09" },
+        { due: "2026-01-31", rule: "FREQ=MONTHLY", next: "2026-02-28" },
+        { due: "-271821-04-19T23:30:00-01:00", rule: "FREQ=DAILY", next: "-271821-04-21" },
+        { due: "2031-02-14Tinvalid", rule: weekdayRule, next: null },
+      ]
+      for (const { due, rule, next } of cases) {
+        const title = `Calendar recurrence fixture ${due}`
+        const task = await createTask(completion, title, { due_date: due, recurrence_rule: rule })
+        const response = await api.patch(path(`/api/tasks/${task.id}`), { data: { status: "complete" } })
+        expect(response.status(), await response.text()).toBe(200)
+        const rows = db.prepare("SELECT id, status, due_date FROM tasks WHERE title = ? ORDER BY ticket_number").all(title)
+        expect.soft(rows, due).toEqual([
+          { id: task.id, status: "complete", due_date: due },
+          ...(next ? [{ id: expect.any(String), status: "pending", due_date: next }] : []),
+        ])
+      }
+    })
+  })
+}
 
 test("a failed recurrence insert rolls back guarded completion and an identical retry creates one successor", async ({ completion }) => {
   const { api, db, path } = completion

@@ -89,7 +89,7 @@ export function toRRuleString(rule: RecurrenceRule): string {
 }
 
 /**
- * Calculate the next occurrence date from a given date based on the recurrence rule.
+ * Calculate the next occurrence using UTC calendar fields.
  * Returns null if the recurrence has ended (count exhausted or past UNTIL date).
  */
 export function getNextOccurrence(
@@ -106,13 +106,13 @@ export function getNextOccurrence(
 
   switch (rule.freq) {
     case "DAILY":
-      next.setDate(next.getDate() + rule.interval);
+      next.setUTCDate(next.getUTCDate() + rule.interval);
       break;
 
     case "WEEKLY":
       if (rule.byDay && rule.byDay.length > 0) {
         // Find next matching day
-        const currentDay = next.getDay();
+        const currentDay = next.getUTCDay();
         const targetDays = rule.byDay
           .map((d) => DAY_MAP[d])
           .filter((d) => d !== undefined)
@@ -123,7 +123,7 @@ export function getNextOccurrence(
         for (const targetDay of targetDays) {
           const diff = targetDay - currentDay;
           if (diff > 0) {
-            next.setDate(next.getDate() + diff);
+            next.setUTCDate(next.getUTCDate() + diff);
             found = true;
             break;
           }
@@ -133,25 +133,25 @@ export function getNextOccurrence(
           // Jump to the first day of the target in the next interval-week
           const firstTarget = targetDays[0] as number;
           const daysUntilNextWeek = 7 * rule.interval - currentDay + firstTarget;
-          next.setDate(next.getDate() + daysUntilNextWeek);
+          next.setUTCDate(next.getUTCDate() + daysUntilNextWeek);
         }
       } else {
-        next.setDate(next.getDate() + 7 * rule.interval);
+        next.setUTCDate(next.getUTCDate() + 7 * rule.interval);
       }
       break;
 
     case "MONTHLY": {
-      const origDay = next.getDate();
-      next.setMonth(next.getMonth() + rule.interval);
+      const origDay = next.getUTCDate();
+      next.setUTCMonth(next.getUTCMonth() + rule.interval);
       // Handle month-end overflow (e.g., Jan 31 → Feb 28)
-      if (next.getDate() !== origDay) {
-        next.setDate(0); // Sets to last day of previous month
+      if (next.getUTCDate() !== origDay) {
+        next.setUTCDate(0); // Sets to last day of previous month
       }
       break;
     }
 
     case "YEARLY":
-      next.setFullYear(next.getFullYear() + rule.interval);
+      next.setUTCFullYear(next.getUTCFullYear() + rule.interval);
       break;
   }
 

@@ -303,6 +303,8 @@ Task activity and timeline reads return `Cache-Control: private, no-store`. They
 
 When a recurring task is completed, the next occurrence starts with every readable step unchecked. The completed task retains its checklist and completion marks. The new occurrence keeps existing unique step IDs and assigns IDs where older data lacks one.
 
+Recurrence uses the date written in the due field, including dates supplied in Home Assistant timestamps. Weekday, day and month changes use that calendar date across time zones and daylight-saving transitions. A rolling recurrence or a task without a due date starts from the UTC date of completion.
+
 If Meitheal cannot save the next occurrence, it rolls back the completion and any checklist edits submitted with it. Reload the task and retry the completion. If the response includes a retry interval, wait for it before trying again.
 
 If two people edit the same step differently or an older occurrence has steps without IDs, Details can ask you to **Load latest checklist**. Review your draft against the saved checklist, then reapply the changes that still belong. See [Edit a checklist in two sessions](task-lifecycle-glossary.md#edit-a-checklist-in-two-sessions).

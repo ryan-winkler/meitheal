@@ -18,6 +18,7 @@ import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
+import { readStoredCalendarDay } from "../../../lib/calendar-day"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -1393,12 +1394,20 @@ export class TaskRepository {
     if (!source || typeof rule !== "string" || !rule) return
 
     const parsed = parseRRule(rule)
+    if (!parsed) return "invalid"
+
     const base = source.recurrence_anchor === "completion_date" || !source.due_date
       ? completionDay
       : String(source.due_date)
-    const next = parsed ? getNextOccurrence(parsed, new Date(base)) : undefined
+    const savedDate = new Date(base)
+    const writtenDay = readStoredCalendarDay(base)
+    const writtenDate = writtenDay && writtenDay !== base && Number.isFinite(savedDate.getTime())
+      ? new Date(writtenDay)
+      : savedDate
+    const anchor = Number.isFinite(writtenDate.getTime()) ? writtenDate : savedDate
+    const next = getNextOccurrence(parsed, anchor)
     if (next === null) return
-    if (!next || !Number.isFinite(next.getTime())) return "invalid"
+    if (!Number.isFinite(next.getTime())) return "invalid"
 
     const dueDate = next.toISOString().split("T")[0]!
     const { id: successorId, insert } = this.recurrenceInsert(source, dueDate, rule)
