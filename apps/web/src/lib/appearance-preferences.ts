@@ -128,16 +128,17 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   }, { signal })
   // Native Areas disclosure remains operable in the horizontal navigation.
   const group = document.querySelector<HTMLDetailsElement>("#sidebar-areas-group")
-  if (group) {
+  const areasNav = group?.parentElement
+  if (group && areasNav) {
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape" && group.open && group.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") {
+      if (event.key === "Escape" && group.open && areasNav.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") {
         group.open = false
         document.getElementById("project-nav-group-toggle")?.focus()
         event.preventDefault()
       }
     }, { signal })
     document.addEventListener("click", event => {
-      if (group.open && !group.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") group.open = false
+      if (group.open && !areasNav.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") group.open = false
     }, { signal })
   }
 }

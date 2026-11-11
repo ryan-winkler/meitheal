@@ -114,4 +114,4 @@ Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Detail
 
 ## Collapsing the sidebar Areas menu
 
-The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. The Manage areas link remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it. A folded main sidebar keeps its compact Planning link.
+The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. The Manage areas link is a separate keyboard target and remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it. A folded main sidebar keeps its compact Planning link.

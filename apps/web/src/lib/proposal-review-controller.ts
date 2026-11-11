@@ -1,7 +1,7 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 
 type Decision = "accept" | "reject"
-type ReviewState = "ready" | "pending" | "blocked" | "done"
+type ReviewState = "ready" | "pending" | "blocked" | "decided"
 
 interface Binding {
   root: HTMLElement
@@ -79,7 +79,7 @@ pageLifecycle.onPageLoad(pageSignal => {
         const receipt: unknown = await response.json().catch(() => null)
         if (signal.aborted) return
         if (response.ok && record(receipt) && receipt.ok === true && receipt.id === id && receipt.action === action) {
-          state = "done"
+          state = "decided"
           status.textContent = action === "accept" ? "Proposal accepted. The task was updated." : "Proposal rejected. The task was not changed."
           status.focus({ preventScroll: true })
         } else {

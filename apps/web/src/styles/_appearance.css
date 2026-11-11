@@ -311,6 +311,9 @@
     max-inline-size: min(14rem, 45%);
   }
   :root[data-appearance-navigation="navbar"] #project-nav {
+    --stree-block-padding: 0px;
+    --stree-inline-padding: 0px;
+    --stree-header-height: 40px;
     overflow: visible;
     max-height: none;
     margin: 0;
@@ -319,12 +322,11 @@
   }
   :root[data-appearance-navigation="navbar"] #project-nav-group-toggle {
     min-inline-size: 0;
-    min-height: 40px;
     padding: 8px;
+    padding-inline-end: calc(var(--stree-manage-size) + 6px);
     color: var(--text-primary);
   }
   :root[data-appearance-navigation="navbar"] #project-nav-group-toggle .stree__group-heading { flex: 1; }
-  :root[data-appearance-navigation="navbar"] #project-nav-group-toggle .stree__manage-link { flex: none; }
   :root[data-appearance-navigation="navbar"] #sidebar-areas-group[open] #project-nav-content {
     position: absolute;
     inset-block-start: calc(100% + 8px);

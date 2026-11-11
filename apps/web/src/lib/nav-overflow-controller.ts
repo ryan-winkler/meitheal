@@ -27,7 +27,6 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const items = sources.flatMap(source => source.items)
   const links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
-  const views = root.dataset.navOverflow === "views"
   let frame = 0
   let lastWidth = -1
 
@@ -41,12 +40,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const primaryLinks = () => links.filter(link => !menu.contains(link))
   const menuLinks = () => links.filter(link => menu.contains(link))
   function syncTabStops(focused = document.activeElement) {
-    const visible = primaryLinks()
-    const selected = visible.find(link => link === focused) ?? visible.find(currentItem) ?? visible[0]
-    for (const link of visible) {
-      if (views && root.hasAttribute("data-nav-overflow-active")) link.tabIndex = link === selected ? 0 : -1
-      else resetTab(link)
-    }
+    // Visible links keep native Tab stops. Only the More menu uses a roving stop.
+    for (const link of primaryLinks()) resetTab(link)
     const overflow = menuLinks()
     const selectedOverflow = overflow.find(link => link === focused) ?? overflow.find(currentItem) ?? overflow[0]
     for (const link of overflow) link.tabIndex = link === selectedOverflow ? 0 : -1

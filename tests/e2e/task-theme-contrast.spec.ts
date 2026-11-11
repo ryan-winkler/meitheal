@@ -108,16 +108,21 @@ test.describe("Shopping theme contrast", () => {
         if ("ha" in state) {
           // Synthetic same-origin HA frontend only, with no transport/auth claim.
           await page.route("**/__task-theme-parent", route => route.fulfill({ contentType: "text/html", body: `<!doctype html><html style="color-scheme:${state.ha};--primary-background-color:${state.ha === "dark" ? "#111111" : "#ffffff"}"><body style="margin:0"><iframe title="Synthetic HA frontend" src="/today" style="border:0;width:100vw;height:100vh"></iframe></body></html>` }))
+          // Supply the rendered ingress marker before the compiled page bridge starts.
+          await context.addInitScript(() => {
+            if (window.parent === window) return
+            const mark = () => {
+              if (!document.body) return
+              document.body.classList.add("ha-ingress")
+              observer.disconnect()
+            }
+            const observer = new MutationObserver(mark)
+            observer.observe(document, { childList: true, subtree: true })
+            mark()
+          })
           await page.goto(`${baseURL}/__task-theme-parent`)
           const iframe = page.frames().find(candidate => candidate !== page.mainFrame())!
           await iframe.waitForSelector("#new-task-title-input", { state: "attached" })
-          await iframe.evaluate(async () => {
-            document.body.classList.add("ha-ingress")
-            // Load the real frontend bridge through Vite; never set app theme tokens.
-            const moduleUrl = "/src/lib/ha-theme-bridge.ts"
-            const { initHAThemeBridge } = await import(/* @vite-ignore */ moduleUrl)
-            initHAThemeBridge()
-          })
           frame = iframe
           await expect(frame.locator("html")).toHaveAttribute("data-ha-theme", state.ha)
           await expect(frame.locator("html")).toHaveClass(new RegExp(state.effective))

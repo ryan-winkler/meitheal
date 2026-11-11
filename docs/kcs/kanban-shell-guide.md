@@ -73,6 +73,8 @@ On narrow screens the task type filters use two rows. Board cards and table rows
 
 ### Filter and group Timeline
 
+Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
+
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views.
 
 ## Troubleshooting
