@@ -210,7 +210,7 @@ const tabs = [
                 <StatusBadge status={status} />
                 {task.due_date && (
                   <span class="task-due-date">
-                    {formatRegionalDate(new Date(String(task.due_date)), { format: dateFormat, timezone })}
+                    {formatRegionalDate(String(task.due_date), { format: dateFormat, timezone })}
                   </span>
                 )}
               </div>

@@ -63,7 +63,7 @@ Open **Overdue** from Dashboard to filter tasks across every Kanban page. The bo
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
-Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light.
+Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light. A due date without a time is a calendar day in the timezone set in **Personal** settings. The relative format shows it as today, tomorrow, yesterday or a number of days, weeks or months. Absolute formats keep the same day in every timezone.
 
 ### Switch task views and keep the current query
 

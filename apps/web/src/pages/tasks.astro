@@ -11,7 +11,7 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { formatRegionalDate } from "../lib/date";
+import { calendarDaysFromToday, formatRegionalDate } from "../lib/date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { buildTaskPath } from "../lib/task-detail-handoff"
 import {
@@ -513,12 +513,18 @@ try {
                   : null;
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
+                // Compare date-only due dates as calendar days in the user's timezone.
+                const dueDays = task.due_date
+                  ? calendarDaysFromToday(String(task.due_date), timezone || "Europe/Dublin")
+                  : null;
                 const dueStatus = dueDate
-                  ? dueDate < today
-                    ? "overdue"
-                    : dueDate.toDateString() === new Date().toDateString()
-                      ? "today"
-                      : "upcoming"
+                  ? dueDays !== null
+                    ? dueDays < 0 ? "overdue" : dueDays === 0 ? "today" : "upcoming"
+                    : dueDate < today
+                      ? "overdue"
+                      : dueDate.toDateString() === new Date().toDateString()
+                        ? "today"
+                        : "upcoming"
                   : null;
                 return (
                   <div
@@ -618,8 +624,9 @@ try {
                             : dueStatus === "today"
                               ? "🟡"
                               : "📅"}{" "}
-                          {formatRegionalDate(dueDate, {
+                          {formatRegionalDate(String(task.due_date), {
                             format: dateFormat,
+                            timezone,
                           })}
                         </span>
                       ) : null}
