@@ -20,7 +20,7 @@
  *   Q4 (not-now)    → urgency 1, importance 1
  */
 
-import { STATUS } from "@lib/status-config"
+import { STATUS, STATUS_LABELS } from "@lib/status-config"
 import { taskApi, type TaskPatchPayload } from "@lib/task-api-client"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
@@ -363,6 +363,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
   if (bar.hasAttribute("aria-busy")) return
   const tasks = new Map<string, HTMLElement>()
   for (const task of bar.closest("[data-quadrant]")?.querySelectorAll<HTMLElement>("[data-drop-zone] .tli") ?? []) {
+    if (action === "defer-q4" && task.dataset.status === STATUS.BACKLOG) continue
     const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
     if (id) tasks.set(id, task)
   }
@@ -388,10 +389,19 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
       }
     }
     if (signal.aborted) return
-    if (patch.status && saved.length) {
+    if (patch.status === STATUS.COMPLETE && saved.length) {
       for (const task of saved) task.closest(".eisenhower__task-wrapper")?.remove()
       updateCounts(page)
       updateTriageBanner(page)
+    }
+    if (patch.status === STATUS.BACKLOG) {
+      for (const task of saved) {
+        task.dataset.status = STATUS.BACKLOG
+        const badge = task.querySelector<HTMLElement>(".status-badge")
+        if (!badge) continue
+        badge.dataset.badgeStatus = STATUS.BACKLOG
+        badge.textContent = STATUS_LABELS.backlog!
+      }
     }
     showTaskBatchResult(saved.length, tasks.size, "common.task_updated")
   } finally {

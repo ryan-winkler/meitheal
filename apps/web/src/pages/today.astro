@@ -373,6 +373,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
           ✕
         </button>
+        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden>☑</button>
       </div>
     </section>
 
@@ -619,6 +620,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </a>
       </div>
     </section>
+  </div>
+  <div id="batch-action-bar" hidden>
+    <span></span>
+    <button type="button" class="btn btn-sm" value="complete">✓ Complete</button>
+    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day">⏰ Snooze</button>
+    <button type="button" class="btn btn-sm" value="delete">🗑 Delete</button>
+    <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
   </div>
 </Layout>
 

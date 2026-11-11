@@ -141,6 +141,15 @@ for (const [action, otherAction, status] of [
       const acceptedRow = quadrant.locator(`.tli[data-id="${accepted}"]`)
       const rejectedRow = quadrant.locator(`.tli[data-id="${rejected}"]`)
       const tabCount = page.locator('[aria-controls="eisenhower-quadrant-not-now"] .mobile-tab__count')
+      const expectChanged = async (row: typeof acceptedRow) => {
+        if (status === "complete") {
+          await expect(row).toHaveCount(0)
+        } else {
+          await expect(row).toHaveAttribute("data-status", "backlog")
+          await expect(row.locator(".status-badge")).toHaveAttribute("data-badge-status", "backlog")
+          await expect(row.locator(".status-badge")).toHaveText("Backlog")
+        }
+      }
       await expect(acceptedRow).toBeVisible()
       await expect(rejectedRow).toBeVisible()
       await button.focus()
@@ -152,10 +161,11 @@ for (const [action, otherAction, status] of [
       await other.evaluate((element: HTMLButtonElement) => element.click())
       release?.()
 
-      await expect(acceptedRow).toHaveCount(0)
-      await expect(rejectedRow).toBeVisible()
-      await expect(quadrant.locator(".quadrant__count")).toHaveText("1")
-      await expect(tabCount).toHaveText("1")
+      await expectChanged(acceptedRow)
+      await expect(rejectedRow).toHaveAttribute("data-status", "pending")
+      const mixedCount = status === "complete" ? "1" : "2"
+      await expect(quadrant.locator(".quadrant__count")).toHaveText(mixedCount)
+      await expect(tabCount).toHaveText(mixedCount)
       await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
       await expect(button).toBeFocused()
       expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ status })
@@ -165,16 +175,15 @@ for (const [action, otherAction, status] of [
 
       reject = false
       await page.keyboard.press("Enter")
-      await expect(rejectedRow).toHaveCount(0)
-      await expect(tabCount).toHaveText("0")
-      await expect(quadrant.locator(".quadrant__empty")).toBeVisible()
+      await expectChanged(rejectedRow)
+      await expect(tabCount).toHaveText(status === "complete" ? "0" : "2")
       expect(writes.slice(2)).toEqual([{ id: rejected, status }])
       expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status })
 
       await page.reload()
-      await expect(acceptedRow).toHaveCount(0)
-      await expect(rejectedRow).toHaveCount(0)
-      await expect(quadrant.locator(".quadrant__empty")).toBeVisible()
+      await expectChanged(acceptedRow)
+      await expectChanged(rejectedRow)
+      if (status === "complete") await expect(quadrant.locator(".quadrant__empty")).toBeVisible()
     } finally {
       release?.()
       for (const id of ids) {

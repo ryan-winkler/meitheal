@@ -13,8 +13,9 @@ interface BatchRetry {
 }
 
 export function setupBatchUI(container: HTMLElement, lm: ListenerManager) {
-  const filterBar = container.querySelector("#today-filter-bar")
-  if (!filterBar) return () => {}
+  const batchBtn = container.querySelector<HTMLButtonElement>("#batch-mode-toggle")
+  const bar = container.querySelector<HTMLElement>("#batch-action-bar")
+  if (!batchBtn || !bar) return () => {}
 
   // The current history entry carries the failed selection through Today's refresh.
   let retry: BatchRetry | undefined
@@ -29,26 +30,7 @@ export function setupBatchUI(container: HTMLElement, lm: ListenerManager) {
   let batchMode = selected.size > 0
   let pending = false
 
-  const batchBtn = document.createElement("button")
-  batchBtn.type = "button"
-  batchBtn.className = "btn btn-sm"
-  batchBtn.id = "batch-mode-toggle"
-  batchBtn.title = "Toggle multi-select mode"
-  batchBtn.textContent = "☑"
-  filterBar.querySelector("#batch-mode-toggle")?.remove()
-  filterBar.appendChild(batchBtn)
-
-  const bar = document.createElement("div")
-  bar.id = "batch-action-bar"
-  bar.innerHTML = `
-    <span></span>
-    <button type="button" class="btn btn-sm" value="complete">✓ Complete</button>
-    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day">⏰ Snooze</button>
-    <button type="button" class="btn btn-sm" value="delete">🗑 Delete</button>
-    <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
-  `
-  container.querySelector("#batch-action-bar")?.remove()
-  container.appendChild(bar)
+  batchBtn.hidden = false
   const count = bar.querySelector("span")!
   const buttons = [batchBtn, ...bar.querySelectorAll("button")]
 

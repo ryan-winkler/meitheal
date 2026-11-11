@@ -22,7 +22,7 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 
 For matrix changes, run `e2e/eisenhower-shell.spec.ts` against a disposable Astro instance. Move the last task into an empty quadrant and check that the destination exposes a task list, the source shows its localized empty message, and the moved task link still takes keyboard focus. Check the empty message, Growth Zone label and drag hint in both themes.
 
-Run `e2e/eisenhower-lifecycle.spec.ts` to check mixed batch results. Not Now keeps tasks whose completion or move to Backlog could not be confirmed, and its counts reflect the remaining rows. Check the remaining tasks before retrying. Completed and Backlog tasks leave the matrix across reloads. The date and assignment actions report the number of confirmed saves and leave their tasks in their quadrants.
+Run `e2e/eisenhower-lifecycle.spec.ts` to check mixed batch results. Not Now removes confirmed completions and keeps unconfirmed tasks visible. Moving a task to Backlog updates its status badge and keeps it available for matrix triage. Retrying either action skips the tasks already changed. Check the remaining tasks before retrying. The date and assignment actions report the number of confirmed saves and leave their tasks in their quadrants.
 
 At mobile widths, the quadrant tabs show one panel. Use Left and Right to cycle through tabs, Home and End to reach either end, and Tab to enter the selected panel. At desktop widths the matrix shows all four quadrants until you turn on Focus mode. With JavaScript disabled the matrix keeps all quadrants available.
 
