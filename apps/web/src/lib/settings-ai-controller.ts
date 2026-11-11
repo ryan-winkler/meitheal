@@ -140,6 +140,7 @@ export function initAISettings(): void {
         return
       }
 
+      // Approval checks the persisted URL; saveSettings must preserve this write order.
       await saveSettings(url ? {
         "ai-custom-url": url.href,
         "ai-custom-url-approved": shareUrl?.checked ? url.href : null,
