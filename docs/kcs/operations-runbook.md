@@ -199,6 +199,14 @@ Use this after changing the Table shell or `table-controller.ts`.
 4. Open SearchHub, Ask Home Assistant and New Task from the Tasks header.
 5. Use the task key to open detail with a keyboard. Close the dialog and confirm focus returns to that key.
 
+Run `e2e/character-shortcuts.spec.ts` against a disposable Astro instance after changing Tasks keyboard navigation or help. Open Table before pressing `K` and confirm that Kanban stays open. On Tasks, `1` opens Kanban, `2` Table, `3` Calendar, and `4` Timeline. Open help with `?` from a focused control. Confirm that Tab stays inside help and that Escape and **Close shortcuts** return focus to the opener.
+
+Check that `K` still moves to the previous task after navigating to Today and after changing Timeline zoom. Use at least two dated tasks to verify the selection moves within the current view.
+
+Open a Timeline bar popup and press `?` with **View Details** focused. Help covers the popup until Escape or **Close shortcuts** returns focus to **View Details**. Native dialogs, popovers and blocking prompts keep keyboard control while open, including when you press `K`.
+
+With a Today AI handoff request pending, open Help and hold the pointer down on its text before the confirmation arrives. When the confirmation appears, release the pointer and use Tab and Escape in the confirmation. Escape returns focus to **Close shortcuts**, and a second Escape returns to **Ask AI**.
+
 ## Cross-Page Shell Program Verification
 
 Use this before closing the full 14.2→14.7 rollout family.

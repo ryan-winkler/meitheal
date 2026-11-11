@@ -6,6 +6,7 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
+        import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -143,6 +144,7 @@
             { signal } as AddEventListenerOptions,
           );
 
+          const openShortcutModal = bindKeyboard ? initShortcutModal(signal) : undefined
           // SearchHub owns Search. Layout owns page navigation and modal shortcuts.
           if (bindKeyboard) document.addEventListener(
             "keydown",
@@ -158,16 +160,8 @@
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
                 );
-                const shortcutModal = document.getElementById("shortcut-modal");
                 const sidebar = document.getElementById("sidebar");
 
-                if (
-                  shortcutModal &&
-                  !shortcutModal.classList.contains("hidden")
-                ) {
-                  shortcutModal.classList.add("hidden");
-                  return;
-                }
                 if (taskOverlay && taskOverlay.classList.contains("active")) {
                   document.getElementById("td-close")?.click()
                   return;
@@ -179,10 +173,9 @@
               }
 
               if (e.key === "Tab") {
-                const shortcut = document.querySelector<HTMLElement>("#shortcut-modal:not(.hidden)")
                 const task = document.querySelector<HTMLElement>("#task-detail-overlay.active")
                 const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
-                const activeOverlay = shortcut ?? task ?? search
+                const activeOverlay = task ?? search
                 if (activeOverlay) containTabFocus(activeOverlay, e)
                 return
               }
@@ -214,10 +207,6 @@
                     (window.__ingress_path || "") + "/tasks";
                 }
               }
-              if (e.key === "k") {
-                window.location.href =
-                  (window.__ingress_path || "") + "/tasks";
-              }
               if (e.key === "t") {
                 window.location.href = (window.__ingress_path || "") + "/table";
               }
@@ -235,10 +224,8 @@
                 window.location.href =
                   (window.__ingress_path || "") + "/calendar";
               }
-              if (e.key === "?") {
-                e.preventDefault();
-                const modal = document.getElementById("shortcut-modal");
-                if (modal) modal.classList.toggle("hidden");
+              if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
+                e.preventDefault()
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
@@ -270,6 +257,17 @@
             },
             { signal },
           );
+
+          // Today and Timeline can consume K in document listeners, including after rerenders.
+          if (bindKeyboard) {
+            window.addEventListener("keydown", event => {
+              if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || !singleKeyShortcutsEnabled()) return
+              const target = event.target
+              if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
+              if (hasPriorityOverlay() || document.getElementById("task-detail-overlay")?.classList.contains("active")) return
+              window.location.href = (window.__ingress_path || "") + "/tasks#kanban"
+            }, { signal })
+          }
 
           // Area switcher
           (async function initAreaSwitcher() {
