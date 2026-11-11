@@ -6,6 +6,14 @@ description: "Diagnose and recover from operating problems."
 
 # Operations Runbook
 
+## Eisenhower scoring saves
+
+Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
+
+A review action saves its primary change first. The optional review timestamp does not block a successful action. If its metadata read fails, no timestamp update is sent. Deleted tasks receive no metadata update. Closing or replacing either wizard retires its pending metadata continuation.
+
+After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/eisenhower-payload.spec.ts` to verify failure, preservation and retry against disposable task data. Client changes also require the local Astro dev check.
+
 ## Custom icon uploads
 
 The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
