@@ -25,9 +25,9 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 ### Save a working view
 
 1. Set the filters, grouping, sort and visible columns you want. Use **Labels** for label selection, **Columns** to choose fields and a column header to sort. **Title** is always visible.
-2. Open **Presets**, choose **Save Current Filters** and name the view.
+2. Once the Table has applied your filters, open **Presets**, choose **Save Current Filters** and name the view. If a refresh fails, choose **Retry** in the Table before saving.
 3. Apply the preset from **Presets** or find it in Search Meitheal under **Views**. Both open Table with the same filters and columns, even if the receiving browser remembers a different Area.
-4. Remove an individual saved filter using its chip, or choose **Clear all active filters**. For a preset with nested rules, use **Clear Rules** before replacing the group with new rules.
+4. Remove a filter using its chip or uncheck it under **Workflow columns** or **Unassigned**. Choose **Clear all active filters** to reset the view. For a preset with nested rules, use **Clear Rules** before replacing the group with new rules.
 
 ### Open task detail from the dense table
 
@@ -47,6 +47,8 @@ When a table refresh keeps the edited row visible, the title draft and focus mov
 ## Table query contract
 
 Table reads filters and presentation with `readTableFilterParams`. An explicit `area_id` takes priority over `area` and the legacy `board` query key. An empty Area explicitly shows all Areas. Only a URL that omits Area uses the browser's remembered Area. Presets and Search write the normalized `area` key.
+
+Select **Workflow columns** to include tasks in any selected column. Other filters still apply, including status, text, Area, and **Unassigned**. Use the repeated `lane` query parameter to share this selection. Presets retain the same column IDs when opened from Table or Search. A removed column is shown as unavailable. If none of the selected columns exist, there are no matches. Clear the selection to search across all columns. Table uses the saved workflow catalog, including Backlog when it is hidden from Kanban. A successfully loaded empty catalog uses the four default columns. If a selected column cannot be checked because the catalog fails to load, use **Retry**. A filter that does not select a column can still show its results while the catalog is unavailable.
 
 The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Older status values such as `todo` appear with their current status. Custom statuses keep their names. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
 

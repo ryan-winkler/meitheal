@@ -70,8 +70,25 @@ function groupStats(map: Map<string, TableGroupStats>, key: string, rice: number
   map.set(key, stats)
 }
 
+export interface TableWorkflowColumn {
+  id: string
+  label: string
+  includes: readonly unknown[]
+}
+
 /** Filter and order the entire eligible task set before projecting one Table page. */
-export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState>, requestedPage: string | null) {
+export function getTablePage(
+  tasks: TaskViewItem[],
+  filters: Partial<FilterState>,
+  requestedPage: string | null,
+  workflowColumns: readonly TableWorkflowColumn[] = [],
+) {
+  const laneIds = new Set(filters.laneIds)
+  const laneStatuses = new Set(workflowColumns
+    .filter(column => laneIds.has(column.id))
+    .flatMap(column => Array.isArray(column.includes)
+      ? column.includes.filter((status): status is string => typeof status === "string").map(normalizeStatus)
+      : []))
   const groupBy = filters.groupBy ?? "none"
   const subgroupBy = filters.subGroupBy ?? "none"
   const [column = "", direction] = (filters.sort ?? "").split("-")
@@ -100,6 +117,7 @@ export function getTablePage(tasks: TaskViewItem[], filters: Partial<FilterState
       ...source, status, is_done: isDone, is_overdue: !isDone && source.is_overdue,
     }
     byId.set(task.id, task)
+    if (laneIds.size > 0 && !laneStatuses.has(status)) continue
     const row = {
       dataset: {
         title: task.title.toLowerCase(),

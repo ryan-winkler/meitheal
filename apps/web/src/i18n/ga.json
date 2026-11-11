@@ -280,6 +280,12 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "filter_unassigned": "Neamhshannta",
+    "filter_workflow_columns": "Colúin sreafa oibre",
+    "filter_columns_load_failed": "Níorbh fhéidir na colúin sreafa oibre a lódáil.",
+    "filter_column_unavailable": "Colún sreafa oibre nach bhfuil ar fáil",
+    "filter_column_unverified": "Colún sreafa oibre le fíorú",
+    "filter_column_limit": "Is féidir suas le {count} colún sreafa oibre a roghnú.",
     "subtask_of": "Fothasc de",
     "task_pages": "Leathanaigh tascanna",
     "matching_tasks_of": "as",

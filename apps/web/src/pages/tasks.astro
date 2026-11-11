@@ -24,6 +24,7 @@ import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
+import { readTableFilterParams } from "../lib/filter-state"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
 import AreaSelector from "../components/layout/AreaSelector.astro";
@@ -95,10 +96,21 @@ let columns: {
   wipLimit: number;
   id: string;
 }[] = [];
+let workflowColumnsUnavailable = false
 try {
-  if (renderedView === "kanban") columns = await repo.getKanbanLanes();
+  if (renderedView === "kanban" || renderedView === "table") columns = await repo.getKanbanLanes()
 } catch {
-  /* fallback to defaults */
+  workflowColumnsUnavailable = true
+}
+
+if (renderedView === "table" && workflowColumnsUnavailable) {
+  Astro.response.headers.set("Cache-Control", "no-store")
+}
+
+// Keep the last applied results when a requested workflow lookup fails during a refresh.
+if (renderedView === "table" && workflowColumnsUnavailable &&
+    Astro.url.searchParams.has("tableRefresh") && readTableFilterParams(Astro.url.searchParams).laneIds?.length) {
+  return new Response("Workflow columns could not load.", { status: 503, headers: { "Cache-Control": "no-store" } })
 }
 
 // Fallback if no lanes in DB
@@ -845,7 +857,10 @@ try {
 
   </div><!-- /tasks-view-kanban -->
   </>}
-  {renderedView === "table" && <TasksTableView />}
+  {renderedView === "table" && <TasksTableView
+    workflowColumns={workflowColumnsUnavailable ? [] : columns}
+    workflowColumnsUnavailable={workflowColumnsUnavailable}
+  />}
   {renderedView === "calendar" && <TasksCalendarView />}
   {renderedView === "timeline" && <TasksTimelineView />}
 

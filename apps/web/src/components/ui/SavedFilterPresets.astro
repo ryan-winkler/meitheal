@@ -59,13 +59,11 @@ const { class: className } = Astro.props
 </div>
 
 <script>
-  import { getRememberedAreaId } from "@lib/area-selector-controller"
   import { confirmDialog } from "@lib/confirm-dialog"
-  import { loadTableFilterState, normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
+  import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
   import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { promptDialog } from "@lib/prompt-dialog"
-  import { loadTableColumnPreferences } from "@lib/table-registry"
 
   const endpoint = "api/saved-filters"
   const activeCapability = "MEITHEAL_PRESETS_NETWORK_ONLY"
@@ -280,15 +278,21 @@ const { class: className } = Astro.props
       location.reload()
     }
 
+    function tableFiltersAreApplied() {
+      const shell = wrapper?.closest("#table-shell[data-table-ready='true']")
+      const pending = shell?.querySelector("#task-table[aria-busy='true']")
+      const retry = shell?.querySelector("#table-refresh-status:not([hidden]) [data-table-retry]:not([hidden])")
+      if (shell && !pending && !retry) return true
+      status("Apply the Table filters before saving a preset.", "Back to presets", render)
+      return false
+    }
+
     async function editPreset(preset?: Preset) {
       if (action || !receipt) return
       const { scope, current } = receipt
-      if (!current()) return
+      if (!current() || (!preset && !tableFiltersAreApplied())) return
       const dialog = new AbortController()
       action = dialog
-      const state = loadTableFilterState()
-      state.area ??= getRememberedAreaId()
-      state.columns ??= loadTableColumnPreferences()
       try {
         const name = preset
           ? await confirmDialog({ message: "Delete this preset?", confirmText: "Delete", variant: "danger", signal: dialog.signal })
@@ -302,6 +306,9 @@ const { class: className } = Astro.props
             method: "DELETE", headers: { "content-type": "application/json" },
           }, "?" + new URLSearchParams({ id: preset.id }))
         } else {
+          if (!tableFiltersAreApplied()) return
+          const state = normalizeSavedFilter(wrapper?.closest<HTMLElement>("#table-shell")?.dataset.tableFilters)
+          if (!state) throw new Error("Applied Table filters are unavailable")
           await presetRequest(scope, dialog.signal, {
             method: "POST",
             headers: { "content-type": "application/json" },

@@ -283,6 +283,12 @@
     "group_by_tooltip": "Group swimlanes by"
   },
   "table": {
+    "filter_unassigned": "Unassigned",
+    "filter_workflow_columns": "Workflow columns",
+    "filter_columns_load_failed": "Workflow columns could not load.",
+    "filter_column_unavailable": "Unavailable workflow column",
+    "filter_column_unverified": "Workflow column awaiting verification",
+    "filter_column_limit": "You can select up to {count} workflow columns.",
     "subtask_of": "Subtask of",
     "task_pages": "Task pages",
     "matching_tasks_of": "of",

@@ -37,6 +37,8 @@ export interface FilterState {
   groupBy: string
   /** Secondary group-by (nested grouping within primary groups) */
   subGroupBy: string
+  /** Table workflow columns, selected by their stable IDs. */
+  laneIds?: string[]
   /** Active label filters — multi-select (empty = all labels visible) */
   labels: string[]
   /** Advanced compound AND/OR filter conditions */
@@ -112,7 +114,7 @@ const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
 
-const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board"] as const
+const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane"] as const
 const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice"]
 const LEGACY_SORTS = new Map([
   ["due_asc", "due_date-asc"],
@@ -144,12 +146,14 @@ function decodeFilterJson(value: unknown): unknown {
   }
 }
 
+export const FILTER_LIST_LIMIT = 50
+
 function stringList(value: unknown): string[] {
   const decoded = typeof value === "string" && value.startsWith("[") ? decodeFilterJson(value) : value
   const list = Array.isArray(decoded) ? decoded : typeof value === "string" ? value.split(",") : []
   return [...new Set(list.filter((item): item is string =>
     typeof item === "string" && item.length > 0 && item.length <= 500,
-  ))].slice(0, 50)
+  ))].slice(0, FILTER_LIST_LIMIT)
 }
 
 export function readFilterLabels(params: URLSearchParams): string[] {
@@ -240,6 +244,10 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
 
   const area = [input.area, input.area_id, input.board].find(value => typeof value === "string" && value.length <= 500)
   if (typeof area === "string") result.area = area
+  if (Array.isArray(input.laneIds)) {
+    const laneIds = stringList(input.laneIds)
+    if (laneIds.length) result.laneIds = laneIds
+  }
   const kindValues = stringList(input.types)
   const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
   if (types.length) result.types = types
@@ -294,6 +302,7 @@ export function readTableFilterParams(params: URLSearchParams): Partial<FilterSt
     area_id: undefined,
     board: undefined,
     labels: readFilterLabels(params),
+    laneIds: params.getAll("lane"),
   })
 }
 
@@ -306,6 +315,7 @@ export function writeTableFilterParams(params: URLSearchParams, state: Partial<F
   }
   if (normalized.types?.length) params.set("types", normalized.types.join(","))
   writeFilterLabels(params, normalized.labels ?? [])
+  for (const id of normalized.laneIds ?? []) params.append("lane", id)
   for (const key of JSON_KEYS) {
     if (normalized[key]) params.set(key, JSON.stringify(normalized[key]))
   }
@@ -316,12 +326,14 @@ export function loadTableFilterState(): Partial<FilterState> {
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
   const state = normalizeTableValues({ ...loadFilterState() })
   delete state.area
+  delete state.laneIds
   return state
 }
 
 export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
-    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
+    const { laneIds: _laneIds, ...sharedState } = state
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
   } catch { /* storage unavailable */ }
   const url = new URL(window.location.href)
   writeTableFilterParams(url.searchParams, state)

@@ -139,6 +139,7 @@ function init(signal: AbortSignal) {
     applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats)
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
+    shell.dataset.tableFilters = JSON.stringify(applied)
     const selectAll = table.querySelector<HTMLInputElement>("#select-all")
     if (selectAll) selectAll.checked = false
     updateBulkBar()
@@ -174,7 +175,7 @@ function init(signal: AbortSignal) {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       if (request.signal.aborted || signal.aborted || pending !== request) return
       const replacement = html.querySelector<HTMLTableElement>("#task-table")
-      const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container"].map(selector =>
+      const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container", "#table-workflow-notice"].map(selector =>
         [shell.querySelector<HTMLElement>(selector), html.querySelector<HTMLElement>(selector)] as const)
       if (!replacement?.tBodies[0] || fragments.some(([current, fresh]) => !current || !fresh)) {
         throw new Error("Table refresh missing content")
@@ -199,6 +200,18 @@ function init(signal: AbortSignal) {
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
+      }
+      const workflowOptions = shell.querySelector("[data-table-workflow-options]")
+      const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
+      if (workflowOptions && freshWorkflowOptions) {
+        const lane = focused instanceof HTMLInputElement && workflowOptions.contains(focused) ? focused.value : null
+        workflowOptions.replaceChildren(...freshWorkflowOptions.childNodes)
+        if (lane !== null) {
+          const control = workflowOptions.querySelector<HTMLInputElement>(`[data-table-lane][value="${CSS.escape(lane)}"]`)
+          const summary = workflowOptions.parentElement?.querySelector("summary")
+          const target = control && !control.disabled ? control : summary
+          target?.focus({ preventScroll: true })
+        }
       }
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
@@ -257,8 +270,8 @@ function init(signal: AbortSignal) {
     params.delete("columns")
     return params.toString()
   }
-  if (rowParams(initial) !== rowParams(applied)) void refresh(initial)
-  else if (new URLSearchParams(location.search).has("tp")) {
+  if (retry.hidden && rowParams(initial) !== rowParams(applied)) void refresh(initial)
+  else if (retry.hidden && new URLSearchParams(location.search).has("tp")) {
     const url = new URL(location.href)
     const page = Number(table.dataset.tablePage)
     if (page > 1) url.searchParams.set("tp", String(page))
@@ -277,6 +290,7 @@ function init(signal: AbortSignal) {
       rice: detail.rice ?? "",
       user: detail.user ?? "",
       task_type: detail.task_type ?? "",
+      laneIds: detail.laneIds ?? [],
       types: detail.types ?? [],
       labels: detail.labels ?? desired.labels ?? [],
       advancedFilter: detail.advancedFilter ?? null,
@@ -307,6 +321,7 @@ function init(signal: AbortSignal) {
     desired.columns = applied.columns = columns
     saveTableFilterState(applied)
     applyColumns(columns)
+    shell.dataset.tableFilters = JSON.stringify(applied)
   }, { signal })
 }
 

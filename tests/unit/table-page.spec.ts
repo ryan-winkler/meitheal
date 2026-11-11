@@ -72,3 +72,25 @@ test("Table uses canonical status for filters, groups and row values and keeps c
   const custom = readTableFilterParams(new URLSearchParams({ status: "Waiting on delivery" }))
   expect(getTablePage(tasks, custom, null).rows.map(row => row.task.id)).toEqual(["custom"])
 })
+
+test("workflow columns match before Table paging and intersect existing filters", () => {
+  const columns = [
+    { id: "lane-todo", label: "Todo", includes: ["todo"] },
+    { id: "lane-active", label: "In Progress", includes: ["active", null, "Waiting"] },
+  ]
+  const tasks = Array.from({ length: 2_000 }, (_, index) => task(String(index).padStart(4, "0"), {
+    status: ["pending", "in_progress", "Waiting", "complete"][index % 4]!,
+    assigned_to: index % 8 < 4 ? null : "member",
+  })).reverse()
+  const filters = readTableFilterParams(new URLSearchParams(
+    "lane=lane-todo&lane=lane-active&lane=lane-active&user=__unassigned__&sort=title-asc",
+  ))
+  expect(filters.laneIds).toEqual(["lane-todo", "lane-active"])
+  const page = getTablePage(tasks, filters, "15", columns)
+  expect(page.stats.total.count).toBe(750)
+  expect(page.rows).toHaveLength(50)
+  expect(page.rows.at(-1)?.task.id).toBe("1994")
+  expect(getTablePage(tasks, { ...filters, status: "active" }, null, columns).stats.total.count).toBe(250)
+  expect(getTablePage(tasks, { laneIds: ["removed"] }, null, columns).rows).toEqual([])
+  expect(getTablePage(tasks, { laneIds: ["removed", "lane-todo"] }, null, columns).stats.total.count).toBe(500)
+})
