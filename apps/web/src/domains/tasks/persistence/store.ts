@@ -11,13 +11,13 @@ import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_
 import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
 import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_task_drafts.mjs"
 import { applyCommentMentionsMigration } from "../../../../drizzle/migrations/0007_comment_mentions.mjs"
+import { applyTaskInactivityMigration } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
+import { applyTaskStallMigration } from "../../../../drizzle/migrations/0008_task_stall.mjs"
+import {
+  installTaskActivityTriggers, taskWriteTriggerMetadata, validateExistingTaskWriteTriggers,
+} from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../../../drizzle/migrations/task-schema-prerequisites.mjs"
-import { applyTaskInactivityMigration, installTaskInactivityTriggers } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
-
-import { applyTaskStallMigration, installTaskStallTriggers } from "../../../../drizzle/migrations/0008_task_stall.mjs"
 import { STATUS } from "../../../lib/status-config"
-import { acceptedStatusSql, inactivityDaysSql, openStatuses } from "./task-inactivity-query"
-import { taskTimestampMs } from "./task-timestamp"
 
 export interface PersistedTask {
   id: string;
@@ -493,12 +493,6 @@ async function initializeSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_is_favorite_idx ON tasks(is_favorite)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_reminder_at_idx ON tasks(reminder_at)");
 
-  // Assignments & Users domain — assigned_to column on tasks
-  if (!(await hasColumn(client, "tasks", "assigned_to"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN assigned_to TEXT");
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_assigned_to_idx ON tasks(assigned_to)");
-
   // Custom (non-HA) users — for families sharing one HA instance
   await client.execute(`
     CREATE TABLE IF NOT EXISTS custom_users (
@@ -525,12 +519,6 @@ async function initializeSchema(): Promise<void> {
   `);
   await client.execute("CREATE INDEX IF NOT EXISTS task_links_source_idx ON task_links(source_task_id)");
   await client.execute("CREATE INDEX IF NOT EXISTS task_links_target_idx ON task_links(target_task_id)");
-
-  // UX unification: normalize legacy status values → canonical 4 (backlog/pending/active/complete)
-  // Idempotent: only updates rows that still have legacy values
-  await client.execute("UPDATE tasks SET status = 'pending' WHERE status = 'todo'");
-  await client.execute("UPDATE tasks SET status = 'active' WHERE status = 'in_progress'");
-  await client.execute("UPDATE tasks SET status = 'complete' WHERE status = 'done'");
 
   // Strategic Lenses pivot: Task Context Rules — per-type/per-tag guardrails
   await client.execute(`
@@ -757,20 +745,19 @@ async function initializeSchema(): Promise<void> {
   const migration = await client.transaction("write")
   try {
     await assertSupportedDatabaseSchema(migration)
+    validateExistingTaskWriteTriggers(await migration.execute(taskWriteTriggerMetadata))
+    await migration.batch([
+      "UPDATE tasks SET status = 'pending' WHERE status = 'todo'",
+      "UPDATE tasks SET status = 'active' WHERE status = 'in_progress'",
+      "UPDATE tasks SET status = 'complete' WHERE status = 'done'",
+    ])
     await applyTaskDeferralMigration(migration)
     await applyTaskPinsMigration(migration)
     await applyTaskDraftsMigration(migration)
     await applyCommentMentionsMigration(migration)
     await applyTaskInactivityMigration(migration)
-    await installTaskInactivityTriggers(migration)
     await applyTaskStallMigration(migration)
-    await installTaskStallTriggers(migration, {
-      newTaskDays: inactivityDaysSql(false, "NEW.area_id"),
-      storedTaskDays: inactivityDaysSql(),
-      openStatuses,
-      completeStatuses: acceptedStatusSql(STATUS.COMPLETE),
-      commentClock: taskTimestampMs("comment.created_at"),
-    })
+    await installTaskActivityTriggers(migration)
     // Publish the schema version atomically with the last migration.
     await migration.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)

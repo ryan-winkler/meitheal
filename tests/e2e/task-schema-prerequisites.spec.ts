@@ -261,7 +261,10 @@ for (const [definition, expected] of [
 
 for (const [object, remove, error] of [
   ["deferral index", "DROP INDEX tasks_deferred_order_idx", /Unexpected task deferral index: tasks_deferred_order_idx/],
-  ["stall column", "ALTER TABLE tasks DROP COLUMN last_activity_spike_at", /Unexpected stall column: tasks.last_activity_spike_at/],
+  ["stall column", `DROP TRIGGER tasks_stall_initial_assignment;
+    DROP TRIGGER tasks_stall_transition;
+    DROP TRIGGER comments_stall_burst;
+    ALTER TABLE tasks DROP COLUMN last_activity_spike_at`, /Unexpected stall column: tasks.last_activity_spike_at/],
 ] as const) {
   test(`CLI leaves prerequisites untouched when the numbered ${object} is invalid`, async ({ databasePath }) => {
     await migrate(databasePath)

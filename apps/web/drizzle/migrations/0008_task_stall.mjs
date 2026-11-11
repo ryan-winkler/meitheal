@@ -1,3 +1,5 @@
+import { reconcileActivityTriggerDefinitions } from "../task-activity-sql.mjs"
+
 const spike = "last_activity_spike_at"
 const human = "inactivity_spike_human"
 const validSpike = `typeof(${spike}) = 'integer' AND ${spike} BETWEEN 1 AND 9007199254740991`
@@ -43,15 +45,13 @@ export async function validateTaskStallSchema(db) {
   await reconcileColumn(db, "tasks", spike, spikeDefinition, 0, null, false)
 }
 
-/** Expressions are compiled by the runtime from versioned, trusted SQL helpers. */
-export async function installTaskStallTriggers(tx, { newTaskDays, storedTaskDays, openStatuses, completeStatuses, commentClock }) {
-  await reconcileColumn(tx, "comments", human, humanDefinition, 1, "0", true)
+export function taskStallTriggerDefinitions({ newTaskDays, storedTaskDays, openStatuses, completeStatuses, commentClock }) {
   const newAreaEnabled = `(${newTaskDays}) BETWEEN 1 AND 365
     AND EXISTS (SELECT 1 FROM areas WHERE id = NEW.area_id)`
   const recentHuman = `FROM comments comment
     WHERE comment.task_id = NEW.task_id AND comment.${human} = 1 AND comment.owner_key IS NOT NULL
       AND ${commentClock} BETWEEN MAX(1, ${now} - (${storedTaskDays}) * 86400000 * 33 / 100) AND ${now}`
-  const triggers = [
+  return [
     ["tasks_stall_initial_assignment", "tasks", `CREATE TRIGGER tasks_stall_initial_assignment
       AFTER INSERT ON tasks WHEN ${newAssignee} IS NOT NULL AND ${newAreaEnabled}
       BEGIN
@@ -76,13 +76,18 @@ export async function installTaskStallTriggers(tx, { newTaskDays, storedTaskDays
           AND EXISTS (SELECT 1 ${recentHuman} AND comment.owner_key <> NEW.owner_key);
       END`],
   ]
-  for (const [name, table, sql] of triggers) {
-    const { rows: [record] } = await tx.execute({
-      sql: "SELECT type, tbl_name, sql FROM sqlite_schema WHERE name = ?", args: [name],
-    })
-    if (!record) await tx.execute(sql)
-    else if (record.type !== "trigger" || record.tbl_name !== table || record.sql?.trim() !== sql.trim()) {
-      throw new Error(`Unexpected task stall trigger: ${name}`)
-    }
-  }
+}
+
+async function reconcileStallTriggers(db, expressions, createMissing) {
+  await reconcileColumn(db, "comments", human, humanDefinition, 1, "0", createMissing)
+  await reconcileActivityTriggerDefinitions(db, taskStallTriggerDefinitions(expressions), "stall", createMissing)
+}
+
+/** Expressions are compiled from versioned, trusted SQL helpers. */
+export async function installTaskStallTriggers(tx, expressions) {
+  await reconcileStallTriggers(tx, expressions, true)
+}
+
+export async function validateTaskStallTriggers(db, expressions) {
+  await reconcileStallTriggers(db, expressions, false)
 }

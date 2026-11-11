@@ -47,6 +47,7 @@ test("verified comment owners can edit and delete without claiming other comment
     execFileSync(process.execPath, ["--input-type=module", "-e", `
       import { createClient } from "@libsql/client"
       const client = createClient({ url: process.env.MEITHEAL_DB_URL })
+      await client.execute("DROP TRIGGER comments_stall_burst")
       await client.execute("ALTER TABLE comments DROP COLUMN owner_key")
       const [id, author] = process.argv.slice(1)
       await client.execute({

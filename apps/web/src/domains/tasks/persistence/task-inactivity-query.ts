@@ -1,6 +1,8 @@
-import { getStatusDef, STATUS } from "../../../lib/status-config"
+import { activeStatuses, inactivityDaysSql, openStatuses } from "../../../../drizzle/task-activity-sql.mjs"
 import { openTaskDependenciesSql } from "./task-dependencies"
 import { taskTimestampMs } from "./task-timestamp"
+
+export { inactivityDaysSql, validInactivityRevisionSql } from "../../../../drizzle/task-activity-sql.mjs"
 
 export const inactivityPageSize = 25
 export const inactivityDayMs = 86_400_000
@@ -23,11 +25,6 @@ const protectedFields = [
 ]
 const unscheduled = protectedFields.map(field => `NULLIF(trim(tasks.${field}, char(9,10,11,12,13,32)), '') IS NULL`).join(" AND ")
 
-export const acceptedStatusSql = (status: string) => [status, ...(getStatusDef(status)?.aliases ?? [])]
-  .map(value => `'${value}'`).join(", ")
-const activeStatuses = acceptedStatusSql(STATUS.ACTIVE)
-export const openStatuses = `${acceptedStatusSql(STATUS.PENDING)}, ${activeStatuses}`
-
 export const inactivityOpenTaskSql = `tasks.deferred_at IS NULL
   AND lower(tasks.status) IN (${openStatuses})
   AND ${created} > 0 AND ${updated} > 0
@@ -48,17 +45,6 @@ export const inactivitySpikeSql = `CASE WHEN typeof(tasks.last_activity_spike_at
 export function inactivityStallSinceSql(now: string) {
   return `CASE WHEN MAX(spike_at, last_activity) <= ${now} - ${inactivityStallMs}
     THEN MAX(spike_at, last_activity) + ${inactivityStallMs} END`
-}
-
-export const validInactivityRevisionSql = "length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*'"
-const validatedDays = `CASE WHEN ${validInactivityRevisionSql} THEN days ELSE 0 END`
-const defaultDays = `(SELECT ${validatedDays} FROM task_inactivity_policy WHERE scope = 'default')`
-
-export function inactivityDaysSql(simulate = false, area = "tasks.area_id"): string {
-  const areaDays = `(SELECT ${validatedDays} FROM task_inactivity_policy WHERE area_id = ${area})`
-  const base = simulate ? `CASE WHEN input.area_id IS NULL THEN COALESCE(input.proposed, ${defaultDays}) ELSE ${defaultDays} END` : defaultDays
-  const override = simulate ? `CASE WHEN input.area_id IS NOT NULL THEN COALESCE(input.proposed, ${areaDays}) ELSE ${areaDays} END` : areaDays
-  return `COALESCE(NULLIF((${override}), -1), (${base}), 0)`
 }
 
 /** Read the current policy and clock again inside the same audited write batch. */

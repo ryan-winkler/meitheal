@@ -1,4 +1,5 @@
 import { databaseSchemaCheckSteps, runWriteTransaction } from "../../scripts/database-client.mjs"
+import { taskWriteTriggerMetadata, validateExistingTaskWriteTriggers } from "./task-activity-schema.mjs"
 
 const tables = {
   areas: {
@@ -77,6 +78,7 @@ const addedColumns = {
   },
   tasks: {
     area_id: "TEXT NOT NULL DEFAULT 'default'",
+    assigned_to: "TEXT",
     goal_id: "TEXT",
     project_id: "TEXT",
     kanban_position: "INTEGER",
@@ -114,6 +116,7 @@ const indexes = [
   { name: "projects_area_id_idx", table: "projects", columns: ["area_id"] },
   { name: "projects_area_status_idx", table: "projects", columns: ["area_id", "status"] },
   { name: "tasks_area_id_idx", table: "tasks", columns: ["area_id"] },
+  { name: "tasks_assigned_to_idx", table: "tasks", columns: ["assigned_to"] },
   { name: "tasks_goal_id_idx", table: "tasks", columns: ["goal_id"] },
   { name: "tasks_project_id_idx", table: "tasks", columns: ["project_id"] },
   { name: "tasks_project_status_idx", table: "tasks", columns: ["project_id", "status"] },
@@ -133,7 +136,7 @@ const tableStatements = Object.entries(tables).map(([table, columns]) =>
 const columnMetadata = {
   sql: `SELECT lower(schema.name) AS table_name, lower(column_info.name) AS column_name,
           column_info.pk AS primary_key_position, upper(column_info.type) AS column_type,
-          column_info.dflt_value AS default_value,
+          column_info.dflt_value AS default_value, column_info."notnull" AS not_null,
           CASE WHEN lower(schema.name) = 'comments' AND lower(column_info.name) = 'id'
             THEN schema.sql END AS table_sql
         FROM sqlite_schema AS schema JOIN pragma_table_info(schema.name) AS column_info
@@ -210,6 +213,13 @@ function validateMetadata(columnInfo, indexInfo, foreignKeyInfo) {
     }
   }
 
+  const assignee = columnInfo.rows.find(row => row.table_name === "tasks" && row.column_name === "assigned_to")
+  const hasNullAssigneeDefault = assignee?.default_value === null ||
+    String(assignee?.default_value).trim().toUpperCase() === "NULL"
+  if (assignee?.column_type !== "TEXT" || Number(assignee.not_null) !== 0 || !hasNullAssigneeDefault) {
+    throw new Error("Unexpected task prerequisite assignee column: tasks.assigned_to")
+  }
+
   for (const [table, column, parent, action] of foreignKeys) {
     if (!foreignKeyInfo.rows.some(key => key.table_name === table && key.column_name === column &&
       key.parent_table === parent && (key.parent_column === null || key.parent_column === "id") &&
@@ -267,8 +277,11 @@ function insertLane(now, [key, label, icon, position, includes]) {
 function* reconcileSteps() {
   yield* databaseSchemaCheckSteps()
   const now = Date.now()
-  const results = yield [...tableStatements, columnMetadata]
-  const existingColumns = readColumns(results[tableStatements.length])
+  const results = yield [...tableStatements, columnMetadata, taskWriteTriggerMetadata]
+  const [columns, triggers] = results.slice(tableStatements.length)
+  // Area seeding and ticket backfill can fire triggers before the activity schema is reconciled.
+  validateExistingTaskWriteTriggers(triggers)
+  const existingColumns = readColumns(columns)
   /** @type {InStatement[]} */
   const changes = []
 

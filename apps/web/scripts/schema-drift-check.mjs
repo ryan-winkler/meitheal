@@ -11,6 +11,7 @@ import { validateCommentMentionsSchema } from "../drizzle/migrations/0007_commen
 
 import { validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 import { validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
+import { validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import { validateTaskSchemaPrerequisites } from "../drizzle/migrations/task-schema-prerequisites.mjs"
 
 const execFileAsync = promisify(execFile);
@@ -81,6 +82,7 @@ async function main() {
     await validateTaskInactivitySchema(client)
     await validateTaskStallSchema(client)
     await validateTaskSchemaPrerequisites(client)
+    await validateTaskActivityTriggers(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",

@@ -368,6 +368,7 @@ test("an ordinary packaged CLI rerun rejects a CHECK that only appears in a sche
     const local = new DatabaseSync(database)
     try {
       const definition = "last_activity_spike_at INTEGER CHECK(last_activity_spike_at IS NULL OR (typeof(last_activity_spike_at) = 'integer' AND last_activity_spike_at BETWEEN 1 AND 9007199254740991))"
+      local.exec("DROP TRIGGER tasks_stall_initial_assignment; DROP TRIGGER tasks_stall_transition; DROP TRIGGER comments_stall_burst")
       local.exec("ALTER TABLE tasks DROP COLUMN last_activity_spike_at")
       local.exec(`ALTER TABLE tasks ADD COLUMN last_activity_spike_at INTEGER /* ${definition} */`)
     } finally {

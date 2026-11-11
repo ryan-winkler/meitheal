@@ -10,6 +10,8 @@
  *   import { CANONICAL_STATUSES, normalizeStatus, STATUS_CONFIG } from '@lib/status-config';
  */
 
+import { TASK_STATUS as STATUS, TASK_STATUS_ALIASES } from "@meitheal/domain-tasks/status-values"
+
 export interface StatusDef {
   /** Canonical status value stored in DB */
   canonical: string;
@@ -35,44 +37,44 @@ export interface StatusDef {
  */
 export const STATUS_CONFIG: readonly StatusDef[] = [
   {
-    canonical: "backlog",
+    canonical: STATUS.BACKLOG,
     label: "Backlog",
     i18nKey: "task_status.backlog",
     icon: "📥",
     defaultLane: "backlog",
     isDone: false,
     isActive: false,
-    aliases: [],
+    aliases: TASK_STATUS_ALIASES[STATUS.BACKLOG],
   },
   {
-    canonical: "pending",
+    canonical: STATUS.PENDING,
     label: "Todo",
     i18nKey: "task_status.pending",
     icon: "📋",
     defaultLane: "pending",
     isDone: false,
     isActive: false,
-    aliases: ["todo"],
+    aliases: TASK_STATUS_ALIASES[STATUS.PENDING],
   },
   {
-    canonical: "active",
+    canonical: STATUS.ACTIVE,
     label: "In Progress",
     i18nKey: "task_status.active",
     icon: "⚡",
     defaultLane: "active",
     isDone: false,
     isActive: true,
-    aliases: ["in_progress"],
+    aliases: TASK_STATUS_ALIASES[STATUS.ACTIVE],
   },
   {
-    canonical: "complete",
+    canonical: STATUS.COMPLETE,
     label: "Done",
     i18nKey: "task_status.complete",
     icon: "✅",
     defaultLane: "complete",
     isDone: true,
     isActive: false,
-    aliases: ["done"],
+    aliases: TASK_STATUS_ALIASES[STATUS.COMPLETE],
   },
 ] as const;
 
@@ -153,12 +155,7 @@ export const STATUS_ICONS: Record<string, string> = Object.fromEntries(
  *   `WHERE status = '${STATUS.COMPLETE}'`
  *   `WHERE status NOT IN ('${STATUS.COMPLETE}')`
  */
-export const STATUS = {
-  BACKLOG: "backlog",
-  PENDING: "pending",
-  ACTIVE: "active",
-  COMPLETE: "complete",
-} as const;
+export { STATUS }
 
 export type StatusValue = (typeof STATUS)[keyof typeof STATUS];
 

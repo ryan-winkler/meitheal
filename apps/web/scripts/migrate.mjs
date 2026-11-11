@@ -12,6 +12,7 @@ import { applyCommentMentionsMigration, validateCommentMentionsSchema } from "..
 import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 
 import { applyTaskStallMigration, validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
+import { installTaskActivityTriggers, validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import { reconcileTaskSchemaPrerequisites, validateTaskSchemaPrerequisites } from "../drizzle/migrations/task-schema-prerequisites.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,7 @@ async function main(client) {
     }
     for (const migration of executableMigrations.values()) await migration.validate(client)
     await validateTaskSchemaPrerequisites(client)
+    await validateTaskActivityTriggers(client)
     console.log("Migration check passed (no pending migrations).");
     return 0;
   }
@@ -108,6 +110,14 @@ async function main(client) {
 
   for (const migration of executableMigrations.values()) await migration.validate(client)
   await reconcileTaskSchemaPrerequisites(client)
+  const activity = await client.transaction("write")
+  try {
+    await assertSupportedDatabaseSchema(activity)
+    await installTaskActivityTriggers(activity)
+    await activity.commit()
+  } finally {
+    activity.close()
+  }
   if (pending.length === 0) {
     console.log("No migrations to apply.");
   }

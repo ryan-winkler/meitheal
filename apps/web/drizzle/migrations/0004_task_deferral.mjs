@@ -4,10 +4,10 @@ const columns = [
 ]
 
 const indexName = "tasks_deferred_order_idx"
-const triggerName = "tasks_deferral_status_revision"
+export const taskDeferralTriggerName = "tasks_deferral_status_revision"
 const indexSql = `CREATE INDEX ${indexName} ON tasks (deferred_at DESC, id ASC)
   WHERE deferred_at IS NOT NULL`
-const triggerSql = `CREATE TRIGGER ${triggerName} AFTER UPDATE OF status ON tasks
+const triggerSql = `CREATE TRIGGER ${taskDeferralTriggerName} AFTER UPDATE OF status ON tasks
   WHEN OLD.status IS NOT NEW.status
     OR (NEW.deferred_at IS NOT NULL AND lower(NEW.status) IN ('complete', 'done', 'archived'))
   BEGIN
@@ -17,7 +17,23 @@ const triggerSql = `CREATE TRIGGER ${triggerName} AFTER UPDATE OF status ON task
     WHERE id = NEW.id;
   END`
 
-const normalizeSql = sql => sql.trim().replace(/\s+/g, " ").toLowerCase()
+// SQL keywords are case-insensitive. Values such as the stored status are not.
+const normalizeSql = sql => sql.split(/('(?:''|[^'])*')/)
+  .map((part, index) => index % 2 === 0 ? part.replace(/\s+/g, " ").toLowerCase() : part)
+  .join("").trim()
+
+function validateDeferralObject(object, name, type, sql) {
+  if (object?.type !== type || object.tbl_name !== "tasks" ||
+    typeof object.sql !== "string" || normalizeSql(object.sql) !== normalizeSql(sql)) {
+    throw new Error(`Unexpected task deferral ${type}: ${name}`)
+  }
+}
+
+export function validateExistingTaskDeferralTrigger(object) {
+  if (!object) return
+  if (object.name !== taskDeferralTriggerName) throw new Error(`Unexpected task deferral trigger: ${taskDeferralTriggerName}`)
+  validateDeferralObject(object, taskDeferralTriggerName, "trigger", triggerSql)
+}
 
 async function reconcileTaskDeferralSchema(db, createMissing) {
   const table = await db.execute("PRAGMA table_info(tasks)")
@@ -31,16 +47,15 @@ async function reconcileTaskDeferralSchema(db, createMissing) {
     }
   }
 
-  for (const [name, type, sql] of [[indexName, "index", indexSql], [triggerName, "trigger", triggerSql]]) {
+  for (const [name, type, sql] of [[indexName, "index", indexSql], [taskDeferralTriggerName, "trigger", triggerSql]]) {
     const { rows: [object] } = await db.execute({
       sql: "SELECT type, tbl_name, sql FROM sqlite_schema WHERE name = ?",
       args: [name],
     })
     if (!object && createMissing) {
       await db.execute(sql)
-    } else if (object?.type !== type || object.tbl_name !== "tasks" ||
-        typeof object.sql !== "string" || normalizeSql(object.sql) !== normalizeSql(sql)) {
-      throw new Error(`Unexpected task deferral ${type}: ${name}`)
+    } else {
+      validateDeferralObject(object, name, type, sql)
     }
   }
 
