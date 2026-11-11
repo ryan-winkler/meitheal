@@ -260,15 +260,15 @@ function dayLabelClass(day: DayGroup): string {
                           </span>
                           <div class="task-content">
                             <div class="task-title">
-                              <span class="task-type-icon" aria-hidden="true">
-                                {typeIcons[tt] ?? ""}
-                              </span>
                               <a
                                 class="task-detail-link"
                                 href={buildTaskPath(id)}
                                 data-task-detail-link={id}
                                 aria-describedby={descriptionId}
                               >
+                                <span class="task-type-icon" aria-hidden="true">
+                                  {typeIcons[tt] ?? ""}
+                                </span>
                                 {title}
                               </a>
                               <span class="sr-only" id={descriptionId}>
@@ -464,8 +464,8 @@ function dayLabelClass(day: DayGroup): string {
     background: var(--bg-hover);
   }
   .task-checkbox {
-    width: 24px;
-    height: 24px;
+    width: 44px;
+    height: 44px;
     appearance: auto;
     accent-color: var(--accent);
   }
@@ -479,18 +479,15 @@ function dayLabelClass(day: DayGroup): string {
   /* ── Task content ── */
   .task-content {
     flex: 1;
-    min-width: 0;
+    min-width: 44px;
   }
   .task-title {
-    display: flex;
-    align-items: center;
-    gap: 3px;
     font-size: 13px;
     font-weight: 500;
   }
   .task-detail-link {
-    min-width: 24px;
-    line-height: 24px;
+    display: block;
+    line-height: 44px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -503,7 +500,6 @@ function dayLabelClass(day: DayGroup): string {
     outline-offset: -2px;
   }
   .task-type-icon {
-    flex-shrink: 0;
     font-size: 11px;
   }
   .task-labels {

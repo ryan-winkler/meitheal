@@ -30,12 +30,14 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 ### Complete work directly from Upcoming
 
 1. Use the task checkbox in a day group.
-2. The item updates in place without leaving the page.
-3. The grouped day card remains open so you can continue scanning the same window.
+2. The checkbox waits for confirmation before accepting another activation. If saving fails, it resets and keeps its current focus so you can retry.
+3. After confirmation, the row leaves the open day card. If focus was on the completed checkbox, it moves to a nearby task or to the day heading.
 
 ### Hand work off to detail without leaving the shell context
 
 Select the task title or press Enter when the title link has focus. The shared detail panel opens over Upcoming. Closing it returns you to the same list and restores focus to the link after keyboard use. Press Space on the separate checkbox to complete the task. The title also works as a direct task link in a new tab or when scripts are unavailable.
+
+The title link and completion checkbox each provide at least a 44 × 44 CSS pixel target. At narrow widths, long titles can truncate while keeping the full title available as the link name.
 
 ## Troubleshooting
 

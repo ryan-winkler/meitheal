@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Upcoming Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -95,6 +95,7 @@ test.describe("Upcoming Shell", () => {
         has: page.locator(`a[data-task-detail-link="${firstTaskId}"]`),
       })
       const dayHeader = dayCard.getByRole("button").first()
+      const dayLabel = await dayHeader.locator(".day-label").innerText()
       await dayHeader.press("Space")
       await expect(dayHeader).toHaveAttribute("aria-expanded", "false")
       await expect(dayCard.locator(".task-list")).toHaveAttribute("inert", "")
@@ -114,16 +115,37 @@ test.describe("Upcoming Shell", () => {
       }
 
       const taskPath = `/api/tasks/${firstTaskId}`
-      await page.route(taskPath, route => route.fulfill({ status: 503, json: { error: "Fixture unavailable" } }))
-      await checkbox.click()
+      const requestHeld = deferred<void>()
+      const releaseFailure = deferred<void>()
+      let completionWrites = 0
+      await page.route(taskPath, async route => {
+        completionWrites++
+        requestHeld.resolve()
+        await releaseFailure.promise
+        await route.fulfill({ status: 503, json: { error: "Fixture unavailable" } })
+      })
+      try {
+        await checkbox.click({ position: { x: 2, y: 2 } })
+        await requestHeld.promise
+        await expect(checkbox).toHaveAttribute("aria-disabled", "true")
+        await page.keyboard.press("Space")
+        await expect(checkbox).toBeChecked()
+        expect(completionWrites).toBe(1)
+      } finally {
+        releaseFailure.resolve()
+      }
       await expect(page.getByText("Failed to update", { exact: true })).toBeVisible()
+      expect(completionWrites).toBe(1)
       await expect(checkbox).not.toBeChecked()
+      await expect(checkbox).toBeEnabled()
+      await expect(checkbox).toBeFocused()
       await expect(detail).toBeHidden()
       await page.unroute(taskPath)
 
       await checkbox.press("Space")
       await expect(row).toHaveCount(0)
       expect((await (await request.get(taskPath)).json()).status).toBe("complete")
+      await expect(page.locator(`${fixtures[0].section} .day-header`).filter({ hasText: dayLabel })).toBeFocused()
       await expect(detail).toBeHidden()
       await expect(page).toHaveURL(/\/upcoming$/)
     } finally {
@@ -156,15 +178,27 @@ test.describe("Upcoming Shell", () => {
           const checkbox = page.getByRole("checkbox", { name: `Complete ${title}` })
           const avatar = page.getByRole("img", { name: `Assigned to ${assignee}` })
           await avatar.hover({ timeout: 5000 })
-          const row = await page.locator(".task-item").filter({ has: link }).boundingBox()
+          const taskRow = page.locator(".task-item").filter({ has: link })
+          await taskRow.scrollIntoViewIfNeeded()
+          const row = await taskRow.boundingBox()
           if (!row) throw new Error("The Upcoming task row is outside the rendered layout")
           expect(row.x).toBeGreaterThanOrEqual(0)
           expect(row.x + row.width).toBeLessThanOrEqual(width)
-          for (const control of [link, checkbox]) {
-            const bounds = await control.boundingBox()
-            expect(bounds?.width).toBeGreaterThanOrEqual(24)
-            expect(bounds?.height).toBeGreaterThanOrEqual(24)
+          const measureHitArea = (control: typeof link) => control.evaluate(element => {
+            const { left, right, top, bottom, width, height } = element.getBoundingClientRect()
+            const cornersHitControl = [left + 2, right - 2].every(x =>
+              [top + 2, bottom - 2].every(y => element.contains(document.elementFromPoint(x, y))))
+            return { left, right, top, bottom, width, height, cornersHitControl }
+          })
+          const hitAreas = await Promise.all([measureHitArea(link), measureHitArea(checkbox)])
+          for (const area of hitAreas) {
+            expect(area.width).toBeGreaterThanOrEqual(44)
+            expect(area.height).toBeGreaterThanOrEqual(44)
+            expect(area.cornersHitControl).toBe(true)
           }
+          const [detailArea, completionArea] = hitAreas
+          expect(Math.min(detailArea.right, completionArea.right) <= Math.max(detailArea.left, completionArea.left)
+            || Math.min(detailArea.bottom, completionArea.bottom) <= Math.max(detailArea.top, completionArea.top)).toBe(true)
           const { violations } = await new AxeBuilder({ page }).include(".task-item").withRules([
             "nested-interactive", "label-content-name-mismatch", "target-size", "aria-prohibited-attr",
           ]).analyze()

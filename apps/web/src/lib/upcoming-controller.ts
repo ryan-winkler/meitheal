@@ -25,26 +25,35 @@ export function initUpcomingPage(): void {
 
 function initTaskCheckboxes(): void {
   document.querySelectorAll<HTMLInputElement>(".task-checkbox").forEach((checkbox) => {
+    pageLifecycle.on(checkbox, "click", event => {
+      if (checkbox.hasAttribute("aria-disabled")) event.preventDefault()
+    })
     pageLifecycle.on(checkbox, "change", async () => {
       const id = checkbox.dataset.id
-      if (!id) return
+      if (!id || !checkbox.checked || checkbox.hasAttribute("aria-disabled")) return
 
+      checkbox.setAttribute("aria-disabled", "true")
       try {
-        const completed = await taskApi.updateTask(id, {
-          status: checkbox.checked ? "complete" : "pending",
-        })
-
-        if (!checkbox.checked) return
-
+        const completed = await taskApi.updateTask(id, { status: "complete" })
         onTaskCompleted(completed)
-        const item = checkbox.closest(".task-item") as HTMLElement | null
+        const item = checkbox.closest<HTMLElement>(".task-item")
         if (!item) return
 
         item.style.opacity = "0.4"
         item.style.transition = "opacity 0.3s"
-        setTimeout(() => item.remove(), 800)
+        setTimeout(() => {
+          const availableCheckbox = ".task-checkbox:not([aria-disabled])"
+          const nextFocus = document.activeElement === checkbox
+            ? item.nextElementSibling?.querySelector<HTMLElement>(availableCheckbox)
+              ?? item.previousElementSibling?.querySelector<HTMLElement>(availableCheckbox)
+              ?? item.closest(".day-card--populated")?.querySelector<HTMLElement>(".day-header")
+            : undefined
+          item.remove()
+          nextFocus?.focus()
+        }, 800)
       } catch (error) {
-        checkbox.checked = !checkbox.checked
+        checkbox.checked = false
+        checkbox.removeAttribute("aria-disabled")
         log.error("Failed to update upcoming task state", error)
         showToast("common.failed_update", "error")
       }
