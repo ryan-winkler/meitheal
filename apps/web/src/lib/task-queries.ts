@@ -119,7 +119,7 @@ const TASK_VIEW_COLUMNS = `
  * Load all tasks with computed fields for any task view page.
  * Returns structured task items with RICE scores, overdue flags, and counts.
  */
-export async function getTasksForView(): Promise<TaskViewResult> {
+export async function getTasksForView({ requireAvailable = false } = {}): Promise<TaskViewResult> {
   const emptyResult: TaskViewResult = {
     tasks: [],
     counts: { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 },
@@ -161,7 +161,8 @@ export async function getTasksForView(): Promise<TaskViewResult> {
     });
 
     return { tasks, counts, customFieldDefs };
-  } catch {
+  } catch (error) {
+    if (requireAvailable) throw error
     return emptyResult;
   }
 }

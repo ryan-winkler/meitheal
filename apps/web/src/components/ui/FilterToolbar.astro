@@ -25,7 +25,7 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
 import TaskTypeIcon from "./TaskTypeIcon.astro"
-import { FILTER_LIST_LIMIT, readTableFilterParams } from "../../lib/filter-state"
+import { FILTER_LIST_LIMIT, readTableFilterParams, tableCreationRangeLabel } from "../../lib/filter-state"
 import type { TableWorkflowColumn } from "../../lib/table-page"
 
 interface Props {
@@ -83,6 +83,7 @@ const tableState = view === "table" ? readTableFilterParams(Astro.url.searchPara
 const selectedLaneIds = new Set(tableState.laneIds)
 const availableLaneIds = new Set(workflowColumns.map(column => column.id))
 const missingLaneIds = [...selectedLaneIds].filter(id => !availableLaneIds.has(id))
+const creationRangeLabel = tableCreationRangeLabel(tableState.createdFrom, tableState.createdThrough)
 
 const defaultGroupByOptions = view === "table"
   ? [
@@ -314,6 +315,29 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         ))}
       </fieldset>
     </details>
+    <details class="table-workflow-filter" data-table-created-date>
+      <summary class:list={["filter-pill", { "filter-pill--active": creationRangeLabel }]} data-table-created-summary>
+        {t("table.created_date_filter", locale)}
+        <span aria-hidden="true">▾</span>
+        <span data-table-created-active hidden={!creationRangeLabel}>{creationRangeLabel}</span>
+      </summary>
+      <form class="table-created-range">
+        <label>
+          {t("table.created_date_from", locale)}
+          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdFrom} data-table-created-from />
+        </label>
+        <label>
+          {t("table.created_date_through", locale)}
+          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdThrough}
+            data-table-created-through />
+        </label>
+        <p id="table-created-date-error" role="alert" hidden>{t("table.created_date_invalid", locale)}</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="btn">{t("table.created_date_apply", locale)}</button>
+          <button type="button" class="btn" data-table-created-clear>{t("table.created_date_clear", locale)}</button>
+        </div>
+      </form>
+    </details>
     <div class="flex flex-wrap gap-1 min-w-0 empty:hidden" data-filter-summary aria-label="Active saved filters"></div>
   </>}
 
@@ -391,7 +415,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 <script>
   // Expose global for inline views (kanban)
   import { getRememberedAreaId } from "@lib/area-selector-controller"
-  import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState } from "@lib/filter-state"
+  import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange } from "@lib/filter-state"
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { readKanbanFilters, storedKanbanGroup } from "../../lib/kanban-query"
   declare global {
@@ -446,6 +470,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const summary = toolbar.querySelector<HTMLElement>("[data-filter-summary]")
     const unassigned = toolbar.querySelector<HTMLInputElement>("[data-table-unassigned]")
     const workflow = toolbar.querySelector<HTMLDetailsElement>("[data-table-workflow-filter]")
+    const createdDate = toolbar.querySelector<HTMLDetailsElement>("[data-table-created-date]")
+    const createdFrom = createdDate?.querySelector<HTMLInputElement>("[data-table-created-from]")
+    const createdThrough = createdDate?.querySelector<HTMLInputElement>("[data-table-created-through]")
+    const createdError = createdDate?.querySelector<HTMLElement>("#table-created-date-error")
+    const appliedCreationDate = createdDate?.querySelector<HTMLElement>("[data-table-created-active]")
+    let createdRange = { createdFrom: initial.createdFrom, createdThrough: initial.createdThrough }
+    let dismissCreationDraft: (() => void) | undefined
     const laneOptions = () => Array.from(workflow?.querySelectorAll<HTMLInputElement>("[data-table-lane]") ?? [])
     const laneCount = toolbar.querySelector<HTMLElement>("[data-table-lane-count]")
     const laneId = (option: HTMLInputElement): string => JSON.parse(option.value)
@@ -744,7 +775,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         user: activeUser,
         ...(prefix !== "table" ? { labels } : {}),
         task_type,
-        ...(prefix === "table" ? { laneIds: selectedLanes() } : {}),
+        ...(prefix === "table" ? { laneIds: selectedLanes(), ...createdRange } : {}),
         area,
         groupBy: groupBySel?.value ?? "none",
         subGroupBy: subGroupBySel?.value ?? "none",
@@ -764,12 +795,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const hasSort = sortBySel && sortBySel.value !== "none"
       
       if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || promoted || (statusSel?.value ?? status) ||
-          (prioritySel?.value ?? priority) || rice || user || labels.length || task_type || selectedLanes().length || (prefix === "table" && area)) {
+          (prioritySel?.value ?? priority) || rice || user || labels.length || task_type || selectedLanes().length ||
+          (appliedCreationDate && !appliedCreationDate.hidden) || (prefix === "table" && area)) {
         clearBtn.classList.remove("hidden")
       } else {
         clearBtn.classList.add("hidden")
       }
     }
+    if (createdDate) document.addEventListener("meitheal:table-filters-applied", updateClearVisibility, { signal })
 
     function emitChange(clear = false) {
       const state = gatherState()
@@ -797,6 +830,57 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     workflow?.addEventListener("change", event => {
       if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-table-lane")) emitChange()
     }, { signal })
+    if (createdDate && createdFrom && createdThrough && createdError) {
+      const clearError = () => {
+        createdError.hidden = true
+        createdThrough.removeAttribute("aria-invalid")
+        createdThrough.removeAttribute("aria-describedby")
+      }
+      const restoreDraft = () => {
+        createdFrom.value = createdRange.createdFrom ?? ""
+        createdThrough.value = createdRange.createdThrough ?? ""
+        clearError()
+      }
+      const close = () => {
+        restoreDraft()
+        createdDate.open = false
+        createdDate.querySelector("summary")?.focus()
+      }
+      dismissCreationDraft = close
+      createdDate.addEventListener("toggle", () => {
+        if (!createdDate.open) {
+          restoreDraft()
+          return
+        }
+        for (const details of toolbar.querySelectorAll<HTMLDetailsElement>("details[open]")) {
+          if (details !== createdDate) details.open = false
+        }
+      }, { signal })
+      toolbar.addEventListener("toggle", event => {
+        const details = event.target
+        if (details instanceof HTMLDetailsElement && details !== createdDate && details.open) createdDate.open = false
+      }, { capture: true, signal })
+      createdDate.addEventListener("input", clearError, { signal })
+      createdDate.querySelector("form")?.addEventListener("submit", event => {
+        event.preventDefault()
+        const range = normalizeTableCreationRange(createdFrom.value, createdThrough.value)
+        if (!range) {
+          createdError.hidden = false
+          createdThrough.setAttribute("aria-invalid", "true")
+          createdThrough.setAttribute("aria-describedby", createdError.id)
+          createdThrough.focus()
+          return
+        }
+        createdRange = { createdFrom: range.createdFrom, createdThrough: range.createdThrough }
+        close()
+        emitChange()
+      }, { signal })
+      createdDate.querySelector("[data-table-created-clear]")?.addEventListener("click", () => {
+        createdRange = { createdFrom: undefined, createdThrough: undefined }
+        close()
+        emitChange()
+      }, { signal })
+    }
 
     // Debounce for search
     let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -886,6 +970,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       status = priority = rice = user = task_type = area = ""
       if (unassigned) unassigned.checked = false
       for (const option of laneOptions()) option.checked = false
+      createdRange = { createdFrom: undefined, createdThrough: undefined }
+      if (createdFrom) createdFrom.value = ""
+      if (createdThrough) {
+        createdThrough.value = ""
+        createdThrough.removeAttribute("aria-invalid")
+        createdThrough.removeAttribute("aria-describedby")
+      }
+      if (createdError) createdError.hidden = true
       labels = []
       renderInheritedFilters()
       if (prefix === "table") document.dispatchEvent(new Event("meitheal:table-labels-reset"))
@@ -935,7 +1027,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       advToggleBtn?.classList.remove("filter-pill--active")
 
       emitChange(true)
-      clearBtn.classList.add("hidden") // Immediate visual feedback
+      if (!appliedCreationDate || appliedCreationDate.hidden) clearBtn.classList.add("hidden")
       if (restoreTableFocus) search?.focus()
     }, { signal })
 
@@ -952,8 +1044,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     
     // Add Escape key handler to clear filters if they are active
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !e.defaultPrevented && clearBtn && !clearBtn.classList.contains("hidden") &&
-          !(e.target as Element | null)?.closest?.('[role="dialog"], [role="alertdialog"]')) {
+      if (e.key !== "Escape" || e.defaultPrevented ||
+          (e.target as Element | null)?.closest?.('[role="dialog"], [role="alertdialog"]')) return
+      if (createdDate?.open) {
+        e.preventDefault()
+        dismissCreationDraft?.()
+        return
+      }
+      if (clearBtn && !clearBtn.classList.contains("hidden")) {
         // Only trigger if not typing in an input or textarea
         const tag = document.activeElement?.tagName?.toLowerCase()
         if (tag === "input" || tag === "textarea") return
@@ -1067,4 +1165,16 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     overflow-wrap: anywhere;
   }
   .table-workflow-filter__options input { flex-shrink: 0; }
+  .table-created-range {
+    display: grid;
+    gap: 0.5rem;
+    inline-size: min(13rem, 100%);
+    margin-block-start: 0.25rem;
+  }
+  .table-created-range label { display: grid; gap: 0.25rem; min-inline-size: 0; }
+  .table-created-range input { min-inline-size: 0; inline-size: 100%; }
+  .table-created-range :is(input, button) { min-block-size: 44px; }
+  .table-created-range [role="alert"] { color: var(--text-danger, var(--text-primary)); }
+  [data-table-created-summary] { flex-wrap: wrap; }
+  [data-table-created-active] { inline-size: 100%; font-variant-numeric: tabular-nums; }
 </style>

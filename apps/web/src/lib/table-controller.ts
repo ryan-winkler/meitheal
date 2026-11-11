@@ -22,12 +22,15 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { taskBackgroundUrl } from "@lib/task-page-url"
+import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
   saveTableFilterState,
   loadTableFilterState,
   normalizeTableColumns,
+  tableCreationRangeLabel,
   writeTableFilterParams,
   getGroupKey,
   getGroupDisplay,
@@ -140,6 +143,14 @@ function init(signal: AbortSignal) {
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
     shell.dataset.tableFilters = JSON.stringify(applied)
+    const createdRange = tableCreationRangeLabel(applied.createdFrom, applied.createdThrough)
+    shell.querySelector("[data-table-created-summary]")?.classList.toggle("filter-pill--active", Boolean(createdRange))
+    const createdDateIndicator = shell.querySelector<HTMLElement>("[data-table-created-active]")
+    if (createdDateIndicator) {
+      createdDateIndicator.textContent = createdRange
+      createdDateIndicator.hidden = !createdRange
+    }
+    document.dispatchEvent(new Event("meitheal:table-filters-applied"))
     const selectAll = table.querySelector<HTMLInputElement>("#select-all")
     if (selectAll) selectAll.checked = false
     updateBulkBar()
@@ -216,6 +227,11 @@ function init(signal: AbortSignal) {
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, Number(table.dataset.tablePage))
+      const background = taskBackgroundUrl(new URL(location.href))
+      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
+        const view = parseTaskView(link.dataset.viewTab ?? null)
+        if (view) link.href = taskViewUrl(background, view).href
+      }
       const count = renderRows()
       resetPageOnRetry = false
 
@@ -291,6 +307,8 @@ function init(signal: AbortSignal) {
       user: detail.user ?? "",
       task_type: detail.task_type ?? "",
       laneIds: detail.laneIds ?? [],
+      createdFrom: detail.createdFrom,
+      createdThrough: detail.createdThrough,
       types: detail.types ?? [],
       labels: detail.labels ?? desired.labels ?? [],
       advancedFilter: detail.advancedFilter ?? null,

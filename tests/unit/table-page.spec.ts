@@ -16,6 +16,40 @@ function task(id: string, fields: Partial<TaskViewItem> = {}): TaskViewItem {
   }
 }
 
+test("creation date filtering covers inclusive DST days and legacy timestamps", () => {
+  const tasks = [
+    task("before spring", { created_at: "2024-03-30T23:59:59.999Z" }),
+    task("spring start", { created_at: String(Date.parse("2024-03-31T00:00:00Z")), parent_id: "before spring" }),
+    task("spring end", { created_at: "2024-03-31 22:59:59.999" }),
+    task("after spring", { created_at: "2024-04-01T00:00:00+01:00" }),
+    task("before autumn", { created_at: "2024-10-26T22:59:59.999Z" }),
+    task("autumn start", { created_at: "2024-10-27T00:00:00+01:00" }),
+    task("autumn end", { created_at: "2024-10-27T23:59:59.999Z" }),
+    task("after autumn", { created_at: "2024-10-28T00:00:00Z" }),
+    task("invalid", { created_at: "2024-02-31T00:00:00Z" }),
+    task("empty"),
+    task("epoch", { created_at: "0" }),
+    task("before common era", { created_at: "0000-03-31T00:00:00Z" }),
+    task("legacy first year", { created_at: "0001-03-31 00:00:00Z" }),
+    task("iso end of day", { created_at: "2024-03-31T24:00:00Z" }),
+    task("legacy spaced timestamp", { created_at: " 2024-03-31  12:00:00.001234567890z " }),
+    task("invalid repeated separator", { created_at: "2024-03-31TT12:00:00Z" }),
+  ]
+  const sameDay = (day: string, zone?: string) =>
+    getTablePage(tasks, { createdFrom: day, createdThrough: day }, null, [], zone)
+  const ids = (page: ReturnType<typeof getTablePage>) => page.rows.map(row => row.task.id)
+  expect(ids(sameDay("2024-03-31", "Europe/Dublin"))).toEqual(["spring start", "spring end", "legacy spaced timestamp"])
+  expect(ids(sameDay("2024-03-31", "invalid-zone"))).toEqual(["spring start", "spring end", "legacy spaced timestamp"])
+  expect(ids(sameDay("2024-03-31", "America/New_York"))).toEqual(["spring end", "after spring", "iso end of day", "legacy spaced timestamp"])
+  expect(ids(sameDay("2024-10-27"))).toEqual(["autumn start", "autumn end"])
+  expect(ids(sameDay("1970-01-01", "UTC"))).toEqual(["epoch"])
+  expect(ids(sameDay("0001-03-31", "UTC"))).toEqual(["legacy first year"])
+  expect(getTablePage(tasks, {}, null).stats.total.count).toBe(tasks.length)
+  const later = getTablePage(tasks, { createdFrom: "2024-10-27", search: "autumn" }, "2")
+  expect(later.page).toBe(1)
+  expect(ids(later)).toEqual(["autumn start", "autumn end", "after autumn"])
+})
+
 test("Table pages a deep hierarchy in depth-first order without overflowing", () => {
   const tasks = Array.from({ length: 10_000 }, (_, index) => task(String(index), {
     parent_id: index > 0 ? String(index - 1) : null,

@@ -1524,7 +1524,27 @@ const paths = {
   // ── Saved Filters ──
   "/api/saved-filters": {
     get: { operationId: "listSavedFilters", tags: ["Views"], summary: "List saved filter presets", responses: { 200: { description: "Saved filters" } } },
-    post: { operationId: "createSavedFilter", tags: ["Views"], summary: "Create a saved filter", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createSavedFilter", tags: ["Views"], summary: "Create a saved filter",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["name"], additionalProperties: true, properties: {
+          name: { type: "string", description: "Must contain 1–100 characters after trimming." },
+          icon: { type: ["string", "null"], description: "Null or omission uses the default icon." },
+          query_json: { type: ["object", "null"], properties: {
+            createdFrom: { type: "string", description: "Inclusive lower creation date, YYYY-MM-DD. Empty omits the bound." },
+            createdThrough: { type: "string", description: "Inclusive upper creation date, YYYY-MM-DD. Empty omits the bound." },
+          } },
+        },
+      } } } },
+      responses: {
+        201: jsonContent({
+          type: "object", required: ["id", "name", "position"], properties: {
+            id: { type: "string" }, name: { type: "string" }, position: { type: "integer" },
+          },
+        }, "Created"),
+        400: { description: "Invalid name, icon, query object or creation date range" },
+      },
+    },
     put: { operationId: "updateSavedFilter", tags: ["Views"], summary: "Update a saved filter", responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteSavedFilter", tags: ["Views"], summary: "Delete a saved filter", responses: { 200: { description: "Deleted" } } },
   },

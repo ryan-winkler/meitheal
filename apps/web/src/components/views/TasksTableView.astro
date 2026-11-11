@@ -13,16 +13,19 @@ import type { Locale } from "../../lib/locale";
 import { formatRegionalDate } from "../../lib/date";
 import { formatTicketKey } from "../../lib/ticket-key";
 import { buildTaskPath } from "../../lib/task-detail-handoff"
-import { getTasksForView } from "../../lib/task-queries";
+import type { TaskViewItem } from "../../lib/task-queries"
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
 import { readTableFilterParams } from "../../lib/filter-state"
 import { getTablePage, type TableWorkflowColumn } from "../../lib/table-page"
 
 interface Props {
+  tasks: TaskViewItem[]
+  creationTimezone?: string | undefined
+  tableReadFailed: boolean
   workflowColumns: TableWorkflowColumn[]
   workflowColumnsUnavailable: boolean
 }
-const { workflowColumns, workflowColumnsUnavailable } = Astro.props
+const { tasks, creationTimezone, tableReadFailed, workflowColumns, workflowColumnsUnavailable } = Astro.props
 
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -30,11 +33,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const { timezone, dateFormat } = Astro.locals;
 
-const { tasks } = await getTasksForView()
 const params = new URLSearchParams(Astro.url.search)
 const filters = readTableFilterParams(params)
 const laneSelectionUnapplied = workflowColumnsUnavailable && Boolean(filters.laneIds?.length)
-const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(tasks, filters, params.get("tp"), workflowColumns)
+const resultsUnavailable = tableReadFailed || laneSelectionUnapplied
+const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
+  tableReadFailed ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
+)
 
 function tableLink(next: number, open?: string) {
   const query = new URLSearchParams(params)
@@ -59,7 +64,7 @@ const priorityClasses: Record<number, string> = {
   <div id="table-shell" class="page-shell" data-table-filters={JSON.stringify(filters)}>
     <!-- Signal bar -->
     <SignalBar>
-      <span id="task-summary" hidden={laneSelectionUnapplied}>
+      <span id="task-summary" hidden={resultsUnavailable}>
         <strong>{stats.total.count}</strong> tasks · <strong>{active}</strong> active
         {overdue > 0 && (
           <Fragment>
@@ -77,7 +82,7 @@ const priorityClasses: Record<number, string> = {
       </div>
     </div>
 
-    <p id="table-workflow-notice" class="table-refresh-status" role="status" hidden={!workflowColumnsUnavailable || laneSelectionUnapplied}>
+    <p id="table-workflow-notice" class="table-refresh-status" role="status" hidden={!workflowColumnsUnavailable || resultsUnavailable}>
       {t("table.filter_columns_load_failed", locale)}
     </p>
 
@@ -89,7 +94,7 @@ const priorityClasses: Record<number, string> = {
       </div>
     </nav>
 
-    <div id="table-empty" hidden={laneSelectionUnapplied || tasks.length > 0}>
+    <div id="table-empty" hidden={resultsUnavailable || tasks.length > 0}>
       <EmptyState
         title={t("table.no_tasks", locale)}
         description={t("table.no_tasks", locale)}
@@ -98,7 +103,7 @@ const priorityClasses: Record<number, string> = {
       />
     </div>
 
-    <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0" hidden={laneSelectionUnapplied || tasks.length === 0}>
+    <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0" hidden={resultsUnavailable || tasks.length === 0}>
           <table class="data-table" id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}>
             <thead>
               <tr>
@@ -420,11 +425,11 @@ const priorityClasses: Record<number, string> = {
           </table>
     </div>
 
-    <div id="table-refresh-status" class="table-refresh-status" role="status" hidden={!laneSelectionUnapplied}
+    <div id="table-refresh-status" class="table-refresh-status" role="status" hidden={!resultsUnavailable}
       data-table-updated={t("table.matching_tasks", locale)}
       data-table-failure={t("table.refresh_failed", locale)}>
-      <span data-table-refresh-message>{laneSelectionUnapplied ? t("table.filter_columns_load_failed", locale) : ""}</span>
-      <button type="button" class="btn" data-table-retry hidden={!laneSelectionUnapplied}>{t("table.retry_page", locale)}</button>
+      <span data-table-refresh-message>{tableReadFailed ? t("table.refresh_failed", locale) : laneSelectionUnapplied ? t("table.filter_columns_load_failed", locale) : ""}</span>
+      <button type="button" class="btn" data-table-retry hidden={!resultsUnavailable}>{t("table.retry_page", locale)}</button>
     </div>
   </div>
 

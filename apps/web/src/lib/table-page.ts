@@ -1,3 +1,4 @@
+import { parseCalendarDay } from "./calendar-day"
 import { getGroupKey, isTaskVisible, type FilterState } from "./filter-state"
 import { CANONICAL_STATUSES, normalizeStatus, STATUS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
@@ -76,13 +77,47 @@ export interface TableWorkflowColumn {
   includes: readonly unknown[]
 }
 
+function creationDateFormatter(timezone: string | undefined) {
+  const format = (timeZone: string) => new Intl.DateTimeFormat("en", {
+    timeZone, calendar: "gregory", numberingSystem: "latn", era: "short", year: "numeric", month: "2-digit", day: "2-digit",
+  })
+  const fallback = "Europe/Dublin"
+  try {
+    return format(timezone || fallback)
+  } catch {
+    return format(fallback)
+  }
+}
+
+function creationCalendarDay(value: string, formatter: Intl.DateTimeFormat) {
+  const stored = value.trim()
+  const numeric = /^-?\d+$/u.test(stored)
+  let timestamp = Number(stored)
+  if (!numeric) {
+    const legacy = /^(\d{4}-\d{2}-\d{2})(?:(?:[Tt]|\s+)(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([Zz]|[+-]\d{2}:?\d{2})?)?$/u
+    const match = legacy.exec(stored)
+    if (!match?.[1] || !parseCalendarDay(match[1])) return
+    timestamp = Date.parse(match[2] ? match[1] + "T" + match[2] + (match[3]?.toUpperCase() ?? "Z") : match[1])
+  }
+  if (!Number.isFinite(new Date(timestamp).getTime())) return
+  const parts = formatter.formatToParts(timestamp)
+  if (parts.find(part => part.type === "era")?.value !== "AD") return
+  const year = parts.find(part => part.type === "year")?.value.padStart(4, "0")
+  const month = parts.find(part => part.type === "month")?.value
+  const day = parts.find(part => part.type === "day")?.value
+  if (year?.length === 4 && month && day) return `${year}-${month}-${day}`
+}
+
 /** Filter and order the entire eligible task set before projecting one Table page. */
 export function getTablePage(
   tasks: TaskViewItem[],
   filters: Partial<FilterState>,
   requestedPage: string | null,
   workflowColumns: readonly TableWorkflowColumn[] = [],
+  timezone?: string,
 ) {
+  const { createdFrom, createdThrough } = filters
+  const creationDay = createdFrom || createdThrough ? creationDateFormatter(timezone) : undefined
   const laneIds = new Set(filters.laneIds)
   const laneStatuses = new Set(workflowColumns
     .filter(column => laneIds.has(column.id))
@@ -134,6 +169,10 @@ export function getTablePage(
       },
     }
     if (!isTaskVisible(row, filters)) continue
+    if (creationDay) {
+      const day = creationCalendarDay(task.created_at, creationDay)
+      if (!day || (createdFrom && day < createdFrom) || (createdThrough && day > createdThrough)) continue
+    }
     const group = groupBy === "none" ? "" : getGroupKey(row, groupBy)
     const subgroup = subgroupBy === "none" ? "" : JSON.stringify([group, getGroupKey(row, subgroupBy)])
     matching.set(task.id, { task, group, subgroup })

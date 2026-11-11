@@ -499,3 +499,171 @@ test("Save Current Filters keeps the applied view when another tab changes prefe
     if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
   }
 })
+
+test("Table creation date drafts stay separate from applied filters and saved links", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  const name = `Created date ${randomUUID()}`
+  const headers = { origin: new URL(baseURL!).origin }
+  let taskId: string | undefined
+  let presetId: string | undefined
+  try {
+    const task = await request.post("/api/tasks", { headers, data: { title: name } })
+    expect(task.status(), await task.text()).toBe(201)
+    const created = await task.json()
+    taskId = created.id
+    const day = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Dublin", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date(created.created_at))
+    const invalid = await request.post("/api/saved-filters", {
+      headers, data: { name, query_json: { createdFrom: "2023-02-29", createdThrough: day } },
+    })
+    expect(invalid.status()).toBe(400)
+    const invalidRoot = await request.post("/api/saved-filters", {
+      headers, data: { name, query_json: JSON.stringify({ createdFrom: "invalid" }) },
+    })
+    expect(invalidRoot.status()).toBe(400)
+    await page.setViewportSize({ width: 320, height: 900 })
+    const bookmark = new URLSearchParams({ search: name, area: "", createdFrom: "2023-02-29", createdThrough: day })
+    await page.goto("/table?" + bookmark)
+    await page.waitForFunction(() =>
+      !("serviceWorker" in navigator) || navigator.serviceWorker.controller?.state === "activated",
+    )
+    const toolbar = page.getByRole("toolbar", { name: "Filter tasks" })
+    const row = page.locator("#task-table .table-row")
+    const summary = toolbar.locator("[data-table-created-summary]")
+    const from = toolbar.getByLabel("On or after", { exact: true })
+    const through = toolbar.getByLabel("On or before", { exact: true })
+    const apply = toolbar.getByRole("button", { name: "Apply dates" })
+    const clear = toolbar.getByRole("button", { name: "Clear dates" })
+    await expect(row).toHaveCount(1)
+    await summary.press("Enter")
+    await expect(from).toHaveValue("")
+    await expect(through).toHaveValue("")
+    await expect(through).not.toHaveAccessibleDescription(/end date/)
+    await from.fill(day)
+    await through.fill("2000-01-01")
+    await apply.press("Enter")
+    await expect(through).toBeFocused()
+    await expect(through).toHaveAttribute("aria-invalid", "true")
+    await expect(through).toHaveAccessibleDescription("The end date must be on or after the start date.")
+    await expect(toolbar.getByRole("alert")).toContainText("The end date must be on or after the start date.")
+    await through.press("Escape")
+    await expect(summary).toBeFocused()
+    await expect(from).toBeHidden()
+    await expect(row).toHaveCount(1)
+    await summary.press("Enter")
+    await expect(from).toHaveValue("")
+    await from.fill(day)
+    await through.fill(day)
+    const sizes = await page.locator("[data-table-created-date]").evaluate(el => ({
+      right: el.getBoundingClientRect().right,
+      controls: Array.from(el.querySelectorAll("input, button")).map(control => control.getBoundingClientRect().height),
+    }))
+    expect(sizes.right).toBeLessThanOrEqual(321)
+    expect(Math.min(...sizes.controls)).toBeGreaterThanOrEqual(44)
+    await apply.press("Enter")
+    await expect(page).toHaveURL(url => url.searchParams.get("createdFrom") === day && url.searchParams.get("createdThrough") === day)
+    await expect(summary).toBeFocused()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    const calendarTab = page.locator('[data-view-tab="calendar"]')
+    const tabHref = await calendarTab.getAttribute("href")
+    expect(new URL(tabHref!, baseURL).searchParams.get("createdFrom")).toBe(day)
+    await page.goto(tabHref!)
+    await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+    await expect(summary).toHaveCount(0)
+    await page.goto((await page.locator('[data-view-tab="table"]').getAttribute("href"))!)
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await expect(summary).toContainText(day)
+
+    await summary.press("Enter")
+    await from.fill("")
+    await through.fill("2000-01-01")
+    await page.route(url => url.searchParams.has("tableRefresh") && url.searchParams.get("createdThrough") === "2000-01-01",
+      route => route.fulfill({ status: 503 }), { times: 1 })
+    await apply.press("Enter")
+    const retry = page.locator("[data-table-retry]")
+    await expect(retry).toBeVisible()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await expect(summary).toContainText(day)
+    await expect(page).toHaveURL(url => url.searchParams.get("createdThrough") === day)
+    await retry.press("Enter")
+    await expect(row).toHaveCount(0)
+    await expect(summary).toContainText("≤ 2000-01-01")
+    await expect(retry).toBeHidden()
+
+    await summary.press("Enter")
+    await from.fill(day)
+    await through.fill(day)
+    await apply.press("Enter")
+    await expect(row).toHaveAttribute("data-id", taskId!)
+
+    await summary.press("Enter")
+    await through.fill("2000-01-01")
+    await page.getByRole("button", { name: "Saved filter presets" }).press("Enter")
+    const save = page.getByRole("button", { name: "Save Current Filters" })
+    await expect(save).toBeEnabled()
+    await save.press("Enter")
+    const dialog = page.getByRole("dialog", { name: "Save Filter Preset" })
+    await dialog.getByRole("textbox").fill(name)
+    const savedResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/saved-filters" && response.request().method() === "POST",
+    )
+    await dialog.getByRole("button", { name: "OK" }).press("Enter")
+    const saved = await savedResponse
+    expect(saved.status(), await saved.text()).toBe(201)
+    presetId = (await saved.json()).id
+    expect(saved.request().postDataJSON().query_json).toMatchObject({ createdFrom: day, createdThrough: day })
+
+    const search = await request.get("/api/search", { params: { q: name, scope: "views" } })
+    expect(search.status(), await search.text()).toBe(200)
+    const { sections } = await search.json()
+    const item = sections.find((section: { id: string }) => section.id === "saved_filters")
+      ?.items.find((candidate: { id: string }) => candidate.id === presetId)
+    expect(item?.href).toBeDefined()
+    await page.goto(item.href)
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await page.reload()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await summary.press("Enter")
+    await expect(through).toHaveValue(day)
+    await from.fill("")
+    await toolbar.getByRole("button", { name: "Clear all active filters" }).press("Escape")
+    await expect(from).toBeHidden()
+    await expect(summary).toBeFocused()
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === name && url.searchParams.get("createdFrom") === day)
+    await summary.press("Enter")
+    await expect(from).toHaveValue(day)
+    await clear.press("Enter")
+    await expect(page).toHaveURL(url => !url.searchParams.has("createdFrom") &&
+      !url.searchParams.has("createdThrough") && url.searchParams.get("search") === name)
+    await expect(summary).toBeFocused()
+    const clearedTabHref = await calendarTab.getAttribute("href")
+    expect(new URL(clearedTabHref!, baseURL).searchParams.has("createdFrom")).toBe(false)
+
+    await page.goto("/table?" + new URLSearchParams({ area: "", createdFrom: day }))
+    const clearAll = toolbar.getByRole("button", { name: "Clear all active filters" })
+    await expect(clearAll).toBeVisible()
+    await page.route(url => url.searchParams.has("tableRefresh") && !url.searchParams.has("createdFrom"),
+      route => route.fulfill({ status: 503 }), { times: 1 })
+    await summary.press("Enter")
+    await clear.press("Enter")
+    await expect(retry).toBeVisible()
+    await expect(clearAll).toBeVisible()
+    await expect(summary).toContainText(day)
+    await retry.press("Enter")
+    await expect(page).toHaveURL(url => !url.searchParams.has("createdFrom"))
+    await expect(clearAll).toBeHidden()
+
+    await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: new URL(baseURL!).origin }])
+    await page.reload()
+    const irish = page.locator("[data-table-created-summary]")
+    await expect(irish).toContainText("Dáta cruthaithe")
+    await irish.press("Enter")
+    await expect(page.getByLabel("Ar an dáta nó ina dhiaidh", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Cuir dátaí i bhfeidhm" })).toBeVisible()
+    expect(await page.locator("[data-table-created-date]").evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(321)
+  } finally {
+    if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
+    if (taskId) await request.delete("/api/tasks/" + taskId, { headers })
+  }
+})

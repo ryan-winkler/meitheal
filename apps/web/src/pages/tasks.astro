@@ -20,11 +20,13 @@ import {
 } from "@domains/tasks/persistence/store";
 import { TaskInactivityRepository } from "@domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
 import { readTableFilterParams } from "../lib/filter-state"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
 import AreaSelector from "../components/layout/AreaSelector.astro";
@@ -111,6 +113,28 @@ if (renderedView === "table" && workflowColumnsUnavailable) {
 if (renderedView === "table" && workflowColumnsUnavailable &&
     Astro.url.searchParams.has("tableRefresh") && readTableFilterParams(Astro.url.searchParams).laneIds?.length) {
   return new Response("Workflow columns could not load.", { status: 503, headers: { "Cache-Control": "no-store" } })
+}
+
+let tableTasks: TaskViewItem[] = []
+let tableCreationTimezone: string | undefined
+let tableReadFailed = false
+if (renderedView === "table") {
+  const filters = readTableFilterParams(Astro.url.searchParams)
+  try {
+    tableTasks = (await getTasksForView({ requireAvailable: true })).tasks
+    if (filters.createdFrom || filters.createdThrough) {
+      const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
+      if (typeof timezone === "string") tableCreationTimezone = timezone
+    }
+  } catch {
+    const headers = { "Cache-Control": "no-store" }
+    if (Astro.url.searchParams.has("tableRefresh")) {
+      return new Response(t("table.refresh_failed", locale), { status: 503, headers })
+    }
+    tableReadFailed = true
+    Astro.response.status = 503
+    Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
+  }
 }
 
 // Fallback if no lanes in DB
@@ -858,6 +882,9 @@ try {
   </div><!-- /tasks-view-kanban -->
   </>}
   {renderedView === "table" && <TasksTableView
+    tasks={tableTasks}
+    creationTimezone={tableCreationTimezone}
+    tableReadFailed={tableReadFailed}
     workflowColumns={workflowColumnsUnavailable ? [] : columns}
     workflowColumnsUnavailable={workflowColumnsUnavailable}
   />}
