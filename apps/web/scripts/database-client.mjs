@@ -34,10 +34,22 @@ function checkSchemaMarker(rows) {
   }
 }
 
+/** @returns {Generator<[string], void, ResultSet[]>} */
+export function* databaseSchemaCheckSteps() {
+  const [table] = yield [schemaMarkerTable]
+  if (table.rows.length > 0) {
+    const [marker] = yield [schemaMarkerRows]
+    checkSchemaMarker(marker.rows)
+  }
+}
+
 /** @param {Pick<Client, "execute">} client */
 export async function assertSupportedDatabaseSchema(client) {
-  if ((await client.execute(schemaMarkerTable)).rows.length > 0) {
-    checkSchemaMarker((await client.execute(schemaMarkerRows)).rows)
+  const check = databaseSchemaCheckSteps()
+  let step = check.next()
+  while (!step.done) {
+    const result = await client.execute(step.value[0])
+    step = check.next([result])
   }
 }
 /** @typedef {import("node:sqlite").SQLInputValue} SQLInputValue */

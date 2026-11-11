@@ -12,6 +12,7 @@ import { applyCommentMentionsMigration, validateCommentMentionsSchema } from "..
 import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 
 import { applyTaskStallMigration, validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
+import { reconcileTaskSchemaPrerequisites, validateTaskSchemaPrerequisites } from "../drizzle/migrations/task-schema-prerequisites.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(__dirname, "../drizzle/migrations");
@@ -62,6 +63,7 @@ async function main(client) {
       return 1;
     }
     for (const migration of executableMigrations.values()) await migration.validate(client)
+    await validateTaskSchemaPrerequisites(client)
     console.log("Migration check passed (no pending migrations).");
     return 0;
   }
@@ -104,9 +106,8 @@ async function main(client) {
     }
   }
 
-  await validateCommentMentionsSchema(client)
-  await validateTaskInactivitySchema(client)
-  await validateTaskStallSchema(client)
+  for (const migration of executableMigrations.values()) await migration.validate(client)
+  await reconcileTaskSchemaPrerequisites(client)
   if (pending.length === 0) {
     console.log("No migrations to apply.");
   }

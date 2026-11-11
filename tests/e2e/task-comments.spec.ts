@@ -47,16 +47,7 @@ test("verified comment owners can edit and delete without claiming other comment
     execFileSync(process.execPath, ["--input-type=module", "-e", `
       import { createClient } from "@libsql/client"
       const client = createClient({ url: process.env.MEITHEAL_DB_URL })
-      await client.execute(\`
-        CREATE TABLE comments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          task_id INTEGER NOT NULL,
-          content TEXT NOT NULL,
-          author TEXT NOT NULL DEFAULT 'user',
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-        )
-      \`)
+      await client.execute("ALTER TABLE comments DROP COLUMN owner_key")
       const [id, author] = process.argv.slice(1)
       await client.execute({
         sql: "INSERT INTO tasks (id, title, idempotency_key, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
