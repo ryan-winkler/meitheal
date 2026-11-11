@@ -145,7 +145,7 @@ export function initAISettings(): void {
         "ai-custom-url-approved": shareUrl?.checked ? url.href : null,
         "ai-provider": provider,
       } : { "ai-provider": provider })
-      if (url && customUrlInput) customUrlInput.value = url.href
+      if (url && customUrlInput?.value.trim() === customUrl) customUrlInput.value = url.href
       localStorage.setItem("meitheal-ai-provider", provider)
       if (url) localStorage.setItem("meitheal-ai-custom-url", url.href)
 
