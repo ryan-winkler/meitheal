@@ -37,6 +37,8 @@ The publication jobs use standard GitHub-hosted Linux runners on both architectu
 
 ## Qualify and promote a canary from a release host
 
+Confirm the installed Alpine `zlib` package is at least `1.4-r0` in both exact candidate images before Green qualification. [Alpine security advisory](https://security.alpinelinux.org/vuln/CVE-2026-4738)
+
 Run this from a clean source checkout on a trusted Linux host with Git, Node, jq, GitHub CLI and rootless Podman. When using images already published by CI, skip the local build and registry write in steps 1 and 2. When hosted Actions cannot start, use native ARM64 or configured ARM64 emulation for the local build and smoke test. Coordinate a single publisher before any registry writes and keep other publishers idle. The tag check and push are separate operations.
 
 1. Run `bash scripts/publish-canary-local.sh build amd64` and `bash scripts/publish-canary-local.sh build aarch64`. Each build uses committed source, the same Home Assistant base and the same smoke test as CI. Record both image IDs. Use the exact ARM64 image ID for Green qualification. To transport it, use `podman save --format docker-archive IMAGE_ID` and `podman load`. Verify the ID after loading.

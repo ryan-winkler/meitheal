@@ -17,7 +17,7 @@ Use a disposable development host for changes to ingress, Supervisor integration
 5. Stage the App manifest and AppArmor profile in the local App directory. In the staged copy, set `image` to the test registry’s image template and keep `version` aligned with the tested tag. Supervisor pulls a configured registry image during installation.
 6. Run `ha store reload`. Install the local App and open its web UI from Home Assistant. Record the exact image digest, App and Home Assistant versions, ingress roles tested, and AppArmor state.
 
-The checked-in configuration installs Node 26 and pnpm 10.8.0 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
+The checked-in configuration installs Node 26 and pnpm 10.34.9 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
 
 The stack uses Home Assistant’s official `6-apps` devcontainer and beta Supervisor channel, matching the upstream App development template. This launcher shares the host runtime socket directory with Supervisor; the legacy `2-addons` launcher fails to start current Core builds because `/run/supervisor/core` is missing. Rebuild older environments through the editor to update the base image.
 

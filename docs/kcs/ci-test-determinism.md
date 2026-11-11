@@ -10,7 +10,9 @@ The required test job builds Meitheal, installs the Chromium version pinned by P
 
 The task runtime opens the shared libSQL client without loading the Drizzle adapter. Persistence specs that use `getDb()` load Drizzle on the first typed query. If a typed-query spec fails while HTTP routes stay healthy, verify the test installation includes `drizzle-orm` before investigating the database.
 
-Use Node 22 and pnpm 10.8.0. From the repository root, run:
+Use Node 22 and pnpm 10.34.9. The pnpm 10.x pin includes security fixes for dependency installation. [pnpm security advisories](https://github.com/pnpm/pnpm/security/advisories)
+
+From the repository root, run:
 
 ```sh
 pnpm install --frozen-lockfile

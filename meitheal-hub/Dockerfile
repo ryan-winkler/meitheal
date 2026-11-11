@@ -9,7 +9,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.23
 # Layer order is optimised for Docker cache: deps change less often than source.
 FROM --platform=$BUILDPLATFORM node:26-alpine3.23 AS builder
 
-RUN npm install -g pnpm@10.8.0
+RUN npm install -g pnpm@10.34.9
 
 WORKDIR /build
 
@@ -33,7 +33,7 @@ RUN pnpm --filter @meitheal/web build
 FROM ${BUILD_FROM} AS runtime-deps
 
 RUN apk add --no-cache nodejs npm
-RUN npm install -g pnpm@10.8.0
+RUN npm install -g pnpm@10.34.9
 
 WORKDIR /opt/meitheal
 
@@ -50,7 +50,7 @@ LABEL io.hass.type="addon"
 ARG MEITHEAL_VERSION
 ENV MEITHEAL_VERSION=$MEITHEAL_VERSION
 
-RUN apk add --no-cache nodejs curl ca-certificates bash
+RUN apk add --no-cache nodejs curl ca-certificates bash 'zlib>=1.4-r0'
 
 WORKDIR /opt/meitheal
 
