@@ -33,6 +33,7 @@ const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
 
 test.describe("Table Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test("the legacy route opens Table and keyboard-applied filter rules survive reload", async ({ page, tableTasks }) => {
     const [matching, other] = tableTasks
@@ -255,13 +256,17 @@ test.describe("Table Shell", () => {
     const draft = "Discard this edit"
     const path = `/api/tasks/${task.id}`
     const savedTitles: string[] = []
-    page.on("request", outbound => {
-      if (outbound.method() === "PATCH" && new URL(outbound.url()).pathname === path) {
+    await page.route(url => url.pathname === path, async route => {
+      const outbound = route.request()
+      if (outbound.method() === "PATCH") {
         savedTitles.push(outbound.postDataJSON().title)
       }
+      await route.continue()
     })
+    const refreshEntered = deferred<void>()
     const release = deferred<void>()
     await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+      refreshEntered.resolve()
       await release.promise
       await route.continue()
     }, { times: 1 })
@@ -270,6 +275,7 @@ test.describe("Table Shell", () => {
       await title.fill(renamed)
       await title.press("Tab")
       await expect(title).toHaveAttribute("data-original", renamed)
+      await refreshEntered.promise
       await expect(table).toHaveAttribute("aria-busy", "true")
       await title.fill(draft)
       await expect(title).toBeFocused()
