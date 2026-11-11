@@ -524,11 +524,15 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
     escapedAssets.push(new URL(route.request().url()).pathname)
     return route.fulfill({ status: 404 })
   })
-  const [controller] = await Promise.all([
+  const [controller, headingFont] = await Promise.all([
     page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/kanban-page-controller.")),
+    page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/outfit-latin-wght-normal.")),
     page.goto(origin + prefix + "/tasks"),
   ])
   expect(controller.ok()).toBe(true)
+  expect(headingFont.ok()).toBe(true)
+  await expect(page.locator('link[rel="preload"][as="font"][href*="outfit-"]')).toHaveCount(1)
+  expect(await page.evaluate(() => document.fonts.load("600 16px Outfit").then(faces => faces.length))).toBe(1)
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   expect(escapedAssets).toEqual([])
 })
