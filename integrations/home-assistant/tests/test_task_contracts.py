@@ -109,7 +109,7 @@ async def test_native_creation_fields_and_flat_receipt(coordinator):
     with patch.object(coordinator, "_fire_event") as event:
         await coordinator.async_create_task("Plan", "Notes", priority=2, due_date="2026-12-02", urgency=0, importance=5)
         coordinator.api.async_request.assert_awaited_once_with("POST", "/api/tasks", payload={"title": "Plan",
-            "description": "Notes", "priority": 2, "due_date": "2026-12-02", "urgency": 0, "importance": 5}, read_json=True)
+            "description": "Notes", "priority": 2, "due_date": "2026-12-02", "urgency": 0, "importance": 5}, read_json=True, event_authority=set())
         event.assert_called_once_with("meitheal_task_created", {"task_id": "created", "title": "Plan"})
     coordinator.async_request_refresh.assert_awaited_once()
 
@@ -138,7 +138,7 @@ async def test_empty_delete_acknowledgement_refreshes_and_emits(coordinator):
     with patch.object(coordinator, "_fire_event") as event:
         await coordinator.async_delete_task("delete")
         event.assert_called_once_with("meitheal_task_deleted", {"task_id": "delete", "title": "Delete me"})
-    coordinator.api.async_request.assert_awaited_once_with("DELETE", "/api/tasks/delete")
+    coordinator.api.async_request.assert_awaited_once_with("DELETE", "/api/tasks/delete", event_authority=set())
     coordinator.async_request_refresh.assert_awaited_once()
 
 
@@ -276,7 +276,7 @@ async def test_nfc_uses_authenticated_route_without_repeat_completion_event(coor
     coordinator.async_request_refresh = AsyncMock()
     with patch.object(coordinator, "_fire_event") as event:
         assert await coordinator.async_complete_task_by_tag("tag") == result
-    coordinator.api.async_request.assert_awaited_once_with("POST", "/api/nfc/complete", payload={"tag_id": "tag"}, read_json=True)
+    coordinator.api.async_request.assert_awaited_once_with("POST", "/api/nfc/complete", payload={"tag_id": "tag"}, read_json=True, event_authority=set())
     assert event.call_count == (0 if repeated else 1)
     coordinator.async_request_refresh.assert_awaited_once()
 

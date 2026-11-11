@@ -11,6 +11,7 @@ import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
+import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
@@ -156,8 +157,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const [inserted] = await client.batch(statements, "write")
   const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
-  dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined)
-  return Response.json(payload, { status: 201 })
+  const authority = await taskEventAuthorityHeaders(["task.created"])
+  dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority)
+  return Response.json(payload, { status: 201, headers: authority })
 }
 
 export const DELETE: APIRoute = async ({ url }) => {

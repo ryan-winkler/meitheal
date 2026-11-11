@@ -122,8 +122,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus.
 
-        Source is 'component' to distinguish from addon-fired events
-        (which use source='meitheal'). This prevents circular re-fires.
+        Source identifies the standalone/App-disabled fallback producer.
+        Mutation responses decide authority before calling this helper.
         """
         self.hass.bus.async_fire(
             event_type,
@@ -252,10 +252,13 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                            "due_date": due_date, "urgency": urgency, "importance": importance}.items():
             if value is not None:
                 payload[key] = value
-        result = await self.api.async_request("POST", "/api/tasks", payload=payload, read_json=True)
+        authority: set[str] = set()
+        result = await self.api.async_request("POST", "/api/tasks", payload=payload, read_json=True,
+                                              event_authority=authority)
         if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not result["id"] or result.get("error"):
             raise UpdateFailed("Meitheal did not acknowledge the created task")
-        self._fire_event("meitheal_task_created", {"task_id": result["id"], "title": title})
+        if "meitheal_task_created" not in authority:
+            self._fire_event("meitheal_task_created", {"task_id": result["id"], "title": title})
         self._fire_logbook("Meitheal", f"created task: {title}")
         await self.async_request_refresh()
 
@@ -292,17 +295,20 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             if task:
                 resolved_title = task.title
 
+        authority: set[str] = set()
         result = await self.api.async_request(
-            "PUT", task_path(task_id), payload={"status": "done"}, read_json=True
+            "PUT", task_path(task_id), payload={"status": "done"}, read_json=True,
+            event_authority=authority,
         )
         if (not isinstance(result, dict) or result.get("id") != task_id
             or result.get("status") not in (STATUS_DONE, "complete") or result.get("error")):
             raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         label = resolved_title or task_id
-        self._fire_event("meitheal_task_completed", {
-            "task_id": task_id, "title": label,
-        })
+        if "meitheal_task_completed" not in authority:
+            self._fire_event("meitheal_task_completed", {
+                "task_id": task_id, "title": label,
+            })
         self._fire_logbook("Meitheal", f"completed task: {label}")
         await self.async_request_refresh()
 
@@ -310,8 +316,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self, tag_id: str
     ) -> dict[str, Any]:
         """Complete a task by NFC tag ID."""
+        authority: set[str] = set()
         result = await self.api.async_request(
-            "POST", "/api/nfc/complete", payload={"tag_id": tag_id}, read_json=True
+            "POST", "/api/nfc/complete", payload={"tag_id": tag_id}, read_json=True,
+            event_authority=authority,
         )
 
         if (not isinstance(result, dict) or result.get("ok") is not True
@@ -324,9 +332,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             if (not isinstance(task, dict) or task.get("id") != task_id
                 or task.get("status") not in (STATUS_DONE, "complete")):
                 raise UpdateFailed("Meitheal did not confirm NFC task completion")
-            self._fire_event("meitheal_task_completed", {
-                "task_id": task_id, "trigger": "nfc", "tag_id": tag_id,
-            })
+            if "meitheal_task_completed" not in authority:
+                self._fire_event("meitheal_task_completed", {
+                    "task_id": task_id, "trigger": "nfc", "tag_id": tag_id,
+                })
             self._fire_logbook("Meitheal", f"completed task via NFC tag: {tag_id}")
         await self.async_request_refresh()
         return result
@@ -390,17 +399,20 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                     task_title = task.title
                     break
 
-        await self.api.async_request("DELETE", task_path(task_id))
+        authority: set[str] = set()
+        await self.api.async_request("DELETE", task_path(task_id), event_authority=authority)
 
-        self._fire_event("meitheal_task_deleted", {
-            "task_id": task_id, "title": task_title,
-        })
+        if "meitheal_task_deleted" not in authority:
+            self._fire_event("meitheal_task_deleted", {
+                "task_id": task_id, "title": task_title,
+            })
         self._fire_logbook("Meitheal", f"deleted task: {task_title}")
         await self.async_request_refresh()
 
     async def async_update_task(self, task_id: str, updates: dict[str, Any]) -> None:
         """Update task fields."""
-        await self.api.async_request("PUT", task_path(task_id), payload=updates)
+        authority: set[str] = set()
+        await self.api.async_request("PUT", task_path(task_id), payload=updates, event_authority=authority)
 
         # Resolve title for logbook
         task_title = task_id
@@ -411,10 +423,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                     break
 
         changed_fields = ", ".join(updates.keys())
-        self._fire_event("meitheal_task_updated", {
-            "task_id": task_id, "title": task_title,
-            "fields": changed_fields,
-        })
+        if "meitheal_task_updated" not in authority:
+            self._fire_event("meitheal_task_updated", {
+                "task_id": task_id, "title": task_title,
+                "fields": changed_fields,
+            })
         self._fire_logbook("Meitheal", f"updated task: {task_title} ({changed_fields})")
         await self.async_request_refresh()
 

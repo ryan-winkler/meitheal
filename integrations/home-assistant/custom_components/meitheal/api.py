@@ -93,7 +93,8 @@ class MeithealApi:
     ) -> None:
         self.session = session
         self.origin = origin
-        self._headers = {"Accept": "application/json"}
+        # Bodyless DELETE is still a JSON API request, not an HTML form.
+        self._headers = {"Accept": "application/json", "Content-Type": "application/json"}
         # Tokenless standalone writes use the existing same-origin proof.
         if not token:
             self._headers["Origin"] = str(origin)
@@ -107,6 +108,7 @@ class MeithealApi:
         params: Mapping[str, str] | None = None,
         payload: dict[str, Any] | None = None,
         read_json: bool = False,
+        event_authority: set[str] | None = None,
     ) -> Any:
         """Request a fixed API path without following redirects or exposing errors."""
         url = self.origin.with_path(path, encoded=True)
@@ -125,6 +127,17 @@ class MeithealApi:
             ) as response:
                 if not 200 <= response.status < 300:
                     raise MeithealResponseError(response.status)
+                if event_authority is not None:
+                    # Response-local authority, not an acknowledgement of bus delivery.
+                    # Never store this on the shared API client: mutations can overlap.
+                    event_authority.update(
+                        event.strip() for event in response.headers.get(
+                            "X-Meitheal-HA-Event-Authority", ""
+                        ).split(",") if event.strip() in {
+                            "meitheal_task_created", "meitheal_task_updated",
+                            "meitheal_task_completed", "meitheal_task_deleted",
+                        }
+                    )
                 if read_json:
                     return await response.json()
         except (aiohttp.ClientError, TimeoutError, ValueError):

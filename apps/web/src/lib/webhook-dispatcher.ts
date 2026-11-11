@@ -39,6 +39,20 @@ const HA_EVENT_MAP: Record<string, MeithealEventType> = {
   "area.updated": "meitheal_area_updated",
 };
 
+export const HA_EVENT_AUTHORITY_HEADER = "X-Meitheal-HA-Event-Authority"
+
+/** Responsibility for this response's events, never a delivery receipt.
+ * Keep native fallback when the App bus is absent or the event is disabled.
+ * This only reads local policy; it never waits for a HA connection.
+ */
+export async function taskEventAuthorityHeaders(eventTypes: string[]): Promise<Record<string, string>> {
+  if (!process.env.SUPERVISOR_TOKEN) return {}
+  const enabled = await getN8nAutoEvents()
+  const owned = eventTypes.filter(type => HA_EVENT_MAP[type] && (enabled.includes(type) || enabled.includes("*")))
+    .map(type => HA_EVENT_MAP[type]!)
+  return owned.length ? { [HA_EVENT_AUTHORITY_HEADER]: [...new Set(owned)].join(",") } : {}
+}
+
 /**
  * Read n8n auto-mode event filter from settings.
  * The Settings UI persists events under `n8n_events` for both auto and
@@ -114,15 +128,15 @@ export function resetWebhookCacheForTests(): void {
   _n8nEventsCachedAt = 0;
 }
 
-export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string, traceId?: string, eventId?: string) {
+export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string, traceId?: string, eventId?: string, responseAuthority?: Record<string, string>) {
   try {
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
     // can trigger on them via the HA WebSocket integration.
     const haEventType = HA_EVENT_MAP[eventType];
     if (haEventType && process.env.SUPERVISOR_TOKEN) {
-      const enabledEvents = await getN8nAutoEvents();
-      if (enabledEvents.includes(eventType) || enabledEvents.includes("*")) {
+      const authority = responseAuthority ?? await taskEventAuthorityHeaders([eventType]);
+      if (authority[HA_EVENT_AUTHORITY_HEADER]?.split(",").includes(haEventType)) {
         const eventData: MeithealTaskEventData = {
           task_id: String(payload.id ?? ""),
           title: String(payload.title ?? ""),

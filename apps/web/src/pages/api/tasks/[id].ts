@@ -3,7 +3,7 @@ import type { InValue } from "@libsql/client"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "../../../lib/ticket-key"
-import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
+import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
@@ -388,7 +388,12 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     ticket_key: formatTicketKey(updTicketNum),
   }
 
-  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
+  const authority = await taskEventAuthorityHeaders([
+    "task.updated",
+    // The App also owns the decision not to re-emit an acknowledged completion.
+    ...(sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) ? ["task.completed"] : []),
+  ])
+  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
@@ -549,7 +554,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   // Phase 1 + Phase 6: Recurrence auto-create — clone task with next due date on completion
   // Rolling recurrence: uses completion date (today) as base instead of original due date
   if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(update.previousStatus ?? "")) {
-    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
       if (await isFeatureEnabled("gamification")) {
@@ -617,7 +622,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   return new Response(JSON.stringify(taskPayload), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...authority,
+    },
   })
 }
 
@@ -636,7 +644,8 @@ export const DELETE: APIRoute = async ({ params }) => {
   const resolvedId = resolved.id
   await repo.deleteTask(resolvedId)
 
-  dispatchTaskEvent("task.deleted", { id: resolvedId }).catch(() => {})
+  const authority = await taskEventAuthorityHeaders(["task.deleted"])
+  dispatchTaskEvent("task.deleted", { id: resolvedId }, undefined, undefined, undefined, authority).catch(() => {})
 
   // Clean up any associated calendar events (fire-and-forget)
   import("../../../domains/calendar/calendar-bridge").then(({ removeTaskCalendarEvent }) => {
@@ -648,7 +657,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     removeTaskFromTodoList(resolvedId).catch(() => {})
   }).catch(() => {})
 
-  return new Response(null, { status: 204 })
+  return new Response(null, { status: 204, headers: authority })
 }
 
 /** PATCH is an alias for PUT — some client-side callers use PATCH for partial updates */

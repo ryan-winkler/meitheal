@@ -5,6 +5,7 @@ import { apiError, apiJson } from "../../../lib/api-response"
 import { isFeatureEnabled } from "../../../lib/feature-flags"
 import { readWithinLimit } from "../../../lib/bounded-body"
 import { PUT as updateTask } from "../tasks/[id]"
+import { HA_EVENT_AUTHORITY_HEADER } from "../../../lib/webhook-dispatcher"
 
 /** Complete the uniquely assigned task through the ordinary task mutation path. */
 export const POST: APIRoute = async (context) => {
@@ -37,5 +38,8 @@ export const POST: APIRoute = async (context) => {
     }),
   })
   if (!response.ok) return response
-  return apiJson({ ok: true, task_id: task.id, task: await response.json() })
+  const result = apiJson({ ok: true, task_id: task.id, task: await response.json() })
+  const authority = response.headers.get(HA_EVENT_AUTHORITY_HEADER)
+  if (authority) result.headers.set(HA_EVENT_AUTHORITY_HEADER, authority)
+  return result
 }

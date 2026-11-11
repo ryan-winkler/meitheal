@@ -195,9 +195,10 @@ export function dispatchTaskCreation(
   taskPayload: ReturnType<typeof taskCreationPayload>,
   requestId?: string,
   eventId?: string,
+  responseAuthority?: Record<string, string>,
 ) {
   const { id, ticket_key, title, description, priority } = taskPayload
-  dispatchTaskEvent("task.created", taskPayload, requestId, undefined, eventId).catch(() => {})
+  dispatchTaskEvent("task.created", taskPayload, requestId, undefined, eventId, responseAuthority).catch(() => {})
 
   // Phase 52: Native Push Notification for Urgent (P1) tasks
   if (priority === 1) {
