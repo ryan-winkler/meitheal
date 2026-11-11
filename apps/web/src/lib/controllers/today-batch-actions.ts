@@ -55,14 +55,14 @@ export function setupBatchUI(container: HTMLElement, lm: ListenerManager) {
     }
   }
 
-  function syncBar() {
+  const syncBar = () => {
     bar.hidden = !batchMode || !selected.size
     count.textContent = pending
       ? (window.mI18n?.get("common.saving") ?? "Saving…")
       : `${selected.size} selected`
   }
 
-  function syncSelection() {
+  const syncSelection = () => {
     batchBtn.setAttribute("aria-pressed", String(batchMode))
     container.classList.toggle("batch-mode", batchMode)
     for (const box of container.querySelectorAll<HTMLInputElement>(".tli__batch-cb")) syncBox(box)
