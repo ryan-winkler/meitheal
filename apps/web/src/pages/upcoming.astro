@@ -429,16 +429,8 @@ function dayLabelClass(day: DayGroup): string {
   }
 
   /* ── Task list collapse ── */
-  .task-list {
-    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    max-height: 2000px;
-    opacity: 1;
-    overflow: hidden;
-  }
   .task-list.collapsed {
-    max-height: 0;
-    opacity: 0;
-    pointer-events: none;
+    display: none;
   }
 
   /* ── Day empty state ── */
@@ -458,7 +450,7 @@ function dayLabelClass(day: DayGroup): string {
     align-items: center;
     gap: 10px;
     border-top: 1px solid var(--border);
-    transition: background 0.15s;
+    transition: background 0.15s, opacity 0.3s;
   }
   .task-item:hover {
     background: var(--bg-hover);
@@ -563,7 +555,6 @@ function dayLabelClass(day: DayGroup): string {
 
   /* ── Accessibility: reduced motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .task-list { transition: none; }
     .task-item { transition: none; }
     .day-header { transition: none; }
     .chevron-icon { transition: none; }

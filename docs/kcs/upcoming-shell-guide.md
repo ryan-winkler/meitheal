@@ -31,7 +31,7 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 
 1. Use the task checkbox in a day group.
 2. The checkbox waits for confirmation before accepting another activation. If saving fails, it resets and keeps its current focus so you can retry.
-3. After confirmation, the row leaves the open day card. If focus was on the completed checkbox, it moves to a nearby task or to the day heading.
+3. After confirmation, the row leaves the open day card. Focus within that row moves to a nearby task or to the day heading. Focus elsewhere stays where you moved it.
 
 ### Hand work off to detail without leaving the shell context
 
@@ -43,8 +43,8 @@ The title link and completion checkbox each provide at least a 44 × 44 CSS pixe
 
 ### Accordion groups stop expanding or collapsing
 
-1. Confirm the day header still updates `aria-expanded`.
-2. If the header moves but the list does not, inspect for client errors from `upcoming-shell`.
+1. Confirm the day header updates `aria-expanded`. The collapsed list is hidden and skips keyboard focus.
+2. Expand the day and confirm you can scroll to and open the final task, including on busy days. If the list does not respond, inspect for client errors from `upcoming-shell`.
 
 ### Clicking a task opens the wrong route
 

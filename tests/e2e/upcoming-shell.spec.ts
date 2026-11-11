@@ -142,16 +142,101 @@ test.describe("Upcoming Shell", () => {
       await expect(detail).toBeHidden()
       await page.unroute(taskPath)
 
-      await checkbox.press("Space")
+      async function completeWhileMovingFocus(taskId: string, taskCheckbox: typeof checkbox, moveFocus: () => Promise<void>) {
+        const held = deferred<void>()
+        const release = deferred<void>()
+        const target = `/api/tasks/${taskId}`
+        await page.route(target, async route => {
+          held.resolve()
+          await release.promise
+          await route.continue()
+        }, { times: 1 })
+        try {
+          await taskCheckbox.press("Space")
+          await held.promise
+          await moveFocus()
+        } finally {
+          release.resolve()
+        }
+      }
+
+      const firstLink = row.getByRole("link", { name: title })
+      await completeWhileMovingFocus(firstTaskId, checkbox, async () => {
+        await page.keyboard.press("Tab")
+        await expect(firstLink).toBeFocused()
+      })
       await expect(row).toHaveCount(0)
       expect((await (await request.get(taskPath)).json()).status).toBe("complete")
       await expect(page.locator(`${fixtures[0].section} .day-header`).filter({ hasText: dayLabel })).toBeFocused()
+
+      const laterCheckbox = page.getByRole("checkbox", { name: `Complete ${fixtures[1].title}` })
+      const outside = page.locator("#upcoming-bar-new-task")
+      await completeWhileMovingFocus(ids[1]!, laterCheckbox, () => outside.focus())
+      await expect(laterCheckbox).toHaveCount(0)
+      await expect(outside).toBeFocused()
       await expect(detail).toBeHidden()
       await expect(page).toHaveURL(/\/upcoming$/)
     } finally {
       for (const id of ids) {
         await request.delete(`/api/tasks/${id}`, { headers })
       }
+    }
+  })
+
+  test("a dense day exposes its final row after keyboard collapse and reopen", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const dueDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const taskCount = 36
+    const titlePrefix = "Upcoming dense day fixture"
+    const ids: string[] = []
+
+    try {
+      for (let index = 1; index <= taskCount; index++) {
+        const created = await request.post("/api/tasks", {
+          headers,
+          data: { title: `${titlePrefix} ${index}`, due_date: dueDate, status: "pending" },
+        })
+        expect(created.status()).toBe(201)
+        ids.push((await created.json()).id)
+      }
+
+      await page.emulateMedia({ reducedMotion: "reduce" })
+      await page.setViewportSize({ width: 320, height: 860 })
+      await page.reload()
+      await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+
+      const card = page.locator(".day-card--populated").filter({ hasText: `${titlePrefix} 1` })
+      const header = card.getByRole("button").first()
+      const list = card.locator(".task-list")
+      await header.press("Space")
+      await expect(header).toHaveAttribute("aria-expanded", "false")
+      await expect(list).toHaveAttribute("inert", "")
+      await expect(list).toBeHidden()
+      await header.press("Enter")
+      await expect(header).toHaveAttribute("aria-expanded", "true")
+      await expect(list).not.toHaveAttribute("inert", "")
+      const dimensions = await list.evaluate(element => ({ height: element.clientHeight, contentHeight: element.scrollHeight }))
+      expect(dimensions.height).toBeGreaterThan(2000)
+      expect(dimensions.height).toBe(dimensions.contentHeight)
+
+      const lastRow = list.locator(".task-item").last()
+      const lastLink = lastRow.getByRole("link")
+      const lastId = await lastLink.getAttribute("data-task-detail-link")
+      await lastRow.scrollIntoViewIfNeeded()
+      await expect(lastLink).toBeInViewport({ ratio: 1 })
+      expect(await lastLink.evaluate(element => {
+        const { x, y, width, height } = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(x + width / 2, y + height / 2))
+      })).toBe(true)
+      await lastRow.getByRole("checkbox").focus()
+      await page.keyboard.press("Tab")
+      await expect(lastLink).toBeFocused()
+      await page.keyboard.press("Enter")
+      const detail = page.locator("#task-detail-overlay")
+      await expect(detail).toHaveAttribute("data-open-task-id", lastId!)
+      await expect(detail).toBeVisible()
+    } finally {
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
 
@@ -162,7 +247,11 @@ test.describe("Upcoming Shell", () => {
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", {
       headers,
-      data: { title, due_date: tomorrow, status: "pending", assigned_to: assignee },
+      data: {
+        title, due_date: tomorrow, status: "active", assigned_to: assignee,
+        color: "#2563eb", recurrence_rule: "FREQ=DAILY",
+        checklists: JSON.stringify([{ id: "upcoming-target-step", text: "Review the schedule", done: false }]),
+      },
     })
     expect(created.status(), await created.text()).toBe(201)
     const { id } = await created.json()
@@ -180,6 +269,12 @@ test.describe("Upcoming Shell", () => {
           await avatar.hover({ timeout: 5000 })
           const taskRow = page.locator(".task-item").filter({ has: link })
           await taskRow.scrollIntoViewIfNeeded()
+          for (const metadata of [
+            taskRow.locator('[data-badge-status="active"]'), taskRow.locator(".task-color-swatch"),
+            taskRow.getByTitle("Recurring"), taskRow.getByTitle("Checklist: 0/1"), avatar,
+          ]) {
+            await expect(metadata).toBeInViewport({ ratio: 1 })
+          }
           const row = await taskRow.boundingBox()
           if (!row) throw new Error("The Upcoming task row is outside the rendered layout")
           expect(row.x).toBeGreaterThanOrEqual(0)

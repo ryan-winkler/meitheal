@@ -40,10 +40,9 @@ function initTaskCheckboxes(): void {
         if (!item) return
 
         item.style.opacity = "0.4"
-        item.style.transition = "opacity 0.3s"
         setTimeout(() => {
           const availableCheckbox = ".task-checkbox:not([aria-disabled])"
-          const nextFocus = document.activeElement === checkbox
+          const nextFocus = item.contains(document.activeElement)
             ? item.nextElementSibling?.querySelector<HTMLElement>(availableCheckbox)
               ?? item.previousElementSibling?.querySelector<HTMLElement>(availableCheckbox)
               ?? item.closest(".day-card--populated")?.querySelector<HTMLElement>(".day-header")
