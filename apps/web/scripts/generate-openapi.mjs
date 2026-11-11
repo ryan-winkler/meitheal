@@ -1469,8 +1469,47 @@ const paths = {
 
   // ── Settings ──
   "/api/settings": {
-    get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map. System settings require administrator access and credential values are masked.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
-    put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. System settings and activating Custom mode require administrator access. With custom_theme_css, send name to save the CSS, filename and mode together. Send both strings empty to remove the theme.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {}, name: { type: "string", maxLength: 255 } }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
+    get: {
+      operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",
+      description: "Without key, returns a flat settings map. An administrator's map includes the read-only ai-handoff-editable flag. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Use key=ai-provider&handoff=1 for the saved provider and permitted destination in one snapshot. This view requires current Home Assistant household access or a local standalone operator. Members can read a custom URL after a current administrator explicitly shares that exact URL. Agent credentials cannot use the handoff view.",
+      parameters: [
+        { name: "key", in: "query", required: false, description: "Read one setting instead of the settings map", schema: { type: "string", minLength: 1 } },
+        { name: "handoff", in: "query", required: false, description: "Request the current AI handoff snapshot with key=ai-provider", schema: { type: "string", const: "1" } },
+      ],
+      responses: {
+        200: jsonContent({ anyOf: [
+          { type: "object", additionalProperties: true, description: "Flat settings map when key is absent" },
+          { type: "object", required: ["key", "value"], properties: { key: { type: "string" }, value: {}, configured: { type: "boolean", description: "Present for masked credential settings" } }, additionalProperties: false, description: "Single setting when key is supplied; value is null when unset" },
+          { type: "object", required: ["key", "value", "canUseAssist"], properties: {
+            key: { const: "ai-provider" }, value: { enum: [null, "chatgpt", "claude", "gemini", "ollama", "ha_llm", "custom"] },
+            url: { type: "string", format: "uri", description: "Permitted HTTP(S) custom or Ollama destination" },
+            urlProblem: { const: "invalid", description: "A current administrator can still use Assist when the secondary URL is invalid" },
+            canUseAssist: { type: "boolean", description: "Current administrator or local standalone operator can use App-managed Assist" },
+          }, additionalProperties: false, description: "AI handoff snapshot" },
+        ] }, "Settings map or single setting"),
+        403: { description: "Current access or explicit custom URL review required" },
+        409: { description: "Saved AI provider or URL is invalid" },
+        503: { description: "Home Assistant could not verify current access" },
+      },
+    },
+    put: {
+      operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting",
+      description: "Send a key and value. System settings and activating Custom mode require administrator access. With custom_theme_css, send name to save the CSS, filename and mode together. Send both strings empty to remove the theme. For a Settings editor save of ai-provider, include the previously saved provider, URL and sharing state. Custom and Ollama additionally require the new destination and sharing choice, which commit together with the provider. A legacy ai-custom-url write revokes approval if it changes the destination. Read ai-custom-url-approved as an administrator to inspect the approval; set it through the grouped save.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["key"],
+        properties: {
+          key: { type: "string" }, value: {}, name: { type: "string", maxLength: 255 },
+          custom_url: { type: "string", format: "uri" }, share_custom_url: { type: "boolean" },
+          previous_provider: { type: ["string", "null"] }, previous_custom_url: { type: ["string", "null"] },
+          previously_shared: { type: "boolean" },
+        },
+      } } } },
+      responses: {
+        200: { description: "Updated" }, 400: { description: "Invalid setting or AI handoff input" },
+        403: { description: "Administrator required" }, 409: { description: "Saved AI provider, URL or sharing choice changed" },
+        503: { description: "Home Assistant could not verify current access" },
+      },
+    },
   },
 
   // ── Lanes (Kanban) ──
@@ -1614,8 +1653,8 @@ const paths = {
       },
     },
   },
-  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", description: "Exports a version-2 configuration bundle with decoded JSON values marked _settingsEncoding: json-values. Credentials are omitted. This is not an App database backup.", responses: { 200: { description: "Settings JSON" } } } },
-  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", description: "Imports known non-secret settings with atomic rule and built-in framework override replacement. Accepts typed values and historical native version-2 exports containing serialized values.", responses: { 200: { description: "Imported" } } } },
+  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", description: "Requires a current Home Assistant administrator. Exports a version-2 configuration bundle with decoded JSON values marked _settingsEncoding: json-values. Credential settings and household AI URL approval are omitted. A saved destination can still contain sensitive values. This is not an App database backup.", responses: { 200: { description: "Settings JSON" }, 403: { description: "Current administrator required" }, 503: { description: "Home Assistant could not verify current access" } } } },
+  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", description: "Requires a current Home Assistant administrator. Imports known non-secret settings. Version-2 payloads can replace rules and built-in framework overrides and restore custom definitions in the same transaction. Unrelated custom frameworks are kept. Accepts typed values and historical native version-2 exports containing serialized values. An imported AI provider or URL requires fresh household sharing approval.", responses: { 200: { description: "Imported" }, 403: { description: "Current administrator required" }, 503: { description: "Home Assistant could not verify current access" } } } },
 
   // ── License ──
   "/api/license/status": {

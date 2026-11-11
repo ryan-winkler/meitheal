@@ -35,7 +35,6 @@ import {
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
 import { initPageShellNavigation } from "./page-shell-controller"
 import { openTaskDetailHandoff } from "./task-detail-handoff"
-import { parseAiHandoffUrl } from "./ai-handoff-url"
 import type { TodayTaskCounts } from "./task-queries"
 import { TODAY_SECTIONS } from "./today-registry"
 import { compareTodayRows, matchesTodayFilters, type TodayFilters } from "./today-list"
@@ -403,7 +402,14 @@ function closeSnoozePopover() {
 
 // ── Ask AI ────────────────────────────────────────────────────────────────
 
-function handleAskAi(el: HTMLElement) {
+let activeAiHandoff: AbortController | undefined
+
+async function handleAskAi(el: HTMLElement) {
+  if (el.dataset.aiBusy === "true") return
+  activeAiHandoff?.abort()
+  const request = new AbortController()
+  activeAiHandoff = request
+  const signal = AbortSignal.any([lm.signal, request.signal])
   const title = el.dataset.title ?? ""
   const desc = el.dataset.description ?? ""
   const status = el.dataset.status ?? "pending"
@@ -411,32 +417,33 @@ function handleAskAi(el: HTMLElement) {
 
   const prompt = `I have a task in my task manager:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify potential blockers?`
 
-  const provider = localStorage.getItem("meitheal-ai-provider") || "chatgpt"
-
-  if (provider === "ha_llm") {
-    window.openAskHaModal?.(prompt)
-    return
-  }
-
-  if (provider === "ollama" || provider === "custom") {
-    const configured = localStorage.getItem("meitheal-ai-custom-url")
-    const url = parseAiHandoffUrl(configured || (provider === "ollama" ? "http://localhost:11434" : ""))
-    if (!url) {
-      showToast("settings.ext_ai_invalid_url", "error")
+  el.dataset.aiBusy = "true"
+  el.setAttribute("aria-busy", "true")
+  try {
+    const { resolveAiHandoffTarget, offerAiHandoff } = await import("@domains/ai/ai-context-service")
+    const target = await resolveAiHandoffTarget(signal)
+    if (!target || signal.aborted) return
+    if (target.provider === "ha_llm") {
+      if (!target.canUseAssist) showToast("settings.ai_handoff_ha_denied", "error")
+      else if (window.openAskHaModal) window.openAskHaModal(prompt)
+      else showToast("settings.ai_handoff_ha_unavailable", "error")
       return
     }
-    window.open(url.href, "_blank", "noopener,noreferrer")
-    return
+    if (!target.url) {
+      showToast("settings.ai_handoff_url_invalid", "error")
+      return
+    }
+    const url = new URL(target.url)
+    const sendsTaskDetails = target.provider !== "custom" && target.provider !== "ollama"
+    if (sendsTaskDetails) url.searchParams.set("q", prompt)
+    await offerAiHandoff(url, sendsTaskDetails, signal)
+  } catch {
+    if (!signal.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
+  } finally {
+    if (activeAiHandoff === request) activeAiHandoff = undefined
+    delete el.dataset.aiBusy
+    el.removeAttribute("aria-busy")
   }
-
-  const encodedPrompt = encodeURIComponent(prompt)
-  const urls: Record<string, string> = {
-    chatgpt: `https://chatgpt.com/?q=${encodedPrompt}`,
-    claude: `https://claude.ai/new?q=${encodedPrompt}`,
-    gemini: `https://gemini.google.com/app?q=${encodedPrompt}`,
-  }
-  const url = urls[provider] || urls.chatgpt
-  window.open(url, "_blank", "noopener,noreferrer")
 }
 
 function parseQuickTask(input: string): ParsedTask {

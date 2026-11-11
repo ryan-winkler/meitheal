@@ -22,6 +22,7 @@ const frameworks = defineCollection({
   schema: z.object({
     name: z.string(),
     version: z.string(),
+    description: z.string().optional(),
     archetype: z.enum(["formula", "matrix", "workflow", "taxonomy"]).default("formula"),
     formula: z.string().optional(),
     badge_thresholds: z.array(z.object({

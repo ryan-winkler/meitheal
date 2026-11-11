@@ -16,7 +16,7 @@ import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { frameworkImportBytesMax } from "@lib/framework-import-limit"
 import { exportFilename } from "@lib/export-filename"
-import { validateFrameworkConfig, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
+import { isFrameworkFieldOptions, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
 import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controller"
 
 interface RuleApiResponse {
@@ -540,14 +540,15 @@ async function loadFrameworkConfigs(): Promise<void> {
         const safeLabel = escapeHtml(field.label)
         const safeHelp = escapeHtml(field.helpText)
         const safeKey = escapeHtml(field.key)
-        const fieldInfo = field.options
+        const fieldInfo = isFrameworkFieldOptions(field.options)
           ? `<span class="fw-field-type" title="${safeHelp}">
                ${field.options.map((o) => escapeHtml(String(o.label))).join(" · ")}
              </span>`
-          : field.min !== undefined && field.max !== undefined
+          : Number.isFinite(field.min) && Number.isFinite(field.max)
             ? `<span class="fw-field-range">${field.min}–${field.max}</span>`
             : ""
 
+        const weight = frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight
         return `
           <div class="rules-fw-field">
             <div class="rules-fw-field-header">
@@ -561,7 +562,7 @@ async function loadFrameworkConfigs(): Promise<void> {
                 data-framework="${escapeHtml(fw.id)}"
                 data-field="${safeKey}"
                 min="0" max="3" step="0.1"
-                value="${frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight}"
+                value="${Number.isFinite(weight) ? weight : 1}"
                 aria-label="${safeLabel} weight"
               />
               <span class="weight-display">${field.weight.toFixed(1)}×</span>
@@ -777,26 +778,12 @@ export function initRulesSettings(): void {
       }
 
       let configurationImported = false
-      let definitionsImported = false
       try {
         if (file.size > 204800) throw new Error("Rules import exceeds 200 KiB")
         const payload = JSON.parse(await file.text()) as Record<string, unknown>
         if (!payload || !Array.isArray(payload.rules)) throw new Error("The import must contain a rules array")
         const custom = payload.customFrameworks ?? []
         if (!Array.isArray(custom) || custom.length > 1000) throw new Error("Invalid custom framework list")
-        const customs: Array<{ config: FrameworkConfig; exists: boolean }> = []
-        const seen = new Set<string>()
-        for (const value of custom) {
-          if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid custom framework")
-          const config = value as FrameworkConfig
-          const errors = validateFrameworkConfig(config)
-          if (errors || seen.has(config.id)) throw new Error(errors?.join(". ") || "Duplicate custom framework ID")
-          seen.add(config.id)
-          const existing = await apiFetch(`/api/frameworks/${encodeURIComponent(config.id)}`)
-          if (!existing.ok && (existing.status !== 404 || existing.errorCode !== "FRAMEWORK_NOT_FOUND")) throw new Error("Could not check custom framework")
-          if (existing.ok && (existing.data as FrameworkConfig).source === "built-in") throw new Error("Custom framework conflicts with a built-in framework")
-          customs.push({ config, exists: existing.ok })
-        }
         const catalog = await apiFetch("/api/frameworks")
         if (!catalog.ok || !Array.isArray(catalog.data)) throw new Error("Could not load frameworks")
         const builtIns = new Map((catalog.data as FrameworkConfig[]).filter(fw => fw.source === "built-in").map(fw => [fw.id, fw]))
@@ -813,31 +800,24 @@ export function initRulesSettings(): void {
             ...(field.helpText !== undefined ? { helpText: field.helpText } : {}),
           }])) : fw.fields
           const overrides = { ...(fields !== undefined ? { fields } : {}), ...(fw.formula !== undefined ? { formula: fw.formula } : {}), ...(fw.badgeThresholds !== undefined ? { badgeThresholds: fw.badgeThresholds } : {}) }
-          const errors = validateFrameworkOverrides(overrides, base.fields.map(field => field.key))
+          const errors = validateFrameworkOverrides(overrides, base.fields.map(field => field.key), { preserveLegacyFormula: true })
           if (errors) throw new Error(errors.join(". "))
           return { frameworkId: base.id, overrides: overrides as FrameworkOverrides }
         })
         await withRulesReplacement(async () => {
           const response = await fetch("/api/import/settings", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ _version: 2, settings: {}, rules: payload.rules, ...(payload.frameworks === undefined ? {} : { frameworkOverrides }) }), signal: pageLifecycle.signal })
+            body: JSON.stringify({ _version: 2, settings: {}, rules: payload.rules, customFrameworks: custom,
+              ...(payload.frameworks === undefined ? {} : { frameworkOverrides }) }), signal: pageLifecycle.signal })
           const outcome = await response.json()
           if (!response.ok || outcome.success !== true) throw new Error("Configuration import was rejected")
           configurationImported = true
-          await loadRulesIntoUI()
-          // Custom definitions use their existing endpoint. All validation/lookups ran before any changes.
-          for (const { config, exists } of customs) {
-            await apiFetch(exists ? `/api/frameworks/${encodeURIComponent(config.id)}` : "/api/frameworks", {
-              method: exists ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
-            })
-          }
-          definitionsImported = true
           await loadRulesIntoUI()
           await loadFrameworkConfigs()
           showToast("settings.rules_imported")
           importInput.value = ""
         })
       } catch {
-        showToast(configurationImported ? definitionsImported ? "settings.rules_import_refresh_failed" : "settings.rules_import_partial" : "settings.import_failed", "error")
+        showToast(configurationImported ? "settings.rules_import_refresh_failed" : "settings.import_failed", "error")
       }
     }))
   }

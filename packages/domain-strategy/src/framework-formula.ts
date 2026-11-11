@@ -1,6 +1,8 @@
-/** Parse the bounded arithmetic grammar without dynamic code. */
-function parseFrameworkFormula(formula: string, fieldValue: (key: string) => number): number {
+/** Evaluate the arithmetic supported by framework formulas without dynamic code. */
+function parseFormula(formula: string, values: Record<string, unknown>, syntaxOnly = false): number | null {
+  if (typeof formula !== "string" || formula.length > 4096) return null
   const tokens = formula.match(/[a-z_][a-z_0-9]*|(?:\d+(?:\.\d*)?|\.\d+)|[()+*/-]|\S/gi) ?? []
+  if (tokens.length > 512) return null
   let cursor = 0
 
   function primary(): number {
@@ -14,7 +16,14 @@ function parseFrameworkFormula(formula: string, fieldValue: (key: string) => num
     if (!token) throw new Error("Missing formula value")
     if (/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(token)) return Number(token)
     if (!/^[a-z_][a-z_0-9]*$/i.test(token)) throw new Error("Invalid formula")
-    return fieldValue(token)
+    const value = values[token]
+    if (typeof value === "boolean") return Number(value)
+    if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") {
+      throw new Error("Missing field")
+    }
+    const number = Number(value)
+    if (!Number.isFinite(number)) throw new Error("Invalid field")
+    return number
   }
 
   function product(): number {
@@ -37,38 +46,18 @@ function parseFrameworkFormula(formula: string, fieldValue: (key: string) => num
     return result
   }
 
-  const score = expression()
-  if (cursor !== tokens.length) throw new Error("Unsupported formula")
-  return score
-}
-
-/** Identify unsupported syntax and references independently of the entered estimates. */
-export function isFrameworkFormulaSupported(formula: string, fieldKeys: string[]): boolean {
   try {
-    parseFrameworkFormula(formula, key => {
-      if (!fieldKeys.includes(key)) throw new Error("Unknown field")
-      return 1
-    })
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Evaluate the arithmetic supported by framework formulas without dynamic code. */
-export function evaluateFrameworkFormula(formula: string, values: Record<string, unknown>): number | null {
-  try {
-    const score = parseFrameworkFormula(formula, key => {
-      const value = values[key]
-      if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") {
-        throw new Error("Missing field")
-      }
-      const number = Number(value)
-      if (!Number.isFinite(number)) throw new Error("Invalid field")
-      return number
-    })
-    return Number.isFinite(score) ? Math.round(score) : null
+    const score = expression()
+    return cursor === tokens.length && (syntaxOnly || Number.isFinite(score)) ? syntaxOnly ? 0 : Math.round(score) : null
   } catch {
     return null
   }
+}
+
+export function evaluateFrameworkFormula(formula: string, values: Record<string, unknown>): number | null {
+  return parseFormula(formula, values)
+}
+
+export function isFrameworkFormulaSupported(formula: string, fields: readonly string[]): boolean {
+  return parseFormula(formula, Object.fromEntries(fields.map(key => [key, 1])), true) !== null
 }

@@ -40,18 +40,26 @@ for (const replacement of ["preset", "defaults", "import"] as const) {
   })
 }
 
-test("partial custom-definition failure refreshes imported rule IDs and preserves the file for retry", async ({ page, request }) => {
+test("a rejected combined rules import preserves the current IDs and can retry the same file", async ({ page, request }) => {
   await request.put("/api/rules", { data: { rules: [initialRule] } })
-  await page.route("**/api/frameworks", route => route.request().method() === "POST"
-    ? route.fulfill({ status: 503, json: { ok: false } }) : route.continue())
+  const before = await (await request.get("/api/rules")).json()
+  await page.route("**/api/import/settings", route => route.fulfill({ status: 503, json: { success: false } }))
   await page.goto("/settings#rules-lenses-settings")
   const input = page.locator("#rules-import-input")
-  await input.setInputFiles({ name: "partial.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({
+  const backup = { name: "rules.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({
     rules: [{ ...initialRule, lensIds: ["rice"] }, { ...initialRule, name: "Heating safety", tags: ["safety"] }], customFrameworks: [custom],
-  })) })
+  })) }
+  await input.setInputFiles(backup)
   await page.locator("#confirm-ok").click()
-  await expect(page.getByText("Rules and built-in settings were imported, but a custom framework failed.", { exact: false })).toBeVisible()
+  await expect(page.locator("#toast-container .toast.error")).not.toHaveCount(0)
   await expect(input).not.toHaveValue("")
+  expect(await (await request.get("/api/rules")).json()).toEqual(before)
+  expect((await request.get(`/api/frameworks/${custom.id}`)).status()).toBe(404)
+  await page.unroute("**/api/import/settings")
+  await input.setInputFiles(backup)
+  await page.locator("#confirm-ok").click()
+  await expect(input).toHaveValue("")
+  expect((await (await request.get(`/api/frameworks/${custom.id}`)).json()).data).toMatchObject(custom)
   await page.locator('.rules-fw-check[data-task-type="task"][data-framework="kcs"]').locator("..").click()
   await expect.poll(async () => (await (await request.get("/api/rules")).json()).data.find((item: { name: string }) => item.name === "Task Default")?.lensIds).toEqual(expect.arrayContaining(["rice", "kcs"]))
   const rules = (await (await request.get("/api/rules")).json()).data
@@ -59,7 +67,9 @@ test("partial custom-definition failure refreshes imported rule IDs and preserve
   expect(rules.find((item: { name: string }) => item.name === "Heating safety").tags).toEqual(["safety"])
 })
 
-test("invalid custom definitions are rejected before any configuration mutation", async ({ page }) => {
+test("invalid custom definitions are rejected before any configuration mutation", async ({ page, request }) => {
+  await request.put("/api/rules", { data: { rules: [initialRule] } })
+  const before = await (await request.get("/api/rules")).json()
   const writes: string[] = []
   await page.route("**/api/**", route => {
     if (route.request().method() !== "GET") writes.push(route.request().url())
@@ -69,7 +79,9 @@ test("invalid custom definitions are rejected before any configuration mutation"
   await page.locator("#rules-import-input").setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ rules: [], customFrameworks: [{ id: "bad", fields: [] }] })) })
   await page.locator("#confirm-ok").click()
   await expect(page.locator("#toast-container .toast.error")).not.toHaveCount(0)
-  expect(writes).toEqual([])
+  expect(writes).toHaveLength(1)
+  expect(new URL(writes[0]!).pathname).toMatch(/\/api\/import\/settings$/)
+  expect(await (await request.get("/api/rules")).json()).toEqual(before)
   await expect(page.locator("#rules-import-input")).not.toHaveValue("")
 })
 

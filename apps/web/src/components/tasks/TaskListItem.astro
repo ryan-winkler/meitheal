@@ -518,7 +518,8 @@ const customEntries = Object.entries(task.custom_fields).filter(
     transition: opacity 0.15s;
     flex-shrink: 0;
   }
-  .tli:hover .tli__actions {
+  .tli:hover .tli__actions,
+  .tli:focus-within .tli__actions {
     opacity: 1;
   }
   .tli__action {

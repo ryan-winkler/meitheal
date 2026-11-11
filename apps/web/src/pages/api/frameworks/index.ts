@@ -10,6 +10,7 @@
  */
 import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "@lib/settings-security"
+import { validateSafeId } from "@lib/sanitize-id"
 import { listBuiltInFrameworks } from "@domains/strategy/framework-catalog"
 import { readFrameworkImport } from "@domains/strategy/framework-import"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
@@ -17,7 +18,6 @@ import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } fro
 import { mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
-import { validateSafeId } from "@lib/sanitize-id"
 
 export const GET: APIRoute = async () => {
   try {
@@ -75,6 +75,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
         JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       )
+    }
+    const idError = validateSafeId(body.id, "framework_id")
+    if (idError) {
+      return new Response(JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idError }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
     }
 
     // Check ID collision with built-in frameworks

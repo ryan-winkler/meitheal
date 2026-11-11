@@ -17,6 +17,7 @@
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { renderTypeIconSvg } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
+        import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
         import { initLabelsAndSubtasks } from "@lib/controllers/modal-labels-subtasks";
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
@@ -243,6 +244,7 @@
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
+          document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
@@ -878,12 +880,10 @@
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
             try {
-              const settingsRes = await fetch(
-                (window.__ingress_path || "") + "/api/settings",
-                { signal: __signal },
-              );
+              const settingsRes = await fetch("/api/settings", { signal: modalSignal })
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
+                if (modalSignal.aborted || currentTaskId !== taskId) return
                 if (allSettings?.custom_fields) {
                   try {
                     const parsed = JSON.parse(
@@ -898,6 +898,7 @@
             } catch { /* non-fatal */ }
 
             // Attach Strategic Lens Evaluator Payload Hook
+            if (modalSignal.aborted || currentTaskId !== taskId) return
             if (window.attachStrategicLens) {
               const lensGeneration = detailGeneration
               window.attachStrategicLens(
@@ -1540,55 +1541,43 @@
             }
           }, { signal: __signal });
 
-        // Ask AI — inline HA Assist response
-        document
-          .getElementById("td-ask-ai")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const btn = document.getElementById("td-ask-ai") as HTMLElement;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = "⚙️ Thinking…";
-            btn.classList.add("opacity-60", "pointer-events-none");
+        const askAi = document.querySelector<HTMLButtonElement>("#td-ask-ai")
+        askAi?.addEventListener("click", async () => {
+          const taskId = currentTaskId
+          const signal = _modalAbortController?.signal
+          if (!taskId || !signal || signal.aborted || askAi.getAttribute("aria-busy") === "true") return
+          askAi.setAttribute("aria-disabled", "true")
+          askAi.setAttribute("aria-busy", "true")
+          askAi.classList.add("opacity-60")
+          document.getElementById("td-ai-response")?.remove()
 
-            // Remove previous AI response
-            document.getElementById("td-ai-response")?.remove();
-
-            try {
-              const result = await askAIForTask(currentTaskId);
-
-              const responseEl = document.createElement("div");
-              responseEl.id = "td-ai-response";
-              responseEl.style.cssText = "margin-top:8px;";
-
-              if (result.source === "ha-assist" && result.response) {
-                responseEl.className =
-                  "p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed";
-                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">✨ AI Response</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`;
-                btn.innerHTML = "✨ AI Responded";
-              } else {
-                responseEl.className =
-                  "p-3 bg-warning/10 border border-warning/20 rounded-md text-xs text-text-secondary leading-relaxed";
-                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-warning text-[11px]">📋 Prompt Copied</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div>HA Assist unavailable. Prompt copied to clipboard — paste into your AI provider.</div>`;
-                btn.innerHTML = "📋 Copied!";
-              }
-
-              // Insert after the Ask AI button
-              btn.parentElement?.after(responseEl);
-              responseEl
-                .querySelector("#td-ai-dismiss")
-                ?.addEventListener("click", () => {
-                  responseEl.remove();
-                }, { signal: __signal });
-            } catch (err) {
-              log.error("AI context error", err);
-              const { showToast: toast } = await import("@lib/toast");
-              toast("Failed to generate AI context.", "error");
-              btn.innerHTML = "❌ Failed";
+          function resetButton() {
+            if (!askAi) return
+            askAi.removeAttribute("aria-disabled")
+            askAi.removeAttribute("aria-busy")
+            askAi.classList.remove("opacity-60")
+          }
+          signal.addEventListener("abort", resetButton, { once: true })
+          try {
+            const result = await askAIForTask(taskId, signal)
+            if (signal.aborted || currentTaskId !== taskId) return
+            if (result.source === "ha-assist") {
+              const response = document.createElement("div")
+              response.id = "td-ai-response"
+              response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
+              response.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">AI Response</strong><button type="button" id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1" aria-label="Dismiss AI response">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`
+              askAi.parentElement?.after(response)
+              response.querySelector("#td-ai-dismiss")?.addEventListener("click", () => response.remove(), { signal })
             }
-
-            btn.classList.remove("opacity-60", "pointer-events-none");
-            setTimeout(() => (btn.innerHTML = originalText), 4000);
-          }, { signal: __signal });
+          } catch (err) {
+            if (signal.aborted || currentTaskId !== taskId) return
+            log.error("AI context error", err)
+            showToast("settings.ai_handoff_context_failed", "error")
+          } finally {
+            signal.removeEventListener("abort", resetButton)
+            if (!signal.aborted && currentTaskId === taskId) resetButton()
+          }
+        }, { signal: __signal })
 
         // Attach Image
         document

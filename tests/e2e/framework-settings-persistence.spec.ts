@@ -47,10 +47,14 @@ test.describe("Framework settings persistence", () => {
 
   test("an actual downloaded export restores weights, labels, formula, badges and custom frameworks after reset", async ({ page, request }) => {
     const customId = "truthfulness-round-trip"
+    const legacyId = "legacy-formula-round-trip"
     await request.delete(`/api/frameworks/${customId}`, { data: {} })
     const custom = { id: customId, name: "Household test", archetype: "taxonomy", source: "user", fields: [{ key: "category", label: "Category", type: "select", uiType: "select", weight: 1, helpText: "Choose a category" }], badgeThresholds: [] }
+    const legacy = { ...custom, id: legacyId, name: "Legacy formula", archetype: "formula", formula: { expression: "impact" },
+      fields: [{ key: "impact", label: "Impact", type: "number", min: "legacy", options: "legacy" }] }
     expect((await request.post("/api/frameworks", { data: custom })).status()).toBe(201)
     try {
+      expect((await request.post("/api/import/settings", { data: { _version: 2, customFrameworks: [legacy] } })).status()).toBe(200)
       const override = { fields: { reach: { weight: 2.3, label: "Household reach", helpText: "People affected" }, impact: { weight: 1.6 } }, formula: "reach + impact", badgeThresholds: [{ min: 0, label: "Household", color: "bg-primary" }] }
       expect((await request.put("/api/frameworks/rice", { data: override })).ok()).toBeTruthy()
       const before = (await (await request.get("/api/frameworks/rice")).json()).data
@@ -60,6 +64,7 @@ test.describe("Framework settings persistence", () => {
       const download = await downloadEvent
       const exported = await readFile((await download.path())!, "utf8")
       expect(JSON.parse(exported).frameworks.find((f: { id: string }) => f.id === "rice").fields.find((f: { key: string }) => f.key === "reach").weight).toBe(2.3)
+      expect(JSON.parse(exported).customFrameworks.find((f: { id: string }) => f.id === legacyId)).toMatchObject(legacy)
       await page.locator("#framework-config-disclosure > summary").click()
       await page.locator('.rules-fw-reset[data-framework="rice"]').click()
       await page.locator("#confirm-ok").click()
@@ -74,13 +79,16 @@ test.describe("Framework settings persistence", () => {
       expect((await (await request.get(`/api/frameworks/${customId}`)).json()).data).toMatchObject(custom)
       // The same downloaded export must also recreate a missing custom framework.
       await request.delete(`/api/frameworks/${customId}`, { data: {} })
+      await request.delete(`/api/frameworks/${legacyId}`, { data: {} })
       await page.locator("#rules-import-input").setInputFiles({ name: "downloaded-rules.json", mimeType: "application/json", buffer: Buffer.from(exported) })
       await page.locator("#confirm-ok").click()
       await expect(page.locator("#rules-import-input")).toHaveValue("")
       expect((await (await request.get(`/api/frameworks/${customId}`)).json()).data).toMatchObject(custom)
+      expect((await (await request.get(`/api/frameworks/${legacyId}`)).json()).data).toMatchObject(legacy)
       await expect(page.locator("#toast-container .toast.error")).toHaveCount(0)
     } finally {
       await request.delete(`/api/frameworks/${customId}`, { data: {} })
+      await request.delete(`/api/frameworks/${legacyId}`, { data: {} })
       await request.delete("/api/frameworks/rice", { data: {} })
     }
   })
@@ -247,25 +255,25 @@ test.describe("Framework settings persistence", () => {
   })
 
   for (const status of [403, 503]) {
-    test(`custom framework import refuses a failed lookup (${status}) rather than creating`, async ({ page, request }) => {
-      const id = `import-lookup-refusal-${status}`
+    test(`rejected atomic framework import (${status}) retains the file and creates nothing`, async ({ page, request }) => {
+      const id = `import-refusal-${status}`
       await request.delete(`/api/frameworks/${id}`, { data: {} })
       await page.goto("/settings#rules-lenses-settings")
       let creates = 0
-      let lookups = 0
-      await page.route(`**/api/frameworks/${id}`, route => {
-        ++lookups
-        return route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ ok: false, errorCode: "FRAMEWORK_NOT_FOUND" }) })
+      let imports = 0
+      await page.route("**/api/import/settings", route => {
+        ++imports
+        return route.fulfill({ status, json: { success: false, error: "Fixture import failure" } })
       })
       await page.route("**/api/frameworks", route => {
         if (route.request().method() === "POST") ++creates
         return route.continue()
       })
-      await page.locator("#rules-import-input").setInputFiles({ name: "lookup-refusal.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ rules: [], customFrameworks: [{ id, name: "Fixture", archetype: "taxonomy", fields: [{ key: "kind", label: "Kind" }], badgeThresholds: [] }] })) })
+      await page.locator("#rules-import-input").setInputFiles({ name: "refusal.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ rules: [], customFrameworks: [{ id, name: "Fixture", archetype: "taxonomy", fields: [{ key: "kind", label: "Kind" }], badgeThresholds: [] }] })) })
       await page.locator("#confirm-ok").click()
       await expect(page.locator("#rules-import-input")).not.toHaveValue("")
       await expect(page.locator("#toast-container .toast.error")).not.toHaveCount(0)
-      expect(lookups).toBe(1)
+      expect(imports).toBe(1)
       expect(creates).toBe(0)
       expect((await request.get(`/api/frameworks/${id}`)).status()).toBe(404)
     })

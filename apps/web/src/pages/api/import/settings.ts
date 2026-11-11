@@ -1,12 +1,14 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { currentSettingsAccess } from "../../../lib/current-settings-access"
+import { validateSafeId } from "../../../lib/sanitize-id"
 import { replaceRules } from "@domains/strategy/rule-repository"
 import { saveOverrides } from "@domains/strategy/framework-repository"
+import { restoreCustomFramework } from "@domains/strategy/custom-framework-repository"
 import { isSecretSetting } from "../../../lib/settings-security"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
-import type { TaskRule, FrameworkOverrides } from "@meitheal/domain-strategy"
-import { validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import { validateFrameworkConfig, validateFrameworkOverrides, type TaskRule, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
 import { readWithinLimit } from "../../../lib/bounded-body"
 import { FEATURE_DEFAULTS } from "../../../lib/feature-flags"
@@ -50,6 +52,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!locals.hassIsAdmin || locals.agentToken) {
         return new Response(JSON.stringify({ error: "Admin access required for settings import" }), { status: 403, headers: { "Content-Type": "application/json" } })
     }
+    const access = await currentSettingsAccess(request, locals, true)
+    if (access instanceof Response) return access
     try {
         // Guard against oversized payloads (200KB max — increased for rules+frameworks)
         const contentLength = Number(request.headers.get("content-length") ?? 0)
@@ -77,6 +81,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         if (payload._settingsEncoding !== undefined && payload._settingsEncoding !== "json-values") return invalid("Unsupported settings encoding")
         let rules: TaskRule[] | undefined
         let frameworks: Array<{ frameworkId: string; overrides: FrameworkOverrides }> | undefined
+        const customFrameworks: FrameworkConfig[] = []
         const settingsData = isV2 ? payload.settings ?? {} : payload
         if (!settingsData || typeof settingsData !== "object" || Array.isArray(settingsData)) return invalid("settings must be an object")
         try {
@@ -95,10 +100,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
                     if (typeof frameworkId !== "string" || seen.has(frameworkId)) return invalid("Framework overrides require unique framework IDs")
                     const base = await getBuiltInFramework(frameworkId)
                     if (!base) return invalid("Framework override requires a known built-in framework ID")
-                    const errors = validateFrameworkOverrides(entry.overrides, base.fields.map(field => field.key))
+                    const errors = validateFrameworkOverrides(entry.overrides, base.fields.map(field => field.key), { preserveLegacyFormula: true })
                     if (errors) return invalid(errors.join(". "))
                     seen.add(frameworkId)
                     frameworks.push({ frameworkId, overrides: entry.overrides as FrameworkOverrides })
+                }
+            }
+            if (isV2 && payload.customFrameworks !== undefined) {
+                if (!Array.isArray(payload.customFrameworks) || payload.customFrameworks.length > 1000) return invalid("customFrameworks must contain at most 1000 entries")
+                const { listBuiltInFrameworks } = await import("@domains/strategy/framework-catalog")
+                const builtInIds = new Set((await listBuiltInFrameworks()).map(framework => framework.id))
+                const seen = new Set<string>()
+                for (const entry of payload.customFrameworks) {
+                    const config = entry as FrameworkConfig
+                    const errors = validateFrameworkConfig(config, { preserveLegacyScoring: true })
+                    if (errors) return invalid(errors.join(". "))
+                    const idError = validateSafeId(config.id, "framework_id")
+                    if (idError) return invalid(idError)
+                    if (seen.has(config.id) || builtInIds.has(config.id)) return invalid("Custom frameworks require unique IDs distinct from built-in frameworks")
+                    if (config.source !== undefined && config.source !== "user" && config.source !== "imported") return invalid("Invalid custom framework source")
+                    seen.add(config.id)
+                    customFrameworks.push({ ...config, source: config.source ?? "user", version: config.version ?? "1.0.0" })
                 }
             }
         } catch (error) {
@@ -112,7 +134,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
             if (value === undefined) {
                 continue
             }
-            if (isSecretSetting(key)) continue
+            if (key === "ai-custom-url-approved" || isSecretSetting(key)) continue
             if (!ALLOWED_KEYS.has(key)) {
                 logApiWarn("import-settings", `Rejected unknown key: ${key}`)
                 continue
@@ -127,6 +149,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
             entries.push({ key, value: JSON.stringify(decoded) })
         }
 
+        const importsAiHandoff = entries.some(({ key }) => key === "ai-provider" || key === "ai-custom-url")
+
         await ensureSchema()
         const transaction = await getPersistenceClient().transaction("write")
         let settingsCount = 0
@@ -136,10 +160,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
             const repo = new SettingsRepository(transaction)
             await repo.ensureSettingsTable()
             settingsCount = await repo.importBatch(entries)
+            if (importsAiHandoff) await repo.deleteByKeys(["ai-custom-url-approved"])
             if (rules) await replaceRules(rules, undefined, false, transaction)
+            for (const framework of customFrameworks) await restoreCustomFramework(transaction, framework)
             if (frameworks) {
                 await transaction.execute("DELETE FROM framework_configs")
-                for (const framework of frameworks) await saveOverrides(framework.frameworkId, framework.overrides, transaction)
+                for (const framework of frameworks) await saveOverrides(framework.frameworkId, framework.overrides, transaction, { preserveLegacyFormula: true })
             }
             await transaction.commit()
         } catch (error) {
@@ -152,6 +178,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         const parts = [`${settingsCount} settings`]
         if (rulesCount > 0) parts.push(`${rulesCount} rules`)
         if (frameworkCount > 0) parts.push(`${frameworkCount} framework configs`)
+        if (customFrameworks.length > 0) parts.push(`${customFrameworks.length} custom frameworks`)
 
         return new Response(JSON.stringify({
             success: true,

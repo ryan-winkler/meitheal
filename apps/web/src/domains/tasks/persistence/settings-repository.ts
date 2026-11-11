@@ -7,9 +7,78 @@
  * - Reminders (tasks with pending reminder_at)
  * - Saved filters (smart views / user-defined filter combos)
  */
-import type { Client } from "@libsql/client"
-import type { InValue } from "@libsql/client"
+import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
+import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { STATUS } from "../../../lib/status-config"
+
+export const AI_HANDOFF_SETTING_KEYS = ["ai-provider", "ai-custom-url", "ai-custom-url-approved"]
+
+function readSettingsStatement(keys: string[]): InStatement {
+  const placeholders = keys.map(() => "?").join(", ")
+  return { sql: `SELECT key, value FROM settings WHERE key IN (${placeholders})`, args: keys }
+}
+
+function readSettingsRows(rows: ResultSet["rows"]): Record<string, unknown> {
+  const settings: Record<string, unknown> = Object.create(null)
+  for (const row of rows) {
+    const key = String(row.key)
+    try { settings[key] = JSON.parse(String(row.value)) }
+    catch { settings[key] = String(row.value) }
+  }
+  return settings
+}
+
+function upsertSettingStatement(key: string, value: string, now: number): InStatement {
+  return {
+    sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [key, value, now],
+  }
+}
+
+interface AiHandoffSettings {
+  provider: string | null
+  url: string | null
+  shared: boolean
+}
+
+/** Compare the form's saved values and commit the provider, destination and approval together. */
+export function saveAiHandoffSettings(
+  client: Client,
+  expected: AiHandoffSettings,
+  next: { provider: string; destination?: { url: string; shared: boolean } },
+): Promise<boolean> {
+  return runWriteTransaction(client, function* () {
+    const [result] = yield [readSettingsStatement(AI_HANDOFF_SETTING_KEYS)]
+    const current = readSettingsRows(result!.rows)
+    const provider = typeof current["ai-provider"] === "string" ? current["ai-provider"] : null
+    const url = typeof current["ai-custom-url"] === "string" ? current["ai-custom-url"] : null
+    const shared = Boolean(url) && current["ai-custom-url-approved"] === url
+    if (provider !== expected.provider || url !== expected.url || shared !== expected.shared) return false
+    const now = Date.now()
+    const statements = [upsertSettingStatement("ai-provider", JSON.stringify(next.provider), now)]
+    if (next.destination) {
+      statements.push(
+        upsertSettingStatement("ai-custom-url", JSON.stringify(next.destination.url), now),
+        upsertSettingStatement("ai-custom-url-approved", JSON.stringify(next.destination.shared ? next.destination.url : null), now),
+      )
+    }
+    yield statements
+    return true
+  })
+}
+
+/** Legacy URL writes revoke sharing in the same transaction whenever the value changes. */
+export function saveLegacyAiHandoffUrl(client: Client, value: unknown): Promise<void> {
+  return runWriteTransaction(client, function* () {
+    const key = "ai-custom-url"
+    const [result] = yield [readSettingsStatement([key])]
+    const current = readSettingsRows(result!.rows)[key]
+    const statements = [upsertSettingStatement(key, JSON.stringify(value), Date.now())]
+    if (current !== value) statements.push({ sql: "DELETE FROM settings WHERE key = ?", args: ["ai-custom-url-approved"] })
+    yield statements
+  })
+}
 
 export class SettingsRepository {
   constructor(private client: Pick<Client, "execute" | "batch">) {}
@@ -46,12 +115,7 @@ export class SettingsRepository {
 
   /** Upsert a setting (insert or update on conflict) */
   async upsert(key: string, value: string): Promise<void> {
-    const now = Date.now()
-    await this.client.execute({
-      sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      args: [key, value, now] as InValue[],
-    })
+    await this.client.execute(upsertSettingStatement(key, value, Date.now()))
   }
 
   /** Delete all settings (factory reset) */
@@ -62,33 +126,14 @@ export class SettingsRepository {
   /** Get multiple settings by keys (batch read) */
   async getByKeys(keys: string[]): Promise<Record<string, unknown>> {
     if (keys.length === 0) return {}
-    const placeholders = keys.map(() => "?").join(", ")
-    const result = await this.client.execute({
-      sql: `SELECT key, value FROM settings WHERE key IN (${placeholders})`,
-      args: keys as InValue[],
-    })
-    const settings: Record<string, unknown> = {}
-    for (const row of result.rows) {
-      const r = row as Record<string, unknown>
-      const key = String(r.key)
-      try {
-        settings[key] = JSON.parse(String(r.value))
-      } catch {
-        settings[key] = String(r.value)
-      }
-    }
-    return settings
+    return readSettingsRows((await this.client.execute(readSettingsStatement(keys))).rows)
   }
 
   /** Batch import settings atomically (upsert many at once) */
   async importBatch(entries: Array<{ key: string; value: string }>): Promise<number> {
     if (entries.length === 0) return 0
     const now = Date.now()
-    const statements = entries.map(({ key, value }) => ({
-      sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      args: [key, value, now] as InValue[],
-    }))
+    const statements = entries.map(({ key, value }) => upsertSettingStatement(key, value, now))
     await this.client.batch(statements)
     return entries.length
   }

@@ -92,6 +92,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
     // Custom: update full config
     const body = (await request.json()) as Partial<FrameworkConfig>
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors: ["Framework must be an object"] }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
+    }
     const existing = await getCustomFramework(frameworkId!)
     if (!existing) {
       return new Response(
@@ -101,7 +106,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
 
     const updated: FrameworkConfig = { ...existing, ...body, id: frameworkId!, source: existing.source }
-    const errors = validateFrameworkConfig(updated)
+    const editsScoring = "formula" in body || "archetype" in body || "fields" in body
+    const errors = validateFrameworkConfig(updated, { preserveLegacyScoring: !editsScoring })
     if (errors) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors }),

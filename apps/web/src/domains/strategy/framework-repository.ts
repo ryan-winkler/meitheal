@@ -52,11 +52,12 @@ export async function saveOverrides(
   frameworkId: string,
   overrides: FrameworkOverrides,
   client: Pick<Client, "execute"> = getPersistenceClient(),
+  options: { preserveLegacyFormula?: boolean } = {},
 ): Promise<FrameworkOverrideRecord> {
   const { getBuiltInFramework } = await import("./framework-catalog")
   const base = await getBuiltInFramework(frameworkId)
   if (!base) throw new TypeError(`Unknown built-in framework: ${frameworkId}`)
-  return persistOverridePatch(client, frameworkId, overrides, base.fields.map(field => field.key))
+  return persistOverridePatch(client, frameworkId, overrides, base.fields.map(field => field.key), options)
 }
 
 /** Merge a validated patch using the exact stored JSON as its write guard. */
@@ -65,8 +66,9 @@ export async function persistOverridePatch(
   frameworkId: string,
   patch: FrameworkOverrides,
   fieldKeys: readonly string[],
+  options: { preserveLegacyFormula?: boolean } = {},
 ): Promise<FrameworkOverrideRecord> {
-  const errors = validateFrameworkOverrides(patch, fieldKeys)
+  const errors = validateFrameworkOverrides(patch, fieldKeys, options)
   if (errors) throw new TypeError(errors.join(". "))
 
   for (let attempt = 0; attempt < 5; attempt++) {

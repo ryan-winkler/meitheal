@@ -141,10 +141,114 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
   }
 })
 
+coreTest("household AI handoff requires current membership and preserves URL consent atomically", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const member = { cookie: "feedback-fixture=member", origin }
+  const settings = prefix + "/api/settings"
+  const handoff = settings + "?key=ai-provider&handoff=1"
+  const original = "https://assistant.example/chat"
+  const changed = "https://assistant.example/changed"
+  const save = (url: string, shared: boolean, previous: string, previouslyShared: boolean, headers = admin) =>
+    api.put(settings, { headers, data: {
+      key: "ai-provider", value: "custom", custom_url: url, share_custom_url: shared,
+      previous_provider: "custom", previous_custom_url: previous, previously_shared: previouslyShared,
+    } })
+  const readAsMember = () => api.get(handoff, { headers: member })
+  const writeSetting = (key: string, value: unknown, headers = admin) => api.put(settings, { headers, data: { key, value } })
+  try {
+    await setDatabaseCoreRole("demoted")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(false)
+    expect((await api.get(prefix + "/api/export/settings.json", { headers: admin })).status()).toBe(403)
+    expect((await api.post(prefix + "/api/import/settings", { headers: admin, data: { _version: 2, rules: [] } })).status()).toBe(403)
+    await setDatabaseCoreRole("stalled")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(false)
+    await setDatabaseCoreRole("allowed")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(true)
+    expect((await writeSetting("ai-provider", "custom")).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ha_api_key", "private-fixture")).status()).toBe(200)
+    const pending = await readAsMember()
+    expect(pending.status()).toBe(403)
+    expect(pending.headers()["cache-control"]).toBe("private, no-store")
+    const pendingBody = await pending.json()
+    expect(pendingBody.title).toBe("URL review required")
+    expect(JSON.stringify(pendingBody)).not.toContain(original)
+    expect((await api.get(handoff, { headers: admin })).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", "not-a-url")).status()).toBe(200)
+    expect(await (await api.get(handoff, { headers: admin })).json()).toEqual({
+      key: "ai-provider", value: "custom", canUseAssist: true, urlProblem: "invalid",
+    })
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url-approved", original)).status()).toBe(400)
+    expect((await save(original, true, original, false, member)).status()).toBe(403)
+    expect((await save(original, true, original, false)).status()).toBe(200)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "custom", url: original, canUseAssist: false })
+    for (const key of ["ai-provider", "ai-custom-url", "ai-custom-url-approved", "ha_api_key"]) {
+      expect((await api.get(settings + "?key=" + key, { headers: member })).status()).toBe(403)
+      expect((await writeSetting(key, "blocked", member)).status()).toBe(403)
+    }
+    const all = await (await api.get(settings, { headers: member })).json()
+    expect(all).not.toHaveProperty("ha_api_key")
+    expect(all).not.toHaveProperty("ai-provider")
+    expect(all).not.toHaveProperty("ai-custom-url-approved")
+    const competing = "https://assistant.example/competing"
+    const [first, second] = await Promise.all([
+      save(changed, true, original, true),
+      save(competing, true, original, true),
+    ])
+    expect([first.status(), second.status()].sort()).toEqual([200, 409])
+    const winner = first.status() === 200 ? changed : competing
+    expect((await (await readAsMember()).json()).url).toBe(winner)
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", winner)).status()).toBe(200)
+    expect((await readAsMember()).status()).toBe(403)
+    expect((await save(winner, true, winner, true)).status()).toBe(409)
+    expect((await save(winner, true, winner, false)).status()).toBe(200)
+    expect((await writeSetting("ai-provider", "ha_llm")).status()).toBe(200)
+    expect((await save(winner, true, winner, true)).status()).toBe(409)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "ha_llm", canUseAssist: false })
+    const staleBuiltIn = await api.put(settings, { headers: admin, data: {
+      key: "ai-provider", value: "chatgpt", previous_provider: "custom", previous_custom_url: winner, previously_shared: true,
+    } })
+    expect(staleBuiltIn.status()).toBe(409)
+    expect((await writeSetting("ai-provider", "custom")).status()).toBe(200)
+
+    const exported = await api.get(prefix + "/api/export/settings.json", { headers: admin })
+    expect(exported.status()).toBe(200)
+    expect((await exported.json()).settings).not.toHaveProperty("ai-custom-url-approved")
+    const restored = await api.post(prefix + "/api/import/settings", { headers: admin, data: {
+      "ai-custom-url": winner, "ai-custom-url-approved": winner,
+    } })
+    expect(restored.status()).toBe(200)
+    expect((await readAsMember()).status()).toBe(403)
+
+    expect((await save(winner, true, winner, false)).status()).toBe(200)
+    await setDatabaseCoreRole("demoted")
+    expect((await save(winner, true, winner, true)).status()).toBe(403)
+    const demotedHandoff = await api.get(handoff, { headers: admin })
+    expect(demotedHandoff.status()).toBe(200)
+    expect(await demotedHandoff.json()).toEqual({ key: "ai-provider", value: "custom", url: winner, canUseAssist: false })
+    const demotedSettings = await (await api.get(settings, { headers: admin })).json()
+    expect(demotedSettings).not.toHaveProperty("ai-custom-url")
+    expect(demotedSettings).not.toHaveProperty("ai-custom-url-approved")
+    expect(demotedSettings["ai-handoff-editable"]).toBe(false)
+    expect((await api.get(prefix + "/api/export/settings.json", { headers: admin })).status()).toBe(403)
+    expect((await api.delete(settings + "?reset=all", { headers: admin, data: {} })).status()).toBe(403)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "custom", url: winner, canUseAssist: false })
+    await setDatabaseCoreRole("stalled")
+    expect((await readAsMember()).status()).toBe(503)
+  } finally { await api.dispose() }
+})
+
 coreTest("Today lets a verified administrator review an Assist prompt before sending", async ({ page }) => {
   await page.context().setExtraHTTPHeaders({})
   await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
-  await page.addInitScript(() => localStorage.setItem("meitheal-ai-provider", "ha_llm"))
+  const preference = await page.request.put(origin + prefix + "/api/settings", {
+    headers: { origin },
+    data: { key: "ai-provider", value: "ha_llm" },
+  })
+  expect(preference.status(), await preference.text()).toBe(200)
   const title = "Review this synthetic task"
   const created = await page.request.post(origin + prefix + "/api/tasks", {
     headers: { origin },
@@ -178,6 +282,32 @@ coreTest("Today lets a verified administrator review an Assist prompt before sen
   ])
   await dialog.getByRole("button", { name: "Close" }).click()
   await expect(ask).toBeFocused()
+})
+
+coreTest("a household member opens only an approved destination from Today through ingress", async ({ page }) => {
+  const destination = "https://assistant.example/household"
+  const settings = origin + prefix + "/api/settings"
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const saved = await page.request.put(settings, { headers: admin, data: {
+    key: "ai-provider", value: "custom", custom_url: destination, share_custom_url: true,
+    previous_provider: null, previous_custom_url: null, previously_shared: false,
+  } })
+  expect(saved.status(), await saved.text()).toBe(200)
+  const created = await page.request.post(origin + prefix + "/api/tasks", { headers: admin, data: {
+    title: "Household handoff fixture", description: "This task text stays out of a custom URL.",
+    due_date: new Date().toISOString().slice(0, 10),
+  } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await page.context().setExtraHTTPHeaders({})
+  await page.context().addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.goto(origin + prefix + "/today")
+  const row = page.locator(`#section-today .tli[data-id="${id}"]`)
+  await row.hover()
+  await row.getByRole("button", { name: "Ask AI" }).click()
+  const link = page.getByRole("link", { name: "Open provider", exact: true })
+  await expect(link).toHaveAttribute("href", destination)
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer")
 })
 
 coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {

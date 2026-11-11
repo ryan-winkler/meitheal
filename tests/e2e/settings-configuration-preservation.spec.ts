@@ -27,6 +27,8 @@ test("rules and framework overrides reject invalid typed values", () => {
     expect(validateFrameworkOverrides(value, ["reach"])).not.toBeNull()
   }
   expect(validateFrameworkOverrides({ fields: { reach: { weight: 2, label: "Reach" } } }, ["reach"])).toBeNull()
+  expect(validateFrameworkOverrides({ formula: "reach ** 2" }, ["reach"])).not.toBeNull()
+  expect(validateFrameworkOverrides({ formula: "reach ** 2" }, ["reach"], { preserveLegacyFormula: true })).toBeNull()
 })
 
 test.describe("configuration transactions", () => {
@@ -112,20 +114,50 @@ test("packaged framework validation and complete imports preserve prior configur
     expect(before.formula).toBe("reach")
     expect(before.fields.find((field: { key: string }) => field.key === "reach")).toMatchObject({ weight: 3, label: "Household reach" })
     expect((await api.put(path("/api/frameworks/rice"), { data: { fields: [] } })).status()).toBe(400)
+    expect((await api.put(path("/api/frameworks/ice"), { data: { formula: "impact ** 2" } })).status()).toBe(400)
     const invalid = await api.post(path("/api/import/settings"), { data: { _version: 2, settings: { theme: "light" }, rules: [], frameworkOverrides: [{ frameworkId: "rice", overrides: { fields: { missing: { weight: 4 } } } }] } })
     expect(invalid.status()).toBe(400)
     expect((await (await api.get(path("/api/frameworks/rice"))).json()).data).toEqual(before)
-    const valid = await api.post(path("/api/import/settings"), { data: { _version: 2, settings: { theme: "dark" }, rules: [{ name: "Keep household rule" }], frameworkOverrides: [{ frameworkId: "rice", overrides: { formula: "reach", fields: { reach: { weight: 3, label: "Household reach" } } } }] } })
+    const impact = { key: "impact", label: "Impact", type: "number", min: 0 }
+    const legacy = { id: "legacy-scoring", name: "Legacy scoring", archetype: "formula", formula: { expression: "impact" },
+      source: "imported", badgeThresholds: [], fields: [{ ...impact, options: "legacy", min: "legacy" }] }
+    const legacyPath = path("/api/frameworks/legacy-scoring")
+    expect((await api.post(path("/api/frameworks"), { data: { ...legacy, fields: [impact] } })).status()).toBe(400)
+    expect((await api.post(path("/api/frameworks"), { data: { ...legacy, formula: "impact", fields: [{ ...impact, options: "legacy" }] } })).status()).toBe(400)
+    const invalidId = { ...legacy, id: "-invalid-framework-id", formula: "impact", fields: [{ key: "impact", label: "Impact", type: "number" }] }
+    expect((await api.post(path("/api/frameworks"), { data: invalidId })).status()).toBe(400)
+    const refusedId = await api.post(path("/api/import/settings"), { data: {
+      _version: 2, settings: { theme: "light" }, customFrameworks: [invalidId],
+    } })
+    expect(refusedId.status()).toBe(400)
+    expect((await refusedId.json()).error).toContain("framework_id")
+    const valid = await api.post(path("/api/import/settings"), { data: {
+      _version: 2, settings: { theme: "dark" }, rules: [{ name: "Keep household rule" }], customFrameworks: [legacy],
+      frameworkOverrides: [
+        { frameworkId: "rice", overrides: { formula: "reach", fields: { reach: { weight: 3, label: "Household reach" } } } },
+        { frameworkId: "ice", overrides: { formula: "impact ** 2" } },
+      ],
+    } })
     expect(valid.status()).toBe(200)
     expect((await (await api.get(path("/api/frameworks/rice"))).json()).data).toEqual(before)
+    expect((await (await api.get(legacyPath)).json()).data).toMatchObject(legacy)
+    expect((await api.get(`${legacyPath}/export`)).status()).toBe(200)
+    expect((await api.put(legacyPath, { data: { name: "Retained scoring", description: "Kept for repair" } })).status()).toBe(200)
+    expect((await api.put(legacyPath, { data: { formula: "impact" } })).status()).toBe(400)
+    expect((await (await api.get(path("/api/frameworks/ice"))).json()).data.formula).toBe("impact ** 2")
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
       db.exec("CREATE TRIGGER reject_framework BEFORE INSERT ON framework_configs BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
-      const failed = await api.post(path("/api/import/settings"), { data: { _version: 2, settings: { theme: "light" }, rules: [{ name: "Replacement" }], frameworkOverrides: [{ frameworkId: "rice", overrides: { formula: "impact" } }] } })
+      const failed = await api.post(path("/api/import/settings"), { data: {
+        _version: 2, settings: { theme: "light" }, rules: [{ name: "Replacement" }], customFrameworks: [{ ...legacy, name: "Replacement" }],
+        frameworkOverrides: [{ frameworkId: "rice", overrides: { formula: "impact" } }],
+      } })
       expect(failed.status()).toBe(500)
       expect(db.prepare("SELECT value FROM settings WHERE key = 'theme'").get()).toEqual({ value: '"dark"' })
       expect(db.prepare("SELECT name FROM rules").all()).toEqual([{ name: "Keep household rule" }])
       expect((await (await api.get(path("/api/frameworks/rice"))).json()).data).toEqual(before)
+      expect((await (await api.get(legacyPath)).json()).data).toMatchObject({ name: "Retained scoring", source: "imported", formula: legacy.formula })
+      expect((await api.put(legacyPath, { data: { formula: "impact", fields: [impact] } })).status()).toBe(200)
     } finally { db.close() }
   } finally {
     await api?.dispose()

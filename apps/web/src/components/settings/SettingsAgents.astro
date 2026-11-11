@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale"
+import { canManageSystemSettings } from "../../lib/settings-security"
 import SettingsPanelCard from "./SettingsPanelCard.astro";
 
 /**
@@ -16,6 +17,7 @@ interface Props {
   locale: Locale;
 }
 const { locale } = Astro.props;
+const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
 ---
 
 <div class="settings-shell-panel">
@@ -82,48 +84,58 @@ const { locale } = Astro.props;
           <div>
             <strong>{t("settings.ext_ai_title", locale)}</strong>
             <div class="integration-desc">
-              {t("settings.ext_ai_desc", locale)}
+              {t(canManageAi ? "settings.ext_ai_desc" : "settings.ext_ai_admin_only", locale)}
             </div>
           </div>
-          <span class="badge badge-active" id="ext-ai-badge">ChatGPT</span>
+          {canManageAi && <span class="badge badge-active" id="ext-ai-badge" hidden></span>}
         </div>
-        <div class="integration-config">
-          <div class="form-group">
-            <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
-            <select class="form-select" id="ai-provider"
-              data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
-              data-name-claude={t("settings.ext_ai_claude", locale)}
-              data-name-gemini={t("settings.ext_ai_gemini", locale)}
-              data-name-ollama={t("settings.ext_ai_ollama", locale)}
-              data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
-              data-name-custom={t("settings.ext_ai_custom", locale)}
+        {canManageAi && <div class="integration-config">
+          <p id="ai-provider-unavailable" class="settings-hint" role="status" hidden>{t("settings.ai_provider_edit_unavailable", locale)}</p>
+          <div id="ai-provider-editor" hidden>
+            <div class="form-group">
+              <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
+              <select class="form-select" id="ai-provider" disabled
+                data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
+                data-name-claude={t("settings.ext_ai_claude", locale)}
+                data-name-gemini={t("settings.ext_ai_gemini", locale)}
+                data-name-ollama={t("settings.ext_ai_ollama", locale)}
+                data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
+                data-name-custom={t("settings.ext_ai_custom", locale)}
+              >
+                <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
+                <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
+                <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
+                <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
+                <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
+                <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
+              </select>
+            </div>
+            <div
+              class="form-group"
+              id="ai-custom-url-group"
+              style="display: none;"
             >
-              <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
-              <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
-              <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
-              <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
-              <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
-              <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
-            </select>
+              <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
+              <input
+                type="url"
+                class="form-input"
+                id="ai-custom-url"
+                aria-describedby="ai-custom-url-help"
+                placeholder="http://localhost:11434/api/chat"
+                disabled
+              />
+              <p class="settings-hint" id="ai-custom-url-help">{t("settings.ai_custom_url_visibility", locale)}</p>
+              <label class="settings-text-sm">
+                <input type="checkbox" id="ai-custom-url-share" aria-describedby="ai-custom-url-help" disabled />
+                {t("settings.ai_custom_url_share", locale)}
+              </label>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-ai" disabled>{t("settings.save_ai_settings", locale)}</button>
           </div>
-          <div
-            class="form-group"
-            id="ai-custom-url-group"
-            style="display: none;"
-          >
-            <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
-            <input
-              type="url"
-              class="form-input"
-              id="ai-custom-url"
-              placeholder="http://localhost:11434/api/chat"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn btn-primary settings-text-sm"
-            id="save-ai">{t("settings.save_ai_settings", locale)}</button>
-        </div>
+        </div>}
       </div>
 
       <hr style="border-color: var(--border); margin: 16px 0;" />
@@ -309,6 +321,9 @@ const { locale } = Astro.props;
   }
   .integration-config .form-group + .form-group {
     margin-top: 12px;
+  }
+  #ext-ai-badge[hidden] {
+    display: none;
   }
 </style>
 

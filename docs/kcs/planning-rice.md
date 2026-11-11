@@ -16,8 +16,10 @@ If another session changes the task while the editor is open, choose **Reload sc
 
 ## Score a ticket with another framework
 
-Open a ticket and choose **Scoring framework**. Formula scoring supports field keys with numeric estimates, decimal constants, parentheses, unary signs, and `+`, `-`, `*`, `/`. Existing RICE arithmetic and rounding are unchanged. Framework configuration can retain other expressions, such as exponentiation or function calls, but the ticket editor reports **unsupported formula** for those expressions and unknown field keys. Edit the formula in Settings to use the supported arithmetic before saving an evaluation. Invalid estimates, including division by zero, produce an estimate error instead.
+Open a ticket and choose **Scoring framework**. Formula scoring supports field keys with numeric estimates, decimal constants, parentheses, unary signs, and `+`, `-`, `*`, `/`. An unchecked box counts as 0 and a checked box counts as 1. Invalid estimates, including division by zero, show an estimate error.
 
-**Auto-score with Assist** merges the returned suggestions with your current estimates. Fields omitted from the response keep their values, including edits made while waiting and estimates in another framework you switched to. Review suggestions before choosing **Save score**.
+The editor keeps estimates for a framework with unsupported scoring settings. Ask an administrator to export the configuration from **Settings → Rules & Lenses**, correct the formula, bounds, or options, and re-import it. Built-in frameworks can also be reset to their packaged defaults. See [Import a framework from YAML](framework-yaml-import.md).
 
-A failed save keeps the visible estimates. Saves use the task's normalized version even for older timestamp formats, so a competing update cannot silently overwrite another evaluation. Reopen the ticket to review current saved data before retrying after a conflict.
+**Auto-score with Assist** applies valid suggestions only to fields you left untouched while waiting. Switching frameworks or saving another score keeps your unsaved estimates. Review the suggestions before choosing **Save score**.
+
+A save merges unrelated frameworks from the latest task. If another session changed the same evaluation, the editor keeps your draft and asks you to reopen the ticket. Note any estimates you want to keep before reopening so you can compare them with the saved values.

@@ -15,6 +15,12 @@
         // Register global logger bridge for is:inline scripts
         registerGlobalLogger();
 
+        // The provider and its private URL are now resolved from Settings.
+        try {
+          localStorage.removeItem("meitheal-ai-provider")
+          localStorage.removeItem("meitheal-ai-custom-url")
+        } catch { /* The app also runs without browser storage. */ }
+
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
         // Connection status check — singleton interval (P0-4: prevent accumulation)

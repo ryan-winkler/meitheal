@@ -1,3 +1,7 @@
+import { isFrameworkFormulaSupported } from "./framework-formula"
+
+const formulaError = "Formula must use declared fields, numbers, parentheses and + - * / operators"
+
 /**
  * Framework Configuration — manages YAML defaults + user overrides
  *
@@ -18,12 +22,19 @@ export interface FrameworkFieldOption {
   label: string
 }
 
+/** Check option data before it reaches a form or the scorer. */
+export function isFrameworkFieldOptions(options: unknown): options is FrameworkFieldOption[] {
+  return Array.isArray(options) && options.every(option => option && typeof option.label === "string" &&
+    (typeof option.value === "string" || Number.isFinite(option.value)))
+}
+
 /** A single field definition within a framework */
 export interface FrameworkField {
   key: string
   label: string
-  type: "number" | "select"
-  uiType: "slider" | "radio" | "select"
+  description?: string | undefined
+  type: "number" | "select" | "boolean" | "text" | "matrix"
+  uiType: "slider" | "radio" | "select" | "checkbox"
   weight: number
   min?: number | undefined
   max?: number | undefined
@@ -83,7 +94,11 @@ export interface FrameworkOverrideRecord {
 }
 
 /** Validate the JSON override contract before persistence or merging. */
-export function validateFrameworkOverrides(value: unknown, fieldKeys?: readonly string[]): string[] | null {
+export function validateFrameworkOverrides(
+  value: unknown,
+  fieldKeys?: readonly string[],
+  { preserveLegacyFormula = false } = {},
+): string[] | null {
   const record = (item: unknown): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item)
   if (!record(value)) return ["Overrides must be an object"]
   const errors: string[] = []
@@ -103,7 +118,12 @@ export function validateFrameworkOverrides(value: unknown, fieldKeys?: readonly 
       if ("helpText" in field && typeof field.helpText !== "string") errors.push(`Field ${key} helpText must be a string`)
     }
   }
-  if ("formula" in value && (typeof value.formula !== "string" || !value.formula.trim())) errors.push("formula must be a non-empty string")
+  if ("formula" in value) {
+    if (typeof value.formula !== "string" || !value.formula.trim()) errors.push("formula must be a non-empty string")
+    else if (fieldKeys && !preserveLegacyFormula && !isFrameworkFormulaSupported(value.formula, fieldKeys)) {
+      errors.push(formulaError)
+    }
+  }
   if ("badgeThresholds" in value) {
     if (!Array.isArray(value.badgeThresholds)) errors.push("badgeThresholds must be an array")
     else for (const badge of value.badgeThresholds) {
@@ -122,6 +142,7 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
     ? (raw.fields as Record<string, unknown>[]).map((f) => ({
         key: String(f.key ?? ""),
         label: String(f.label ?? ""),
+        ...(typeof f.description === "string" ? { description: f.description } : {}),
         type: String(f.type ?? "number") as FrameworkField["type"],
         uiType: String(f.ui_type ?? "slider") as FrameworkField["uiType"],
         weight: Number(f.weight ?? 1),
@@ -195,14 +216,39 @@ export function mergeFrameworkConfig(
   return merged
 }
 
-/**
- * Validate a framework configuration object.
- * Returns null if valid, or an array of error messages.
- */
+/** Check the scoring semantics separately so backup restore can retain legacy definitions. */
+export function validateFrameworkScoring(
+  fields: readonly Pick<FrameworkField, "key" | "min" | "max" | "options">[],
+  formula: unknown,
+): string[] {
+  const errors: string[] = []
+  for (const field of fields) {
+    if (field.options != null && !isFrameworkFieldOptions(field.options)) {
+      errors.push(`Field "${field.key}" options must have a label and a text or numeric value`)
+    }
+    for (const bound of ["min", "max"] as const) {
+      if (field[bound] !== undefined && (typeof field[bound] !== "number" || !Number.isFinite(field[bound]))) {
+        errors.push(`Field "${field.key}" ${bound} must be a finite number`)
+      }
+    }
+    if (typeof field.min === "number" && typeof field.max === "number" && field.min > field.max) {
+      errors.push(`Field "${field.key}" min must not exceed max`)
+    }
+  }
+  if (formula !== undefined && (typeof formula !== "string" || (formula && !isFrameworkFormulaSupported(formula, fields.map(field => field.key))))) {
+    errors.push(formulaError)
+  }
+  return errors
+}
+
+/** Return validation errors for a framework configuration, or null when valid. */
 export function validateFrameworkConfig(
   config: Partial<FrameworkConfig>,
+  { preserveLegacyScoring = false } = {},
 ): string[] | null {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return ["Framework must be an object"]
   const errors: string[] = []
+  const fields: FrameworkField[] = []
 
   if (!config.id || typeof config.id !== "string") {
     errors.push("id is required and must be a non-empty string")
@@ -224,6 +270,11 @@ export function validateFrameworkConfig(
   } else {
     const keys = new Set<string>()
     for (const field of config.fields) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) {
+        errors.push("Each field must be an object")
+        continue
+      }
+      fields.push(field)
       if (!field.key || typeof field.key !== "string") {
         errors.push("Each field must have a non-empty key")
       } else if (keys.has(field.key)) {
@@ -237,6 +288,9 @@ export function validateFrameworkConfig(
 
   if (config.archetype === "formula" && !config.formula) {
     errors.push("Formula archetypes require a formula expression")
+  }
+  if (!preserveLegacyScoring) {
+    errors.push(...validateFrameworkScoring(fields, config.formula))
   }
 
   if (!Array.isArray(config.badgeThresholds)) {
@@ -265,12 +319,13 @@ export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, un
     fields: config.fields.map((f) => ({
       key: f.key,
       label: f.label,
+      ...(f.description !== undefined ? { description: f.description } : {}),
       type: f.type,
       ui_type: f.uiType,
       weight: f.weight,
       min: f.min,
       max: f.max,
-      options: f.options?.map((o) => ({ value: o.value, label: o.label })),
+      options: f.options,
       help_text: f.helpText,
     })),
   }
