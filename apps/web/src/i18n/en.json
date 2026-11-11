@@ -682,7 +682,7 @@
     "accent_reset": "Reset",
     "accent_hint": "Changes apply immediately across all pages.",
     "theme_import": "🎨 Import CSS Theme",
-    "theme_import_hint": "Max 50KB · .css only · 1 theme",
+    "theme_import_hint": "Import a CSS file to activate Custom. Maximum 50 KB.",
     "theme_remove": "Remove custom theme",
     "timezone_title": "Timezone",
     "week_start_title": "Week Starts On",

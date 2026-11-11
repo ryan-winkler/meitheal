@@ -1470,7 +1470,7 @@ const paths = {
   // ── Settings ──
   "/api/settings": {
     get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map. System settings require administrator access and credential values are masked.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
-    put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. Changing system settings requires administrator access.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {} }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
+    put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. System settings and activating Custom mode require administrator access. With custom_theme_css, send name to save the CSS, filename and mode together. Send both strings empty to remove the theme.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {}, name: { type: "string", maxLength: 255 } }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
   },
 
   // ── Lanes (Kanban) ──

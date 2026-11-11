@@ -90,7 +90,11 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     }
 
     const secret = isSecretSetting(key)
-    if (isSystemSetting(key)) {
+    if (key === "theme" && body.value !== "dark" && body.value !== "light" &&
+        body.value !== "auto" && body.value !== "custom") {
+      return apiProblem({ status: 400, detail: "Choose Dark, Light, Auto, or Custom." })
+    }
+    if (isSystemSetting(key) || (key === "theme" && body.value === "custom")) {
       const denied = requireSystemSettingsAdmin(request, locals)
       if (denied) return denied
     }
@@ -107,6 +111,22 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     const maxSize = key === "custom_theme_css" ? 65536 : 10240
     if (value.length > maxSize) {
       return apiError(`value exceeds ${maxSize > 10240 ? "64KB" : "10KB"} limit`, 400)
+    }
+
+    if (key === "custom_theme_css" && Object.hasOwn(body, "name")) {
+      const { name } = body
+      const css = body.value
+      if (typeof css !== "string" || typeof name !== "string" || name.length > 255 ||
+          ((css !== "" || name !== "") && (!css.trim() || !name.trim()))) {
+        return apiProblem({ status: 400, detail: "Send CSS and a filename, or send both empty to remove the theme." })
+      }
+      const theme = css ? "custom" : "dark"
+      await repo.importBatch([
+        { key, value },
+        { key: "custom_theme_name", value: JSON.stringify(name) },
+        { key: "theme", value: JSON.stringify(theme) },
+      ])
+      return settingsJson({ key, value: css, name, theme })
     }
 
     await repo.upsert(key, value)

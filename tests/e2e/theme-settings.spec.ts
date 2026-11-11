@@ -71,40 +71,6 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveClass(/dark/);
   });
 
-  test("Selecting Custom shows import section", async ({ page }) => {
-    const themeSelect = page.locator("#theme-select");
-    const customSection = page.locator("#custom-theme-section");
-
-    await themeSelect.selectOption("dark");
-    await expect(customSection).not.toBeVisible();
-
-    // Select custom
-    await themeSelect.selectOption("custom");
-    await page.waitForTimeout(200);
-
-    // Custom section should now be visible
-    await expect(customSection).toBeVisible();
-
-    // Import button and info text should be visible
-    await expect(page.locator("#custom-theme-empty")).toBeVisible();
-    await expect(page.getByText("Import CSS Theme")).toBeVisible();
-  });
-
-  test("Switching away from Custom hides import section", async ({ page }) => {
-    const themeSelect = page.locator("#theme-select");
-    const customSection = page.locator("#custom-theme-section");
-
-    // Select custom first
-    await themeSelect.selectOption("custom");
-    await page.waitForTimeout(200);
-    await expect(customSection).toBeVisible();
-
-    // Switch to dark
-    await themeSelect.selectOption("dark");
-    await page.waitForTimeout(200);
-    await expect(customSection).not.toBeVisible();
-  });
-
   test("Theme persists across page reload", async ({ page }) => {
     const themeSelect = page.locator("#theme-select");
 

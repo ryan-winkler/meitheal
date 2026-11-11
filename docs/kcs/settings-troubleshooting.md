@@ -77,7 +77,9 @@ If the URL does not change to `#automation-ai-settings`, capture the browser con
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. Use **Custom** to import your own Meitheal colors.
+Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference.
+
+In an administrator session, choose **Custom** to import a CSS file up to 50 KB. The imported palette becomes active after the file, filename and theme mode save together. Select the displayed filename to download the saved CSS. Light, Dark and Auto update the installation's saved mode and keep the file available for later use. Choose **Remove custom theme** to clear the file and switch to Dark. A regular Home Assistant member gets the built-in modes. After an account change, a live navigation applies the current session's theme permissions.
 
 An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
 

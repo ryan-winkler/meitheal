@@ -17,6 +17,7 @@ import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
 import JsonLd from "../components/seo/JsonLd.astro";
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
 import { applyPersonalAccent } from "../lib/accent-colors"
+import { canManageSystemSettings } from "../lib/settings-security"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
@@ -91,7 +92,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 ---
 
 <!doctype html>
-<html lang={locale} dir="ltr">
+<html lang={locale} dir="ltr" data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
@@ -287,7 +288,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var accent = stored("meitheal-accent-color");
           window.__meithealApplyAccent(root, accent);
-          var css = theme === "custom" && stored("meitheal-custom-theme-css");
+          var themeAdmin = root.hasAttribute("data-custom-theme-admin");
+          if (!themeAdmin) {
+            try { localStorage.removeItem("meitheal-custom-theme-css"); } catch {}
+          }
+          var css = themeAdmin && theme === "custom" && stored("meitheal-custom-theme-css");
           if (css) {
             var style = doc.getElementById("meitheal-custom-theme");
             if (!style) {

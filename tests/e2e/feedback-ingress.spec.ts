@@ -940,6 +940,71 @@ coreTest("verified members receive durable receipts and queue APIs fail closed",
   }
 })
 
+coreTest("a live ingress role change prevents reuse of an administrator's Custom CSS", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+  const settings = origin + prefix + "/settings#personal-settings"
+  const settingsApi = origin + prefix + "/api/settings"
+  const css = ":root { --fixture-theme-probe: administrator; }"
+  const name = "admin-fixture.css"
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    const root = page.locator("html")
+    const themeSelect = page.locator("#theme-select")
+    const applied = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--fixture-theme-probe").trim())
+    expect((await page.goto(settings))?.status()).toBe(200)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    await themeSelect.selectOption("custom")
+    await page.locator("#custom-theme-input").setInputFiles({ name, mimeType: "text/css", buffer: Buffer.from(css) })
+    await expect.poll(applied).toBe("administrator")
+    expect(await page.evaluate(() => localStorage.getItem("meitheal-custom-theme-css"))).toBe(css)
+
+    await context.addInitScript(() => {
+      const selector = "#meitheal-custom-theme"
+      new MutationObserver(records => {
+        if (records.some(record => Array.from(record.addedNodes).some(node =>
+          node instanceof Element && (node.matches(selector) || node.querySelector(selector))))) {
+          document.documentElement.dataset.fixtureCustomCssSeen = "true"
+        }
+      }).observe(document, { childList: true, subtree: true })
+    })
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    expect((await page.goto(origin + prefix + "/today"))?.status()).toBe(200)
+    expect(await applied()).toBe("")
+    expect(await root.getAttribute("data-fixture-custom-css-seen")).toBeNull()
+    await expect(page.locator("#meitheal-custom-theme")).toHaveCount(0)
+
+    const bulk = await page.request.get(settingsApi)
+    expect(bulk.ok()).toBe(true)
+    const memberSettings = await bulk.json()
+    expect(memberSettings).not.toHaveProperty("custom_theme_css")
+    expect(memberSettings).not.toHaveProperty("custom_theme_name")
+    for (const key of ["custom_theme_css", "custom_theme_name"]) {
+      expect((await page.request.get(settingsApi, { params: { key } })).status()).toBe(403)
+    }
+    for (const data of [
+      { key: "theme", value: "custom" },
+      { key: "custom_theme_css", value: css },
+      { key: "custom_theme_css", value: css, name },
+      { key: "custom_theme_name", value: name },
+    ]) {
+      expect((await page.request.put(settingsApi, { headers: { origin }, data })).status()).toBe(403)
+    }
+    expect((await page.request.put(settingsApi, {
+      headers: { origin }, data: { key: "theme", value: ["custom"] },
+    })).status()).toBe(400)
+
+    await page.goto(settings)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    await expect(themeSelect.locator('option[value="custom"]')).toHaveCount(0)
+    await expect(page.locator("#custom-theme-section")).toHaveCount(0)
+    await themeSelect.selectOption("light")
+    await expect(root).toHaveAttribute("data-theme", "light")
+  } finally {
+    await context.close()
+  }
+})
+
 coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
   const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })

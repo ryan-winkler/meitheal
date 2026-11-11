@@ -38,7 +38,8 @@ test("native Settings exports and historical exports restore decoded values with
     }
     const changeDestination = async () => {
       for (const [key, value] of Object.entries(expected)) {
-        const changed = value === null ? "previous non-null value"
+        const changed = key === "theme" ? "auto"
+          : value === null ? "previous non-null value"
           : typeof value === "boolean" ? !value
           : typeof value === "number" ? value + 1
           : Array.isArray(value) ? ["todo.different"]

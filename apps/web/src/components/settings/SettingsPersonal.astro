@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { canManageSystemSettings } from "../../lib/settings-security"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsAppearance from "./SettingsAppearance.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
@@ -12,6 +13,7 @@ interface Props {
   locale: Locale
 }
 const { locale } = Astro.props
+const canManageTheme = canManageSystemSettings(Astro.request, Astro.locals)
 
 const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "personal-settings")!
 ---
@@ -44,7 +46,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <option value="dark">{t("settings.theme_dark", locale)}</option>
         <option value="light">{t("settings.theme_light", locale)}</option>
         <option value="auto">{t("settings.theme_auto", locale)}</option>
-        <option value="custom">{t("settings.theme_custom", locale)}</option>
+        {canManageTheme && <option value="custom">{t("settings.theme_custom", locale)}</option>}
       </select>
     </div>
 
@@ -113,7 +115,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         >{t("settings.accent_hint", locale)}</small
       >
     </div>
-    <div
+    {canManageTheme && <div
       id="custom-theme-section"
       class="form-group"
       style="margin-top: 12px; display: none;"
@@ -156,7 +158,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           aria-label={t("settings.theme_remove", locale)}>×</button
         >
       </div>
-    </div>
+    </div>}
     <SettingsAppearance locale={locale} />
     <div class="form-group mt-3">
       <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
