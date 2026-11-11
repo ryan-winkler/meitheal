@@ -66,7 +66,13 @@ let connectionGeneration = 0
 let lastError: string | null = null;
 let reconnectAttempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null; // Guard against rapid reconnect races
-let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+interface HeartbeatState {
+  readonly connection: Connection
+  readonly generation: number
+  interval: ReturnType<typeof setInterval> | null
+  timeout: ReturnType<typeof setTimeout> | null
+}
+let heartbeat: HeartbeatState | null = null
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
@@ -290,36 +296,55 @@ export async function getHAConnection(): Promise<Connection | null> {
 // ── Heartbeat ──
 
 function startHeartbeat(): void {
-  stopHeartbeat();
-  heartbeatInterval = setInterval(() => {
-    if (!connection) { stopHeartbeat(); return }
+  stopHeartbeat()
+  if (!connection) return
+  const state: HeartbeatState = { connection, generation: connectionGeneration, interval: null, timeout: null }
+  heartbeat = state
+  const current = () => heartbeat === state && connection === state.connection && connectionGeneration === state.generation
+  state.interval = setInterval(() => {
+    if (!current()) {
+      if (heartbeat === state) stopHeartbeat()
+      return
+    }
     const timeout = setTimeout(() => {
+      if (!current()) return
+      stopHeartbeat()
       logger.log("warn", {
         event: "ha.heartbeat.timeout", domain: "ha", component: "ha-connection",
         request_id: SYS_REQ, message: "Heartbeat pong not received within 10s — closing stale connection",
-      });
-      emitStatus("error", "heartbeat timeout");
-      // Force close — the library will trigger reconnect
-      connection?.close();
-      connection = null;
-    }, HEARTBEAT_TIMEOUT_MS);
-
-    connection.sendMessagePromise({ type: "ping" })
-      .then(() => { clearTimeout(timeout) })
+      })
+      emitStatus("error", "heartbeat timeout")
+      // Close only the connection whose ping timed out. Status listeners may
+      // themselves retire its generation before this callback finishes.
+      state.connection.close()
+      if (connection === state.connection && connectionGeneration === state.generation) connection = null
+    }, HEARTBEAT_TIMEOUT_MS)
+    state.timeout = timeout
+    const clearDeadline = () => {
+      clearTimeout(timeout)
+      if (state.timeout === timeout) state.timeout = null
+    }
+    state.connection.sendMessagePromise({ type: "ping" })
+      .then(clearDeadline)
       .catch(() => {
-        clearTimeout(timeout);
+        clearDeadline()
+        if (!current()) return
         logger.log("warn", {
           event: "ha.heartbeat.failed", domain: "ha", component: "ha-connection",
           request_id: SYS_REQ, message: "Heartbeat ping failed",
-        });
-      });
-  }, HEARTBEAT_INTERVAL_MS);
+        })
+      })
+  }, HEARTBEAT_INTERVAL_MS)
 }
 
 function stopHeartbeat(): void {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
+  const retired = heartbeat
+  heartbeat = null
+  if (retired) {
+    if (retired.interval) clearInterval(retired.interval)
+    if (retired.timeout) clearTimeout(retired.timeout)
+    retired.interval = null
+    retired.timeout = null
   }
 }
 

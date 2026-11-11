@@ -35,6 +35,14 @@ The app retains the entity snapshot for discovery. It checks state and timestamp
 
 Meitheal closes a stream when a frame would put more than 64 KiB in its application queue. The packaged server also counts pending Node HTTP output toward that budget and terminates a backed-up socket. HTTP framing and one frame being written by the adapter can add to the observed buffer size. EventSource can reconnect. If the browser repeatedly reconnects, check the proxy's stream buffering and the size and frequency of the entity updates.
 
+## Home Assistant connection heartbeat
+
+The App checks its Home Assistant WebSocket every 30 seconds and allows 10 seconds for a pong. Credential rotation or removal, manual close and reconnect retire both the old heartbeat interval and any pending deadline. A delayed pong, rejected ping or retired callback cannot close a replacement connection or clear its heartbeat deadline. Independently opened Core connections keep their own lifecycle.
+
+A genuine timeout closes only the connection whose ping expired and reports a heartbeat error. Check Core availability and the configured credentials, then retry the operation; the App opens a fresh connection on demand. Credential and entity-subscription generation guards remain in place.
+
+Run `pnpm --filter @meitheal/tests test e2e/ha-connection-generation.spec.ts` for the deterministic loopback regression, including a real stalled close handshake and late ping settlement. This source fixture does not replace Supervisor verification in the [Home Assistant devcontainer](home-assistant-devcontainer.md).
+
 ## Dashboard Shell Verification
 
 Use this after changing dashboard shell, search-launcher, or top-level navigation behavior.
