@@ -6,6 +6,12 @@ description: "Diagnose and recover from operating problems."
 
 # Operations Runbook
 
+## Local build inputs and sign-in support
+
+Working-tree image builds exclude local `.keys` signing material, `.data` directories, `.db` databases and sidecars, and Python caches through `.dockerignore`. Keep these files outside the build inputs even when preparing a build from a working checkout. These exclusions do not replace backups or remove files from the checkout.
+
+Passkey sign-in is unavailable. The checked-in auth configuration leaves it disabled; there is no registration or authentication verifier to enable. Use the existing Home Assistant ingress or scoped API credential paths. The offline license signature verifier remains separate from sign-in.
+
 ## Custom icon uploads
 
 The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
