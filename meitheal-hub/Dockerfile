@@ -50,7 +50,7 @@ LABEL io.hass.type="addon"
 ARG MEITHEAL_VERSION
 ENV MEITHEAL_VERSION=$MEITHEAL_VERSION
 
-RUN apk add --no-cache nodejs curl ca-certificates bash
+RUN apk add --no-cache nodejs curl ca-certificates bash 'zlib>=1.4-r0'
 
 WORKDIR /opt/meitheal
 
