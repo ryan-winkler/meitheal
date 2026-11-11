@@ -101,6 +101,8 @@ test.describe("Appearance preferences", () => {
     await form.getByRole("button", { name: "Save appearance" }).click()
     await page.mouse.move(1000, 700)
     await expect(body).toHaveClass(/sidebar-collapsed/)
+    // Finish the mode-change transition before checking that focus expansion stays in place.
+    await expect(page.locator(".main-content")).toHaveCSS("margin-left", "76px")
     const before = await page.locator(".main-content").evaluate(el => el.getBoundingClientRect().left)
     await sidebar.locator('a[href="/today"]').first().focus()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
