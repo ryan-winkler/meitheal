@@ -411,8 +411,30 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
     async def async_update_task(self, task_id: str, updates: dict[str, Any]) -> None:
         """Update task fields."""
+        path = task_path(task_id)
+        completing = updates.get("status") in (STATUS_DONE, "complete")
+        was_done = False
+        payload = updates
+        if completing:
+            # Poll data may be stale. Bind the mixed-field write to the same
+            # snapshot used for the native fallback's transition decision.
+            current = await self.api.async_request("GET", path, read_json=True)
+            if (not isinstance(current, dict) or current.get("error")
+                or current.get("id") != task_id or not isinstance(current.get("status"), str)):
+                raise UpdateFailed("Meitheal did not confirm the task status")
+            version = current.get("task_version", current.get("updated_at"))
+            if type(version) is not int or not 0 <= version < 2**53:
+                raise UpdateFailed("Meitheal did not confirm the task version")
+            was_done = current["status"].lower() in (STATUS_DONE, "complete")
+            payload = {**updates, "updated_at": version}
+
         authority: set[str] = set()
-        await self.api.async_request("PUT", task_path(task_id), payload=updates, event_authority=authority)
+        result = await self.api.async_request(
+            "PUT", path, payload=payload, read_json=completing, event_authority=authority,
+        )
+        if completing and (not isinstance(result, dict) or result.get("error")
+            or result.get("id") != task_id or result.get("status") not in (STATUS_DONE, "complete")):
+            raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         # Resolve title for logbook
         task_title = task_id
@@ -427,6 +449,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             self._fire_event("meitheal_task_updated", {
                 "task_id": task_id, "title": task_title,
                 "fields": changed_fields,
+            })
+        if completing and not was_done and "meitheal_task_completed" not in authority:
+            self._fire_event("meitheal_task_completed", {
+                "task_id": task_id, "title": result.get("title") or task_title,
             })
         self._fire_logbook("Meitheal", f"updated task: {task_title} ({changed_fields})")
         await self.async_request_refresh()

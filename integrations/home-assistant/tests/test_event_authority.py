@@ -7,20 +7,25 @@ physical device or registry is accessed by this fixture.
 """
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import date
 import json
 import os
 from pathlib import Path
 import shutil
 import sqlite3
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from aiohttp import ClientSession, WSMsgType, web
+from homeassistant.components.todo import TodoItem, TodoItemStatus
+from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 from yarl import URL
 
-from custom_components.meitheal.api import MeithealApi
-from custom_components.meitheal.coordinator import MeithealCoordinator
+from custom_components.meitheal.api import MeithealApi, MeithealResponseError
+from custom_components.meitheal.coordinator import MeithealCoordinator, MeithealCoordinatorData, MeithealTask
 from custom_components.meitheal.device_trigger import async_attach_trigger
+from custom_components.meitheal.todo import MeithealTodoListEntity
 
 ROOT = Path(__file__).resolve().parents[3]
 HEADER = "X-Meitheal-HA-Event-Authority"
@@ -256,6 +261,134 @@ async def test_app_owned_delivery_failure_never_starts_native_second_producer(ha
                 await held[0].send_json({"type": "auth_ok", "ha_version": "2026.11.1"})
                 await settled(hass, lambda: len(actions) == 1)
                 assert actions[0][1]["source"] == "meitheal"
+    finally:
+        for detach in detaches:
+            detach()
+
+
+@pytest.mark.parametrize("mode,enabled,completion_source,update_source", [
+    ("app", None, "meitheal", "meitheal"),
+    ("standalone", None, "component", "component"),
+    ("app", ["task.created", "task.updated"], "component", "meitheal"),
+])
+async def test_todo_mixed_completion_uses_one_authoritative_producer(
+    hass, aiohttp_server, tmp_path, mode, enabled, completion_source, update_source,
+):
+    actions, detaches = await attach_actions(hass)
+    try:
+        async with app_core(hass, aiohttp_server, tmp_path, mode=mode, enabled=enabled) as (coordinator, frames, *_):
+            await coordinator.async_create_task("Todo original")
+            tasks = await coordinator.api.async_request("GET", "/api/tasks", read_json=True)
+            original = tasks["tasks"][0]
+            task_id = original["id"]
+            path = f"/api/tasks/{task_id}"
+            todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
+            coordinator.data = MeithealCoordinatorData([MeithealTask({**original, "status": "complete"})])
+            assert (await coordinator.api.async_request("GET", path, read_json=True))["status"] == "pending"
+
+            def events(kind):
+                return [data for name, data in actions if name == f"meitheal_task_{kind}"]
+
+            item = TodoItem(uid=task_id, summary="Todo completed", due=date(2027, 1, 15), status=TodoItemStatus.COMPLETED)
+            with patch.object(coordinator.api, "async_request", wraps=coordinator.api.async_request) as requests:
+                await todo.async_update_todo_item(item)
+                writes = [c for c in requests.await_args_list if c.args[0] == "PUT"]
+                assert len(writes) == 1
+                assert {key: writes[0].kwargs["payload"][key] for key in ("title", "due_date", "status")} == {
+                    "title": "Todo completed", "due_date": "2027-01-15", "status": "done",
+                }
+            saved = await coordinator.api.async_request("GET", path, read_json=True)
+            assert (saved["title"], saved["due_date"], saved["status"]) == ("Todo completed", "2027-01-15", "complete")
+            await settled(hass, lambda: len(events("completed")) >= 1 and len(events("updated")) >= 1)
+            assert [(e["domain"], e["source"]) for e in events("completed")] == [("meitheal", completion_source)]
+
+            # Stale poll data must neither suppress a real completion nor invent a repeat.
+            coordinator.data = MeithealCoordinatorData([MeithealTask(original)])
+            await todo.async_update_todo_item(TodoItem(uid=task_id, summary="Edited after completion", status=TodoItemStatus.COMPLETED))
+            await settled(hass, lambda: len(events("updated")) >= 2)
+            assert len(events("completed")) == 1
+            assert (await coordinator.api.async_request("GET", path, read_json=True))["title"] == "Edited after completion"
+
+            await todo.async_update_todo_item(TodoItem(uid=task_id, status=TodoItemStatus.NEEDS_ACTION))
+            assert (await coordinator.api.async_request("GET", path, read_json=True))["status"] == "pending"
+            await todo.async_update_todo_item(TodoItem(uid=task_id, status=TodoItemStatus.COMPLETED))
+            await settled(hass, lambda: len(events("completed")) >= 2 and len(events("updated")) >= 4)
+            assert [e["source"] for e in events("completed")] == [completion_source] * 2
+            assert [e["source"] for e in events("updated")] == [update_source] * 4
+            assert sum(f["event_type"] == "meitheal_task_completed" for f in frames) == (2 if completion_source == "meitheal" else 0)
+    finally:
+        for detach in detaches:
+            detach()
+
+
+async def test_concurrent_todo_completion_cannot_act_on_the_same_snapshot(hass, aiohttp_server, tmp_path):
+    actions, detaches = await attach_actions(hass)
+    try:
+        async with app_core(hass, aiohttp_server, tmp_path, mode="standalone") as (coordinator, *_):
+            await coordinator.async_create_task("Contended Todo")
+            tasks = await coordinator.api.async_request("GET", "/api/tasks", read_json=True)
+            task_id = tasks["tasks"][0]["id"]
+            path = f"/api/tasks/{task_id}"
+            todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
+            request = coordinator.api.async_request
+            both_read = asyncio.Event()
+            snapshots = []
+
+            async def hold_same_snapshot(method, request_path, **kwargs):
+                result = await request(method, request_path, **kwargs)
+                if method == "GET" and request_path == path:
+                    snapshots.append(result)
+                    if len(snapshots) == 2:
+                        both_read.set()
+                    await both_read.wait()
+                return result
+
+            with patch.object(coordinator.api, "async_request", side_effect=hold_same_snapshot):
+                async with asyncio.timeout(5):
+                    results = await asyncio.gather(*(
+                        todo.async_update_todo_item(TodoItem(uid=task_id, summary=title, status=TodoItemStatus.COMPLETED))
+                        for title in ("First writer", "Second writer")
+                    ), return_exceptions=True)
+            assert len(snapshots) == 2 and snapshots[0] == snapshots[1]
+            assert snapshots[0]["status"] == "pending"
+            assert sum(result is None for result in results) == 1
+            conflict = next(result for result in results if result is not None)
+            assert isinstance(conflict, MeithealResponseError) and conflict.status == 409
+            await settled(hass, lambda: any(kind == "meitheal_task_completed" for kind, _ in actions))
+            assert [kind for kind, _ in actions if kind != "meitheal_task_created"] == ["meitheal_task_updated", "meitheal_task_completed"]
+            saved = await request("GET", path, read_json=True)
+            assert saved["title"] == ("First writer" if results[0] is None else "Second writer")
+            assert saved["status"] == "complete"
+    finally:
+        for detach in detaches:
+            detach()
+
+
+async def test_todo_completion_rejects_an_unmatched_successful_receipt(hass, aiohttp_server):
+    calls = []
+    token = "mth_" + "a" * 64
+
+    async def response(request):
+        calls.append((request.method, request.headers.get("Authorization")))
+        if request.method == "GET":
+            return web.json_response({"id": "one", "status": "pending", "task_version": 10})
+        return web.json_response({"id": "another", "status": "complete"})
+
+    server_app = web.Application()
+    server_app.router.add_route("*", "/api/tasks/one", response)
+    server = await aiohttp_server(server_app)
+    actions, detaches = await attach_actions(hass)
+    try:
+        async with ClientSession() as session:
+            coordinator = MeithealCoordinator(hass, MeithealApi(session, server.make_url("").origin(), token))
+            coordinator.async_request_refresh = AsyncMock()
+            todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
+            with pytest.raises(UpdateFailed, match="did not acknowledge task completion"):
+                await todo.async_update_todo_item(TodoItem(uid="one", status=TodoItemStatus.COMPLETED))
+            coordinator.async_request_refresh.assert_not_awaited()
+            await hass.async_block_till_done()
+            assert actions == []
+        assert calls == [("GET", f"Bearer {token}"), ("PUT", f"Bearer {token}")]
     finally:
         for detach in detaches:
             detach()
