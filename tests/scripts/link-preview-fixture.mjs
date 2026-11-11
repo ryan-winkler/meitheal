@@ -86,3 +86,10 @@ const app = http.createServer((request, response) => {
 app.listen(0, "127.0.0.1", () => {
   process.send({ port: app.address().port })
 })
+
+// App shutdown listeners do not own these fixture servers.
+process.once("SIGTERM", () => {
+  app.close(() => upstream.close(() => process.exit(0)))
+  app.closeAllConnections()
+  upstream.closeAllConnections()
+})
