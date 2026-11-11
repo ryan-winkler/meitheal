@@ -318,6 +318,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                   class="focus-card__complete btn btn-sm"
                   data-id={task.id}
                   title="Complete this task"
+                  aria-label={`Complete ${task.title}`}
                 >
                   ✓
                 </button>
