@@ -327,11 +327,41 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     }, prefix)).toBe("ready")
     const refresh = page.locator("#sw-update-btn")
     await expect(refresh).toBeVisible()
-    const previousDocument = await page.evaluate(() => performance.timeOrigin)
-    await refresh.click()
-    await page.waitForFunction(previous => performance.timeOrigin !== previous &&
-      performance.getEntriesByType("navigation").some(entry =>
-        entry instanceof PerformanceNavigationTiming && entry.type === "reload"), previousDocument)
+    const refreshEvents: string[] = []
+    await page.exposeFunction("recordFixtureWorkerState", (event: string) => { refreshEvents.push(event) })
+    const previousDocument = await page.evaluate(async prefix => {
+      const workers = navigator.serviceWorker
+      const waiting = (await workers.getRegistration(prefix + "/"))?.waiting
+      const report = (event: string) => {
+        const record = Reflect.get(window, "recordFixtureWorkerState") as (state: string) => Promise<void>
+        void record(event)
+      }
+      waiting?.addEventListener("statechange", () => report(`candidate ${waiting.state}`))
+      workers.addEventListener("controllerchange", () => report(`controller ${workers.controller?.state}`))
+      return performance.timeOrigin
+    }, prefix)
+    page.on("request", request => {
+      if (request.isNavigationRequest()) refreshEvents.push("document requested")
+    })
+    page.on("response", response => {
+      if (response.request().isNavigationRequest()) refreshEvents.push(`document response ${response.status()}`)
+    })
+    page.on("requestfailed", request => {
+      if (request.isNavigationRequest()) refreshEvents.push(`document failure ${request.failure()?.errorText}`)
+    })
+    page.on("framenavigated", frame => {
+      if (frame === page.mainFrame()) refreshEvents.push("main document navigation")
+    })
+    try {
+      // Check the worker-triggered reload explicitly because its commit can race the click's navigation wait.
+      await refresh.click({ noWaitAfter: true })
+      await page.waitForFunction(previous => performance.timeOrigin !== previous &&
+        performance.getEntriesByType("navigation").some(entry =>
+          entry instanceof PerformanceNavigationTiming && entry.type === "reload"), previousDocument)
+    } catch (error) {
+      console.error("Refresh document and worker events", refreshEvents)
+      throw error
+    }
     await expect(page).toHaveURL(settingsUrl)
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
