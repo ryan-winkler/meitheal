@@ -249,6 +249,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
 
 test("an older worker sends cleanup POSTs to the network and an update purges private aliases", async () => {
   test.slow()
+  const workerTimeout = 15_000
   const work = await mkdtemp(join(tmpdir(), "meitheal-label-cleanup-worker-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()
@@ -260,17 +261,23 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     const prefix: string = info.configuredPath
     const changed = once(child, "message", { signal: AbortSignal.timeout(3000) })
     child.send({ type: "fixture-worker", old: true })
-    await changed
+    expect((await changed)[0]).toEqual({ oldWorker: true })
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ extraHTTPHeaders: {}, reducedMotion: "reduce" })
+    context.setDefaultTimeout(workerTimeout)
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
-    await page.goto(origin + prefix + "/fixture")
-    await page.evaluate(async prefix => {
-      await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
-    }, prefix)
-    await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
-    await page.goto(origin + prefix + "/settings#workflow-settings")
+    const settingsUrl = origin + prefix + "/settings#workflow-settings"
+    expect((await page.goto(origin + prefix + "/fixture", { waitUntil: "domcontentloaded" }))?.status()).toBe(200)
+    await test.step("Install and claim the older worker", async () => {
+      await page.evaluate(async prefix => {
+        await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
+      }, prefix)
+      await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
+    }, { timeout: workerTimeout })
+    expect((await page.goto(settingsUrl, { waitUntil: "domcontentloaded" }))?.status()).toBe(200)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toBe(origin + prefix + "/sw.js")
     expect((await pinRequest(page, prefix + "/api/labels", "POST", { title: "Worker planned label" })).status).toBe(201)
     const cleanup = page.locator("[data-label-cleanup]")
     await cleanup.locator("[data-cleanup-review]").click()
@@ -294,12 +301,14 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     await expect(cleanup.getByRole("checkbox")).toHaveCount(1)
     const current = once(child, "message", { signal: AbortSignal.timeout(3000) })
     child.send({ type: "fixture-worker", old: false })
-    await current
-    await page.evaluate(async prefix => {
-      const registration = await navigator.serviceWorker.getRegistration(prefix + "/")
-      if (!registration) throw new Error("Missing fixture worker")
-      await registration.update()
-    }, prefix)
+    expect((await current)[0]).toEqual({ oldWorker: false })
+    await test.step("Request the current worker from the fixture", async () => {
+      await page.evaluate(async prefix => {
+        const registration = await navigator.serviceWorker.getRegistration(prefix + "/")
+        if (!registration) throw new Error("Missing fixture worker")
+        await registration.update()
+      }, prefix)
+    }, { timeout: workerTimeout })
     await expect.poll(() => page.evaluate(async prefix =>
       (await navigator.serviceWorker.getRegistration(prefix + "/"))?.waiting?.state, prefix)).toBe("installed")
     await expect.poll(() => page.evaluate(async prefix => {
@@ -318,7 +327,10 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     }, prefix)).toBe("ready")
     const refresh = page.locator("#sw-update-btn")
     await expect(refresh).toBeVisible()
-    await Promise.all([page.waitForEvent("domcontentloaded"), refresh.click()])
+    await Promise.all([
+      page.waitForEvent("framenavigated", frame => frame === page.mainFrame() && frame.url() === settingsUrl),
+      refresh.click(),
+    ])
     await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => { channel.port1.close(); resolve(false) }, 500)
