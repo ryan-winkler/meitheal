@@ -435,6 +435,7 @@
     "ai_handoff_url_invalid": "The saved AI URL is invalid. Open Settings → Automation & AI to correct it.",
     "ai_handoff_url_unavailable": "Could not load the saved AI URL. Retry after reconnecting.",
     "ai_handoff_provider_unavailable": "Could not read a valid AI provider. Check Settings → Automation & AI and retry.",
+    "ai_custom_url_visibility": "This URL is visible to verified household members. Keep secrets and access tokens out of its path and query. Review any URL already saved here.",
     "ai_handoff_open": "Open provider",
     "ai_handoff_review": "Continue to {host} with the selected AI handoff?",
     "ai_handoff_ha_unavailable": "Home Assistant Assist is unavailable. Reconnect it and try again.",

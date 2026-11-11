@@ -433,6 +433,7 @@
     "ai_handoff_url_invalid": "Tá an URL IS sábháilte neamhbhailí. Oscail Socruithe → Automation & AI chun é a cheartú.",
     "ai_handoff_url_unavailable": "Níorbh fhéidir an URL IS sábháilte a lódáil. Bain triail eile as tar éis athcheangail.",
     "ai_handoff_provider_unavailable": "Níorbh fhéidir soláthraí bailí IS a léamh. Seiceáil Socruithe → Automation & AI agus bain triail eile as.",
+    "ai_custom_url_visibility": "Tá an URL seo le feiceáil ag baill fhíoraithe an teaghlaigh. Ná cuir rúin ná comharthaí rochtana ina chonair ná ina cheist. Seiceáil aon URL atá sábháilte anseo cheana.",
     "ai_handoff_open": "Oscail an soláthraí",
     "ai_handoff_review": "Lean ar aghaidh chuig {host} leis an aistriú IS roghnaithe?",
     "ai_handoff_ha_unavailable": "Níl Assist Home Assistant ar fáil. Athcheangail é agus bain triail eile as.",

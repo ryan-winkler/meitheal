@@ -388,3 +388,5 @@ Today and task-detail AI handoffs use the same authoritative server preference a
 AI handoff reads expose only the saved provider and custom destination to household sessions. Other system settings and all system-setting writes remain administrator-only. After resolving an external destination, Today and task detail show an Open provider link with its host. This native click preserves browser activation after slow reads and uses `noopener noreferrer`. HA-only still opens Assist directly.
 
 The two handoff-setting read exceptions require a verified Home Assistant ingress identity. Unauthenticated standalone callers, including forged ingress headers, retain the administrator restriction. `GET /api/settings?key=...` returns `{ key, value }` (plus `configured` for masked credentials); omitting `key` returns the flat settings map.
+
+The custom AI URL is a household-visible destination, not a credential store. Keep secrets and access tokens out of its path and query; administrators should review existing saved URLs. Settings explains this beside the URL input. Invalid dialog destinations cancel cleanly before mounting.

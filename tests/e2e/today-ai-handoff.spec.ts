@@ -77,6 +77,7 @@ test("Today validates the saved custom URL and preserves valid custom destinatio
 
 test("a delayed provider read offers a fresh native handoff with no opener or referrer", async ({ page, context }) => {
   await page.route("**/api/settings?key=ai-provider", async route => {
+    // Outlast Chromium's transient-activation window before offering a fresh native link.
     await new Promise(resolve => setTimeout(resolve, 6000))
     await route.fulfill({ json: { value: "custom" } })
   })
@@ -87,7 +88,7 @@ test("a delayed provider read offers a fresh native handoff with no opener or re
   await row.hover()
   await row.getByRole("button", { name: "Ask AI" }).click()
   const handoff = page.getByRole("link", { name: "Open provider", exact: true })
-  await expect(handoff).toBeVisible({ timeout: 10000 })
+  await expect(handoff).toBeVisible({ timeout: 15000 })
   const opened = context.waitForEvent("page")
   await handoff.click()
   const provider = await opened

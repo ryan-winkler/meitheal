@@ -116,8 +116,10 @@ const { locale } = Astro.props;
               type="url"
               class="form-input"
               id="ai-custom-url"
+              aria-describedby="ai-custom-url-help"
               placeholder="http://localhost:11434/api/chat"
             />
+            <p class="settings-hint" id="ai-custom-url-help">{t("settings.ai_custom_url_visibility", locale)}</p>
           </div>
           <button
             type="button"

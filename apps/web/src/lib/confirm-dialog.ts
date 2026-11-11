@@ -91,7 +91,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
     let okBtn: HTMLButtonElement | HTMLAnchorElement = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
     if (options.confirmUrl) {
-      if (!["http:", "https:"].includes(options.confirmUrl.protocol)) throw new Error("Invalid dialog destination")
+      if (!["http:", "https:"].includes(options.confirmUrl.protocol)) { resolve(false); return }
       const link = document.createElement("a")
       link.id = okBtn.id
       link.style.cssText = okBtn.style.cssText
