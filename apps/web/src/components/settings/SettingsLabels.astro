@@ -8,13 +8,13 @@ interface Props { locale: Locale }
 const { locale } = Astro.props
 const cleanupKeys = ["review", "description", "selection", "remove", "confirm_title", "confirm_one", "confirm_many", "cancel", "loading", "removing", "empty", "previous", "next", "retry", "stale", "blocked", "denied", "unavailable", "offline", "removed_one", "removed_many", "untitled"]
 const cleanupCopy = Object.fromEntries(cleanupKeys.map(key => [key, t(`labels.cleanup.${key}`, locale)]))
-const editorKeys = ["name", "color", "save", "save_label", "delete", "delete_label", "delete_title", "delete_message", "cancel", "saving", "saved", "deleting", "deleted", "creating", "created", "exists", "empty", "loading", "load_error", "retry", "failed", "invalid", "denied", "blocked", "conflict", "missing", "unavailable", "cancelled", "tooLarge", "media"]
+const editorKeys = ["name", "color", "save", "save_label", "delete", "delete_label", "delete_title", "delete_message", "cancel", "saving", "saved", "deleting", "deleted", "creating", "created", "exists", "empty", "loading", "load_error", "retry", "failed", "invalid", "denied", "blocked", "conflict", "missing", "unavailable", "cancelled", "tooLarge", "media", "search", "range", "page", "pages", "previous", "next", "empty_search", "unsaved", "background_saved", "background_failed"]
 const editorCopy: Record<string, string> = { ...Object.fromEntries(editorKeys.map(key => [key, t(`labels.editor.${key}`, locale)])), untitled: t("labels.cleanup.untitled", locale) }
 ---
 
 <div class="settings-shell-panel">
   <SettingsPanelCard title={t("labels.manage_labels", locale)} subtitle={t("labels.manage_subtitle", locale)}>
-    <div data-label-editor data-copy={JSON.stringify(editorCopy)}>
+    <div data-label-editor data-locale={locale} data-copy={JSON.stringify(editorCopy)}>
       <form id="create-label-form" class="labels-create-form">
         <label class="label-name-field" for="new-label-title">
           <span>{editorCopy.name}</span>
@@ -28,6 +28,19 @@ const editorCopy: Record<string, string> = { ...Object.fromEntries(editorKeys.ma
       </form>
       <p role="status" aria-atomic="true" data-label-editor-status>{editorCopy.loading}</p>
       <button type="button" class="btn btn-outline" data-label-editor-retry hidden>{editorCopy.retry}</button>
+      <label class="label-search-field" for="labels-search">
+        <span>{editorCopy.search}</span>
+        <input type="search" id="labels-search" class="form-input" data-label-search maxlength="100" aria-controls="labels-list" disabled />
+      </label>
+      <div class="label-results-toolbar">
+        <p role="status" aria-atomic="true" data-label-range>{editorCopy.loading}</p>
+        <nav aria-label={editorCopy.pages} data-label-pages hidden>
+          <button type="button" class="btn btn-outline" data-label-previous disabled>{editorCopy.previous}</button>
+          <span data-label-page></span>
+          <button type="button" class="btn btn-outline" data-label-next disabled>{editorCopy.next}</button>
+        </nav>
+      </div>
+      <p data-label-empty hidden></p>
       <ul id="labels-list" class="labels-list" aria-label={t("labels.title", locale)}></ul>
     </div>
     <section class="label-cleanup" data-label-cleanup data-copy={JSON.stringify(cleanupCopy)}>
@@ -67,6 +80,12 @@ const editorCopy: Record<string, string> = { ...Object.fromEntries(editorKeys.ma
   .labels-color-picker, :global(.labels-color-picker) { inline-size: 44px; block-size: 44px; padding: .25rem; border: 1px solid var(--border); border-radius: var(--radius-sm, 6px); background: var(--bg-card); }
   [data-label-editor] button { min-block-size: 44px; max-inline-size: 100%; white-space: normal; }
   :global(.label-row-actions button) { min-block-size: 44px; max-inline-size: 100%; white-space: normal; }
+  .label-search-field { display: grid; gap: .25rem; margin-block: 1rem .5rem; min-inline-size: 0; }
+  .label-search-field input { inline-size: 100%; min-inline-size: 0; }
+  .label-results-toolbar, [data-label-pages] { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-inline-size: 0; }
+  .label-results-toolbar { justify-content: space-between; }
+  [data-label-range], [data-label-page] { font-variant-numeric: tabular-nums; }
+  [data-label-range], [data-label-empty] { overflow-wrap: anywhere; margin-block: .5rem; }
   .labels-list { list-style: none; margin: 0; padding: 0; min-inline-size: 0; }
   :global(.label-settings-row) { padding-block: 1rem; border-block-end: 1px solid var(--border); min-inline-size: 0; }
   :global(.label-settings-form) { display: grid; gap: .75rem; min-inline-size: 0; }

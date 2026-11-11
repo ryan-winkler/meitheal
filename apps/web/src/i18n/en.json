@@ -1188,7 +1188,17 @@
       "unavailable": "Could not complete this change. Review the current labels before trying again.",
       "cancelled": "The label change was cancelled.",
       "tooLarge": "The label change is too large. Use a name of 1 to 100 characters.",
-      "media": "Could not send this label change. Reload Labels and try again."
+      "media": "Could not send this label change. Reload Labels and try again.",
+      "search": "Search labels",
+      "range": "Showing {from}–{to}. Matching: {matches}. Total: {total}.",
+      "page": "Page {page} of {pages}",
+      "pages": "Label pages",
+      "previous": "Previous",
+      "next": "Next",
+      "empty_search": "No labels match your search.",
+      "unsaved": "Unsaved changes.",
+      "background_saved": "Saved “{name}”.",
+      "background_failed": "Could not save “{name}”. {reason}"
     }
   },
   "gamification": {

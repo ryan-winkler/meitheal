@@ -33,6 +33,12 @@ Task descriptions support up to 10,000 characters. A longer create or update req
 
 Task detail and list reads retain saved urgency, importance, effort, NFC tag and board position fields. Integrations can read board order with `GET /api/tasks?sort=kanban_position&order=asc&limit=100&offset=0`. Equal positions use task ID ascending, and tasks without a position sort last. Continue pagination with `offset` when the matching total exceeds the requested limit.
 
+### Find and page shared labels
+
+**Settings → Workflow → Labels** shows up to 25 editable definitions at a time. **Search labels** searches saved names across all definitions, ignoring letter case and treating canonically equivalent Unicode alike. The range distinguishes matching definitions from the total. Clear search to return to the full list. Search becomes available after the complete list loads; use **Retry** if loading fails.
+
+Changing pages or search retains unsaved names, colours, row messages and pending writes for this page visit. Search uses the saved name until a rename succeeds. A save may finish while its row is on another page; its result is announced and appears when you return. Creation keeps the current page and search. Reloading or leaving Settings clears unsaved edits.
+
 ### Rename or delete a shared label
 
 In **Settings → Workflow → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.

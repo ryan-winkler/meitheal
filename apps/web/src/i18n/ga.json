@@ -1185,7 +1185,17 @@
       "unavailable": "Níorbh fhéidir an t-athrú seo a chur i gcrích. Athbhreithnigh na lipéid reatha sula ndéanann tú iarracht eile.",
       "cancelled": "Cealaíodh an t-athrú lipéid.",
       "tooLarge": "Tá an t-athrú lipéid rómhór. Úsáid ainm idir 1 agus 100 carachtar.",
-      "media": "Níorbh fhéidir an t-athrú lipéid seo a sheoladh. Athlódáil Lipéid agus bain triail eile as."
+      "media": "Níorbh fhéidir an t-athrú lipéid seo a sheoladh. Athlódáil Lipéid agus bain triail eile as.",
+      "search": "Cuardaigh lipéid",
+      "range": "Ag taispeáint {from}–{to}. Meaitseálacha: {matches}. Iomlán: {total}.",
+      "page": "Leathanach {page} as {pages}",
+      "pages": "Leathanaigh lipéad",
+      "previous": "Roimhe seo",
+      "next": "Ar aghaidh",
+      "empty_search": "Níl aon lipéad ag teacht le do chuardach.",
+      "unsaved": "Athruithe gan sábháil.",
+      "background_saved": "Sábháladh “{name}”.",
+      "background_failed": "Níorbh fhéidir “{name}” a shábháil. {reason}"
     }
   },
   "gamification": {
