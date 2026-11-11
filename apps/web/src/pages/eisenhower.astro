@@ -419,40 +419,38 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
             </div>
           )}
 
-          <div class="quadrant__tasks" data-drop-zone={q.id} role="list">
-            {q.tasks.length === 0 ? (
-              <div class="quadrant__empty">
-                {t("eisenhower.empty_quadrant", locale)}
-              </div>
-            ) : (
-              q.tasks.map((task, idx) => (
-                <div
-                  class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
-                  data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
-                  data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
-                >
-                  <TaskListItem task={task} compact={true} />
-                  <div class="eisenhower__task-meta">
-                    {task.eisenhower_override && (
-                      <span class="tli__pin" title="Manually placed">📌</span>
-                    )}
-                    {task.effort_minutes != null && task.effort_minutes > 0 && (
-                      <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
-                        title={`Estimated effort: ${task.effort_minutes}m`}>
-                        {effortEmoji(task.effort_minutes)}
-                        <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
-                      </span>
-                    )}
-                    {task.blocked_by && (
-                      <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
-                    )}
-                    {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
-                      <span class="tli__recurring" title="Recurring task">🔁</span>
-                    )}
-                  </div>
+          <div class="quadrant__tasks" data-drop-zone={q.id} role={q.tasks.length > 0 ? "list" : undefined}>
+            <div class="quadrant__empty" hidden={q.tasks.length > 0}>
+              {t("eisenhower.empty_quadrant", locale)}
+            </div>
+            {q.tasks.map((task, idx) => (
+              <div
+                class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
+                role="listitem"
+                data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
+                data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
+              >
+                <TaskListItem task={task} compact={true} />
+                <div class="eisenhower__task-meta">
+                  {task.eisenhower_override && (
+                    <span class="tli__pin" title="Manually placed">📌</span>
+                  )}
+                  {task.effort_minutes != null && task.effort_minutes > 0 && (
+                    <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
+                      title={`Estimated effort: ${task.effort_minutes}m`}>
+                      {effortEmoji(task.effort_minutes)}
+                      <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
+                    </span>
+                  )}
+                  {task.blocked_by && (
+                    <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
+                  )}
+                  {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
+                    <span class="tli__recurring" title="Recurring task">🔁</span>
+                  )}
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
 
           {/* ── Quick-capture input per quadrant ── */}
@@ -775,7 +773,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     min-height: 80px;
   }
 
-  .quadrant__empty {
+  .quadrant__empty:not([hidden]) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -784,7 +782,6 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     font-size: 0.8125rem;
     color: var(--text-muted);
     font-style: italic;
-    opacity: 0.7;
   }
 
   /* ── Task wrapper (task + pin indicator) ── */
@@ -962,7 +959,6 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     font-size: 0.75rem;
     color: var(--text-muted);
     margin-top: 16px;
-    opacity: 0.6;
   }
 
   /* ── Flow section ── */
@@ -1315,10 +1311,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .quadrant__sublabel {
     font-size: 0.5625rem;
-    color: #22c55e;
+    color: var(--text-secondary);
     font-weight: 600;
     letter-spacing: 0.03em;
-    opacity: 0.8;
   }
 
   /* ── Effort total in quadrant header ── */

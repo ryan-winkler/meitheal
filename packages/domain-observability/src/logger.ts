@@ -236,5 +236,6 @@ export const defaultRedactionPatterns: RegExp[] = [
   /(hassio_token=)[^&\s]+/gi,
   /(ha_token=)[^&\s]+/gi,
   /(supervisor_token=)[^&\s]+/gi,
-  /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/gi
+  // Start once per local-part run and include addresses printed back-to-back.
+  /(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})*/gi
 ];

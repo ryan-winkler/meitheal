@@ -1,5 +1,5 @@
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { request as httpsRequest } from "node:https"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -186,15 +186,16 @@ for (const refreshFails of [false, true]) {
 
 test("retained admin pages and a partially streamed write cannot outlive current Core permissions", async () => {
   test.slow()
-  await fixture(async ({ page, origin, prefix, core, bodyStarted }) => {
+  await fixture(async ({ page, origin, prefix, work, core, bodyStarted }) => {
     const created = await pinRequest(page, prefix + "/api/labels", "POST", { title: "Roof" })
     expect(created.status).toBe(201)
     const path = prefix + "/api/labels/" + created.body.id
+    const ca = await readFile(join(work, "fixture-cert.pem"))
     let finish!: () => void
     let cancel!: () => void
     const started = bodyStarted()
     const result = new Promise<{ status: number, body: string }>((resolve, reject) => {
-      const request = httpsRequest(origin + path, { method: "PUT", rejectUnauthorized: false,
+      const request = httpsRequest(origin + path, { method: "PUT", ca,
         headers: { origin, referer: page.url(), cookie: "feedback-fixture=admin", "content-type": "application/json",
           "sec-fetch-mode": "same-origin", "sec-fetch-site": "same-origin", "x-meitheal-fixture-held-body": "1" } }, response => {
         let body = ""

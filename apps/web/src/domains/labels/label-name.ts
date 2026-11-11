@@ -5,5 +5,5 @@ export function labelNameKey(name: string) {
 
 /** JSON may contain lone UTF-16 surrogates that SQLite text bindings cannot retain. */
 export function isWellFormedLabelName(name: string) {
-  return /^(?:[\u0000-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$/.test(name)
+  return !/[\uD800-\uDFFF]/u.test(name)
 }

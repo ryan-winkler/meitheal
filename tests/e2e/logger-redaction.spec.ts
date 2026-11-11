@@ -26,7 +26,8 @@ test("logger redacts tokens and email values", () => {
       component: "unit-test",
       request_id: "req-logger",
       message:
-        "authorization: Bearer abc123 user@example.com hassio_token=secret ha_token=HA123 supervisor_token=SUP456"
+        "authorization: Bearer abc123 <user@example.com>, (Case+note%2@example.test) 100% complete hassio_token=secret ha_token=HA123 supervisor_token=SUP456",
+      metadata: { emailPair: "first@example.test123@example.test" }
     });
   } finally {
     process.stdout.write = originalWrite;
@@ -36,6 +37,9 @@ test("logger redacts tokens and email values", () => {
   expect(output).toContain("[REDACTED]");
   expect(output).not.toContain("abc123");
   expect(output).not.toContain("user@example.com");
+  expect(output).not.toContain("Case+note%2@example.test");
+  expect(output).toContain("<[REDACTED]>, ([REDACTED]) 100% complete");
+  expect(JSON.parse(output).metadata.emailPair).toMatch(/^(?:\[REDACTED\])+$/);
   expect(output).not.toContain("hassio_token=secret");
   expect(output).not.toContain("ha_token=HA123");
   expect(output).not.toContain("supervisor_token=SUP456");

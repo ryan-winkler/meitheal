@@ -65,7 +65,8 @@ jobs:
 
   typecheck-and-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # The isolated spec loop reached spec 211 of 215 at the 25-minute limit.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
         with:

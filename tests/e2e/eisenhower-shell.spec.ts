@@ -43,6 +43,43 @@ test.describe("Eisenhower Shell", () => {
     }
   })
 
+  test("task list semantics follow a drag into an empty quadrant", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const title = "Eisenhower quadrant list semantics"
+    const created = await request.post("/api/tasks", {
+      headers,
+      data: { title, urgency: 1, importance: 1 },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
+    const taskPath = `/api/tasks/${id}`
+
+    try {
+      await page.reload()
+      const source = page.locator('[data-drop-zone="not-now"]')
+      const target = page.locator('[data-drop-zone="schedule"]')
+      const card = page.locator(`.tli[data-id="${id}"]`)
+
+      await expect(source.getByRole("listitem").filter({ has: card })).toBeVisible()
+      await expect(target.locator(".quadrant__empty")).toBeVisible()
+      await expect(target).not.toHaveAttribute("role", "list")
+
+      await card.dragTo(target)
+
+      const link = target.getByRole("listitem").getByRole("link", { name: title })
+      await expect(target).toHaveAttribute("role", "list")
+      await expect(target.locator(".quadrant__empty")).toBeHidden()
+      await expect(source.locator(".quadrant__empty")).toBeVisible()
+      await expect(source).not.toHaveAttribute("role", "list")
+      await link.focus()
+      await expect(link).toBeFocused()
+      await expect.poll(async () => (await (await request.get(taskPath)).json()).importance).toBe(5)
+    } finally {
+      const removed = await request.delete(taskPath, { headers, data: {} })
+      expect(removed.status()).toBe(204)
+    }
+  })
+
   test("flow section renders handoff cards", async ({ page }) => {
     const flowSection = page.locator("#eisenhower-flow")
     await expect(flowSection).toBeVisible()

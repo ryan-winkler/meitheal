@@ -557,7 +557,7 @@
     "app_readiness_subtitle": "Installability, offline health, browser handoff, and Home Assistant companion reopening.",
     "app_readiness_callout_title": "Recommended path",
     "app_readiness_callout_desc": "Install from a standalone browser tab when you want the full PWA prompt. Use Companion and x-callback links when you need to reopen the same section inside the Home Assistant app, Siri Shortcuts, or automations.",
-    "pwa_about_p1": "<a href=\"https://en.wiktionary.org/wiki/meitheal\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px;\">Meitheal</a> (IPA: /ˈmɛhəl/) — from Irish: a cooperative work party where neighbours come together to help with farming, harvesting, or building. The tradition reflects a core principle: <em>work shared is work halved</em>.",
+    "pwa_about_p1": "<a href=\"https://en.wiktionary.org/wiki/meitheal\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px;\">Meitheal</a> (IPA: /ˈmɛhəl/) — from Irish: a cooperative work party where neighbours come together to help with farming, harvesting, or building. The tradition reflects a core principle: <em>work shared is work halved</em>.",
     "pwa_about_p2": "A Home Assistant-native, Astro-first task and life management engine — built for people who think in systems.",
     "pwa_version": "Version:",
     "pwa_checking": "PWA: Checking...",

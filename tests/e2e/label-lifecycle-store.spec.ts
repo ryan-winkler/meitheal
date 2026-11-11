@@ -93,10 +93,10 @@ test("deleting the final definition removes native and legacy junction reference
 
 test("Unicode rename preserves unrelated order and legacy properties while merging destination references", async ({ db }) => {
   const label = await createLabel("Bríd")
-  await task(db, "legacy", ["Keep", { name: " BRI\u0301D ", color: "#123456", extra: { retained: true } }, "Loft", { name: "LOFT" }, "Keep"])
-  await updateLabel(label.id, { title: "Loft" })
+  await task(db, "legacy", ["Keep", { name: " BRI\u0301D ", color: "#123456", extra: { retained: true } }, "Loft 🛠", { name: "LOFT 🛠" }, "Keep"])
+  expect(await updateLabel(label.id, { title: "Loft 🛠" })).toMatchObject({ title: "Loft 🛠" })
   expect(JSON.parse(String((await db.execute("SELECT labels FROM tasks WHERE id='legacy'")).rows[0]!.labels)))
-    .toEqual(["Keep", { name: "Loft", color: "#123456", extra: { retained: true } }, "Keep"])
+    .toEqual(["Keep", { name: "Loft 🛠", color: "#123456", extra: { retained: true } }, "Keep"])
 })
 
 test("duplicate definitions reject ambiguous rename and retain shared references until the final deletion", async ({ db }) => {

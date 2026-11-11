@@ -112,7 +112,6 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
   const taskItems = page.querySelectorAll<HTMLElement>(".tli")
   for (const item of taskItems) {
     item.draggable = true
-    item.setAttribute("role", "listitem")
     item.style.cursor = "grab"
 
     item.addEventListener("dragstart", (e: DragEvent) => {
@@ -168,12 +167,8 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
         ?? page.querySelector<HTMLElement>(`.tli:has([data-id="${taskId}"])`)
       if (!draggedItem) return
 
-      // Get the wrapper (.eisenhower__task-wrapper) that contains the tli
-      const wrapper = draggedItem.closest<HTMLElement>(".eisenhower__task-wrapper") ?? draggedItem
-
-      // Remove "empty" placeholder if present
-      const emptyEl = zone.querySelector(".quadrant__empty")
-      if (emptyEl) emptyEl.remove()
+      const wrapper = draggedItem.closest<HTMLElement>(".eisenhower__task-wrapper")
+      if (!wrapper) return
 
       zone.appendChild(wrapper)
 
@@ -216,18 +211,13 @@ function updateCounts(page: HTMLElement) {
     const badge = q.querySelector(".quadrant__count")
     if (badge) badge.textContent = String(count)
 
-    // Show/hide empty placeholder
     const zone = q.querySelector<HTMLElement>("[data-drop-zone]")
-    const existing = zone?.querySelector(".quadrant__empty")
-    if (count === 0 && !existing && zone) {
-      const empty = document.createElement("div")
-      empty.className = "quadrant__empty"
-      empty.setAttribute("data-i18n", "eisenhower.empty_quadrant")
-      empty.textContent = "No tasks in this quadrant"
-      zone.appendChild(empty)
-    } else if (count > 0 && existing) {
-      existing.remove()
-    }
+    if (!zone) continue
+    if (count > 0) zone.setAttribute("role", "list")
+    else zone.removeAttribute("role")
+
+    const empty = zone.querySelector<HTMLElement>(".quadrant__empty")
+    if (empty) empty.hidden = count > 0
   }
 }
 

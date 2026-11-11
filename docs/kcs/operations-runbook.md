@@ -20,6 +20,8 @@ A review action saves its primary change first. The optional review timestamp do
 
 After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/eisenhower-payload.spec.ts` to verify failure, preservation and retry against disposable task data. Client changes also require the local Astro dev check.
 
+For matrix changes, run `e2e/eisenhower-shell.spec.ts` against a disposable Astro instance. Move the last task into an empty quadrant and check that the destination exposes a task list, the source shows its localized empty message, and the moved task link still takes keyboard focus. Check the empty message, Growth Zone label and drag hint in both themes.
+
 ## Custom icon uploads
 
 The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
@@ -100,6 +102,7 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking a Today task still opens the shared task detail surface.
+6. Confirm section buttons announce the visible section title, the item count and their expanded or collapsed state.
 
 ### Check page entry contrast
 
@@ -384,7 +387,7 @@ Renames and final deletions scan bounded label selections inside one writer tran
 
 `PUT /api/labels/{id}` accepts a strict JSON object containing `title`, `hex_color`, or both; the UTF-8 body is limited to 4 KiB and five seconds. HTML is stripped from titles before trimming and validating well-formed Unicode of 1–100 UTF-16 code units. Colours use six hexadecimal digits, with an optional leading `#`. `DELETE` accepts no body. Both retain their existing success response shapes and use private, no-store errors. A fresh Home Assistant administrator roster check occurs after body parsing immediately before repository work. Agent tokens are denied; unavailable verification returns `503` and makes no change. A demoted member must not be able to save from a retained page.
 
-For upgrade and recovery, retain a task, a private saved draft and a template with the same label in a disposable copy. Rename and verify all three, restart, then restore the candidate App backup and check the new name and draft revision. Restore the exact predecessor image and data backup and verify the old name, revision and links. A data-only restore against a different image is not predecessor rollback proof. After any uncertain network response, reload Labels before retrying.
+For upgrade and recovery, retain a task, a private saved draft and a template with the same label in a disposable copy. Rename and verify all three, restart, then restore the candidate App backup and check the new name and draft revision. Include an emoji in the new name to verify valid UTF-16 pairs survive the round trip. Restore the exact predecessor image and data backup and verify the old name, revision and links. A data-only restore against a different image is not predecessor rollback proof. After any uncertain network response, reload Labels before retrying.
 
 Administrators can review unused definitions in **Settings → Workflow → Labels**. Review shows up to 25 eligible labels per page. Selection clears on pagination, refresh, disconnection or account verification failure. Removal rechecks current usage and metadata together before committing the complete selection. A changed or newly used label leaves the selection intact in storage and asks for a new preview.
 
@@ -437,6 +440,8 @@ Default credential/PII patterns and nested sensitive metadata keys are always
 redacted before output. Caller patterns add protection. The retained
 `log_redaction` option cannot disable this minimum protection. Stdout emits one
 JSON event per line and remains the authoritative troubleshooting stream.
+To verify email redaction in a disposable environment, use a synthetic address
+with a plus tag. The address is redacted and surrounding punctuation remains visible.
 
 An optional `loki_url` must be an HTTP(S) push endpoint without embedded
 credentials. The native sender does not follow redirects. It forwards the same
