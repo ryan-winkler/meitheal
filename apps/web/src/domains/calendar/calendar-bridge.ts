@@ -1047,6 +1047,14 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
     for (const row of credRes.rows) {
       creds[String(row.key)] = String(row.value);
     }
+    // Credential setup historically stores raw URLs; Settings restores store JSON
+    // values. Decode only this preference, leaving credential bytes untouched.
+    if (creds.caldav_url) {
+      try {
+        const restored: unknown = JSON.parse(creds.caldav_url)
+        creds.caldav_url = typeof restored === "string" ? restored : ""
+      } catch { /* Existing raw URL. */ }
+    }
 
     if (!creds.caldav_url || !creds.caldav_username || !creds.caldav_password_enc) {
       return { created: 0, updated: 0, total: 0, failed: "CalDAV credentials not configured" };

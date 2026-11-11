@@ -8,6 +8,8 @@ import { getCalendarSyncStatus, startCalDAVSync, stopCalDAVSync, syncCalDAVEvent
 import { validateCalDAVUrl } from "../../apps/web/src/domains/calendar/caldav-client"
 import { POST as saveCredentials } from "../../apps/web/src/pages/api/integrations/calendar/caldav-credentials"
 import { POST as manualSync } from "../../apps/web/src/pages/api/integrations/calendar/sync"
+import { GET as exportSettings } from "../../apps/web/src/pages/api/export/settings.json"
+import { POST as importSettings } from "../../apps/web/src/pages/api/import/settings"
 
 const origin = "http://caldav-fixture.example"
 const xml = (body: string) => `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`
@@ -86,6 +88,37 @@ async function retry() {
   return manualSync({ request: new Request("http://localhost/api/integrations/calendar/sync", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "sync" }),
   }) } as Parameters<typeof manualSync>[0])
+}
+
+for (const legacy of [false, true]) {
+  test(`CalDAV credentials survive an actual ${legacy ? "historical" : "current"} Settings restore and WebDAV request`, async ({ environment: { db, dav } }) => {
+    const exported = await exportSettings({ locals: { hassIsAdmin: true } } as Parameters<typeof exportSettings>[0])
+    expect(exported.status).toBe(200)
+    const bundle = await exported.json()
+    // This direct domain fixture has no Astro virtual catalog. Empty framework
+    // configuration is verified separately through the packaged ingress fixture.
+    expect(bundle.frameworkOverrides).toEqual([])
+    delete bundle.frameworkOverrides
+    expect(bundle.settings.caldav_url).toBe(origin)
+    expect(bundle.settings).not.toHaveProperty("caldav_password_enc")
+    if (legacy) {
+      delete bundle._settingsEncoding
+      // Historical native credentials were stored raw, unlike ordinary preferences.
+      bundle.settings = { caldav_url: origin }
+    }
+    await db.execute({ sql: "UPDATE settings SET value = ? WHERE key = 'caldav_url'", args: ["http://different.example"] })
+    const restored = await importSettings({ locals: { hassIsAdmin: true }, request: new Request("http://localhost/api/import/settings", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(bundle),
+    }) } as unknown as Parameters<typeof importSettings>[0])
+    expect(restored.status).toBe(200)
+    dav.events.good = ["restored-credentials"]
+    await ready()
+    const response = await retry()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, total: 1 })
+    expect(dav.reports).toBeGreaterThan(0)
+    expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([expect.objectContaining({ title: "restored-credentials" })])
+  })
 }
 
 test("actual CalDAV REPORT failure retains saved imports and returns a partial manual outcome", async ({ environment: { db, dav } }) => {
