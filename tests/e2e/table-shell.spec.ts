@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test as base } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 interface TableTask {
   id: string
@@ -249,13 +249,40 @@ test.describe("Table Shell", () => {
     await expect(selection).not.toBeChecked()
 
     const renamed = `${task.title} renamed`
-    await title.fill(renamed)
-    await title.press("Tab")
-    await expect(title).toHaveAttribute("data-original", renamed)
-    await title.fill("Discard this edit")
-    await title.press("Escape")
-    await expect(title).toHaveText(renamed)
-    await page.reload()
-    await expect(title).toHaveText(renamed)
+    const refreshStarted = deferred<void>()
+    const releaseRefresh = deferred<void>()
+    let held = false
+    const savedTitles: string[] = []
+    page.on("request", request => {
+      if (request.method() === "PATCH" && new URL(request.url()).pathname === `/api/tasks/${task.id}`) savedTitles.push(request.postDataJSON().title)
+    })
+    const isRefresh = (url: URL) => url.pathname === "/tasks" && url.searchParams.has("tableRefresh")
+    await page.route(isRefresh, async route => {
+      if (held) return route.continue()
+      held = true
+      const response = await route.fetch()
+      refreshStarted.resolve()
+      await releaseRefresh.promise
+      await route.fulfill({ response }).catch(() => {})
+    })
+    try {
+      await title.fill(renamed)
+      await title.press("Tab")
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await refreshStarted.promise
+      await title.fill("Discard this edit")
+      releaseRefresh.resolve()
+      await expect(page.locator("#task-table")).not.toHaveAttribute("aria-busy", "true")
+      await expect(title).toBeFocused()
+      await expect(title).toHaveText("Discard this edit")
+      const refreshed = page.waitForResponse(response => isRefresh(new URL(response.url())))
+      await title.press("Escape")
+      expect((await refreshed).status()).toBe(200)
+      await expect(page.locator("#task-table")).not.toHaveAttribute("aria-busy", "true")
+      await expect(title).toHaveText(renamed)
+      expect(savedTitles).toEqual([renamed])
+      await page.reload()
+      await expect(title).toHaveText(renamed)
+    } finally { releaseRefresh.resolve() }
   })
 })

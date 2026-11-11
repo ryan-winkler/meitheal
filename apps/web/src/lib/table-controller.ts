@@ -95,6 +95,7 @@ function setupPagerFocus(shell: HTMLElement, signal: AbortSignal) {
   } catch { /* storage unavailable or marker malformed */ }
 }
 
+/** Wire Table refresh and editing without replacing an active title draft. */
 function init(signal: AbortSignal) {
   const shell = document.getElementById("table-shell")
   if (!shell || shell.dataset.tableReady === "true") return
@@ -131,6 +132,7 @@ function init(signal: AbortSignal) {
   let requestNumber = 0
   let pending: AbortController | undefined
   let resetPageOnRetry = false
+  let refreshAfterEditing = false
 
   const renderRows = () => {
     const stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats
@@ -180,6 +182,11 @@ function init(signal: AbortSignal) {
       }
 
       const focused = document.activeElement
+      if (focused?.matches(".editable-cell") && table.contains(focused)) {
+        refreshAfterEditing = true
+        return
+      }
+      refreshAfterEditing = false
       const row = focused?.closest<HTMLElement>(".table-row")
       const id = row?.dataset.id
       const control = ["[data-open-table-task]", ".row-check", ".editable-cell", "select[data-field=status]",
@@ -231,7 +238,9 @@ function init(signal: AbortSignal) {
   setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
-  setupInlineEditing(table, signal, () => void refresh())
+  setupInlineEditing(table, signal, () => void refresh(), () => {
+    if (refreshAfterEditing) void refresh()
+  })
   setupRowClicks(table, signal, () => void refresh())
   setupBulkActions({ signal, onTasksChanged: () => void refresh() })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
@@ -680,7 +689,8 @@ function toggleChildRows(parentId: string, show: boolean) {
 // Inline Editing
 // =============================================================================
 
-function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void) {
+/** Save title commits on blur; resume pending rows after an unchanged or cancelled edit. */
+function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, resumeRefresh: () => void) {
   table.addEventListener("focusout", async event => {
     const cell = (event.target as Element).closest<HTMLElement>(".editable-cell")
     if (!cell || !cell.isConnected) return
@@ -688,6 +698,7 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
     const original = cell.dataset.original ?? ""
     if (!title || title === original) {
       cell.textContent = original
+      resumeRefresh()
       return
     }
     const id = cell.dataset.id
@@ -707,6 +718,7 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
       if (signal.aborted) return
       cell.textContent = original
       showToast("Failed to update", "error")
+      resumeRefresh()
     }
   }, { signal })
 
