@@ -941,8 +941,9 @@ coreTest("verified members receive durable receipts and queue APIs fail closed",
 })
 
 coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
-  const member = await browser.newContext({ extraHTTPHeaders: {} })
+  const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
+  const personal = origin + prefix + "/settings#personal-settings"
   const settings = origin + prefix + "/settings#local-feedback"
   const message = 'Synthetic <img src=x onerror="window.feedbackExecuted=true"> report'
   try {
@@ -958,7 +959,23 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
       expect(saved.status()).toBe(201)
       await route.abort()
     })
-    await userPage.goto(settings)
+    await userPage.goto(personal)
+    const personalPanel = userPage.locator("#personal-settings")
+    const localFeedback = personalPanel.getByRole("link", { name: "Share local feedback", exact: true })
+    await personalPanel.getByRole("link", { name: /Changelog/ }).focus()
+    await userPage.keyboard.press("Tab")
+    await expect(localFeedback).toBeFocused()
+    const guides = personalPanel.getByRole("link", { name: "Guides", exact: true })
+    await expect(guides).toHaveAttribute("href", "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md")
+    await expect(guides).toHaveAttribute("target", "_blank")
+    await expect(localFeedback).toHaveAttribute("href", "#local-feedback")
+    await userPage.keyboard.press("Enter")
+    await expect(userPage).toHaveURL(settings)
+    const feedbackCard = userPage.locator("#local-feedback")
+    await expect(feedbackCard).toBeFocused()
+    await expect(feedbackCard.getByRole("link", { name: "Report a security vulnerability privately" }))
+      .toHaveAttribute("href", "mailto:info@coolockvillage.ie")
+    expect(submissionIds).toHaveLength(0)
     const denied = await userPage.evaluate(async () => {
       const response = await fetch("/api/settings?key=ha-token")
       return { status: response.status, contentType: response.headers.get("content-type") }
@@ -1007,6 +1024,18 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
     await adminPage.getByRole("alertdialog").getByRole("button", { name: "Delete report" }).click()
     await expect(entry).toHaveCount(0)
     await expect(adminPage.locator("[data-queue-status]")).toHaveText("Report deleted.")
+
+    await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
+    const irishPage = await member.newPage()
+    await irishPage.goto(personal)
+    const irishPanel = irishPage.locator("#personal-settings")
+    await expect(irishPanel.getByRole("link", { name: "Treoracha", exact: true })).toBeVisible()
+    const irishFeedback = irishPanel.getByRole("link", { name: "Roinn aiseolas áitiúil", exact: true })
+    await expect(irishFeedback).toHaveAttribute("href", "#local-feedback")
+    const bounds = await irishFeedback.boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
   } finally {
     await member.close()
     await admin.close()

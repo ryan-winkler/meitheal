@@ -6,7 +6,9 @@ description: Submit, review, and share feedback from a Meitheal installation.
 
 # Local feedback queue
 
-Open Meitheal from Home Assistant, then choose **Settings → App & PWA → Report a problem or share feedback**. Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
+Open Meitheal from Home Assistant and choose **Settings → Personal → Help & Support → Share local feedback**. Settings opens the feedback card in **App & PWA** and moves keyboard focus to it. **Guides** opens the public documentation in a new tab.
+
+Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
 
 Optional version context accepts the app's bounded stable or prerelease version, or its exact 12-character lowercase hexadecimal Canary version. Historical 9-character abbreviations and full 40-character source hashes are not the published Canary version format. Context is kept exactly as submitted; whitespace and oversized values are rejected.
 

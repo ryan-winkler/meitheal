@@ -298,11 +298,11 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         >{t("settings.help_readme", locale)}</a
       >
       <a
-        href="https://github.com/ryan-winkler/meitheal/wiki"
+        href="https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_wiki", locale)}</a
+        >{t("settings.help_guides", locale)}</a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/blob/main/CHANGELOG.md"
@@ -310,6 +310,14 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
         >{t("settings.help_changelog", locale)}</a
+      >
+    </SettingsActionRow>
+    <SettingsActionRow class="mt-2">
+      <a
+        href="#local-feedback"
+        data-settings-section-link
+        class="btn btn-secondary settings-link"
+        >{t("settings.help_local_feedback", locale)}</a
       >
     </SettingsActionRow>
   </SettingsPanelCard>
