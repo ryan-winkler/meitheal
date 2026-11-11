@@ -12,17 +12,16 @@ const targets = [
 ]
 
 async function paintedTextContrast(page: Page) {
-  for (const target of targets) {
-    for (const node of await page.locator(target.selector).all()) {
-      expect(await node.isVisible(), `Visible text required: ${target.selector}`).toBe(true)
-    }
-  }
   const rows = await page.evaluate(targets => {
     const canvas = document.createElement("canvas")
     canvas.width = canvas.height = 1
     const context = canvas.getContext("2d")!
     return targets.flatMap(target => [...document.querySelectorAll<HTMLElement>(target.selector)].map((node, index) => {
       const style = getComputedStyle(node)
+      const bounds = node.getBoundingClientRect()
+      if (style.visibility !== "visible" || bounds.width === 0 || bounds.height === 0) {
+        throw new Error(`Visible text required: ${target.selector}`)
+      }
       context.clearRect(0, 0, 1, 1)
       context.fillStyle = style.color
       context.fillRect(0, 0, 1, 1)
@@ -92,7 +91,10 @@ test.describe("Dashboard contrast", () => {
     await page.goto("/")
     await expect(page.locator(".dashboard-hero__title")).toBeVisible()
     const heroStyle = await page.locator(".dashboard-hero__title").getAttribute("style")
-    await page.locator(".stats-grid .stat-value").first().evaluate(node => { (node as HTMLElement).style.visibility = "hidden" })
+    const metric = page.locator("#dashboard-stat-open-count")
+    await expect(metric).toBeVisible()
+    await page.addStyleTag({ content: "#dashboard-stat-open-count { visibility: hidden !important }" })
+    await expect(metric).toBeHidden()
     await expect(paintedTextContrast(page)).rejects.toThrow("Visible text required")
     expect(await page.locator(".dashboard-hero__title").getAttribute("style")).toBe(heroStyle)
   })
