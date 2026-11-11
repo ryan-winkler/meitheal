@@ -98,6 +98,9 @@ export function reviewNext(): void {
 export async function reviewAction(action: "promote" | "archive" | "delete"): Promise<void> {
   const task = reviewTasks[reviewIndex]
   if (!task) return
+  const stats = reviewStats
+  const isCurrentTask = () => reviewTasks[reviewIndex] === task &&
+    document.getElementById("review-overlay")?.classList.contains("triage-overlay--hidden") === false
 
   try {
     switch (action) {
@@ -111,33 +114,36 @@ export async function reviewAction(action: "promote" | "archive" | "delete"): Pr
         if (update) {
           await taskApi.updateTask(task.id, { ...update })
         }
-        reviewStats.promoted++
+        stats.promoted++
         break
       }
       case "archive": {
         await taskApi.updateTask(task.id, { status: STATUS.COMPLETE })
-        reviewStats.archived++
+        stats.archived++
         break
       }
       case "delete": {
         await taskApi.deleteTask(task.id)
-        reviewStats.deleted++
+        stats.deleted++
         break
       }
     }
 
-    // Track last_reviewed in framework_payload
-    const existingFP = await getExistingFrameworkPayload(task.id)
-    existingFP.last_reviewed = new Date().toISOString()
-    try {
-      await taskApi.updateTask(task.id, { framework_payload: JSON.stringify(existingFP) })
-    } catch {
-      // Non-critical — don't block on metadata save failure
+    if (!isCurrentTask()) return
+    if (action !== "delete") {
+      try {
+        const existingFP = await getExistingFrameworkPayload(task.id)
+        if (!isCurrentTask()) return
+        existingFP.last_reviewed = new Date().toISOString()
+        await taskApi.updateTask(task.id, { framework_payload: JSON.stringify(existingFP) })
+      } catch {
+        // Review time is optional; a failed read must never replace retained scoring.
+      }
     }
 
-    reviewAdvance()
+    if (isCurrentTask()) reviewAdvance()
   } catch {
-    showToast("common.failed_update", "error")
+    if (isCurrentTask()) showToast("common.failed_update", "error")
   }
 }
 
