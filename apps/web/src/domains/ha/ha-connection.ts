@@ -227,6 +227,13 @@ export async function getHAConnection(): Promise<Connection | null> {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "complete" })
+        }).then(response => {
+          void response.body?.cancel().catch(() => {})
+          if (!response.ok) {
+            const retryAfter = response.headers.get("retry-after")
+            const retry = retryAfter ? ` (Retry-After: ${retryAfter})` : ""
+            throw new Error(`Task completion returned HTTP ${response.status}${retry}`)
+          }
         }).catch((err: unknown) => {
           logger.log("error", {
             event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",

@@ -148,6 +148,8 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
   const priorWebSocket = globalThis.WebSocket
   const priorToken = process.env.SUPERVISOR_TOKEN
   const priorPort = process.env.PORT
+  const write = process.stdout.write
+  const completionErrors: string[] = []
   const completions: { method: string | undefined; url: string | undefined; body: string }[] = []
   const server = createServer((request, response) => {
     let body = ""
@@ -155,13 +157,21 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     request.on("data", chunk => { body += chunk })
     request.once("end", () => {
       completions.push({ method: request.method, url: request.url, body })
-      response.writeHead(204).end()
+      if (request.url === "/api/tasks/busy-task") response.writeHead(503, { "Retry-After": "10" }).end()
+      else response.writeHead(204).end()
     })
   }).listen(0, "127.0.0.1")
   await once(server, "listening")
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Expected a loopback TCP server")
   globalThis.WebSocket = EntitySocket as unknown as typeof WebSocket
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    if (String(chunk).includes('"event":"ha.notification.action_failed"')) {
+      completionErrors.push(String(chunk))
+      return true
+    }
+    return write.call(process.stdout, chunk)
+  }) as typeof process.stdout.write
   process.env.SUPERVISOR_TOKEN = "test-token"
   process.env.PORT = String(address.port)
   try {
@@ -184,6 +194,13 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     await expect.poll(() => completions).toEqual([
       { method: "PUT", url: "/api/tasks/sample-task", body: '{"status":"complete"}' },
     ])
+    expect(socket!.publish("mobile_app_notification_action", { action: "MEITHEAL_TASK_DONE_busy-task" })).toBe(1)
+    await expect.poll(() => completionErrors).toEqual([
+      expect.stringContaining("Task completion returned HTTP 503 (Retry-After: 10)"),
+    ])
+    expect(completions.at(-1)).toEqual(
+      { method: "PUT", url: "/api/tasks/busy-task", body: '{"status":"complete"}' },
+    )
     socket!.receive({
       type: "event",
       id: socket!.entitySubscription,
@@ -261,6 +278,7 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
   } finally {
     stopEntitySubscription()
     closeHAConnection()
+    process.stdout.write = write
     globalThis.WebSocket = priorWebSocket
     if (priorToken === undefined) delete process.env.SUPERVISOR_TOKEN
     else process.env.SUPERVISOR_TOKEN = priorToken

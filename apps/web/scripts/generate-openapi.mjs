@@ -798,7 +798,7 @@ const paths = {
       operationId: "updateTask",
       tags: ["Tasks"],
       summary: "Update a task",
-      description: "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
+      description: "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. When a task transitions to 'complete', the update also saves the next occurrence if its recurrence rule yields one. Events are dispatched after the write. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
       requestBody: { content: { "application/json": { schema: {
         type: "object",
@@ -866,6 +866,11 @@ const paths = {
             ] } },
             "application/problem+json": { schema: ref("ProblemDetail") },
           },
+        },
+        500: problemContent("Could not save task completion"),
+        503: {
+          ...problemContent("Database unavailable. Retry after the interval in Retry-After."),
+          headers: { "Retry-After": { schema: { type: "integer" }, description: "Seconds before retrying" } },
         },
       },
     },

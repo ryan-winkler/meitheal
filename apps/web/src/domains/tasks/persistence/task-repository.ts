@@ -13,11 +13,13 @@
  *   const created = await repo.createTask({ id: '...', title: 'New', ... });
  */
 
-import type { Client, InStatement, InValue } from "@libsql/client"
-import { getStatusDef, normalizeStatus, STATUS } from "../../../lib/status-config";
-import { logApiError } from "../../../lib/api-logger";
+import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
+import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
+import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { parseTicketKey } from "../../../lib/ticket-key"
+import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
 import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
@@ -26,6 +28,15 @@ import { openTaskDependencies } from "./task-dependencies"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
+
+type RecurrenceSuccessor = {
+  id: string
+  ticketNumber: number
+  title: string
+  dueDate: string
+  rule: string
+}
+type RecurrenceOutcome = RecurrenceSuccessor | "invalid" | undefined
 
 export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "status" | "priority" | "deferred_at"> & {
   score: number
@@ -1003,7 +1014,7 @@ export class TaskRepository {
       activity?: RecentTaskActor
     } = {},
   ): Promise<
-    { ok: true; task: TaskRow; previousStatus?: string }
+    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor }
     | { ok: false; errorCode: "unavailable" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "conflict"; updatedAt: number }
@@ -1077,7 +1088,9 @@ export class TaskRepository {
     // A status transition and its prior state share the same writer transaction.
     // Callers must use this snapshot for once-only completion side effects.
     const statusIndex = diagnostics.length
-    if (typeof fields.status === "string") diagnostics.push({ sql: "SELECT status FROM tasks WHERE id = ?", args: [id] })
+    if (typeof fields.status === "string") {
+      diagnostics.push({ sql: "SELECT status, date('now') AS completion_day FROM tasks WHERE id = ?", args: [id] })
+    }
 
     // Capture the old state and commit the event and update in the same writer batch.
     const eventId = activity ? crypto.randomUUID() : null
@@ -1086,12 +1099,34 @@ export class TaskRepository {
     const writeIndex = statements.length
     statements.push(update)
     if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
-    const results = statements.length > 1
-      ? await this.client.batch(statements, "write")
-      : [await this.client.execute(update)]
+    let results: ResultSet[]
+    let recurrence: RecurrenceOutcome
+    if (typeof fields.status === "string" && isDoneStatus(fields.status)) {
+      const repo = this
+      const completion = await runWriteTransaction(this.client, function* (): Generator<
+        InStatement[], { results: ResultSet[]; recurrence: RecurrenceOutcome }, ResultSet[]
+      > {
+        const writeResults = yield statements
+        const prior = writeResults[statusIndex]?.rows[0]
+        const previousStatus = String(prior?.status ?? "")
+        const next = writeResults[writeIndex]?.rows[0] && !isDoneStatus(previousStatus)
+          ? yield* repo.createRecurrenceSuccessor(id, String(prior?.completion_day ?? ""))
+          : undefined
+        return { results: writeResults, recurrence: next }
+      })
+      results = completion.results
+      recurrence = completion.recurrence
+    } else {
+      results = statements.length > 1
+        ? await this.client.batch(statements, "write")
+        : [await this.client.execute(update)]
+    }
+    if (recurrence === "invalid") logApiWarn("recurrence-auto-create", "Invalid saved recurrence rule or date")
+    const successor = recurrence === "invalid" ? undefined : recurrence
     const row = results[writeIndex]?.rows[0]
     if (row) return { ok: true, task: row as unknown as TaskRow,
       ...(typeof fields.status === "string" ? { previousStatus: String(results[statusIndex]?.rows[0]?.status ?? "") } : {}),
+      ...(successor ? { successor } : {}),
     }
 
     if (version) {
@@ -1348,15 +1383,44 @@ export class TaskRepository {
     return results[3]?.rowsAffected ?? 0
   }
 
-  /** Fetch recurrence data for cloning (used by auto-create on completion) */
+  private *createRecurrenceSuccessor(
+    id: string,
+    completionDay: string,
+  ): Generator<InStatement[], RecurrenceOutcome, ResultSet[]> {
+    const [recurrence] = yield [this.recurrenceDataQuery(id)]
+    const source = recurrence?.rows[0] as unknown as TaskRow | undefined
+    const rule = source?.recurrence_rule
+    if (!source || typeof rule !== "string" || !rule) return
+
+    const parsed = parseRRule(rule)
+    const base = source.recurrence_anchor === "completion_date" || !source.due_date
+      ? completionDay
+      : String(source.due_date)
+    const next = parsed ? getNextOccurrence(parsed, new Date(base)) : undefined
+    if (next === null) return
+    if (!next || !Number.isFinite(next.getTime())) return "invalid"
+
+    const dueDate = next.toISOString().split("T")[0]!
+    const { id: successorId, insert } = this.recurrenceInsert(source, dueDate, rule)
+    const [created] = yield [insert]
+    const ticket = created?.rows[0]?.ticket_number
+    if (ticket == null) throw new Error("Recurring occurrence insert returned no ticket")
+    return { id: successorId, ticketNumber: Number(ticket), title: source.title, dueDate, rule }
+  }
+
+  /** Fetch the task fields inherited by its next occurrence. */
   async getRecurrenceData(id: string): Promise<TaskRow | null> {
-    const result = await this.client.execute({
+    const result = await this.client.execute(this.recurrenceDataQuery(id))
+    return (result.rows[0] as unknown as TaskRow) ?? null
+  }
+
+  private recurrenceDataQuery(id: string): InStatement {
+    return {
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels,
                    area_id, project_id, parent_id, task_type, assigned_to, checklists, custom_fields
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
-    });
-    return (result.rows[0] as unknown as TaskRow) ?? null;
+    }
   }
 
   /**
@@ -1368,12 +1432,18 @@ export class TaskRepository {
     nextDueDate: string,
     recurrenceRule: string,
   ): Promise<{ id: string; ticketNumber: number }> {
-    const newId = crypto.randomUUID();
-    const now = Date.now();
+    const { id, insert } = this.recurrenceInsert(sourceTask, nextDueDate, recurrenceRule)
+    const result = await this.client.execute(insert)
+    return { id, ticketNumber: Number(result.rows[0]!.ticket_number) }
+  }
+
+  private recurrenceInsert(sourceTask: TaskRow, nextDueDate: string, recurrenceRule: string) {
+    const id = crypto.randomUUID()
+    const now = Date.now()
 
     // Resolve the project in the insert so legacy references and concurrent
     // project deletion cannot create a dangling reference.
-    const result = await this.client.execute({
+    const insert: InStatement = {
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
                                recurrence_rule, recurrence_anchor, area_id, project_id, parent_id, task_type, assigned_to,
                                checklists, custom_fields, ticket_number,
@@ -1383,7 +1453,7 @@ export class TaskRepository {
                     (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
             RETURNING ticket_number`,
       args: [
-        newId,
+        id,
         sourceTask.title ? String(sourceTask.title) : "Recurring task",
         sourceTask.description ? String(sourceTask.description) : null,
         STATUS.PENDING,
@@ -1401,9 +1471,8 @@ export class TaskRepository {
         sourceTask.custom_fields ? String(sourceTask.custom_fields) : "{}",
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],
-    });
-
-    return { id: newId, ticketNumber: Number(result.rows[0]!.ticket_number) }
+    }
+    return { id, insert }
   }
 
   /** Count open tasks (non-complete) — used for iOS badge count */

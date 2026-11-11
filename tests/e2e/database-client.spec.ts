@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabase, runWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
 
 const webRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
 const execFileAsync = promisify(execFile)
@@ -156,3 +156,87 @@ test("starts with remote transports unloaded and sends remote requests through l
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 })
+
+for (const refused of [false, true]) {
+  test(`remote dependent batches share a writer and ${refused ? "close after a refused statement" : "commit"}`, async () => {
+    const select = "SELECT 42 AS answer"
+    const insert = "INSERT INTO items (id) VALUES (?)"
+    const baton = "fixture-transaction"
+    const storedSql = new Map<number, string>()
+    const traffic: Array<{ baton: string | undefined; command: string; args?: unknown[] | undefined }> = []
+    const emptyResult = { cols: [], rows: [], affected_row_count: 0 }
+    const selectResult = { cols: [{ name: "answer" }], rows: [[{ type: "integer", value: "42" }]], affected_row_count: 0 }
+    type Statement = { sql?: string; sql_id?: number; args?: unknown[] }
+    type Command = { type: "batch"; batch: { steps: Array<{ stmt: Statement }> } }
+      | { type: "execute"; stmt: Statement }
+      | { type: "store_sql"; sql_id: number; sql: string }
+      | { type: "close" }
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/v2/pipeline") {
+        response.writeHead(404).end()
+        return
+      }
+      const chunks: Uint8Array[] = []
+      for await (const chunk of request) chunks.push(chunk)
+      const incoming = JSON.parse(Buffer.concat(chunks).toString()) as { baton?: string; requests: Command[] }
+      const record = (stmt: Statement) => {
+        const sql = stmt.sql ?? storedSql.get(stmt.sql_id!)
+        if (!sql) throw new Error("Missing fixture SQL")
+        traffic.push({ baton: incoming.baton, command: sql, args: stmt.args })
+        return sql
+      }
+      const results = incoming.requests.map(command => {
+        if (command.type === "store_sql") {
+          storedSql.set(command.sql_id, command.sql)
+          return { type: "ok", response: { type: "store_sql" } }
+        }
+        if (command.type === "batch") {
+          const statements = command.batch.steps.map(step => record(step.stmt))
+          const failed = (sql: string) => refused && sql === insert
+          const stepResults = statements.map(sql => failed(sql) ? null : sql === select ? selectResult : emptyResult)
+          const stepErrors = statements.map(sql => failed(sql)
+            ? { message: "Fixture refused the insert", code: "SQLITE_CONSTRAINT" }
+            : null)
+          return { type: "ok", response: { type: "batch", result: { step_results: stepResults, step_errors: stepErrors } } }
+        }
+        if (command.type === "execute") {
+          record(command.stmt)
+          return { type: "ok", response: { type: "execute", result: emptyResult } }
+        }
+        traffic.push({ baton: incoming.baton, command: "close" })
+        return { type: "ok", response: { type: "close" } }
+      })
+      const closed = incoming.requests.some(command => command.type === "close")
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ baton: closed ? undefined : baton, results }))
+    })
+    server.listen(0, "127.0.0.1")
+    await once(server, "listening")
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("No fixture port")
+    const client = openDatabase(`libsql://127.0.0.1:${address.port}?tls=0`)
+    try {
+      const transaction = runWriteTransaction(client, function* () {
+        const [selected] = yield [select]
+        const answer = Number(selected?.rows[0]?.answer)
+        yield [{ sql: insert, args: [answer] }]
+        return answer
+      })
+      if (refused) {
+        await expect(transaction).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT", message: expect.stringContaining("Fixture refused the insert") })
+      } else {
+        await expect(transaction).resolves.toBe(42)
+      }
+      await expect.poll(() => traffic.map(({ baton, command }) => [baton, command])).toEqual([
+        [undefined, "BEGIN IMMEDIATE"],
+        [undefined, select],
+        [baton, insert],
+        ...(refused ? [] : [[baton, "COMMIT"]]),
+        [baton, "close"],
+      ])
+      expect(traffic.find(entry => entry.command === insert)?.args).toEqual([{ type: "float", value: 42 }])
+    } finally {
+      client.close()
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
+}

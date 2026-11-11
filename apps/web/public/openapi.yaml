@@ -1564,10 +1564,11 @@ paths:
       summary: Update a task
       description: Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an
         existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area
-        and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. With
-        expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or
-        'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the
-        exact checklist string or null returned by GET.
+        and status. When a task transitions to 'complete', the update also saves the next occurrence if its recurrence
+        rule yields one. Events are dispatched after the write. With expected_status 'backlog', send the exact
+        updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write,
+        include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null
+        returned by GET.
       parameters:
         - name: id
           in: path
@@ -1738,6 +1739,23 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+        "500":
+          description: Could not save task completion
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "503":
+          description: Database unavailable. Retry after the interval in Retry-After.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds before retrying
     delete:
       operationId: deleteTask
       tags:

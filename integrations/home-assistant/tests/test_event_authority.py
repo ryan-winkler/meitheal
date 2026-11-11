@@ -2,11 +2,11 @@
 
 Requires the same checkout's App build and Node on PATH. CI and explicit
 MEITHEAL_REQUIRE_APP_PROTOCOL=1 qualification fail if these are absent; ordinary
-Python-only local runs may skip the six App cases. No installed HA, Supervisor,
+Python-only local runs may skip App cases. No installed HA, Supervisor,
 physical device or registry is accessed by this fixture.
 """
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import date
 import json
 import os
@@ -91,7 +91,8 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
     core_server = await aiohttp_server(protocol)
     env = {**os.environ, "MEITHEAL_DB_URL": f"file:{tmp_path / 'tasks.db'}",
            "MEITHEAL_EVENT_CORE_WS": str(core_server.make_url("/core")).replace("http:", "ws:"),
-           "SUPERVISOR_TOKEN": "event-authority-fixture", "NODE_ENV": "production"}
+           "SUPERVISOR_TOKEN": "event-authority-fixture", "NODE_ENV": "production",
+           "TZ": "Europe/Dublin"}
     if mode == "standalone":
         env.pop("SUPERVISOR_TOKEN", None)
     for key in ["HA_BASE_URL", "HA_TOKEN", "MEITHEAL_DEV_USER_ID"]:
@@ -316,6 +317,84 @@ async def test_todo_mixed_completion_uses_one_authoritative_producer(
             assert [e["source"] for e in events("completed")] == [completion_source] * 2
             assert [e["source"] for e in events("updated")] == [update_source] * 4
             assert sum(f["event_type"] == "meitheal_task_completed" for f in frames) == (2 if completion_source == "meitheal" else 0)
+    finally:
+        for detach in detaches:
+            detach()
+
+
+@pytest.mark.parametrize("mode,enabled,completion_source,update_source", [
+    ("app", None, "meitheal", "meitheal"),
+    ("app", ["task.created", "task.updated"], "component", "meitheal"),
+    ("standalone", None, "component", "component"),
+])
+async def test_todo_recurrence_insert_failure_leaves_retry_and_event_authority_intact(
+    hass, aiohttp_server, tmp_path, mode, enabled, completion_source, update_source,
+):
+    actions, detaches = await attach_actions(hass)
+    try:
+        async with app_core(hass, aiohttp_server, tmp_path, mode=mode, enabled=enabled) as (coordinator, frames, *_):
+            await coordinator.async_create_task("Recurring Todo before completion", due_date="2031-02-13")
+            tasks = await coordinator.api.async_request("GET", "/api/tasks", read_json=True)
+            task_id = tasks["tasks"][0]["id"]
+            path = f"/api/tasks/{task_id}"
+            todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
+            await settled(hass, lambda: len(actions) == 1)
+            actions.clear()
+            frames.clear()
+            coordinator.async_request_refresh.reset_mock()
+
+            rule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+            completed_title = "Recurring Todo after completion"
+            with closing(sqlite3.connect(tmp_path / "tasks.db")) as db:
+                with db:
+                    db.execute("UPDATE tasks SET recurrence_rule = ? WHERE id = ?", (rule, task_id))
+                    db.execute("""
+                        CREATE TRIGGER reject_todo_recurrence BEFORE INSERT ON tasks
+                        WHEN NEW.title = 'Recurring Todo after completion' AND NEW.due_date = '2031-02-17'
+                        BEGIN SELECT RAISE(ABORT, 'fixture rejected next occurrence'); END
+                    """)
+
+                original = await coordinator.api.async_request("GET", path, read_json=True)
+                item = TodoItem(uid=task_id, summary=completed_title, due=date(2031, 2, 14),
+                                status=TodoItemStatus.COMPLETED)
+                with patch.object(coordinator.api, "async_request", wraps=coordinator.api.async_request) as requests:
+                    with pytest.raises(MeithealResponseError) as failure:
+                        await todo.async_update_todo_item(item)
+                    assert failure.value.status == 500
+                    assert await coordinator.api.async_request("GET", path, read_json=True) == original
+                    assert db.execute("SELECT COUNT(*) FROM tasks WHERE id <> ?", (task_id,)).fetchone() == (0,)
+                    coordinator.async_request_refresh.assert_not_awaited()
+                    await hass.async_block_till_done()
+                    assert actions == frames == []
+
+                    db.execute("DROP TRIGGER reject_todo_recurrence")
+                    await todo.async_update_todo_item(item)
+                    writes = [c.kwargs["payload"] for c in requests.await_args_list if c.args[0] == "PUT"]
+                    expected_write = {"title": completed_title, "due_date": "2031-02-14",
+                                      "status": "done", "updated_at": original["updated_at"]}
+                    assert writes == [expected_write, expected_write]
+
+                saved = await coordinator.api.async_request("GET", path, read_json=True)
+                assert (saved["title"], saved["due_date"], saved["status"]) == (completed_title, "2031-02-14", "complete")
+                assert saved["updated_at"] > original["updated_at"]
+                successors = db.execute(
+                    "SELECT id, title, due_date, status, recurrence_rule FROM tasks WHERE id <> ?", (task_id,),
+                ).fetchall()
+                assert len(successors) == 1
+                successor_id, *successor_fields = successors[0]
+                assert successor_fields == [completed_title, "2031-02-17", "pending", rule]
+
+            expected_events = [
+                ("meitheal_task_completed", task_id, completion_source),
+                ("meitheal_task_updated", task_id, update_source),
+            ]
+            if mode == "app":
+                expected_events.append(("meitheal_task_created", successor_id, "meitheal"))
+            expected_frames = sorted((kind, event_task_id) for kind, event_task_id, source in expected_events
+                                     if source == "meitheal")
+            await settled(hass, lambda: len(actions) >= len(expected_events) and len(frames) >= len(expected_frames))
+            assert sorted((kind, data["task_id"], data["source"]) for kind, data in actions) == sorted(expected_events)
+            assert sorted((f["event_type"], f["event_data"]["task_id"]) for f in frames) == expected_frames
     finally:
         for detach in detaches:
             detach()

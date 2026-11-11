@@ -20,7 +20,7 @@ export async function launchPinBrowser(work: string, backForwardCache = false, e
   })
 }
 
-export function startCoreFixture(work: string, plainHttp = false, restartPort?: number): ChildProcess {
+export function startCoreFixture(work: string, plainHttp = false, restartPort?: number, timeZone?: string): ChildProcess {
   const cert = join(work, "fixture-cert.pem")
   const key = join(work, "fixture-key.pem")
   if (!restartPort) execFileSync("openssl", ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "1",
@@ -32,6 +32,7 @@ export function startCoreFixture(work: string, plainHttp = false, restartPort?: 
     MEITHEAL_PIN_FIXTURE: "1",
     MEITHEAL_PIN_FIXTURE_HTTP: plainHttp ? "1" : "0",
     ...(restartPort ? { MEITHEAL_INGRESS_FIXTURE_PORT: String(restartPort) } : {}),
+    ...(timeZone ? { TZ: timeZone } : {}),
     ...(process.env.MEITHEAL_PIN_LEGACY_WORKER ? { MEITHEAL_PIN_LEGACY_WORKER: process.env.MEITHEAL_PIN_LEGACY_WORKER } : {}),
     MEITHEAL_PIN_FIXTURE_TLS_CERT: cert,
     MEITHEAL_PIN_FIXTURE_TLS_KEY: key,

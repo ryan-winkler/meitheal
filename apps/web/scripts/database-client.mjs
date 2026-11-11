@@ -1,5 +1,6 @@
 import { createRequire } from "node:module"
 import { DatabaseSync } from "node:sqlite"
+import { setTimeout } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
@@ -11,6 +12,9 @@ import { ResultSetImpl } from "@libsql/core/util"
 /** @typedef {import("@libsql/core/api").Transaction} Transaction */
 /** @typedef {import("@libsql/core/api").TransactionMode} TransactionMode */
 /** @typedef {import("@libsql/core/api").Row} Row */
+/** @typedef {import("@libsql/core/api").ResultSet} ResultSet */
+
+const localWriters = new WeakMap()
 /** @typedef {import("node:sqlite").SQLInputValue} SQLInputValue */
 /** @typedef {import("node:sqlite").SQLOutputValue} SQLOutputValue */
 
@@ -125,6 +129,48 @@ function begin(db, mode) {
     case "deferred": return db.exec("BEGIN DEFERRED")
     default: throw new RangeError("Unknown SQLite transaction mode")
   }
+}
+
+/**
+ * Run batches whose parameters depend on earlier results in the same write.
+ * Local SQLite runs all steps synchronously so other App queries cannot
+ * encounter a writer lock held across a Promise continuation.
+ * @template T
+ * @param {Client} client
+ * @param {() => Generator<InStatement[], T, ResultSet[]>} steps
+ * @returns {Promise<T>}
+ */
+export async function runWriteTransaction(client, steps) {
+  const local = localWriters.get(client)
+  if (!local) {
+    const tx = await client.transaction("write")
+    try {
+      const program = steps()
+      let state = program.next()
+      while (!state.done) state = program.next(await tx.batch(state.value))
+      await tx.commit()
+      return state.value
+    } finally {
+      tx.close()
+    }
+  }
+
+  let acquired = false
+  const start = () => {
+    acquired = true
+    return steps()
+  }
+  for (const delay of [5, 15, 30, 60]) {
+    try {
+      return local(start)
+    } catch (error) {
+      // Once BEGIN succeeds, cleanup rolls back failure. Never replay COMMIT.
+      if (acquired || !(error instanceof LibsqlError) ||
+        (error.code !== "SQLITE_BUSY" && error.code !== "TRANSACTION_ACTIVE")) throw error
+      await setTimeout(delay)
+    }
+  }
+  return local(start)
 }
 
 let verifiedSQLite = false
@@ -272,7 +318,8 @@ function openLocal(path, memory) {
     }
   }
 
-  return {
+  /** @type {Client} */
+  const client = {
     protocol: "file",
     get closed() { return closed },
     /** @param {InStatement} statement @param {InArgs} [args] */
@@ -294,6 +341,15 @@ function openLocal(path, memory) {
       closed = false
     },
   }
+  localWriters.set(client, steps => onMain(db => {
+    begin(db, "write")
+    const program = steps()
+    let state = program.next()
+    while (!state.done) state = program.next(executeBatch(db, state.value))
+    db.exec("COMMIT")
+    return state.value
+  }))
+  return client
 }
 
 /** @param {string} url @returns {Client} */
