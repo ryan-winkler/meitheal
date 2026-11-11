@@ -669,7 +669,7 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
 
 test("a 2,000-task Table keeps its paged results, assets and views inside ingress", async ({ page, context }) => {
   test.setTimeout(45000)
-  const db = new DatabaseSync(path.join(work, "meitheal.db"))
+  const db = new DatabaseSync(path.join(work, "meitheal.db"), { timeout: 5000 })
   try {
     const task = db.prepare(`INSERT INTO tasks
       (id, title, description, status, request_id, idempotency_key, created_at, updated_at)
@@ -717,6 +717,15 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
   await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
   await calendar.click()
+  await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  expect(escaped).toEqual([])
+
+  await page.goto(origin + prefix + "/tasks?view=table#table")
+  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(50)
+  await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press("3")
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
   expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
   expect(escaped).toEqual([])

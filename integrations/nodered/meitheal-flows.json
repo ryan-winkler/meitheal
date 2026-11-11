@@ -56,7 +56,7 @@
     "areaId": [],
     "deviceId": [],
     "entityId": [],
-    "data": "{\"title\": \"📋 New Meitheal Task\", \"message\": \"{{payload.title}}\\n\\nPriority: {{payload.priority}}\\nBoard: {{payload.board_id}}\\nTicket: {{payload.ticket_key}}\"}",
+    "data": "{\"title\": \"📋 New Meitheal Task\", \"message\": \"{{payload.title}}\\n\\nPriority: {{payload.priority}}\\nArea: {{payload.area_id}}\\nTicket: {{payload.ticket_key}}\"}",
     "dataType": "json",
     "mergeContext": "",
     "mustacheAltTags": false,

@@ -430,3 +430,38 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
   await page.keyboard.press("ArrowDown")
   await expect(bars.last()).toBeFocused()
 })
+
+test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  let firstId: string | undefined
+  let secondId: string | undefined
+  try {
+    const firstTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board task", task_type: "task" } })
+    expect(firstTask.status()).toBe(201)
+    firstId = (await firstTask.json()).id
+
+    const secondTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board epic", task_type: "epic" } })
+    expect(secondTask.status()).toBe(201)
+    secondId = (await secondTask.json()).id
+
+    await page.goto("/tasks?groupBy=type#kanban")
+    await expect(page.locator(".swimlane-group:not([hidden])").first()).toBeVisible()
+
+    await page.locator(`[data-task-id="${firstId}"] .card-open-btn`).focus()
+    await page.keyboard.press("c")
+
+    expect(new URL(page.url()).pathname).toBe("/tasks")
+    await expect(page.locator(".kanban-board")).toBeVisible()
+    await expect(page.locator(".swimlane-group:not([hidden]):not(.swimlane-collapsed)")).toHaveCount(0)
+
+    await page.keyboard.press("c")
+    await expect(page.locator(".swimlane-group.swimlane-collapsed")).toHaveCount(0)
+
+    await blurActive(page)
+    await page.keyboard.press("c")
+    await expect(page).toHaveURL(/\/calendar$/)
+  } finally {
+    if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
+    if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
+  }
+})

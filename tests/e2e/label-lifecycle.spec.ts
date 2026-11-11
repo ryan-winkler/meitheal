@@ -320,7 +320,7 @@ for (const status of [409, 503]) {
 test("label editor handles long multilingual names and white/black colours in narrow, enlarged and Irish layouts", async () => {
   test.slow()
   await fixture(async ({ page, origin, prefix, work }) => {
-    const db = new DatabaseSync(join(work, "pins.db"))
+    const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5000 })
     const names = ['Roof <img src=x onerror="window.labelInjected=1"> & attic', "Cothabháil an tí agus sábháilteacht an teaghlaigh · حديقة المنزل", "家のメンテナンスと防災準備 🏡", "X"]
     try {
       const insert = db.prepare("INSERT INTO vikunja_labels (title,hex_color) VALUES (?,?)")
