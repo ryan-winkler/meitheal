@@ -1,5 +1,6 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
 import http from "node:http"
+import { boardRouteSelection } from "./board-route-selection.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
@@ -107,7 +108,14 @@ const server = http.createServer((req, res) => {
       res.writeHead(400).end()
       return
     }
-    req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
+    const search = query === -1 ? "" : req.url.slice(query)
+    // Keep scoped aliases inside ingress and let the normal middleware authorize them.
+    let routedPath = normalizedPath
+    if (search && canonical && boardRouteSelection(canonical, new URLSearchParams(search))) {
+      const parsedPath = new URL("http://localhost" + normalizedPath).pathname
+      if (parsedPath.endsWith("/")) routedPath = parsedPath.slice(0, -1)
+    }
+    req.url = routedPath + search
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
     if (req.method === "POST" && normalizedPath === "/api/export/database.sqlite") {
       waitForDatabaseDownloadDrain = waitForDrain

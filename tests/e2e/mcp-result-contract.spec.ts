@@ -39,6 +39,8 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     expect(tools.some((tool: { name: string }) => tool.name === "replaceRules")).toBe(false)
     const search = tools.find((tool: { name: string }) => tool.name === "searchTasks")
     expect(search.inputSchema.properties.scope.enum).toEqual(["tasks"])
+    const list = tools.find((tool: { name: string }) => tool.name === "listTasks")
+    expect(list.inputSchema.properties).not.toHaveProperty("board_name")
 
     const owned: string[] = []
     const unique = `MCPResult${crypto.randomUUID().replaceAll("-", "")}`
@@ -58,6 +60,25 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
         expect(found.isError).toBe(false)
         expect(JSON.parse(found.content[0].text).count).toBe(count)
       }
+      const listed = (await rpc("tools/call", { name: "listTasks", arguments: { limit: 20 } })).result
+      expect(listed.isError).toBe(false)
+      expect(JSON.parse(listed.content[0].text).tasks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: owned[0] }),
+      ]))
+      for (const [name, args] of [
+        ["listTasks", { board_name: "unavailable-board" }],
+        ["searchTasks", { q: unique, board_id: "unavailable-board" }],
+        ["completeTask", { id: owned[0], board_id: "unavailable-board" }],
+      ] as const) {
+        for (const modern of [false, true]) {
+          const scoped = await rpc("tools/call", { name, arguments: args }, modern)
+          if (modern) expect(scoped.result.isError).toBe(true)
+          else expect(scoped.error.code).toBe(-32603)
+          expect(JSON.stringify(scoped)).not.toContain(unique)
+        }
+      }
+      const retained = await api.get(base + `/api/tasks/${owned[0]}`, { headers })
+      expect(await retained.json()).toMatchObject({ status: "pending" })
     } finally {
       for (const id of owned) {
         const removed = await api.delete(base + `/api/tasks/${id}`, { headers })

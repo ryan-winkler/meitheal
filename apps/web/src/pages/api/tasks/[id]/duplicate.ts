@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError, apiJson } from "../../../../lib/api-response"
@@ -19,8 +20,11 @@ const logger = createLogger({
  * Competitive parity: Jira, Asana, Linear all have "Clone/Duplicate" actions.
  * Copies all fields except id, created_at, updated_at, and calendar_sync_state.
  */
-export const POST: APIRoute = async ({ params }) => {
+export const POST: APIRoute = async ({ params, request }) => {
     try {
+        const boardSelection = await rejectBoardSelectionInJson(request)
+        if (boardSelection) return boardSelection
+
         await ensureSchema()
         const repo = new TaskRepository(getPersistenceClient())
         const sourceId = params.id!

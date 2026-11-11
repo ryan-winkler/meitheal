@@ -171,6 +171,7 @@ Use this after changing the Kanban shell or `kanban-controller.ts`.
 5. Confirm SearchHub, Assist, lane management, and the task view tabs still open. See the [Kanban guide](kanban-shell-guide.md) for the user workflows.
 6. Run `tests/e2e/kanban-pagination.spec.ts` against a disposable server. Inspect the raw Tasks response and confirm it contains only the requested view. Check page navigation, full-board filtering, the retry state and relative card order.
 7. For render changes, compare the packaged server with the same 1,000- and 2,000-card fixture. Record uncompressed HTML bytes, warm request latency and rendered card count. Use an isolated Home Assistant fixture for native performance qualification.
+8. For a Household-only release, verify an unavailable Board URL returns 404 through the App panel. Use a disposable fixture to verify an explicit Board selector on bulk purge returns 400. Activate the updated service worker and check that cached Board-selected URLs are unavailable offline while ordinary Household cache entries still work.
 
 A task write that returns `TASK_VERSION_CONFLICT` should be checked by reloading the task before retrying. A `TASK_BLOCKED` response identifies the open dependencies preventing activation. Native clients can pass the observed epoch-millisecond `updated_at` to reject stale writes. Intake decisions also pass `expected_status: "backlog"` and require an exact version and status match in SQLite.
 

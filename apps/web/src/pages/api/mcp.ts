@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import type { APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
+import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { apiJson, apiError, apiProblem } from "../../lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
 import { resolveMcpSchema } from "@lib/mcp-schema"
@@ -319,15 +320,15 @@ async function executeTool(
   args: Record<string, unknown>,
   authorization: string
 ): Promise<Record<string, unknown>> {
-  const requestApi = scopedApi(authorization)
-
-  // Check custom handlers first
-  const custom = customHandlers.get(toolName)
-  if (custom) return custom(args, requestApi)
-
-  // Dynamic dispatch from OpenAPI routes
   const { routes } = loadOpenAPISpec()
   const route = routes.get(toolName)
+  const custom = customHandlers.get(toolName)
+  if ((custom || (route && isBoardTaskApiPath(route.path))) && hasBoardSelection(args)) {
+    return checkedJson(unavailableBoardResponse())
+  }
+  const requestApi = scopedApi(authorization)
+  if (custom) return custom(args, requestApi)
+
   if (!route) {
     return { error: `Unknown tool: ${toolName}`, available: routes.size }
   }

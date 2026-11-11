@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
 import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -132,10 +133,11 @@ export const GET: APIRoute = async ({ url }) => {
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new TaskRepository(client)
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   const prepared = await prepareTaskCreation(repo, body)
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
@@ -162,7 +164,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   return Response.json(payload, { status: 201, headers: authority })
 }
 
-export const DELETE: APIRoute = async ({ url }) => {
+export const DELETE: APIRoute = async ({ request, url }) => {
   try {
     const purge = url.searchParams.get("purge")
     if (purge !== "all") {
@@ -171,6 +173,8 @@ export const DELETE: APIRoute = async ({ url }) => {
         headers: { "content-type": "application/json" },
       })
     }
+    const boardSelection = await rejectBoardSelectionInJson(request, 400)
+    if (boardSelection) return boardSelection
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     await repo.purgeAll()

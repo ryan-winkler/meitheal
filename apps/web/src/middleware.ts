@@ -9,6 +9,7 @@ import { initHAIntegrations } from "@domains/ha";
 import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
 import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
+import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
@@ -376,6 +377,9 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
       );
     }
   }
+
+  const unavailableBoard = rejectBoardSelectionInUrl(url, routePattern, method)
+  if (unavailableBoard) return unavailableBoard
 
   let databaseAvailable = true
   try {

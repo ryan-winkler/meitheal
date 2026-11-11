@@ -62,7 +62,9 @@ for (const [name, handler, query] of [
       client.execute = unavailable
       client.batch = unavailable
       try {
-        response = await handler({ url: new URL(`http://localhost/api/tasks${query}`) } as never)
+        const url = new URL(`http://localhost/api/tasks${query}`)
+        const request = new Request(url, { method: handler === deleteCompleted ? "DELETE" : "GET" })
+        response = await handler({ url, request } as never)
       } finally {
         client.execute = execute
         client.batch = batch

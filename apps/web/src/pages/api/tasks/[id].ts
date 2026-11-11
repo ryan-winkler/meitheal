@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "../../../lib/ticket-key"
@@ -60,9 +61,10 @@ export const GET: APIRoute = async ({ params, url }) => {
 }
 
 export const PUT: APIRoute = async ({ params, request, locals }) => {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
   // Resolve task ID (supports UUID and MTH-N format)
   const resolved = await repo.resolveTaskId(params.id!)
@@ -611,7 +613,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   })
 }
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = async ({ params, request }) => {
+  const boardSelection = await rejectBoardSelectionInJson(request)
+  if (boardSelection) return boardSelection
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
 
