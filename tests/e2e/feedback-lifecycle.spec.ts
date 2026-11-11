@@ -23,12 +23,12 @@ const test = base.extend<{ feedbackPage: Page }>({
         url = origin + info.configuredPath + "/settings#app-pwa-settings"
       }
       const page = await context.newPage()
-      page.on("pageerror", error => console.log("Feedback fixture page error:", error.message))
-      page.on("response", response => { if (response.status() >= 400 && response.url().includes("_astro")) console.log("Feedback fixture asset:", response.status(), response.url()) })
+      const errors: string[] = []
+      page.on("pageerror", error => errors.push(error.message))
       await page.goto(url!)
-      page.on("console", message => { if (message.type() === "error") console.log("Feedback console:", message.text()) })
       await expect(page.locator("[data-feedback-form] fieldset")).toHaveJSProperty("disabled", false)
       await use(page)
+      expect(errors).toEqual([])
     } finally {
       await context.close()
       if (child) { const exit = once(child, "exit"); child.kill(); await exit }
@@ -57,11 +57,13 @@ async function navigateSection(page: Page, hash: string) {
 test("Feedback preserves drafts, exact focus ownership and scoped confirmation", async ({ feedbackPage: page }) => {
   let current = report()
   let deletes = 0
+  let conflict = false
   let patchGate: ReturnType<typeof deferred<void>> | null = null
   const patchStarted = deferred<void>()
   await page.route(/\/api\/feedback(?:[/?]|$)/, async route => {
     const method = route.request().method()
     if (method === "PATCH") {
+      if (conflict) return route.fulfill({ status: 409, json: { detail: "Report changed. Refresh and retry." } })
       patchStarted.resolve()
       if (patchGate) await patchGate.promise
       current = { ...current, state: route.request().postDataJSON().state }
@@ -94,6 +96,11 @@ test("Feedback preserves drafts, exact focus ownership and scoped confirmation",
   current = report("open")
   await page.getByRole("button", { name: "Refresh reports", exact: true }).click()
   await expect(entry.locator("[data-claim-report]")).toBeVisible()
+  conflict = true
+  await entry.locator("[data-claim-report]").click()
+  await expect(page.locator("[data-queue-status]")).toContainText("Report changed")
+  await expect(entry.locator('[name="reviewedMessage"]')).toHaveValue("Keep my redacted export draft")
+  conflict = false
   patchGate = deferred<void>()
   await entry.locator("[data-claim-report]").click()
   await patchStarted.promise
@@ -110,6 +117,8 @@ test("Feedback preserves drafts, exact focus ownership and scoped confirmation",
   await expect(entry.locator("[data-delete-report]")).toBeVisible()
   await entry.locator("[data-delete-report]").click()
   await expect(page.locator("#meitheal-confirm-overlay")).toBeVisible()
+  await entry.locator("[data-delete-report]").evaluate(button => (button as HTMLButtonElement).click())
+  await expect(page.locator("#meitheal-confirm-overlay")).toHaveCount(1)
   await navigateSection(page, "#personal-settings")
   await expect(page.locator("#meitheal-confirm-overlay")).toHaveCount(0)
   expect(deletes).toBe(0)
