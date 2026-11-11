@@ -1,8 +1,11 @@
 import type { ListenerManager } from "../managed-listeners"
 import { setUnscheduledPage } from "../today-list"
-import { addBatchCheckboxes } from "./today-batch-actions"
 
-export function setupUnscheduledSection(container: HTMLElement, lm: ListenerManager): () => void {
+export function setupUnscheduledSection(
+  container: HTMLElement,
+  lm: ListenerManager,
+  addBatchCheckboxes: (scope: HTMLElement) => void,
+): () => void {
   const section = container.querySelector<HTMLElement>("#section-unscheduled")
   const list = section?.querySelector<HTMLElement>("#today-unscheduled-list")
   const toggle = section?.querySelector<HTMLButtonElement>(".today-section__toggle")

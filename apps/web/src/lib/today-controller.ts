@@ -90,6 +90,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
   const container = options?.container ?? document.body
   focusedIndex = -1
+  // Restore the batch selection before restoring filters rewrites history state.
+  const addBatchCheckboxes = setupBatchUI(container, lm)
 
   initPageShellNavigation({
     barId: "today-bar",
@@ -112,8 +114,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupAutoRefresh(container)     // G33
   setupEveningReview(container, lm)   // G34
   renderEffortIndicators(container) // G35
-  setupBatchUI(container, lm)         // G30
-  const refreshUnscheduled = setupUnscheduledSection(container, lm)
+  const refreshUnscheduled = setupUnscheduledSection(container, lm, addBatchCheckboxes)
   setupFilters(container, refreshUnscheduled)
   if (window.location.search !== initialSearch) refreshUnscheduled()
   setupHabitsSection(container, lm)    // G38

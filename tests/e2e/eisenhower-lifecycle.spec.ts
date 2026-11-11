@@ -27,6 +27,7 @@ for (const action of ["review", "complete-q4", "triage"] as const) {
         await route.continue()
       })
       await page.goto("/eisenhower")
+      await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
       const card = page.locator(`[data-drop-zone="not-now"] .tli[data-id="${task.id}"]`)
       await expect(card).toBeVisible()
       await page.evaluate(() => {
@@ -59,7 +60,8 @@ for (const action of ["review", "complete-q4", "triage"] as const) {
       await expect.poll(async () => (await (await request.get(taskPath)).json()).status).toBe("complete")
       expect(statusWrites).toEqual(["complete"])
     } finally {
-      await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin } })
+      const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+      expect(removed.status()).toBe(204)
     }
   })
 }
@@ -80,6 +82,7 @@ test("aborted page ownership retires actions and review listeners before the nex
       await route.continue()
     })
     await page.goto("/eisenhower")
+    await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
     await page.locator('[data-action="start-review"]').click()
     await expect(page.locator("#review-overlay")).toBeVisible()
     await page.evaluate(() => document.dispatchEvent(new Event("astro:before-swap")))
@@ -98,6 +101,142 @@ test("aborted page ownership retires actions and review listeners before the nex
     await expect(page.locator(`.tli[data-id="${task.id}"]`)).toHaveCount(0)
     expect(statusWrites).toEqual(["complete"])
   } finally {
-    await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin } })
+    const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+    expect(removed.status()).toBe(204)
   }
 })
+
+for (const [action, otherAction, status] of [
+  ["complete-q4", "defer-q4", "complete"],
+  ["defer-q4", "complete-q4", "backlog"],
+] as const) {
+  test(`Q4 ${status} keeps unconfirmed tasks visible and retries only those tasks`, async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const ids: string[] = []
+    const writes: Array<{ id: string; status: string }> = []
+    let reject = true
+    let release: (() => void) | undefined
+    try {
+      for (const result of ["accepted", "rejected"]) {
+        const response = await request.post("/api/tasks", { headers, data: {
+          title: `Q4 ${status} ${result}`, urgency: 1, importance: 1,
+        } })
+        expect(response.status(), await response.text()).toBe(201)
+        ids.push((await response.json()).id)
+      }
+      const [accepted, rejected] = ids
+      await page.route("**/api/tasks/*", async route => {
+        const id = new URL(route.request().url()).pathname.split("/").pop() ?? ""
+        if (!ids.includes(id) || route.request().method() !== "PUT") return route.continue()
+        writes.push({ id, status: route.request().postDataJSON().status })
+        if (writes.length === 1) await new Promise<void>(resolve => { release = resolve })
+        if (reject && id === rejected) return route.fulfill({ status: 503, json: { error: "Write rejected" } })
+        return route.continue()
+      })
+      await page.goto("/eisenhower")
+      await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
+      const quadrant = page.locator('[data-quadrant="not-now"]')
+      const button = quadrant.locator(`[data-action="${action}"]`)
+      const other = quadrant.locator(`[data-action="${otherAction}"]`)
+      const acceptedRow = quadrant.locator(`.tli[data-id="${accepted}"]`)
+      const rejectedRow = quadrant.locator(`.tli[data-id="${rejected}"]`)
+      const tabCount = page.locator('[aria-controls="eisenhower-quadrant-not-now"] .mobile-tab__count')
+      await expect(acceptedRow).toBeVisible()
+      await expect(rejectedRow).toBeVisible()
+      await button.focus()
+      await page.keyboard.press("Enter")
+      await expect.poll(() => Boolean(release)).toBe(true)
+      await expect(button).toBeFocused()
+      await expect(other).toBeDisabled()
+      await page.keyboard.press("Enter")
+      await other.evaluate((element: HTMLButtonElement) => element.click())
+      release?.()
+
+      await expect(acceptedRow).toHaveCount(0)
+      await expect(rejectedRow).toBeVisible()
+      await expect(quadrant.locator(".quadrant__count")).toHaveText("1")
+      await expect(tabCount).toHaveText("1")
+      await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
+      await expect(button).toBeFocused()
+      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ status })
+      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status: "pending" })
+      expect(writes.map(write => write.id).sort()).toEqual([...ids].sort())
+      expect(writes.every(write => write.status === status)).toBe(true)
+
+      reject = false
+      await page.keyboard.press("Enter")
+      await expect(rejectedRow).toHaveCount(0)
+      await expect(tabCount).toHaveText("0")
+      await expect(quadrant.locator(".quadrant__empty")).toBeVisible()
+      expect(writes.slice(2)).toEqual([{ id: rejected, status }])
+      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status })
+
+      await page.reload()
+      await expect(acceptedRow).toHaveCount(0)
+      await expect(rejectedRow).toHaveCount(0)
+      await expect(quadrant.locator(".quadrant__empty")).toBeVisible()
+    } finally {
+      release?.()
+      for (const id of ids) {
+        const removed = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+        expect(removed.status()).toBe(204)
+      }
+    }
+  })
+}
+
+for (const [action, quadrantName, urgency, importance, field, value] of [
+  ["commit-q1", "do-first", 5, 5, "due_date", "2026-11-11"],
+  ["schedule-q2", "schedule", 1, 5, "due_date", "2026-11-15"],
+  ["assign-q3", "delegate", 5, 1, "assigned_to", "Eisenhower fixture assignee"],
+] as const) {
+  test(`${action} distinguishes a failed batch from a mixed result`, async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const ids: string[] = []
+    let rejectAll = true
+    try {
+      for (const result of ["accepted", "rejected"]) {
+        const response = await request.post("/api/tasks", { headers, data: {
+          title: `${action} ${result}`, urgency, importance,
+        } })
+        expect(response.status(), await response.text()).toBe(201)
+        ids.push((await response.json()).id)
+      }
+      const [accepted, rejected] = ids
+      await page.route("**/api/tasks/*", route => {
+        const id = new URL(route.request().url()).pathname.split("/").pop() ?? ""
+        if (route.request().method() === "PUT" && (id === rejected || (id === accepted && rejectAll))) {
+          return route.fulfill({ status: 503, json: { error: "Write rejected" } })
+        }
+        return route.continue()
+      })
+      await page.clock.setFixedTime(new Date("2026-11-11T12:00:00Z"))
+      await page.goto("/eisenhower")
+      await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
+      const quadrant = page.locator(`[data-quadrant="${quadrantName}"]`)
+      const button = quadrant.locator(`[data-action="${action}"]`)
+      const runAction = async () => {
+        await button.click()
+        if (action === "assign-q3") {
+          await page.locator("#prompt-input").fill(`  ${value}  `)
+          await page.locator("#prompt-ok").click()
+        }
+      }
+      await runAction()
+      await expect(page.getByText("Couldn’t confirm the changes. Check the selected tasks before retrying.")).toBeVisible()
+      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: null })
+      rejectAll = false
+      await runAction()
+      await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
+      await expect(quadrant.locator(`.tli[data-id="${accepted}"]`)).toBeVisible()
+      await expect(quadrant.locator(`.tli[data-id="${rejected}"]`)).toBeVisible()
+      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: value })
+      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ [field]: null })
+    } finally {
+      for (const id of ids) {
+        const removed = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+        expect(removed.status()).toBe(204)
+      }
+    }
+  })
+}

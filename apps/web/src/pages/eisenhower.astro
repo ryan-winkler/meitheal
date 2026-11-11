@@ -24,6 +24,7 @@ import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
+import { STATUS } from "../lib/status-config"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 
@@ -31,7 +32,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const { tasks } = await getTasksForView()
-const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
+const openTasks = tasks.filter((t) => !t.is_done && t.status !== STATUS.BACKLOG && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────
 const q1: TaskViewItem[] = [] // Do First  — urgent + important
@@ -911,6 +912,10 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
     color: var(--danger, #ef4444);
     border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+  }
+  .quadrant__action-btn[aria-disabled="true"] {
+    opacity: 0.65;
+    cursor: wait;
   }
 
   /* ── WIP limit warning (Q1 > threshold) ── */

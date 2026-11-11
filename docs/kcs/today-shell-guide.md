@@ -60,6 +60,10 @@ Task rows label their current status. When changing status badge colors, verify 
 
 While Today is open, the counters and progress bar refresh every 30 seconds. The refresh reads aggregate counts across the full task store. Reload the page to refresh the task rows after an external change.
 
+### Update several tasks
+
+Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.
+
 ### Browse a large unscheduled queue
 
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.

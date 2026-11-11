@@ -927,12 +927,44 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
 
   /* ── G30: Batch mode ────────────────────────────────── */
-  :global(.batch-toggle-btn.active) {
+  :global(#batch-mode-toggle) {
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+  :global(#batch-mode-toggle[aria-pressed="true"]) {
     background: var(--accent);
     color: var(--bg);
   }
   :global(.batch-mode .tli) {
     padding-left: 8px;
+  }
+  :global(.tli__batch-cb) {
+    margin-right: 6px;
+    accent-color: var(--accent);
+  }
+  :global(#batch-action-bar:not([hidden])) {
+    display: flex;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(12px);
+  }
+  :global(#batch-action-bar span) {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  :global(#batch-action-bar [value="delete"]) {
+    color: var(--danger);
   }
 
   /* ── G31: Drag reorder — premium drag feedback ──────── */

@@ -21,11 +21,12 @@
  */
 
 import { STATUS } from "@lib/status-config"
-import { taskApi } from "@lib/task-api-client"
+import { taskApi, type TaskPatchPayload } from "@lib/task-api-client"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { EISENHOWER_SECTIONS } from "@lib/eisenhower-registry"
 import { promptDialog } from "@lib/prompt-dialog"
 import { showToast } from "@lib/toast"
+import { showTaskBatchResult } from "./task-batch-feedback"
 import {
   startTriage,
   closeTriage,
@@ -92,9 +93,10 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
     defaultSectionId: "eisenhower-overview",
   })
 
-  setupDragAndDrop(page, lifecycle)
+  const pendingTasks = new Set<string>()
+  setupDragAndDrop(page, lifecycle, pendingTasks)
   setupClickToOpen(page, lifecycle)
-  setupActionButtons(page, lifecycle)
+  setupActionButtons(page, lifecycle, pendingTasks)
   setupQuickCapture(page, lifecycle)
   setupFocusMode(page, lifecycle)
   setupMobileTabs(page, lifecycle)
@@ -107,7 +109,7 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
 // Drag and drop
 // =============================================================================
 
-function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
+function setupDragAndDrop(page: HTMLElement, signal: AbortSignal, pendingTasks: Set<string>) {
   // Make task items draggable
   const taskItems = page.querySelectorAll<HTMLElement>(".tli")
   for (const item of taskItems) {
@@ -158,7 +160,7 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
 
       const taskId = e.dataTransfer?.getData("text/plain")
       const targetQuadrant = zone.dataset.dropZone
-      if (!taskId || !targetQuadrant || !(targetQuadrant in QUADRANT_MAP)) return
+      if (!taskId || pendingTasks.has(taskId) || !targetQuadrant || !(targetQuadrant in QUADRANT_MAP)) return
 
       const update = QUADRANT_MAP[targetQuadrant]!
 
@@ -190,11 +192,14 @@ function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
       updateTriageBanner(page)
 
       // Persist — updates urgency/importance, NOT priority/due_date
+      pendingTasks.add(taskId)
       try {
         await taskApi.updateTask(taskId, { ...update })
-        showToast("common.task_updated")
+        if (!signal.aborted) showToast("common.task_updated")
       } catch {
-        showToast("common.failed_update", "error")
+        if (!signal.aborted) showToast("common.failed_update", "error")
+      } finally {
+        pendingTasks.delete(taskId)
       }
     }, { signal })
   }
@@ -276,7 +281,7 @@ function checkWipLimits(page: HTMLElement) {
 // Action buttons (Q1 Commit, Q4 Defer/Complete)
 // =============================================================================
 
-function setupActionButtons(page: HTMLElement, signal: AbortSignal) {
+function setupActionButtons(page: HTMLElement, signal: AbortSignal, pendingTasks: Set<string>) {
   const onAction = async (e: Event) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
     if (!btn) return
@@ -284,27 +289,18 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal) {
     const action = btn.dataset.action
     if (!action) return
 
+    const quadrantBar = btn.closest<HTMLElement>(".quadrant__action-bar")
+    if (quadrantBar) {
+      await updateQuadrant(page, quadrantBar, action, signal, pendingTasks)
+      return
+    }
+
     // Prevent double-click
     btn.setAttribute("disabled", "true")
     btn.style.opacity = "0.5"
 
     try {
       switch (action) {
-        case "commit-q1":
-          await commitQ1ToToday(page)
-          break
-        case "schedule-q2":
-          await scheduleQ2ThisWeek(page)
-          break
-        case "defer-q4":
-          await deferQ4ToBacklog(page)
-          break
-        case "complete-q4":
-          await completeQ4(page)
-          break
-        case "assign-q3":
-          await assignQ3(page)
-          break
         case "start-triage":
           await startTriage()
           return // Skip the disable/re-enable flow
@@ -346,141 +342,62 @@ function setupActionButtons(page: HTMLElement, signal: AbortSignal) {
   if (bar && !page.contains(bar)) bar.addEventListener("click", onAction, { signal })
 }
 
-/**
- * Q1 → Today bridge: sets due_date = today on all Q1 tasks
- * so they appear in the Today Focus Stack.
- */
-async function commitQ1ToToday(page: HTMLElement) {
-  const q1Zone = page.querySelector<HTMLElement>('[data-drop-zone="do-first"]')
-  if (!q1Zone) return
-
-  const tasks = q1Zone.querySelectorAll<HTMLElement>(".tli")
-  if (tasks.length === 0) return
-
-  const today = new Date().toISOString().split("T")[0] ?? ""
-  let successCount = 0
-
-  for (const task of tasks) {
-    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
-    if (!id) continue
-
-    try {
-      await taskApi.updateTask(id, { due_date: today })
-      successCount++
-    } catch {
-      // Continue with remaining tasks
+async function quadrantPatch(action: string, signal: AbortSignal): Promise<TaskPatchPayload | undefined> {
+  switch (action) {
+    case "commit-q1": return { due_date: new Date().toISOString().slice(0, 10) }
+    case "schedule-q2": {
+      const sunday = new Date()
+      sunday.setDate(sunday.getDate() + (7 - sunday.getDay()) % 7)
+      return { due_date: sunday.toISOString().slice(0, 10) }
     }
-  }
-
-  if (successCount > 0) {
-    showToast("common.task_updated")
+    case "assign-q3": {
+      const assignee = await promptDialog({ title: "Assign Delegate Tasks", placeholder: "Assignee name", required: true, signal })
+      return assignee ? { assigned_to: assignee.trim() } : undefined
+    }
+    case "defer-q4": return { status: STATUS.BACKLOG }
+    case "complete-q4": return { status: STATUS.COMPLETE }
   }
 }
 
-/**
- * Q2 → Schedule This Week: sets due_date to end of current week (Sunday)
- * for all Q2 tasks that don't already have a due date.
- */
-async function scheduleQ2ThisWeek(page: HTMLElement) {
-  const q2Zone = page.querySelector<HTMLElement>('[data-drop-zone="schedule"]')
-  if (!q2Zone) return
-
-  const tasks = q2Zone.querySelectorAll<HTMLElement>(".tli")
-  if (tasks.length === 0) return
-
-  // Calculate next Sunday
-  const now = new Date()
-  const daysUntilSunday = 7 - now.getDay()
-  const endOfWeek = new Date(now)
-  endOfWeek.setDate(now.getDate() + (daysUntilSunday === 7 ? 0 : daysUntilSunday))
-  const endOfWeekStr = endOfWeek.toISOString().slice(0, 10)
-
-  let successCount = 0
-
-  for (const task of tasks) {
+async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: string, signal: AbortSignal, pendingTasks: Set<string>) {
+  if (bar.hasAttribute("aria-busy")) return
+  const tasks = new Map<string, HTMLElement>()
+  for (const task of bar.closest("[data-quadrant]")?.querySelectorAll<HTMLElement>("[data-drop-zone] .tli") ?? []) {
     const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
-    if (!id) continue
-
-    try {
-      await taskApi.updateTask(id, { due_date: endOfWeekStr })
-      successCount++
-    } catch {
-      // Continue with remaining tasks
-    }
+    if (id) tasks.set(id, task)
   }
+  if (!tasks.size) return
 
-  if (successCount > 0) {
-    showToast("common.task_updated")
-  }
-}
+  const available = [...tasks].filter(([id]) => !pendingTasks.has(id))
+  const buttons = bar.querySelectorAll("button[data-action]")
+  bar.setAttribute("aria-busy", "true")
+  for (const button of buttons) button.setAttribute("aria-disabled", "true")
+  for (const [id] of available) pendingTasks.add(id)
+  try {
+    const patch = await quadrantPatch(action, signal)
+    if (!patch) return
 
-/**
- * Q4 Defer: moves all Q4 tasks to backlog status.
- */
-async function deferQ4ToBacklog(page: HTMLElement) {
-  const q4Zone = page.querySelector<HTMLElement>('[data-drop-zone="not-now"]')
-  if (!q4Zone) return
-
-  const tasks = q4Zone.querySelectorAll<HTMLElement>(".tli")
-  if (tasks.length === 0) return
-
-  let successCount = 0
-
-  for (const task of tasks) {
-    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
-    if (!id) continue
-
-    try {
-      await taskApi.updateTask(id, { status: "backlog" })
-      successCount++
-    } catch {
-      // Continue with remaining tasks
+    const saved: HTMLElement[] = []
+    for (const [id, task] of available) {
+      if (signal.aborted) return
+      try {
+        const updated = await taskApi.updateTask(id, patch)
+        if (!patch.status || updated?.status === patch.status) saved.push(task)
+      } catch {
+        // Keep the task available when the write cannot be confirmed.
+      }
     }
-  }
-
-  if (successCount > 0) {
-    showToast("common.task_updated")
-    // Remove deferred tasks from the quadrant
-    for (const task of tasks) {
-      const wrapper = task.closest(".eisenhower__task-wrapper")
-      wrapper?.remove()
+    if (signal.aborted) return
+    if (patch.status && saved.length) {
+      for (const task of saved) task.closest(".eisenhower__task-wrapper")?.remove()
+      updateCounts(page)
+      updateTriageBanner(page)
     }
-    updateCounts(page)
-  }
-}
-
-/**
- * Q4 Complete All: marks all Q4 tasks as done.
- */
-async function completeQ4(page: HTMLElement) {
-  const q4Zone = page.querySelector<HTMLElement>('[data-drop-zone="not-now"]')
-  if (!q4Zone) return
-
-  const tasks = q4Zone.querySelectorAll<HTMLElement>(".tli")
-  if (tasks.length === 0) return
-
-  let successCount = 0
-
-  for (const task of tasks) {
-    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
-    if (!id) continue
-
-    try {
-      await taskApi.updateTask(id, { status: STATUS.COMPLETE })
-      successCount++
-    } catch {
-      // Continue with remaining tasks
-    }
-  }
-
-  if (successCount > 0) {
-    showToast("common.task_updated")
-    // Remove completed tasks from the quadrant
-    for (const task of tasks) {
-      const wrapper = task.closest(".eisenhower__task-wrapper")
-      wrapper?.remove()
-    }
-    updateCounts(page)
+    showTaskBatchResult(saved.length, tasks.size, "common.task_updated")
+  } finally {
+    for (const [id] of available) pendingTasks.delete(id)
+    for (const button of buttons) button.removeAttribute("aria-disabled")
+    bar.removeAttribute("aria-busy")
   }
 }
 
@@ -661,40 +578,3 @@ function setupMobileTabs(page: HTMLElement, signal: AbortSignal) {
   mobile.addEventListener("change", syncPanelRoles, { signal })
   page.setAttribute("data-quadrant-tabs-ready", "")
 }
-
-// =============================================================================
-// Q3 quick-assign
-// =============================================================================
-
-/**
- * Q3 Assign: prompts for assignee name and updates all Q3 tasks.
- */
-async function assignQ3(page: HTMLElement) {
-  const q3Zone = page.querySelector<HTMLElement>('[data-drop-zone="delegate"]')
-  if (!q3Zone) return
-
-  const tasks = q3Zone.querySelectorAll<HTMLElement>(".tli")
-  if (tasks.length === 0) return
-
-  const assignee = await promptDialog({ title: "Assign Delegate Tasks", placeholder: "Assignee name", required: true })
-  if (!assignee) return
-
-  let successCount = 0
-
-  for (const task of tasks) {
-    const id = task.dataset.id ?? task.querySelector<HTMLElement>("[data-id]")?.dataset.id
-    if (!id) continue
-
-    try {
-      await taskApi.updateTask(id, { assigned_to: assignee.trim() })
-      successCount++
-    } catch {
-      // Continue with remaining tasks
-    }
-  }
-
-  if (successCount > 0) {
-    showToast("common.task_updated")
-  }
-}
-
