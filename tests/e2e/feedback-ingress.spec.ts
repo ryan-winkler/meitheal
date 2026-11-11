@@ -141,6 +141,27 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
   }
 })
 
+coreTest("household members read only AI handoff destinations and cannot change system settings", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const member = { cookie: "feedback-fixture=member", origin }
+  try {
+    for (const [key, value] of [["ai-provider", "custom"], ["ai-custom-url", "https://assistant.example/chat"], ["ha_api_key", "private-fixture"]]) {
+      expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key, value } })).status()).toBe(200)
+    }
+    for (const key of ["ai-provider", "ai-custom-url"]) {
+      const read = await api.get(prefix + "/api/settings?key=" + key, { headers: member })
+      expect(read.status()).toBe(200)
+      expect((await read.json()).value).toBe(key === "ai-provider" ? "custom" : "https://assistant.example/chat")
+      expect((await api.put(prefix + "/api/settings", { headers: member, data: { key, value: "blocked" } })).status()).toBe(403)
+    }
+    expect((await api.get(prefix + "/api/settings?key=ha_api_key", { headers: member })).status()).toBe(403)
+    const all = await (await api.get(prefix + "/api/settings", { headers: member })).json()
+    expect(all).not.toHaveProperty("ha_api_key")
+    expect(all).not.toHaveProperty("ai-provider")
+  } finally { await api.dispose() }
+})
+
 coreTest("Today lets a verified administrator review an Assist prompt before sending", async ({ page }) => {
   await page.context().setExtraHTTPHeaders({})
   await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])

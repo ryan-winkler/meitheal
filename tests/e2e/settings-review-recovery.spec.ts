@@ -90,11 +90,15 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
     await expect(page.locator(".toast")).toHaveCount(0)
     provider = null
     await page.locator("#td-ask-ai").click()
-    await expect.poll(handoffs).toEqual(["https://chatgpt.com/"])
+    await expect(page.getByRole("link", { name: "Oscail an soláthraí" })).toHaveAttribute("href", "https://chatgpt.com/")
+    await page.locator("#confirm-cancel").click()
+    await expect(page.locator("#meitheal-confirm-overlay")).toHaveCount(0)
     provider = "custom"
     configured = "http://127.0.0.1:4999/"
     await page.locator("#td-ask-ai").click()
-    await expect.poll(handoffs).toEqual(["https://chatgpt.com/", "http://127.0.0.1:4999/"])
+    await expect(page.getByRole("link", { name: "Oscail an soláthraí" })).toHaveAttribute("href", "http://127.0.0.1:4999/")
+    await expect(page.getByRole("link", { name: "Oscail an soláthraí" })).toHaveAttribute("rel", "noopener noreferrer")
+    expect(await handoffs()).toEqual([])
   } finally {
     expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
   }

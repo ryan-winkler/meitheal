@@ -68,5 +68,31 @@ test("Today validates the saved custom URL and preserves valid custom destinatio
   expect(await page.locator("html").getAttribute("data-ai-handoff")).toBeNull()
   configured = "https://assistant.example/chat"
   await ask.click()
-  await expect(page.locator("html")).toHaveAttribute("data-ai-handoff", JSON.stringify([configured, "_blank", "noopener,noreferrer"]))
+  const handoff = page.getByRole("link", { name: "Open provider", exact: true })
+  await expect(handoff).toHaveAttribute("href", configured)
+  await expect(handoff).toHaveAttribute("target", "_blank")
+  await expect(handoff).toHaveAttribute("rel", "noopener noreferrer")
+})
+
+
+test("a delayed provider read offers a fresh native handoff with no opener or referrer", async ({ page, context }) => {
+  await page.route("**/api/settings?key=ai-provider", async route => {
+    await new Promise(resolve => setTimeout(resolve, 6000))
+    await route.fulfill({ json: { value: "custom" } })
+  })
+  await page.route("**/api/settings?key=ai-custom-url", route => route.fulfill({ json: { value: "https://assistant.example/chat" } }))
+  await context.route("https://assistant.example/**", route => route.fulfill({ contentType: "text/html", body: "<title>Local provider fixture</title>" }))
+  await page.goto("/today")
+  const row = page.locator(`#section-today .tli[data-id="${taskId}"]`)
+  await row.hover()
+  await row.getByRole("button", { name: "Ask AI" }).click()
+  const handoff = page.getByRole("link", { name: "Open provider", exact: true })
+  await expect(handoff).toBeVisible({ timeout: 10000 })
+  const opened = context.waitForEvent("page")
+  await handoff.click()
+  const provider = await opened
+  await provider.waitForLoadState()
+  expect(provider.url()).toBe("https://assistant.example/chat")
+  expect(await provider.evaluate(() => ({ opener: window.opener, referrer: document.referrer }))).toEqual({ opener: null, referrer: "" })
+  await provider.close()
 })

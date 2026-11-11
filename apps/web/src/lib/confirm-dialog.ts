@@ -13,6 +13,8 @@ export interface ConfirmOptions {
   title?: string;
   message: string;
   confirmText?: string;
+  /** A validated HTTP(S) destination opened by a native link click. */
+  confirmUrl?: URL;
   cancelText?: string;
   variant?: "danger" | "warning" | "default";
   signal?: AbortSignal;
@@ -87,7 +89,19 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
     const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
-    const okBtn = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    let okBtn: HTMLButtonElement | HTMLAnchorElement = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    if (options.confirmUrl) {
+      if (!["http:", "https:"].includes(options.confirmUrl.protocol)) throw new Error("Invalid dialog destination")
+      const link = document.createElement("a")
+      link.id = okBtn.id
+      link.style.cssText = okBtn.style.cssText
+      link.style.textDecoration = "none"
+      link.href = options.confirmUrl.href
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
+      okBtn.replaceWith(link)
+      okBtn = link
+    }
     cancelBtn.textContent = options.cancelText ?? "Cancel"
     okBtn.textContent = options.confirmText ?? "Confirm"
     okBtn.style.background = accentColor
@@ -151,7 +165,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
         cleanup(false);
       } else if (e.key === "Tab" && focusable.length > 0) {
         // Focus trap — cycle between cancel and confirm
-        const idx = focusable.indexOf(document.activeElement as HTMLButtonElement);
+        const idx = focusable.indexOf(document.activeElement as HTMLButtonElement | HTMLAnchorElement);
         if (e.shiftKey) {
           e.preventDefault();
           focusable[idx <= 0 ? focusable.length - 1 : idx - 1]?.focus();

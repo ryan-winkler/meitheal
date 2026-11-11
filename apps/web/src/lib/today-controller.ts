@@ -414,7 +414,7 @@ async function handleAskAi(el: HTMLElement) {
   el.dataset.aiBusy = "true"
   el.setAttribute("aria-busy", "true")
   try {
-    const { resolveAiHandoffTarget } = await import("@domains/ai/ai-context-service")
+    const { resolveAiHandoffTarget, offerAiHandoff } = await import("@domains/ai/ai-context-service")
     const target = await resolveAiHandoffTarget(signal)
     if (!target || signal.aborted) return
     if (target.provider === "ha_llm") {
@@ -427,7 +427,7 @@ async function handleAskAi(el: HTMLElement) {
       if (target.provider === "gemini") url.pathname = "/app"
       url.searchParams.set("q", prompt)
     }
-    window.open(url.href, "_blank", "noopener,noreferrer")
+    await offerAiHandoff(url, signal)
   } catch {
     if (!signal.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
   } finally {

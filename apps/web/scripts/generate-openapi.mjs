@@ -1299,7 +1299,7 @@ const paths = {
 
   // ── Settings ──
   "/api/settings": {
-    get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map. System settings require administrator access and credential values are masked.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
+    get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map. System settings require administrator access and credential values are masked. Household sessions may read ai-provider and ai-custom-url individually with the key query parameter for AI handoff; this does not grant system-setting writes.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
     put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. Changing system settings requires administrator access.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {} }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
   },
 

@@ -13,6 +13,8 @@ import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
 import { showToast } from "@lib/toast"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
+import { confirmDialog } from "@lib/confirm-dialog"
+import { t } from "../../i18n/client"
 
 const log = createClientLogger("ai", "context");
 
@@ -177,6 +179,19 @@ export async function resolveAiHandoffTarget(signal?: AbortSignal): Promise<AiHa
   return signal?.aborted ? null : { provider, url: new URL(targetUrl) }
 }
 
+/** Keep external navigation on a fresh native link gesture after settings resolve. */
+export async function offerAiHandoff(url: URL, signal?: AbortSignal): Promise<void> {
+  const locale = window.mI18n?.locale === "ga" ? "ga" : "en"
+  await confirmDialog({
+    title: t("settings.ai_handoff_open", locale),
+    message: t("settings.ai_handoff_review", locale, { host: url.host }),
+    confirmText: t("settings.ai_handoff_open", locale),
+    confirmUrl: url,
+    cancelText: t("common.cancel", locale),
+    ...(signal ? { signal } : {}),
+  })
+}
+
 /** Fall back to clipboard and the saved external provider when Assist is unavailable. */
 async function fallbackToClipboard(prompt: string): Promise<void> {
   if (navigator.clipboard && window.isSecureContext) {
@@ -184,7 +199,7 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
   }
   const target = await resolveAiHandoffTarget()
   if (target?.provider === "ha_llm") showToast("settings.ai_handoff_ha_unavailable", "error")
-  else if (target) window.open(target.url.href, "_blank", "noopener,noreferrer")
+  else if (target) await offerAiHandoff(target.url)
 }
 
 /**
