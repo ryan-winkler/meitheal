@@ -159,9 +159,6 @@ dialog[open] .modal-content,
   dialog::backdrop {
     animation: none;
   }
-  .shortcut-modal-content {
-    animation: none;
-  }
 }
 
 /* B2: Command palette scale animation */
@@ -303,19 +300,29 @@ dialog[open] .modal-content,
 .shortcut-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Detached pickers reach 10002. Native overlays use the browser top layer. */
+  z-index: 10003;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.5);
-    /* Fallback */
-    backdrop-filter: blur(4px);
-    padding: 1rem;
-  animation: fade-in 0.2s ease forwards;
+  backdrop-filter: blur(4px);
+  padding: 1rem;
 }
 
 .shortcut-modal-overlay.hidden {
   display: none !important;
+}
+
+/* Keep help mounted so the covering dialog can return focus to its Close button. */
+body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .shortcut-modal-overlay {
+  visibility: hidden;
+}
+
+@supports selector(:popover-open) {
+  body:has([popover]:popover-open) .shortcut-modal-overlay {
+    visibility: hidden;
+  }
 }
 
 .shortcut-modal-content {
@@ -324,9 +331,32 @@ dialog[open] .modal-content,
   border-radius: 12px;
   padding: 24px 32px;
   max-width: 360px;
+  max-height: 100%;
   width: 90%;
+  overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: fade-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.shortcut-modal-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  font-size: 13px;
+}
+
+.shortcut-modal-grid kbd {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.shortcut-modal-grid h4 {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  font-weight: 600;
 }
 
 /* ===== Mobile modal overrides ===== */

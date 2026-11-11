@@ -18,6 +18,7 @@ import JsonLd from "../components/seo/JsonLd.astro";
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
 import { applyPersonalAccent } from "../lib/accent-colors"
 import { canManageSystemSettings } from "../lib/settings-security"
+import { TASK_VIEWS } from "../lib/task-view-route"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfitWoff2 from '@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2?url';
@@ -614,27 +615,27 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </script>
     <!-- Keyboard Shortcuts Modal (must be outside task-detail-overlay for visibility) -->
     <div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-      <div class="shortcut-modal-content" onclick="arguments[0].stopPropagation()">
+      <div class="shortcut-modal-content">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <h3 style="margin:0;font-size:16px;color:var(--accent);">⌨ Keyboard Shortcuts</h3>
-          <button id="shortcut-modal-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 8px;" aria-label="Close shortcuts">✕</button>
+          <button id="shortcut-modal-close" type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 8px;" aria-label="Close shortcuts">✕</button>
         </div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px;">
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">/</kbd><span>Focus search</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">n</kbd><span>New task</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">d</kbd><span>Dashboard</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">k</kbd><span>Kanban board</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">t</kbd><span>Table view</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">⌘K</kbd><span>Command palette</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">?</kbd><span>This help</span>
-          <kbd style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;">Esc</kbd><span>Close modal / blur</span>
+        <div class="shortcut-modal-grid">
+          <kbd>/</kbd><span>Focus search</span>
+          <kbd>n</kbd><span>New task</span>
+          <kbd>d</kbd><span>Dashboard</span>
+          <kbd>k</kbd><span>Kanban board</span>
+          <kbd>t</kbd><span>Table view</span>
+          <kbd>⌘K</kbd><span>Command palette</span>
+          <kbd>?</kbd><span>This help</span>
+          <kbd>Esc</kbd><span>Close modal / blur</span>
+          <h4>{t("settings.shortcut_task_views", locale)}</h4>
+          {TASK_VIEWS.map((view, index) => (
+            <><kbd>{index + 1}</kbd><span>{t(`settings.shortcut_${view}`, locale)}</span></>
+          ))}
         </div>
       </div>
     </div>
-
-    <script>
-      import "@lib/layout-shortcuts-controller";
-    </script>
 
     <!-- Graceful fallback when JavaScript is disabled -->
     <noscript>
