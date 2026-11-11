@@ -95,7 +95,8 @@ jobs:
         run: |
           test ! -e apps/web/dist/client/llms.txt
           test ! -e apps/web/dist/client/llms-full.txt
-      - run: pnpm --filter @meitheal/tests exec playwright install --with-deps --only-shell chromium
+      - name: Install the pinned Chromium on the hosted runner
+        run: pnpm --filter @meitheal/tests exec playwright install chromium
       - name: Test each spec with a fresh local server
         run: |
           test_tmp=$(mktemp -d)
