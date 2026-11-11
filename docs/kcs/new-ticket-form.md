@@ -8,7 +8,7 @@ description: "Use the grouped ticket form, checklist capture and private drafts.
 
 Choose **New Task**, then select **Task**, **Shopping**, **Checklist** or **Event**. Enter a title of up to 500 characters and an optional description of up to 10,000 characters. The form scrolls independently, keeping its heading and create action available on narrow screens.
 
-**Ticket details** contains status, priority, due date and assignee. Assignee is hidden when nobody is available. **More options** contains Goal, Repeat, Tags and custom fields. Goals remain available even when there are no assignees. Choose the selectors with the keyboard or touch controls. Due dates use the shared calendar picker; opening or dismissing it keeps the saved date and time unchanged. Calendar day capture preselects its date for the next new ticket.
+**Ticket details** contains status, priority, due date and assignee. Assignee is hidden when nobody is available. **More options** contains Goal, Repeat, Tags and custom fields. Goals remain available even when there are no assignees. Tags, their suggestions and the empty state use the current app surface and readable text in Light, Dark and Auto. Choose the selectors with the keyboard or touch controls. Due dates use the shared calendar picker; opening or dismissing it keeps the saved date and time unchanged. Calendar day capture preselects its date for the next new ticket.
 
 For a checklist, paste one item per line into **New items**. **Add Item** or Enter adds the items to the list; Shift+Enter inserts another line. Each row has its own remove button. Shopping uses a quantity, category and item name. For an event, choose **Starts** and **Ends**; an end at or before the start keeps the form open with an explanation.
 

@@ -144,18 +144,23 @@
 .label-picker__input {
   width: 100%;
   padding: 0.375rem 0.75rem;
-  border: 1px solid var(--border-color, hsl(220 13% 85%));
+  border: 1px solid var(--border, var(--border-color, hsl(220 13% 85%)));
   border-radius: 0.5rem;
   font-size: 0.8125rem;
-  background: var(--input-bg, var(--ha-card-background, white));
+  background: var(--bg-input, var(--input-bg, var(--ha-card-background, white)));
   color: var(--text-primary, var(--primary-text-color, hsl(220 14% 15%)));
   transition: border-color 0.15s ease;
 }
 
+.label-picker__input::placeholder {
+  color: var(--text-muted, hsl(220 14% 35%));
+  opacity: 1;
+}
+
 .label-picker__input:focus {
   outline: none;
-  border-color: var(--accent-color, hsl(234 89% 63%));
-  box-shadow: 0 0 0 2px hsla(234 89% 63% / 0.15);
+  border-color: var(--border-focus, var(--accent-color, hsl(234 89% 63%)));
+  box-shadow: 0 0 0 2px var(--accent-light, hsla(234 89% 63% / 0.15));
 }
 
 .label-picker__dropdown {
@@ -165,8 +170,8 @@
   right: 0;
   max-height: 12rem;
   overflow-y: auto;
-  background: var(--input-bg, var(--ha-card-background, white));
-  border: 1px solid var(--border-color, hsl(220 13% 85%));
+  background: var(--bg-input, var(--input-bg, var(--ha-card-background, white)));
+  border: 1px solid var(--border, var(--border-color, hsl(220 13% 85%)));
   border-radius: 0.5rem;
   box-shadow: 0 4px 12px hsla(0 0% 0% / 0.12);
   z-index: 50;
@@ -189,12 +194,12 @@
 
 .label-picker__option:hover,
 .label-picker__option--focused {
-  background: var(--hover-bg, hsl(220 14% 96%));
+  background: var(--bg-hover, var(--hover-bg, hsl(220 14% 96%)));
 }
 
 .label-picker__option--create {
   font-style: italic;
-  color: var(--accent-color, hsl(234 89% 63%));
+  color: var(--accent-text, var(--accent-color, hsl(234 89% 63%)));
 }
 
 .label-picker__dot {

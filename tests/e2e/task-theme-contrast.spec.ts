@@ -11,8 +11,10 @@ const states = [
   { name: "auto-ha-light-system-dark", theme: "auto", system: "dark", ha: "light", effective: "light" },
 ] as const
 
-async function sample(frame: Page | Frame) {
-  return frame.evaluate(() => {
+type ContrastTarget = { selector: string; name: string; placeholder?: boolean }
+
+async function sample(frame: Page | Frame, targets?: ContrastTarget[]) {
+  return frame.evaluate(targets => {
     type Color = [number, number, number, number]
     const parse = (value: string): Color => {
       const canvas = document.createElement("canvas")
@@ -58,14 +60,17 @@ async function sample(frame: Page | Frame) {
         active: element.getAttribute("aria-checked"),
       })
     }
-    for (const id of ["new-task-title-input", "new-task-desc-input", "nt-shopping-qty", "nt-shopping-category", "nt-shopping-item-input", "new-task-assigned-to", "new-task-goal", "submit-new-task-btn", "cancel-new-task", "nt-add-shopping-item"]) {
-      const element = document.getElementById(id)!
-      measure(element, id)
-      if (element.getAttribute("placeholder")) measure(element, `${id}:placeholder`, true)
-      const label = document.querySelector(`label[for="${id}"]`)
-      if (label) measure(label, `${id}:label`)
+    if (targets) for (const target of targets) measure(document.querySelector(target.selector)!, target.name, target.placeholder)
+    else {
+      for (const id of ["new-task-title-input", "new-task-desc-input", "nt-shopping-qty", "nt-shopping-category", "nt-shopping-item-input", "new-task-assigned-to", "new-task-goal", "submit-new-task-btn", "cancel-new-task", "nt-add-shopping-item"]) {
+        const element = document.getElementById(id)!
+        measure(element, id)
+        if (element.getAttribute("placeholder")) measure(element, `${id}:placeholder`, true)
+        const label = document.querySelector(`label[for="${id}"]`)
+        if (label) measure(label, `${id}:label`)
+      }
+      document.querySelectorAll("#nt-status-pills [data-status]").forEach(element => measure(element, `status:${element.getAttribute("data-status")}`))
     }
-    document.querySelectorAll("#nt-status-pills [data-status]").forEach(element => measure(element, `status:${element.getAttribute("data-status")}`))
     const root = document.documentElement
     const style = getComputedStyle(root)
     return {
@@ -75,7 +80,7 @@ async function sample(frame: Page | Frame) {
         systemDark: matchMedia("(prefers-color-scheme: dark)").matches,
       }, measurements,
     }
-  })
+  }, targets)
 }
 
 test.describe("Shopping theme contrast", () => {
@@ -208,5 +213,69 @@ test.describe("Shopping theme contrast", () => {
     } finally {
       await writeFile(join(dir, "bright-accents.json"), JSON.stringify({ measurements, errors }, null, 2))
     }
+  })
+
+  test("Tags input, dropdown, create hover and empty state stay readable in Dark and Light", async ({ browser, baseURL }, testInfo) => {
+    const dir = evidenceDir ?? testInfo.outputPath("contrast")
+    await mkdir(dir, { recursive: true })
+    const violations: unknown[] = []
+    const runtimeErrors: string[] = []
+    for (const theme of ["dark", "light"] as const) {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, colorScheme: theme === "dark" ? "light" : "dark", reducedMotion: "reduce", serviceWorkers: "block" })
+      try {
+        await context.addInitScript(theme => {
+          localStorage.setItem("meitheal-theme", theme)
+          localStorage.setItem("meitheal-appearance", JSON.stringify({ base: "slate" }))
+        }, theme)
+        const page = await context.newPage()
+        page.on("pageerror", error => runtimeErrors.push(`${theme}: ${error.message}`))
+        page.on("console", message => {
+          if (message.type() === "error" && /content security policy/i.test(message.text())) runtimeErrors.push(`${theme}: ${message.text()}`)
+        })
+        // Deterministic labels only; selection is deferred inside the real form.
+        await page.route("**/api/labels", route => route.fulfill({ json: [{ id: 981, title: "Contrast fixture", hex_color: "#6366f1" }] }))
+        await page.goto(`${baseURL}/today`)
+        await page.waitForFunction(() => typeof (window as Window & { openNewTaskModal?: unknown }).openNewTaskModal === "function")
+        await page.getByRole("button", { name: "New Task", exact: true }).click()
+        await page.getByRole("button", { name: "Shopping", exact: true }).click()
+        await page.locator("#nt-options > summary").click()
+        const input = page.locator("#new-task-label-picker-input")
+        const option = "#new-task-label-picker-dropdown .label-picker__option"
+        await input.scrollIntoViewIfNeeded()
+        await page.locator("#close-new-task-modal").focus()
+        const captures: unknown[] = []
+        const capture = async (phase: string, targets: ContrastTarget[]) => {
+          await page.waitForTimeout(300)
+          const result = await sample(page, targets)
+          captures.push({ phase, ...result })
+          for (const item of result.measurements) if (Number(item.contrast) < 4.5) violations.push({ theme, phase, ...item })
+          await page.screenshot({ path: join(dir, `tags-${theme}-${phase}.png`) })
+        }
+        await capture("placeholder", [{ selector: "#new-task-label-picker-input", name: "tags-placeholder", placeholder: true }])
+        await input.focus()
+        await expect(page.locator(`${option}[data-title]`)).toHaveText("Contrast fixture")
+        await capture("dropdown", [{ selector: `${option}[data-title]`, name: "tags-dropdown-option" }])
+        await input.fill("New contrast tag")
+        await expect(page.locator(`${option}[data-create]`)).toHaveText('+ Create "new contrast tag"')
+        await capture("typed-create", [
+          { selector: "#new-task-label-picker-input", name: "tags-typed-text" },
+          { selector: `${option}[data-create]`, name: "tags-create-option" },
+        ])
+        await page.locator(`${option}[data-create]`).hover()
+        await capture("create-hover", [{ selector: `${option}[data-create]`, name: "tags-create-hover" }])
+        await input.fill("")
+        await page.locator(`${option}[data-title]`).click()
+        await expect(page.locator("#new-task-label-picker-value")).toHaveValue('["Contrast fixture"]')
+        await input.focus()
+        await expect(page.locator(option)).toHaveText("No labels found")
+        await capture("empty", [{ selector: option, name: "tags-empty-state" }])
+        await writeFile(join(dir, `tags-${theme}.json`), JSON.stringify(captures, null, 2))
+      } finally {
+        await context.close()
+      }
+    }
+    await writeFile(join(dir, "tags-errors.json"), JSON.stringify(runtimeErrors, null, 2))
+    expect(violations, "Tags text and placeholders must retain at least 4.5:1 contrast").toEqual([])
+    expect(runtimeErrors, "No Tags runtime or CSP errors").toEqual([])
   })
 })
