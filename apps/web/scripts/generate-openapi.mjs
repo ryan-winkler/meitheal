@@ -415,9 +415,11 @@ const feedbackHeader = {
 }
 const feedbackId = { in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }
 const feedbackForbidden = problemContent("A verified Home Assistant ingress user with the required role is needed.")
-const feedbackUnavailable = problemContent("The local feedback database is busy or the queue is full.")
+const feedbackUnavailable = problemContent("Current Home Assistant authority could not be verified, the local feedback database is busy, or the queue is full.")
 const feedbackJsonErrors = {
   400: err400,
+  408: problemContent("The feedback body did not arrive within five seconds."),
+  499: problemContent("The feedback request was cancelled."),
   403: feedbackForbidden,
   413: problemContent("The request body exceeds 8 KiB."),
   415: problemContent("The request body must be application/json."),
