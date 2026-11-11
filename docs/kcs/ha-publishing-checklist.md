@@ -43,8 +43,8 @@ Source of truth:
 
 ### Astro runtime updates
 
-Astro 7.4.8 requires Node.js 22.23.4 or later. Build with the locked pnpm
-10.34.9 dependency graph and keep the Astro and Node adapter versions compatible.
+Astro 7.4.10 requires Node.js 22.23.4 or later. Use the locked dependency
+graph with pnpm 10.34.9 and the Astro Node adapter 11.1.12.
 The HA image builds on the host architecture and installs runtime dependencies
 inside the target architecture. Check that both the standalone server and the
 ingress wrapper can start from the packaged output.
