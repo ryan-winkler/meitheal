@@ -1,4 +1,5 @@
 import { createRequire } from "node:module"
+import { statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
@@ -15,6 +16,30 @@ import { ResultSetImpl } from "@libsql/core/util"
 /** @typedef {import("@libsql/core/api").ResultSet} ResultSet */
 
 const localWriters = new WeakMap()
+export const DATABASE_SCHEMA_VERSION = 18
+
+const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
+const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
+
+/** @param {{ value?: unknown }[]} rows */
+function checkSchemaMarker(rows) {
+  if (rows.length === 0) return
+  const value = rows[0]?.value
+  if (rows.length !== 1 || typeof value !== "string" || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error("The Meitheal database has an invalid schema version marker")
+  }
+  const version = Number(value)
+  if (version > DATABASE_SCHEMA_VERSION) {
+    throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${DATABASE_SCHEMA_VERSION})`)
+  }
+}
+
+/** @param {Pick<Client, "execute">} client */
+export async function assertSupportedDatabaseSchema(client) {
+  if ((await client.execute(schemaMarkerTable)).rows.length > 0) {
+    checkSchemaMarker((await client.execute(schemaMarkerRows)).rows)
+  }
+}
 /** @typedef {import("node:sqlite").SQLInputValue} SQLInputValue */
 /** @typedef {import("node:sqlite").SQLOutputValue} SQLOutputValue */
 
@@ -190,12 +215,49 @@ function verifySQLite() {
   }
 }
 
-/** @param {string} path @param {boolean} memory @returns {Client} */
-function openLocal(path, memory) {
+/** @param {string} path @param {boolean} memory @param {boolean} readOnly @returns {Client} */
+function openLocal(path, memory, readOnly) {
   verifySQLite()
   // Deliberately do not wait inside SQLite. Busy feedback writes already retry asynchronously.
-  const connect = () => sqliteOperation(() => new DatabaseSync(path, { timeout: 0 }))
-  let main = connect()
+  const connect = (inspectOnly = readOnly) => sqliteOperation(() => new DatabaseSync(path, { timeout: 0, readOnly: inspectOnly }))
+  /** @param {DatabaseSync} database */
+  function inspectSchema(database) {
+    sqliteOperation(() => {
+      database.exec("BEGIN")
+      try {
+        if (database.prepare(schemaMarkerTable).get()) checkSchemaMarker(database.prepare(schemaMarkerRows).all())
+      } finally {
+        if (database.isTransaction) database.exec("ROLLBACK")
+      }
+    })
+  }
+  function openMain() {
+    if (memory) return connect()
+    if (!statSync(path, { throwIfNoEntry: false })) {
+      if (readOnly) throw new Error("Database does not exist. Run the migration command to create it.")
+      return connect()
+    }
+    const inspection = connect(true)
+    try {
+      inspectSchema(inspection)
+      if (readOnly) return inspection
+    } catch (error) {
+      inspection.close()
+      // SQLite can require a writer to recover a journal left by a crashed process.
+      if (readOnly || !(error instanceof LibsqlError) || (error.rawCode !== 264 && error.rawCode !== 776)) throw error
+      const recovery = connect()
+      try {
+        inspectSchema(recovery)
+        return recovery
+      } catch (recoveryError) {
+        recovery.close()
+        throw recoveryError
+      }
+    }
+    inspection.close()
+    return connect()
+  }
+  let main = openMain()
   let closed = false
   const transactions = new Set()
 
@@ -337,7 +399,7 @@ function openLocal(path, memory) {
     close,
     reconnect() {
       close()
-      main = connect()
+      main = openMain()
       closed = false
     },
   }
@@ -352,8 +414,9 @@ function openLocal(path, memory) {
   return client
 }
 
-/** @param {string} url @returns {Client} */
-export function openDatabase(url) {
+/** Open local SQLite or remote libSQL. The read-only option applies to local SQLite. */
+/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Client} */
+export function openDatabase(url, { readOnly = false } = {}) {
   if (/^file:/i.test(url) || url === ":memory:") {
     const config = expandConfig({ url }, true)
     const authority = config.authority
@@ -362,7 +425,7 @@ export function openDatabase(url) {
       throw new LibsqlError("Invalid authority in local SQLite URL", "URL_INVALID")
     }
     const memory = isInMemoryConfig(config)
-    return openLocal(memory ? `file:${config.path}` : config.path, memory)
+    return openLocal(memory ? `file:${config.path}` : config.path, memory, readOnly)
   }
 
   // Use the remote-only entry point, so remote loading never activates the old native SQLite engine.

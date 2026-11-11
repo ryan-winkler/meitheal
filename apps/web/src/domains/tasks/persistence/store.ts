@@ -5,7 +5,7 @@ import type { Client } from "@libsql/client"
 import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
-import { openDatabase } from "../../../../scripts/database-client.mjs"
+import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../../../scripts/database-client.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
 import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
@@ -39,6 +39,7 @@ export interface PersistedTaskResponse {
 let clientSingleton: Client | null = null;
 let dbSingleton: LibSQLDatabase | null = null
 let schemaInitialization: Promise<void> | undefined
+let remoteSchemaCheck: Promise<void> | undefined
 let startupBackupAttempted = false
 
 /** Latest DB integrity check result — exposed via /api/health */
@@ -94,6 +95,17 @@ export function getPersistenceClient(): Client {
   return getClient();
 }
 
+/** Local admission is synchronous. Remote clients check the same marker before use. */
+export function ensureDatabaseSchemaSupported(): void | Promise<void> {
+  const client = getClient()
+  if (client.protocol === "file") return
+  remoteSchemaCheck ??= assertSupportedDatabaseSchema(client).catch(error => {
+    remoteSchemaCheck = undefined
+    throw error
+  })
+  return remoteSchemaCheck
+}
+
 function toTask(row: Record<string, unknown>): PersistedTask {
   return {
     id: String(row.id),
@@ -147,6 +159,7 @@ export function ensureSchema(): Promise<void> {
 
 async function initializeSchema(): Promise<void> {
   const client = getClient()
+  await assertSupportedDatabaseSchema(client)
 
   if (!startupBackupAttempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
     // A schema retry may follow partial writes. Keep the original pre-migration snapshot.
@@ -986,9 +999,10 @@ async function initializeSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  const targetVersion = 18
+  const targetVersion = DATABASE_SCHEMA_VERSION
   const migration = await client.transaction("write")
   try {
+    await assertSupportedDatabaseSchema(migration)
     await applyTaskDeferralMigration(migration)
     await applyTaskPinsMigration(migration)
     await applyTaskDraftsMigration(migration)
@@ -1367,5 +1381,6 @@ export function resetPersistenceForTests(): void {
   clientSingleton = null;
   dbSingleton = null;
   schemaInitialization = undefined
+  remoteSchemaCheck = undefined
   startupBackupAttempted = false
 }

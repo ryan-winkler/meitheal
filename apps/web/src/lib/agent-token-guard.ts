@@ -11,6 +11,7 @@
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
+import { ensureDatabaseSchemaSupported } from "@domains/tasks/persistence/store"
 import { apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
@@ -36,12 +37,18 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
 
   let record: AgentTokenRecord | null
   try {
+    const schemaCheck = ensureDatabaseSchemaSupported()
+    if (schemaCheck) await schemaCheck
     schemaReady ??= ensureAgentTokenSchema()
     await schemaReady
     record = await getAgentTokenByHash(hashToken(plaintext))
   } catch {
     schemaReady = undefined
-    throw apiProblem({ status: 503, detail: "Agent credentials are temporarily unavailable." })
+    throw apiProblem({
+      status: 503,
+      detail: "Agent credentials are temporarily unavailable.",
+      extraHeaders: { "cache-control": "private, no-store" },
+    })
   }
 
   const active = record && !record.revoked &&

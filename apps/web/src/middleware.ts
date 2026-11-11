@@ -4,7 +4,7 @@ import { resolveIngressContext } from "@domains/auth/ingress";
 import { getIngressTransport } from "../scripts/ingress-transport.mjs";
 import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureSchema } from "@domains/tasks/persistence/store";
+import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
 import { initHAIntegrations } from "@domains/ha";
 import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
 import type { DateFormat } from "./lib/date";
@@ -353,9 +353,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     });
   }
 
-  // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  initHAIntegrations().catch(() => {});
-
   // Browser requests without verified transport still require same-origin proof.
   if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && url.pathname.startsWith("/api/")) {
     const origin = request.headers.get("origin");
@@ -380,7 +377,26 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
   }
 
-  if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+  let databaseAvailable = true
+  try {
+    const schemaCheck = ensureDatabaseSchemaSupported()
+    if (schemaCheck) await schemaCheck
+  } catch {
+    if (!isHealthCheck) {
+      return apiProblem({
+        status: 503,
+        detail: "The database is unavailable. Check the Meitheal startup log or the health endpoint.",
+        extraHeaders: { "cache-control": "private, no-store" },
+      })
+    }
+    databaseAvailable = false
+  }
+
+  // Lazy-init only after accepting the caller. Do not block on the HA connection.
+  if (databaseAvailable) {
+    initHAIntegrations().catch(() => {})
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+  }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
   locals.timezone = "Europe/Dublin";
@@ -391,7 +407,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     locals.timezone = _settingsCache.timezone;
     locals.weekStart = _settingsCache.weekStart;
     locals.dateFormat = _settingsCache.dateFormat as DateFormat;
-  } else {
+  } else if (databaseAvailable) {
     try {
       await ensureSchema();
       const db = getPersistenceClient();

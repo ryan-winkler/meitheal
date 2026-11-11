@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDatabase } from "./database-client.mjs"
+import { assertSupportedDatabaseSchema, openDatabase } from "./database-client.mjs"
 import { autoBackupDb } from "./startup-backup.mjs"
 import { splitSqlStatements } from "./split-sql-statements.mjs";
 import { applyTaskDeferralMigration, validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
@@ -33,37 +33,28 @@ const executableMigrations = new Map([
   }],
 ])
 
-if (dbUrl.startsWith("file:")) {
-  const dbPath = dbUrl.slice("file:".length);
-  const absolutePath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-}
-
-const client = openDatabase(dbUrl)
-
-async function main() {
-  if (!checkOnly) await autoBackupDb(client)
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS __meitheal_migrations (
-      name TEXT PRIMARY KEY,
-      applied_at INTEGER NOT NULL
-    )
-  `);
-
+/** @param {ReturnType<typeof openDatabase>} client */
+async function main(client) {
+  await assertSupportedDatabaseSchema(client)
   const files = (await readdir(migrationsDir))
     .filter(name => name.endsWith(".sql") || executableMigrations.has(name)).sort()
-  const pending = [];
-
-  for (const file of files) {
-    const existing = await client.execute({
-      sql: "SELECT name FROM __meitheal_migrations WHERE name = ? LIMIT 1",
-      args: [file]
-    });
-    if (existing.rows.length === 0) {
-      pending.push(file);
-    }
+  if (!checkOnly) {
+    await autoBackupDb(client)
+    const tx = await client.transaction("write")
+    try {
+      await assertSupportedDatabaseSchema(tx)
+      await tx.execute(`
+        CREATE TABLE IF NOT EXISTS __meitheal_migrations (
+          name TEXT PRIMARY KEY,
+          applied_at INTEGER NOT NULL
+        )
+      `)
+      await tx.commit()
+    } finally { tx.close() }
   }
+  const ledger = await client.execute("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = '__meitheal_migrations' COLLATE NOCASE")
+  const applied = new Set(ledger.rows.length ? (await client.execute("SELECT name AS name FROM __meitheal_migrations")).rows.map(row => row.name) : [])
+  const pending = files.filter(file => !applied.has(file))
 
   if (checkOnly) {
     if (pending.length > 0) {
@@ -82,18 +73,17 @@ async function main() {
 
     const tx = await client.transaction("write");
     try {
-      if (migration) {
-        const existing = await tx.execute({
-          sql: "SELECT name FROM __meitheal_migrations WHERE name = ?",
-          args: [file],
-        })
-        if (existing.rows.length > 0) {
-          await migration.validate(tx)
-          await tx.commit()
-          continue
-        }
-        await migration.apply(tx)
+      await assertSupportedDatabaseSchema(tx)
+      const existing = await tx.execute({
+        sql: "SELECT name FROM __meitheal_migrations WHERE name = ?",
+        args: [file],
+      })
+      if (existing.rows.length > 0) {
+        await migration?.validate(tx)
+        await tx.commit()
+        continue
       }
+      await migration?.apply(tx)
       for (const statement of statements) {
         await tx.execute(statement);
       }
@@ -126,13 +116,19 @@ async function main() {
 
 let exitCode = 0;
 let fatalError = null;
+/** @type {ReturnType<typeof openDatabase> | undefined} */
+let client
 try {
-  exitCode = await main();
+  if (!checkOnly && dbUrl.startsWith("file:")) {
+    await mkdir(path.dirname(path.resolve(dbUrl.slice("file:".length))), { recursive: true })
+  }
+  client = openDatabase(dbUrl, { readOnly: checkOnly })
+  exitCode = await main(client);
 } catch (error) {
   exitCode = 1;
   fatalError = error;
 } finally {
-  await client.close();
+  client?.close();
 }
 
 if (fatalError) {

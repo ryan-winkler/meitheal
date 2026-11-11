@@ -256,6 +256,10 @@ that explicitly adds a `domain` stream label can instead use selectors such as
 - verify `MEITHEAL_DB_URL` and add-on write permissions.
 - for a manual migration check in the add-on shell, use `s6-setuidgid meitheal node scripts/migrate.mjs --check` from `/opt/meitheal/apps/web` with the configured database URL.
 
+The check reports pending migrations without creating the database or migration ledger. SQLite can create WAL support files when it opens an existing database for a read-only check. If startup reports that the stored schema version requires a newer App, use an App that supports that version, or restore the older App and its matching cold backup together. Startup checks the stored version before App schema changes, backup rotation or authentication writes. SQLite may still need to recover its own journal after an interrupted process.
+
+Stop App writers before replacing or upgrading their database, including Apps sharing a remote libSQL database. This startup check uses `app_settings.schema_version`. A migration that introduces an incompatible schema must commit its new version marker with the schema changes, even when the migration is run separately from the App.
+
 The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open file and in-memory databases with Node’s built-in SQLite. Verify the SQLite version in the actual runtime with `node -e 'console.log(new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS version").get().version)'`. The app requires 3.51.3 or newer for safe WAL writes. An explicit remote database URL still selects the standard libSQL network client. [SQLite WAL fix](https://sqlite.org/wal.html#the_wal_reset_bug).
 
 Local SQLite returns busy errors immediately so feedback can retry without blocking the event loop. Check the primary SQLite error code and the numeric `rawCode` when diagnosing a failure. The adapter also names extended busy and constraint codes.
