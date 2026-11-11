@@ -3860,8 +3860,9 @@ paths:
       summary: Read application settings
       description: Without key, returns a flat settings map. With key, returns a single { key, value } object; secret settings
         also include configured. System settings require administrator access and credential values are masked. Verified
-        household ingress sessions may individually read ai-provider and ai-custom-url for handoff. Standalone system
-        reads and all system writes remain administrator-only.
+        household ingress sessions may individually read ai-provider. Reading ai-custom-url also requires administrator
+        approval of that exact URL through ai-custom-url-approved; legacy URLs remain private until reviewed. Standalone
+        system reads and all system writes remain administrator-only.
       parameters:
         - name: key
           in: query
@@ -3894,7 +3895,7 @@ paths:
                     additionalProperties: false
                     description: Single setting when key is supplied; value is null when unset
         "403":
-          description: Administrator required for this system setting
+          description: Administrator access or explicit custom URL review required
     put:
       operationId: updateSettings
       tags:

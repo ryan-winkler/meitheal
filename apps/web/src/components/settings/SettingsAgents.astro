@@ -120,6 +120,10 @@ const { locale } = Astro.props;
               placeholder="http://localhost:11434/api/chat"
             />
             <p class="settings-hint" id="ai-custom-url-help">{t("settings.ai_custom_url_visibility", locale)}</p>
+            <label class="settings-text-sm">
+              <input type="checkbox" id="ai-custom-url-share" aria-describedby="ai-custom-url-help" />
+              {t("settings.ai_custom_url_share", locale)}
+            </label>
           </div>
           <button
             type="button"

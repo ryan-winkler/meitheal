@@ -1301,14 +1301,14 @@ const paths = {
   "/api/settings": {
     get: {
       operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",
-      description: "Without key, returns a flat settings map. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Verified household ingress sessions may individually read ai-provider and ai-custom-url for handoff. Standalone system reads and all system writes remain administrator-only.",
+      description: "Without key, returns a flat settings map. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Verified household ingress sessions may individually read ai-provider. Reading ai-custom-url also requires administrator approval of that exact URL through ai-custom-url-approved; legacy URLs remain private until reviewed. Standalone system reads and all system writes remain administrator-only.",
       parameters: [{ name: "key", in: "query", required: false, description: "Read one setting instead of the settings map", schema: { type: "string", minLength: 1 } }],
       responses: {
         200: jsonContent({ anyOf: [
           { type: "object", additionalProperties: true, description: "Flat settings map when key is absent" },
           { type: "object", required: ["key", "value"], properties: { key: { type: "string" }, value: {}, configured: { type: "boolean", description: "Present for masked credential settings" } }, additionalProperties: false, description: "Single setting when key is supplied; value is null when unset" },
         ] }, "Settings map or single setting"),
-        403: { description: "Administrator required for this system setting" },
+        403: { description: "Administrator access or explicit custom URL review required" },
       },
     },
     put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. Changing system settings requires administrator access.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {} }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },

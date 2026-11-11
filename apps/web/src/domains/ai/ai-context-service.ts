@@ -163,6 +163,10 @@ export async function resolveAiHandoffTarget(signal?: AbortSignal): Promise<AiHa
     let configured: unknown
     try {
       const response = await fetch("/api/settings?key=ai-custom-url", { signal: signal ?? null, cache: "no-store" })
+      if (response.status === 403) {
+        if (!signal?.aborted) showToast("settings.ai_handoff_url_review_required", "error")
+        return null
+      }
       if (!response.ok) throw new Error("Provider settings unavailable")
       configured = (await response.json())?.value
     } catch {

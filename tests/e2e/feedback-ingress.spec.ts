@@ -149,6 +149,14 @@ coreTest("household members read only AI handoff destinations and cannot change 
     for (const [key, value] of [["ai-provider", "custom"], ["ai-custom-url", "https://assistant.example/chat"], ["ha_api_key", "private-fixture"]]) {
       expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key, value } })).status()).toBe(200)
     }
+    const custom = prefix + "/api/settings?key=ai-custom-url"
+    const approval = (value: string | null, headers = admin) => api.put(prefix + "/api/settings", { headers, data: { key: "ai-custom-url-approved", value } })
+    const pending = await api.get(custom, { headers: member })
+    expect(pending.status()).toBe(403)
+    expect(await pending.text()).not.toContain("https://assistant.example/chat")
+    expect((await approval("https://other.example/")).status()).toBe(400)
+    expect((await approval("https://assistant.example/chat", member)).status()).toBe(403)
+    expect((await approval("https://assistant.example/chat")).status()).toBe(200)
     for (const key of ["ai-provider", "ai-custom-url"]) {
       const read = await api.get(prefix + "/api/settings?key=" + key, { headers: member })
       expect(read.status()).toBe(200)
@@ -159,6 +167,13 @@ coreTest("household members read only AI handoff destinations and cannot change 
     const all = await (await api.get(prefix + "/api/settings", { headers: member })).json()
     expect(all).not.toHaveProperty("ha_api_key")
     expect(all).not.toHaveProperty("ai-provider")
+    expect(all).not.toHaveProperty("ai-custom-url-approved")
+    expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key: "ai-custom-url", value: "https://assistant.example/changed" } })).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(403)
+    expect((await approval("https://assistant.example/changed")).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(200)
+    expect((await approval(null)).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(403)
   } finally { await api.dispose() }
 })
 

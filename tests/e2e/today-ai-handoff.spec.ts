@@ -97,3 +97,16 @@ test("a delayed provider read offers a fresh native handoff with no opener or re
   expect(await provider.evaluate(() => ({ opener: window.opener, referrer: document.referrer }))).toEqual({ opener: null, referrer: "" })
   await provider.close()
 })
+
+
+test("a pending custom URL asks for administrator review without offering a destination", async ({ page }) => {
+  await page.route("**/api/settings?key=ai-provider", route => route.fulfill({ json: { value: "custom" } }))
+  await page.route("**/api/settings?key=ai-custom-url", route => route.fulfill({ status: 403, json: { title: "URL review required" } }))
+  await page.goto("/today")
+  const row = page.locator(`#section-today .tli[data-id="${taskId}"]`)
+  await row.hover()
+  await row.getByRole("button", { name: "Ask AI" }).click()
+  await expect(page.getByText("Ask an administrator to review and share the custom AI URL in Settings → Automation & AI.", { exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Open provider", exact: true })).toHaveCount(0)
+  expect(await page.locator("html").getAttribute("data-ai-handoff")).toBeNull()
+})

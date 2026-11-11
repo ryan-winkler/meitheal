@@ -17,3 +17,4 @@
 - [ADR-015: Hierarchy Architecture Overhaul — Parent Pages, Helpers, Breadcrumbs](adr-015-hierarchy-architecture-overhaul.md) - Records hierarchy routes, shared navigation helpers, and breadcrumbs.
 - [ADR-016: Recurrence Engine vs Habit Cadence — Deliberate Separation](adr-016-recurrence-vs-habits.md) - Explains the distinction between recurring tasks and habits.
 - [ADR-017: Pillars Domain — Identity-Based Motivational Anchors](adr-017-pillars-domain.md) - Defines pillars, principles, and their relationships to planning work.
+- [Review custom AI URLs before household sharing](0019-household-ai-url-review.md) - Keeps legacy destinations private until an administrator explicitly reviews them.

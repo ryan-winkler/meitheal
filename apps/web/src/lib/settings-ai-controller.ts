@@ -123,6 +123,10 @@ export function initAISettings(): void {
     })
   }
 
+  const customUrlInput = document.querySelector<HTMLInputElement>("#ai-custom-url")
+  const shareUrl = document.querySelector<HTMLInputElement>("#ai-custom-url-share")
+  if (customUrlInput && shareUrl) pageLifecycle.on(customUrlInput, "input", () => { shareUrl.checked = false })
+
   // Save AI settings
   const saveAiBtn = document.getElementById("save-ai") as HTMLButtonElement | null
   if (saveAiBtn) {
@@ -131,12 +135,17 @@ export function initAISettings(): void {
       const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value.trim()
       const usesUrl = provider === "custom" || provider === "ollama"
       const url = usesUrl ? parseAiHandoffUrl(customUrl || (provider === "ollama" ? "http://localhost:11434" : "")) : null
-      if (usesUrl && !url) {
+      if (usesUrl && (!url || (shareUrl?.checked && !customUrl))) {
         showToast("settings.ext_ai_invalid_url", "error")
         return
       }
 
-      await saveSettings(url ? { "ai-custom-url": url.href, "ai-provider": provider } : { "ai-provider": provider })
+      await saveSettings(url ? {
+        "ai-custom-url": url.href,
+        "ai-custom-url-approved": shareUrl?.checked ? url.href : null,
+        "ai-provider": provider,
+      } : { "ai-provider": provider })
+      if (url && customUrlInput) customUrlInput.value = url.href
       localStorage.setItem("meitheal-ai-provider", provider)
       if (url) localStorage.setItem("meitheal-ai-custom-url", url.href)
 
@@ -186,6 +195,9 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     const el = document.getElementById("ai-custom-url") as HTMLInputElement | null
     if (el) el.value = String(s["ai-custom-url"])
   }
+
+  const shareUrl = document.querySelector<HTMLInputElement>("#ai-custom-url-share")
+  if (shareUrl) shareUrl.checked = typeof s["ai-custom-url"] === "string" && Boolean(s["ai-custom-url"]) && s["ai-custom-url-approved"] === s["ai-custom-url"]
 
   // Agent Protocols
   const a2aEnabled = s["agent-protocols-a2a-enabled"]
