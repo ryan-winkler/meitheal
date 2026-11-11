@@ -67,7 +67,22 @@ const Q1_WIP_LIMIT = 5
 
 export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
   const page = document.getElementById("eisenhower-shell")
-  if (!page) return
+  if (!page || signal.aborted) return
+
+  const host = window as Window & {
+    __meithealEisenhowerController?: { page: HTMLElement; signal: AbortSignal; controller: AbortController }
+  }
+  const previous = host.__meithealEisenhowerController
+  if (previous?.page === page && previous.signal === signal && !previous.controller.signal.aborted) return
+  previous?.controller.abort()
+  const controller = new AbortController()
+  const owner = { page, signal, controller }
+  host.__meithealEisenhowerController = owner
+  signal.addEventListener("abort", () => controller.abort(), { once: true, signal: controller.signal })
+  controller.signal.addEventListener("abort", () => {
+    if (host.__meithealEisenhowerController === owner) delete host.__meithealEisenhowerController
+  }, { once: true })
+  const lifecycle = controller.signal
 
   initPageShellNavigation({
     barId: "eisenhower-bar",
@@ -77,22 +92,22 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
     defaultSectionId: "eisenhower-overview",
   })
 
-  setupDragAndDrop(page)
-  setupClickToOpen(page)
-  setupActionButtons(page)
-  setupQuickCapture(page)
-  setupFocusMode(page)
-  setupMobileTabs(page)
+  setupDragAndDrop(page, lifecycle)
+  setupClickToOpen(page, lifecycle)
+  setupActionButtons(page, lifecycle)
+  setupQuickCapture(page, lifecycle)
+  setupFocusMode(page, lifecycle)
+  setupMobileTabs(page, lifecycle)
   checkWipLimits(page)
-  setupTriageListeners(signal)
-  setupReviewListeners(signal)
+  setupTriageListeners(lifecycle)
+  setupReviewListeners(lifecycle)
 }
 
 // =============================================================================
 // Drag and drop
 // =============================================================================
 
-function setupDragAndDrop(page: HTMLElement) {
+function setupDragAndDrop(page: HTMLElement, signal: AbortSignal) {
   // Make task items draggable
   const taskItems = page.querySelectorAll<HTMLElement>(".tli")
   for (const item of taskItems) {
@@ -112,11 +127,11 @@ function setupDragAndDrop(page: HTMLElement) {
           item.style.opacity = "0.5"
         })
       }
-    })
+    }, { signal })
     item.addEventListener("dragend", () => {
       item.classList.remove("tli--dragging")
       item.style.opacity = ""
-    })
+    }, { signal })
   }
 
   // Drop zones
@@ -128,7 +143,7 @@ function setupDragAndDrop(page: HTMLElement) {
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move"
       quadrantEl?.classList.add("quadrant--drag-over")
-    })
+    }, { signal })
 
     zone.addEventListener("dragleave", (e: DragEvent) => {
       // Only remove if actually leaving the zone (not entering a child)
@@ -136,7 +151,7 @@ function setupDragAndDrop(page: HTMLElement) {
       if (!zone.contains(related)) {
         quadrantEl?.classList.remove("quadrant--drag-over")
       }
-    })
+    }, { signal })
 
     zone.addEventListener("drop", async (e: DragEvent) => {
       e.preventDefault()
@@ -186,7 +201,7 @@ function setupDragAndDrop(page: HTMLElement) {
       } catch {
         showToast("common.failed_update", "error")
       }
-    })
+    }, { signal })
   }
 }
 
@@ -269,8 +284,8 @@ function checkWipLimits(page: HTMLElement) {
 // Action buttons (Q1 Commit, Q4 Defer/Complete)
 // =============================================================================
 
-function setupActionButtons(page: HTMLElement) {
-  page.addEventListener("click", async (e: Event) => {
+function setupActionButtons(page: HTMLElement, signal: AbortSignal) {
+  const onAction = async (e: Event) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
     if (!btn) return
 
@@ -333,7 +348,10 @@ function setupActionButtons(page: HTMLElement) {
       btn.removeAttribute("disabled")
       btn.style.opacity = ""
     }
-  })
+  }
+  page.addEventListener("click", onAction, { signal })
+  const bar = document.getElementById("eisenhower-bar")
+  if (bar && !page.contains(bar)) bar.addEventListener("click", onAction, { signal })
 }
 
 /**
@@ -478,7 +496,7 @@ async function completeQ4(page: HTMLElement) {
 // Quick-capture inputs
 // =============================================================================
 
-function setupQuickCapture(page: HTMLElement) {
+function setupQuickCapture(page: HTMLElement, signal: AbortSignal) {
   const inputs = page.querySelectorAll<HTMLInputElement>("[data-quadrant-capture]")
 
   for (const input of inputs) {
@@ -516,7 +534,7 @@ function setupQuickCapture(page: HTMLElement) {
         input.style.opacity = ""
         input.focus()
       }
-    })
+    }, { signal })
   }
 }
 
@@ -524,7 +542,7 @@ function setupQuickCapture(page: HTMLElement) {
 // Click to open task detail
 // =============================================================================
 
-function setupClickToOpen(page: HTMLElement) {
+function setupClickToOpen(page: HTMLElement, signal: AbortSignal) {
   page.addEventListener("click", (e: Event) => {
     const target = e.target as HTMLElement
 
@@ -548,14 +566,14 @@ function setupClickToOpen(page: HTMLElement) {
         new CustomEvent("meitheal:open-task-detail", { detail: { id: taskId } }),
       )
     }
-  })
+  }, { signal })
 }
 
 // =============================================================================
 // Focus mode (desktop: expand one quadrant full-width)
 // =============================================================================
 
-function setupFocusMode(page: HTMLElement) {
+function setupFocusMode(page: HTMLElement, signal: AbortSignal) {
   const grid = page.querySelector<HTMLElement>(".eisenhower__grid")
   if (!grid) return
 
@@ -582,14 +600,14 @@ function setupFocusMode(page: HTMLElement) {
       grid.classList.add("grid--focused")
       quadrantEl.classList.add("quadrant--focused")
     }
-  })
+  }, { signal })
 }
 
 // =============================================================================
 // Mobile tab switching
 // =============================================================================
 
-function setupMobileTabs(page: HTMLElement) {
+function setupMobileTabs(page: HTMLElement, signal: AbortSignal) {
   const tabs = page.querySelectorAll<HTMLElement>("[data-tab-quadrant]")
   const quadrants = page.querySelectorAll<HTMLElement>(".eisenhower__quadrant")
 
@@ -618,7 +636,7 @@ function setupMobileTabs(page: HTMLElement) {
       }
       const targetQ = page.querySelector<HTMLElement>(`[data-quadrant="${target}"]`)
       targetQ?.classList.add("quadrant--tab-active")
-    })
+    }, { signal })
   }
 }
 

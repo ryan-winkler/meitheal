@@ -53,6 +53,12 @@ if (form) {
 }
 ```
 
+Eisenhower keeps one window-scoped controller owner for the current page and lifecycle signal. Repeated `astro:page-load` events reuse that owner. Replacing the owner aborts its listeners, including the delegated triage and weekly review listeners. The page signal also retires that owner on navigation. Keep drag, capture, focus, tabs and action handlers on the same owned signal.
+
+Weekly review uses the current `eisenhower-shell` task list and its button in the separate `eisenhower-bar`. Both action surfaces share the same listener lifetime. Triage filters non-deferred task responses through the canonical open-status definitions before selecting unclassified tasks.
+
+If one Q4 or weekly review action sends multiple task updates, run `e2e/eisenhower-lifecycle.spec.ts` against a disposable Astro instance. It repeats page-load setup and checks one canonical completion request per click; weekly review still records its separate review metadata update.
+
 ## Shared navigation and theme checks
 
 Page-shell section labels use `--accent-text` on populated and empty pages. Run `e2e/theme-accent-focus.spec.ts` to check those labels with a surface-matching custom accent in Light and Dark, and to verify keyboard focus after navigation.

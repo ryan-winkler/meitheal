@@ -11,6 +11,7 @@
 
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
+import { normalizeStatus, OPEN_STATUSES } from "@lib/status-config"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -40,12 +41,13 @@ export function quadrantPreview(urgency: number, importance: number): string {
 /** Open the triage overlay by fetching unclassified tasks */
 export async function startTriage(): Promise<void> {
   try {
-    const res = await fetch("/api/tasks?status=open&deferred=0")
+    const res = await fetch("/api/tasks?deferred=0")
     if (!res.ok) { showToast("common.failed_update", "error"); return }
     const data = await res.json()
     const raw = Array.isArray(data) ? data : (data.tasks ?? [])
     triageTasks = raw
       .filter((t: Record<string, unknown>) =>
+        OPEN_STATUSES.has(normalizeStatus(String(t.status ?? ""))) &&
         (t.urgency === 0 || t.urgency == null) &&
         (t.importance === 0 || t.importance == null)
       )
