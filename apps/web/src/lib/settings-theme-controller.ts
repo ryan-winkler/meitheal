@@ -7,6 +7,7 @@
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { DEFAULT_ACCENT } from "@lib/design-tokens"
+import { applyPersonalAccent } from "@lib/accent-colors"
 import { showToast } from "@lib/toast"
 import {
   setTheme as importedSetTheme,
@@ -51,7 +52,7 @@ function initAccentSettings(): void {
   const swatches = document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
   const picker = document.querySelector<HTMLInputElement>("#accent-color-custom")
   const reset = document.getElementById("accent-reset")
-  const root = document.documentElement.style
+  const root = document.documentElement
 
   function updateSelection(color: string): void {
     const normalized = color.toLowerCase()
@@ -65,7 +66,7 @@ function initAccentSettings(): void {
 
   function setAccent(color: string): void {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return
-    root.setProperty("--personal-accent", color)
+    applyPersonalAccent(root, color)
     localStorage.setItem(ACCENT_KEY, color)
     updateSelection(color)
   }
@@ -78,7 +79,7 @@ function initAccentSettings(): void {
   if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
   if (reset) {
     pageLifecycle.on(reset, "click", () => {
-      root.removeProperty("--personal-accent")
+      applyPersonalAccent(root, null)
       localStorage.removeItem(ACCENT_KEY)
       updateSelection(DEFAULT_ACCENT)
     })

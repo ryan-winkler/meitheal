@@ -16,6 +16,7 @@ import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
 import JsonLd from "../components/seo/JsonLd.astro";
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
+import { applyPersonalAccent } from "../lib/accent-colors"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
@@ -259,6 +260,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </script>
 
     <!-- Restore appearance before a full load or an Astro document swap. -->
+    <script is:inline set:html={`window.__meithealApplyAccent = ${applyPersonalAccent.toString()};`} />
     <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY }}>
       (function () {
         function restoreAppearance(doc) {
@@ -284,9 +286,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             doc.body.classList.toggle("sidebar-collapsed", collapsed);
           }
           var accent = stored("meitheal-accent-color");
-          if (/^#[0-9a-f]{6}$/i.test(accent || "")) {
-            root.style.setProperty("--personal-accent", accent);
-          }
+          window.__meithealApplyAccent(root, accent);
           var css = theme === "custom" && stored("meitheal-custom-theme-css");
           if (css) {
             var style = doc.getElementById("meitheal-custom-theme");
