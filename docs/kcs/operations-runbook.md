@@ -360,7 +360,7 @@ The first source release serves the native task and label APIs. An installation 
 
 The `schema-drift` CI job validates migration SQL against runtime schema expectations.
 
-The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check measures:
+The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check starts its own production web process on an available loopback port assigned by the operating system. The check measures:
 
 - Up to 1.5 MiB for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
 - Up to 256 MiB of web process RSS after five warmup writes. This is a single process measurement on the CI host.

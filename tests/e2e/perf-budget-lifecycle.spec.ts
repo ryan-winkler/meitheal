@@ -31,6 +31,7 @@ for (const failure of [false, true]) {
       await writeFile(join(directory, "dist/client/sw.js"), "")
       await writeFile(join(directory, "dist/server/entry.mjs"), `
 import { createServer } from "node:http"
+import { once } from "node:events"
 import { writeFileSync } from "node:fs"
 let requests = 0
 process.on("SIGTERM", () => {})
@@ -54,12 +55,17 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ id: String(requests), title: task.title }))
   })
 })
-server.listen(Number(process.env.PORT), "127.0.0.1", () => writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)))
+export function startServer() {
+  if (process.env.PORT !== "0") throw new Error("The kernel must select the fixture port")
+  const done = once(server, "close")
+  server.listen(0, "127.0.0.1", () => writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)))
+  return { server: { server }, done }
+}
 `)
       const result = await new Promise<{ code: string | number | null | undefined; stdout: string; stderr: string }>(resolve => {
         execFile(process.execPath, ["scripts/perf-budget-check.mjs"], {
           cwd: directory,
-          timeout: 8_000,
+          timeout: 25_000,
           env: {
             ...process.env,
             MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX: failure ? "1" : "100",
@@ -68,13 +74,13 @@ server.listen(Number(process.env.PORT), "127.0.0.1", () => writeFileSync(${JSON.
           },
         }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }))
       })
-      pid = Number(await readFile(pidFile, "utf8"))
       expect(result.code, result.stderr).toBe(failure ? 1 : 0)
+      if (failure) expect(result.stderr).toContain("Generated client assets too large: 2 bytes > 1")
+      pid = Number(await readFile(pidFile, "utf8"))
       expect(JSON.parse(result.stdout).observed.clientBytes).toBe(2)
       expect(await readFile(countFile, "utf8")).toBe("105")
       expect(JSON.parse(result.stdout).observed).toMatchObject({ warmups: 5, requests: 100 })
       expect(isAlive(pid), "The harness must reap its owned server before exiting").toBe(false)
-      if (failure) expect(result.stderr).toContain("Generated client assets too large: 2 bytes > 1")
     } finally {
       // Only this fixture's recorded child is eligible for failure cleanup.
       if (pid === undefined) {

@@ -145,31 +145,42 @@ async function main() {
   const clientBytes = await sizeOfDirectoryBytes(path.join(clientDir, "_astro")) + serviceWorker.size;
   const distClientBytes = await sizeOfDirectoryBytes(clientDir);
 
-  const port = 4600 + Math.floor(Math.random() * 300);
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), "meitheal-perf-"));
   const version = path.basename(scratchDir);
   const dbPath = path.join(scratchDir, "tasks.db");
   const dbUrl = `file:${dbPath}`;
-  const baseUrl = `http://127.0.0.1:${port}`;
-
-  const server = spawn(process.execPath, ["--max-old-space-size=128", "dist/server/entry.mjs"], {
+  // Ask the kernel for a free port and read it from this child only.
+  const server = spawn(process.execPath, ["--max-old-space-size=128", "--input-type=module", "--eval", `
+    const { startServer } = await import("./dist/server/entry.mjs")
+    const { server, done } = startServer()
+    server.server.once("listening", () => process.send(server.server.address().port))
+    await done
+  `], {
     cwd: appRoot,
     env: {
       PATH: process.env.PATH,
       NODE_ENV: "production",
       HOST: "127.0.0.1",
-      PORT: String(port),
+      PORT: "0",
+      ASTRO_NODE_AUTOSTART: "disabled",
       MEITHEAL_VERSION: version,
       MEITHEAL_DB_URL: dbUrl
     },
-    stdio: ["ignore", "ignore", "inherit"]
-  });
-  const closed = once(server, "close").catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+    stdio: ["ignore", "ignore", "inherit", "ipc"]
+  })
+  const closed = once(server, "close")
 
   try {
+    const [port] = await Promise.race([
+      once(server, "message", { signal: AbortSignal.timeout(15_000) }),
+      closed.then(([code, signal]) => {
+        throw new Error(`Benchmark server exited before listening (${signal ?? code})`)
+      }),
+    ])
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      throw new Error("Benchmark server did not report a valid port")
+    }
+    const baseUrl = `http://127.0.0.1:${port}`
     await waitForHealth(`${baseUrl}/api/health`, version);
     const warmups = 5;
     const requests = 100;
@@ -235,9 +246,12 @@ async function main() {
   } finally {
     server.kill("SIGTERM");
     const killTimeout = setTimeout(() => server.kill("SIGKILL"), 2_000);
-    await closed;
-    clearTimeout(killTimeout);
-    await fs.rm(scratchDir, { recursive: true, force: true });
+    try {
+      await closed
+    } finally {
+      clearTimeout(killTimeout)
+      await fs.rm(scratchDir, { recursive: true, force: true })
+    }
   }
 }
 
