@@ -25,7 +25,7 @@ pnpm --filter @meitheal/tests exec playwright install --only-shell chromium
 )
 ```
 
-The hosted Linux runner uses `playwright install --with-deps --only-shell chromium` to install system dependencies too. The full suite uses ports 4611 and 4612 by default. Use `MEITHEAL_TEST_PORT` to choose the start of a different unused pair. Playwright refuses to reuse an existing server. A healthy fixture serves `/api/health` and reports standalone mode.
+The hosted Linux runner uses `playwright install --with-deps --only-shell chromium` to install system dependencies too. The test job has a 25-minute deadline for the full suite. The build-entrypoint spec resolves the runner's npm before isolating its command path so a tool-cache installation works with the same guarded entrypoint. The full suite uses ports 4611 and 4612 by default. Use `MEITHEAL_TEST_PORT` to choose the start of a different unused pair. Playwright refuses to reuse an existing server. A healthy fixture serves `/api/health` and reports standalone mode.
 
 To reproduce one browser spec, set `MEITHEAL_TEST_BROWSER=1` and pass its path to `pnpm --filter @meitheal/tests test`. For focused tests that need no server, omit that variable. Tests requiring a server skip in that local mode unless an external base URL is provided. Use external URLs only for a disposable instance because some specs create or delete data. The full CI runner always sets fixture mode.
 
