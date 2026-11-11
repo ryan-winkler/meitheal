@@ -204,3 +204,66 @@ test("Feedback wraps schema-backed actor IDs and full-page report text at narrow
     expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1)
   }
 })
+
+test("Feedback reinitialization fences obsolete held requests from replacement controls", async ({ feedbackPage: page }) => {
+  test.skip(!devUrl, "Reinitialization module entry uses the actual Astro dev module graph")
+  const gates: ReturnType<typeof deferred<void>>[] = []
+  const arrived: ReturnType<typeof deferred<void>>[] = []
+  let ordinal = 0
+  await page.route(/\/api\/feedback(?:[/?]|$)/, async route => {
+    const index = ordinal++
+    arrived[index]!.resolve()
+    await gates[index]!.promise
+    await route.fulfill({ status: index === 2 ? 403 : 200, json: index === 2
+      ? { detail: "Obsolete denied request" } : { reports: [report()], nextCursor: null, id: report().id, receivedAt: 0 } }).catch(() => {})
+  })
+  async function reinitialize() {
+    await page.evaluate(async () => {
+      const path = "/src/lib/settings-feedback-controller.ts"
+      const controller = await import(path)
+      controller.initSettingsFeedback()
+    })
+  }
+  for (let index = 0; index < 3; index++) {
+    gates.push(deferred<void>())
+    arrived.push(deferred<void>())
+    if (index === 0) {
+      await page.locator('[name="category"]').selectOption("problem")
+      await page.locator('[name="message"]').fill("Synthetic held request")
+      await page.getByRole("button", { name: "Save feedback", exact: true }).click()
+    } else if (index === 1) await page.locator("[data-feedback-queue] > summary").click()
+    else await page.getByRole("button", { name: "Refresh reports", exact: true }).click()
+    await arrived[index]!.promise
+    await reinitialize()
+    gates[index]!.resolve()
+    // Reinitialization returns after abort handlers have unwound; verify old completions cannot relock controls.
+    await expect(page.locator("[data-feedback-form] fieldset")).toHaveJSProperty("disabled", false)
+    await expect(page.locator("[data-queue-controls]")).toHaveJSProperty("disabled", false)
+    await expect(page.locator("[data-queue-status]")).not.toContainText("no longer permits")
+  }
+  // Deliver the 403 headers now and its JSON body only after replacement initialization.
+  await page.evaluate(() => {
+    const original = window.fetch
+    const local = window as Window & { releaseObsoleteFeedback?: () => void }
+    window.fetch = (input, init) => {
+      if (!String(input).includes("/api/feedback")) return original(input, init)
+      return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+        local.releaseObsoleteFeedback = () => {
+          controller.enqueue(new TextEncoder().encode('{"detail":"Old denied response"}'))
+          controller.close()
+        }
+      } }), { status: 403, headers: { "content-type": "application/json" } }))
+    }
+  })
+  await page.getByRole("button", { name: "Refresh reports", exact: true }).click()
+  await page.waitForFunction(() => typeof (window as Window & { releaseObsoleteFeedback?: unknown }).releaseObsoleteFeedback === "function")
+  await reinitialize()
+  await page.evaluate(async () => {
+    const release = (window as Window & { releaseObsoleteFeedback?: () => void }).releaseObsoleteFeedback
+    if (!release) throw new Error("Missing held Feedback body")
+    release()
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+  await expect(page.locator("[data-queue-controls]")).toHaveJSProperty("disabled", false)
+  await expect(page.locator("[data-queue-status]")).not.toContainText("no longer permits")
+})

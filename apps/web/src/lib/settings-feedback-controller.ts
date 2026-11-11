@@ -120,11 +120,14 @@ function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
       form.reset()
       status.textContent = `Feedback saved. Receipt ${receipt.id}.`
     } catch (error) {
+      if (signal.aborted) return
       if (error instanceof FeedbackRequestError && error.status === 403) panel.dispatchEvent(new Event("meitheal:feedback-denied"))
       reportError(status, error, signal)
     } finally {
-      controls.disabled = signal.aborted
-      focus.restore(message)
+      if (!signal.aborted) {
+        controls.disabled = false
+        focus.restore(message)
+      }
       focus.dispose()
     }
   }, { signal })
@@ -146,6 +149,7 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
   const formatTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
   let cursor: FeedbackCursor | null = null
   let loaded = false
+  controls.disabled = false
 
   function captureDrafts() {
     for (const entry of list.querySelectorAll<HTMLDetailsElement>("[data-report-id]")) {
@@ -221,10 +225,11 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
     try {
       await operation()
     } catch (error) {
+      if (signal.aborted) return
       if (error instanceof FeedbackRequestError && error.status === 403) denyAccess()
       else reportError(status, error, signal)
     } finally {
-      controls.disabled = signal.aborted || denied
+      if (!signal.aborted) controls.disabled = denied
     }
   }
 
