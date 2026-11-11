@@ -24,10 +24,12 @@ test("App WebSocket events match the native Core device trigger contract", async
       task_id: contract.event_data.task_id, title: contract.event_data.title,
     })).toBe(true)
     expect(ha.firedEvents).toHaveLength(1)
-    const { timestamp, ...eventData } = ha.firedEvents[0].event_data
+    const fired = ha.firedEvents[0]
+    if (!fired) throw new Error("App did not emit the expected HA event")
+    const { timestamp, ...eventData } = fired.event_data
     expect(typeof timestamp).toBe("string")
     expect(new Date(String(timestamp)).toISOString()).toBe(timestamp)
-    expect({ event_type: ha.firedEvents[0].event_type, event_data: eventData }).toEqual(contract)
+    expect({ event_type: fired.event_type, event_data: eventData }).toEqual(contract)
   } finally {
     stopEntitySubscription()
     closeHAConnection()
