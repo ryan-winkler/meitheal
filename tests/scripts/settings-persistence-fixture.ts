@@ -2,10 +2,10 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { test as base, type APIRequestContext, type BrowserContext } from "@playwright/test"
+import { test as base, type APIRequestContext, type Browser, type BrowserContext } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "./task-pins-fixture"
 
-type Household = { context: BrowserContext; api: APIRequestContext; origin: string; prefix: string }
+type Household = { context: BrowserContext; api: APIRequestContext; origin: string; prefix: string; launchBrowser(args: string[]): Promise<Browser> }
 
 /** Disposable authenticated ingress, with paths adapted from ordinary app-relative tests. */
 export const test = base.extend<{ household: Household }>({
@@ -26,7 +26,7 @@ export const test = base.extend<{ household: Household }>({
       await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
       api = await playwright.request.newContext({ baseURL: origin, ignoreHTTPSErrors: true,
         extraHTTPHeaders: { cookie: "feedback-fixture=admin", origin } })
-      await use({ context, api, origin, prefix })
+      await use({ context, api, origin, prefix, launchBrowser: args => launchPinBrowser(work, false, args) })
     } finally {
       await api?.dispose()
       await browser?.close()

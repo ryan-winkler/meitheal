@@ -10,6 +10,8 @@ import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/webmcp-controller"
+import { WEBMCP_SETTING } from "@lib/webmcp-protocol"
 import { getClientLocale, t } from "../i18n/client"
 
 function renderAgentBadge(select: HTMLSelectElement, label?: string) {
@@ -153,11 +155,17 @@ export function initAISettings(): void {
     const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
 
 
-    await saveSettings({
-      "agent-protocols-a2a-enabled": a2a,
-      "agent-protocols-webmcp-enabled": webmcp,
-      "agent-protocols-mcp-enabled": mcp,
-    })
+    try {
+      await saveSettings({
+        "agent-protocols-a2a-enabled": a2a,
+        [WEBMCP_SETTING]: webmcp,
+        "agent-protocols-mcp-enabled": mcp,
+      })
+    } finally {
+      // A later key may fail after WebMCP was saved. Recheck actual persistence
+      // rather than granting tools from an unsaved checkbox or stale cache.
+      notifyWebMcpPreferenceChanged()
+    }
 
     // Update status badge
     const statusEl = document.getElementById("agent-protocols-status")
@@ -189,7 +197,9 @@ export function restoreAISettings(s: Record<string, unknown>): void {
 
   // Agent Protocols
   const a2aEnabled = s["agent-protocols-a2a-enabled"]
-  const webmcpEnabled = s["agent-protocols-webmcp-enabled"]
+  const webmcpEnabled = s[WEBMCP_SETTING]
+  // Bootstrap may predate an opt-out in another tab. Do not grant from its snapshot.
+  refreshWebMcpPreference()
   const mcpEnabled = s["agent-protocols-mcp-enabled"]
   if (a2aEnabled !== undefined)
     (document.getElementById("agent-a2a-enabled") as HTMLInputElement).checked =

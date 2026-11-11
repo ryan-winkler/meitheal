@@ -8,11 +8,11 @@ import { chromium, type Page } from "@playwright/test"
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("./feedback-ingress-fixture.mjs", import.meta.url))
 
-export async function launchPinBrowser(work: string, backForwardCache = false) {
+export async function launchPinBrowser(work: string, backForwardCache = false, extraArgs: string[] = []) {
   const certificate = new X509Certificate(await readFile(join(work, "fixture-cert.pem")))
   const spki = createHash("sha256").update(certificate.publicKey.export({ type: "spki", format: "der" })).digest("base64")
   return chromium.launch({
-    args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`],
+    args: ["--no-proxy-server", `--ignore-certificate-errors-spki-list=${spki}`, ...extraArgs],
     ...(backForwardCache ? {
       channel: "chromium", ...(process.env.MEITHEAL_BFCACHE_CHROMIUM ? { executablePath: process.env.MEITHEAL_BFCACHE_CHROMIUM } : {}),
       ignoreDefaultArgs: ["--disable-back-forward-cache"],

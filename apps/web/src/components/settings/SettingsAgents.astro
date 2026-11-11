@@ -194,6 +194,13 @@ const { locale } = Astro.props;
                 >
                   {t("settings.webmcp_desc", locale)}
                 </div>
+                <p id="webmcp-runtime-status" class="settings-hint" role="status" aria-live="polite"
+                  data-state="disabled"
+                  data-disabled={t("settings.webmcp_disabled", locale)}
+                  data-unavailable={t("settings.webmcp_unavailable", locale)}
+                  data-starting={t("settings.webmcp_starting", locale)}
+                  data-registered={t("settings.webmcp_registered", locale)}
+                  data-failed={t("settings.webmcp_failed", locale)}>{t("settings.webmcp_disabled", locale)}</p>
               </div>
             </div>
           </div>
