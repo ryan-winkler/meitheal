@@ -89,11 +89,11 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             class="pwa-subtle-link"
             style="display: none;">{t("settings.pwa_install", locale)}</a
           >
-          <a
-            href="#"
+          <button
+            type="button"
             id="pwa-update-settings-btn"
             class="pwa-subtle-link"
-            style="display: none;">{t("settings.pwa_update_available", locale)}</a
+            style="display: none;">{t("settings.pwa_update_available", locale)}</button
           >
           <span
             id="pwa-installed-badge"
@@ -457,7 +457,9 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 </style>
 
 <script>
+  import { activateServiceWorker, getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
   import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { showToast } from "@lib/toast"
 
   function initPwaCompact() {
     const dot = document.getElementById("pwa-compact-dot")
@@ -496,16 +498,35 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
 
       // Check for waiting SW (update available)
       if (updateBtn) {
-        navigator.serviceWorker.ready.then((reg) => {
-          if (reg.waiting) {
-            updateBtn.style.display = ""
-            pageLifecycle.on(updateBtn, "click", (e: Event) => {
-              e.preventDefault()
-              reg.waiting?.postMessage({ type: "SKIP_WAITING" })
-              window.location.reload()
-            })
+        const signal = pageLifecycle.signal
+        let offered: ServiceWorker | null = null
+        const offerUpdate = (worker: ServiceWorker) => {
+          if (signal.aborted) return
+          offered = worker
+          updateBtn.style.display = ""
+        }
+        void getAppServiceWorkerRegistration().then(registration => {
+          if (registration?.waiting) offerUpdate(registration.waiting)
+        }).catch(() => {})
+        window.addEventListener("meitheal-sw-update", (event) => {
+          const { detail } = event as CustomEvent<SwUpdateEventDetail>
+          if (detail?.type === "update-available") offerUpdate(detail.worker)
+        }, { signal })
+        updateBtn.addEventListener("click", async () => {
+          if (!offered || updateBtn.getAttribute("aria-disabled") === "true") return
+          const label = updateBtn.textContent
+          updateBtn.setAttribute("aria-disabled", "true")
+          updateBtn.textContent = window.mI18n?.get("settings.pwa_refresh_pending") ?? "Updating…"
+          const ready = await activateServiceWorker(offered, signal)
+          if (signal.aborted) return
+          if (ready) {
+            window.location.reload()
+            return
           }
-        })
+          updateBtn.removeAttribute("aria-disabled")
+          updateBtn.textContent = label
+          showToast("settings.pwa_refresh_failed", "error")
+        }, { signal })
       }
     } else {
       dot.className = "pwa-compact-dot pwa-compact-dot--unavailable"
@@ -555,8 +576,6 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     })
   }
 
-  initPwaCompact()
-
   // ── Pop out to browser (escape HA iframe for PWA install) ──
   function initPwaPopout() {
     const popoutBtn = document.getElementById("pwa-popout-btn")
@@ -602,8 +621,6 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     }
   }
 
-  initPwaPopout()
-
   // ── PWA Troubleshooting Actions ──
   function showTroubleshootResult(msg: string, ok = true) {
     const el = document.getElementById("pwa-troubleshoot-result")
@@ -636,25 +653,32 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     })
 
     if (forceUpdateBtn) {
+      const signal = pageLifecycle.signal
       pageLifecycle.on(forceUpdateBtn, "click", async () => {
+        if (forceUpdateBtn.getAttribute("aria-disabled") === "true") return
+        const label = forceUpdateBtn.textContent
+        forceUpdateBtn.setAttribute("aria-disabled", "true")
+        forceUpdateBtn.textContent = window.mI18n?.get("settings.pwa_refresh_pending") ?? "Updating…"
         try {
           if (!("serviceWorker" in navigator)) {
             showTroubleshootResult("Service workers not available.", false)
             return
           }
-          const reg = await navigator.serviceWorker.getRegistration()
-          if (reg) {
-            await reg.update()
-            if (reg.waiting) {
-              reg.waiting.postMessage({ type: "SKIP_WAITING" })
-            }
-            showTroubleshootResult("✓ SW update triggered. Reloading...")
-            setTimeout(() => window.location.reload(), 800)
-          } else {
-            showTroubleshootResult("No service worker registered.", false)
+          const selected = getAppServiceWorkerRegistration().then(async registration => {
+            if (!registration) return null
+            await registration.update()
+            return registration.installing ?? registration.waiting ?? registration.active
+          })
+          const ready = await activateServiceWorker(selected, signal)
+          if (signal.aborted) return
+          if (ready) {
+            window.location.reload()
+            return
           }
-        } catch {
-          showTroubleshootResult("✗ SW update failed.", false)
+          showToast("settings.pwa_refresh_failed", "error")
+        } finally {
+          forceUpdateBtn.removeAttribute("aria-disabled")
+          forceUpdateBtn.textContent = label
         }
       })
     }
@@ -724,6 +748,13 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     }
   }
 
-  initPwaTroubleshooting()
+  let initialized: AbortSignal | undefined
+  pageLifecycle.onPageLoad((signal) => {
+    if (initialized === signal || !document.getElementById("app-pwa-settings")) return
+    initialized = signal
+    initPwaCompact()
+    initPwaPopout()
+    initPwaTroubleshooting()
+  })
 </script>
 

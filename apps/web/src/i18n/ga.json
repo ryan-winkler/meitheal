@@ -568,6 +568,8 @@
     "pwa_req_https_badge": "HTTP only",
     "pwa_install": "install",
     "pwa_update_available": "update available",
+    "pwa_refresh_pending": "Á nuashonrú…",
+    "pwa_refresh_failed": "Níor críochnaíodh nuashonrú na haipe. Bain triail eile as.",
     "pwa_installed": "✓ Installed",
     "pwa_open_browser": "open in browser ↗",
     "pwa_open_browser_title": "Open in a standalone browser tab (required for install prompt)",

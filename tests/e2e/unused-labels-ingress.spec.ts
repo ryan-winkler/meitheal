@@ -247,7 +247,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
   }
 })
 
-test("an older worker sends cleanup POSTs to the network and an update purges private aliases", async () => {
+async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeOut = false) {
   test.slow()
   const workerTimeout = 15_000
   const work = await mkdtemp(join(tmpdir(), "meitheal-label-cleanup-worker-"))
@@ -302,6 +302,7 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     const current = once(child, "message", { signal: AbortSignal.timeout(3000) })
     child.send({ type: "fixture-worker", old: false })
     expect((await current)[0]).toEqual({ oldWorker: false })
+    const candidateStarted = context.waitForEvent("serviceworker")
     await test.step("Request the current worker from the fixture", async () => {
       await page.evaluate(async prefix => {
         const registration = await navigator.serviceWorker.getRegistration(prefix + "/")
@@ -309,6 +310,15 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
         await registration.update()
       }, prefix)
     }, { timeout: workerTimeout })
+    const candidate = await candidateStarted
+    await candidate.evaluate(() => {
+      const gate = new Promise<void>(resolve => Reflect.set(self, "releaseFixtureActivation", resolve))
+      self.addEventListener("activate", event => {
+        Reflect.set(self, "fixtureActivationHeld", true)
+        const activation = event as Event & { waitUntil(pending: Promise<void>): void }
+        activation.waitUntil(gate)
+      }, { once: true })
+    })
     await expect.poll(() => page.evaluate(async prefix =>
       (await navigator.serviceWorker.getRegistration(prefix + "/"))?.waiting?.state, prefix)).toBe("installed")
     await expect.poll(() => page.evaluate(async prefix => {
@@ -325,7 +335,14 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
         waiting.postMessage({ type: "TASK_DRAFTS_IMPLEMENTED" }, [channel.port2])
       })
     }, prefix)).toBe("ready")
-    const refresh = page.locator("#sw-update-btn")
+    let updateUrl = settingsUrl
+    if (control !== "toast") {
+      updateUrl = origin + prefix + "/settings#app-pwa-settings"
+      await page.evaluate(() => { window.location.hash = "app-pwa-settings" })
+      await expect(page).toHaveURL(updateUrl)
+      if (control === "force") await page.locator("#pwa-troubleshoot summary").click()
+    }
+    const refresh = page.locator({ toast: "#sw-update-btn", settings: "#pwa-update-settings-btn", force: "#pwa-force-update-btn" }[control])
     await expect(refresh).toBeVisible()
     const refreshEvents: string[] = []
     await page.exposeFunction("recordFixtureWorkerState", (event: string) => { refreshEvents.push(event) })
@@ -338,6 +355,12 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
       }
       waiting?.addEventListener("statechange", () => report(`candidate ${waiting.state}`))
       workers.addEventListener("controllerchange", () => report(`controller ${workers.controller?.state}`))
+      window.addEventListener("beforeunload", () => {
+        sessionStorage.setItem("fixture-worker-at-reload", JSON.stringify({
+          state: waiting?.state,
+          controls: workers.controller === waiting,
+        }))
+      }, { once: true })
       return performance.timeOrigin
     }, prefix)
     page.on("request", request => {
@@ -355,6 +378,26 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     try {
       // Check the worker-triggered reload explicitly because its commit can race the click's navigation wait.
       await refresh.click({ noWaitAfter: true })
+      await expect.poll(() => candidate.evaluate(() => Reflect.get(self, "fixtureActivationHeld"))).toBe(true)
+      await expect.poll(() => refreshEvents).toContain("candidate activating")
+      await expect(refresh).toHaveText("Updating…")
+      if (control === "force") {
+        // The previous force action scheduled a reload after 800 ms.
+        await expect(page.waitForRequest(request => request.isNavigationRequest(), { timeout: 1000 }))
+          .rejects.toThrow(/Timeout/)
+      }
+      expect(refreshEvents).not.toContain("document requested")
+      if (timeOut) {
+        await expect(page.getByRole("alert").filter({ hasText: "The app update didn’t finish. Try again." }))
+          .toBeVisible({ timeout: workerTimeout + 2000 })
+        await expect(refresh).toBeEnabled()
+      }
+      await candidate.evaluate(() => Reflect.get(self, "releaseFixtureActivation")())
+      if (timeOut) {
+        await expect.poll(() => refreshEvents).toContain("candidate activated")
+        expect(refreshEvents).not.toContain("document requested")
+        await refresh.click({ noWaitAfter: true })
+      }
       await page.waitForFunction(previous => performance.timeOrigin !== previous &&
         performance.getEntriesByType("navigation").some(entry =>
           entry instanceof PerformanceNavigationTiming && entry.type === "reload"), previousDocument)
@@ -362,8 +405,14 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
       console.error("Refresh document and worker events", refreshEvents)
       throw error
     }
-    await expect(page).toHaveURL(settingsUrl)
+    await expect(page).toHaveURL(updateUrl)
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-worker-at-reload") ?? "null")))
+      .toEqual({ state: "activated", controls: true })
+    await expect.poll(() => page.evaluate(async ({ names, variants, ordinary }) => Promise.all(names.map(async name => {
+      const cache = await caches.open(name)
+      return Promise.all([...variants, ordinary].map(async url => Boolean(await cache.match(url))))
+    })), { names, variants, ordinary })).toEqual(names.map(() => [false, false, false, true]))
     await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => { channel.port1.close(); resolve(false) }, 500)
@@ -374,10 +423,6 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
       }
       navigator.serviceWorker.controller?.postMessage({ type: "COMMENT_MENTIONS_NETWORK_ONLY" }, [channel.port2])
     }))).toBe(true)
-    await expect.poll(() => page.evaluate(async ({ names, variants, ordinary }) => Promise.all(names.map(async name => {
-      const cache = await caches.open(name)
-      return Promise.all([...variants, ordinary].map(async url => Boolean(await cache.match(url))))
-    })), { names, variants, ordinary })).toEqual(names.map(() => [false, false, false, true]))
     await context.setOffline(true)
     const offline = await page.evaluate(async variants => Promise.all(variants.map(url =>
       fetch(url).then(response => response.text()).catch(() => null))), variants)
@@ -391,4 +436,11 @@ test("an older worker sends cleanup POSTs to the network and an update purges pr
     }
     await rm(work, { recursive: true, force: true })
   }
-})
+}
+
+for (const control of ["toast", "settings", "force"] as const) {
+  test(`an older worker sends cleanup POSTs to the network and an update purges private aliases from ${control}`,
+    () => verifyWorkerUpdate(control))
+}
+
+test("a timed-out update stays on the current page until Refresh is retried", () => verifyWorkerUpdate("toast", true))

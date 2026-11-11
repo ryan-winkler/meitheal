@@ -160,8 +160,8 @@ The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `win
 
 1. SW checks for updates every **5 minutes** (reduced from 60s for addon context)
 2. When a new SW is found waiting, a toast appears: "Update available — Refresh"
-3. User clicks → sends `SKIP_WAITING` → page reloads
-4. `controllerchange` triggers `meitheal-sw-update` custom event for UI reactivity
+3. **Refresh**, **update available**, and **Force SW Update** wait for the selected worker to finish activation and control the current page before reloading. This lets the worker finish its cache cleanup before navigation.
+4. If the update takes more than 15 seconds, the page stays open and you can retry. This includes the update check when you use **Force SW Update**. `controllerchange` still notifies features that need to recheck the worker.
 
 ---
 
