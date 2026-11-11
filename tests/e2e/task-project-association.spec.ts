@@ -101,60 +101,67 @@ test("createTask without project_id defaults to null", async () => {
   expect(tasks).toHaveLength(0)
 })
 
-test("completing a recurring task keeps the next occurrence in its project", async ({ request }) => {
-  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+for (const { label, rule, nextDueDate } of [
+  { label: "daily", rule: "FREQ=DAILY", nextDueDate: "2031-02-15" },
+  { label: "weekday", rule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", nextDueDate: "2031-02-17" },
+] as const) {
+  test(`completing a ${label} task keeps the next occurrence in its project`, async ({ request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
-  const area = await request.post("/api/areas", { data: { name: "Recurring project area" } })
-  expect(area.status()).toBe(201)
-  const { id: areaId } = await area.json()
-  const project = await request.post("/api/projects", { data: { title: "Recurring work", area_id: areaId } })
-  expect(project.status()).toBe(201)
-  const { id: projectId } = await project.json()
-  const title = "Recurring project checklist"
-  const assignment = { area_id: areaId, assigned_to: "custom_recurring_fixture" }
-  const rawChecklist = JSON.stringify([
-    { id: "first-step", text: "Check supplies", done: true },
-    "Keep the receipt",
-    { text: "", done: false },
-    { id: "first-step", text: "Confirm the duplicate step", done: 1 },
-    { id: "second-step", text: "Read the meter" },
-    { id: "second-step", text: 27 },
-    null,
-  ])
-  const created = await request.post("/api/tasks", {
-    data: {
-      ...assignment, title, project_id: projectId, due_date: "2031-02-14",
-      recurrence_rule: "FREQ=DAILY", checklists: rawChecklist,
-    },
-  })
-  expect(created.status()).toBe(201)
-  const { id } = await created.json()
-  const complete = await request.patch(`/api/tasks/${id}`, { data: { status: "complete" } })
-  expect(complete.status()).toBe(200)
+    const area = await request.post("/api/areas", { data: { name: "Recurring project area" } })
+    expect(area.status()).toBe(201)
+    const { id: areaId } = await area.json()
+    const project = await request.post("/api/projects", { data: { title: "Recurring work", area_id: areaId } })
+    expect(project.status()).toBe(201)
+    const { id: projectId } = await project.json()
+    const title = `Recurring project checklist (${label})`
+    const assignment = { area_id: areaId, assigned_to: "custom_recurring_fixture" }
+    const rawChecklist = JSON.stringify([
+      { id: "first-step", text: "Check supplies", done: true },
+      "Keep the receipt",
+      { text: "", done: false },
+      { id: "first-step", text: "Confirm the duplicate step", done: 1 },
+      { id: "second-step", text: "Read the meter" },
+      { id: "second-step", text: 27 },
+      null,
+    ])
+    const created = await request.post("/api/tasks", {
+      data: {
+        ...assignment, title, project_id: projectId, due_date: "2031-02-14",
+        recurrence_rule: rule, checklists: rawChecklist,
+      },
+    })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    const complete = await request.patch(`/api/tasks/${id}`, { data: { status: "complete" } })
+    expect(complete.status()).toBe(200)
+    const repeated = await request.patch(`/api/tasks/${id}`, { data: { status: "complete" } })
+    expect(repeated.status()).toBe(200)
 
-  const list = await request.get("/api/tasks", { params: { q: title, due_date: "2031-02-15" } })
-  expect(list.status()).toBe(200)
-  const { tasks } = await list.json()
-  expect(tasks).toHaveLength(1)
-  const next = await request.get(`/api/tasks/${tasks[0].id}`)
-  expect(next.status()).toBe(200)
-  const occurrence = await next.json()
-  expect(occurrence.id).not.toBe(id)
-  expect(occurrence).toMatchObject({
-    ...assignment, title, project_id: projectId, status: "pending", due_date: "2031-02-15",
-    recurrence_rule: "FREQ=DAILY",
+    const list = await request.get("/api/tasks", { params: { q: title, due_date: nextDueDate } })
+    expect(list.status()).toBe(200)
+    const { tasks } = await list.json()
+    expect(tasks).toHaveLength(1)
+    const next = await request.get(`/api/tasks/${tasks[0].id}`)
+    expect(next.status()).toBe(200)
+    const occurrence = await next.json()
+    expect(occurrence.id).not.toBe(id)
+    expect(occurrence).toMatchObject({
+      ...assignment, title, project_id: projectId, status: "pending", due_date: nextDueDate,
+      recurrence_rule: rule,
+    })
+    const steps = JSON.parse(occurrence.checklists)
+    expect(steps).toEqual([
+      { id: "first-step", text: "Check supplies", done: false },
+      { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Keep the receipt", done: false },
+      { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "", done: false },
+      { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Confirm the duplicate step", done: false },
+      { id: "second-step", text: "Read the meter", done: false },
+    ])
+    expect(new Set(steps.map((step: { id: string }) => step.id)).size).toBe(steps.length)
+    expect((await (await request.get(`/api/tasks/${id}`)).json()).checklists).toBe(rawChecklist)
   })
-  const steps = JSON.parse(occurrence.checklists)
-  expect(steps).toEqual([
-    { id: "first-step", text: "Check supplies", done: false },
-    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Keep the receipt", done: false },
-    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "", done: false },
-    { id: expect.stringMatching(/^[a-f0-9-]{36}$/), text: "Confirm the duplicate step", done: false },
-    { id: "second-step", text: "Read the meter", done: false },
-  ])
-  expect(new Set(steps.map((step: { id: string }) => step.id)).size).toBe(steps.length)
-  expect((await (await request.get(`/api/tasks/${id}`)).json()).checklists).toBe(rawChecklist)
-})
+}
 
 test("rolling recurrence creates an empty checklist when omitted or empty", async ({ request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal API fixture")

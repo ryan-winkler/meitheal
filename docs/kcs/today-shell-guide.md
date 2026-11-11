@@ -56,6 +56,8 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 **Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts tasks marked complete and updated on the current UTC date, including older records with ISO timestamps. Open **Pinned tasks** from the sidebar to see your personal pins.
 
+Task rows label their current status. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
+
 While Today is open, the counters and progress bar refresh every 30 seconds. The refresh reads aggregate counts across the full task store. Reload the page to refresh the task rows after an external change.
 
 ### Browse a large unscheduled queue

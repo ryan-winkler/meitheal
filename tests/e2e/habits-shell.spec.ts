@@ -18,6 +18,8 @@ test.describe("Habits Shell", () => {
 
     await expect(page).toHaveURL(/#habits-library$/)
     await expect(libraryTab).toHaveClass(/is-active/)
+    await expect(libraryTab).toHaveAttribute("aria-current", "location")
+    await expect(page.locator("#habits-bar-tabs a[aria-selected]")).toHaveCount(0)
     await expect(page.locator("#habits-library")).toBeVisible()
   })
 

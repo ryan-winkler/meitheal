@@ -37,6 +37,7 @@ test.describe("Progress Parent Page — /progress", () => {
     await expect(sectionPicker).toHaveAttribute("aria-expanded", "true")
     await page.getByRole("menuitem", { name: "Routines" }).click()
     await expect(page).toHaveURL(/\/progress#routines$/)
+    await expect(page.locator('#progress-bar-tabs a[href="#routines"]')).toHaveAttribute("aria-current", "location")
     const section = page.locator("#progress-section-routines")
     await expect(section).toBeVisible()
 
@@ -85,6 +86,32 @@ test.describe("Planning Parent Page — /planning", () => {
     const spacesSection = page.locator("#planning-section-spaces")
     await expect(spacesSection).toHaveAttribute("aria-hidden", "false")
     await expect(spacesSection).toBeVisible()
+  })
+
+  test("section links keep native Tab order and announce the current location", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 960 })
+    const navigation = page.locator("#planning-bar-tabs")
+    const spaces = navigation.locator('a[href="#spaces"]')
+    const eisenhower = navigation.locator('a[href="#eisenhower"]')
+    const triage = navigation.locator('a[href="#triage"]')
+
+    await expect(spaces).toHaveAttribute("aria-current", "location")
+    await expect(navigation.locator("a[aria-selected]")).toHaveCount(0)
+    await spaces.focus()
+    await page.keyboard.press("Tab")
+    await expect(eisenhower).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(eisenhower).toHaveAttribute("aria-current", "location")
+    await expect(page.locator("#planning-section-eisenhower")).toBeVisible()
+
+    await page.keyboard.press("ArrowRight")
+    await expect(triage).toBeFocused()
+    await expect(triage).toHaveAttribute("aria-current", "location")
+    await expect(navigation.locator('a[aria-current="location"]')).toHaveCount(1)
+    await page.goBack()
+    await expect(eisenhower).toHaveAttribute("aria-current", "location")
+    await page.goForward()
+    await expect(triage).toHaveAttribute("aria-current", "location")
   })
 
   test("renders planning helper with correct variant", async ({ page }) => {

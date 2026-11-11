@@ -410,14 +410,14 @@ function dayLabelClass(day: DayGroup): string {
     font-weight: 600;
   }
   .day-label--today {
-    color: var(--accent);
+    color: var(--accent-text);
   }
 
   /* ── Count badges ── */
   .day-count-badge {
     font-size: 11px;
-    background: var(--accent);
-    color: white;
+    background: var(--personal-accent, var(--palette-accent-hover));
+    color: var(--personal-accent-foreground, #fff);
     padding: 1px 6px;
     border-radius: 8px;
     font-weight: 600;

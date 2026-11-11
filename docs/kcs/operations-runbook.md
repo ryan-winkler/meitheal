@@ -112,6 +112,8 @@ Today and Settings keep text and controls at full opacity during their entry mot
 
 For shared task rows, check that Today and the Eisenhower matrix show all five priority labels at 4.5:1 contrast or higher in light and dark themes. The task type icon exposes a name in the row, and filter icons leave the adjacent button text as its name.
 
+Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
+
 ## Task Link Verification
 
 Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.

@@ -98,7 +98,7 @@ interface CalDay {
   isToday: boolean;
   isWeekend: boolean;
   taskCount: number;
-  haEventCount: number;
+  haEventLabel: string | undefined;
   colors: string[];
 }
 
@@ -115,6 +115,7 @@ for (let week = 0; week < 6; week++) {
       ? `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
       : "";
     const dayData = tasksByDay[dateStr];
+    const haEventCount = dayData?.haEvents ?? 0;
 
     row.push({
       day: d,
@@ -123,7 +124,9 @@ for (let week = 0; week < 6; week++) {
       isToday: dateStr === todayStr,
       isWeekend: isWeekendFn(dow),
       taskCount: dayData?.count ?? 0,
-      haEventCount: dayData?.haEvents ?? 0,
+      haEventLabel: haEventCount > 0
+        ? `${haEventCount} calendar event${haEventCount === 1 ? "" : "s"}`
+        : undefined,
       colors: dayData?.colors ?? [],
     });
     currentDay++;
@@ -189,28 +192,24 @@ const calendarSignal =
               data-date={cell.dateStr}
               role={cell.isCurrentMonth ? "button" : undefined}
               tabindex={cell.isCurrentMonth ? "0" : undefined}
-              aria-label={
-                cell.isCurrentMonth
-                  ? `${cell.dateStr}, ${cell.taskCount} tasks`
-                  : undefined
-              }
+              aria-current={cell.isToday ? "date" : undefined}
             >
               {cell.isCurrentMonth && (
                 <div>
                   <span
                     class={`cal-day-num ${cell.isToday ? "cal-day-today" : ""}`}
                   >
-                    {cell.day}
+                    {cell.day}<span class="sr-only">{` ${monthName}`}</span>
                   </span>
                   {cell.taskCount > 0 && (
                     <div class="cal-task-indicator">
-                      <span class="cal-task-badge">{cell.taskCount}</span>
-                      {cell.haEventCount > 0 && (
-                        <span
-                          class="cal-ha-badge"
-                          title={`${cell.haEventCount} calendar event${cell.haEventCount !== 1 ? "s" : ""}`}
-                        >
-                          📅
+                      <span class="cal-task-badge">
+                        {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
+                      </span>
+                      {cell.haEventLabel && (
+                        <span class="cal-ha-badge" title={cell.haEventLabel}>
+                          <span aria-hidden="true">📅</span>
+                          <span class="sr-only">{cell.haEventLabel}</span>
                         </span>
                       )}
                       {cell.colors.length > 0 && (
@@ -321,7 +320,7 @@ const calendarSignal =
   .cal-today-btn {
     margin-left: auto;
     font-size: 12px;
-    color: var(--accent);
+    color: var(--accent-text);
     text-decoration: none;
     padding: 4px 10px;
     border-radius: 6px;
@@ -357,8 +356,7 @@ const calendarSignal =
     letter-spacing: 0.05em;
   }
   .cal-header-weekend {
-    color: var(--text-muted);
-    opacity: 0.7;
+    background: color-mix(in srgb, var(--bg-secondary) 70%, var(--border));
   }
 
   .cal-cell {
@@ -398,9 +396,6 @@ const calendarSignal =
   }
   .cal-day-today {
     font-weight: 700;
-    color: var(--accent);
-    background: var(--accent);
-    color: white;
     width: 24px;
     height: 24px;
     display: inline-flex;
@@ -415,11 +410,14 @@ const calendarSignal =
   }
   .cal-task-badge {
     font-size: 10px;
-    background: var(--accent);
-    color: white;
     padding: 1px 5px;
     border-radius: 8px;
     font-weight: 600;
+  }
+  .cal-day-today,
+  .cal-task-badge {
+    color: var(--personal-accent-foreground, #fff);
+    background: var(--personal-accent, var(--palette-accent-hover));
   }
   .cal-color-dots {
     display: flex;

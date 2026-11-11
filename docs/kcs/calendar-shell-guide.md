@@ -23,6 +23,8 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 2. Review tasks due on that date and HA events. Task rows show the shared status label and icon.
 3. Use `Add Task` to open the shared task modal with the current drawer date prefilled.
 
+Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes.
+
 ### Switch to another task view without dropping filters
 
 1. Apply the filters you want on Calendar.

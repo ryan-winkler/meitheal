@@ -148,6 +148,7 @@
       --accent-light: var(--personal-accent-light, var(--personal-accent, var(--palette-accent-light)));
       --warning: #F59E0B;
       --danger: #EF4444;
+      --danger-text: color-mix(in srgb, var(--danger) 60%, var(--text-primary));
       --info: #3B82F6;
       --border: #334155;
       --border-focus: #A5B4FC;

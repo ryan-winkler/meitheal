@@ -42,8 +42,6 @@ function updateActiveSectionState(sectionId: HabitsSectionId): void {
       const active = link.dataset.unifiedBarSection === sectionId
       link.classList.toggle("is-active", active)
       link.setAttribute("aria-current", active ? "location" : "false")
-      link.setAttribute("aria-selected", active ? "true" : "false")
-      link.setAttribute("tabindex", active ? "0" : "-1")
     })
 
   setUnifiedBarSwitcherActiveState(HABITS_BAR_ID, sectionId)
