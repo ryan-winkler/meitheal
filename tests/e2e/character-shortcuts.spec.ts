@@ -445,21 +445,38 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
     secondId = (await secondTask.json()).id
 
     await page.goto("/tasks?groupBy=type#kanban")
-    await expect(page.locator(".swimlane-group:not([hidden])").first()).toBeVisible()
+    const visibleLanes = page.locator(".swimlane-group:not([hidden])")
+    await expect(visibleLanes.first()).toBeVisible()
+    const laneCount = await visibleLanes.count()
+    expect(laneCount).toBeGreaterThan(1)
+    await expect(page.locator(".swimlane-group.swimlane-collapsed")).toHaveCount(0)
+
+    // location.href navigation is asynchronous, so count navigation attempts
+    // at the moment the key is handled instead of reading the URL afterwards.
+    await page.evaluate(() => {
+      const state = window as typeof window & { __cNavigations?: number }
+      state.__cNavigations = 0
+      ;(window as typeof window & { navigation: EventTarget }).navigation
+        .addEventListener("navigate", () => { state.__cNavigations = (state.__cNavigations ?? 0) + 1 })
+    })
+    const navigations = () => page.evaluate(() => (window as typeof window & { __cNavigations?: number }).__cNavigations)
 
     await page.locator(`[data-task-id="${firstId}"] .card-open-btn`).focus()
     await page.keyboard.press("c")
-
-    expect(new URL(page.url()).pathname).toBe("/tasks")
-    await expect(page.locator(".kanban-board")).toBeVisible()
+    expect(await navigations()).toBe(0)
     await expect(page.locator(".swimlane-group:not([hidden]):not(.swimlane-collapsed)")).toHaveCount(0)
 
     await page.keyboard.press("c")
+    expect(await navigations()).toBe(0)
     await expect(page.locator(".swimlane-group.swimlane-collapsed")).toHaveCount(0)
+    await expect(visibleLanes).toHaveCount(laneCount)
+    expect(new URL(page.url()).pathname).toBe("/tasks")
 
+    // Outside the board the global shortcut still opens Calendar, whose legacy
+    // route redirects to the Tasks Calendar view.
     await blurActive(page)
     await page.keyboard.press("c")
-    await expect(page).toHaveURL(/\/calendar$/)
+    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
   } finally {
     if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
     if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })

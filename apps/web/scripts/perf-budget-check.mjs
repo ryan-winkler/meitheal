@@ -209,25 +209,34 @@ async function main() {
 
     let kanbanWarm2000;
     let hasTasks = false;
+    let totalTasks = 0;
     let db;
     try {
       db = new DatabaseSync(dbPath, { timeout: 5000 });
       const hasTasksTable = db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get();
       if (hasTasksTable) {
-        hasTasks = true;
         const task = db.prepare(`INSERT INTO tasks
           (id, title, description, status, request_id, idempotency_key, created_at, updated_at)
           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`);
         const stamp = Date.now();
         db.exec("BEGIN IMMEDIATE");
-        for (let index = 1; index <= 2000; index++) {
-          const id = `perf-kanban-${index}`;
-          task.run(id, `Perf task ${index}`, "Performance test card", id, id, stamp + index, stamp + index);
+        try {
+          for (let index = 1; index <= 2000; index++) {
+            const id = `perf-kanban-${index}`;
+            task.run(id, `Perf task ${index}`, "Performance test card", id, id, stamp + index, stamp + index);
+          }
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
         }
-        db.exec("COMMIT");
+        totalTasks = Number(db.prepare("SELECT COUNT(*) AS count FROM tasks").get().count);
+        hasTasks = true;
       }
-    } catch {
-      // In lifecycle tests with stub servers, SQLite database or tasks table may not exist
+    } catch (error) {
+      // Stub servers in the lifecycle tests have no SQLite tasks table, so the
+      // measurement is skipped. A real seeding failure is reported, not measured.
+      if (db) kanbanWarm2000 = { skipped: `seed failed: ${error instanceof Error ? error.message : String(error)}` };
     } finally {
       db?.close();
     }
@@ -248,6 +257,8 @@ async function main() {
       const kanbanMaxMs = sortedKanbanSamples.at(-1);
 
       kanbanWarm2000 = {
+        seededTasks: 2000,
+        totalTasks,
         warmups: kanbanWarmups,
         requests: kanbanRequests,
         samplesMs: kanbanSamplesMs.map((value) => Number(value.toFixed(1))),
