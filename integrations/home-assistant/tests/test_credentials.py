@@ -1,6 +1,7 @@
 """Exercise config entry, transport and entity behavior on Home Assistant Core."""
 
 from types import SimpleNamespace
+import traceback
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,10 +24,12 @@ except ModuleNotFoundError as error:
 
 from custom_components.meitheal.api import (
     MeithealApi,
+    MeithealConnectionError,
     MeithealResponseError,
     connection_origin,
 )
 from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.coordinator import MeithealCoordinator
 from custom_components.meitheal.diagnostics import async_get_config_entry_diagnostics
 
 TOKEN = "mth_" + "a" * 64
@@ -36,6 +39,42 @@ ORIGIN = f"https://{HOST}"
 CONNECTION = {CONF_HOST: HOST, CONF_PORT: 443, CONF_SSL: True}
 PROBE = f"{ORIGIN}/api/tasks?limit=1"
 TASKS = f"{ORIGIN}/api/tasks"
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_malformed_json_http_success_is_sanitized_without_announcing_creation(hass, aiohttp_server, caplog):
+    """Use the real native HTTP/JSON client and coordinator, not a canned API mock."""
+    private_body = '{"private-malformed-response-fixture":'
+    requests = []
+
+    async def malformed(request):
+        requests.append((request.method, request.path, request.headers.get("Authorization")))
+        return web.Response(status=200, text=private_body, content_type="application/json")
+
+    app = web.Application()
+    app.router.add_post("/api/tasks", malformed)
+    server = await aiohttp_server(app)
+    events = []
+    remove_created = hass.bus.async_listen("meitheal_task_created", events.append)
+    remove_logbook = hass.bus.async_listen("logbook_entry", events.append)
+    try:
+        async with ClientSession() as session:
+            api = MeithealApi(session, server.make_url("").origin(), TOKEN)
+            coordinator = MeithealCoordinator(hass, api)
+            coordinator.async_request_refresh = AsyncMock()
+            with pytest.raises(MeithealConnectionError) as failure:
+                await coordinator.async_create_task("Malformed receipt fixture")
+            assert str(failure.value) == "Cannot read a response from Meitheal"
+            assert failure.value.__cause__ is None
+            rendered = "".join(traceback.format_exception(failure.value)) + caplog.text
+            assert private_body not in rendered and TOKEN not in rendered
+            coordinator.async_request_refresh.assert_not_awaited()
+            await hass.async_block_till_done()
+            assert events == []
+        assert requests == [("POST", "/api/tasks", f"Bearer {TOKEN}")]
+    finally:
+        remove_created()
+        remove_logbook()
 
 
 def mock_entry(
