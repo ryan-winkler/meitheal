@@ -1,7 +1,9 @@
 """Native mutations through built App + loopback Core protocol + real Core triggers.
 
-Requires `pnpm --filter @meitheal/web build` and Node on PATH. No installed HA,
-Supervisor, physical device or registry is accessed by this fixture.
+Requires the same checkout's App build and Node on PATH. CI and explicit
+MEITHEAL_REQUIRE_APP_PROTOCOL=1 qualification fail if these are absent; ordinary
+Python-only local runs may skip the six App cases. No installed HA, Supervisor,
+physical device or registry is accessed by this fixture.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -30,8 +32,20 @@ pytestmark = pytest.mark.usefixtures("socket_enabled")
 async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
     """Forward real App fire_event frames onto this test's actual Core bus."""
     entry = ROOT / "apps/web/dist/server/entry.mjs"
-    if not entry.exists() or not shutil.which("node"):
-        pytest.skip("Build the web App and put Node on PATH for App/Core protocol proof")
+    missing = []
+    if not entry.is_file():
+        missing.append("built App apps/web/dist/server/entry.mjs")
+    if not shutil.which("node"):
+        missing.append("Node on PATH")
+    if missing:
+        reason = ("App/Core protocol prerequisites missing: " + ", ".join(missing)
+                  + ". Use Node 22/pnpm 10.8.0, install the frozen workspace and build "
+                    "with pnpm --filter @meitheal/web build from the tested checkout.")
+        required = any(os.environ.get(key, "").lower() in ("1", "true")
+                       for key in ("CI", "MEITHEAL_REQUIRE_APP_PROTOCOL"))
+        if required:
+            pytest.fail(reason, pytrace=False)
+        pytest.skip("Python-only local mode: " + reason)
     frames = []
     held = []
     authenticated = asyncio.Event()

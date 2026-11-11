@@ -132,6 +132,16 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the checked-out App for native protocol tests
+        run: pnpm --filter @meitheal/web build
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -141,6 +151,7 @@ jobs:
         working-directory: integrations/home-assistant
         env:
           TEST_REQUIREMENTS: ${{ matrix.requirements }}
+          MEITHEAL_REQUIRE_APP_PROTOCOL: "1"
         run: |
           python -m pip install -r "$TEST_REQUIREMENTS"
           python -m pytest -q

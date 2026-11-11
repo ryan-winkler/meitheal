@@ -10,7 +10,7 @@ Home Assistant installs the Meitheal Core integration from a separate integratio
 
 ## Stage a release candidate
 
-1. Run the Core credential tests from `integrations/home-assistant` with Python 3.14. Install `requirements-test.txt` in a fresh environment for Core 2026.11.1 and `requirements-test-2026.10.txt` in a separate environment for Core 2026.10.4. First build the web App with `pnpm --filter @meitheal/web build` and put Node on PATH to include the App/Core delivery tests; those tests explicitly skip when the build or Node is absent. Run `python -m pytest -q` in each environment.
+1. Qualify the App and Core integration from the same pinned source checkout. Record `git rev-parse HEAD`, use Node 22 and pnpm 10.8.0, run `pnpm install --frozen-lockfile`, then `pnpm --filter @meitheal/web build` at the repository root. Keep Node on PATH. From `integrations/home-assistant`, use Python 3.14 and separate environments: install `requirements-test.txt` for Core 2026.11.1 and `requirements-test-2026.10.txt` for Core 2026.10.4. Run `MEITHEAL_REQUIRE_APP_PROTOCOL=1 python -m pytest -q` in each environment. Do not reuse a build from another commit or checkout. CI performs the frozen workspace install and App build in each Core matrix job before pytest; it uses the same required mode.
 2. Stage an integration archive from the tested source commit. Choose a new output path and supply the integration repository's GitHub owner and name.
 
    ```sh
@@ -20,6 +20,10 @@ Home Assistant installs the Meitheal Core integration from a separate integratio
 
 3. Compare the SHA-256 printed by the script with a second build of the same commit and repository name. The staged manifest links to that repository's README and Issues tab. Check both URLs anonymously before publishing a release. The archive contains the Apache license, README, Marketplace metadata, runtime and validation workflow. Extract it at the integration repository root. Match the GitHub Release tag to the manifest version.
 4. Require both staged jobs to pass on the integration repository. The HACS job checks the integration category with no ignored checks, and hassfest validates the integration. Set the repository description, add relevant topics, and enable Issues. Verify the custom install link and a tagged upgrade on a disposable Home Assistant instance before requesting catalog inclusion. [Validation checks](https://contributors.home-assistant.io/marketplace/reference/validation/)
+
+Full qualification must run all six App/Core protocol cases in `tests/test_event_authority.py` without skips on **both** requirements profiles: the three App-enabled, standalone and App-disabled mutation-producer modes, and the three lost-acknowledgement, failed-acknowledgement and held-authentication delivery modes. The seventh concurrent HTTP receipt-binding case does not require the App and cannot substitute for those six. Run the focused module with `MEITHEAL_REQUIRE_APP_PROTOCOL=1 python -m pytest -q -rs tests/test_event_authority.py` when checking these counts.
+
+`CI=true` or `MEITHEAL_REQUIRE_APP_PROTOCOL=1` makes a missing Node executable or App entry fail clearly. A Python-only local run with neither flag may deliberately skip the six App cases when prerequisites are absent; that is partial local feedback, not full qualification. The minimum Core profile retains its unrelated optional-LLM skips.
 
 ## Test an installer handoff
 

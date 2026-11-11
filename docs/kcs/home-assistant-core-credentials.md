@@ -44,7 +44,7 @@ Treat the Home Assistant config entry and any backup containing it as sensitive.
 
 ## Release verification
 
-Run the Core behavior harness with Python 3.14 from `integrations/home-assistant` after installing `requirements-test.txt`. Run `pytest -q`. For Tier 2, open the real **Discovered** Meitheal card and complete its token form in a disposable Home Assistant Supervisor environment. Then repeat enrollment on an existing integration entry during an App upgrade. Check reauthentication after revocation and repeat a create, complete, search and delete cycle on the same existing entity. Record the App and Core versions and the exact candidate image digest.
+Follow the [source-bound App/Core qualification steps](home-assistant-marketplace.md#stage-a-release-candidate) with Python 3.14 and both pinned requirements profiles. Build the App from the tested checkout and run pytest with `MEITHEAL_REQUIRE_APP_PROTOCOL=1`; all six App/native protocol cases must run without skips. A Python-only local run is partial feedback. For Tier 2, open the real **Discovered** Meitheal card and complete its token form in a disposable Home Assistant Supervisor environment. Then repeat enrollment on an existing integration entry during an App upgrade. Check reauthentication after revocation and repeat a create, complete, search and delete cycle on the same existing entity. Record the App and Core versions and the exact candidate image digest.
 
 The existing NFC service points at `POST /api/nfc/complete`. Its server endpoint needs separate implementation and acceptance before NFC completion can be advertised.
 
