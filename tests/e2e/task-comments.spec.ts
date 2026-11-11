@@ -35,6 +35,7 @@ test("verified comment owners can edit and delete without claiming other comment
     PATH: process.env.PATH,
     NODE_ENV: "production",
     SUPERVISOR_TOKEN: "comment-fixture-only",
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
     HA_BASE_URL: "http://127.0.0.1:1",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
   }
@@ -46,16 +47,8 @@ test("verified comment owners can edit and delete without claiming other comment
     execFileSync(process.execPath, ["--input-type=module", "-e", `
       import { createClient } from "@libsql/client"
       const client = createClient({ url: process.env.MEITHEAL_DB_URL })
-      await client.execute(\`
-        CREATE TABLE comments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          task_id INTEGER NOT NULL,
-          content TEXT NOT NULL,
-          author TEXT NOT NULL DEFAULT 'user',
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-        )
-      \`)
+      await client.execute("DROP TRIGGER comments_stall_burst")
+      await client.execute("ALTER TABLE comments DROP COLUMN owner_key")
       const [id, author] = process.argv.slice(1)
       await client.execute({
         sql: "INSERT INTO tasks (id, title, idempotency_key, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -86,6 +79,7 @@ test("verified comment owners can edit and delete without claiming other comment
       content: "Existing comment",
       author: legacyAuthor,
       created_at: "2024-03-15 08:00:00",
+      can_manage: false,
     }])
 
     const tokenResponse = await request.post(ingress + "/api/agent-tokens", {
@@ -93,7 +87,7 @@ test("verified comment owners can edit and delete without claiming other comment
       data: { name: "Test automation", scopes: ["tasks:write"] },
     })
     expect(tokenResponse.status()).toBe(201)
-    const { token } = await tokenResponse.json()
+    const { token, id: automationTokenId } = await tokenResponse.json()
     const replacement = await request.post(ingress + "/api/agent-tokens", {
       headers: headers("admin"),
       data: { name: "Test automation", scopes: ["tasks:write"] },
@@ -167,8 +161,11 @@ test("verified comment owners can edit and delete without claiming other comment
     expect(listed.status()).toBe(200)
     const stored = (await listed.json()).comments
     expect(stored).toHaveLength(14)
-    expect(stored[0]).toMatchObject({ content: "Existing comment", author: legacyAuthor })
-    expect(stored.slice(1, 13)).toEqual(receipts.map(({ comment }) => comment).sort((a, b) => a.id - b.id))
+    expect(stored[0]).toMatchObject({ content: "Existing comment", author: legacyAuthor, can_manage: false })
+    expect(stored.slice(1, 13)).toEqual(receipts
+      .map(({ comment, role }) => ({ ...comment, can_manage: role === "member" }))
+      .sort((a, b) => a.id - b.id))
+    expect(stored[13]).toEqual({ ...automationComment, can_manage: false })
 
     const memberComment = receipts.find(({ role }) => role === "member")!.comment
     expect(memberComment.author).toBe(legacyAuthor)
@@ -205,6 +202,22 @@ test("verified comment owners can edit and delete without claiming other comment
     const automationItem = origin + comments + "/" + automationComment.id
     const automationHeaders = { authorization: `Bearer ${token}` }
     expect((await request.get(automationItem, { headers: automationHeaders })).status()).toBe(403)
+    const changeAutomationScopes = async (scopes: string[]) => {
+      const response = await request.patch(ingress + "/api/agent-tokens", {
+        headers: headers("admin"),
+        data: { id: automationTokenId, scopes },
+      })
+      expect(response.status()).toBe(200)
+    }
+    await changeAutomationScopes(["tasks:read"])
+    const readOnlyOwner = await request.get(origin + comments, { headers: automationHeaders })
+    expect(readOnlyOwner.status()).toBe(200)
+    expect((await readOnlyOwner.json()).comments.at(-1)).toEqual({ ...automationComment, can_manage: false })
+    expect((await request.delete(automationItem, { headers: automationHeaders })).status()).toBe(403)
+    await changeAutomationScopes(["tasks:read", "tasks:write"])
+    const readWriteOwner = await request.get(origin + comments, { headers: automationHeaders })
+    expect(readWriteOwner.status()).toBe(200)
+    expect((await readWriteOwner.json()).comments.at(-1)).toEqual({ ...automationComment, can_manage: true })
     const readerHeaders = { authorization: `Bearer ${readerToken}` }
     const automationRead = await request.get(automationItem, { headers: readerHeaders })
     expect(automationRead.status()).toBe(200)
@@ -272,5 +285,7 @@ test("a failed comment post keeps the draft for retry in the task panel", async 
   await submit.click()
   await expect(panel.getByText("Keep this draft", { exact: true })).toBeVisible()
   await expect(panel.getByText("Local user", { exact: true })).toBeVisible()
+  await expect(panel.getByRole("button", { name: "Edit comment" })).toHaveCount(0)
+  await expect(panel.getByRole("button", { name: "Delete comment" })).toHaveCount(0)
   await expect(input).toHaveValue("")
 })

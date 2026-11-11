@@ -6,45 +6,90 @@ description: "Qualify App images and promote a verified version to the Home Assi
 
 # Releasing Meitheal
 
-Home Assistant discovers both channels through the [current Meitheal add-on repository](https://github.com/Coolock-Village/meitheal-ha-addon). Keep existing Store entries and App slugs when updating a channel. Release workflows in this repository target the personal-account add-on repository after its ownership transfer. The optional Core integration has a separate [Marketplace release process](home-assistant-marketplace.md).
+Home Assistant discovers both channels through the [Meitheal add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon). Keep existing Store entries and App slugs when updating a channel. The optional Core integration has a separate [Marketplace release process](home-assistant-marketplace.md).
+
+Maintain one Canary App entry in `meitheal-hub-canary/config.yaml`, with slug `meitheal_canary` and image family `ghcr.io/coolock-village/meitheal-canary-{arch}`. Settings and other feature work ship through this same Canary. The Stable manifest remains in `meitheal-hub/config.yaml` with slug `meitheal`. Release preparation, image metadata and staging validate both canonical manifests and reject additional root App manifests, including Settings, preview and extra experimental variants. Staging checks the destination repository before writing files. Remove an obsolete extra manifest through its reviewed retirement process before staging.
+
+Canary publication retains the existing Coolock Village packages. The source repository and image source label remain `ryan-winkler/meitheal`, and discovery remains `ryan-winkler/meitheal-ha-addon`. The release-host publisher derives its destination from the canonical image template. This registry owner does not change package visibility or repository association, and does not grant the source repository's Actions token access to the packages.
+
+This repository guard covers the release tooling. Supervisor installations from other repositories or manually created local Apps require separate device checks and cleanup.
+
+## Move a Canary from the legacy private Store repository
+
+Supervisor derives the installed App ID from its repository URL. The public repository gives Meitheal Canary a new internal ID. Use the public HTTPS URL without credentials. [Supervisor Store API](https://contributors.home-assistant.io/apps/supervisor-api/store/)
+
+After the public ARM64 image passes the Green benchmark and publishes, add the public repository and confirm that it offers the qualified version. Before uninstalling the legacy Canary, retain an App-only Supervisor backup and verify access to its exact rollback image. Rehearse the [database and App-option transfer](home-assistant-backup-and-restore.md#move-data-between-store-repositories) in an isolated Supervisor first; a new repository ID does not inherit the old data volume, and Settings JSON does not include tasks or protected credentials.
+
+Keep at most one Canary installed during the transition: uninstall the legacy Canary before installing **Meitheal Canary** from the public repository. Transfer the verified data and compatible App options, then verify health, authenticated ingress, settings, tasks and restart persistence. Update saved Home Assistant shortcuts and any separately installed Meitheal integration that still targets the old App hostname. Keep the legacy recovery material until acceptance and a matching backup of the new App are verified. Remove the legacy repository once no installed Apps depend on it.
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
 | Stable | A matching `vX.Y.Z` tag on a commit in `main` | `X.Y.Z` | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
-| Canary | The current `main` commit | The first 12 hexadecimal characters of its commit ID | `ghcr.io/ryan-winkler/meitheal-canary-{arch}:{version}` |
+| Canary | The current `main` commit | The first 12 hexadecimal characters of its commit ID | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
 
 ## Qualify the release
+
+The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update. Push checks on `main` verify the merged source; pushes changing only `meitheal-hub-canary/config.yaml` remain excluded.
 
 1. Run the required checks and review findings for the intended source commit.
 2. Follow the [Supervisor devcontainer runbook](home-assistant-devcontainer.md) for ingress, permissions, install, update and restart. Exercise [backup and restore](home-assistant-backup-and-restore.md) with disposable data.
 3. Verify the intended Home Assistant version, supported architectures, and the resource budget on the target hardware. Record the tested source commit and image digest.
 4. For stable, run `node scripts/bump-version.mjs patch` and update the App changelog. Check the edited files with `node scripts/check-version-sync.mjs`. Merge through the normal review process, then push the exact matching version tag after the reviewed commit reaches `main`.
-5. For canary, run the image workflow from `main` after the reviewed commit reaches it. Qualify those exact images before staging App Store discovery. The source canary manifest stays unchanged.
+5. For canary, use the hosted smoke workflow to check native builds from `main`. Build and retain the candidate images on the release host. Qualify those exact images before publication.
 
 ## Pull-request image checks
 
 The [App container smoke workflow](../../.github/workflows/container-smoke.yml) lists its covered paths: the Dockerfile, both channel build manifests, the lockfile, root/web/domain package manifests, workspace configuration, root/web TypeScript configuration, Astro configuration, and image smoke helpers. Changes to these files run native amd64 and ARM64 builds against both channel bases. The checks detect absolute font paths in packaged CSS, including quoted and spaced URLs, and run the existing migration, startup, health and task-creation smoke test against the Home Assistant base runtime. Run the workflow manually from `main` to verify the combined result after several merges. The jobs do not publish images or update App Store discovery. This catches builder-version changes that the host Node checks cannot cover; it does not replace Supervisor or physical-device qualification.
 
-## How CI publishes
+## Hosted builds and stable publication
 
-The [Stable](../../.github/workflows/publish-addon-images.yml) and [Canary](../../.github/workflows/publish-canary-images.yml) workflows use the same [publication process](../../.github/workflows/publish-app.yml). Native amd64 and ARM64 jobs build and test the images with disposable SQLite data before pushing. Each job checks migrations, starts the packaged server, opens the Today page and creates a task. An existing version tag is accepted only when its image has the expected source revision and App metadata and passes the same smoke test.
+The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds and tests images on native amd64 and ARM64 runners before pushing to GHCR. The smoke test checks migrations, starts the packaged server with disposable SQLite data, opens Today and creates a task. An existing version tag is accepted only when its image has the expected source revision and App metadata and passes the same smoke test.
 
 For stable, a fresh runner with an empty Docker configuration pulls both versioned images from GHCR and compares their digests with the build job outputs. It uses the App repository credential to commit the manifest, docs and assets with both digests in the commit message. Stable promotion rejects a version lower than the advertised version.
 
-The canary workflow ends after image publication and has no App repository credential. Pull the exact hosted artifacts and record both digests and config IDs. Use the ARM64 artifact for Green qualification, then follow the staging and review steps below.
+The [Canary workflow](../../.github/workflows/publish-canary-images.yml) runs the same build and smoke test on both native architectures. It uses local image tags and has no package permissions or App repository credential. Build results are recorded in Actions. Use the release-host procedure below for retained images, hardware qualification and publication.
 
-The publication jobs use standard GitHub-hosted Linux runners on both architectures. GitHub makes these runners available without compute charges for public repositories. Private use draws from the account’s included Actions minutes. [Runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) · [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+Before Green qualification, verify that both exact images have Alpine zlib version `1.4-r0` or later installed. The runtime Dockerfile enforces that minimum even when the Home Assistant base is cached. [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-4738)
+
+Both App directories receive the same profile from `meitheal-hub/apparmor.txt`. Supervisor loads it under each installed App ID. Check the effective profile on a host with AppArmor enforcement and keep Protection mode enabled during qualification. [AppArmor in Home Assistant](https://contributors.home-assistant.io/apps/guides/security/#apparmor).
+
+Distributed App images carry the OCI license label `LicenseRef-Proprietary`; this is separate from the source license files shipped for attribution. Both local and hosted build scripts preserve that label.
+
+Both workflows use standard GitHub-hosted Linux runners on both architectures. GitHub makes these runners available without compute charges for public repositories. Private use draws from the account’s included Actions minutes. [Runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) · [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 
 ## Qualify and promote a canary from a release host
 
-Confirm the installed Alpine `zlib` package is at least `1.4-r0` in both exact candidate images before Green qualification. [Alpine security advisory](https://security.alpinelinux.org/vuln/CVE-2026-4738)
+Run this from a clean source checkout on a trusted Linux host with Git, Node, Python 3.10 or later, jq, GitHub CLI and rootless Podman. Build ARM64 natively or with configured ARM64 emulation, then qualify it on the physical Green. Coordinate a single publisher before any registry writes and keep other publishers idle. The tag check and push are separate operations.
 
-Run this from a clean source checkout on a trusted Linux host with Git, Node, jq, GitHub CLI and rootless Podman. When using images already published by CI, skip the local build and registry write in steps 1 and 2. When hosted Actions cannot start, use native ARM64 or configured ARM64 emulation for the local build and smoke test. Coordinate a single publisher before any registry writes and keep other publishers idle. The tag check and push are separate operations.
+1. Run `bash scripts/publish-canary-local.sh build amd64` and `bash scripts/publish-canary-local.sh build aarch64`. Each build extracts committed source with readable container file modes inside a private build directory, then uses the same Home Assistant base and the same smoke test as CI. Retain both images and record their full `sha256:` config IDs. To transport the ARM64 image, use `podman save --format docker-archive IMAGE_ID` and `podman load`. Verify the ID after loading and save the raw fixed 2,000-task Green benchmark log as a regular file. Keep the log with the private release evidence.
+2. After qualification and review, check out current source `main`. If the reviewed commit has a different SHA, build and qualify that exact revision. Use a classic PAT with `write:packages` and access to both canonical per-architecture packages. Pipe it from an approved credential store for each command. Publish ARM64 first, then publish the AMD64 sibling from the same source revision. Supply the same Green receipt and ARM64 ID to both commands.
 
-1. Run `bash scripts/publish-canary-local.sh build amd64` and `bash scripts/publish-canary-local.sh build aarch64`. Each build uses committed source, the same Home Assistant base and the same smoke test as CI. Record both image IDs. Use the exact ARM64 image ID for Green qualification. To transport it, use `podman save --format docker-archive IMAGE_ID` and `podman load`. Verify the ID after loading.
-2. After qualification and review, check out current source `main`. If the reviewed commit has a different SHA, build and qualify that exact revision. Keep the two existing package names and verify package access separately from source visibility. A classic PAT with `write:packages` and write access to both packages is required. Pipe it from an approved credential store to `bash scripts/publish-canary-local.sh publish ARCH IMAGE_ID GHCR_USER`. The command rechecks the image ID and smoke test, refuses to replace an existing tag with a different image and prints the published digest. Run it for both architectures.
-3. Run `bash scripts/publish-canary-local.sh stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT` with a clean checkout of the current App repository `main`. It pulls both tags without credentials from an empty image store and verifies their digests, qualified image IDs and App metadata before writing the canary files. If either package denies anonymous access, leave the advertised version alone. Public visibility applies to the whole package, including previous versions. Review the existing images before changing that setting. [GitHub package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
-4. Review the resulting files. A discovery push can trigger an installation on a device with automatic App updates enabled. Finish Green qualification and capture the target device’s pre-upgrade backup and rollback evidence before pushing. Recheck the current source `main` SHA against the reported revision immediately before submitting the App repository change through its normal branch rules. Include the source revision and both digests in the commit message. Verify the offered and installed versions in Supervisor.
+   ```sh
+   bash scripts/publish-canary-local.sh publish aarch64 ARM64_IMAGE_ID GHCR_USER ARM64_IMAGE_ID GREEN_RECEIPT
+   bash scripts/publish-canary-local.sh publish amd64 AMD64_IMAGE_ID GHCR_USER ARM64_IMAGE_ID GREEN_RECEIPT
+   ```
+
+   Before registry login, the command recomputes the Green gates from the raw log and checks the exact ARM64 config ID, running version and retained image metadata. The receipt must include the driver’s measured wall time, samples at the expected cadence and a final cleanup marker after the measurements and health checks. The command smoke-tests the image being published and refuses to replace an existing tag with a different image. After the push it verifies the digest and image metadata with a fresh anonymous pull before printing the digest. The receipt must come from the trusted release operator’s physical run. The verifier checks consistency and thresholds, and the raw log carries no signature attesting to its origin.
+
+   The publisher can create a tag when the authenticated registry lookup reports that the tag or package does not exist. Authentication, permission and service errors stop publication. GitHub initially creates personal Container Registry packages as private. On the first publication, an image push can succeed while the anonymous verification still fails. Review the package history and image identity in the canonical namespace before making each package public. GitHub applies public visibility permanently to the package and its entire version history. Retry the publish command with the identical image ID and Green receipt to verify the existing tag. [GitHub Container Registry publishing](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#pushing-container-images)
+
+3. Run `bash scripts/publish-canary-local.sh stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT GREEN_RECEIPT` with a clean checkout of the current App repository `main`. It rechecks the Green receipt and pulls both tags without credentials from an empty image store. It verifies their digests, qualified image IDs and App metadata before writing the canary files. If either package denies anonymous access, leave the advertised version alone. Public visibility applies to the whole package, including previous versions. Review the existing images before changing that setting. [GitHub package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
+4. Review the resulting files. A discovery push can trigger an installation on a device with automatic App updates enabled. Capture the target device’s pre-upgrade backup and rollback evidence before pushing. Recheck the current source `main` SHA against the reported revision immediately before submitting the App repository change through its normal branch rules. Include the source revision and both digests in the commit message. Verify the offered and installed versions in Supervisor.
+
+### Read the Green performance receipt
+
+Run `python3 scripts/verify-canary-green.py --report GREEN_RECEIPT ARM64_IMAGE_ID VERSION`, using the 12-character Canary version. The JSON reports individual gates even when a complete receipt fails. The command still exits nonzero on failure. Keep the raw receipt with the report. Use the versioned [Green benchmark contract](green-canary-benchmark.md), including the fixed helper, script hashes and final driver telemetry; historical receipts do not qualify under the new profile.
+
+The release minimum is 128 MiB idle and 160 MiB active within the unchanged 192 MiB hard cap. The 64/96 MiB figures remain optimization goals. App memory accounting, CPU and route latency definitions are unchanged.
+
+| Release gate | What the fixed workload measures |
+| --- | --- |
+| Idle memory below 128 MiB | The largest of 12 cgroup `memory.current` samples under the nearest-rank p95 calculation. |
+| Active memory below 160 MiB | Nearest-rank p95 of sampled `memory.current` during the 105-cycle workload. The report also includes the sampled maximum and the observed cgroup high-water mark when available. |
+| Mean active CPU at or below 15% of one core | Cgroup CPU time divided by the elapsed time between active samples. The window includes the fixed 2.5-second pause in each cycle. The report also includes interval CPU and throttling to show bursts the mean can hide. |
+| Every route p95 at or below 350 ms | The 100th value in ascending order for each set of 105 complete loopback HTTP responses. The report shows p50, maximum and the number above 350 ms, so up to five slow responses remain visible even when the gate passes. |
+
+Charged cgroup memory includes anonymous memory, file cache and kernel charges. Treat a single run as a repeatable release screen. Record repeated runs with the same image and workload when investigating variance. For installed acceptance, separately check browser interactions through Home Assistant ingress and observe the installed App with Home Assistant connected. Loopback curl records the full response, including transfer and writing the response to a file. Browser rendering, ingress and Home Assistant integrations have separate costs. [Linux cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files) · [curl timing fields](https://curl.se/docs/manpage.html#-w)
 
 ## Verify the contribution check
 
@@ -56,10 +101,10 @@ Rehearse from a fresh fork using standard hosted runners. Open a pull request wi
 
 ## Recover a failed run
 
-- If GHCR denies a build job access, verify that the package is linked to the source repository and grants its workflow permission to publish. The build aborts if it cannot distinguish an absent version tag from denied access.
-- If anonymous verification fails after a build, check the visibility of both per-architecture packages. Keep the App Store on its advertised version until the images can be pulled without credentials. [Container registry access](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+- If GHCR denies a stable publication job access, verify that the package is linked to the source repository and grants its workflow permission to publish. Publication aborts if it cannot distinguish an absent version tag from denied access. For canary, check the release-host credential and access to both packages.
+- If anonymous verification fails after publication, check the visibility of both per-architecture packages. A successful push may have already created the tag. Retry with the same image and receipt once access is fixed. Keep the App Store on its advertised version until the images can be pulled without credentials. [Container registry access](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
 - If the last step cannot write the App repository, verify `ADDON_REPO_TOKEN` has only the permissions required to update contents in that repository. This workflow uses normal Git pushes, which respect branch rules.
-- Retry a failed stable run on its matching tag, or a failed canary on current `main`. Keep the same version tag only when it still identifies the same image and source.
+- Retry a failed stable run on its matching tag, or a failed canary smoke run on current `main`. For a failed canary publication, retry with the same qualified image ID and source revision.
 - After promotion, reload the App Store in Home Assistant and check that the offered version and installed image match the release commit. If a canary cannot start after an update, follow the [rollback runbook](home-assistant-backup-and-restore.md).
 
 The image build passes the publication version to both Astro and the App runtime. The release smoke check requires the health endpoint to report that version. Local builds without a version override use the stable version in the App manifest.

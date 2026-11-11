@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,6 +17,62 @@ function release(...args: string[]) {
   })
 }
 
+function checkImageLicense(license: string | undefined, arch = "amd64") {
+  const imageId = `sha256:${"a".repeat(64)}`
+  return spawnSync("bash", ["scripts/check-app-release-image.sh", revision, arch,
+    arch === "aarch64" ? "linux/arm64" : "linux/amd64", revision.slice(0, 12), imageId], {
+    cwd: root,
+    encoding: "utf8",
+    input: JSON.stringify([{
+      Id: imageId,
+      Os: "linux",
+      Architecture: arch === "aarch64" ? "arm64" : arch,
+      Config: {
+        Labels: {
+          "org.opencontainers.image.revision": revision,
+          ...(license === undefined ? {} : { "org.opencontainers.image.licenses": license }),
+          "io.hass.version": revision.slice(0, 12),
+          "io.hass.arch": arch,
+          "io.hass.type": "addon",
+        },
+      },
+    }]),
+  })
+}
+
+test("image validation accepts Proprietary binary metadata on both architectures", () => {
+  for (const arch of ["amd64", "aarch64"]) {
+    const result = checkImageLicense("LicenseRef-Proprietary", arch)
+    expect(result.status, result.stderr).toBe(0)
+  }
+})
+
+test("image validation rejects a missing binary license label", () => {
+  expect(checkImageLicense(undefined).status).toBe(1)
+})
+
+test("image validation rejects source-license and other binary license labels", () => {
+  for (const license of ["LicenseRef-Meitheal-Source-Available-1.0", "AGPL-3.0"]) {
+    expect(checkImageLicense(license).status).toBe(1)
+  }
+})
+
+test("packaged builds inherit the binary license from the final Dockerfile stage", () => {
+  const dockerfile = readFileSync(join(root, "meitheal-hub/Dockerfile"), "utf8")
+  const finalStage = dockerfile.slice(dockerfile.lastIndexOf("\nFROM "))
+  const label = 'LABEL org.opencontainers.image.licenses="LicenseRef-Proprietary"'
+  expect(finalStage).toContain(label)
+  expect(dockerfile.match(/^LABEL org\.opencontainers\.image\.licenses=.+$/gm)).toEqual([label])
+  for (const path of ["scripts/build-app-release-image.sh", "scripts/publish-canary-local.sh", ".github/workflows/container-smoke.yml"]) {
+    const build = readFileSync(join(root, path), "utf8")
+    expect(build).toContain("meitheal-hub/Dockerfile")
+    expect(build).not.toContain("--label \"org.opencontainers.image.licenses=")
+  }
+  const smoke = readFileSync(join(root, ".github/workflows/container-smoke.yml"), "utf8")
+  expect(smoke).toContain('bash scripts/smoke-app-release-image.sh docker "$image"')
+  expect(readFileSync(join(root, "scripts/smoke-app-release-image.sh"), "utf8")).toContain("bash scripts/check-app-release-image.sh")
+})
+
 test("release preparation accepts only the expected event, version tag and branch", () => {
   expect(release("prepare", "stable", "push", `refs/tags/v${stableVersion}`, revision).stdout.trim()).toBe(`version=${stableVersion}`)
   expect(release("prepare", "stable", "workflow_dispatch", "refs/tags/vdifferent", revision).status).toBe(1)
@@ -27,14 +83,21 @@ test("release preparation accepts only the expected event, version tag and branc
   expect(release("prepare", "canary", "push", "refs/heads/main", "invalid").status).toBe(1)
 })
 
-test("canary image publication cannot advance App Store discovery", () => {
+test("hosted canary checks cannot publish packages or advance App Store discovery", () => {
   const workflows = join(root, ".github/workflows")
   const canary = readFileSync(join(workflows, "publish-canary-images.yml"), "utf8")
   const stable = readFileSync(join(workflows, "publish-addon-images.yml"), "utf8")
   const shared = readFileSync(join(workflows, "publish-app.yml"), "utf8")
+  const builder = readFileSync(join(workflows, "build-app-image.yml"), "utf8")
 
-  expect(canary).not.toContain("ADDON_REPO_TOKEN")
+  expect(canary).toMatch(/^permissions:\n  contents: read\n  packages: none$/m)
+  expect(canary).toContain("architecture: amd64\n            runner: ubuntu-24.04\n")
+  expect(canary).toContain("architecture: aarch64\n            runner: ubuntu-24.04-arm\n")
+  expect(canary).toContain("run: bash scripts/build-app-release-image.sh build-only")
+  expect(canary).not.toMatch(/packages: write|publish-app\.yml|build-app-image\.yml|secrets\.|GH_TOKEN/)
   expect(stable).toContain("ADDON_REPO_TOKEN")
+  expect(builder).toContain("run: bash scripts/build-app-release-image.sh publish")
+  expect(shared).toContain("&& inputs.channel == 'stable'")
   expect(shared).toMatch(/^  promote:\n    if: inputs\.channel == 'stable'$/m)
   expect(shared).toContain('node scripts/app-release.mjs stage stable "$VERSION" app-repository')
 })
@@ -94,6 +157,7 @@ test("staging one channel preserves the other channel and the source manifest", 
     expect(canary.stderr).toBe("")
     expect(canary.status).toBe(0)
     expect(readFileSync(join(fixture, "meitheal-hub-canary/config.yaml"), "utf8")).toContain('version: "abcdef123456"')
+    expect(readFileSync(join(fixture, "meitheal-hub-canary/config.yaml"), "utf8")).toContain('image: "ghcr.io/coolock-village/meitheal-canary-{arch}"')
     expect(readFileSync(stable, "utf8")).toBe('version: "999999.0.0"\n')
     expect(readFileSync(source, "utf8")).toBe(before)
     expect(existsSync(join(fixture, "repository.yaml"))).toBe(true)
@@ -103,6 +167,23 @@ test("staging one channel preserves the other channel and the source manifest", 
     expect(release("stage", "canary", "invalid", fixture).status).toBe(1)
   } finally {
     rmSync(fixture, { recursive: true })
+  }
+})
+
+test("staging both channels uses the reviewed AppArmor policy", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
+  const profile = readFileSync(join(root, "meitheal-hub/apparmor.txt"))
+  try {
+    mkdirSync(join(fixture, ".git"))
+    expect(release("stage", "stable", String(stableVersion), fixture).status).toBe(0)
+    expect(release("stage", "canary", "abcdef123456", fixture).status).toBe(0)
+
+    for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
+      expect(readFileSync(join(fixture, directory, "config.yaml"), "utf8")).toMatch(/^apparmor: true$/m)
+      expect(readFileSync(join(fixture, directory, "apparmor.txt"))).toEqual(profile)
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
   }
 })
 
@@ -116,5 +197,104 @@ test("staging rejects destination links outside the App repository", () => {
     expect(existsSync(join(fixture, "redirect/config.yaml"))).toBe(false)
   } finally {
     rmSync(fixture, { recursive: true })
+  }
+})
+
+test("all release entrypoints retain one canonical Canary and reject extra App manifests", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-policy-"))
+  const source = join(fixture, "source")
+  const destination = join(fixture, "destination")
+  try {
+    mkdirSync(join(source, "scripts"), { recursive: true })
+    cpSync(join(root, "scripts/app-release.mjs"), join(source, "scripts/app-release.mjs"))
+    cpSync(join(root, "repository.yaml"), join(source, "repository.yaml"))
+    for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
+      cpSync(join(root, directory), join(source, directory), { recursive: true })
+    }
+    mkdirSync(join(destination, ".git"), { recursive: true })
+    mkdirSync(join(source, "tooling"))
+    writeFileSync(join(source, "tooling/config.json"), '{"compilerOptions":{}}')
+    const run = (...args: string[]) => spawnSync(process.execPath, [join(source, "scripts/app-release.mjs"), ...args], {
+      cwd: source,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        GITHUB_REF: args[1] === "stable" ? `refs/tags/v${stableVersion}` : "refs/heads/main",
+      },
+    })
+    const commands = ["stable", "canary"].flatMap(channel => {
+      const version = channel === "stable" ? String(stableVersion) : revision.slice(0, 12)
+      const ref = channel === "stable" ? `refs/tags/v${version}` : "refs/heads/main"
+      return [
+        ["prepare", channel, "push", ref, revision],
+        ["image", channel, "amd64", version, revision],
+        ["image", channel, "aarch64", version, revision],
+        ["stage", channel, version, destination],
+      ]
+    })
+    for (const command of commands) {
+      const result = run(...command)
+      expect(result.stderr, command.join(" ")).toBe("")
+      expect(result.status, command.join(" ")).toBe(0)
+      if (command[0] === "image") {
+        const family = command[1] === "canary" ? "meitheal-canary" : "meitheal"
+        const owner = command[1] === "canary" ? "coolock-village" : "ryan-winkler"
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          image: `ghcr.io/${owner}/${family}-${command[2]}:${command[3]}`,
+          platform: command[2] === "amd64" ? "linux/amd64" : "linux/arm64",
+        })
+      }
+    }
+    const before = readFileSync(join(destination, "meitheal-hub-canary/config.yaml"), "utf8")
+    const extraManifests = [
+      ["meitheal-settings", "config.yaml", 'name: "Settings Canary"\nslug: "meitheal_settings"\n'],
+      ["meitheal-preview", "config.yml", "name: Preview\n'slug': meitheal_preview\n"],
+      ["experimental", "config.json", '{"name":"Extra Canary","slug":"meitheal_extra"}'],
+      ["meitheal-hub-canary", "config.json", '{"slug":"meitheal_canary"}'],
+    ]
+    for (const [directory, filename, manifest] of extraManifests) {
+      const extra = join(source, directory!, filename!)
+      mkdirSync(join(source, directory!), { recursive: true })
+      writeFileSync(extra, manifest!)
+      try {
+        for (const command of commands) {
+          const result = run(...command)
+          expect(result.status, command.join(" ")).toBe(1)
+          expect(result.stderr).toContain(`Unexpected App manifest ${directory}/${filename}`)
+        }
+      } finally {
+        rmSync(extra)
+      }
+    }
+    const extraDestination = join(destination, "meitheal-settings")
+    mkdirSync(extraDestination)
+    writeFileSync(join(extraDestination, "config.yaml"), 'slug: "meitheal_settings"\n')
+    for (const channel of ["stable", "canary"]) {
+      const version = channel === "stable" ? String(stableVersion) : revision.slice(0, 12)
+      expect(run("stage", channel, version, destination).stderr).toContain("Unexpected App manifest meitheal-settings/config.yaml")
+    }
+    expect(readFileSync(join(destination, "meitheal-hub-canary/config.yaml"), "utf8")).toBe(before)
+    rmSync(extraDestination, { recursive: true })
+
+    const canary = join(source, "meitheal-hub-canary/config.yaml")
+    const manifest = readFileSync(canary, "utf8")
+    writeFileSync(canary, manifest.replace(/^slug: .+$/m, 'slug: "meitheal_settings"'))
+    for (const command of commands) {
+      expect(run(...command).stderr).toContain("Unexpected App slug")
+    }
+    for (const image of [
+      "ghcr.io/ryan-winkler/meitheal-canary-{arch}",
+      "ghcr.io/coolock-village/meitheal-settings-{arch}",
+    ]) {
+      writeFileSync(canary, manifest.replace(/^image: .+$/m, `image: "${image}"`))
+      for (const command of commands) {
+        const result = run(...command)
+        expect(result.status, command.join(" ")).toBe(1)
+        expect(result.stderr).toContain("Unexpected App image template")
+      }
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
   }
 })

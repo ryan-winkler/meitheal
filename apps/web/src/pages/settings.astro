@@ -11,11 +11,15 @@ import SettingsDangerZone from "../components/settings/SettingsDangerZone.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import Layout from "../layouts/Layout.astro"
-import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
+import { issueDatabaseDownloadToken } from "../lib/database-download-token"
 import { SETTINGS_SECTIONS } from "../lib/settings-registry"
+import { verifiedIngressUser } from "../lib/verified-ingress-user"
 
+const user = verifiedIngressUser(Astro.locals)
+const databaseDownloadToken = user?.isAdmin ? issueDatabaseDownloadToken(user.id) : undefined
+if (databaseDownloadToken) Astro.response.headers.set("Cache-Control", "private, no-store")
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 const workflowSection = SETTINGS_SECTIONS.find((section) => section.id === "workflow-settings")!
@@ -25,21 +29,33 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
 ---
 
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
-  <UnifiedBar
-    title={t("settings.title", locale)}
-    titleIcon="gear"
-    tabs={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
-    searchPlaceholder="Search settings…"
-    searchScope="settings"
-    slot="custom-header"
-  />
+  <header id="settings-bar" class="settings-bar" data-search-scope="settings" slot="custom-header">
+    <h1 tabindex="-1">{t("settings.title", locale)}</h1>
+    <div class="settings-bar__actions">
+      <button type="button" id="settings-sections-toggle" aria-expanded="true" aria-controls="settings-directory">
+        {t("settings.sections", locale)} <span aria-hidden="true">▾</span>
+      </button>
+      <button type="button" id="settings-bar-search-launcher" aria-keyshortcuts="/" data-search-scope="settings">
+        <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" />
+        </svg>
+        {t("settings.search", locale)} <kbd aria-hidden="true">/</kbd>
+      </button>
+    </div>
+  </header>
 
   <div id="settings-shell" class="settings-shell">
-    <div class="settings-shell__mobile-nav">
-      <SettingsShellNav sections={SETTINGS_SECTIONS} variant="mobile" />
-    </div>
+    <span id="settings-scroll-marker" aria-hidden="true"></span>
+    <SettingsShellNav sections={SETTINGS_SECTIONS} locale={locale} />
 
     <div class="settings-shell__content">
+      <div id="settings-load-status" class="settings-load-status">
+        <p id="settings-loading" role="status">{t("settings.loading", locale)}</p>
+        <p id="settings-load-error" role="alert" hidden>{t("settings.load_error", locale)}</p>
+        <button id="settings-load-retry" type="button" class="btn btn-secondary" hidden>{t("settings.retry", locale)}</button>
+      </div>
+      <div id="settings-panels" inert>
+
 
       <!-- 1. Personal -->
       <SettingsPersonal locale={locale} />
@@ -49,6 +65,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
         id="workflow-settings"
         class="settings-shell__section"
         data-settings-shell-section
+        hidden
       >
         <SettingsSectionIntro section={workflowSection} />
         <SettingsGeneral locale={locale} />
@@ -60,6 +77,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
         id="rules-lenses-settings"
         class="settings-shell__section"
         data-settings-shell-section
+        hidden
       >
         <SettingsSectionIntro section={rulesSection} />
         <SettingsRules locale={locale} />
@@ -70,6 +88,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
         id="automation-ai-settings"
         class="settings-shell__section"
         data-settings-shell-section
+        hidden
       >
         <SettingsSectionIntro section={automationAiSection} />
         <SettingsAgents locale={locale} />
@@ -81,30 +100,23 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
         id="integrations-settings"
         class="settings-shell__section"
         data-settings-shell-section
+        hidden
       >
         <SettingsSectionIntro section={integrationsSection} />
         <SettingsIntegrations locale={locale} />
       </section>
 
       <!-- 6. App & PWA -->
-      <SettingsAppPwa locale={locale} />
+      <SettingsAppPwa locale={locale} databaseDownloadToken={databaseDownloadToken} />
 
       <!-- 7. Danger Zone -->
       <SettingsDangerZone locale={locale} />
-
+      </div>
     </div>
   </div>
 
-  <button
-    id="settings-go-top"
-    class="settings-go-top"
-    type="button"
-    aria-label="Scroll to top"
-    title="Back to top (Home key)"
-    aria-keyshortcuts="Home"
-    hidden
-  >
-    ↑
+  <button id="settings-go-top" type="button" aria-label={t("settings.scroll_to_top", locale)} hidden>
+    <span aria-hidden="true">↑</span>
   </button>
 
   <div
@@ -121,474 +133,276 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
   </script>
 </Layout>
 
-  <style>
-  .settings-shell {
+<style>
+  :global(body:has(#settings-bar)) {
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  :global(.main-content:has(> #settings-bar)) {
+    animation: none;
+  }
+
+  :global(#main-content:has(> #settings-shell)) {
+    overflow: clip;
+  }
+
+  .settings-bar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 30;
     display: flex;
-    flex-direction: column;
-    gap: 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 60px;
+    padding: 8px clamp(12px, 3vw, 28px);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
   }
-  .settings-shell:not(.is-detail-view) .settings-shell__layout {
-    display: none; /* Bar-specific overrides handled by UnifiedBar.astro component */
+
+  .settings-bar h1 {
+    margin: 0;
+    font-size: clamp(1.125rem, 2vw, 1.375rem);
+    font-weight: 650;
   }
-  .settings-shell__mobile-nav {
-    display: none;
-  }
-  /* — Search results dropdown — */
-  .settings-search-results {
-    display: none;
-    flex-direction: column;
-    gap: 4px;
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 320px;
-    max-width: calc(100vw - 32px);
-    max-height: 340px;
-    overflow-y: auto;
-    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    padding: 4px;
-    z-index: 50;
-    animation: settings-dropdown-in 120ms ease-out;
-  }
-  .settings-search-results:not([hidden]) {
+
+  .settings-bar__actions {
     display: flex;
+    gap: 6px;
   }
-  @keyframes settings-dropdown-in {
-    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-  .settings-search-results__item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-    padding: 10px 12px;
-    text-align: left;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  .settings-search-results__item:hover,
-  .settings-search-results__item.is-active {
-    background: var(--accent-6-bg);
-    color: var(--text-primary);
-  }
-  .settings-search-results__item.is-active {
-    background: var(--accent-12-bg);
-  }
-  .settings-search-results__meta {
-    display: flex;
-    flex-wrap: wrap;
+
+  .settings-bar button {
+    display: inline-flex;
     gap: 6px;
     align-items: center;
-  }
-  .settings-search-results__type,
-  .settings-search-results__section {
-    display: inline-flex;
-    align-items: center;
-    min-height: 20px;
-    padding: 0 6px;
-    border-radius: 999px;
-    font-size: 10px;
-    line-height: 1;
-  }
-  .settings-search-results__type {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
-  }
-  .settings-search-results__section {
-    background: var(--bg-secondary);
-    color: var(--text-muted);
-  }
-  .settings-search-results__description,
-  .settings-search-results__empty {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.55;
-  }
-  .settings-search-results__empty {
-    padding: 12px;
-    text-align: center;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .settings-search-results {
-      animation: none;
-      transition: none;
-    }
-  }
-  /* — Color-mix CSS custom properties (pre-computed for paint perf) — */
-  :root {
-    --accent-6-bg: color-mix(in srgb, var(--bg-card) 80%, var(--accent) 6%);
-    --accent-10: color-mix(in srgb, var(--accent) 10%, transparent);
-    --accent-12-bg: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
-    --accent-20: color-mix(in srgb, var(--accent) 20%, transparent);
-    --accent-50-border: color-mix(in srgb, var(--accent) 50%, var(--border));
-    --accent-78-white: color-mix(in srgb, var(--accent) 78%, white);
-  }
-  /* — Tab items —
-   * Uses :global() because tabs live in SettingsSummaryCard.astro
-   * (child component), but styles need to be owned by the parent
-   * settings.astro to maintain the unified tab bar layout. #33 */
-  :global(.settings-tab) {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 10px 16px;
     min-height: 44px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--text-secondary);
-    text-decoration: none;
-    white-space: nowrap;
-    font-size: 13px;
+    padding: 4px 10px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    flex-shrink: 0;
-    transition:
-      background 160ms ease,
-      border-color 160ms ease,
-      color 160ms ease,
-      box-shadow 160ms ease,
-      transform 160ms ease;
   }
-  :global(.settings-tab:hover) {
-    background: var(--accent-6-bg);
-    border-color: var(--border);
-    color: var(--text-primary);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  .settings-bar button:hover,
+  .settings-bar button[aria-expanded="true"] {
+    background: var(--bg-hover);
   }
-  :global(.settings-tab.is-active) {
-    background: var(--accent-12-bg);
-    border-color: var(--accent-50-border);
-    color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-10);
-  }
-  :global(.settings-tab:focus-visible) {
-    outline: 2px solid var(--accent-78-white);
+
+  .settings-bar button:focus-visible,
+  .settings-shell :global(:focus-visible) {
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
-  :global(.settings-tab__icon) {
-    font-size: 15px;
-    line-height: 1;
-    flex-shrink: 0;
+
+  .settings-bar kbd {
+    margin-inline-start: 6px;
+    padding-inline: 5px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
   }
-  :global(.settings-tab__label) {
-    font-size: 13px;
-    font-weight: 600;
-  }
-  :global(.settings-tab__status) {
-    display: inline-flex;
-    align-items: center;
-    min-height: 18px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 18%, transparent); /* #23: bump from 10% for contrast */
-    color: var(--accent);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    text-align: center;
-    justify-content: center;
-  }
-  :global(.settings-tab.is-active .settings-tab__status) {
-    background: var(--accent-20);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.settings-tab) {
-      transition: none;
-    }
-    :global(.settings-tab:hover) {
-      transform: none;
-    }
-  }
-  /* — Icon-only tabs on narrow viewports (HA Companion phone) — */
-  @media (max-width: 480px) {
-    :global(.settings-tab__label) {
-      display: none;
-    }
-    :global(.settings-tab) {
-      padding: 10px 12px;
-    }
-    :global(.settings-tab__icon) {
-      font-size: 18px;
-    }
-  }
-  /* — Deep-link landing flash — */
-  @keyframes settings-landing-pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
-    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
-    100% { box-shadow: 0 0 0 0 transparent; }
-  }
-  :global(.settings-landing-flash) {
-    animation: settings-landing-pulse 1.2s ease-out;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.settings-landing-flash) {
-      animation: none;
-    }
-  }
-  .settings-shell__content {
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-    max-width: 1200px;
+
+  .settings-shell {
+    position: relative;
+    display: grid;
+    grid-template-columns: clamp(180px, 20vw, 232px) minmax(0, 1fr);
+    align-items: start;
+    gap: clamp(16px, 2.5vw, 36px);
+    max-width: 1280px;
     margin: 0 auto;
-    width: 100%;
+    padding: clamp(16px, 3vw, 32px) 0;
   }
-  .settings-shell__section {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    scroll-margin-top: calc(var(--settings-tab-bar-h, 56px) + 16px); /* #9: dynamic, matches UnifiedBar min-height */
-    padding-bottom: 32px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+
+  .settings-shell[data-directory-collapsed] {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 1040px;
   }
-  .settings-shell__section:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+
+  .settings-shell {
+    --accent-text: color-mix(in srgb, var(--accent) 40%, var(--text-primary));
+    --text-muted: var(--text-secondary);
+    --text-muted-rgb: var(--text-secondary-rgb);
   }
-  :global(.settings-shell__section--nested) {
-    border-bottom: none;
-    padding-bottom: 0;
+
+  #settings-scroll-marker {
+    position: absolute;
+    inset-block-start: 0;
+    width: 1px;
+    height: 400px;
+    pointer-events: none;
   }
-  .settings-shell__section--muted {
-    opacity: 0.42;
-    filter: saturate(0.8);
-  }
-  /* — Go to top FAB — */
-  .settings-go-top {
+
+  #settings-go-top:not([hidden]) {
     position: fixed;
-    bottom: var(--floating-action-bottom, calc(28px + env(safe-area-inset-bottom, 0px)));
-    right: 28px;
+    inset-block-end: var(--floating-action-bottom, calc(28px + env(safe-area-inset-bottom, 0px)));
+    inset-inline-end: 16px;
     z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     width: 44px;
     height: 44px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--bg-card);
-    color: var(--text-secondary);
+    color: var(--text-primary);
     font-size: 18px;
     cursor: pointer;
-    box-shadow:
-      0 4px 16px rgba(0, 0, 0, 0.3),
-      0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
-    opacity: 0;
-    transform: translateY(8px);
-    will-change: transform, opacity;
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease,
-      background 160ms ease,
-      border-color 160ms ease;
-    pointer-events: none;
   }
-  .settings-go-top.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-  .settings-go-top:hover {
-    background: var(--accent-12-bg);
-    border-color: var(--accent-50-border);
-    color: var(--accent);
-  }
-  .settings-go-top:focus-visible {
-    outline: 2px solid var(--accent-78-white);
+
+  #settings-go-top:focus-visible {
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .settings-go-top {
-      transition: none;
-      will-change: auto;
-    }
+
+  .settings-shell__content {
+    min-width: 0;
   }
-  .settings-grid {
+
+  .settings-shell :global([data-settings-shell-section]:not([hidden])) {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
     gap: 16px;
+    min-width: 0;
   }
-  .custom-field-row {
+
+  .settings-shell :global(.settings-grid) {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+    align-items: start;
+  }
+
+  .settings-shell :global(.custom-field-row) {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
+    padding-block: 8px;
   }
-  .custom-field-row .form-input,
-  .custom-field-row .form-select {
-    padding: 6px 10px;
-    font-size: 13px;
+
+  .settings-shell :global(.custom-field-row :is(input, select)) {
+    flex: 1 1 110px;
+    min-width: 0;
   }
-  .custom-field-row:last-child {
-    border-bottom: none;
-  }
-  .integration-section {
-    border-bottom: 1px solid var(--border);
-    padding: 16px 0;
-  }
-  .integration-section:last-child {
-    border-bottom: none;
-  }
-  .integration-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-  .integration-desc {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 4px;
-    line-height: 1.4;
-  }
-  .integration-config {
-    padding-left: 8px;
-    border-left: 2px solid var(--border);
-    margin-left: 4px;
-  }
-  .shortcut-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .shortcut-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    font-size: 13px;
-  }
-  kbd {
-    background: var(--bg-hover);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
-    color: var(--text-primary);
-  }
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-  }
-  .badge-active {
-    background: rgba(99, 102, 241, 0.15);
-    color: var(--accent);
-  }
-  .badge-pending {
-    background: rgba(107, 114, 128, 0.15);
-    color: var(--text-muted);
-  }
-  .framework-row {
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .framework-row:last-child {
-    border-bottom: none;
-  }
-  .framework-info {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-  .framework-desc {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-  .toggle-label {
+
+  .settings-shell :global(:is(.toggle-label, .toggle-switch)) {
     position: relative;
-    display: inline-block;
-    width: 40px;
-    height: 22px;
-    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
     cursor: pointer;
   }
-  .toggle-label input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .toggle-slider {
+
+  .settings-shell :global(:is(.toggle-label, .toggle-switch) input) {
     position: absolute;
     inset: 0;
-    background: var(--bg-hover);
-    border: 1px solid var(--border);
-    border-radius: 11px;
-    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: inherit;
   }
-  .toggle-slider::before {
+
+  .settings-shell :global(.toggle-slider) {
+    width: 40px;
+    height: 24px;
+    position: relative;
+    border: 1px solid var(--text-secondary);
+    border-radius: 12px;
+    background: var(--bg-hover);
+    pointer-events: none;
+  }
+
+  .settings-shell :global(.toggle-slider::before) {
     content: "";
     position: absolute;
+    inset-block-start: 3px;
+    inset-inline-start: 3px;
     width: 16px;
     height: 16px;
-    left: 2px;
-    bottom: 2px;
-    background: var(--text-muted);
     border-radius: 50%;
-    transition: background 200ms, color 200ms, border-color 200ms, opacity 200ms, transform 200ms;
+    background: var(--text-secondary);
   }
-  .toggle-label input:checked + .toggle-slider {
-    background: var(--accent);
-    border-color: var(--accent);
+
+  .settings-shell :global(input:checked + .toggle-slider) {
+    background: var(--accent-text);
+    border-color: var(--accent-text);
   }
-  .toggle-label input:checked + .toggle-slider::before {
-    transform: translateX(18px);
-    background: white;
+
+  .settings-shell :global(input:checked + .toggle-slider::before) {
+    inset-inline-start: 19px;
+    background: var(--bg-primary);
   }
-  @media (max-width: 768px) {
-    .settings-shell__mobile-nav {
+
+  .settings-shell :global(input:focus-visible + .toggle-slider) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 3px;
+  }
+
+  .settings-shell :global(.settings-file-picker) {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .settings-shell :global(.settings-file-picker:focus-within) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+  }
+
+  .settings-shell :global(.settings-file-picker input) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .settings-shell :global([id]),
+  .settings-shell :global([data-settings-destination]) {
+    scroll-margin-block-start: 80px;
+    scroll-margin-block-end: 80px;
+  }
+
+  .settings-shell :global([data-settings-destination]:focus) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 3px;
+  }
+
+  .settings-load-status:not([hidden]) {
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .settings-load-status p {
+    margin: 0;
+  }
+
+  .settings-load-status button {
+    margin-top: 8px;
+  }
+
+  @media (max-width: 860px) {
+    .settings-shell {
       display: block;
-      position: sticky;
-      top: var(--settings-tab-bar-h, 56px);
-      z-index: 28;
-      margin: -4px -16px 8px;
-      padding: 10px 16px 2px;
-      background: color-mix(in srgb, var(--bg-primary) 96%, transparent);
-      border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
     }
-    .settings-shell__hero {
-      grid-template-columns: 1fr;
-      padding: 18px;
-    }
-    .settings-shell__surface-header {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .settings-grid {
-      grid-template-columns: 1fr;
-    }
-    .shortcut-grid {
-      grid-template-columns: 1fr;
-    }
-    .settings-go-top {
-      right: 16px;
-      font-size: 16px;
+
+    .settings-bar kbd {
+      display: none;
     }
   }
-  @media (max-width: 560px) {
-    .settings-shell__search-input-row {
-      grid-template-columns: 1fr;
+
+  @media (max-width: 360px) {
+    .settings-bar button {
+      padding-inline: 7px;
+    }
+
+    .settings-bar button svg {
+      display: none;
     }
   }
 </style>

@@ -19,6 +19,10 @@ const { locale, hideGlobalSearch = false } = Astro.props;
     <button
       class="menu-toggle flex md:hidden p-2 rounded-md hover:bg-bg-hover text-text-secondary transition-colors"
       id="menu-toggle"
+      type="button"
+      aria-controls="sidebar"
+      aria-expanded="false"
+      disabled
       aria-label={t("topbar.toggle_menu", locale)}
     >
       <Icon name="menu" size={20} />
@@ -77,67 +81,3 @@ const { locale, hideGlobalSearch = false } = Astro.props;
     <slot name="actions" />
   </div>
 </header>
-
-<script>
-  // Mobile menu toggle
-  const menuBtn = document.getElementById("menu-toggle");
-  const sidebar = document.getElementById("sidebar");
-  let savedScrollY = 0;
-
-  function toggleSidebar() {
-    const isOpening = !sidebar?.classList.contains("open");
-    sidebar?.classList.toggle("open");
-    document.body.classList.toggle("sidebar-open");
-
-    // Lock/unlock body scroll on mobile
-    if (isOpening) {
-      savedScrollY = window.scrollY;
-    } else {
-      // Restore scroll position after body position:fixed is removed
-      requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
-    }
-  }
-
-  function closeSidebar() {
-    if (sidebar?.classList.contains("open")) {
-      toggleSidebar();
-    }
-  }
-
-  menuBtn?.addEventListener("click", toggleSidebar);
-
-  // Close sidebar when clicking the dark overlay area
-  document.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement;
-    if (
-      sidebar?.classList.contains("open") &&
-      !sidebar.contains(target) &&
-      target !== menuBtn &&
-      !menuBtn?.contains(target)
-    ) {
-      closeSidebar();
-    }
-  });
-
-  // Auto-close sidebar when a nav link is clicked on mobile
-  sidebar?.addEventListener("click", (e) => {
-    const link = (e.target as HTMLElement)?.closest("a.nav-link");
-    if (link && !link.classList.contains("nav-link--external") && window.innerWidth <= 768) {
-      closeSidebar();
-    }
-  });
-
-  // Global search and CMD+K/Escape handled by layout-controller.ts
-  // (with proper AbortSignal lifecycle management)
-
-  // Sidebar-specific Escape binding (close sidebar on Escape)
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (sidebar?.classList.contains("open")) {
-        sidebar.classList.remove("open");
-        document.body.classList.remove("sidebar-open");
-        requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
-      }
-    }
-  });
-</script>

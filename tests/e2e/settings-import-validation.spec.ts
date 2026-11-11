@@ -14,5 +14,5 @@ test("rejects unknown rule task types before importing settings or replacing rul
   const response = await POST({ request, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0])
 
   expect(response.status).toBe(400)
-  expect(await response.json()).toEqual({ error: "Invalid task types in imported rules" })
+  expect(await response.json()).toEqual({ error: "Invalid task type" })
 })

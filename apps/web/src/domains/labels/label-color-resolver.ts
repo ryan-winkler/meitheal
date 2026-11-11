@@ -10,6 +10,7 @@
  */
 
 import { getLabelColorMap } from "./label-store"
+import { labelNameKey } from "./label-name"
 
 /**
  * HSL-based palette for deterministic fallback colors.
@@ -85,9 +86,10 @@ export async function resolveLabelColor(
   labelName: string
 ): Promise<string> {
   const map = await getColorMap()
-  const stored = map.get(labelName.toLowerCase())
+  const key = labelNameKey(labelName)
+  const stored = map.get(key)
   if (stored) return stored
-  return PALETTE[hashToIndex(labelName.toLowerCase())] ?? "#6b7280"
+  return PALETTE[hashToIndex(key)] ?? "#6b7280"
 }
 
 /**
@@ -111,8 +113,9 @@ export async function resolveAllLabelColors(
 ): Promise<Array<{ name: string; color: string; variant: string }>> {
   const map = await getColorMap()
   return labelNames.map((name) => {
-    const stored = map.get(name.toLowerCase())
-    const color = stored ?? PALETTE[hashToIndex(name.toLowerCase())] ?? "#6b7280"
+    const key = labelNameKey(name)
+    const stored = map.get(key)
+    const color = stored ?? PALETTE[hashToIndex(key)] ?? "#6b7280"
     const variant = COLOR_TO_VARIANT[color] ?? "default"
     return { name, color, variant }
   })

@@ -6,7 +6,11 @@ description: Submit, review, and share feedback from a Meitheal installation.
 
 # Local feedback queue
 
-Open Meitheal from Home Assistant, then choose **Settings → App & PWA → Report a problem or share feedback**. Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
+Open Meitheal from Home Assistant and choose **Settings → Personal → Help & Support → Share local feedback**. Settings opens the feedback card in **App & PWA** and moves keyboard focus to it. **Guides** opens the public documentation in a new tab.
+
+Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
+
+Optional version context accepts the app's bounded stable or prerelease version, or its exact 12-character lowercase hexadecimal Canary version. Historical 9-character abbreviations and full 40-character source hashes are not the published Canary version format. Context is kept exactly as submitted; whitespace and oversized values are rejected.
 
 If a request fails, keep the form open and retry with the same category, text and context. If the first attempt was saved, the retry returns the original receipt. Changing the draft creates a new submission. The receipt remains valid while the report is in the queue.
 
@@ -27,10 +31,16 @@ If SQLite remains busy, retry shortly with the same submission. If the queue is 
 
 Feedback requires Supervisor 2026.10.4 or later and a verified Home Assistant ingress user. The queue and its review actions require a verified administrator. Feedback responses bypass the service worker cache and report contents stay out of search, MCP tools and automation exports. The API checks the same-origin request marker on writes and limits the JSON request to 8 KiB before decoding it.
 
-The raw SQLite download in **Settings → App & PWA** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
+The raw SQLite download in **Settings → App & PWA** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Reopen the download from Settings if an old or edited URL returns 404. The download stays outside offline caches, and activating an app update removes older cached export URLs. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
 
 ## Verification
 
 The app applies its migrations at startup. For a local checkout, run `pnpm --filter @meitheal/web db:migrate` against the configured SQLite database before using the queue.
 
 Run `pnpm --filter @meitheal/tests test e2e/feedback.spec.ts` for SQLite scope, retry, limits and review checks. To exercise the built routes and Settings controls, run the web build and then `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/feedback-ingress.spec.ts`. The browser fixture uses disposable SQLite and synthetic ingress identities. Check that the form guidance, queue controls, and security reporting link are legible for members and administrators in both themes. In a Home Assistant devcontainer, confirm member and administrator permissions through the actual Supervisor ingress, including retry after a restart.
+
+Include `feedback-version.spec.ts`, `feedback-body.spec.ts`, `feedback-authority.spec.ts` and `feedback-lifecycle.spec.ts` in local checks. Feedback ingress tests need the fixture's current Core roster, including active nonsystem member accounts; retained ingress role headers alone do not authorize a request. Run each built spec with a fresh production fixture, as `test:ci` does. The lifecycle reinitialization case requires the actual Astro dev module graph through `FEEDBACK_LIFECYCLE_DEV_URL`; it deliberately does not run against a production server's absent `/src` modules. A synthetic dev transport is frontend lifecycle evidence, separate from the built routes' current-role checks and installed Home Assistant acceptance.
+
+Feedback checks your current Home Assistant account before each operation. Inactive and system accounts cannot submit; only current administrators can read, review, export or delete reports. If Home Assistant cannot verify access, the request returns 503 without using the report queue. Reopen Settings after permissions change.
+
+Requests accept at most 8KiB of UTF-8 JSON and stop waiting after five seconds. A 408 response means the body did not arrive in time;499 records a cancelled request. Keep the form open and retry unchanged to recover the same receipt. Administrator disposition and reviewed-export drafts stay in this Settings session across refresh, filters and review updates; they are cleared on navigation or loss of access. Refreshing invalidates prepared export previews. Delete confirmations close when leaving the visible Feedback section; cancelling never deletes a report.

@@ -8,5 +8,5 @@
  * @domain navigation
  * @phase 15.1 — Planning-First Navigation Redesign
  */
-return Astro.redirect("/planning#spaces")
+return Astro.redirect(`${Astro.locals.ingressPath || ""}/planning#spaces`)
 ---

@@ -11,6 +11,8 @@
  *      without native browser dialogs.
  */
 
+import { mountDialogOverlay } from "./dialog-overlay"
+
 export interface PromptOptions {
   title?: string
   message?: string
@@ -22,9 +24,11 @@ export interface PromptOptions {
   validate?: (value: string) => string
   /** Set to true to require non-empty input */
   required?: boolean
+  signal?: AbortSignal
 }
 
 export function promptDialog(options: PromptOptions): Promise<string | null> {
+  if (options.signal?.aborted) return Promise.resolve(null)
   return new Promise((resolve) => {
     // Remove any existing prompt dialog
     document.getElementById("meitheal-prompt-overlay")?.remove()
@@ -49,27 +53,22 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
       animation: confirmSlideIn 0.15s ease-out;
     `
 
-    const titleText = options.title ?? "Input"
-    const messageHtml = options.message
-      ? `<p style="
-          margin: 0 0 16px; font-size: 14px; line-height: 1.5;
-          color: var(--text-secondary, #94a3b8); text-align: center;
-        ">${options.message}</p>`
-      : ""
-
     dialog.innerHTML = `
       <h3 id="prompt-title" style="
         margin: 0 0 12px; font-size: 16px; font-weight: 600;
         color: var(--text-primary, #f1f5f9); text-align: center;
-      ">${titleText}</h3>
-      ${messageHtml}
+      "></h3>
+      <p id="prompt-message" style="
+        margin: 0 0 16px; font-size: 14px; line-height: 1.5;
+        color: var(--text-secondary, #94a3b8); text-align: center;
+      "></p>
       <input
         type="text"
         id="prompt-input"
         autocomplete="off"
         maxlength="200"
-        placeholder="${options.placeholder ?? ""}"
-        value="${options.defaultValue ?? ""}"
+        placeholder=""
+        value=""
         style="
           width: 100%; box-sizing: border-box;
           padding: 10px 14px; font-size: 14px;
@@ -90,38 +89,59 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
           background: transparent; border: 1px solid var(--border, #334155);
           color: var(--text-secondary, #94a3b8);
           transition: background 0.15s, border-color 0.15s;
-        ">${options.cancelText ?? "Cancel"}</button>
+        "></button>
         <button type="button" id="prompt-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
           background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
           color: #fff; font-weight: 500;
           transition: opacity 0.15s;
-        ">${options.confirmText ?? "OK"}</button>
+        "></button>
       </div>
     `
 
-    overlay.appendChild(dialog)
-    document.body.appendChild(overlay)
+    // Assign text and input properties without parsing option values as HTML.
+    dialog.querySelector<HTMLElement>("#prompt-title")!.textContent = options.title ?? "Input"
+    const message = dialog.querySelector<HTMLElement>("#prompt-message")!
+    if (options.message) message.textContent = options.message
+    else message.remove()
+    const input = dialog.querySelector<HTMLInputElement>("#prompt-input")!
+    const errorDiv = dialog.querySelector<HTMLElement>("#prompt-error")!
+    const cancelBtn = dialog.querySelector<HTMLButtonElement>("#prompt-cancel")!
+    const okBtn = dialog.querySelector<HTMLButtonElement>("#prompt-ok")!
+    input.placeholder = options.placeholder ?? ""
+    input.value = options.defaultValue ?? ""
+    input.defaultValue = input.value
+    cancelBtn.textContent = options.cancelText ?? "Cancel"
+    okBtn.textContent = options.confirmText ?? "OK"
 
+    overlay.appendChild(dialog)
     const previouslyFocused = document.activeElement as HTMLElement | null
-    const input = dialog.querySelector("#prompt-input") as HTMLInputElement
-    const errorDiv = dialog.querySelector("#prompt-error") as HTMLElement
-    const cancelBtn = dialog.querySelector("#prompt-cancel") as HTMLButtonElement
-    const okBtn = dialog.querySelector("#prompt-ok") as HTMLButtonElement
+    mountDialogOverlay(overlay)
 
     // Focus and select input text
     requestAnimationFrame(() => {
+      if (!input.isConnected || options.signal?.aborted) return
       input.focus()
       input.select()
     })
 
-    function cleanup(result: string | null) {
-      overlay.style.opacity = "0"
-      document.removeEventListener("keydown", onKey, true)
-      setTimeout(() => {
+    let settled = false
+    const abort = () => cleanup(null, true)
+    function cleanup(result: string | null, immediate = false) {
+      function remove() {
+        document.removeEventListener("keydown", onKey, true)
+        options.signal?.removeEventListener("abort", abort)
         overlay.remove()
-        previouslyFocused?.focus()
-      }, 100)
+        if (!options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
+      }
+      if (settled) {
+        if (immediate) remove()
+        return
+      }
+      settled = true
+      overlay.style.opacity = "0"
+      if (immediate) remove()
+      else setTimeout(remove, 100)
       resolve(result)
     }
 
@@ -163,11 +183,18 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     })
 
     function onKey(e: KeyboardEvent) {
+      if (settled) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return
+      }
       if (e.key === "Escape") {
         e.preventDefault()
         e.stopPropagation()
         cleanup(null)
-      } else if (e.key === "Enter") {
+      } else if (e.key === "Enter" && (document.activeElement === input || document.activeElement === okBtn)) {
         e.preventDefault()
         trySubmit()
       } else if (e.key === "Tab") {
@@ -184,6 +211,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
       }
     }
     document.addEventListener("keydown", onKey, true)
+    options.signal?.addEventListener("abort", abort, { once: true })
   })
 }
 

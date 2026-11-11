@@ -1,7 +1,12 @@
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
-        import { buildTaskPermalink, getLegacyTaskId } from "@lib/task-detail-handoff"
+        import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+        import {
+          buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
+        } from "@lib/task-detail-handoff"
+        import { buildIngressPagePath } from "@lib/page-shell-links"
+        import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -12,11 +17,22 @@
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { renderTypeIconSvg } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
+        import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
         import { initLabelsAndSubtasks } from "@lib/controllers/modal-labels-subtasks";
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
+        import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+        import { isActiveParticipantProblem } from "@lib/task-participant-problem"
+        import { mountReactions } from "@lib/controllers/modal-reactions"
+        import { initModalDeferral } from "@lib/controllers/modal-deferral"
+        import { initModalTaskPin } from "@lib/controllers/modal-task-pin"
+        import { commentMentionWriteHeaders, readCommentMentionProblem } from "@lib/comment-mention-client"
+        import { commentAttemptHeader, commentMentionContextHeader } from "@lib/comment-mentions"
+        import { initModalTaskReferences } from "@lib/controllers/modal-task-references"
+        import { resolveDescriptionTaskReferences } from "@lib/task-references"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -28,6 +44,20 @@
           ) as HTMLDivElement;
         if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
+        let pinnedSession: {
+          reconcile: () => void; dirty: boolean; pending: number; queued?: () => void
+        } | undefined
+        let searchSession: {
+          handoff: SearchDetailHandoff
+          lifetime: AbortController
+          dirty: boolean
+          pending: number
+          queued?: () => void
+        } | undefined
+        let detailGeneration = 0
+        const deferral = initModalDeferral(tdOverlay, __signal)
+        const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
+        const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
@@ -38,9 +68,14 @@
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
+        let currentCommentTarget: string | null = null
+        let commentsReady: Promise<void> = Promise.resolve()
         let _modalAbortController: AbortController | null = null;
         __signal.addEventListener("abort", () => {
           _modalAbortController?.abort()
+          searchSession?.lifetime.abort()
+          searchSession?.handoff.onDismiss("history")
+          searchSession = undefined
           delete tdOverlay.dataset.detailController
         }, { once: true })
         let _isPopulating = false;
@@ -52,28 +87,91 @@
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
+        const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+          byte => byte.toString(16).padStart(2, "0")).join("")
+        tdOverlay.dataset.ticketHistorySession = drawerSession
 
-        function setTaskLocation(taskId: string | null, replace = false) {
-          const url = new URL(window.location.href)
-          if (taskId) url.searchParams.set("open", taskId)
-          else url.searchParams.delete("open")
-          if (getLegacyTaskId(url.hash) !== null) url.hash = ""
-          if (url.href === window.location.href) return
-          if (replace) history.replaceState(history.state, "", url)
-          else history.pushState(history.state, "", url)
+        function beginScopedWrite() {
+          const search = searchSession
+          const session = pinnedSession ?? search
+          if (!session) return undefined
+          session.pending++
+          session.dirty = true
+          return {
+            signal: AbortSignal.any([__signal, AbortSignal.timeout(7_000)]),
+            finish() {
+              if (--session.pending !== 0) return
+              const next = session.queued
+              delete session.queued
+              if (search && search !== searchSession && !__signal.aborted) {
+                deferral.reconcileSearch()
+                return
+              }
+              if (next && !__signal.aborted && session === (pinnedSession ?? searchSession)) queueMicrotask(next)
+            },
+          }
         }
 
-        function closeTD() {
-          if (!tdOverlay?.classList.contains("active") || tdOverlay.classList.contains("closing")) return
+        function waitForDetailWrites(next: () => void): boolean {
+          const generation = detailGeneration
+          const run = () => { if (generation === detailGeneration) next() }
+          const session = pinnedSession ?? searchSession
+          if (session?.pending) {
+            session.queued = run
+            return true
+          }
+          return deferral.waitForWrite(run) || pins.waitForWrite(run)
+        }
+
+        function setTaskLocation(taskId: string | null, replace = false, commentTarget: string | null = null) {
+          if (pinnedSession || searchSession) return
+          const url = new URL(window.location.href)
+          const ticket = ticketIdFromPath(url.pathname, window.__ingress_path)
+          if (taskId) {
+            const target = new URL(buildIngressPagePath(taskDetailPath(taskId)), url.origin)
+            if (commentTarget !== null) target.searchParams.set("comment", commentTarget)
+            if (target.href === url.href) return
+            if (ticket !== null) {
+              history.replaceState(history.state, "", target)
+              return
+            }
+            const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
+            url.searchParams.delete("open")
+            url.searchParams.delete("comment")
+            if (getLegacyTaskId(url.hash) !== null) url.hash = ""
+            const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
+            if (legacy || replace) history.replaceState(state, "", target)
+            else {
+              history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
+              history.pushState(state, "", target)
+            }
+          } else if (ticket !== null) {
+            if (history.state?.ticketDrawer?.pushed) history.back()
+            else history.replaceState(history.state, "", taskBackgroundUrl(url))
+          }
+        }
+
+        function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
+          const search = searchSession
+          const immediate = reason === "history" && Boolean(search)
+          if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
+          if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
+          const closing = ++detailGeneration
+          closeTaskReferences()
+          search?.lifetime.abort()
+          deferral.opening(false)
+          pins.opening()
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
-          setTaskLocation(null)
+          currentCommentTarget = null
+          delete tdOverlay.dataset.openTaskId
+          if (updateLocation) setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
           const finishClose = () => {
-            if (currentTaskId !== null || !tdOverlay.classList.contains("active")) return
+            if (closing !== detailGeneration || currentTaskId !== null || !tdOverlay.classList.contains("active")) return
             tdOverlay.classList.remove("active", "closing");
             document.body.style.overflow = "";
             // D1: Collapse sidebar on close (reset for next open)
@@ -81,16 +179,23 @@
             _sidebarToggle?.setAttribute("aria-expanded", "false");
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (_previouslyFocused instanceof HTMLElement &&
+            if (!search && _previouslyFocused instanceof HTMLElement &&
                 _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
               _previouslyFocused.focus()
-            } else {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"]')?.focus()
+            } else if (!search) {
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
             }
             _previouslyFocused = null
+            const closed = pinnedSession
+            pinnedSession = undefined
+            searchSession = undefined
+            const deferralChanged = deferral.closed(Boolean(closed), Boolean(search))
+            if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
+            if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
+            search?.handoff.onDismiss(reason)
           };
 
-          if (reducedMotion) {
+          if (reducedMotion || immediate) {
             finishClose();
             return;
           }
@@ -99,7 +204,7 @@
           const panel = document.getElementById("task-detail-panel");
           if (panel) {
             const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
-            panel.addEventListener("animationend", onEnd, { once: true });
+            panel.addEventListener("animationend", onEnd, { once: true, signal: __signal });
             // Safety fallback — never leave modal stuck
             setTimeout(() => { panel.removeEventListener("animationend", onEnd); finishClose(); }, 300);
           } else {
@@ -117,16 +222,29 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
-        async function openTaskDetail(taskId: string) {
-          if (!tdOverlay) return;
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+          if (!tdOverlay?.isConnected || __signal.aborted) return
+          const newSession = !tdOverlay.classList.contains("active")
+          if (search && !newSession) {
+            search.onDismiss("history")
+            return
+          }
+          if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
+          detailGeneration++
+          closeTaskReferences()
+          deferral.opening(newSession)
+          pins.opening()
           // P3-4: Store focus origin for restore on close
-          if (!tdOverlay.classList.contains("active")) _previouslyFocused = document.activeElement
+          if (newSession) _previouslyFocused = search ? null : document.activeElement
           currentTaskId = taskId;
-          const legacyLink = getLegacyTaskId(window.location.hash) === taskId
-          if (!legacyLink) setTaskLocation(taskId)
+          currentCommentTarget = commentTarget
+          tdOverlay.dataset.openTaskId = taskId
+          if (updateLocation) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
+          document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
@@ -171,20 +289,30 @@
               showTaskError(true)
               return
             }
-            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { signal: modalSignal })
+            const pendingChecklist = pendingChecklistSave(taskId)
+            if (pendingChecklist) {
+              await pendingChecklist
+              if (modalSignal.aborted) return
+            }
+            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+              signal: modalSignal,
+              ...(pendingChecklist ? { cache: "no-store" } : {}),
+            })
+            if (modalSignal.aborted) return
             if (!res.ok) {
               showTaskError([401, 403, 404].includes(res.status))
               return
             }
             const t = (await res.json()) as Record<string, unknown>
             if (modalSignal.aborted) return
-            if (!t.id) {
+            const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
+            if (!t.id || (requestedTicket && Number(requestedTicket[1]) !== Number(t.ticket_number))) {
               showTaskError(false)
               return
             }
             taskId = String(t.id)
             currentTaskId = taskId
-            if (!legacyLink || getLegacyTaskId(window.location.hash) === null) setTaskLocation(taskId, true)
+            setTaskLocation(taskId, true, commentTarget)
 
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
@@ -274,25 +402,17 @@
                 linkParentDisplay
                   .querySelector(".td-unlink-parent")
                   ?.addEventListener("click", async () => {
-                    if (
-                      await confirmDialog({
-                        message: t.title
-                          ? `Unlink parent from "${t.title}"?`
-                          : "Unlink parent?",
-                        title: "Unlink",
-                      })
-                    ) {
-                      await fetch(
-                        `${window.__ingress_path || ""}/api/tasks/${currentTaskId}`,
-                        {
-                          method: "PUT",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ parent_id: null }),
-                        },
-                      );
-                      openTaskDetail(String(currentTaskId));
+                    const unlinkTaskId = currentTaskId
+                    const confirmed = await confirmDialog({
+                      message: t.title ? `Unlink parent from "${t.title}"?` : "Unlink parent?",
+                      title: "Unlink",
+                      signal: modalSignal,
+                    })
+                    if (!confirmed || !unlinkTaskId || currentTaskId !== unlinkTaskId) return
+                    if (await saveTaskField("parent_id", null) && currentTaskId === unlinkTaskId) {
+                      openTaskDetail(unlinkTaskId)
                     }
-                  });
+                  }, { signal: modalSignal });
               } else {
                 linkParentDisplay.innerHTML =
                   '<span class="text-xs text-text-muted italic">None</span>';
@@ -371,10 +491,11 @@
               const loadActivity = async () => {
                 try {
                   const actRes = await fetch(
-                    `${window.__ingress_path || ""}/api/tasks/${taskId}/activity`,
-                    { signal: __signal },
+                    `/api/tasks/${encodeURIComponent(taskId)}/activity`,
+                    { signal: __signal, cache: "no-store" },
                   );
-                  if (!actRes.ok) return;
+                  const cacheDirectives = actRes.headers.get("cache-control")?.toLowerCase().split(",")
+                  if (!actRes.ok || !cacheDirectives?.some(value => value.trim() === "no-store")) return
                   const actData = await actRes.json();
                   const entries = Array.isArray(actData)
                     ? actData
@@ -499,8 +620,7 @@
             if (t.description) {
               // Render markdown preview (save=false prevents re-saving)
               try {
-                const dirtyHtml = String(marked.parse(String(t.description) || "*No description provided.*"));
-                if (descPreview) descPreview.innerHTML = sanitizeClient(dirtyHtml);
+                renderTaskDescription(String(t.description))
               } catch (e) { log.warn("markdown-preview error", e) }
               descEditContainer?.classList.add("hidden");
               descPreviewContainer?.classList.remove("hidden");
@@ -760,12 +880,10 @@
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
             try {
-              const settingsRes = await fetch(
-                (window.__ingress_path || "") + "/api/settings",
-                { signal: __signal },
-              );
+              const settingsRes = await fetch("/api/settings", { signal: modalSignal })
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
+                if (modalSignal.aborted || currentTaskId !== taskId) return
                 if (allSettings?.custom_fields) {
                   try {
                     const parsed = JSON.parse(
@@ -780,12 +898,19 @@
             } catch { /* non-fatal */ }
 
             // Attach Strategic Lens Evaluator Payload Hook
+            if (modalSignal.aborted || currentTaskId !== taskId) return
             if (window.attachStrategicLens) {
+              const lensGeneration = detailGeneration
               window.attachStrategicLens(
                 taskId,
                 String(t.task_type ?? "task"),
                 String(t.framework_payload ?? "{}"),
                 allSettings,
+                {
+                  signal: modalSignal,
+                  save: (payload, updatedAt) => lensGeneration === detailGeneration && currentTaskId === taskId
+                    ? saveTaskField("framework_payload", payload, updatedAt) : Promise.resolve(false),
+                },
               );
             }
 
@@ -859,101 +984,23 @@
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            const checklistsContainer = document.getElementById(
-              "td-checklists",
-            ) as HTMLElement;
-            const clDoneSpan = document.getElementById(
-              "td-checklist-done",
-            ) as HTMLElement;
-            const clTotalSpan = document.getElementById(
-              "td-checklist-total",
-            ) as HTMLElement;
-            const clProgressDiv = document.getElementById(
-              "td-checklist-progress",
-            ) as HTMLElement;
-
-            window.__currentChecklists = [];
-            try {
-              if (t.checklists) {
-                window.__currentChecklists =
-                  typeof t.checklists === "string"
-                    ? JSON.parse(String(t.checklists))
-                    : t.checklists;
-              }
-            } catch {
-              /* skip */
+            showTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
+            const taskReactions = document.getElementById("td-task-reactions")
+            if (taskReactions) {
+              taskReactions.replaceChildren()
+              mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
-
-            window.refreshChecklistsVisuals = () => {
-              type ChecklistItem = { id: string; text: string; done: boolean }
-              const list = (window.__currentChecklists || []) as ChecklistItem[];
-              if (checklistsContainer) {
-                checklistsContainer.replaceChildren();
-                let doneCount = 0;
-                list.forEach((item: ChecklistItem, index: number) => {
-                  if (item.done) doneCount++;
-                  const row = document.createElement("div");
-                  row.className = "flex items-center gap-2 group";
-                  row.innerHTML = `
-                    <input type="checkbox" class="form-checkbox h-4 w-4 bg-transparent border-border rounded" ${item.done ? "checked" : ""} />
-                    <input type="text" class="form-input flex-1 text-sm bg-transparent border-transparent px-1 py-0.5 focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)" value="${escapeHtml(item.text)}" placeholder="Checklist item..." />
-                    <button type="button" class="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-xs p-1" title="Delete item">×</button>
-                  `;
-                  // Toggle done
-                  const cb = row.querySelector(
-                    "input[type=checkbox]",
-                  ) as HTMLInputElement;
-                  cb.addEventListener("change", () => {
-                    if (list[index]) {
-                      list[index].done = cb.checked;
-                      saveTD("checklists", JSON.stringify(list));
-                      window.refreshChecklistsVisuals?.();
-                    }
-                  }, { signal: __signal });
-                  // Edit text
-                  const txt = row.querySelector(
-                    "input[type=text]",
-                  ) as HTMLInputElement;
-                  txt.addEventListener("blur", () => {
-                    if (list[index] && txt.value.trim() !== list[index].text) {
-                      list[index].text = txt.value.trim();
-                      saveTD("checklists", JSON.stringify(list));
-                    }
-                  }, { signal: __signal });
-                  txt.addEventListener("keydown", (e: KeyboardEvent) => {
-                    if (e.key === "Enter") txt.blur();
-                  }, { signal: __signal });
-                  // Delete
-                  const del = row.querySelector("button") as HTMLButtonElement;
-                  del.addEventListener("click", () => {
-                    list.splice(index, 1);
-                    saveTD("checklists", JSON.stringify(list));
-                    window.refreshChecklistsVisuals?.();
-                  }, { signal: __signal });
-                  checklistsContainer.appendChild(row);
-                });
-
-                if (clProgressDiv && clDoneSpan && clTotalSpan) {
-                  if (list.length > 0) {
-                    clProgressDiv.style.display = "block";
-                    clDoneSpan.textContent = String(doneCount);
-                    clTotalSpan.textContent = String(list.length);
-                  } else {
-                    clProgressDiv.style.display = "none";
-                  }
-                }
-              }
-            };
-            window.refreshChecklistsVisuals();
 
             // Load comments for the current task.
             document.getElementById("td-comments")?.replaceChildren()
+            document.getElementById("td-comment-link-status")?.replaceChildren()
             commentError?.setAttribute("hidden", "")
+            if (commentButton) commentButton.disabled = false
             if (commentInput && commentInput.dataset.taskId !== taskId) {
               commentInput.value = ""
               commentInput.dataset.taskId = taskId
             }
-            void loadComments(taskId, modalSignal)
+            commentsReady = loadComments(taskId, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
@@ -979,6 +1026,8 @@
               if (modalSignal.aborted) return
               _isPopulating = false
               if (projectField) projectField.disabled = !projectFieldReady
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
+              pins.loaded(taskId, modalSignal)
             }, 100)
           } catch (e) {
             if (modalSignal.aborted) return
@@ -989,21 +1038,39 @@
 
 
 
-        async function saveTaskField(field: string, value: unknown): Promise<boolean> {
+        async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
+          const generation = detailGeneration
+          const taskId = currentTaskId
+          const search = searchSession
+          const completeDeferralWrite = deferral.nativeWrite(field, value)
+          const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          let saved = false
           try {
-            const response = await fetch(`/api/tasks/${currentTaskId}`, {
+            const response = await fetch(`/api/tasks/${taskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ [field]: value }),
+              body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
+              ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
             })
-            if (response.ok) return true
+            saved = response.ok
+            if (saved) {
+              notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
+              if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
+                onTaskCompleted(await response.json())
+              }
+              return !search || generation === detailGeneration
+            }
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
+          } finally {
+            completeDeferralWrite(saved)
+            scopedWrite?.finish()
           }
+          if (search && generation !== detailGeneration) return false
           const { showToast } = await import("@lib/toast")
-          showToast("common.failed_update", "error")
+          if (!search || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
 
@@ -1024,6 +1091,12 @@
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
 
+        function renderTaskDescription(markdown: string) {
+          if (!descPreview) return
+          descPreview.innerHTML = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          resolveDescriptionTaskReferences(descPreview)
+        }
+
         function enterDescEdit() {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
@@ -1032,6 +1105,7 @@
         }
 
         function exitDescEdit(save: boolean) {
+          closeTaskReferences()
           descEditContainer?.classList.add("hidden");
           descPreviewContainer?.classList.remove("hidden");
           if (!save && tdDescription) {
@@ -1040,8 +1114,7 @@
           if (save && descPreview && tdDescription) {
             const rawMarkdown = tdDescription.value;
             try {
-              const dirtyHtml = marked.parse(rawMarkdown || "*No description provided.*") as string;
-              descPreview.innerHTML = sanitizeClient(dirtyHtml);
+              renderTaskDescription(rawMarkdown)
             } catch (e: any) {
               log.error("Markdown render error", e);
               descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${escapeHtml(e.message)}</div>`;
@@ -1129,43 +1202,11 @@
             input.value = "";
           }, { signal: __signal });
 
-        // Global Add Checklist Item handler
-        document
-          .getElementById("td-add-checklist-item")
-          ?.addEventListener("click", () => {
-            if (!currentTaskId) return;
-            const list = window.__currentChecklists || [];
-            list.push({
-              id: crypto.randomUUID(),
-              text: "New Item",
-              done: false,
-            });
-            window.__currentChecklists = list;
-            saveTD("checklists", JSON.stringify(list)).then(() => {
-              if (typeof window.refreshChecklistsVisuals === "function") {
-                window.refreshChecklistsVisuals();
-                // focus the newly added input
-                const container = document.getElementById("td-checklists");
-                if (container) {
-                  const inputs = container.querySelectorAll("input[type=text]");
-                  if (inputs.length > 0) {
-                    (inputs[inputs.length - 1] as HTMLElement).focus();
-                    (inputs[inputs.length - 1] as HTMLInputElement).select();
-                  }
-                }
-              }
-            });
-          }, { signal: __signal });
-
-          document.getElementById("td-status")
+        document.getElementById("td-status")
           ?.addEventListener("change", (e) => {
             const newVal = (e.target as HTMLSelectElement).value;
             saveTD("status", newVal);
             const isDone = newVal === "complete";
-            if (isDone) {
-              const pri = Number((document.getElementById("td-priority") as HTMLSelectElement)?.value ?? 3);
-              onTaskCompleted(pri);
-            }
             const doneBtn = document.getElementById("td-toggle-done");
             if (doneBtn)
               doneBtn.textContent = isDone
@@ -1262,7 +1303,7 @@
         document.addEventListener("keydown", (e) => {
           const panel = document.getElementById("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
-          if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
             if (
               active?.tagName === "INPUT" ||
@@ -1386,7 +1427,9 @@
                     el.addEventListener("click", async () => {
                       const newParentId = (el as HTMLElement).dataset.id;
                       if (newParentId) {
+                        const modalSignal = _modalAbortController?.signal
                         await saveTD("parent_id", newParentId);
+                        if (modalSignal?.aborted) return
                         parentSearchInput.value = "";
                         parentResultsDiv.style.display = "none";
                         // Refresh the panel to show the new parent
@@ -1435,11 +1478,6 @@
                 newStatus === "complete"
                   ? "↩ Mark as Undone"
                   : "✓ Mark as Done";
-            // Gamification + confetti on completion
-            if (newStatus === "complete") {
-              const priorityEl = document.getElementById("td-priority") as HTMLSelectElement | null;
-              onTaskCompleted(Number(priorityEl?.value ?? 3));
-            }
           }, { signal: __signal });
 
         // Toggle favorite
@@ -1447,11 +1485,14 @@
           .getElementById("td-toggle-favorite")
           ?.addEventListener("click", async () => {
             if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
             const btn = document.getElementById(
               "td-toggle-favorite",
             ) as HTMLElement;
             const isFav = btn.textContent?.startsWith("★");
             await saveTD("is_favorite", isFav ? 0 : 1);
+            if (search && generation !== detailGeneration) return
             btn.textContent = isFav ? "⭐ Add to Favorites" : "★ Favorited";
           }, { signal: __signal });
 
@@ -1460,6 +1501,10 @@
           .getElementById("td-duplicate")
           ?.addEventListener("click", async () => {
             if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
+            const write = search ? beginScopedWrite() : undefined
+            const stale = () => search && generation !== detailGeneration
             const toast = document.createElement("div");
             toast.className = "toast";
             try {
@@ -1467,8 +1512,10 @@
                 `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
                 {
                   method: "POST",
+                  ...(write ? { signal: write.signal } : {}),
                 },
               );
+              if (stale()) return
               if (!res.ok) {
                 toast.className = "toast error";
                 toast.textContent = "Failed to duplicate";
@@ -1477,68 +1524,60 @@
                 return;
               }
               const data = await res.json();
+              if (stale()) return
               toast.className = "toast success";
               toast.textContent = `Duplicated → ${data.title}`;
               document.querySelector(".toast-container")?.appendChild(toast);
               setTimeout(() => toast.remove(), 2500);
-              openTaskDetail(data.id);
+              if (!search?.queued) void openTaskDetail(data.id)
             } catch {
+              if (stale()) return
               toast.className = "toast error";
               toast.textContent = "Network error";
               document.querySelector(".toast-container")?.appendChild(toast);
               setTimeout(() => toast.remove(), 2500);
+            } finally {
+              write?.finish()
             }
           }, { signal: __signal });
 
-        // Ask AI — inline HA Assist response
-        document
-          .getElementById("td-ask-ai")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const btn = document.getElementById("td-ask-ai") as HTMLElement;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = "⚙️ Thinking…";
-            btn.classList.add("opacity-60", "pointer-events-none");
+        const askAi = document.querySelector<HTMLButtonElement>("#td-ask-ai")
+        askAi?.addEventListener("click", async () => {
+          const taskId = currentTaskId
+          const signal = _modalAbortController?.signal
+          if (!taskId || !signal || signal.aborted || askAi.getAttribute("aria-busy") === "true") return
+          askAi.setAttribute("aria-disabled", "true")
+          askAi.setAttribute("aria-busy", "true")
+          askAi.classList.add("opacity-60")
+          document.getElementById("td-ai-response")?.remove()
 
-            // Remove previous AI response
-            document.getElementById("td-ai-response")?.remove();
-
-            try {
-              const result = await askAIForTask(currentTaskId);
-
-              const responseEl = document.createElement("div");
-              responseEl.id = "td-ai-response";
-              responseEl.style.cssText = "margin-top:8px;";
-
-              if (result.source === "ha-assist" && result.response) {
-                responseEl.className =
-                  "p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed";
-                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">✨ AI Response</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`;
-                btn.innerHTML = "✨ AI Responded";
-              } else {
-                responseEl.className =
-                  "p-3 bg-warning/10 border border-warning/20 rounded-md text-xs text-text-secondary leading-relaxed";
-                responseEl.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-warning text-[11px]">📋 Prompt Copied</strong><button id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1">&times;</button></div><div>HA Assist unavailable. Prompt copied to clipboard — paste into your AI provider.</div>`;
-                btn.innerHTML = "📋 Copied!";
-              }
-
-              // Insert after the Ask AI button
-              btn.parentElement?.after(responseEl);
-              responseEl
-                .querySelector("#td-ai-dismiss")
-                ?.addEventListener("click", () => {
-                  responseEl.remove();
-                }, { signal: __signal });
-            } catch (err) {
-              log.error("AI context error", err);
-              const { showToast: toast } = await import("@lib/toast");
-              toast("Failed to generate AI context.", "error");
-              btn.innerHTML = "❌ Failed";
+          function resetButton() {
+            if (!askAi) return
+            askAi.removeAttribute("aria-disabled")
+            askAi.removeAttribute("aria-busy")
+            askAi.classList.remove("opacity-60")
+          }
+          signal.addEventListener("abort", resetButton, { once: true })
+          try {
+            const result = await askAIForTask(taskId, signal)
+            if (signal.aborted || currentTaskId !== taskId) return
+            if (result.source === "ha-assist") {
+              const response = document.createElement("div")
+              response.id = "td-ai-response"
+              response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
+              response.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">AI Response</strong><button type="button" id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1" aria-label="Dismiss AI response">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`
+              askAi.parentElement?.after(response)
+              response.querySelector("#td-ai-dismiss")?.addEventListener("click", () => response.remove(), { signal })
             }
-
-            btn.classList.remove("opacity-60", "pointer-events-none");
-            setTimeout(() => (btn.innerHTML = originalText), 4000);
-          }, { signal: __signal });
+          } catch (err) {
+            if (signal.aborted || currentTaskId !== taskId) return
+            log.error("AI context error", err)
+            showToast("settings.ai_handoff_context_failed", "error")
+          } finally {
+            signal.removeEventListener("abort", resetButton)
+            if (!signal.aborted && currentTaskId === taskId) resetButton()
+          }
+        }, { signal: __signal })
 
         // Attach Image
         document
@@ -1578,56 +1617,101 @@
         document
           .getElementById("td-delete")
           ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
+            const taskId = currentTaskId
+            if (!taskId) return
+            const search = searchSession
+            const generation = detailGeneration
+            const stale = () => search && generation !== detailGeneration
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
+              ...(search ? { signal: search.lifetime.signal } : {}),
             });
-            if (!ok) return;
+            if (!ok || stale() || taskId !== currentTaskId) return
+            const scopedWrite = beginScopedWrite()
             try {
               const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${currentTaskId}`,
+                `${window.__ingress_path || ""}/api/tasks/${taskId}`,
                 {
                   method: "DELETE",
+                  ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
                 },
               );
+              if (stale()) return
               // Treat 204 (deleted) and 404 (already gone) as success
               if (res.ok || res.status === 404) {
-                closeTD();
-                document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
+                const deferred = deferral.removing(taskId)
+                closeTD("discard")
+                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
+              } else if (search) {
+                const { showToast } = await import("@lib/toast")
+                if (!stale()) showToast("Couldn’t delete the task.", "error")
               }
             } catch {
+              if (stale()) return
               // Network error — still close and refresh to re-sync
-              closeTD();
-              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+              closeTD("discard")
+              if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+            } finally {
+              scopedWrite?.finish()
             }
           }, { signal: __signal });
 
+        let commentAttempt: { taskId: string, draft: string, key: string } | undefined
         commentButton?.addEventListener("click", async () => {
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
+          const initialComments = commentsReady
           const draft = commentInput?.value
           if (!taskId || !signal || !commentInput || !draft?.trim()) return
 
+          closeTaskReferences()
           commentButton.disabled = true
           commentError?.setAttribute("hidden", "")
+          let participantDenied = false
+          let mentionFailure: Awaited<ReturnType<typeof readCommentMentionProblem>>
+          const mentionHeaders = commentMentionWriteHeaders(draft)
+          const hasMentions = Boolean(mentionHeaders[commentMentionContextHeader])
+          if (hasMentions && (commentAttempt?.taskId !== taskId || commentAttempt.draft !== draft)) {
+            commentAttempt = { taskId, draft, key: `${Date.now()}.${crypto.randomUUID()}` }
+          }
           try {
             const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, {
               method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ content: draft.trim() }),
+              headers: { "content-type": "application/json", ...mentionHeaders,
+                ...(hasMentions && commentAttempt ? { [commentAttemptHeader]: commentAttempt.key } : {}) },
+              body: JSON.stringify({ content: draft }),
               signal,
             })
-            if (!response.ok) throw new Error("Comment request failed")
+            if (!response.ok) {
+              participantDenied = await isActiveParticipantProblem(response)
+              mentionFailure = await readCommentMentionProblem(response)
+              throw new Error("Comment request failed")
+            }
+            const receipt: unknown = await response.json()
+            if (!receipt || typeof receipt !== "object" || !("id" in receipt) ||
+              typeof receipt.id !== "number" || !Number.isSafeInteger(receipt.id) || receipt.id < 1) {
+              throw new Error("Comment response did not include a valid receipt")
+            }
+            notifyInactivityTaskChanged(taskId)
             if (signal.aborted) return
             if (commentInput.value === draft) commentInput.value = ""
-            await loadComments(taskId, signal)
+            commentAttempt = undefined
+            const { id } = receipt
+            await initialComments
+            if (!signal.aborted) await loadComments(taskId, signal, null, id)
           } catch {
-            if (!signal.aborted) commentError?.removeAttribute("hidden")
+            if (!signal.aborted && commentError) {
+              commentError.textContent = (participantDenied ? commentError.dataset.participantRequired
+                : mentionFailure === "context" ? commentError.dataset.mentionContextChanged
+                : mentionFailure ? commentError.dataset.mentionFailed : commentError.dataset.failed) ?? ""
+              commentError.removeAttribute("hidden")
+              if ((participantDenied || mentionFailure) && [document.body, commentButton].includes(document.activeElement as HTMLElement)) commentInput.focus()
+            }
           } finally {
-            commentButton.disabled = false
+            if (!signal.aborted) commentButton.disabled = false
           }
         }, { signal: __signal })
 
@@ -1650,43 +1734,79 @@
         }, { signal: __signal })
 
         // Close
-        tdClose?.addEventListener("click", closeTD, { signal: __signal })
+        tdClose?.addEventListener("click", () => closeTD(), { signal: __signal })
         tdOverlay?.addEventListener("click", (e) => {
-          if (e.target === tdOverlay) closeTD();
+          if (e.target === tdOverlay) closeTD("discard")
         }, { signal: __signal });
 
-        function checkTaskLocation() {
+        function checkTaskLocation(fromHistory = false) {
+          if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
           const url = new URL(window.location.href)
-          const taskId = getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
-          if (taskId === null) closeTD()
-          else if (taskId !== currentTaskId || !tdOverlay.classList.contains("active")) void openTaskDetail(taskId)
+          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const commentTarget = url.searchParams.get("comment")
+          if (taskId === null) closeTD("discard", false)
+          else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
+            (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
+            void openTaskDetail(taskId, commentTarget, undefined, false)
+            if (fromHistory) {
+              const generation = detailGeneration
+              // The browser can restore a Settings anchor after popstate finishes.
+              requestAnimationFrame(() => {
+                if (!__signal.aborted && generation === detailGeneration && tdOverlay.classList.contains("active") &&
+                    !tdOverlay.contains(document.activeElement)) tdClose?.focus({ preventScroll: true })
+              })
+            }
+          }
         }
-        window.addEventListener("popstate", checkTaskLocation, { signal: __signal })
-        window.addEventListener("hashchange", checkTaskLocation, { signal: __signal })
+        const discardSearchDetail = () => { if (searchSession) closeTD("history") }
+        window.addEventListener("popstate", discardSearchDetail, { capture: true, signal: __signal })
+        window.addEventListener("hashchange", discardSearchDetail, { capture: true, signal: __signal })
+        window.addEventListener("pagehide", discardSearchDetail, { signal: __signal })
+        window.addEventListener("popstate", () => checkTaskLocation(true), { signal: __signal })
+        window.addEventListener("meitheal:ticket-history", () => checkTaskLocation(true), { signal: __signal })
+        window.addEventListener("hashchange", () => checkTaskLocation(true), { signal: __signal })
         checkTaskLocation()
 
         // Expose openTaskDetail globally for cross-page use (table, index new-task flow)
         window.openTaskDetail = openTaskDetail;
+        const openPinnedTaskDetail = (taskId: string, reconcile: () => void) => {
+          if (!tdOverlay.isConnected || __signal.aborted || tdOverlay.classList.contains("active")) return
+          pinnedSession = { reconcile, dirty: false, pending: 0 }
+          void openTaskDetail(taskId)
+        }
+        window.openPinnedTaskDetail = openPinnedTaskDetail
+        __signal.addEventListener("abort", () => {
+          if (window.openTaskDetail === openTaskDetail) delete window.openTaskDetail
+          if (window.openPinnedTaskDetail === openPinnedTaskDetail) delete window.openPinnedTaskDetail
+        }, { once: true })
 
         // Delegated click → open task detail for any task element
         // P1-3: Also handles keyboard activation (Enter/Space) for a11y
-        function handleTaskActivation(e: Event) {
-          const target = (e as any).target as HTMLElement;
-          // P1-3: For keydown events, only activate on Enter/Space
-          if (e.type === "keydown") {
-            const ke = e as KeyboardEvent;
-            if (ke.key !== "Enter" && ke.key !== " ") return;
+        function handleTaskActivation(event: Event) {
+          const target = event.target
+          if (event.defaultPrevented || !(target instanceof Element)) return
+          const link = target.closest<HTMLAnchorElement>("a[data-task-detail-link]")
+          if (link) {
+            if (!(event instanceof MouseEvent) || event.type !== "click" || event.button !== 0 ||
+                event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
+                (link.target && link.target !== "_self") || link.hasAttribute("download")) return
+            const id = link.dataset.taskDetailLink
+            if (!id) return
+            event.preventDefault()
+            void openTaskDetail(id, new URL(link.href).searchParams.get("comment"))
+            return
           }
-          const taskEl = target.closest(
+          if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return
+          if (target.closest("button, a, input, select, textarea, .task-actions, .action-btn")) return
+          if (target instanceof HTMLElement && target.isContentEditable) return
+
+          const taskEl = target.closest<HTMLElement>(
             ".task-item, .kanban-card, .bento-card, tr[data-id], [data-task-id]",
-          ) as HTMLElement | null;
-          if (!taskEl) return;
-          // Don't intercept action buttons
-          if (target.closest("button, a, .task-actions, .action-btn")) return;
-          const taskId = taskEl.dataset.id || taskEl.dataset.taskId;
-          if (taskId) {
-            e.preventDefault();
-            (e as Event).stopPropagation?.();
+          )
+          const taskId = taskEl && (taskEl.dataset.id || taskEl.dataset.taskId)
+          if (taskEl && taskId) {
+            event.preventDefault()
+            event.stopPropagation()
             // Clean up search dropdown if opened from search results
             if (taskEl.closest("#search-results")) {
               const sr = document.getElementById("search-results");
@@ -1699,6 +1819,9 @@
             openTaskDetail(taskId);
           }
         }
+        document.body.addEventListener("click", event => {
+          if (event.target instanceof Element && event.target.closest("a[data-task-detail-link]")) handleTaskActivation(event)
+        }, { signal: __signal, capture: true })
         document.body.addEventListener("click", handleTaskActivation, {
           signal: __signal,
         });
@@ -1708,6 +1831,6 @@
         });
 
         // === Command Palette (extracted) ===
-        initCommandPalette({ openTaskDetail, closeTD, __signal })
+        initCommandPalette({ openTaskDetail, __signal })
         });
 

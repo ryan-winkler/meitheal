@@ -2,23 +2,27 @@
 import { getTypeIconConfig } from "@lib/type-icon-config"
 
 interface Props {
-  type: string | null | undefined;
-  size?: number; // font-size in px, defaults to 16
-  class?: string;
+  type: string | null | undefined
+  size?: number
+  class?: string
+  role?: "img"
 }
 
-const { type, size = 16, class: className = "" } = Astro.props;
-const typeStr = String(type || "task").toLowerCase();
-const config = getTypeIconConfig(type);
+const { type, size = 16, class: className = "", role } = Astro.props
+const typeStr = String(type || "task").toLowerCase()
+const config = getTypeIconConfig(type)
 ---
 
 <span
   class:list={["task-type-icon", className]}
+  role={role}
   style={`color: ${config.color}; width: ${size}px; height: ${size}px; display: inline-flex; align-items: center; justify-content: center;`}
   title={typeStr.charAt(0).toUpperCase() + typeStr.slice(1)}
-  aria-label={`Task Type: ${typeStr}`}
+  aria-label={role === "img" ? `Task Type: ${typeStr}` : undefined}
+  aria-hidden={role === "img" ? undefined : "true"}
 >
   <svg
+    aria-hidden="true"
     xmlns="http://www.w3.org/2000/svg"
     width={size}
     height={size}

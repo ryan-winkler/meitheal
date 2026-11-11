@@ -1,61 +1,25 @@
 /**
  * Notifications Service — Web Notifications API integration
  *
- * Provides task due-date reminders and sync conflict alerts via the
- * Notification API. Includes Permissions API pre-check for graceful
- * permission requests without browser-level prompts.
+ * Sends browser notifications through the App's active service worker.
+ * Request permission only in response to a user gesture.
  *
  * Bounded context: offline (notification lifecycle managed with PWA)
  */
 
-// --- Ingress-aware URL helper ---
+import { buildIngressPagePath } from "@lib/page-shell-links"
+import { buildTaskPath } from "@lib/task-detail-handoff"
+import { isPwaSupported } from "./sw-register"
 
-/**
- * Build a URL prefixed with the HA ingress path when running inside HA.
- * The ingress path is set on window.__ingress_path by Layout.astro.
- * Falls back to raw path when running standalone.
- */
-function getIngressAwareUrl(path: string): string {
-  const win = typeof window !== "undefined" ? window : undefined;
-  const prefix = (win as Record<string, unknown> | undefined)?.__ingress_path ?? "";
-  return `${prefix}${path}`;
+function getNotificationPermission(): NotificationPermission | "unsupported" {
+  return typeof Notification === "undefined" ? "unsupported" : Notification.permission
 }
 
-// --- Permissions API pre-check ---
-
-/**
- * Get current notification permission without triggering a prompt.
- * Returns "granted" | "denied" | "default" | "unsupported".
- */
-export async function getNotificationPermission(): Promise<string> {
-  if (typeof Notification === "undefined") return "unsupported"
-
-  // Use Permissions API for silent check when available
-  if ("permissions" in navigator) {
-    try {
-      const status = await navigator.permissions.query({ name: "notifications" })
-      return status.state // "granted" | "denied" | "prompt"
-    } catch {
-      // Permissions API doesn't support notifications query in some browsers
-    }
-  }
-
-  return Notification.permission
+/** Call directly from a user gesture so the browser can show its permission prompt. */
+export async function requestNotificationPermission(): Promise<NotificationPermission | "unsupported"> {
+  const current = getNotificationPermission()
+  return current === "default" ? Notification.requestPermission() : current
 }
-
-/**
- * Request notification permission. Only prompts if status is "default".
- */
-export async function requestNotificationPermission(): Promise<string> {
-  const current = await getNotificationPermission()
-  if (current === "granted" || current === "denied") return current
-
-  if (typeof Notification === "undefined") return "unsupported"
-
-  return Notification.requestPermission()
-}
-
-// --- Notification dispatch ---
 
 interface TaskNotification {
   title: string
@@ -65,42 +29,27 @@ interface TaskNotification {
   requireInteraction?: boolean
 }
 
-/**
- * Show a notification if permission is granted.
- * Uses tag-based deduplication to avoid spamming.
- */
+/** Submit a notification to this installation's active worker. */
 export async function showTaskNotification(notification: TaskNotification): Promise<boolean> {
-  const permission = await getNotificationPermission()
-  if (permission !== "granted") return false
+  if (!isPwaSupported() || getNotificationPermission() !== "granted") return false
 
   try {
-    const opts: NotificationOptions = {
+    const scope = new URL(buildIngressPagePath("/"), location.origin)
+    const registration = await navigator.serviceWorker.getRegistration(scope.href)
+    // The browser may return Home Assistant's broader worker before the App worker is active.
+    if (registration?.scope !== scope.href || registration.active?.scriptURL !== new URL("sw.js", scope).href) return false
+
+    const url = new URL((notification.url ?? "").replace(/^\/+/, ""), scope)
+    if (url.origin !== scope.origin || url.username || url.password || !url.pathname.startsWith(scope.pathname)) return false
+    const icon = new URL("icon-192.png", scope).href
+    await registration.showNotification(notification.title, {
       body: notification.body,
       tag: notification.tag ?? "meitheal-general",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      data: { url: notification.url ?? "/" },
-    }
-    if (notification.requireInteraction) {
-      opts.requireInteraction = true
-    }
-
-    const n = new Notification(notification.title, opts)
-
-    // Click handler: navigate to task
-    n.onclick = () => {
-      window.focus()
-      if (notification.url) {
-        try {
-          const target = new URL(notification.url, window.location.origin)
-          if (target.origin === window.location.origin) {
-            window.location.href = target.href
-          }
-        } catch { /* invalid URL — ignore */ }
-      }
-      n.close()
-    }
-
+      icon,
+      badge: icon,
+      data: { url: url.href },
+      requireInteraction: notification.requireInteraction === true,
+    })
     return true
   } catch {
     return false
@@ -121,8 +70,7 @@ interface TaskForCheck {
  * Only notifies once per task per session (uses sessionStorage).
  */
 export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
-  const permission = await getNotificationPermission()
-  if (permission !== "granted") return
+  if (getNotificationPermission() !== "granted") return
 
   const now = new Date()
   const notifiedKey = "meitheal_notified_overdue"
@@ -134,13 +82,13 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
 
     const due = new Date(task.dueDate)
     if (due < now) {
-      await showTaskNotification({
+      const delivered = await showTaskNotification({
         title: "⏰ Overdue Task",
         body: task.title,
         tag: `overdue-${task.id}`,
-        url: getIngressAwareUrl(`/tasks?open=${task.id}`),
+        url: buildTaskPath(task.id),
       })
-      notified.add(task.id)
+      if (delivered) notified.add(task.id)
     }
   }
 
@@ -152,8 +100,7 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
  * Uses sessionStorage deduplication (same as overdue check).
  */
 export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<void> {
-  const permission = await getNotificationPermission()
-  if (permission !== "granted") return
+  if (getNotificationPermission() !== "granted") return
 
   const now = new Date()
   const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000)
@@ -167,13 +114,13 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
     const due = new Date(task.dueDate)
     if (due > now && due <= oneHourFromNow) {
       const minutesUntilDue = Math.round((due.getTime() - now.getTime()) / 60000)
-      await showTaskNotification({
+      const delivered = await showTaskNotification({
         title: "📋 Task Due Soon",
         body: `${task.title} — due in ${minutesUntilDue} minutes`,
         tag: `upcoming-${task.id}`,
-        url: getIngressAwareUrl(`/tasks?open=${task.id}`),
+        url: buildTaskPath(task.id),
       })
-      notified.add(task.id)
+      if (delivered) notified.add(task.id)
     }
   }
 

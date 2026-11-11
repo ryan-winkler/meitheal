@@ -64,20 +64,21 @@ export const GET: APIRoute = async () => {
     // HA WebSocket connection status
     const haWsStatus = getHAConnectionStatus();
 
+    const integrityOk = getDbIntegrityStatus()
     return apiJson({
-      status: "ok",
+      status: integrityOk ? "ok" : "degraded",
       service: "meitheal-web",
       version: VERSION,
       time: new Date(now).toISOString(),
       uptime_seconds: Math.floor(uptimeMs / 1000),
       db_status: "connected",
-      db_integrity: getDbIntegrityStatus() ? "ok" : "failed",
+      db_integrity: integrityOk ? "ok" : "failed",
       schema_version: getSchemaVersion(),
       ha_mode: haMode,
       supervisor_reachable: supervisorReachable,
       addon_slug: addonSlug,
       ha_websocket: haWsStatus,
-    });
+    }, integrityOk ? 200 : 503);
   } catch (error) {
     return apiJson({
       status: "degraded",

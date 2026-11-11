@@ -15,6 +15,8 @@ Meitheal uses a **service worker** to cache the app shell and intercept network 
 3. **Navigation** — cached pages load normally, unknown routes show the offline fallback page
 4. **Task operations** — saved to IndexedDB immediately, queued for sync when online
 
+Paginated unscheduled tasks on Today require a network connection. When the updated service worker takes control, it removes older cached copies of these live pages. Ordinary Today and the offline fallback remain available from the app shell.
+
 ## What's Available Offline
 
 | Feature | Offline | Notes |
@@ -51,6 +53,7 @@ All APIs use **feature detection** with graceful fallbacks — unsupported brows
 
 The web app manifest (`manifest.webmanifest`) includes:
 
+- **Install icons** use the Meitheal mark from `apps/web/public/logo.svg` at 192 and 512 pixels. The maskable icon extends the navy background to every edge and keeps the mark within the safe circle.
 - **Shortcuts**: Today, Calendar, Settings — appear in long-press/right-click on the app icon
 - **Screenshots**: Desktop and mobile captures of Today with sample tasks. The built app serves them from `/pwa/screenshots/`.
 - **App & PWA entry point**: Settings now includes companion handoff actions and install troubleshooting in one place
@@ -91,7 +94,7 @@ When the same task is edited on multiple devices:
 | Clearing all offline data | Browser settings → Clear site data |
 | Force sync | Navigate to any page while online |
 | Attachment not showing | Check browser IDB storage quota in DevTools |
-| Notification not showing | Check notification permissions in browser settings |
+| Notification not showing | Check notification permissions in browser settings. App & PWA shows a test notification with the app icon when the browser first grants permission. |
 | Theme not matching OS | Clear `meitheal-theme` from localStorage |
 
 ## Home Assistant Ingress Compatibility
@@ -157,8 +160,8 @@ The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `win
 
 1. SW checks for updates every **5 minutes** (reduced from 60s for addon context)
 2. When a new SW is found waiting, a toast appears: "Update available — Refresh"
-3. User clicks → sends `SKIP_WAITING` → page reloads
-4. `controllerchange` triggers `meitheal-sw-update` custom event for UI reactivity
+3. **Refresh**, **update available**, and **Force SW Update** wait for the selected worker to finish activation and control the current page before reloading. This lets the worker finish its cache cleanup before navigation.
+4. If the update takes more than 15 seconds, the page stays open and you can retry. This includes the update check when you use **Force SW Update**. `controllerchange` still notifies features that need to recheck the worker.
 
 ---
 

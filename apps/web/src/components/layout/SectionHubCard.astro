@@ -39,9 +39,10 @@ interface Props {
   id?: string
   /** Optional "Coming Soon" badge instead of link behavior */
   comingSoon?: boolean
+  prefetch?: boolean
 }
 
-const { href, icon, title, description, id, comingSoon = false } = Astro.props
+const { href, icon, title, description, id, comingSoon = false, prefetch = true } = Astro.props
 const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"].filter(Boolean).join(" ")
 ---
 
@@ -60,7 +61,7 @@ const classes = ["parent-section-hub", !comingSoon && "parent-section-hub--link"
     <span class="parent-section-hub__badge">Coming Soon</span>
   </div>
 ) : (
-  <a href={href} class={classes} id={id} data-astro-prefetch="viewport">
+  <a href={href} class={classes} id={id} data-astro-prefetch={prefetch ? "viewport" : "false"}>
     <div class="parent-section-hub__header">
       <span class="parent-section-hub__icon">{icon}</span>
       <div>

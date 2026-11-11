@@ -400,3 +400,78 @@ body.ha-ingress .top-navigation .hamburger-btn {
   flex-shrink: 0;
   vertical-align: middle;
 }
+
+/* Native destination links share one disclosure when their row becomes crowded. */
+.nav-overflow__more[hidden],
+.nav-overflow__primary[data-nav-overflow-empty] {
+  display: none !important;
+}
+.nav-overflow__primary > * { flex: none; }
+.unified-bar__view-pills > .nav-overflow__primary {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+}
+.nav-overflow[data-nav-overflow-active] > .nav-overflow__primary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  overflow: visible;
+}
+.nav-overflow__more { position: relative; flex: none; }
+.nav-overflow__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+}
+.nav-overflow__toggle::-webkit-details-marker { display: none; }
+.nav-overflow__toggle:hover,
+.nav-overflow__more[open] > .nav-overflow__toggle { background: var(--bg-hover); }
+.nav-overflow__toggle:focus-visible,
+.nav-overflow__menu a:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -2px;
+}
+.nav-overflow__menu {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 60;
+  min-inline-size: 12rem;
+  max-inline-size: min(26rem, calc(100vw - 16px));
+  max-block-size: min(32rem, 70dvh);
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+}
+.nav-overflow__menu li { list-style: none; }
+.nav-overflow__menu :is(.nav-link, .unified-bar__view-pill) {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 768px), (pointer: coarse) {
+  .nav-overflow__toggle,
+  .nav-overflow__menu :is(.nav-link, .unified-bar__view-pill) { min-height: 44px; }
+}

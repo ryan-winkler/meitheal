@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   release-ref:
-    if: github.repository == 'ryan-winkler/meitheal'
+    if: github.repository == 'ryan-winkler/meitheal' && inputs.channel == 'stable'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:

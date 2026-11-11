@@ -1,1 +1,3 @@
 pytest-homeassistant-custom-component==0.13.375
+# Parser used by both supported Core conversation manifests.
+hassil==3.12.1

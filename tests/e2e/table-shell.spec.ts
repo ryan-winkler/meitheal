@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test as base } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 interface TableTask {
   id: string
@@ -33,6 +33,7 @@ const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
 
 test.describe("Table Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test("the legacy route opens Table and keyboard-applied filter rules survive reload", async ({ page, tableTasks }) => {
     const [matching, other] = tableTasks
@@ -133,7 +134,7 @@ test.describe("Table Shell", () => {
     const [task] = tableTasks
     await page.goto("/table")
     const row = page.getByRole("row").filter({ hasText: task.title })
-    const opener = row.getByRole("button", { name: new RegExp(task.ticket_key) })
+    const opener = row.getByRole("link", { name: new RegExp(task.ticket_key) })
     await opener.press("Enter")
 
     const detail = page.getByRole("dialog", { name: `Task detail: ${task.title}` })
@@ -144,5 +145,154 @@ test.describe("Table Shell", () => {
 
     await row.locator(".td-due").click()
     await expect(detail.locator("#td-title")).toHaveValue(task.title)
+  })
+
+  test("long titles keep toolbar controls reachable while columns scroll and titles stay editable", async ({ page, request, baseURL, tableTasks }) => {
+    const [ordinary] = tableTasks
+    const longTitle = "UniqueAuditLongTitle" + "X".repeat(150)
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title: longTitle } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json() as { id: string }
+
+    async function openTitle(title: string) {
+      await page.goto("/tasks?" + new URLSearchParams({ view: "table", search: title }) + "#table")
+      await expect(page.locator("#task-table .table-row")).toHaveCount(1)
+      await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveText(title)
+    }
+
+    async function expectToolbarInView(width: number) {
+      const controls = [
+        page.getByRole("button", { name: "Saved filter presets" }),
+        page.getByRole("button", { name: "Customize visible columns" }),
+        page.getByRole("button", { name: "Toggle filter builder" }),
+        page.locator("#table-label-filter > summary"),
+      ]
+      for (const control of controls) {
+        await control.focus()
+        await expect(control).toBeFocused()
+        const box = await control.boundingBox()
+        expect(box).not.toBeNull()
+        expect(box!.x).toBeGreaterThanOrEqual(0)
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
+    }
+
+    async function expectScrollableColumns() {
+      const region = page.getByRole("region", { name: "Table View" })
+      const scroll = await region.evaluate(node => ({ width: node.clientWidth, content: node.scrollWidth }))
+      expect(scroll.content).toBeGreaterThan(scroll.width)
+      await region.focus()
+      await page.keyboard.press("ArrowRight")
+      await expect.poll(() => region.evaluate(node => node.scrollLeft)).toBeGreaterThan(0)
+      await region.evaluate(node => { node.scrollLeft = node.scrollWidth })
+      const edges = await region.evaluate(node => {
+        const region = node.getBoundingClientRect()
+        const first = node.querySelector("td.col-checkbox")!.getBoundingClientRect()
+        const last = node.querySelector("td.col-actions")!.getBoundingClientRect()
+        return { first: first.left - region.left, last: last.right - region.right }
+      })
+      expect(Math.abs(edges.first)).toBeLessThanOrEqual(1)
+      expect(edges.last).toBeLessThanOrEqual(1)
+    }
+
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openTitle(ordinary.title)
+      await expectToolbarInView(1440)
+
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 })
+        await openTitle(longTitle)
+        await expectToolbarInView(width)
+        await expect(page.getByRole("region", { name: "Table View" })).toHaveCSS("overflow-x", "auto")
+        if (width < 1440) await expectScrollableColumns()
+      }
+
+      const editor = page.getByRole("textbox", { name: "Title", exact: true })
+      await editor.focus()
+      await editor.press("Control+End")
+      await page.keyboard.insertText(" updated")
+      await editor.press("Tab")
+      const edited = longTitle + " updated"
+      await expect.poll(async () => (await (await request.get(`/api/tasks/${id}`)).json()).title).toBe(edited)
+
+      const wide = await request.patch(`/api/tasks/${id}`, {
+        headers, data: { custom_fields: JSON.stringify({ Reference: "W".repeat(200) }) },
+      })
+      expect(wide.ok(), await wide.text()).toBeTruthy()
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openTitle(edited)
+      await expectToolbarInView(1440)
+      await expectScrollableColumns()
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
+  test("a completed row stays editable by keyboard during a refresh and Escape discards its draft", async ({ page, request, tableTasks }) => {
+    const [, task] = tableTasks
+    await page.goto("/tasks?view=table")
+    await expect(page.getByRole("navigation", { name: "Task views" })).toHaveAttribute("data-switcher-ready", "true")
+    const table = page.locator("#task-table")
+    await expect(page.locator("#table-shell")).toHaveAttribute("data-table-ready", "true")
+    await expect(table).not.toHaveAttribute("aria-busy", "true")
+    const row = page.getByRole("row").filter({
+      has: page.getByRole("link", { name: new RegExp(task.ticket_key) }),
+    })
+    const title = row.getByRole("textbox", { name: "Title", exact: true })
+    await expect(title).toHaveText(task.title)
+    await expect(row.getByRole("img", { name: "Task Type: task" })).toBeVisible()
+
+    const selection = row.getByRole("checkbox", { name: `Select task: ${task.title}` })
+    await selection.check()
+    await expect(selection).toBeChecked()
+    await expect(page.locator("#bulk-bar")).toBeVisible()
+    await selection.uncheck()
+    await expect(selection).not.toBeChecked()
+
+    const renamed = `${task.title} renamed`
+    const draft = "Discard this edit"
+    const path = `/api/tasks/${task.id}`
+    const savedTitles: string[] = []
+    await page.route(url => url.pathname === path, async route => {
+      const outbound = route.request()
+      if (outbound.method() === "PATCH") {
+        savedTitles.push(outbound.postDataJSON().title)
+      }
+      await route.continue()
+    })
+    const refreshEntered = deferred<void>()
+    const release = deferred<void>()
+    await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+      refreshEntered.resolve()
+      await release.promise
+      await route.continue()
+    }, { times: 1 })
+
+    try {
+      await title.fill(renamed)
+      await title.press("Tab")
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await refreshEntered.promise
+      await expect(table).toHaveAttribute("aria-busy", "true")
+      await title.fill(draft)
+      await expect(title).toBeFocused()
+
+      release.resolve()
+      await expect(table).not.toHaveAttribute("aria-busy", "true")
+      await expect(title).toBeFocused()
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await expect(title).toHaveText(draft)
+      await title.press("Escape")
+      await expect(title).toHaveText(renamed)
+      await page.reload()
+      await expect(title).toHaveText(renamed)
+      expect((await (await request.get(path)).json()).title).toBe(renamed)
+      expect(savedTitles).toEqual([renamed])
+    } finally {
+      release.resolve()
+    }
   })
 })

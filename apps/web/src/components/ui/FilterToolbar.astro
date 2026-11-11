@@ -25,6 +25,8 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
 import TaskTypeIcon from "./TaskTypeIcon.astro"
+import { FILTER_LIST_LIMIT, readTableFilterParams, tableCreationRangeLabel } from "../../lib/filter-state"
+import type { TableWorkflowColumn } from "../../lib/table-page"
 
 interface Props {
   /** View context — controls ID prefixing and default visibility */
@@ -49,6 +51,8 @@ interface Props {
   groupByOptions?: { value: string; label: string }[]
   /** Hide area select (use with AreaSelector component) */
   hideAreaSelect?: boolean
+  workflowColumns?: TableWorkflowColumn[]
+  workflowColumnsUnavailable?: boolean
   /** Additional CSS class */
   class?: string
 }
@@ -62,9 +66,11 @@ const {
   showRICEFilter = view === "table",
   showUserFilter = view === "table",
   showUserPills = view === "kanban",
-  showSortBy = true,
+  showSortBy = view !== "table",
   groupByOptions,
   hideAreaSelect = false,
+  workflowColumns = [],
+  workflowColumnsUnavailable = false,
   class: className,
 } = Astro.props
 
@@ -73,6 +79,11 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const prefix = view
+const tableState = view === "table" ? readTableFilterParams(Astro.url.searchParams) : {}
+const selectedLaneIds = new Set(tableState.laneIds)
+const availableLaneIds = new Set(workflowColumns.map(column => column.id))
+const missingLaneIds = [...selectedLaneIds].filter(id => !availableLaneIds.has(id))
+const creationRangeLabel = tableCreationRangeLabel(tableState.createdFrom, tableState.createdThrough)
 
 const defaultGroupByOptions = view === "table"
   ? [
@@ -80,7 +91,6 @@ const defaultGroupByOptions = view === "table"
       { value: "type", label: "Type" },
       { value: "priority", label: "Priority" },
       { value: "area", label: "Area" },
-      { value: "project", label: "Project" },
       { value: "assignee", label: "Assignee" },
       { value: "status", label: "Status" },
       { value: "rice", label: "RICE" },
@@ -174,6 +184,15 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       <TaskTypeIcon type="task" size={14} />
       Routine
     </button>
+    {view === "table" && [
+      { id: "quick_capture", label: "Quick capture" },
+      { id: "calendar_event", label: "Calendar event" },
+    ].map(kind => (
+      <button type="button" class="filter-toolbar__type-btn active" data-type={kind.id} aria-pressed="true">
+        <TaskTypeIcon type="task" size={14} />
+        {kind.label}
+      </button>
+    ))}
   </div>
 
   {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
@@ -214,6 +233,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           { value: "priority", label: "Then by Priority" },
           { value: "type", label: "Then by Type" },
           { value: "area", label: "Then by Area" },
+          { value: "assignee", label: "Then by Assignee" },
           { value: "rice", label: "Then by RICE" }
         ].map((opt, i) => (
           <button type="button" class={`timeline-zoom-option filter-dropdown__option ${i === 0 ? 'timeline-zoom-option--active' : ''}`} data-select={`${prefix}-sub-group-by`} data-value={opt.value}>
@@ -252,6 +272,74 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     </details>
   )}
   {showSortBy && <input type="hidden" id={`${prefix}-sort-by`} value="none" />}
+
+  {view === "kanban" && (
+    <button
+      type="button"
+      class:list={["filter-pill", { "filter-pill--active": Astro.url.searchParams.get("promoted") === "1" }]}
+      data-filter-promoted
+      aria-pressed={Astro.url.searchParams.get("promoted") === "1" ? "true" : "false"}
+    >
+      <span aria-hidden="true">↑</span>
+      <span class="filter-pill__label">{t("kanban.promoted_only", locale)}</span>
+    </button>
+  )}
+  {view === "table" && <>
+    <label class="filter-pill table-unassigned-filter">
+      <input type="checkbox" data-table-unassigned checked={tableState.user === "__unassigned__"} />
+      {t("table.filter_unassigned", locale)}
+    </label>
+    <details class="table-workflow-filter" data-table-workflow-filter>
+      <summary class="filter-pill">
+        {t("table.filter_workflow_columns", locale)}
+        <span data-table-lane-count hidden={selectedLaneIds.size === 0}>{selectedLaneIds.size}</span>
+        <span aria-hidden="true">▾</span>
+      </summary>
+      <fieldset class="table-workflow-filter__options" data-table-workflow-options={workflowColumnsUnavailable ? "unavailable" : "ready"}>
+        <legend class="sr-only">{t("table.filter_workflow_columns", locale)}</legend>
+        <p class="text-sm text-text-muted" data-table-lane-limit role="status" hidden={selectedLaneIds.size < FILTER_LIST_LIMIT}>
+          {t("table.filter_column_limit", locale).replace("{count}", String(FILTER_LIST_LIMIT))}
+        </p>
+        {workflowColumns.map(column => (
+          <label>
+            <input type="checkbox" data-table-lane value={JSON.stringify(column.id)} checked={selectedLaneIds.has(column.id)}
+              disabled={selectedLaneIds.size >= FILTER_LIST_LIMIT && !selectedLaneIds.has(column.id)} />
+            <span>{column.label}</span>
+          </label>
+        ))}
+        {missingLaneIds.map(id => (
+          <label>
+            <input type="checkbox" data-table-lane value={JSON.stringify(id)} checked />
+            <span>{t(workflowColumnsUnavailable ? "table.filter_column_unverified" : "table.filter_column_unavailable", locale)} ({id})</span>
+          </label>
+        ))}
+      </fieldset>
+    </details>
+    <details class="table-workflow-filter" data-table-created-date>
+      <summary class:list={["filter-pill", { "filter-pill--active": creationRangeLabel }]} data-table-created-summary>
+        {t("table.created_date_filter", locale)}
+        <span aria-hidden="true">▾</span>
+        <span data-table-created-active hidden={!creationRangeLabel}>{creationRangeLabel}</span>
+      </summary>
+      <form class="table-created-range">
+        <label>
+          {t("table.created_date_from", locale)}
+          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdFrom} data-table-created-from />
+        </label>
+        <label>
+          {t("table.created_date_through", locale)}
+          <input type="date" min="0001-01-01" max="9999-12-31" class="form-input" value={tableState.createdThrough}
+            data-table-created-through />
+        </label>
+        <p id="table-created-date-error" role="alert" hidden>{t("table.created_date_invalid", locale)}</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="btn">{t("table.created_date_apply", locale)}</button>
+          <button type="button" class="btn" data-table-created-clear>{t("table.created_date_clear", locale)}</button>
+        </div>
+      </form>
+    </details>
+    <div class="flex flex-wrap gap-1 min-w-0 empty:hidden" data-filter-summary aria-label="Active saved filters"></div>
+  </>}
 
   {/* Clear all button */}
   <button
@@ -318,15 +406,17 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   </div>
 
   {/* Label filter bar — separate row below main toolbar */}
-  <div class="w-full hidden" id={`${prefix}-label-filter-container`}>
-    <LabelFilterBar id={`${prefix}-label-filter`} />
+  <div class:list={["w-full", view !== "table" && "hidden"]} id={`${prefix}-label-filter-container`}>
+    <LabelFilterBar id={`${prefix}-label-filter`} view={view} />
   </div>
   </>}
 </div>
 
 <script>
   // Expose global for inline views (kanban)
-  import { isTaskVisible, loadFilterState } from "../../lib/filter-state"
+  import { getRememberedAreaId } from "@lib/area-selector-controller"
+  import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange } from "@lib/filter-state"
+  import { pageLifecycle } from "@lib/page-lifecycle"
   import { readKanbanFilters, storedKanbanGroup } from "../../lib/kanban-query"
   declare global {
     interface Window {
@@ -341,7 +431,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
    * Binds all filter controls and emits a unified `meitheal:filter-change`
    * CustomEvent whenever any filter value changes. Views listen for this event.
    */
-  function initFilterToolbar(toolbar: HTMLElement) {
+  function initFilterToolbar(toolbar: HTMLElement, signal: AbortSignal) {
     const prefix = toolbar.id.replace(/-filter-bar$/, "")
 
     // Gather all controls
@@ -355,6 +445,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
     const sortBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sort-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
+    const promotedToggle = toolbar.querySelector<HTMLButtonElement>("[data-filter-promoted]")
     const typeToggles = toolbar.querySelectorAll<HTMLButtonElement>(".filter-toolbar__type-btn")
 
     // Advanced Filter controls
@@ -362,27 +453,102 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const advPanel = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-panel`)
     const advCloseBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-close`)
     const advAddCondBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-condition`)
-    const advAddGroupBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-add-group`)
     const advClearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-clear`)
     const advApplyBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-advanced-apply`)
     const advContainer = toolbar.querySelector<HTMLElement>(`#${prefix}-advanced-conditions-container`)
 
     const params = new URLSearchParams(location.search)
     const initial = prefix === "kanban" ? readKanbanFilters(params)
-      : prefix === "timeline" ? loadFilterState() : {}
+      : prefix === "table" ? loadTableFilterState() : loadFilterState()
     if (prefix === "kanban" && !params.has("groupBy")) initial.groupBy = storedKanbanGroup()
     if (prefix === "timeline" && initial.groupBy === "assigned") initial.groupBy = "assignee"
     // Internal state for advanced filters
-    let advancedFilterState = prefix === "kanban" ? initial.advancedFilter ?? null : null
+    let advancedFilterState = prefix === "timeline" ? null : initial.advancedFilter ?? null
     let { status = "", priority = "" } = initial
-    let { rice = "", user = "", labels = [] } = prefix === "kanban" ? initial : {}
+    let { rice = "", user = "", labels = [], task_type = "" } = prefix === "timeline" ? {} : initial
+    let area = prefix === "table" ? initial.area ?? getRememberedAreaId() : ""
+    const summary = toolbar.querySelector<HTMLElement>("[data-filter-summary]")
+    const unassigned = toolbar.querySelector<HTMLInputElement>("[data-table-unassigned]")
+    const workflow = toolbar.querySelector<HTMLDetailsElement>("[data-table-workflow-filter]")
+    const createdDate = toolbar.querySelector<HTMLDetailsElement>("[data-table-created-date]")
+    const createdFrom = createdDate?.querySelector<HTMLInputElement>("[data-table-created-from]")
+    const createdThrough = createdDate?.querySelector<HTMLInputElement>("[data-table-created-through]")
+    const createdError = createdDate?.querySelector<HTMLElement>("#table-created-date-error")
+    const appliedCreationDate = createdDate?.querySelector<HTMLElement>("[data-table-created-active]")
+    let createdRange = { createdFrom: initial.createdFrom, createdThrough: initial.createdThrough }
+    let dismissCreationDraft: (() => void) | undefined
+    const laneOptions = () => Array.from(workflow?.querySelectorAll<HTMLInputElement>("[data-table-lane]") ?? [])
+    const laneCount = toolbar.querySelector<HTMLElement>("[data-table-lane-count]")
+    const laneId = (option: HTMLInputElement): string => JSON.parse(option.value)
+    const selectedLanes = () => laneOptions().filter(option => option.checked).map(laneId)
+    if (unassigned) unassigned.checked = user === "__unassigned__"
+    for (const option of laneOptions()) option.checked = initial.laneIds?.includes(laneId(option)) ?? false
+    function updateLaneCount() {
+      if (!laneCount) return
+      const count = selectedLanes().length
+      laneCount.textContent = String(count)
+      laneCount.hidden = count === 0
+      const limit = workflow?.querySelector<HTMLElement>("[data-table-lane-limit]")
+      if (limit) limit.hidden = count < FILTER_LIST_LIMIT
+      for (const option of laneOptions()) option.disabled = count >= FILTER_LIST_LIMIT && !option.checked
+    }
+    const inheritedLabels = {
+      status: "Status", priority: "Priority", rice: "RICE", user: "Assignee", task_type: "Hierarchy",
+    } as const
+    let readOnlyRules = prefix === "table" && (advancedFilterState?.conditions.some(
+      condition => "conditions" in condition || condition.operator === "between",
+    ) ?? false)
+    const savedRulesSummary = document.createElement("p")
+    savedRulesSummary.className = "text-sm text-text-muted"
+    savedRulesSummary.textContent = "This preset has saved rules that are applied as a group. Clear Rules to replace them."
+
+    function updateRulesMode() {
+      if (advAddCondBtn) advAddCondBtn.disabled = readOnlyRules
+      if (advApplyBtn) advApplyBtn.disabled = readOnlyRules
+      if (readOnlyRules) advContainer?.append(savedRulesSummary)
+      else savedRulesSummary.remove()
+    }
+
+    function renderInheritedFilters() {
+      if (!summary) return
+      const values = { status, priority, rice, user, task_type }
+      summary.replaceChildren()
+      for (const key of Object.keys(inheritedLabels) as Array<keyof typeof inheritedLabels>) {
+        const value = values[key]
+        if (!value || (key === "user" && unassigned && value === "__unassigned__")) continue
+        const display = key === "user" && value === "__unassigned__" ? "Unassigned" : value
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "filter-pill max-w-full break-all"
+        chip.dataset.inheritedFilter = key
+        chip.textContent = `${inheritedLabels[key]} · ${display} ×`
+        chip.setAttribute("aria-label", `Remove ${inheritedLabels[key]} filter ${display}`)
+        summary.append(chip)
+      }
+    }
+    summary?.addEventListener("click", event => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("[data-inherited-filter]")
+      if (!button) return
+      const key = button.dataset.inheritedFilter
+      if (key === "status") status = ""
+      if (key === "priority") priority = ""
+      if (key === "rice") rice = ""
+      if (key === "user") user = ""
+      if (key === "task_type") task_type = ""
+      renderInheritedFilters()
+      const next = summary.querySelector("button") ?? search
+      next?.focus()
+      emitChange()
+    }, { signal })
+    let promoted = promotedToggle?.getAttribute("aria-pressed") === "true"
     if (prefix === "timeline") {
       if (statusSel) statusSel.value = status
       if (prioritySel) prioritySel.value = priority
     }
-    if (prefix === "kanban" || prefix === "timeline") {
+    {
       if (search) search.value = initial.search ?? ""
       if (groupBySel) groupBySel.value = initial.groupBy ?? "none"
+      if (subGroupBySel) subGroupBySel.value = initial.subGroupBy ?? "none"
       typeToggles.forEach(btn => {
         const active = !initial.types?.length || initial.types.includes(btn.dataset.type ?? "")
         btn.classList.toggle("active", active)
@@ -438,7 +604,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
             logicBtn.classList.add("text-accent")
             logicBtn.classList.remove("text-indigo-400")
           }
-        })
+        }, { signal })
         row.appendChild(logicBtn)
       }
 
@@ -472,7 +638,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         } else {
           valInput.style.display = ""
         }
-      })
+      }, { signal })
 
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
@@ -492,7 +658,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         
         checkEmptyState()
         updateClearVisibility()
-      })
+      }, { signal })
 
       row.append(fieldSel, opSel, valInput, removeBtn)
       return row
@@ -501,7 +667,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     function checkEmptyState() {
       if (!advContainer) return
       const emptyState = advContainer.querySelector(".advanced-panel__empty-state")
-      const hasRows = advContainer.querySelectorAll(".advanced-filter-row").length > 0
+      const hasRows = readOnlyRules || advContainer.querySelectorAll(".advanced-filter-row").length > 0
       if (emptyState) {
         (emptyState as HTMLElement).style.display = hasRows ? "none" : "block"
       }
@@ -512,12 +678,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const isExpanded = advToggleBtn.getAttribute("aria-expanded") === "true"
       advToggleBtn.setAttribute("aria-expanded", String(!isExpanded))
       advPanel?.classList.toggle("hidden")
-    })
+    }, { signal })
 
     advCloseBtn?.addEventListener("click", () => {
       advToggleBtn?.setAttribute("aria-expanded", "false")
       advPanel?.classList.add("hidden")
-    })
+    }, { signal })
 
     // Click outside to close advanced panel
     document.addEventListener("click", (e) => {
@@ -527,7 +693,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           advPanel.classList.add("hidden")
         }
       }
-    })
+    }, { signal })
 
     // Advanced Panel Actions
     advAddCondBtn?.addEventListener("click", () => {
@@ -538,7 +704,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const row = renderAdvancedConditionRow()
       advContainer.appendChild(row)
       updateClearVisibility()
-    })
+    }, { signal })
 
     // Logic Toggle Actions (Removed from header)
     // advClearBtn logic
@@ -548,9 +714,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       rows.forEach(r => r.remove())
       checkEmptyState()
       advancedFilterState = null
+      readOnlyRules = false
+      updateRulesMode()
+      checkEmptyState()
       advToggleBtn?.classList.remove("filter-pill--active")
       emitChange()
-    })
+    }, { signal })
 
     advApplyBtn?.addEventListener("click", () => {
       if (!advContainer) return
@@ -583,19 +752,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       advToggleBtn?.setAttribute("aria-expanded", "false")
       advPanel?.classList.add("hidden")
       emitChange()
-    })
-
-    // Internal state mapping
-    const state = {
-      status: "",
-      priority: "",
-      rice: "",
-      user: "",
-      area: "",
-      groupBy: "none",
-      subGroupBy: "none",
-      sortBy: "none"
-    }
+    }, { signal })
 
     function gatherState() {
       // Collect active types
@@ -613,10 +770,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         search: search?.value ?? "",
         status: statusSel?.value ?? status,
         priority: prioritySel?.value ?? priority,
+        ...(promotedToggle ? { promoted } : {}),
         rice,
         user: activeUser,
-        labels,
-        area: "",
+        ...(prefix !== "table" ? { labels } : {}),
+        task_type,
+        ...(prefix === "table" ? { laneIds: selectedLanes(), ...createdRange } : {}),
+        area,
         groupBy: groupBySel?.value ?? "none",
         subGroupBy: subGroupBySel?.value ?? "none",
         sortBy: sortBySel?.value ?? "none",
@@ -629,40 +789,122 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       if (!clearBtn) return
       const hasAdvanced = advancedFilterState && advancedFilterState.conditions && advancedFilterState.conditions.length > 0
       const hasSearch = search && search.value.trim().length > 0
-      const hasTypes = document.querySelectorAll(".filter-toolbar__type-btn:not(.active)").length > 0
+      const hasTypes = toolbar.querySelector(".filter-toolbar__type-btn:not(.active)") !== null
       // Check if group/sort have non-default values
       const hasGroup = groupBySel && groupBySel.value !== "none"
       const hasSort = sortBySel && sortBySel.value !== "none"
       
-      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || (statusSel?.value ?? status) ||
-          (prioritySel?.value ?? priority) || rice || user || labels.length) {
+      if (hasAdvanced || hasSearch || hasTypes || hasGroup || hasSort || promoted || (statusSel?.value ?? status) ||
+          (prioritySel?.value ?? priority) || rice || user || labels.length || task_type || selectedLanes().length ||
+          (appliedCreationDate && !appliedCreationDate.hidden) || (prefix === "table" && area)) {
         clearBtn.classList.remove("hidden")
       } else {
         clearBtn.classList.add("hidden")
       }
     }
+    if (createdDate) document.addEventListener("meitheal:table-filters-applied", updateClearVisibility, { signal })
 
-    function emitChange() {
+    function emitChange(clear = false) {
       const state = gatherState()
       document.dispatchEvent(
         new CustomEvent("meitheal:filter-change", {
-          detail: { ...state, view: prefix },
+          detail: { ...state, view: prefix, clear, ...(clear ? { labels: [] } : {}) },
         })
       )
+      updateLaneCount()
       updateClearVisibility()
     }
 
+    unassigned?.addEventListener("change", () => {
+      user = unassigned.checked ? "__unassigned__" : ""
+      renderInheritedFilters()
+      emitChange()
+    }, { signal })
+    workflow?.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !workflow.open) return
+      event.preventDefault()
+      event.stopPropagation()
+      workflow.open = false
+      workflow.querySelector("summary")?.focus()
+    }, { signal })
+    workflow?.addEventListener("change", event => {
+      if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-table-lane")) emitChange()
+    }, { signal })
+    if (createdDate && createdFrom && createdThrough && createdError) {
+      const clearError = () => {
+        createdError.hidden = true
+        createdThrough.removeAttribute("aria-invalid")
+        createdThrough.removeAttribute("aria-describedby")
+      }
+      const restoreDraft = () => {
+        createdFrom.value = createdRange.createdFrom ?? ""
+        createdThrough.value = createdRange.createdThrough ?? ""
+        clearError()
+      }
+      const close = () => {
+        restoreDraft()
+        createdDate.open = false
+        createdDate.querySelector("summary")?.focus()
+      }
+      dismissCreationDraft = close
+      createdDate.addEventListener("toggle", () => {
+        if (!createdDate.open) {
+          restoreDraft()
+          return
+        }
+        for (const details of toolbar.querySelectorAll<HTMLDetailsElement>("details[open]")) {
+          if (details !== createdDate) details.open = false
+        }
+      }, { signal })
+      toolbar.addEventListener("toggle", event => {
+        const details = event.target
+        if (details instanceof HTMLDetailsElement && details !== createdDate && details.open) createdDate.open = false
+      }, { capture: true, signal })
+      createdDate.addEventListener("input", clearError, { signal })
+      createdDate.querySelector("form")?.addEventListener("submit", event => {
+        event.preventDefault()
+        const range = normalizeTableCreationRange(createdFrom.value, createdThrough.value)
+        if (!range) {
+          createdError.hidden = false
+          createdThrough.setAttribute("aria-invalid", "true")
+          createdThrough.setAttribute("aria-describedby", createdError.id)
+          createdThrough.focus()
+          return
+        }
+        createdRange = { createdFrom: range.createdFrom, createdThrough: range.createdThrough }
+        close()
+        emitChange()
+      }, { signal })
+      createdDate.querySelector("[data-table-created-clear]")?.addEventListener("click", () => {
+        createdRange = { createdFrom: undefined, createdThrough: undefined }
+        close()
+        emitChange()
+      }, { signal })
+    }
+
     // Debounce for search
-    let searchTimer: ReturnType<typeof setTimeout>
+    let searchTimer: ReturnType<typeof setTimeout> | undefined
     search?.addEventListener("input", () => {
       clearTimeout(searchTimer)
-      searchTimer = setTimeout(emitChange, 150)
-    })
+      searchTimer = setTimeout(() => {
+        searchTimer = undefined
+        emitChange()
+      }, 150)
+    }, { signal })
+
+    search?.addEventListener("blur", () => {
+      if (!searchTimer) return
+      clearTimeout(searchTimer)
+      searchTimer = undefined
+      emitChange()
+    }, { signal })
 
     // Select change listeners (for remaining native selects)
     ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
-      sel?.addEventListener("change", emitChange)
+      sel?.addEventListener("change", () => emitChange(), { signal })
     })
+
+    signal.addEventListener("abort", () => clearTimeout(searchTimer), { once: true })
 
     // Custom dropdown listeners
     const dropdowns = toolbar.querySelectorAll<HTMLDetailsElement>(".filter-dropdown")
@@ -672,7 +914,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         dropdowns.forEach(d => {
           if (d !== details) d.removeAttribute("open")
         })
-      })
+      }, { signal })
       
       const options = details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
       const summaryValue = details.querySelector(".filter-dropdown__value")
@@ -699,7 +941,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           }
           
           details.removeAttribute("open")
-        })
+        }, { signal })
       })
     })
     
@@ -709,7 +951,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       dropdowns.forEach(d => {
         if (!d.contains(target)) d.removeAttribute("open")
       })
-    })
+    }, { signal })
 
     // Type toggle listeners
     typeToggles.forEach((btn) => {
@@ -717,14 +959,28 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         btn.classList.toggle("active")
         btn.setAttribute("aria-pressed", String(btn.classList.contains("active")))
         emitChange()
-      })
+      }, { signal })
     })
 
     // Clear all button
     clearBtn?.addEventListener("click", () => {
+      const restoreTableFocus = prefix === "table" && document.activeElement === clearBtn
       if (search) search.value = ""
-      status = priority = rice = user = ""
+      setPromoted(false)
+      status = priority = rice = user = task_type = area = ""
+      if (unassigned) unassigned.checked = false
+      for (const option of laneOptions()) option.checked = false
+      createdRange = { createdFrom: undefined, createdThrough: undefined }
+      if (createdFrom) createdFrom.value = ""
+      if (createdThrough) {
+        createdThrough.value = ""
+        createdThrough.removeAttribute("aria-invalid")
+        createdThrough.removeAttribute("aria-describedby")
+      }
+      if (createdError) createdError.hidden = true
       labels = []
+      renderInheritedFilters()
+      if (prefix === "table") document.dispatchEvent(new Event("meitheal:table-labels-reset"))
       ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
         if (sel) sel.value = ""
       })
@@ -760,6 +1016,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
       
       // Clear advanced filters too
+      readOnlyRules = false
+      updateRulesMode()
       if (advContainer) {
         const rows = advContainer.querySelectorAll(".advanced-filter-row")
         rows.forEach(r => r.remove())
@@ -768,20 +1026,39 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       advancedFilterState = null
       advToggleBtn?.classList.remove("filter-pill--active")
 
+      emitChange(true)
+      if (!appliedCreationDate || appliedCreationDate.hidden) clearBtn.classList.add("hidden")
+      if (restoreTableFocus) search?.focus()
+    }, { signal })
+
+    function setPromoted(value: boolean) {
+      promoted = value
+      promotedToggle?.setAttribute("aria-pressed", String(value))
+      promotedToggle?.classList.toggle("filter-pill--active", value)
+    }
+
+    promotedToggle?.addEventListener("click", () => {
+      setPromoted(!promoted)
       emitChange()
-      clearBtn.classList.add("hidden") // Immediate visual feedback
-    })
+    }, { signal })
     
     // Add Escape key handler to clear filters if they are active
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && clearBtn && !clearBtn.classList.contains("hidden")) {
+      if (e.key !== "Escape" || e.defaultPrevented ||
+          (e.target as Element | null)?.closest?.('[role="dialog"], [role="alertdialog"]')) return
+      if (createdDate?.open) {
+        e.preventDefault()
+        dismissCreationDraft?.()
+        return
+      }
+      if (clearBtn && !clearBtn.classList.contains("hidden")) {
         // Only trigger if not typing in an input or textarea
         const tag = document.activeElement?.tagName?.toLowerCase()
         if (tag === "input" || tag === "textarea") return
         e.preventDefault()
         clearBtn.click()
       }
-    })
+    }, { signal })
 
     // Load boards into board selector (idempotent via DOM attribute)
     async function loadAreas() {
@@ -789,7 +1066,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       areaSel.dataset.populated = "true"
       
       try {
-        const res = await fetch("/api/areas")
+        const res = await fetch("/api/areas", { signal })
         if (!res.ok) return
         const data = await res.json()
         const boards: { id: string; name: string; icon?: string }[] = data.areas || []
@@ -803,21 +1080,37 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       } catch { /* offline fallback */ }
     }
 
-    if (prefix === "kanban" || prefix === "timeline") {
-      if (groupBySel && initial.groupBy && initial.groupBy !== "none") {
+    if (prefix === "table") {
+      document.addEventListener("meitheal:label-filter", event => {
+        const detail = (event as CustomEvent<{ view: string; labels: string[] }>).detail
+        if (detail?.view !== "table") return
+        labels = detail.labels
+        updateClearVisibility()
+      }, { signal })
+      document.addEventListener("meitheal:area-changed", event => {
+        area = (event as CustomEvent<{ areaId: string }>).detail.areaId
+        updateClearVisibility()
+      }, { signal })
+      renderInheritedFilters()
+      updateRulesMode()
+    }
+    {
+      for (const groupControl of [groupBySel, subGroupBySel]) {
+        if (!groupControl || groupControl.value === "none") continue
+        const groupValue = groupControl.value
         const option = Array.from(toolbar.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option"))
-          .find(item => item.dataset.select === groupBySel.id && item.dataset.value === initial.groupBy)
+          .find(item => item.dataset.select === groupControl.id && item.dataset.value === groupValue)
         const label = option?.closest("details")?.querySelector(".filter-dropdown__value")
         if (option && label) {
           option.closest("details")?.querySelector(".timeline-zoom-option--active")?.classList.remove("timeline-zoom-option--active")
           option.classList.add("timeline-zoom-option--active")
-          label.textContent = option.textContent?.trim() ?? initial.groupBy
+          label.textContent = option.textContent?.trim() ?? groupValue
         } else if (prefix === "timeline") {
-          groupBySel.value = "none"
+          groupControl.value = "none"
         }
       }
       if (advContainer && advancedFilterState?.conditions.length) {
-        for (const condition of advancedFilterState.conditions) {
+        for (const condition of readOnlyRules ? [] : advancedFilterState.conditions) {
           if ("conditions" in condition) continue
           const row = renderAdvancedConditionRow()
           const field = row.querySelector<HTMLSelectElement>(".adv-field")
@@ -830,29 +1123,58 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
             op.dispatchEvent(new Event("change"))
           }
           if (value) value.value = String(condition.value)
-          if (logic && condition.logic === "OR") logic.click()
+          if (logic && (condition.logic ?? advancedFilterState.logic) === "OR") logic.click()
           advContainer.append(row)
         }
         advToggleBtn?.classList.add("filter-pill--active")
         checkEmptyState()
       }
+      updateLaneCount()
       updateClearVisibility()
     }
     loadAreas()
   }
 
-  // Initialize toolbars
-  function bootToolbars() {
-    document.querySelectorAll<HTMLElement>(".filter-toolbar").forEach((toolbar) => {
-      // Guard: don't re-initialize if already done
+  pageLifecycle.onPageLoad(signal => {
+    document.querySelectorAll<HTMLElement>(".filter-toolbar").forEach(toolbar => {
       if (toolbar.dataset.initialized) return
       toolbar.dataset.initialized = "true"
-      initFilterToolbar(toolbar)
+      signal.addEventListener("abort", () => { delete toolbar.dataset.initialized }, { once: true })
+      initFilterToolbar(toolbar, signal)
     })
-  }
-
-  // Use both events but rely on data-initialized + data-populated for idempotency
-  document.addEventListener("DOMContentLoaded", bootToolbars)
-  document.addEventListener("astro:page-load", bootToolbars)
+  })
 </script>
 
+
+<style>
+  .table-workflow-filter { min-inline-size: 0; max-inline-size: 100%; }
+  .table-workflow-filter > summary, .table-unassigned-filter { min-block-size: 44px; height: auto; }
+  .table-workflow-filter__options {
+    border: 0;
+    min-inline-size: 0;
+    margin: 0.25rem 0 0;
+    padding: 0;
+    max-block-size: 15rem;
+    overflow: auto;
+  }
+  .table-workflow-filter__options label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-block-size: 44px;
+    overflow-wrap: anywhere;
+  }
+  .table-workflow-filter__options input { flex-shrink: 0; }
+  .table-created-range {
+    display: grid;
+    gap: 0.5rem;
+    inline-size: min(13rem, 100%);
+    margin-block-start: 0.25rem;
+  }
+  .table-created-range label { display: grid; gap: 0.25rem; min-inline-size: 0; }
+  .table-created-range input { min-inline-size: 0; inline-size: 100%; }
+  .table-created-range :is(input, button) { min-block-size: 44px; }
+  .table-created-range [role="alert"] { color: var(--text-danger, var(--text-primary)); }
+  [data-table-created-summary] { flex-wrap: wrap; }
+  [data-table-created-active] { inline-size: 100%; font-variant-numeric: tabular-nums; }
+</style>

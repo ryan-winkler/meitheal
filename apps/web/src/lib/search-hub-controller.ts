@@ -1,5 +1,10 @@
 import { createFocusTrap } from "@lib/focus-trap"
+import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
+import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
   SearchResponse,
   SearchResultItem,
@@ -8,12 +13,25 @@ import type {
   TaskSearchField,
 } from "@domains/search/search-types"
 
-// Window globals (typed in types/window.d.ts):
-//   openSearchHub, closeSearchHub, __searchHubKeyboardBound
+const waitingSearchCapability = "MEITHEAL_SEARCH_WAITING_CAPABLE"
+
+async function waitingSearchWorker(scope: URL) {
+  const waiting = (await searchRegistration(scope))?.waiting
+  if (waiting?.scriptURL === new URL("sw.js", scope).href &&
+      await workerAllowsNetworkOnly(waiting, waitingSearchCapability)) return waiting
+  return undefined
+}
 
 interface StaticRegistry {
   pages: SearchResultItem[]
   actions: SearchResultItem[]
+}
+
+interface SearchReturn {
+  taskId: string
+  prefill: string
+  scope: SearchScope
+  trigger: HTMLElement | null
 }
 
 function getStaticRegistry(): StaticRegistry {
@@ -74,21 +92,29 @@ function prefixIngress(href: string): string {
 function createEmptyState(message: string): HTMLElement {
   const empty = document.createElement("div")
   empty.className = "search-hub-empty"
-  empty.textContent = message
+  const announcement = document.createElement("span")
+  announcement.setAttribute("role", "status")
+  announcement.textContent = message
+  empty.appendChild(announcement)
   return empty
 }
 
 function renderResultItem(
   item: SearchResultItem,
-  selected: boolean,
+  index: number,
   onSelect: () => void,
 ): HTMLButtonElement {
   const button = document.createElement("button")
   button.type = "button"
-  button.className = `search-hub-item${selected ? " is-selected" : ""}`
+  button.className = "search-hub-item"
+  button.id = `search-hub-option-${index}`
+  button.tabIndex = -1
+  button.setAttribute("role", "option")
+  button.setAttribute("aria-selected", "false")
 
   const icon = document.createElement("span")
   icon.className = "search-hub-item-icon"
+  icon.setAttribute("aria-hidden", "true")
   if (item.color) {
     icon.style.boxShadow = `inset 0 0 0 1px rgba(var(--border-rgb), 0.4), 0 0 0 1px ${item.color}`
   }
@@ -116,6 +142,12 @@ function renderResultItem(
 
   const meta = document.createElement("div")
   meta.className = "search-hub-item-meta"
+  if (item.meta?.deferred === true) {
+    const badge = document.createElement("span")
+    badge.className = "search-hub-badge"
+    badge.textContent = window.mI18n?.get("deferral.title") ?? "Deferred"
+    meta.appendChild(badge)
+  }
   const matchedFields = Array.isArray(item.meta?.matched_fields)
     ? (item.meta?.matched_fields as unknown[]).slice(0, 2).map((value) => String(value))
     : []
@@ -138,6 +170,8 @@ async function searchCatalog(
   includeCompleted: boolean,
   includeArchived: boolean,
   sort: string,
+  ingressScope: URL,
+  signal: AbortSignal,
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({
     scope,
@@ -149,12 +183,7 @@ async function searchCatalog(
   if (includeCompleted) params.set("include_completed", "1")
   if (includeArchived) params.set("include_archived", "1")
 
-  const response = await fetch(`/api/search?${params.toString()}`)
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`)
-  }
-
-  return response.json() as Promise<SearchResponse>
+  return fetchOnlineSearch(params, ingressScope, AbortSignal.any([signal, AbortSignal.timeout(8_000)]))
 }
 
 pageLifecycle.onPageLoad((signal) => {
@@ -164,6 +193,7 @@ pageLifecycle.onPageLoad((signal) => {
   const panel = overlay?.querySelector(".search-hub-panel") as HTMLElement | null
   const input = document.getElementById("search-hub-input") as HTMLInputElement | null
   const results = document.getElementById("search-hub-results") as HTMLDivElement | null
+  const status = document.getElementById("search-hub-status")
   const closeButton = document.getElementById("search-hub-close") as HTMLButtonElement | null
   const scopeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".search-hub-scope"))
   const taskOptions = document.getElementById("search-task-options") as HTMLDivElement | null
@@ -175,15 +205,17 @@ pageLifecycle.onPageLoad((signal) => {
   // The SearchHub modal must initialize even without a launcher input.
   // Pages using custom-header slot (e.g. settings) don't render TopNavigation,
   // so #global-search doesn't exist — but window.openSearchHub must still work.
-  if (!overlay || !panel || !input || !results || !closeButton) {
+  if (!overlay || !panel || !input || !results || !status || !closeButton || overlay.dataset.searchController === "ready") {
     return
   }
+  overlay.dataset.searchController = "ready"
 
   const launcherEl = launcher  // nullable — may not exist on custom-header pages
   const overlayEl = overlay
   const panelEl = panel
   const inputEl = input
   const resultsEl = results
+  const statusEl = status
   const closeButtonEl = closeButton
 
   const focusTrap = createFocusTrap(panelEl)
@@ -192,7 +224,11 @@ pageLifecycle.onPageLoad((signal) => {
   let selectedIndex = -1
   let renderedItems: SearchResultItem[] = []
   let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let searchRequest: AbortController | null = null
   let suppressLauncherFocus = false
+  let searchTrigger: HTMLElement | null = null
+  let detailReturn: SearchReturn | undefined
+  let returnSelection: string | undefined
 
   function updateScopeUI(): void {
     scopeButtons.forEach((button) => {
@@ -220,22 +256,47 @@ pageLifecycle.onPageLoad((signal) => {
     selectedIndex = buttons.length === 0 ? -1 : Math.max(0, Math.min(nextIndex, buttons.length - 1))
     buttons.forEach((button, index) => {
       button.classList.toggle("is-selected", index === selectedIndex)
+      button.setAttribute("aria-selected", String(index === selectedIndex))
     })
+    const selected = buttons[selectedIndex]
+    if (selected) {
+      inputEl.setAttribute("aria-activedescendant", selected.id)
+      selected.scrollIntoView({ block: "nearest" })
+    } else {
+      inputEl.removeAttribute("aria-activedescendant")
+    }
   }
 
-  function closeHub(): void {
+  function invalidateResults(): void {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = null
+    searchRequest?.abort()
+    searchRequest = null
+    renderedItems = []
+    resultsEl.replaceChildren()
+    statusEl.replaceChildren()
+    setSelectedIndex(-1)
+  }
+
+  function closeHub(restoreFocus = true): void {
     if (!isOpen) return
     isOpen = false
     overlayEl.classList.add("hidden")
-    renderedItems = []
-    selectedIndex = -1
+    inputEl.setAttribute("aria-expanded", "false")
+    invalidateResults()
     inputEl.value = ""
     if (launcherEl) launcherEl.value = ""
+    returnSelection = undefined
+    focusTrap.deactivate(false)
+    if (restoreFocus) focusSearchTrigger(searchTrigger)
+    searchTrigger = null
+  }
+
+  function focusSearchTrigger(trigger: HTMLElement | null): void {
+    if (!trigger?.isConnected) return
     suppressLauncherFocus = true
-    focusTrap.deactivate()
-    setTimeout(() => {
-      suppressLauncherFocus = false
-    }, 0)
+    trigger.focus()
+    suppressLauncherFocus = false
   }
 
   function runAction(actionId: string | undefined): void {
@@ -245,17 +306,26 @@ pageLifecycle.onPageLoad((signal) => {
       return
     }
     if (actionId === "ask-home-assistant") {
-      const askButton = document.getElementById("ask-ha-btn") as HTMLButtonElement | null
-      askButton?.click()
+      window.openAskHaModal?.()
     }
   }
 
   function selectItem(item: SearchResultItem): void {
-    closeHub()
-    if (item.kind === "task" && item.taskId && typeof window.openTaskDetail === "function") {
-      window.openTaskDetail(item.taskId)
+    if (item.kind === "task" && item.taskId) {
+      const snapshot = { taskId: item.taskId, prefill: inputEl.value, scope: activeScope, trigger: searchTrigger }
+      detailReturn = snapshot
+      closeHub(false)
+      openTaskDetailHandoff(item.taskId, {
+        onDismiss(reason) {
+          if (signal.aborted || detailReturn !== snapshot) return
+          detailReturn = undefined
+          if (reason === "dismiss") openHub(snapshot, snapshot)
+          else if (reason === "discard") focusSearchTrigger(snapshot.trigger)
+        },
+      })
       return
     }
+    closeHub()
     if (item.kind === "action") {
       runAction(item.actionId)
       return
@@ -263,17 +333,25 @@ pageLifecycle.onPageLoad((signal) => {
     if (item.href) {
       const target = prefixIngress(item.href)
       if (isSafeUrl(target)) {
+        const url = new URL(target, window.location.href)
+        const settingsShell = document.getElementById("settings-shell")
+        if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
+          settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
+          return
+        }
         window.location.href = target
       }
     }
   }
 
-  function renderSections(sections: SearchResultSection[]): void {
+  function renderSections(sections: SearchResultSection[], exactFirst = false, restoredTaskId?: string): void {
     resultsEl.replaceChildren()
+    statusEl.replaceChildren()
     renderedItems = []
 
     if (sections.length === 0 || sections.every((section) => section.items.length === 0)) {
-      resultsEl.appendChild(createEmptyState("No matching results yet"))
+      setSelectedIndex(-1)
+      statusEl.appendChild(createEmptyState("No matching results yet"))
       return
     }
 
@@ -282,22 +360,29 @@ pageLifecycle.onPageLoad((signal) => {
 
       const sectionEl = document.createElement("section")
       sectionEl.className = "search-hub-section"
+      sectionEl.setAttribute("role", "group")
 
       const title = document.createElement("div")
       title.className = "search-hub-section-title"
+      title.id = `search-hub-section-${section.id}`
       title.textContent = section.label
+      sectionEl.setAttribute("aria-labelledby", title.id)
       sectionEl.appendChild(title)
 
       section.items.forEach((item) => {
         const itemIndex = renderedItems.push(item) - 1
-        const button = renderResultItem(item, itemIndex === selectedIndex, () => selectItem(item))
+        const button = renderResultItem(item, itemIndex, () => selectItem(item))
         sectionEl.appendChild(button)
       })
 
       resultsEl.appendChild(sectionEl)
     })
 
-    setSelectedIndex(0)
+    const exactIndex = exactFirst ? renderedItems.findIndex(item =>
+      item.kind === "task" && Number(item.meta?.score) >= EXACT_TASK_IDENTIFIER_SCORE,
+    ) : -1
+    const restoredIndex = restoredTaskId ? renderedItems.findIndex(item => item.taskId === restoredTaskId) : -1
+    setSelectedIndex(restoredIndex >= 0 ? restoredIndex : Math.max(0, exactIndex))
   }
 
   function buildStaticSections(query: string): SearchResultSection[] {
@@ -328,43 +413,96 @@ pageLifecycle.onPageLoad((signal) => {
     return sections
   }
 
+  function showSearchStatus(message: string, label?: string, action?: () => void): void {
+    const state = createEmptyState(message)
+    if (label && action) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "search-hub-close"
+      button.textContent = label
+      button.addEventListener("click", action, { signal })
+      state.appendChild(button)
+    }
+    statusEl.replaceChildren(state)
+  }
+
   async function refreshResults(): Promise<void> {
     if (!isOpen) return
+    invalidateResults()
 
     const query = inputEl.value.trim()
-    const taskFields = getTaskFields()
     const staticSections = buildStaticSections(query)
+    const sort = sortSelect?.value ?? "relevance"
 
     if (activeScope === "actions") {
       renderSections(staticSections)
       return
     }
 
-    resultsEl.replaceChildren()
-    resultsEl.appendChild(createEmptyState("Searching..."))
+    const request = new AbortController()
+    searchRequest = request
+    const scope = searchWorkerScope()
+    const worker = navigator.serviceWorker?.controller ?? null
+    const isCurrent = () => isOpen && searchRequest === request && !signal.aborted && !request.signal.aborted &&
+      (navigator.serviceWorker?.controller ?? null) === worker && searchWorkerScope().href === scope.href
+    showSearchStatus("Searching…")
 
     try {
+      if (worker) {
+        const ready = await searchWorkerReady(scope, worker)
+        if (!isCurrent()) return
+        if (!ready) {
+          const waiting = await waitingSearchWorker(scope)
+          if (!isCurrent()) return
+          renderSections(staticSections)
+          if (waiting) {
+            showSearchStatus("Activate the update to search tasks and settings.", "Activate update", () => {
+              void searchRegistration(scope).then(current => {
+                if (!isCurrent()) return
+                if (current?.waiting !== waiting) {
+                  void refreshResults()
+                  return
+                }
+                inputEl.focus()
+                showSearchStatus("Activating search update…", "Retry", () => void refreshResults())
+                waiting.postMessage({ type: "SKIP_WAITING" })
+              }).catch(() => {
+                if (isCurrent()) void refreshResults()
+              })
+            })
+          } else {
+            showSearchStatus("Online search is unavailable until the app updates.", "Retry", () => {
+              void searchRegistration(scope).then(current => current?.update()).catch(() => {})
+              void refreshResults()
+            })
+          }
+          return
+        }
+      }
+      if (!isCurrent()) return
       const response = await searchCatalog(
         query,
         activeScope,
-        taskFields,
+        getTaskFields(),
         includeCompleted?.checked ?? false,
         includeArchived?.checked ?? false,
-        sortSelect?.value ?? "relevance",
+        sort,
+        scope,
+        request.signal,
       )
-
-      renderSections([...staticSections, ...response.sections])
-    } catch {
-      resultsEl.replaceChildren()
-      if (!query) {
-        resultsEl.appendChild(createEmptyState("Start typing to search..."))
-      } else {
-        resultsEl.appendChild(createEmptyState("Search is unavailable right now"))
+      if (isCurrent()) {
+        renderSections([...staticSections, ...response.sections], sort === "relevance", returnSelection)
+        returnSelection = undefined
       }
+    } catch {
+      if (!isCurrent()) return
+      renderSections(staticSections)
+      showSearchStatus("Search is unavailable right now.", "Retry", () => void refreshResults())
     }
   }
 
-  function openHub(options?: string | { prefill?: string; scope?: string }): void {
+  function openHub(options?: string | { prefill?: string; scope?: string }, restored?: SearchReturn): void {
+    if (detailReturn) return
     const prefill = typeof options === "string" ? options : options?.prefill ?? ""
     const scope = typeof options === "object" ? options?.scope : undefined
 
@@ -377,7 +515,10 @@ pageLifecycle.onPageLoad((signal) => {
 
     if (!isOpen) {
       isOpen = true
+      searchTrigger = restored ? restored.trigger : document.activeElement instanceof HTMLElement ? document.activeElement : null
+      returnSelection = restored?.taskId
       overlayEl.classList.remove("hidden")
+      inputEl.setAttribute("aria-expanded", "true")
       focusTrap.activate()
     }
 
@@ -394,31 +535,26 @@ pageLifecycle.onPageLoad((signal) => {
   }
 
   window.openSearchHub = openHub
-  window.closeSearchHub = closeHub
 
-  if (!window.__searchHubKeyboardBound) {
-    window.__searchHubKeyboardBound = true
-    document.addEventListener("keydown", (event) => {
-      const target = event.target as HTMLElement | null
-      const tag = target?.tagName ?? ""
-      const isEditing =
-        ["INPUT", "TEXTAREA", "SELECT"].includes(tag) ||
-        target?.contentEditable === "true"
+  document.addEventListener("keydown", event => {
+    if (event.defaultPrevented) return
+    const target = event.target
+    if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
+    if (document.getElementById("task-detail-overlay")?.classList.contains("active")) return
 
-      if (isEditing) return
+    if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+      && singleKeyShortcutsEnabled()) {
+      event.preventDefault()
+      const scope = document.getElementById("settings-bar")?.dataset.searchScope
+      openHub(scope ? { scope } : undefined)
+      return
+    }
 
-      if (event.key === "/" && !event.shiftKey) {
-        event.preventDefault()
-        window.openSearchHub?.()
-        return
-      }
-
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        window.openSearchHub?.()
-      }
-    })
-  }
+    if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault()
+      openHub()
+    }
+  }, { signal })
 
   // Launcher-specific event listeners — only bound when #global-search exists.
   // On pages with custom-header (settings), the UnifiedBar search launcher
@@ -437,13 +573,15 @@ pageLifecycle.onPageLoad((signal) => {
     }, { signal })
   }
 
-  closeButtonEl.addEventListener("click", closeHub, { signal })
+  closeButtonEl.addEventListener("click", () => closeHub(), { signal })
   overlayEl.addEventListener("click", (event) => {
     if (event.target === overlayEl) closeHub()
   }, { signal })
 
   inputEl.addEventListener("input", () => {
-    if (searchTimer) clearTimeout(searchTimer)
+    returnSelection = undefined
+    invalidateResults()
+    showSearchStatus("Searching…")
     searchTimer = setTimeout(() => {
       void refreshResults()
     }, 120)
@@ -460,19 +598,38 @@ pageLifecycle.onPageLoad((signal) => {
       setSelectedIndex(selectedIndex - 1)
       return
     }
-    if (event.key === "Enter" && renderedItems[selectedIndex]) {
+    if (event.key === "Enter") {
       event.preventDefault()
-      selectItem(renderedItems[selectedIndex]!)
-      return
-    }
-    if (event.key === "Escape") {
-      event.preventDefault()
-      closeHub()
+      const selected = renderedItems[selectedIndex]
+      if (selected) selectItem(selected)
     }
   }, { signal })
 
+  panelEl.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || event.defaultPrevented || !isOpen) return
+    event.preventDefault()
+    event.stopPropagation()
+    closeHub()
+  }, { signal })
+
+  navigator.serviceWorker?.addEventListener("controllerchange", () => {
+    if (isOpen) void refreshResults()
+  }, { signal })
+  window.addEventListener("pagehide", () => {
+    detailReturn = undefined
+    closeHub(false)
+  }, { signal })
+  signal.addEventListener("abort", () => {
+    delete overlayEl.dataset.searchController
+    if (window.openSearchHub === openHub) delete window.openSearchHub
+    detailReturn = undefined
+    focusTrap.deactivate(false)
+    invalidateResults()
+  }, { once: true })
+
   scopeButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      returnSelection = undefined
       activeScope = (button.dataset.scope as SearchScope) || "all"
       updateScopeUI()
       void refreshResults()
@@ -488,6 +645,7 @@ pageLifecycle.onPageLoad((signal) => {
     .filter(Boolean)
     .forEach((element) => {
       element?.addEventListener("change", () => {
+        returnSelection = undefined
         void refreshResults()
       }, { signal })
     })

@@ -22,11 +22,12 @@
  * dynamic content support.
  */
 
+import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { taskApi, type TaskCreatePayload } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
-import { parseTaskInput } from "./nl-task-parser"
+import { parseTaskInput, type ParsedTask } from "./nl-task-parser"
 import {
   saveFilterState,
   loadFilterState,
@@ -88,6 +89,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
   const container = options?.container ?? document.body
   focusedIndex = -1
+  // Restore the batch selection before restoring filters rewrites history state.
+  const addBatchCheckboxes = setupBatchUI(container, lm)
 
   initPageShellNavigation({
     barId: "today-bar",
@@ -110,8 +113,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupAutoRefresh(container)     // G33
   setupEveningReview(container, lm)   // G34
   renderEffortIndicators(container) // G35
-  setupBatchUI(container, lm)         // G30
-  const refreshUnscheduled = setupUnscheduledSection(container, lm)
+  const refreshUnscheduled = setupUnscheduledSection(container, lm, addBatchCheckboxes)
   setupFilters(container, refreshUnscheduled)
   if (window.location.search !== initialSearch) refreshUnscheduled()
   setupHabitsSection(container, lm)    // G38
@@ -159,9 +161,9 @@ function setupEventDelegation(container: HTMLElement) {
       }
 
       try {
-        await taskApi.updateTask(id, { status: newStatus })
+        const completed = await taskApi.updateTask(id, { status: newStatus })
         showToast(cb.checked ? "common.task_completed" : "common.task_reopened")
-        if (cb.checked) onTaskCompleted()
+        if (cb.checked) onTaskCompleted(completed)
       } catch {
         cb.checked = !cb.checked
         item?.classList.toggle("tli--done", cb.checked)
@@ -280,7 +282,7 @@ function setupEventDelegation(container: HTMLElement) {
       const header = target.closest(".today-section__header") as HTMLElement | null
       const section = header?.closest(".today-section") as HTMLElement | null
       if (section && section.id !== "section-unscheduled") {
-        section.classList.toggle("today-section--collapsed")
+        setSectionCollapsed(section, !section.classList.contains("today-section--collapsed"))
         saveSectionState()
       }
       return
@@ -335,7 +337,7 @@ function setupEventDelegation(container: HTMLElement) {
 
     // ── Click on task item → open detail ──
     const taskItem = target.closest(".tli") as HTMLElement | null
-    if (taskItem && !target.closest("button") && !target.closest("input")) {
+    if (taskItem && !e.defaultPrevented && !target.closest("a, button, input")) {
       const id = taskItem.dataset.id
       if (id) {
         openTaskDetailHandoff(id)
@@ -400,7 +402,14 @@ function closeSnoozePopover() {
 
 // ── Ask AI ────────────────────────────────────────────────────────────────
 
-function handleAskAi(el: HTMLElement) {
+let activeAiHandoff: AbortController | undefined
+
+async function handleAskAi(el: HTMLElement) {
+  if (el.dataset.aiBusy === "true") return
+  activeAiHandoff?.abort()
+  const request = new AbortController()
+  activeAiHandoff = request
+  const signal = AbortSignal.any([lm.signal, request.signal])
   const title = el.dataset.title ?? ""
   const desc = el.dataset.description ?? ""
   const status = el.dataset.status ?? "pending"
@@ -408,33 +417,40 @@ function handleAskAi(el: HTMLElement) {
 
   const prompt = `I have a task in my task manager:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify potential blockers?`
 
-  const provider = localStorage.getItem("meitheal-ai-provider") || "chatgpt"
-
-  if (provider === "ha_llm") {
-    const modal = document.getElementById("ask-ha-modal")
-    if (modal) {
-      modal.classList.add("active")
-      const input = modal.querySelector("#ask-ha-input") as HTMLInputElement
-      if (input) {
-        input.value = prompt
-        input.focus()
-        const form = input.closest("form")
-        if (form) form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
-      }
+  el.dataset.aiBusy = "true"
+  el.setAttribute("aria-busy", "true")
+  try {
+    const { resolveAiHandoffTarget, offerAiHandoff } = await import("@domains/ai/ai-context-service")
+    const target = await resolveAiHandoffTarget(signal)
+    if (!target || signal.aborted) return
+    if (target.provider === "ha_llm") {
+      if (!target.canUseAssist) showToast("settings.ai_handoff_ha_denied", "error")
+      else if (window.openAskHaModal) window.openAskHaModal(prompt)
+      else showToast("settings.ai_handoff_ha_unavailable", "error")
+      return
     }
-    return
+    if (!target.url) {
+      showToast("settings.ai_handoff_url_invalid", "error")
+      return
+    }
+    const url = new URL(target.url)
+    const sendsTaskDetails = target.provider !== "custom" && target.provider !== "ollama"
+    if (sendsTaskDetails) url.searchParams.set("q", prompt)
+    await offerAiHandoff(url, sendsTaskDetails, signal)
+  } catch {
+    if (!signal.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
+  } finally {
+    if (activeAiHandoff === request) activeAiHandoff = undefined
+    delete el.dataset.aiBusy
+    el.removeAttribute("aria-busy")
   }
+}
 
-  const encodedPrompt = encodeURIComponent(prompt)
-  const urls: Record<string, string> = {
-    chatgpt: `https://chatgpt.com/?q=${encodedPrompt}`,
-    claude: `https://claude.ai/new?q=${encodedPrompt}`,
-    gemini: `https://gemini.google.com/app?q=${encodedPrompt}`,
-    ollama: localStorage.getItem("meitheal-ai-custom-url") || "http://localhost:11434",
-    custom: localStorage.getItem("meitheal-ai-custom-url") || "",
+function parseQuickTask(input: string): ParsedTask {
+  if (window.__featureFlags?.nlp_parser === false) {
+    return { title: input.trim(), dueDate: null, priority: null, labels: [], assignee: null, hasExtractions: false }
   }
-  const url = urls[provider] || urls.chatgpt
-  if (url) window.open(url, "_blank")
+  return parseTaskInput(input)
 }
 
 // ── Quick Add ─────────────────────────────────────────────────────────────
@@ -452,7 +468,7 @@ function setupQuickAdd(container: HTMLElement) {
     if (!text) return
 
     // Parse NL input
-    const parsed = parseTaskInput(text)
+    const parsed = parseQuickTask(text)
     const todayStr = new Date().toISOString().split("T")[0]!
 
     // Detect shopping list: "shopping: item1, item2"
@@ -513,7 +529,7 @@ function setupQuickAdd(container: HTMLElement) {
         return
       }
 
-      const parsed = parseTaskInput(val)
+      const parsed = parseQuickTask(val)
       const parts: string[] = []
 
       if (parsed.dueDate) parts.push(`📅 Due: ${parsed.dueDate}`)
@@ -651,6 +667,8 @@ function setupKeyboardNav(container: HTMLElement) {
     const target = e.target
     if (!(target instanceof HTMLElement) || target.closest("input, select, textarea, button, a") || target.isContentEditable) return
 
+    if (isDisabledCharacterShortcut(e.key)) return
+
     const items = getVisibleTasks()
     switch (e.key) {
       case "j":
@@ -700,6 +718,13 @@ function setupKeyboardNav(container: HTMLElement) {
 
 // ── Section Collapse ──────────────────────────────────────────────────────
 
+function setSectionCollapsed(section: HTMLElement, collapsed: boolean) {
+  section.classList.toggle("today-section--collapsed", collapsed)
+  section.querySelector(".today-section__toggle")?.setAttribute("aria-expanded", String(!collapsed))
+  const list = section.querySelector<HTMLElement>(".today-section__list")
+  if (list) list.inert = collapsed
+}
+
 function setupSectionCollapse(container: HTMLElement) {
   try {
     const saved = localStorage.getItem(SECTION_COLLAPSE_KEY)
@@ -709,7 +734,7 @@ function setupSectionCollapse(container: HTMLElement) {
     collapsed.forEach(id => {
       if (id === "section-unscheduled") return
       const section = container.querySelector(`#${id}`) as HTMLElement | null
-      if (section) section.classList.add("today-section--collapsed")
+      if (section) setSectionCollapsed(section, true)
     })
   } catch {
     /* ignore */
@@ -733,6 +758,7 @@ function saveSectionState() {
 
 function setupDragReorder(container: HTMLElement) {
   let dragSource: HTMLElement | null = null
+  let reorderPending = false
 
   // A page of unscheduled rows cannot safely overwrite board-wide positions.
   container.querySelectorAll<HTMLElement>(".today-section__list:not(#today-unscheduled-list)").forEach(list => {
@@ -740,6 +766,10 @@ function setupDragReorder(container: HTMLElement) {
       item.setAttribute("draggable", "true")
 
       lm.on(item, "dragstart", (e: Event) => {
+        if (reorderPending) {
+          e.preventDefault()
+          return
+        }
         const de = e as DragEvent
         dragSource = item
         item.classList.add("tli--dragging")
@@ -771,13 +801,14 @@ function setupDragReorder(container: HTMLElement) {
         e.preventDefault()
         const de = e as DragEvent
         item.classList.remove("tli--drag-over")
-        if (!dragSource || dragSource === item) return
+        if (reorderPending || !dragSource || dragSource === item) return
 
         // Only allow reorder within same section list
         const sourceList = dragSource.closest(".today-section__list")
         const targetList = item.closest(".today-section__list")
-        if (sourceList !== targetList) return
+        if (!sourceList || sourceList !== targetList) return
 
+        const priorOrder = Array.from(sourceList.children)
         // Move DOM element
         const rect = item.getBoundingClientRect()
         const midY = rect.top + rect.height / 2
@@ -792,14 +823,21 @@ function setupDragReorder(container: HTMLElement) {
           (sourceList as HTMLElement).querySelectorAll<HTMLElement>(".tli")
         ).map(el => el.dataset.id).filter(Boolean) as string[]
 
+        reorderPending = true
         try {
-          await taskApi.raw("/api/tasks/reorder", {
+          const result = await taskApi.raw("/api/tasks/reorder", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ ordered_ids: orderedIds }),
           })
+          if (!result.ok) throw new Error("Task order rejected")
         } catch {
-          // Revert silently — reload to fix
+          if (sourceList.isConnected) {
+            sourceList.append(...priorOrder)
+            showToast("common.order_retry", "error")
+          }
+        } finally {
+          reorderPending = false
         }
       })
     })
@@ -858,7 +896,14 @@ function setupAutoRefresh(container: HTMLElement) {
         const value = counts[counter.dataset.todayCount as keyof TodayTaskCounts]
         if (Number.isFinite(value)) counter.textContent = String(value)
       }
-      if (fill && Number.isFinite(counts.completionPercent)) fill.style.width = `${counts.completionPercent}%`
+      if (fill && Number.isFinite(counts.completionPercent)) {
+        fill.style.width = `${counts.completionPercent}%`
+        fill.closest('[role="progressbar"]')?.setAttribute("aria-valuenow", String(counts.completionPercent))
+      }
+      const summary = container.querySelector("#today-signal-summary")
+      if (summary && Number.isFinite(counts.dueToday) && Number.isFinite(counts.carriedForward)) {
+        summary.textContent = `${counts.dueToday} due today · ${counts.carriedForward} carried forward`
+      }
     } catch {
       /* Keep the last counts if the refresh fails. */
     } finally {

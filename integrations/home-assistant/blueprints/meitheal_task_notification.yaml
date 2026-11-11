@@ -46,12 +46,18 @@ blueprint:
 trigger:
   - platform: event
     event_type: !input event_type
-    event_data:
-      domain: meitheal
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.get('source') == 'meitheal' or
+         trigger.event.data.get('domain') == 'meitheal' }}
 
 variables:
   task_title: "{{ trigger.event.data.title | default('Task') }}"
-  task_id: "{{ trigger.event.data.task_id | default('') }}"
+  task_id: >-
+    {% set id = trigger.event.data.get('task_id') %}
+    {{ id | trim if id is string else '' }}
   event_name: >-
     {% set types = {
       'meitheal_task_created': 'New Task',
@@ -81,17 +87,20 @@ action:
       # Android: clickAction opens Meitheal ingress
       clickAction: "{{ ingress_path }}"
       # Android/iOS: notification tag for deduplication
-      tag: "meitheal_{{ task_id }}"
+      tag: "meitheal_{{ task_id or trigger.event.event_type }}"
       # Actionable notification buttons
-      actions:
-        - action: "URI"
-          title: "📋 View Task"
-          uri: "{{ ingress_path }}"
-        - action: "MEITHEAL_COMPLETE_{{ task_id }}"
-          title: "✅ Complete"
-        - action: "URI"
-          title: "📊 Dashboard"
-          uri: "{{ ingress_path }}"
+      actions: >-
+        {% set dashboard = {'action': 'URI', 'title': '📊 Dashboard', 'uri': ingress_path} %}
+        {% if task_id %}
+          {% set task_url = ingress_path.rstrip('/') ~ '/tasks?open=' ~ (task_id | urlencode) %}
+          {{ [
+            {'action': 'URI', 'title': '📋 View Task', 'uri': task_url},
+            {'action': 'MEITHEAL_COMPLETE_' ~ task_id, 'title': '✅ Complete'},
+            dashboard
+          ] }}
+        {% else %}
+          {{ [dashboard] }}
+        {% endif %}
 
 mode: queued
-max_queued: 5
+max: 5

@@ -11,7 +11,12 @@
  * Bounded Context: Tasks (view-layer utility)
  */
 
-import { evaluateFilterGroup } from "./filter-engine"
+import { VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
+
+import { parseCalendarDay } from "./calendar-day"
+import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
+import { normalizeStatus } from "./status-config"
+import { TABLE_COLUMNS } from "./table-registry"
 
 // =============================================================================
 // Types
@@ -28,14 +33,19 @@ export interface FilterState {
   area: string
   /** Active type filters — multi-select (empty = all types visible) */
   types: string[]
+  task_type?: string
   /** Primary group-by dimension */
   groupBy: string
   /** Secondary group-by (nested grouping within primary groups) */
   subGroupBy: string
+  /** Table workflow columns, selected by their stable IDs. */
+  laneIds?: string[]
+  createdFrom?: string | undefined
+  createdThrough?: string | undefined
   /** Active label filters — multi-select (empty = all labels visible) */
   labels: string[]
   /** Advanced compound AND/OR filter conditions */
-  advancedFilter?: import("./filter-engine").FilterGroup | null
+  advancedFilter?: FilterGroup | null
   /** Visible column IDs in the table view */
   columns?: string[]
 }
@@ -106,6 +116,254 @@ const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "ar
 const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
+
+const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
+const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const
+const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice"]
+const LEGACY_SORTS = new Map([
+  ["due_asc", "due_date-asc"],
+  ["due_desc", "due_date-desc"],
+  ["priority_desc", "priority-asc"],
+  ["rice_desc", "rice-desc"],
+])
+const RULE_FIELDS = new Set(["title", "status", "priority", "rice", "type", "assigned", "labels", "area"])
+const RULE_OPERATORS = new Set([
+  "equals", "notEquals", "contains", "notContains", "greaterThan", "lessThan", "between", "isEmpty", "isNotEmpty",
+])
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+}
+
+function decodeFilterJson(value: unknown): unknown {
+  if (typeof value !== "string") return value
+  if (!value || value.length > 8000) return undefined
+  try {
+    return JSON.parse(value)
+  } catch {
+    try {
+      return JSON.parse(decodeURIComponent(value))
+    } catch {
+      return undefined
+    }
+  }
+}
+
+export const FILTER_LIST_LIMIT = 50
+
+function stringList(value: unknown): string[] {
+  const decoded = typeof value === "string" && value.startsWith("[") ? decodeFilterJson(value) : value
+  const list = Array.isArray(decoded) ? decoded : typeof value === "string" ? value.split(",") : []
+  return [...new Set(list.filter((item): item is string =>
+    typeof item === "string" && item.length > 0 && item.length <= 500,
+  ))].slice(0, FILTER_LIST_LIMIT)
+}
+
+export function readFilterLabels(params: URLSearchParams): string[] {
+  return stringList(params.has("label") ? params.getAll("label") : params.get("labels"))
+}
+
+export function writeFilterLabels(params: URLSearchParams, labels: readonly string[]): void {
+  params.delete("label")
+  params.delete("labels")
+  if (!labels.length) return
+  if (labels.some(label => /[,\[\]]/.test(label))) {
+    for (const label of labels) params.append("label", label)
+  } else {
+    params.set("labels", labels.join(","))
+  }
+}
+
+function ruleValue(value: unknown): value is string | number | boolean {
+  return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)) ||
+    (typeof value === "string" && value.length <= 500)
+}
+
+function normalizeTableRules(raw: unknown): FilterGroup | undefined {
+  const root = decodeFilterJson(raw)
+  let count = 0
+  function group(node: unknown, depth: number): FilterGroup | undefined {
+    if (++count > 40 || depth > 4 || !isPlainRecord(node) || !Array.isArray(node.conditions)) return
+    const conditions: FilterGroup["conditions"] = []
+    const logic = node.logic === "OR" ? "OR" : "AND"
+    for (const item of node.conditions) {
+      if (!isPlainRecord(item)) return
+      if ("conditions" in item) {
+        const nested = group(item, depth + 1)
+        if (!nested) return
+        conditions.push(nested)
+        continue
+      }
+      if (++count > 40 || typeof item.field !== "string" || !RULE_FIELDS.has(item.field) ||
+          typeof item.operator !== "string" || !RULE_OPERATORS.has(item.operator)) return
+      const { field, operator, value } = item
+      const validValue = operator === "between"
+        ? Array.isArray(value) && value.length === 2 && value.every(ruleValue)
+        : ruleValue(value) || ((operator === "isEmpty" || operator === "isNotEmpty") && value == null)
+      if (!validValue) return
+      conditions.push({
+        id: typeof item.id === "string" && item.id.length <= 100 ? item.id : String(count),
+        field,
+        operator: operator as FilterOperator,
+        value: field === "status" && typeof value === "string" && (operator === "equals" || operator === "notEquals")
+          ? normalizeStatus(value)
+          : value ?? "",
+        ...(item.logic === "OR" || item.logic === "AND" ? { logic: item.logic } : {}),
+      })
+    }
+    return {
+      id: typeof node.id === "string" && node.id.length <= 100 ? node.id : depth === 1 ? "root" : String(count),
+      logic,
+      conditions,
+    }
+  }
+
+  const rules = group(root, 1)
+  return rules?.conditions.length && encodeURIComponent(JSON.stringify(rules)).length <= 8000 ? rules : undefined
+}
+
+export function normalizeTableColumns(value: unknown): string[] | undefined {
+  const decoded = decodeFilterJson(value)
+  if (!Array.isArray(decoded)) return
+  return TABLE_COLUMNS.filter(column => column.id === "title" || decoded.includes(column.id)).map(column => column.id)
+}
+
+function tableGroup(value: unknown): string | undefined {
+  const group = value === "board" ? "area" : value
+  return GROUP_BY_OPTIONS.find(option => option !== "none" && option === group)
+}
+
+export function normalizeTableCreationRange(from: unknown, through: unknown): Pick<FilterState, typeof TABLE_DATE_KEYS[number]> | null {
+  const valid = (value: unknown): value is string | undefined =>
+    value === undefined || (typeof value === "string" && (!value || (value >= "0001-01-01" && Boolean(parseCalendarDay(value)))))
+  if (!valid(from) || !valid(through) || (from && through && from > through)) return null
+  return { ...(from ? { createdFrom: from } : {}), ...(through ? { createdThrough: through } : {}) }
+}
+
+export function tableCreationRangeLabel(from: string | undefined, through: string | undefined): string {
+  if (from && through) return from === through ? from : `${from} – ${through}`
+  if (from) return `≥ ${from}`
+  return through ? `≤ ${through}` : ""
+}
+
+function normalizeTableValues(input: Record<string, unknown>): Partial<FilterState> {
+  const result: Partial<FilterState> = normalizeTableCreationRange(input.createdFrom, input.createdThrough) ?? {}
+  for (const key of ["search", "status", "priority", "rice", "user"] as const) {
+    const value = input[key]
+    if (typeof value === "string" && value && value.length <= 500) {
+      result[key] = key === "status" ? normalizeStatus(value) : value
+    }
+    else if ((key === "search" || key === "priority") && typeof value === "number" && Number.isFinite(value)) {
+      result[key] = String(value)
+    } else if (key === "search" && typeof value === "boolean") result.search = String(value)
+  }
+
+  const area = [input.area, input.area_id, input.board].find(value => typeof value === "string" && value.length <= 500)
+  if (typeof area === "string") result.area = area
+  if (Array.isArray(input.laneIds)) {
+    const laneIds = stringList(input.laneIds)
+    if (laneIds.length) result.laneIds = laneIds
+  }
+  const kindValues = stringList(input.types)
+  const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
+  if (types.length) result.types = types
+  const labels = stringList(input.labels)
+  if (labels.length) result.labels = labels
+  if (typeof input.task_type === "string" && VALID_TASK_TYPES.some(type => type === input.task_type)) {
+    result.task_type = input.task_type
+  }
+  const groupBy = tableGroup(input.groupBy)
+  const subGroupBy = tableGroup(input.subGroupBy)
+  if (groupBy) result.groupBy = groupBy
+  if (groupBy && subGroupBy && subGroupBy !== groupBy) result.subGroupBy = subGroupBy
+
+  if (typeof input.sort === "string") {
+    const sort = LEGACY_SORTS.get(input.sort) ?? input.sort
+    const [column, direction, extra] = sort.split("-")
+    if (extra === undefined && SORT_COLUMNS.includes(column ?? "") && (direction === "asc" || direction === "desc")) {
+      result.sort = sort
+    }
+  }
+
+  const rules = normalizeTableRules(input.advancedFilter)
+  if (rules) result.advancedFilter = rules
+  const columns = normalizeTableColumns(input.columns)
+  if (columns) result.columns = columns
+  return result
+}
+
+export function normalizeSavedFilter(raw: unknown): Partial<FilterState> | null {
+  let input = raw
+  if (typeof raw === "string") {
+    try {
+      input = JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+  if (!isPlainRecord(input)) return null
+  if (!normalizeTableCreationRange(input.createdFrom, input.createdThrough)) return null
+  const state = normalizeTableValues(input)
+  if (input.advancedFilter && !state.advancedFilter) {
+    const group = decodeFilterJson(input.advancedFilter)
+    if (!isPlainRecord(group) || !Array.isArray(group.conditions) || group.conditions.length > 0) return null
+  }
+  return { ...state, area: state.area ?? "" }
+}
+
+export function readTableFilterParams(params: URLSearchParams): Partial<FilterState> {
+  const area = params.get("area_id") ?? params.get("area") ?? params.get("board") ?? undefined
+  return normalizeTableValues({
+    ...Object.fromEntries(params),
+    area,
+    area_id: undefined,
+    board: undefined,
+    labels: readFilterLabels(params),
+    laneIds: params.getAll("lane"),
+    createdFrom: params.getAll("createdFrom").length > 1 ? null : params.get("createdFrom") ?? undefined,
+    createdThrough: params.getAll("createdThrough").length > 1 ? null : params.get("createdThrough") ?? undefined,
+  })
+}
+
+export function writeTableFilterParams(params: URLSearchParams, state: Partial<FilterState>): void {
+  const normalized = normalizeTableValues({ ...state })
+  for (const key of TABLE_KEYS) params.delete(key)
+  for (const key of [...SCALAR_KEYS, "task_type", ...TABLE_DATE_KEYS] as const) {
+    const value = normalized[key]
+    if (value !== undefined) params.set(key, value)
+  }
+  if (normalized.types?.length) params.set("types", normalized.types.join(","))
+  writeFilterLabels(params, normalized.labels ?? [])
+  for (const id of normalized.laneIds ?? []) params.append("lane", id)
+  for (const key of JSON_KEYS) {
+    if (normalized[key]) params.set(key, JSON.stringify(normalized[key]))
+  }
+}
+
+export function loadTableFilterState(): Partial<FilterState> {
+  const params = new URLSearchParams(window.location.search)
+  if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
+  const state = normalizeTableValues({ ...loadFilterState() })
+  delete state.area
+  delete state.laneIds
+  for (const key of TABLE_DATE_KEYS) delete state[key]
+  return state
+}
+
+export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
+  try {
+    const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
+  } catch { /* storage unavailable */ }
+  const url = new URL(window.location.href)
+  writeTableFilterParams(url.searchParams, state)
+  if (page !== undefined) {
+    if (page > 1) url.searchParams.set("tp", String(page))
+    else url.searchParams.delete("tp")
+  }
+  window.history.replaceState(window.history.state, "", url)
+}
 
 /**
  * Save filter state to both localStorage and URL search params.
@@ -250,25 +508,8 @@ export function isTaskVisible(
   el: Pick<HTMLElement, "dataset">,
   state: Partial<FilterState>,
 ): boolean {
-  // Advanced Filter (early exit if it fails)
-  if (state.advancedFilter) {
-    // Extract data from the element just like the filter engine expects
-    const data = { ...el.dataset }
-    if (data.labels) {
-      try {
-        const parsed = JSON.parse(data.labels)
-        data.labels = JSON.stringify(parsed.map((l: any) => typeof l === 'string' ? l : l.name || ''))
-      } catch {
-        data.labels = "[]"
-      }
-    } else {
-      data.labels = "[]"
-    }
-    data.type = data.taskType || data.task_type || "task"
-
-    if (!evaluateFilterGroup(state.advancedFilter, data)) {
-      return false
-    }
+  if (state.advancedFilter && !evaluateFilterGroup(state.advancedFilter, extractDataFromElement(el))) {
+    return false
   }
 
   // Search
@@ -306,6 +547,8 @@ export function isTaskVisible(
     if (el.dataset.area !== state.area) return false
   }
 
+  if (state.task_type && (el.dataset.taskType ?? el.dataset.task_type ?? "task") !== state.task_type) return false
+
   // Type filter (multi-select — if types array has values, task must be one of them)
   if (state.types && state.types.length > 0) {
     const taskKind = el.dataset.taskKind ?? el.dataset.task_kind ?? "standard_action"
@@ -339,7 +582,7 @@ export function isTaskVisible(
  * Get the group key for a task element based on the group-by dimension.
  * Returns a string key used to sort tasks into groups.
  */
-export function getGroupKey(el: HTMLElement, groupBy: string): string {
+export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): string {
   switch (groupBy) {
     case "type":
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"

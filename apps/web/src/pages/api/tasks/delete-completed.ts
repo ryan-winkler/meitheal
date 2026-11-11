@@ -19,6 +19,7 @@
  * accidental invocation.
  */
 import type { APIRoute } from "astro"
+import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -76,7 +77,7 @@ export const GET: APIRoute = async ({ url }) => {
 }
 
 /** DELETE — permanently remove completed/archived tasks older than threshold */
-export const DELETE: APIRoute = async ({ url }) => {
+export const DELETE: APIRoute = async ({ request, url }) => {
   try {
     const result = validateMonths(url)
     if (result instanceof Response) return result
@@ -90,6 +91,8 @@ export const DELETE: APIRoute = async ({ url }) => {
       )
     }
 
+    const boardSelection = await rejectBoardSelectionInJson(request)
+    if (boardSelection) return boardSelection
     await ensureSchema()
     const client = getPersistenceClient()
     const repo = new TaskRepository(client)

@@ -8,6 +8,10 @@ description: "Maintain the API, event, and automation contracts."
 
 > KCS runbook for the build-time OpenAPI, AsyncAPI, MCP, and observability pipeline.
 
+Agent handoff status is shown in Settings. Review displays saved proposals and fetches them live. Service workers purge previously cached Review pages during activation.
+
+App events sent to the Home Assistant event bus carry `domain: "meitheal"` and `source: "meitheal"` with an ISO timestamp. Native device triggers filter by the domain marker. When diagnosing a trigger, inspect the event on Core's event bus and confirm that marker and the expected task ID; events from other domains must not activate a Meitheal trigger.
+
 ## Build Pipeline
 
 ```bash
@@ -44,21 +48,39 @@ For tools that need special logic beyond simple CRUD dispatch:
 
 Open Meitheal through Home Assistant as an administrator, then go to **Settings → Automation & AI → Agent Tokens**. Give each client its own token and select the scopes for its operations. Copy the token during creation and store it in the client’s secret storage. Send it as an `Authorization: Bearer` header. A token is required for MCP and needs both `mcp:execute` and the scope of the tool it calls.
 
+Keep tokens out of examples, logs, and reports. Use sample tasks to test a connection. Ask the installation owner before you send task details or household data to an external service.
+
 | Operation | Scope |
 |-----------|-------|
 | List tasks, read a task, or read its links | `tasks:read` |
+| Read task or comment reactions and board reaction counts | `tasks:read` |
 | Create or update tasks, or add and remove their links | `tasks:write` |
+| Add or remove your own task or comment reactions | `tasks:write` |
 | Delete tasks, including bulk removal of completed tasks | `tasks:delete` |
 | Query universal search | `search:read` |
 | List and change projects | `projects:read` and `projects:write`, respectively |
 
 An invalid, revoked, or expired token returns HTTP 401. A valid token without permission returns HTTP 403. Use the Home Assistant administrator session to change scopes or revoke credentials. Existing settings and webhook scopes have no permitted operations in the current policy. To connect Home Assistant Core, create a token with all three task scopes and `search:read`.
 
+Use the literal `/api/` prefix in API URLs. Encoded spellings of that prefix that resolve to an API route return HTTP 404.
+
 ### Find, create, and complete tasks
 
 1. Find tasks with `GET /api/search?q=…&scope=tasks` and use a result's task ID for follow-up requests.
 2. Create a task with `POST /api/tasks`. The response includes its ID at the top level.
 3. Update the task with `PATCH /api/tasks/{id}`. Set `status` to `complete` when the work is done.
+
+The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
+
+### Read saved agent proposals
+
+Open `/review` through the installed App to read saved proposals and their proposed changes. New Task agent assignment, proposal approval, and rejection are unavailable. Use the existing scoped task APIs for supported automation.
+
+### Read or change reactions
+
+Use `GET` or `POST` on `/api/tasks/{id}/reactions` for a task, or `/api/tasks/{id}/comments/{commentId}/reactions` for a comment. A verified Home Assistant user or scoped agent can send a JSON `content` value with up to 16 Unicode code points after normalization. Repeating the same reaction as the same author returns the existing reaction ID. To remove your own reaction, send `DELETE` to the same collection path with the reaction ID appended.
+
+Lists contain up to 50 entries and a `next_cursor` for older entries. Use `GET /api/tasks/reaction-counts?ids=…` with up to 100 comma-separated task IDs for card counts. This response can omit tasks with zero reactions.
 
 ### Retry a task mutation
 
@@ -139,6 +161,7 @@ All API responses include dual rate limit headers:
 | `GET /openapi.yaml` | Full OpenAPI 3.1 spec |
 | `GET /.well-known/jsondoc.json` | Same API operations as OpenAPI 3.1 JSON. The relative server URL retains the App's ingress path. |
 | `GET /asyncapi.yaml` | AsyncAPI 2.6 event spec |
+| `GET /.well-known/mcp.json` | Current MCP discovery and ingress-aware endpoint |
 | `POST /api/mcp` | JSON-RPC 2.0 MCP server |
 | `GET /api/a2a/agent-card` | Agent-to-Agent discovery |
 
@@ -146,6 +169,7 @@ All API responses include dual rate limit headers:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| MCP discovery or authenticated requests return 404 | MCP is disabled | Check the MCP toggle in Settings → Automation & AI → Agent Protocols |
 | MCP returns empty tools list | `openapi.yaml` not found | Run `npm run generate:openapi` |
 | Tool definitions stale in dev | 30s cache TTL | Wait or restart dev server |
 | `X-Automation-Source` logged as `unknown` | Value not in allowlist | Use one of the documented values above |

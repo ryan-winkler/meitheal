@@ -5,6 +5,10 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./status-values": "./src/task-status-values.mjs"
+  },
   "scripts": {
     "check": "tsc --noEmit"
   },

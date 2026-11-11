@@ -188,7 +188,7 @@ import { t } from "../../i18n/translations"
 
   const log = createClientLogger("pillars", "pillar-form-modal")
 
-  pageLifecycle.onPageLoad(() => {
+  pageLifecycle.onPageLoad(signal => {
     const overlay = document.getElementById("pillar-form-overlay")
     const closeBtn = document.getElementById("close-pillar-modal")
     const cancelBtn = document.getElementById("cancel-pillar-modal")
@@ -204,6 +204,15 @@ import { t } from "../../i18n/translations"
 
     // --- State: tracks current editing context ---
     let editingPillarId: string | null = null
+    let opener: HTMLElement | null = null
+    const savedMessageKey = "meitheal-pillar-saved"
+    try {
+      const saved = sessionStorage.getItem(savedMessageKey)
+      if (saved) {
+        sessionStorage.removeItem(savedMessageKey)
+        showToast(saved, "success")
+      }
+    } catch { /* Session storage can be unavailable in embedded browsers. */ }
 
     // --- Init shared pickers ---
     const iconPickerCleanup = initIconPicker("pillar-icon-picker", {
@@ -226,15 +235,21 @@ import { t } from "../../i18n/translations"
       },
     })
 
+    signal.addEventListener("abort", () => {
+      iconPickerCleanup?.()
+      colorPickerCleanup?.()
+      if (overlay.classList.contains("active")) document.body.style.overflow = ""
+    }, { once: true })
+
     // --- Focus trap helper ---
     function trapFocus(e: KeyboardEvent) {
       if (e.key !== "Tab" || !overlay?.classList.contains("active")) return
-      const focusable = overlay.querySelectorAll<HTMLElement>(
+      const focusable = [...overlay.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([disabled]):not([type=hidden]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )
+      )].filter(control => control.getClientRects().length)
       if (focusable.length === 0) return
-      const first = focusable.item(0)
-      const last = focusable.item(focusable.length - 1)
+      const first = focusable[0]
+      const last = focusable.at(-1)
       if (!first || !last) return
       if (e.shiftKey) {
         if (document.activeElement === first) { e.preventDefault(); last.focus() }
@@ -243,13 +258,17 @@ import { t } from "../../i18n/translations"
       }
     }
 
+    document.addEventListener("keydown", trapFocus, { signal })
+
     // --- Weight slider live display ---
     weightSlider?.addEventListener("input", () => {
       if (weightDisplay) weightDisplay.textContent = weightSlider.value
-    })
+    }, { signal })
 
     // --- Open/Close ---
-    function openPillarModal(editData?: Record<string, unknown>) {
+    function openPillarModal(editData?: Record<string, unknown>, source?: HTMLElement) {
+      if (submitBtn?.disabled) return
+      opener = source ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       form?.reset()
       editingPillarId = null
 
@@ -292,65 +311,54 @@ import { t } from "../../i18n/translations"
 
       overlay?.classList.add("active")
       document.body.style.overflow = "hidden"
-      document.addEventListener("keydown", trapFocus)
-      setTimeout(() => {
-        document.getElementById("pillar-name")?.focus()
-      }, 50)
+      document.getElementById("pillar-name")?.focus()
     }
 
-    function closePillarModal() {
-      if (!overlay?.classList.contains("active")) return
-      document.removeEventListener("keydown", trapFocus)
+    function closePillarModal(force = false) {
+      if (!overlay?.classList.contains("active") || (submitBtn?.disabled && !force)) return
       editingPillarId = null
-      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      const finishClose = () => {
-        overlay.classList.remove("active", "closing")
-        document.body.style.overflow = ""
-        form?.reset()
-      }
-      if (reducedMotion) { finishClose(); return }
-      overlay.classList.add("closing")
-      const content = overlay.querySelector(".modal-content")
-      if (content) {
-        const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose() }
-        content.addEventListener("animationend", onEnd, { once: true })
-        setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose() }, 300)
-      } else {
-        finishClose()
-      }
+      overlay.classList.remove("active")
+      document.body.style.overflow = ""
+      form?.reset()
+      opener?.focus()
+      opener = null
     }
 
-    closeBtn?.addEventListener("click", closePillarModal)
-    cancelBtn?.addEventListener("click", closePillarModal)
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) closePillarModal()
-    })
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && overlay.classList.contains("active")) {
-        e.preventDefault()
+    closeBtn?.addEventListener("click", () => closePillarModal(), { signal })
+    cancelBtn?.addEventListener("click", () => closePillarModal(), { signal })
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) closePillarModal()
+    }, { signal })
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && overlay.classList.contains("active")) {
+        event.preventDefault()
         closePillarModal()
       }
-    })
+    }, { signal })
 
     // --- Wire add buttons (create mode) ---
     const addBtn = document.getElementById("pillar-add-btn")
     const addBtnEmpty = document.getElementById("pillar-add-btn-empty")
-    addBtn?.addEventListener("click", () => openPillarModal())
-    addBtnEmpty?.addEventListener("click", () => openPillarModal())
+    addBtn?.addEventListener("click", () => openPillarModal(), { signal })
+    addBtnEmpty?.addEventListener("click", () => openPillarModal(), { signal })
 
     // --- Wire edit event (edit mode) — dispatched from detail page ---
     document.addEventListener("edit-pillar", ((e: CustomEvent) => {
-      openPillarModal(e.detail)
-    }) as EventListener)
+      openPillarModal(e.detail, e.detail.opener)
+    }) as EventListener, { signal })
 
     // --- Form submission ---
     form.addEventListener("submit", async (e) => {
       e.preventDefault()
       const nameInput = document.getElementById("pillar-name") as HTMLInputElement
       const name = nameInput.value.trim()
-      if (!name) return
+      if (!name) {
+        showToast("Enter a pillar name before saving.", "error")
+        nameInput.focus()
+        return
+      }
 
-      if (!submitBtn) return
+      if (!submitBtn || submitBtn.disabled) return
       const originalText = submitBtn.textContent || submitBtn.dataset.createLabel || "Create Pillar"
       submitBtn.disabled = true
       submitBtn.textContent = editingPillarId
@@ -373,6 +381,7 @@ import { t } from "../../i18n/translations"
           method,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
+          signal,
         })
 
         if (res.ok) {
@@ -383,21 +392,23 @@ import { t } from "../../i18n/translations"
           const toastTemplate = editingPillarId
             ? (form.dataset.updatedToast || '"{name}" updated')
             : (form.dataset.createdToast || 'Pillar "{name}" created')
-          showToast(toastTemplate.replace("{name}", name), "success")
-          closePillarModal()
+          const message = toastTemplate.replace("{name}", name)
+          try { sessionStorage.setItem(savedMessageKey, message) } catch { showToast(message, "success") }
+          closePillarModal(true)
           window.location.reload()
         } else {
           const err = await res.json().catch(() => ({ error: "Unknown error" }))
           showToast(err.error || form.dataset.errorSave || "Failed to save pillar", "error")
         }
       } catch (err) {
+        if (signal.aborted) return
         log.error("Failed to save pillar", err)
         showToast(form.dataset.errorNetwork || "Network error saving pillar", "error")
       } finally {
         submitBtn.disabled = false
         submitBtn.textContent = originalText
       }
-    })
+    }, { signal })
   })
 
 </script>

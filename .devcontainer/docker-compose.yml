@@ -18,7 +18,13 @@ services:
   ha-devcontainer:
     image: ghcr.io/home-assistant/devcontainer:6-apps
     privileged: true
-    command: /sbin/init
+    # Mask console logins before privileged init can claim a host tty.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /usr/bin/systemctl --root=/ mask getty@tty1.service getty@.service serial-getty@.service
+        exec /sbin/init
     ports:
       - "${HA_UI_PORT:-7123}:${HA_CORE_PORT:-80}"
       - "${HA_SUPERVISOR_PORT:-7357}:4357"

@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError, apiJson } from "../../../../lib/api-response"
@@ -49,11 +50,13 @@ export const GET: APIRoute = async ({ params }) => {
  */
 export const POST: APIRoute = async ({ params, request }) => {
   try {
+    const body = await request.json()
+    if (hasBoardSelection(body)) return unavailableBoardResponse()
+
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const sourceTaskId = params.id!
 
-    const body = await request.json()
     const { target_task_id, link_type } = body as { target_task_id: string; link_type: string }
 
     if (!target_task_id || !link_type) {
@@ -92,17 +95,19 @@ export const POST: APIRoute = async ({ params, request }) => {
 /**
  * DELETE /api/tasks/:id/links?link_id=xxx — Remove a link.
  */
-export const DELETE: APIRoute = async ({ params, url }) => {
+export const DELETE: APIRoute = async ({ params, request, url }) => {
   try {
-    await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    const taskId = params.id!
-
     const link_id = url.searchParams.get("link_id")
     if (!link_id) {
       return apiError("link_id query parameter is required", 400)
     }
 
+    const boardSelection = await rejectBoardSelectionInJson(request)
+    if (boardSelection) return boardSelection
+
+    await ensureSchema()
+    const repo = new TaskRepository(getPersistenceClient())
+    const taskId = params.id!
     const rowsAffected = await repo.deleteLink(link_id, taskId)
     if (rowsAffected === 0) {
       return apiError("Link not found or does not belong to this task", 404)

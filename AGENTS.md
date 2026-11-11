@@ -6,7 +6,7 @@
 
 Meitheal helps people keep track of household tasks and routines in Home Assistant. It stores task data locally. The app connects tasks to calendars, to-do lists, and automations that users set up.
 
-The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation policy](AI_POLICY.md) for use by tools and agents.
+The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
 
 ## Hard Requirements
 
@@ -54,7 +54,7 @@ Cross-context imports must occur through public package APIs, not deep path impo
 
 ## Dual-Repo Architecture
 
-The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/Coolock-Village/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
+The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
 
 - The release workflow verifies both image digests before stable promotion.
 - Stable promotion uses `ADDON_REPO_TOKEN` scoped to the add-on repository.
@@ -190,15 +190,17 @@ Both are logged in structured API request logs (`metadata.automation_source`, `m
 
 ## Deploy Rules
 
+Use the single Canary App entry for feature work and validation. Its directory is `meitheal-hub-canary`, slug is `meitheal_canary`, and image family is `meitheal-canary-{arch}`. Settings and other feature changes belong to that same entry. Release commands enforce the canonical manifests in the source and destination repositories.
+
 Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 
 | Channel | Dir | Trigger | Version | Stage |
 |---------|-----|---------|---------|-------|
 | Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Manual workflow from `main` builds images. A reviewed change promotes discovery. | Commit SHA | `experimental` |
+| Canary | `meitheal-hub-canary/` | Manual workflow from `main` smoke-tests images. The release host publishes qualified images. | Commit SHA | `experimental` |
 
 - **Stable**: Push a version tag (`v*`) to trigger CI Docker build. Version in `config.yaml` must match the tag (e.g. `version: "0.0.1"` ↔ `v0.0.1`). Also bump `MEITHEAL_VERSION` in `run.sh` to match. Use `node scripts/bump-version.mjs patch` for atomic bumps.
-- **Canary**: Run the Canary image workflow from `main` when a candidate is ready. Stage discovery with the release-host helper after Green qualification and rollback checks. Do not edit the source manifest version by hand.
+- **Canary**: Use the read-only Canary workflow to check native builds from `main`. Publish exact images with the release-host helper after Green qualification, then stage discovery after rollback checks. The helper manages the advertised version.
 - Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
 - Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 
@@ -231,13 +233,13 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 - Keep existing third-party notices and the separate license files in `integrations/`.
 - Integration code in `integrations/` communicates with the core through network APIs.
-- Keep the license and notices with future image builds. Use `LicenseRef-Meitheal-Source-Available-1.0` for the Meitheal grant.
+- Keep the license and notices with future image builds. `LicenseRef-Meitheal-Source-Available-1.0` describes the Meitheal source grant. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
 - Keep contributor agreements in the repository’s signing workflow.
 - Keep private signing keys outside Git.
 
 ## Required Files (CI Enforced)
 
-- `README.md`, `AGENTS.md`, `AI_POLICY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
 - `WEBMCP.md` and the discovery files `public/.well-known/mcp.json` and `public/.well-known/jsondoc.json`
 - `.coderabbit.yaml`, `repository.yaml`, and the stable App manifest and docs
 - `docs/index.md`, the Home Assistant devcontainer and operations runbooks, and the architecture and licensing decisions

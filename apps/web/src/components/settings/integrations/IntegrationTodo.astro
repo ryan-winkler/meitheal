@@ -17,7 +17,7 @@ const locale = Astro.props.locale || "en"
 <div class="integration-card" id="integration-todo">
   <IntegrationCardHeader
     integration="todo"
-    icon="✅"
+    icon="tasks"
     title={t("settings.todo_title", locale)}
     description={t("settings.todo_desc", locale)}
     helpLabel={t("settings.todo_explainer", locale)}
@@ -47,8 +47,8 @@ const locale = Astro.props.locale || "en"
           <span id="todo-count-badge" class="cal-count-badge" data-text-enabled="enabled">0 of 0 enabled</span>
         </div>
         <div class="cal-bulk-actions">
-          <button type="button" class="btn btn-ghost btn-xs" id="todo-enable-all" title={t("settings.todo_enable_all", locale)}>{t("settings.todo_enable_all", locale)}</button>
-          <button type="button" class="btn btn-ghost btn-xs" id="todo-disable-all" title={t("settings.todo_disable_all", locale)}>{t("settings.todo_disable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-enable-all" title={t("settings.enable_all", locale)}>{t("settings.enable_all", locale)}</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="todo-disable-all" title={t("settings.disable_all", locale)}>{t("settings.disable_all", locale)}</button>
         </div>
       </div>
       <p class="integration-hint">

@@ -31,7 +31,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const { tasks } = await getTasksForView()
-const openTasks = tasks.filter((t) => !t.is_done)
+const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────
 const q1: TaskViewItem[] = [] // Do First  — urgent + important
@@ -135,7 +135,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     </button>
   </UnifiedBar>
 
-  <main id="eisenhower-shell" class="eisenhower">
+  <div id="eisenhower-shell" class="eisenhower">
     <section
       id="eisenhower-overview"
       class="eisenhower__overview-section"
@@ -152,23 +152,6 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
         <p class="eisenhower__subtitle">{t("eisenhower.subtitle", locale)}</p>
       </div>
     </section>
-
-    {/* ── Mobile tab bar (visible < 768px) ── */}
-    <nav class="eisenhower__mobile-tabs" role="tablist" aria-label="Quadrant tabs">
-      {quadrants.map((q, i) => (
-        <button
-          class={`mobile-tab ${i === 0 ? "mobile-tab--active" : ""}`}
-          data-tab-quadrant={q.id}
-          role="tab"
-          aria-selected={i === 0 ? "true" : "false"}
-          style={`--tab-color: ${q.colorToken}`}
-        >
-          <span class="mobile-tab__emoji">{q.emoji}</span>
-          <span class="mobile-tab__label">{q.label}</span>
-          <span class="mobile-tab__count">{q.tasks.length}</span>
-        </button>
-      ))}
-    </nav>
 
     {/* ── Triage banner — nudge for unclassified tasks ── */}
     {unclassifiedCount > 0 && (
@@ -323,10 +306,29 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     </div>
 
     <section id="eisenhower-matrix" data-eisenhower-section>
+    <div class="eisenhower__mobile-tabs" role="tablist" aria-label={t("eisenhower.quadrant_tabs", locale)}>
+      {quadrants.map((q, i) => (
+        <button
+          type="button"
+          class="mobile-tab"
+          id={`eisenhower-tab-${q.id}`}
+          role="tab"
+          aria-controls={`eisenhower-quadrant-${q.id}`}
+          aria-selected={i === 0 ? "true" : "false"}
+          tabindex={i === 0 ? 0 : -1}
+          style={`--tab-color: ${q.colorToken}`}
+        >
+          <span class="mobile-tab__emoji" aria-hidden="true">{q.emoji}</span>
+          {q.label}
+          <span class="mobile-tab__count">{q.tasks.length}</span>
+        </button>
+      ))}
+    </div>
     <div class="eisenhower__grid">
       {quadrants.map((q) => (
         <section
           class={`eisenhower__quadrant ${q.id === "schedule" ? "quadrant--growth-zone" : ""}`}
+          id={`eisenhower-quadrant-${q.id}`}
           data-quadrant={q.id}
           style={`--q-color: ${q.colorToken}`}
         >
@@ -419,40 +421,38 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
             </div>
           )}
 
-          <div class="quadrant__tasks" data-drop-zone={q.id} role="list">
-            {q.tasks.length === 0 ? (
-              <div class="quadrant__empty">
-                {t("eisenhower.empty_quadrant", locale)}
-              </div>
-            ) : (
-              q.tasks.map((task, idx) => (
-                <div
-                  class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
-                  data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
-                  data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
-                >
-                  <TaskListItem task={task} compact={true} />
-                  <div class="eisenhower__task-meta">
-                    {task.eisenhower_override && (
-                      <span class="tli__pin" title="Manually placed">📌</span>
-                    )}
-                    {task.effort_minutes != null && task.effort_minutes > 0 && (
-                      <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
-                        title={`Estimated effort: ${task.effort_minutes}m`}>
-                        {effortEmoji(task.effort_minutes)}
-                        <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
-                      </span>
-                    )}
-                    {task.blocked_by && (
-                      <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
-                    )}
-                    {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
-                      <span class="tli__recurring" title="Recurring task">🔁</span>
-                    )}
-                  </div>
+          <div class="quadrant__tasks" data-drop-zone={q.id} role={q.tasks.length > 0 ? "list" : undefined}>
+            <div class="quadrant__empty" hidden={q.tasks.length > 0}>
+              {t("eisenhower.empty_quadrant", locale)}
+            </div>
+            {q.tasks.map((task, idx) => (
+              <div
+                class={`eisenhower__task-wrapper ${q.id === "do-first" && idx === 0 ? "task-wrapper--top-task" : ""}`}
+                role="listitem"
+                data-unclassified={task.urgency === 0 && task.importance === 0 ? "true" : undefined}
+                data-top-task={q.id === "do-first" && idx === 0 ? "true" : undefined}
+              >
+                <TaskListItem task={task} compact={true} />
+                <div class="eisenhower__task-meta">
+                  {task.eisenhower_override && (
+                    <span class="tli__pin" title="Manually placed">📌</span>
+                  )}
+                  {task.effort_minutes != null && task.effort_minutes > 0 && (
+                    <span class={`tli__effort ${effortClass(task.effort_minutes)}`}
+                      title={`Estimated effort: ${task.effort_minutes}m`}>
+                      {effortEmoji(task.effort_minutes)}
+                      <span class="tli__effort-label">{effortLabelText(task.effort_minutes)}</span>
+                    </span>
+                  )}
+                  {task.blocked_by && (
+                    <span class="tli__blocked" title={`Blocked: ${task.blocked_by}`}>🚫</span>
+                  )}
+                  {parseFrameworkPayload(task.framework_payload)?.recurrence_rule && (
+                    <span class="tli__recurring" title="Recurring task">🔁</span>
+                  )}
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
 
           {/* ── Quick-capture input per quadrant ── */}
@@ -499,7 +499,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
         </a>
       </div>
     </section>
-  </main>
+  </div>
 
   <script>
     import { initEisenhowerPage } from "@lib/eisenhower-controller"
@@ -594,12 +594,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
       grid-template-rows: auto;
       min-height: unset;
     }
-    /* On mobile, hide all quadrants except the active tab */
-    .eisenhower__quadrant {
+    #eisenhower-shell[data-quadrant-tabs-ready] .eisenhower__quadrant:not(.quadrant--tab-active) {
       display: none;
-    }
-    .eisenhower__quadrant.quadrant--tab-active {
-      display: flex;
     }
   }
 
@@ -617,12 +613,12 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     display: none;
   }
   @media (max-width: 768px) {
-    .eisenhower__mobile-tabs {
+    #eisenhower-shell[data-quadrant-tabs-ready] .eisenhower__mobile-tabs {
       display: flex;
     }
   }
   .mobile-tab {
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -637,13 +633,16 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     cursor: pointer;
     transition: background 150ms, border-color 150ms, color 150ms;
     white-space: nowrap;
-    min-width: 0;
+    min-height: 44px;
   }
   .mobile-tab:hover {
     background: rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
   }
-  .mobile-tab--active {
+  .mobile-tab:focus-visible {
+    outline-offset: -3px;
+  }
+  .mobile-tab[aria-selected="true"] {
     border-color: var(--tab-color);
     color: var(--text-primary);
     background: rgba(255, 255, 255, 0.06);
@@ -652,13 +651,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .mobile-tab__emoji {
     font-size: 0.875rem;
   }
-  .mobile-tab__label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .mobile-tab__count {
     background: rgba(var(--accent-rgb), 0.15);
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 0.625rem;
     padding: 1px 5px;
     border-radius: 10px;
@@ -667,16 +662,18 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
 
   /* ── Focus mode (desktop: expand one quadrant full-width) ── */
-  .eisenhower__grid.grid--focused {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-  }
-  .eisenhower__grid.grid--focused .eisenhower__quadrant {
-    display: none;
-  }
-  .eisenhower__grid.grid--focused .eisenhower__quadrant.quadrant--focused {
-    display: flex;
-    min-height: calc(100vh - 240px);
+  @media (width > 768px) {
+    .eisenhower__grid.grid--focused {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+    }
+    .eisenhower__grid.grid--focused .eisenhower__quadrant {
+      display: none;
+    }
+    .eisenhower__grid.grid--focused .eisenhower__quadrant.quadrant--focused {
+      display: flex;
+      min-height: calc(100vh - 240px);
+    }
   }
   .quadrant__focus-btn {
     flex-shrink: 0;
@@ -705,6 +702,11 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     color: var(--accent);
     border-color: rgba(var(--accent-rgb), 0.3);
     opacity: 1;
+  }
+  @media (max-width: 768px) {
+    .eisenhower__quadrant .quadrant__focus-btn {
+      display: none;
+    }
   }
 
   /* ── Quadrant ── */
@@ -775,7 +777,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     min-height: 80px;
   }
 
-  .quadrant__empty {
+  .quadrant__empty:not([hidden]) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -784,7 +786,6 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     font-size: 0.8125rem;
     color: var(--text-muted);
     font-style: italic;
-    opacity: 0.7;
   }
 
   /* ── Task wrapper (task + pin indicator) ── */
@@ -834,7 +835,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     border: 1px solid rgba(var(--accent-rgb), 0.3);
     border-radius: var(--radius-sm, 6px);
     background: rgba(var(--accent-rgb), 0.08);
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
@@ -911,6 +912,10 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     color: var(--danger, #ef4444);
     border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
   }
+  .quadrant__action-btn[aria-disabled="true"] {
+    opacity: 0.65;
+    cursor: wait;
+  }
 
   /* ── WIP limit warning (Q1 > threshold) ── */
   .quadrant__wip-warning {
@@ -962,7 +967,6 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     font-size: 0.75rem;
     color: var(--text-muted);
     margin-top: 16px;
-    opacity: 0.6;
   }
 
   /* ── Flow section ── */
@@ -1315,10 +1319,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .quadrant__sublabel {
     font-size: 0.5625rem;
-    color: #22c55e;
+    color: var(--text-secondary);
     font-weight: 600;
     letter-spacing: 0.03em;
-    opacity: 0.8;
   }
 
   /* ── Effort total in quadrant header ── */

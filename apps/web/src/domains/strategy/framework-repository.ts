@@ -6,9 +6,10 @@
  * and provides merged configs at runtime.
  */
 
+import type { Client } from "@libsql/client"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import type { FrameworkConfig, FrameworkOverrides, FrameworkOverrideRecord } from "@meitheal/domain-strategy"
-import { mergeFrameworkConfig, parseFrameworkConfig } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, parseFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -36,8 +37,7 @@ function toOverrideRecord(row: Record<string, unknown>): FrameworkOverrideRecord
 }
 
 /** Get overrides for a specific framework */
-export async function getOverrides(frameworkId: string): Promise<FrameworkOverrideRecord | null> {
-  const client = getPersistenceClient()
+export async function getOverrides(frameworkId: string, client: Pick<Client, "execute"> = getPersistenceClient()): Promise<FrameworkOverrideRecord | null> {
   const result = await client.execute({
     sql: "SELECT * FROM framework_configs WHERE framework_id = ? LIMIT 1",
     args: [frameworkId],
@@ -51,25 +51,60 @@ export async function getOverrides(frameworkId: string): Promise<FrameworkOverri
 export async function saveOverrides(
   frameworkId: string,
   overrides: FrameworkOverrides,
+  client: Pick<Client, "execute"> = getPersistenceClient(),
+  options: { preserveLegacyFormula?: boolean } = {},
 ): Promise<FrameworkOverrideRecord> {
-  const client = getPersistenceClient()
-  const now = new Date().toISOString()
+  const { getBuiltInFramework } = await import("./framework-catalog")
+  const base = await getBuiltInFramework(frameworkId)
+  if (!base) throw new TypeError(`Unknown built-in framework: ${frameworkId}`)
+  return persistOverridePatch(client, frameworkId, overrides, base.fields.map(field => field.key), options)
+}
 
-  const existing = await getOverrides(frameworkId)
-  if (existing) {
-    await client.execute({
-      sql: "UPDATE framework_configs SET overrides = ?, updated_at = ? WHERE framework_id = ?",
-      args: [JSON.stringify(overrides), now, frameworkId],
+/** Merge a validated patch using the exact stored JSON as its write guard. */
+export async function persistOverridePatch(
+  client: Pick<Client, "execute">,
+  frameworkId: string,
+  patch: FrameworkOverrides,
+  fieldKeys: readonly string[],
+  options: { preserveLegacyFormula?: boolean } = {},
+): Promise<FrameworkOverrideRecord> {
+  const errors = validateFrameworkOverrides(patch, fieldKeys, options)
+  if (errors) throw new TypeError(errors.join(". "))
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const result = await client.execute({
+      sql: "SELECT * FROM framework_configs WHERE framework_id = ? LIMIT 1",
+      args: [frameworkId],
     })
-    return { ...existing, overrides, updatedAt: now }
+    const row = result.rows[0] as Record<string, unknown> | undefined
+    const existing = row ? toOverrideRecord(row) : null
+    const previous = existing && !validateFrameworkOverrides(existing.overrides) ? existing.overrides : {}
+    const overrides: FrameworkOverrides = {
+      ...previous,
+      ...patch,
+      ...((previous.fields || patch.fields) ? { fields: {
+        ...previous.fields,
+        ...Object.fromEntries(Object.entries(patch.fields ?? {}).map(([key, field]) => [key, { ...previous.fields?.[key], ...field }])),
+      } } : {}),
+    }
+    const now = new Date().toISOString()
+    if (existing && row) {
+      const saved = await client.execute({
+        sql: "UPDATE framework_configs SET overrides = ?, updated_at = ? WHERE framework_id = ? AND overrides = ?",
+        args: [JSON.stringify(overrides), now, frameworkId, String(row.overrides)],
+      })
+      if (saved.rowsAffected) return { ...existing, overrides, updatedAt: now }
+    } else {
+      const id = crypto.randomUUID()
+      const saved = await client.execute({
+        sql: "INSERT INTO framework_configs (id, framework_id, overrides, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(framework_id) DO NOTHING",
+        args: [id, frameworkId, JSON.stringify(overrides), now, now],
+      })
+      if (saved.rowsAffected) return { id, frameworkId, overrides, createdAt: now, updatedAt: now }
+    }
+    // Another writer won after our read. Merge again from its committed values.
   }
-
-  const id = crypto.randomUUID()
-  await client.execute({
-    sql: "INSERT INTO framework_configs (id, framework_id, overrides, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    args: [id, frameworkId, JSON.stringify(overrides), now, now],
-  })
-  return { id, frameworkId, overrides, createdAt: now, updatedAt: now }
+  throw new Error("Framework settings changed repeatedly while saving. Reload and retry.")
 }
 
 /** Reset a framework to YAML defaults by removing overrides */

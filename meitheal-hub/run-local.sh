@@ -1,7 +1,7 @@
 #!/bin/bash
 # Meitheal Hub — Local testing entrypoint (no bashio/Supervisor)
 #
-# Usage: podman run --rm -p 3333:3000 -v /tmp/meitheal-data:/data local/meitheal-hub /run-local.sh
+# Usage: podman run --rm -p 127.0.0.1:3333:3000 -v /tmp/meitheal-data:/data --entrypoint /run-local.sh local/meitheal-hub
 set -euo pipefail
 
 export MEITHEAL_LOG_LEVEL="${MEITHEAL_LOG_LEVEL:-info}"
@@ -21,8 +21,9 @@ cd /opt/meitheal/apps/web
 # Ensure data dir is writable
 mkdir -p /data 2>/dev/null || true
 
-# Run migrations (non-fatal)
-node scripts/migrate.mjs 2>&1 || echo "⚠ Migrations skipped (no DB yet — will create on first write)"
+# Run migrations before starting the web server.
+node scripts/migrate.mjs
+export MEITHEAL_STARTUP_BACKUP_HANDLED=1
 
 # Verify build output exists
 if [ ! -f dist/server/entry.mjs ]; then

@@ -17,7 +17,6 @@
  *   1. Importing and calling init* from each controller
  *   2. Loading settings from API and delegating restore to each controller
  *   3. Integration card expand/collapse wiring
- *   4. n8n mode tab switching
  */
 import { createClientLogger } from "@lib/client-logger"
 import { pageLifecycle } from "@lib/page-lifecycle"
@@ -60,52 +59,6 @@ export function initSettingsController(): void {
     })
   })
 
-  const n8nAutoTab = document.getElementById("n8n-mode-auto")
-  const n8nStandaloneTab = document.getElementById("n8n-mode-standalone")
-  const switchToAuto = () => {
-    n8nAutoTab?.classList.add("mode-tab--active")
-    n8nStandaloneTab?.classList.remove("mode-tab--active")
-    n8nAutoTab?.setAttribute("aria-selected", "true")
-    n8nStandaloneTab?.setAttribute("aria-selected", "false")
-    const autoContent = document.getElementById("n8n-auto-content")
-    const standaloneContent = document.getElementById("n8n-standalone-content")
-    if (autoContent) autoContent.style.display = ""
-    if (standaloneContent) standaloneContent.style.display = "none"
-  }
-  const switchToStandalone = () => {
-    n8nStandaloneTab?.classList.add("mode-tab--active")
-    n8nAutoTab?.classList.remove("mode-tab--active")
-    n8nStandaloneTab?.setAttribute("aria-selected", "true")
-    n8nAutoTab?.setAttribute("aria-selected", "false")
-    const autoContent = document.getElementById("n8n-auto-content")
-    const standaloneContent = document.getElementById("n8n-standalone-content")
-    if (autoContent) autoContent.style.display = "none"
-    if (standaloneContent) standaloneContent.style.display = ""
-  }
-  if (n8nAutoTab) {
-    n8nAutoTab.setAttribute("role", "tab")
-    n8nAutoTab.setAttribute("tabindex", "0")
-    pageLifecycle.on(n8nAutoTab, "click", switchToAuto)
-    pageLifecycle.on(n8nAutoTab, "keydown", (e) => {
-      if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
-        e.preventDefault()
-        switchToAuto()
-      }
-    })
-  }
-  if (n8nStandaloneTab) {
-    n8nStandaloneTab.setAttribute("role", "tab")
-    n8nStandaloneTab.setAttribute("tabindex", "0")
-    pageLifecycle.on(n8nStandaloneTab, "click", switchToStandalone)
-    pageLifecycle.on(n8nStandaloneTab, "keydown", (e) => {
-      if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
-        e.preventDefault()
-        switchToStandalone()
-      }
-    })
-  }
-
-
   // ───── Init all domain controllers ─────
   initThemeSettings()
   initSidebarSettings()
@@ -118,22 +71,37 @@ export function initSettingsController(): void {
   initCalendarTodoSettings()
   initRulesSettings()
 
-  // ───── Load and restore all settings ─────
-  loadSettings()
+  const status = document.getElementById("settings-load-status")
+  const loading = document.getElementById("settings-loading")
+  const error = document.getElementById("settings-load-error")
+  const retry = document.getElementById("settings-load-retry")
+  const panels = document.getElementById("settings-panels")
+  if (!status || !loading || !error || !retry || !panels) return
+
+  async function load(): Promise<void> {
+    loading!.hidden = false
+    error!.hidden = true
+    retry!.hidden = true
+    try {
+      await loadSettings()
+      status!.hidden = true
+      panels!.inert = false
+      panels!.closest("#settings-shell")?.dispatchEvent(new Event("meitheal:settings-ready"))
+    } catch (cause) {
+      log.error("Failed to load settings from API", cause)
+      error!.hidden = false
+      retry!.hidden = false
+    } finally {
+      loading!.hidden = true
+    }
+  }
+
+  pageLifecycle.on(retry, "click", () => { void load() })
+  void load()
 }
 
 async function loadSettings(): Promise<void> {
-  let settings: Record<string, unknown> = {}
-  try {
-    settings = await settingsStore.load()
-  } catch (e) {
-    log.error("Failed to load settings from API", e)
-    // Fall back to localStorage for locale
-    const stored = localStorage.getItem("meitheal-locale") || "en"
-    const localeEl = document.getElementById("locale-select") as HTMLSelectElement | null
-    if (localeEl) localeEl.value = stored
-    return
-  }
+  const settings = await settingsStore.load()
 
   // Delegate restore to each controller — wrapped in try/catch per domain
   try { restoreThemeSettings(settings) } catch (e) { log.error("Theme restore error", e) }

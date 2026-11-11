@@ -4,13 +4,22 @@
         import { confirmDialog } from "@lib/confirm-dialog";
         import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
+        import { containTabFocus } from "@lib/focus-trap"
+        import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { pageLifecycle } from "@lib/page-lifecycle";
+        import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
 
         const log = createClientLogger("app", "layout");
 
         // Register global logger bridge for is:inline scripts
         registerGlobalLogger();
+
+        // The provider and its private URL are now resolved from Settings.
+        try {
+          localStorage.removeItem("meitheal-ai-provider")
+          localStorage.removeItem("meitheal-ai-custom-url")
+        } catch { /* The app also runs without browser storage. */ }
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
@@ -21,24 +30,25 @@
           const dot = indicator.querySelector(".status-dot");
           const text = indicator.querySelector(".status-text");
           try {
-            const res = await fetch(
-              (window.__ingress_path || "") + "/api/health",
-            );
+            const res = await fetch("/api/health", { cache: "no-store" });
             const data = await res.json();
             if (data.status === "ok") {
               dot?.classList.add("online");
               dot?.classList.remove("offline");
-              if (text) text.textContent = "Connected";
-            } else {
+              if (text) text.textContent = indicator.dataset.ready ?? "Meitheal ready";
+            } else if (data.db_status === "error") {
               dot?.classList.remove("online");
               dot?.classList.add("offline");
-              if (text) text.textContent = "DB Offline";
+              if (text) text.textContent = indicator.dataset.storageOffline ?? "Storage unavailable";
+            } else {
+              throw new Error("Health response unavailable");
             }
           } catch {
             dot?.classList.remove("online");
             dot?.classList.add("offline");
-            if (text) text.textContent = "Disconnected";
+            if (text) text.textContent = indicator.dataset.unreachable ?? "Meitheal unavailable";
           }
+          indicator.title = text?.textContent ?? ""
         }
         checkHealth();
         // P0-4: Clear previous interval before creating new one to prevent
@@ -59,15 +69,20 @@
           log.error("Unhandled promise rejection", e.reason);
         });
 
-        // Mobile menu toggle managed in TopNavigation.astro
-
         // ============================================================
         // P0-2/P0-3/P0-5: Lifecycle-managed page initialization
         // All DOM-dependent listeners use pageLifecycle.signal so they
         // auto-cleanup on ViewTransition navigation (astro:before-swap).
         // DOM refs are re-queried on each page load to avoid stale refs.
         // ============================================================
+        let keyboardSignal: AbortSignal | undefined
         pageLifecycle.onPageLoad((signal) => {
+          // The fallback and initial Astro event can arrive with the same signal.
+          const bindKeyboard = keyboardSignal !== signal
+          keyboardSignal = signal
+          applyAppearancePreferences(readAppearancePreferences())
+          if (bindKeyboard) bindAppearanceNavigation(signal)
+
           // Defensive: clear any stale body scroll lock from a previous page's
           // task-detail or modal overlay (MPA nav doesn't run close handlers)
           document.body.style.overflow = "";
@@ -93,6 +108,11 @@
 
           injectShortcutStyles();
           attachShortcutTooltips(document.body);
+          if (bindKeyboard) window.addEventListener("storage", (event) => {
+            if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
+              attachShortcutTooltips(document.body)
+            }
+          }, { signal })
 
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
           const rawPath = window.location.pathname;
@@ -123,22 +143,20 @@
             { signal } as AddEventListenerOptions,
           );
 
-          // "/" and Cmd/Ctrl+K launch universal search, "n" creates a task
-          document.addEventListener(
+          // SearchHub owns Search. Layout owns page navigation and modal shortcuts.
+          if (bindKeyboard) document.addEventListener(
             "keydown",
             (e) => {
+              if (e.defaultPrevented) return
               const tag = (e.target as HTMLElement)?.tagName;
               const isEditing =
                 ["INPUT", "TEXTAREA", "SELECT"].includes(tag) ||
                 (e.target as HTMLElement)?.contentEditable === "true";
 
               if (e.key === "Escape") {
-                // Close overlays in priority order: task detail > command palette > search > sidebar
+                // Search owns Escape inside its panel.
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
-                );
-                const searchHubOverlay = document.getElementById(
-                  "search-hub-overlay",
                 );
                 const shortcutModal = document.getElementById("shortcut-modal");
                 const sidebar = document.getElementById("sidebar");
@@ -154,44 +172,37 @@
                   document.getElementById("td-close")?.click()
                   return;
                 }
-                if (
-                  searchHubOverlay &&
-                  !searchHubOverlay.classList.contains("hidden")
-                ) {
-                  window.closeSearchHub?.();
-                  return;
-                }
                 if (sidebar?.classList.contains("open")) {
                   sidebar.classList.remove("open");
                   return;
                 }
               }
 
+              if (e.key === "Tab") {
+                const shortcut = document.querySelector<HTMLElement>("#shortcut-modal:not(.hidden)")
+                const task = document.querySelector<HTMLElement>("#task-detail-overlay.active")
+                const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
+                const activeOverlay = shortcut ?? task ?? search
+                if (activeOverlay) containTabFocus(activeOverlay, e)
+                return
+              }
+
               if (isEditing) return;
 
               // Suppress most shortcuts when task detail overlay is open
-              // Allow ?, Escape, and Tab through so users can access help and close/navigate
+              // Allow ? and Escape through so users can access help and close
               const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
                 ?.classList.contains("active") ?? false;
               if (
                 taskDetailOpen &&
                 e.key !== "?" &&
-                e.key !== "Escape" &&
-                e.key !== "Tab"
+                e.key !== "Escape"
               )
                 return;
 
-              if (e.key === "/" && !e.shiftKey) {
-                e.preventDefault();
-                window.openSearchHub?.();
-              }
-              // Ctrl+K / Cmd+K opens universal search
-              if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                window.openSearchHub?.();
-                return;
-              }
+              if (e.ctrlKey || e.metaKey || !singleKeyShortcutsEnabled()) return
+
               if (e.key === "n") {
                 e.preventDefault();
                 // If on tasks page, click the create button; otherwise navigate
@@ -230,54 +241,9 @@
                 if (modal) modal.classList.toggle("hidden");
               }
 
-              // --- Focus Trap Logic ---
-              const taskOverlay = document.getElementById(
-                "task-detail-overlay",
-              );
-              const searchHubOverlay = document.getElementById(
-                "search-hub-overlay",
-              );
-              const shortcutModal = document.getElementById("shortcut-modal");
-
-              // Find which overlay is active (priority order)
-              let activeOverlay: HTMLElement | null = null;
-              if (shortcutModal && !shortcutModal.classList.contains("hidden"))
-                activeOverlay = shortcutModal;
-              else if (taskOverlay && taskOverlay.classList.contains("active"))
-                activeOverlay = taskOverlay;
-              else if (
-                searchHubOverlay &&
-                !searchHubOverlay.classList.contains("hidden")
-              )
-                activeOverlay = searchHubOverlay;
-
-              if (activeOverlay && e.key === "Tab") {
-                const focusableElements = activeOverlay.querySelectorAll(
-                  'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])',
-                );
-                const firstElement = focusableElements[0] as HTMLElement;
-                const lastElement = focusableElements[
-                  focusableElements.length - 1
-                ] as HTMLElement;
-
-                if (e.shiftKey) {
-                  // Shift + Tab
-                  if (document.activeElement === firstElement) {
-                    lastElement?.focus();
-                    e.preventDefault();
-                  }
-                } else {
-                  // Tab
-                  if (document.activeElement === lastElement) {
-                    firstElement?.focus();
-                    e.preventDefault();
-                  }
-                }
-              }
-
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is open AND user is NOT editing a text field
-              if (taskOverlay && taskOverlay.classList.contains("active")) {
+              if (taskDetailOpen) {
                 const tdTag = (e.target as HTMLElement)?.tagName;
                 const tdIsEditing =
                   ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
@@ -438,6 +404,8 @@
         // Moved inside layout init to use global lifecycle — these are permanent per session.
         pageLifecycle.onPageLoad((signal) => {
           const reloadOnEvent = () => window.location.reload()
-          document.addEventListener("meitheal:tasks-changed", reloadOnEvent, { signal })
+          document.addEventListener("meitheal:tasks-changed", event => {
+            if (!(event as CustomEvent<{ dataOnly?: boolean }>).detail?.dataOnly) reloadOnEvent()
+          }, { signal })
           document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })
         })

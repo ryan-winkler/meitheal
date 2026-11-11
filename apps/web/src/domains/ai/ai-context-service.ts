@@ -11,6 +11,10 @@
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
+import { showToast } from "@lib/toast"
+import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
+import { confirmDialog } from "@lib/confirm-dialog"
+import { getClientLocale, t } from "../../i18n/client"
 
 const log = createClientLogger("ai", "context");
 
@@ -20,46 +24,43 @@ interface TaskWithExtras extends OfflineTask {
   task_type?: string;
 }
 
-/** Result from an AI call — either inline response or fallback */
-export interface AIResult {
-  /** The AI's response text, or null if we fell back to clipboard */
-  response: string | null;
-  /** Whether we used HA Assist or fell back to external provider */
-  source: "ha-assist" | "clipboard-fallback";
-  /** Conversation ID for multi-turn follow-ups */
-  conversationId?: string | undefined;
-}
+/** Result from a task AI request. */
+export type AIResult =
+  | { source: "ha-assist"; response: string; conversationId?: string | undefined }
+  | { source: "none" }
 
 /**
  * Get the configured HA conversation agent ID from settings.
  * Falls back to undefined (HA's default agent).
  */
-async function getAgentId(): Promise<string | undefined> {
+async function getAgentId(signal?: AbortSignal): Promise<string | undefined> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ha-agent-id"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value && typeof data.value === "string") return data.value;
+    const res = await fetch("/api/settings?key=ha-assist-agent", { signal: signal ?? null })
+    if (!res.ok) return undefined
+    const data = await res.json()
+    // Empty is an intentional selection of built-in Assist, not a missing key.
+    if (data?.value !== null && data?.value !== undefined) {
+      return typeof data.value === "string" && data.value ? data.value : undefined
     }
-  } catch {
-    /* use default */
-  }
-  return undefined;
+    const legacy = await fetch("/api/settings?key=ha-agent-id", { signal: signal ?? null })
+    if (legacy.ok) {
+      const old = await legacy.json()
+      if (typeof old?.value === "string" && old.value) return old.value
+    }
+  } catch { /* use HA's default */ }
+  return undefined
 }
 
 /**
  * Fetch full task data from offline store or API.
  */
-async function resolveTask(taskId: string): Promise<TaskWithExtras> {
+async function resolveTask(taskId: string, signal?: AbortSignal): Promise<TaskWithExtras> {
   let raw = await getTask(taskId);
+  signal?.throwIfAborted()
 
   if (!raw) {
     try {
-      const res = await fetch(
-        `${window.__ingress_path || ""}/api/tasks/${taskId}`
-      );
+      const res = await fetch(`/api/tasks/${taskId}`, { signal: signal ?? null })
       if (res.ok) {
         const data = await res.json();
         // Handle both { task: {...} } and flat {...} response shapes
@@ -82,6 +83,7 @@ async function resolveTask(taskId: string): Promise<TaskWithExtras> {
         }
       }
     } catch (err) {
+      signal?.throwIfAborted()
       log.warn("Failed to fetch task from server", err);
     }
   }
@@ -96,20 +98,20 @@ async function resolveTask(taskId: string): Promise<TaskWithExtras> {
  */
 async function callAssist(
   prompt: string,
-  conversationId?: string
+  signal?: AbortSignal
 ): Promise<{ speech: string; conversationId?: string } | null> {
-  const agentId = await getAgentId();
+  const agentId = await getAgentId(signal)
 
   const body: Record<string, string> = { text: prompt };
   if (agentId) body.agent_id = agentId;
-  if (conversationId) body.conversation_id = conversationId;
 
   const res = await fetch(
-    (window.__ingress_path || "") + "/api/ha/assist",
+    "/api/ha/assist",
     {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: signal ?? null,
     }
   );
 
@@ -128,63 +130,98 @@ async function callAssist(
   };
 }
 
-/**
- * Fall back to clipboard + external provider when HA is unavailable.
- */
-async function fallbackToClipboard(prompt: string): Promise<void> {
-  // Copy to clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(prompt);
-    } catch {
-      /* clipboard denied */
-    }
-  }
+const builtInHandoffUrls = {
+  chatgpt: "https://chatgpt.com/",
+  claude: "https://claude.ai/new",
+  gemini: "https://gemini.google.com/app",
+}
+type BuiltInProvider = keyof typeof builtInHandoffUrls
+type AiHandoffTarget = { canUseAssist: boolean } & (
+  | { provider: "ha_llm" }
+  | { provider: BuiltInProvider | "ollama" | "custom"; url: URL | null }
+)
 
-  // Open external provider
-  let provider = "chatgpt";
+/** Resolve the authoritative saved provider before either UI opens a destination. */
+export async function resolveAiHandoffTarget(signal?: AbortSignal): Promise<AiHandoffTarget | null> {
+  if (signal?.aborted) return null
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ai-provider"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value) provider = data.value;
-    }
-  } catch {
-    /* default */
-  }
-
-  let targetUrl = "https://chatgpt.com/";
-  if (provider === "claude") targetUrl = "https://claude.ai/new";
-  else if (provider === "gemini") targetUrl = "https://gemini.google.com/";
-  else if (provider === "ollama" || provider === "custom") {
-    try {
-      const resUrl = await fetch(
-        (window.__ingress_path || "") + "/api/settings?key=ai-custom-url"
-      );
-      if (resUrl.ok) {
-        const d = await resUrl.json();
-        if (d?.value) targetUrl = d.value;
+    const response = await fetch("/api/settings?key=ai-provider&handoff=1", { signal: signal ?? null, cache: "no-store" })
+    if (response.status === 403 || response.status === 409) {
+      const problem = await response.json().catch(() => null)
+      if (response.status === 403 && problem?.title === "URL review required") {
+        if (!signal?.aborted) showToast("settings.ai_handoff_url_review_required", "error")
+        return null
       }
-    } catch {
-      /* use default */
+      if (response.status === 409 && problem?.title === "Invalid AI URL") {
+        if (!signal?.aborted) showToast("settings.ai_handoff_url_invalid", "error")
+        return null
+      }
     }
+    if (!response.ok) throw new Error("Provider settings unavailable")
+    const data: unknown = await response.json()
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid provider setting")
+    const { key, value, url, canUseAssist, urlProblem } = data as Record<string, unknown>
+    if (key !== "ai-provider" || typeof canUseAssist !== "boolean") throw new Error("Invalid handoff settings")
+    if (signal?.aborted) return null
+    const provider = value === null ? "chatgpt" : value
+    if (provider === "ha_llm") return { provider, canUseAssist }
+    if (provider === "ollama" || provider === "custom") {
+      const target = parseAiHandoffUrl(url)
+      if (target) return { provider, url: target, canUseAssist }
+      if (canUseAssist && urlProblem === "invalid" && url === undefined) return { provider, url: null, canUseAssist }
+      showToast("settings.ai_handoff_url_invalid", "error")
+      return null
+    }
+    if (typeof provider !== "string" || !Object.hasOwn(builtInHandoffUrls, provider)) throw new Error("Invalid provider setting")
+    const builtIn = provider as BuiltInProvider
+    return { provider: builtIn, url: new URL(builtInHandoffUrls[builtIn]), canUseAssist }
+  } catch {
+    if (!signal?.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
+    return null
   }
+}
 
-  window.open(targetUrl, "_blank");
+/** Keep external navigation on a fresh native link gesture after settings resolve. */
+export function offerAiHandoff(url: URL, sendsTaskDetails: boolean, signal?: AbortSignal): Promise<boolean> {
+  const locale = getClientLocale()
+  return confirmDialog({
+    title: t("settings.ai_handoff_open", locale),
+    message: t(sendsTaskDetails ? "settings.ai_handoff_review_prompt" : "settings.ai_handoff_review", locale, { host: url.host }),
+    confirmText: t("settings.ai_handoff_open", locale),
+    confirmUrl: url,
+    cancelText: t("common.cancel", locale),
+    ...(signal ? { signal } : {}),
+  })
+}
+
+/** Fall back to clipboard and the saved external provider when Assist is unavailable. */
+async function fallbackToClipboard(url: URL, prompt: string, signal?: AbortSignal): Promise<AIResult> {
+  const locale = getClientLocale()
+  await confirmDialog({
+    title: t("settings.ai_handoff_external", locale),
+    message: t("settings.ai_handoff_review_copy", locale, { host: url.host }),
+    confirmText: t("settings.ai_handoff_open", locale),
+    confirmUrl: url,
+    copyPrompt: {
+      text: prompt,
+      label: t("settings.ai_handoff_copy", locale),
+      success: t("settings.ai_handoff_copy_success", locale),
+      failure: t("settings.ai_handoff_copy_failed", locale),
+    },
+    cancelText: t("common.cancel", locale),
+    ...(signal ? { signal } : {}),
+  })
+  return { source: "none" }
 }
 
 /**
  * Fetch today's calendar events for AI context.
  * Best-effort — returns null if unavailable.
  */
-async function fetchCalendarContext(): Promise<string | null> {
+async function fetchCalendarContext(signal?: AbortSignal): Promise<string | null> {
   try {
     // Get configured calendar entities
-    const settingsRes = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=calendar-entities"
-    );
+    const settingsRes = await fetch("/api/settings?key=calendar-entities", { signal: signal ?? null })
     if (!settingsRes.ok) return null;
     const settingsData = await settingsRes.json();
     const entities: string[] = settingsData?.value
@@ -201,8 +238,9 @@ async function fetchCalendarContext(): Promise<string | null> {
     const allEvents: Array<{ summary: string; start: string; end: string }> = [];
     for (const entityId of entities.slice(0, 3)) { // Cap at 3 calendars
       const res = await fetch(
-        `${window.__ingress_path || ""}/api/ha/events?entity_id=${encodeURIComponent(entityId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
-      );
+        `/api/ha/events?entity_id=${encodeURIComponent(entityId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        { signal: signal ?? null },
+      )
       if (res.ok) {
         const data = await res.json();
         if (data?.events) allEvents.push(...data.events);
@@ -226,9 +264,9 @@ async function fetchCalendarContext(): Promise<string | null> {
  * @domain pillars
  * @kcs Non-Negotiables are behavioral boundaries the AI must never contradict
  */
-async function fetchPillarContext(): Promise<string | null> {
+async function fetchPillarContext(signal?: AbortSignal): Promise<string | null> {
   try {
-    const res = await fetch("/api/pillars")
+    const res = await fetch("/api/pillars", { signal: signal ?? null })
     if (!res.ok) return null
     const data = await res.json()
     const pillars = data?.pillars ?? []
@@ -246,10 +284,9 @@ async function fetchPillarContext(): Promise<string | null> {
     // Fetch Non-Negotiable Principles for each Pillar
     const nnLines: string[] = []
     for (const p of pillars) {
+      signal?.throwIfAborted()
       try {
-        const pRes = await fetch(
-          `/api/pillars/${p.id}/principles`
-        )
+        const pRes = await fetch(`/api/pillars/${p.id}/principles`, { signal: signal ?? null })
         if (!pRes.ok) continue
         const pData = await pRes.json()
         const principles = pData?.principles ?? []
@@ -279,11 +316,9 @@ async function fetchPillarContext(): Promise<string | null> {
  * Fetch active habit streaks for AI context.
  * Best-effort — returns null if unavailable.
  */
-async function fetchHabitContext(): Promise<string | null> {
+async function fetchHabitContext(signal?: AbortSignal): Promise<string | null> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/habits"
-    );
+    const res = await fetch("/api/habits", { signal: signal ?? null })
     if (!res.ok) return null;
     const data = await res.json();
     const habits = data?.habits ?? data ?? [];
@@ -304,16 +339,23 @@ async function fetchHabitContext(): Promise<string | null> {
  * Enriched with calendar schedule + habit context for holistic awareness.
  * Falls back to clipboard + external if HA is disconnected.
  */
-export async function askAIForTask(taskId: string): Promise<AIResult> {
-  const task = await resolveTask(taskId);
+export async function askAIForTask(taskId: string, signal?: AbortSignal): Promise<AIResult> {
+  let target = await resolveAiHandoffTarget(signal)
+  if (!target || signal?.aborted) return { source: "none" }
+  if (target.provider === "ha_llm" && !target.canUseAssist) {
+    showToast("settings.ai_handoff_ha_denied", "error")
+    return { source: "none" }
+  }
+  const task = await resolveTask(taskId, signal)
   const type = task.taskType ?? task.task_type ?? "Task";
 
   // Fetch contextual data in parallel (best-effort, non-blocking)
   const [calendarContext, habitContext, pillarContext] = await Promise.all([
-    fetchCalendarContext(),
-    fetchHabitContext(),
-    fetchPillarContext(),
+    fetchCalendarContext(signal),
+    fetchHabitContext(signal),
+    fetchPillarContext(signal),
   ]);
+  if (signal?.aborted) return { source: "none" }
 
   let prompt = `I am working on the following ${type} in Meitheal. Help me plan, break down, or solve blocking issues.
 
@@ -337,22 +379,29 @@ ${task.description || "No description provided."}`;
 
   prompt += `\n\nPlease act as a senior technical co-pilot. Break this down into actionable sub-tasks or suggest the next step. Consider my schedule, active habits, and Pillar alignment when planning.`;
 
-  try {
-    const result = await callAssist(prompt);
-    if (result) {
-      return {
-        response: result.speech,
-        source: "ha-assist",
-        conversationId: result.conversationId,
-      };
+  if (target.canUseAssist) {
+    try {
+      const result = await callAssist(prompt, signal)
+      if (result && !signal?.aborted) {
+        return { response: result.speech, source: "ha-assist", conversationId: result.conversationId }
+      }
+    } catch (err) {
+      if (!signal?.aborted) log.warn("HA Assist call failed", err)
     }
-  } catch (err) {
-    log.warn("HA Assist call failed, falling back", err);
   }
 
-  // Fallback
-  await fallbackToClipboard(prompt);
-  return { response: null, source: "clipboard-fallback" };
+  if (signal?.aborted) return { source: "none" }
+  if (target.provider !== "ha_llm") target = await resolveAiHandoffTarget(signal)
+  if (!target || signal?.aborted) return { source: "none" }
+  if (target.provider === "ha_llm") {
+    showToast(target.canUseAssist ? "settings.ai_handoff_ha_unavailable" : "settings.ai_handoff_ha_denied", "error")
+    return { source: "none" }
+  }
+  if (!target.url) {
+    showToast("settings.ai_handoff_url_invalid", "error")
+    return { source: "none" }
+  }
+  return fallbackToClipboard(target.url, prompt, signal)
 }
 
 /**
@@ -368,19 +417,20 @@ export async function autoScoreTask(
     fields: Array<{
       key: string;
       label: string;
-      help_text?: string;
-      description?: string;
-      min?: number;
-      max?: number;
-      options?: Array<{ label: string; value: string | number }>;
+      help_text?: string | undefined
+      description?: string | undefined
+      min?: number | undefined
+      max?: number | undefined
+      options?: Array<{ label: string; value: string | number }> | undefined
     }>;
-  }>
+  }>,
+  signal?: AbortSignal,
 ): Promise<{
   scores: Record<string, Record<string, number | string>>;
   justification: string;
-  source: "ha-assist" | "clipboard-fallback";
+  source: "ha-assist";
 }> {
-  const task = await resolveTask(taskId);
+  const task = await resolveTask(taskId, signal)
 
   let prompt = `Score the following task against strategic frameworks. Return a JSON object with keys for each framework ID, and values being objects mapping field keys to suggested values.
 
@@ -414,43 +464,14 @@ Respond with ONLY a JSON object in this exact format, no markdown fences:
   "justification": "Brief 1-2 sentence explanation of your scoring rationale."
 }`;
 
-  try {
-    const result = await callAssist(prompt);
-    if (result) {
-      // Try to parse structured JSON from the response
-      const parsed = extractJSON(result.speech);
-      if (parsed?.scores) {
-        return {
-          scores: parsed.scores,
-          justification: parsed.justification || result.speech,
-          source: "ha-assist",
-        };
-      }
-      // If AI returned text but not parseable JSON, return it as justification
-      return {
-        scores: {},
-        justification: result.speech,
-        source: "ha-assist",
-      };
-    }
-  } catch (err) {
-    log.warn("Auto-score via Assist failed", err);
-  }
-
-  // Fallback: clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(prompt);
-    } catch {
-      /* denied */
-    }
-  }
-
+  const result = await callAssist(prompt, signal)
+  if (!result) throw new Error("Home Assistant Assist is unavailable")
+  const parsed = extractJSON(result.speech)
   return {
-    scores: {},
-    justification: "HA Assist unavailable — prompt copied to clipboard. Paste into your AI provider.",
-    source: "clipboard-fallback",
-  };
+    scores: parsed?.scores ?? {},
+    justification: parsed?.justification || result.speech,
+    source: "ha-assist",
+  }
 }
 
 /**

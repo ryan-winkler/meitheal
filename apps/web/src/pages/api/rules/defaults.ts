@@ -1,16 +1,16 @@
 /**
  * Rules Defaults API — POST: restore all rules to the "Strategic" preset
  *
- * Deletes all existing rules and framework overrides, then creates
+ * Atomically replaces all existing rules and framework overrides with
  * the default 3-rule Strategic preset. Used by the "Restore Defaults"
  * button in Settings. Also accessible by HA LLM API and AI agents.
  *
  * @domain strategy
  */
 import type { APIRoute } from "astro"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
 import { ensureSchema } from "@domains/tasks/persistence/store"
-import { deleteAllRules, createRule } from "@domains/strategy/rule-repository"
-import { getAllOverrides, resetOverrides } from "@domains/strategy/framework-repository"
+import { replaceRules } from "@domains/strategy/rule-repository"
 import { logApiError } from "../../../lib/api-logger"
 import type { TaskRule } from "@meitheal/domain-strategy"
 import { DEFAULT_AI_SCOPE } from "@meitheal/domain-strategy"
@@ -58,31 +58,18 @@ const DEFAULT_RULES: Array<Omit<TaskRule, "createdAt" | "updatedAt">> = [
   },
 ]
 
-export const POST: APIRoute = async () => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     await ensureSchema()
 
-    // Clear all existing rules
-    await deleteAllRules()
-
-    // Clear all framework overrides
-    const overrides = await getAllOverrides()
-    for (const override of overrides) {
-      await resetOverrides(override.frameworkId)
-    }
-
-    // Create default rules
-    const created: TaskRule[] = []
-    for (const rule of DEFAULT_RULES) {
-      // Generate a fresh ID for each creation
-      const newRule: TaskRule = {
-        ...rule,
-        id: crypto.randomUUID(),
-        createdAt: "",
-        updatedAt: "",
-      }
-      created.push(await createRule(newRule))
-    }
+    const created = await replaceRules(DEFAULT_RULES.map((rule) => ({
+      ...rule,
+      id: crypto.randomUUID(),
+      createdAt: "",
+      updatedAt: "",
+    })), undefined, true)
 
     return new Response(
       JSON.stringify({

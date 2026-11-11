@@ -287,3 +287,13 @@ test("balanced rules resolve RICE lens for story", () => {
   const match = resolveRulesForTask("story", [], rules)
   expect(match.applicableLensIds).toContain("rice")
 })
+
+test("framework bounds and formula grammar are validated before persistence", () => {
+  for (const value of ['0" data-fixture="invalid-bound', Infinity, NaN]) {
+    const config = { ...validFormulaConfig, fields: [{ ...validFormulaConfig.fields![0]!, min: value as number }] }
+    expect(validateFrameworkConfig(config)).toContain('Field "reach" min must be a finite number')
+  }
+  expect(validateFrameworkConfig({ ...validFormulaConfig, formula: "reach ** 2" })).toContain("Formula must use declared fields, numbers, parentheses and + - * / operators")
+  expect(validateFrameworkConfig({ ...validFormulaConfig, formula: "unknown + reach" })).not.toBeNull()
+  expect(validateFrameworkConfig({ ...validFormulaConfig, formula: "reach / (impact - impact)" })).toBeNull()
+})

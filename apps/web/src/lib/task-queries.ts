@@ -12,6 +12,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
 // Types
@@ -28,6 +29,7 @@ export interface TaskViewItem {
   rice: number | null;
   calendar_sync_state: string | null;
   area_id: string;
+  project_id: string | null
   custom_fields: Record<string, unknown>;
   start_date: string | null;
   end_date: string | null;
@@ -42,6 +44,7 @@ export interface TaskViewItem {
   checklists: string | null;
   created_at: string;
   updated_at: string;
+  deferred_at: number | null
   is_overdue: boolean;
   is_done: boolean;
   framework_payload: Record<string, unknown>;
@@ -65,21 +68,6 @@ export interface TaskViewResult {
     overdue: number;
   };
   customFieldDefs: Array<{ name: string; type: string }>;
-}
-
-// =============================================================================
-// RICE Calculation
-// =============================================================================
-
-function calculateRice(fp: Record<string, unknown>): number | null {
-  const reach = Number(fp.reach);
-  const impact = Number(fp.impact);
-  const confidence = Number(fp.confidence);
-  const effort = Number(fp.effort);
-
-  if (!reach || !impact || !confidence || !effort) return null;
-
-  return Math.round((reach * impact * confidence) / effort);
 }
 
 // =============================================================================
@@ -120,9 +108,9 @@ function isOverdue(dueDate: string | null, isDone: boolean): boolean {
 
 const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
-  framework_payload, calendar_sync_state, area_id, custom_fields,
+  framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
   start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-  parent_id, ticket_number, assigned_to, checklists, created_at, updated_at,
+  parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
 `;
@@ -131,7 +119,7 @@ const TASK_VIEW_COLUMNS = `
  * Load all tasks with computed fields for any task view page.
  * Returns structured task items with RICE scores, overdue flags, and counts.
  */
-export async function getTasksForView(): Promise<TaskViewResult> {
+export async function getTasksForView({ requireAvailable = false } = {}): Promise<TaskViewResult> {
   const emptyResult: TaskViewResult = {
     tasks: [],
     counts: { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 },
@@ -163,7 +151,7 @@ export async function getTasksForView(): Promise<TaskViewResult> {
       const task = toTaskViewItem(row);
       counts.total++;
       if (task.is_done) counts.complete++;
-      else {
+      else if (task.deferred_at === null) {
         counts.open++;
         if (task.status === "active") counts.active++;
         else counts.pending++;
@@ -173,7 +161,8 @@ export async function getTasksForView(): Promise<TaskViewResult> {
     });
 
     return { tasks, counts, customFieldDefs };
-  } catch {
+  } catch (error) {
+    if (requireAvailable) throw error
     return emptyResult;
   }
 }
@@ -183,9 +172,11 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
   const dueDate = row.due_date ? String(row.due_date) : null;
-  const fp = safeParseJson<Record<string, unknown>>(row.framework_payload, {}) ?? {};
-  const rice = calculateRice(fp);
-  const overdue = isOverdue(dueDate, isDone);
+  const fp = frameworkPayloadObject(safeParseJson(row.framework_payload, {}))
+  const riceInputs = readRiceInputs(fp)
+  const rice = riceInputs ? riceLensScore(riceInputs) : null
+  const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
+  const overdue = deferredAt === null && isOverdue(dueDate, isDone);
 
   return {
     id: String(row.id),
@@ -198,6 +189,7 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
     rice,
     calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
     area_id: String(row.area_id ?? "default"),
+    project_id: row.project_id == null ? null : String(row.project_id),
     custom_fields: safeParseJson<Record<string, unknown>>(row.custom_fields, {}),
     start_date: row.start_date ? String(row.start_date) : null,
     end_date: row.end_date ? String(row.end_date) : null,
@@ -212,6 +204,7 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
     checklists: row.checklists ? String(row.checklists) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    deferred_at: deferredAt,
     is_overdue: overdue,
     is_done: isDone,
     framework_payload: fp,
@@ -268,7 +261,7 @@ export async function getTodayTaskRows(today: string, includeUnscheduled: boolea
         WITH totals AS (
           SELECT ${TODAY_COMPLETION_COUNT} AS completed_today,
                  COUNT(*) FILTER (
-                   WHERE status IS NOT 'complete' AND (due_date IS NULL OR due_date = '')
+                   WHERE status IS NOT 'complete' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                  ) AS open_unscheduled
           FROM tasks
         )
@@ -276,6 +269,7 @@ export async function getTodayTaskRows(today: string, includeUnscheduled: boolea
         FROM totals
         LEFT JOIN tasks
           ON status IS NOT 'complete'
+          AND deferred_at IS NULL
           AND (
             ? = 1
             OR (due_date IS NOT NULL AND due_date <> '')
@@ -307,13 +301,13 @@ export async function getTodayTaskCounts(now = new Date()): Promise<TodayTaskCou
   const { rows } = await getPersistenceClient().execute({
     sql: `
       SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
-             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND is_favorite NOT IN (0, '')) AS pinned_count,
+             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM tasks
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
       FROM tasks
-      WHERE status IS NOT 'complete' AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,

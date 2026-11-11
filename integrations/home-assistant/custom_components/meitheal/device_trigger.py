@@ -88,7 +88,7 @@ async def async_attach_trigger(
 
     event_config = {
         CONF_PLATFORM: "event",
-        "event_type": event_type,
+        "event_type": [event_type],
         "event_data": {"domain": DOMAIN},
     }
 

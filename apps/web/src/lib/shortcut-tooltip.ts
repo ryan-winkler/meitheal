@@ -19,6 +19,8 @@
  * ```
  */
 
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "")
 
 /** Map modifier names to OS-appropriate symbols */
@@ -47,33 +49,36 @@ function createBadge(key: string): HTMLSpanElement {
  * Scan a container for elements with `data-shortcut` and attach
  * tooltip badges that appear on hover.
  *
- * Safe to call multiple times — skips elements that already have badges.
+ * Safe to call multiple times to update existing shortcut hints.
  */
 export function attachShortcutTooltips(container: HTMLElement): void {
-  const elements = container.querySelectorAll<HTMLElement>("[data-shortcut]")
-
-  elements.forEach((el) => {
-    // Skip if already processed
-    if (el.querySelector(".shortcut-badge")) return
-
+  const singleKeysEnabled = singleKeyShortcutsEnabled()
+  for (const el of container.querySelectorAll<HTMLElement>("[data-shortcut]")) {
     const key = el.dataset.shortcut
-    if (!key) return
+    if (!key) continue
 
-    // Ensure relative positioning for badge placement
-    const style = getComputedStyle(el)
-    if (style.position === "static") {
-      el.style.position = "relative"
+    const enabled = key.length !== 1 || singleKeysEnabled
+    let badge = el.querySelector(".shortcut-badge")
+    if (enabled && !badge) {
+      if (getComputedStyle(el).position === "static") el.style.position = "relative"
+      badge = createBadge(key)
+      el.appendChild(badge)
     }
+    badge?.toggleAttribute("hidden", !enabled)
 
-    const badge = createBadge(key)
-    el.appendChild(badge)
-
-    // Update title/aria-label with shortcut info
     const label = el.dataset.shortcutLabel || el.getAttribute("aria-label")
     if (label) {
-      el.setAttribute("title", `${label} (${formatKey(key)})`)
+      const title = `${label} (${formatKey(key)})`
+      if (enabled) el.setAttribute("title", title)
+      else if (el.getAttribute("title") === title) el.setAttribute("title", label)
     }
-  })
+  }
+
+  for (const launcher of container.querySelectorAll(".unified-bar__search-launcher, #settings-bar-search-launcher")) {
+    if (singleKeysEnabled) launcher.setAttribute("aria-keyshortcuts", "/")
+    else launcher.removeAttribute("aria-keyshortcuts")
+    launcher.querySelector("kbd")?.toggleAttribute("hidden", !singleKeysEnabled)
+  }
 }
 
 /**
@@ -110,8 +115,12 @@ export function injectShortcutStyles(): void {
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
-    *:hover > .shortcut-badge,
-    *:focus-visible > .shortcut-badge {
+    .unified-bar__search-launcher kbd[hidden] {
+      display: none;
+    }
+
+    *:hover > .shortcut-badge:not([hidden]),
+    *:focus-visible > .shortcut-badge:not([hidden]) {
       display: inline-flex;
     }
 

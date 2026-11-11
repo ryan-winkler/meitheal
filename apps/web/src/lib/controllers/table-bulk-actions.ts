@@ -12,13 +12,14 @@
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
+import { notifyTaskCountsChanged } from "@lib/deferral-client"
+import { reconcileTableDeferral } from "./table-deferral"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
 interface BulkDeps {
   signal: AbortSignal
-  applyAllFilters: () => void
-  updateGroupCounts: () => void
+  onTasksChanged: () => void
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -32,23 +33,17 @@ export function setupBulkActions(deps: BulkDeps): void {
   const bulkDelete = document.getElementById("bulk-delete")
   const bulkClose = document.getElementById("bulk-close")
 
-  // Row checkboxes
-  document.querySelectorAll<HTMLInputElement>(".row-check").forEach((cb) => {
-    cb.addEventListener("click", (e) => e.stopPropagation())
-    cb.addEventListener("change", updateBulkBar)
-  })
+  const table = document.getElementById("task-table")
+  table?.addEventListener("change", event => {
+    if ((event.target as Element).matches(".row-check")) updateBulkBar()
+  }, { signal: deps.signal })
 
-  // Select all
   selectAll?.addEventListener("change", () => {
-    const checked = selectAll.checked
-    document.querySelectorAll<HTMLInputElement>(".row-check").forEach((cb) => {
-      const row = cb.closest<HTMLElement>(".table-row")
-      if (row && !row.classList.contains("filtered-out")) {
-        cb.checked = checked
-      }
+    table?.querySelectorAll<HTMLInputElement>(".row-check").forEach(box => {
+      box.checked = selectAll.checked && isSelectableTableRow(box.closest(".table-row"))
     })
     updateBulkBar()
-  })
+  }, { signal: deps.signal })
 
   // Bulk status change
   bulkStatus?.addEventListener("change", async () => {
@@ -59,7 +54,7 @@ export function setupBulkActions(deps: BulkDeps): void {
 
     await bulkUpdateField("status", val, ids, deps)
     bulkStatus.value = ""
-  })
+  }, { signal: deps.signal })
 
   // Bulk priority change
   bulkPriority?.addEventListener("change", async () => {
@@ -70,7 +65,7 @@ export function setupBulkActions(deps: BulkDeps): void {
 
     await bulkUpdateField("priority", Number(val), ids, deps)
     bulkPriority.value = ""
-  })
+  }, { signal: deps.signal })
 
   // Bulk board change
   bulkArea?.addEventListener("change", async () => {
@@ -81,7 +76,7 @@ export function setupBulkActions(deps: BulkDeps): void {
 
     await bulkUpdateField("area_id", val, ids, deps)
     bulkArea.value = ""
-  })
+  }, { signal: deps.signal })
 
   // Bulk delete
   bulkDelete?.addEventListener("click", async () => {
@@ -93,49 +88,75 @@ export function setupBulkActions(deps: BulkDeps): void {
       message: "This action cannot be undone.",
       confirmText: "Delete",
       variant: "danger",
+      signal: deps.signal,
     })
-    if (!confirmed) return
+    if (!confirmed || deps.signal.aborted) return
 
     let deleted = 0
+    const projects: Array<string | undefined> = []
     for (const id of ids) {
       try {
         const res = await fetch(`/api/tasks/${id}`, { method: "DELETE", signal: deps.signal })
         if (res.ok) {
-          const row = document.querySelector<HTMLElement>(`.table-row[data-id="${id}"]`)
-          row?.remove()
+          const row = table?.querySelector<HTMLElement>(`.table-row[data-id="${CSS.escape(id)}"]`)
+          projects.push(row?.dataset.projectId)
           deleted++
         }
       } catch { /* continue */ }
     }
 
-    showToast(`Deleted ${deleted} task${deleted > 1 ? "s" : ""}`, "success")
-    updateBulkBar()
-    deps.updateGroupCounts()
-  })
+    if (deps.signal.aborted) return
+    showToast(`Deleted ${deleted} task${deleted === 1 ? "" : "s"}`, deleted > 0 ? "success" : "error")
+    if (deleted > 0) {
+      notifyTaskCountsChanged(...projects)
+      deps.onTasksChanged()
+    }
+  }, { signal: deps.signal })
 
   // Bulk close button
   bulkClose?.addEventListener("click", () => {
-    document.querySelectorAll<HTMLInputElement>(".row-check").forEach((cb) => {
+    table?.querySelectorAll<HTMLInputElement>(".row-check").forEach((cb) => {
       cb.checked = false
     })
     if (selectAll) selectAll.checked = false
     updateBulkBar()
-  })
+  }, { signal: deps.signal })
+}
+
+export function isSelectableTableRow(row: Element | null): boolean {
+  return row instanceof HTMLTableRowElement && row.matches(".table-row:not(.group-collapsed-row)") && !row.hidden
+}
+
+function tableCheckboxes() {
+  return Array.from(document.querySelectorAll<HTMLInputElement>("#task-table .row-check"))
 }
 
 export function getSelectedIds(): string[] {
-  const ids: string[] = []
-  document.querySelectorAll<HTMLInputElement>(".row-check:checked").forEach((cb) => {
-    const id = cb.dataset.id
-    if (id) ids.push(id)
-  })
-  return ids
+  return tableCheckboxes().flatMap(box => box.checked && box.dataset.id && isSelectableTableRow(box.closest(".table-row"))
+    ? [box.dataset.id] : [])
 }
 
 export function updateBulkBar(): void {
   const bulkBar = document.getElementById("bulk-bar")
   const selectedCountEl = document.getElementById("selected-count")
-  const selected = getSelectedIds()
+  const boxes = tableCheckboxes()
+  const visible = boxes.filter(box => {
+    const selectable = isSelectableTableRow(box.closest(".table-row"))
+    if (!selectable) box.checked = false
+    return selectable
+  })
+  const selected = visible.filter(box => box.checked)
+  const selectAll = document.querySelector<HTMLInputElement>("#task-table #select-all")
+  if (selectAll) {
+    selectAll.checked = visible.length > 0 && selected.length === visible.length
+    selectAll.indeterminate = selected.length > 0 && selected.length < visible.length
+  }
+  for (const box of document.querySelectorAll<HTMLInputElement>("#task-table .group-select-all")) {
+    const group = visible.filter(rowBox => rowBox.closest<HTMLElement>(".table-row")?.dataset.groupValue === box.dataset.groupKey)
+    const count = group.filter(rowBox => rowBox.checked).length
+    box.checked = group.length > 0 && count === group.length
+    box.indeterminate = count > 0 && count < group.length
+  }
 
   if (bulkBar) {
     bulkBar.style.display = selected.length > 0 ? "flex" : "none"
@@ -159,15 +180,15 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
       })
       if (res.ok) {
         updated++
-        const row = document.querySelector<HTMLElement>(`.table-row[data-id="${id}"]`)
+        const row = document.querySelector<HTMLElement>(`#task-table .table-row[data-id="${CSS.escape(id)}"]`)
         if (row) {
           if (field === "status") {
             row.dataset.status = String(value)
             row.classList.toggle("row-done", value === "complete")
+            void reconcileTableDeferral(row, String(value), deps.signal)
             // Gamification + confetti on completion
             if (value === "complete") {
-              const priority = Number(row?.dataset.priority ?? 3)
-              onTaskCompleted(priority)
+              onTaskCompleted(await res.json())
             }
             // Update inline select
             const sel = row.querySelector<HTMLSelectElement>(`select[data-field="status"]`)
@@ -186,6 +207,7 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
     } catch { /* continue */ }
   }
 
-  showToast(`Updated ${updated} task${updated > 1 ? "s" : ""}`, "success")
-  deps.applyAllFilters()
+  if (deps.signal.aborted) return
+  showToast(`Updated ${updated} task${updated === 1 ? "" : "s"}`, updated > 0 ? "success" : "error")
+  if (updated > 0) deps.onTasksChanged()
 }

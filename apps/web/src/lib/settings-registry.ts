@@ -19,6 +19,7 @@ export interface SettingsSectionDescriptor {
   id: SettingsSectionId
   label: string
   icon: string
+  outlineIcon: "person" | "kanban" | "sliders" | "automation" | "plug" | "phone" | "warning"
   description: string
   navDetail: string
   statusLabel: string
@@ -45,7 +46,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "personal-settings",
     label: "Personal",
     icon: "🎨",
-    description: "Theme, language, timezone, and everyday preferences",
+    outlineIcon: "person",
+    description: "Set up appearance, language, dates and keyboard shortcuts.",
     navDetail: "Appearance, locale, shortcuts, and date defaults",
     statusLabel: "Theme",
     summaryTitle: "Appearance",
@@ -61,7 +63,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "workflow-settings",
     label: "Workflow",
     icon: "🧭",
-    description: "Sidebar, fields, labels, notifications, backlog, and task logic",
+    outlineIcon: "kanban",
+    description: "Manage your sidebar, labels, task defaults and notifications.",
     navDetail: "Sidebar, labels, custom fields, defaults, and notifications",
     statusLabel: "Labels",
     summaryTitle: "Task model",
@@ -77,7 +80,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "rules-lenses-settings",
     label: "Rules & Lenses",
     icon: "📏",
-    description: "Task context rules, AI scope, framework weights, and presets",
+    outlineIcon: "sliders",
+    description: "Choose task rules, scoring frameworks and AI permissions.",
     navDetail: "Per-type lens assignment, AI guardrails, framework configuration",
     statusLabel: "Rules",
     summaryTitle: "Strategy",
@@ -93,7 +97,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "automation-ai-settings",
     label: "Automation & AI",
     icon: "🤖",
-    description: "Conversation agents, external AI, and protocol exposure",
+    outlineIcon: "automation",
+    description: "Set up conversation agents, AI providers and access for other tools.",
     navDetail: "Assist agents, providers, and protocol exposure",
     statusLabel: "Protocols",
     summaryTitle: "Agents",
@@ -109,7 +114,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "integrations-settings",
     label: "Integrations",
     icon: "🔌",
-    description: "Home Assistant, calendar, todo, Grocy, n8n, and webhooks",
+    outlineIcon: "plug",
+    description: "Connect Home Assistant, calendars, to-do lists and other services.",
     navDetail: "Home Assistant, calendars, todo lists, Grocy, n8n, and webhooks",
     statusLabel: "HA",
     summaryTitle: "Home Assistant",
@@ -125,7 +131,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "app-pwa-settings",
     label: "App & PWA",
     icon: "📲",
-    description: "Exports, installability, offline, companion links, and support",
+    outlineIcon: "phone",
+    description: "Install Meitheal, open it in the Home Assistant app, or move your data.",
     navDetail: "Installability, companion handoff, exports, and recovery",
     statusLabel: "PWA",
     summaryTitle: "Offline readiness",
@@ -141,7 +148,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "danger-zone-settings",
     label: "Danger Zone",
     icon: "⚠",
-    description: "Archiving, data retention, purge, and reset operations",
+    outlineIcon: "warning",
+    description: "Preview and delete old tasks, purge all tasks or reset settings.",
     navDetail: "Data retention, protected reset, and purge operations",
     statusLabel: "Protected",
     summaryTitle: "Protected",
@@ -161,6 +169,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     anchorId: "theme-select",
     sectionId: "personal-settings",
     keywords: ["theme", "dark", "light", "custom theme", "appearance"],
+  },
+  {
+    id: "field-appearance-customize",
+    label: "Customize appearance",
+    anchorId: "appearance-settings",
+    sectionId: "personal-settings",
+    keywords: ["font", "typeface", "typography", "corners", "roundness", "radius"],
   },
   {
     id: "field-language",
@@ -255,7 +270,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
   },
   {
     id: "field-bot-proposals",
-    label: "Bot Proposals",
+    label: "Agent handoff status",
     anchorId: "bot-allow-proposals",
     sectionId: "automation-ai-settings",
     keywords: ["bot", "proposals", "handoff", "agent", "accept", "lock"],

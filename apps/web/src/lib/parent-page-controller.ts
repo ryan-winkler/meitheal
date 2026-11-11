@@ -61,8 +61,7 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
       .forEach((tab) => {
         const isActive = tab.dataset.unifiedBarSection === sectionId
         tab.classList.toggle("is-active", isActive)
-        tab.setAttribute("aria-selected", isActive ? "true" : "false")
-        tab.setAttribute("tabindex", isActive ? "0" : "-1")
+        tab.setAttribute("aria-current", isActive ? "location" : "false")
       })
 
     setUnifiedBarSwitcherActiveState(config.barId, sectionId)

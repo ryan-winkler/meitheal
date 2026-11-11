@@ -1,4 +1,5 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { desc, sql } from "drizzle-orm"
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const tasks = sqliteTable(
   "tasks",
@@ -13,15 +14,38 @@ export const tasks = sqliteTable(
     idempotencyKey: text("idempotency_key").notNull(),
     requestId: text("request_id").notNull(),
     createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull()
+    updatedAt: integer("updated_at").notNull(),
+    deferredAt: integer("deferred_at"),
+    deferralRevision: text("deferral_revision"),
+    inactivityTouchedAt: integer("inactivity_touched_at"),
+    lastActivitySpikeAt: integer("last_activity_spike_at")
   },
   (table) => ({
     idempotencyUnique: uniqueIndex("tasks_idempotency_unique").on(table.idempotencyKey),
     requestIdx: index("tasks_request_idx").on(table.requestId),
     stateIdx: index("tasks_calendar_sync_state_idx").on(table.calendarSyncState),
-    createdIdx: index("tasks_created_idx").on(table.createdAt)
+    createdIdx: index("tasks_created_idx").on(table.createdAt),
+    deferredOrderIdx: index("tasks_deferred_order_idx").on(desc(table.deferredAt), table.id)
+      .where(sql`${table.deferredAt} IS NOT NULL`)
   })
 );
+
+export const taskInactivityPolicy = sqliteTable("task_inactivity_policy", {
+  scope: text("scope").primaryKey().notNull(),
+  areaId: text("area_id").unique(),
+  days: integer("days").notNull(),
+  revision: text("revision").notNull(),
+})
+
+export const taskPins = sqliteTable("task_pins", {
+  ownerId: text("owner_id").notNull(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  pinnedAt: integer("pinned_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.ownerId, table.taskId] }),
+  index("task_pins_owner_recent_idx").on(table.ownerId, desc(table.pinnedAt), table.taskId),
+  index("task_pins_task_idx").on(table.taskId),
+])
 
 export const domainEvents = sqliteTable(
   "domain_events",

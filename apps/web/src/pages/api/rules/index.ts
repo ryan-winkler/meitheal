@@ -5,13 +5,17 @@
  * POST /api/rules — create a new rule
  */
 import type { APIRoute } from "astro"
-import { findAllRules, createRule } from "@domains/strategy/rule-repository"
-import { createTaskRule } from "@meitheal/domain-strategy"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
+import { findAllRules, createRule, replaceRules } from "@domains/strategy/rule-repository"
+import { parseRuleInput } from "@domains/strategy/rule-input"
+import { ensureSchema } from "@domains/tasks/persistence/store"
+import { apiJson } from "@lib/api-response"
 import type { TaskType } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
 
 export const GET: APIRoute = async ({ url }) => {
   try {
+    await ensureSchema()
     const taskTypeParam = url.searchParams.get("taskType") as TaskType | null
     const tagParam = url.searchParams.get("tag")
     const filter: { taskType?: TaskType; tag?: string } = {}
@@ -31,30 +35,17 @@ export const GET: APIRoute = async ({ url }) => {
   }
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
+    await ensureSchema()
     const body = await request.json()
 
-    // Validate required fields
-    if (!body.name || typeof body.name !== "string") {
-      return new Response(
-        JSON.stringify({ ok: false, errorCode: "VALIDATION_ERROR", message: "name is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      )
+    let rule
+    try { rule = parseRuleInput(body) } catch (error) {
+      return apiJson({ ok: false, errorCode: "VALIDATION_ERROR", message: error instanceof Error ? error.message : "Invalid rule" }, 400)
     }
-
-    const rule = createTaskRule({
-      name: body.name,
-      description: body.description ?? "",
-      ruleType: body.ruleType ?? "strategic-lens",
-      taskTypes: Array.isArray(body.taskTypes) ? body.taskTypes : [],
-      tags: Array.isArray(body.tags) ? body.tags : [],
-      lensIds: Array.isArray(body.lensIds) ? body.lensIds : [],
-      aiScope: body.aiScope ?? undefined,
-      constraints: body.constraints ?? "",
-      priority: typeof body.priority === "number" ? body.priority : 100,
-      enabled: body.enabled !== false,
-    })
 
     const created = await createRule(rule)
     return new Response(JSON.stringify({ ok: true, data: created }), {
@@ -67,5 +58,33 @@ export const POST: APIRoute = async ({ request }) => {
       JSON.stringify({ ok: false, errorCode: "RULE_CREATE_FAILED" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
+  }
+}
+
+/** Full replacements are explicit; editor saves replace only the displayed defaults. */
+export const PUT: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
+  let rules
+  let replaceIds: string[] | undefined
+  try {
+    const body = await request.json()
+    if (!Array.isArray(body.rules) || body.rules.length > 1000) throw new Error("rules must contain at most 1000 rules")
+    rules = body.rules.map(parseRuleInput)
+    if (body.replaceIds !== undefined) {
+      if (!Array.isArray(body.replaceIds) || body.replaceIds.length > 1000 || body.replaceIds.some((id: unknown) => typeof id !== "string" || id.length > 128)) {
+        throw new Error("replaceIds must be a list of rule IDs")
+      }
+      replaceIds = body.replaceIds
+    }
+  } catch (error) {
+    return apiJson({ ok: false, errorCode: "VALIDATION_ERROR", message: error instanceof Error ? error.message : "Invalid rules" }, 400)
+  }
+  try {
+    await ensureSchema()
+    return apiJson({ ok: true, data: await replaceRules(rules, replaceIds) })
+  } catch (error) {
+    logApiError("rules", "Failed to replace rules", error)
+    return apiJson({ ok: false, errorCode: "RULES_REPLACE_FAILED", message: "Rules were not replaced. Your previous configuration is unchanged." }, 500)
   }
 }

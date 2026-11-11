@@ -165,7 +165,8 @@ export async function updatePrinciple(
     statement: string
     isNonNegotiable: boolean
     position: number
-  }>
+  }>,
+  pillarId?: string,
 ): Promise<boolean> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
@@ -180,21 +181,22 @@ export async function updatePrinciple(
   if (sets.length === 0) return false
 
   args.push(id)
+  if (pillarId !== undefined) args.push(pillarId)
   const result = await client.execute({
-    sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?`,
+    sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}`,
     args,
   })
 
   return (result.rowsAffected ?? 0) > 0
 }
 
-export async function deletePrinciple(id: string): Promise<boolean> {
+export async function deletePrinciple(id: string, pillarId?: string): Promise<boolean> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "DELETE FROM principles WHERE id = ?",
-    args: [id],
+    sql: `DELETE FROM principles WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}`,
+    args: pillarId === undefined ? [id] : [id, pillarId],
   })
 
   return (result.rowsAffected ?? 0) > 0

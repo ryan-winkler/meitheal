@@ -206,7 +206,7 @@ test("getNextOccurrence advances monthly by 1 month", async () => {
   const next = getNextOccurrence(rule, base)
   expect(next).not.toBeNull()
   // Verify month advanced by 1
-  expect(next!.getMonth()).toBe(3) // April = month 3 (0-indexed)
+  expect(next!.getUTCMonth()).toBe(3) // April = month 3 (0-indexed)
 })
 
 test("describeRule produces human-readable text", async () => {

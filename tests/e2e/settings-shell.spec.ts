@@ -1,13 +1,24 @@
 import { expect, test, type Page } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-async function waitForSettingsShell(page: Page): Promise<void> {
-  await expect(page.locator("#settings-shell")).toBeVisible()
-  await expect(page.locator("[data-settings-shell-section]").first()).toBeVisible()
+const sections = [
+  ["personal-settings", "Personal"],
+  ["workflow-settings", "Workflow"],
+  ["rules-lenses-settings", "Rules & Lenses"],
+  ["automation-ai-settings", "Automation & AI"],
+  ["integrations-settings", "Integrations"],
+  ["app-pwa-settings", "App & PWA"],
+  ["danger-zone-settings", "Danger Zone"],
+] as const
+
+async function openSettings(page: Page, fragment = ""): Promise<void> {
+  await page.goto(`/settings${fragment}`)
+  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  await expect(page.getByRole("heading", { name: "Settings", exact: true, level: 1 })).toBeVisible()
 }
 
 async function openSettingsSearch(page: Page) {
-  await page.getByRole("button", { name: "Search settings…", exact: true }).click()
+  await page.getByRole("button", { name: "Search settings", exact: true }).click()
   const search = page.getByRole("dialog", { name: "Universal Search" })
   await expect(search.getByRole("tab", { name: "Settings", selected: true })).toBeVisible()
   return search
@@ -15,15 +26,38 @@ async function openSettingsSearch(page: Page) {
 
 test.describe("Settings Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/settings")
-    await waitForSettingsShell(page)
+  test("all sections use durable links and report the current location", async ({ page }) => {
+    await openSettings(page)
+    const directory = page.getByRole("navigation", { name: "Sections" })
+    for (const [id, label] of sections) {
+      const link = directory.getByRole("link", { name: label, exact: true })
+      await expect(link).toHaveAttribute("href", `#${id}`)
+      await link.click()
+      await expect(page).toHaveURL(new RegExp(`#${id}$`))
+      await expect(page.getByRole("heading", { name: label, exact: true, level: 2 })).toBeFocused()
+      await expect(link).toHaveAttribute("aria-current", "location")
+      await expect(page.locator("[data-settings-shell-section]:visible")).toHaveCount(1)
+    }
+    await page.goBack()
+    await expect(directory.getByRole("link", { name: "App & PWA" })).toHaveAttribute("aria-current", "location")
+    await page.goForward()
+    await expect(directory.getByRole("link", { name: "Danger Zone" })).toHaveAttribute("aria-current", "location")
+  })
+
+  test("agent handoff shows its current status and links to Review", async ({ page }) => {
+    await openSettings(page, "#automation-ai-settings")
+    await expect(page.getByRole("heading", { name: "Agent handoff", exact: true })).toBeVisible()
+    await expect(page.getByText("A current Home Assistant administrator reviews agent proposals before their changes apply.", { exact: true })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Open Review" })).toHaveAttribute("href", "/review")
+    await expect(page.getByRole("checkbox", { name: "Allow Bot Proposals" })).toHaveCount(0)
   })
 
   test("search jumps directly to matching anchors", async ({ page }) => {
+    await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
 
     await searchInput.fill("theme")
     await expect(search.locator(".search-hub-item.is-selected .search-hub-item-title")).toHaveText("Theme")
@@ -31,77 +65,33 @@ test.describe("Settings Shell", () => {
     await searchInput.press("Enter")
 
     await expect(page).toHaveURL(/#theme-select$/)
-    await expect(page.locator("#theme-select")).toBeVisible()
+    await expect(page.locator("#theme-select")).toBeFocused()
     await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
     )
   })
 
-  test("desktop quick jumps keep section navigation in sync", async ({ page }) => {
-    await page.setViewportSize({ width: 1920, height: 1080 })
-    const quickJump = page.getByRole("navigation", { name: "Settings quick navigation" })
-      .getByRole("link", { name: "App & PWA", exact: true })
-    const navCard = page.locator('[data-settings-nav="app-pwa-settings"]').first()
-
-    await expect(quickJump).toHaveAttribute("href", "#app-pwa-settings")
-    await quickJump.click()
-
-    await expect(page).toHaveURL(/#app-pwa-settings$/)
-    await expect(quickJump).toHaveAttribute("aria-current", "location")
-    await expect(navCard).toHaveAttribute("aria-current", "location")
-    await expect(page.locator("#app-pwa-settings")).toBeVisible()
-  })
-
-  test("section picker stays open through queued scroll and dismisses when the page moves", async ({ page }) => {
-    const picker = page.getByRole("button", { name: "Settings — switch section" })
-    const menu = page.getByRole("menu", { name: "Settings sections" })
-
-    const opened = await picker.evaluate(async (button) => {
-      const trigger = button as HTMLButtonElement
-      const scrolled = new Promise<void>((resolve) => {
-        window.addEventListener("scroll", () => resolve(), { once: true })
-      })
-      // Open before the browser dispatches the scroll event.
-      window.scrollBy({ top: 6, behavior: "instant" })
-      trigger.click()
-      const expanded = trigger.getAttribute("aria-expanded")
-      await scrolled
-      return expanded
-    })
-
-    expect(opened).toBe("true")
-    await expect(picker).toHaveAttribute("aria-expanded", "true")
-    await expect(menu).toBeVisible()
-
-    await page.evaluate(() => window.scrollBy({ top: 100, behavior: "instant" }))
-
-    await expect(picker).toHaveAttribute("aria-expanded", "false")
-    await expect(menu).toBeHidden()
-
-    await picker.click()
-    await menu.getByRole("menuitem", { name: "App & PWA", exact: true }).press("Enter")
-    await expect(page).toHaveURL(/#app-pwa-settings$/)
-  })
-
   test("dismissing Settings search resets the query and restores launcher focus", async ({ page }) => {
+    await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
 
     await searchInput.fill("companion")
-    await expect(search.getByRole("button", { name: /Companion App Links/ })).toBeVisible()
+    await expect(search.getByRole("option", { name: /Companion App Links/ })).toBeVisible()
 
     await searchInput.press("Escape")
 
     await expect(search).toBeHidden()
-    await expect(page.getByRole("button", { name: "Search settings…", exact: true })).toBeFocused()
+    await expect(page.getByRole("button", { name: "Search settings", exact: true })).toBeFocused()
     await openSettingsSearch(page)
     await expect(searchInput).toHaveValue("")
   })
 
   test("keyboard search navigation highlights results before jumping", async ({ page }) => {
+    await openSettings(page)
     const search = await openSettingsSearch(page)
-    const searchInput = search.getByRole("searchbox")
+    const searchInput = search.getByRole("combobox")
     const results = search.locator(".search-hub-item")
 
     await searchInput.fill("companion")
@@ -122,69 +112,70 @@ test.describe("Settings Shell", () => {
     )
   })
 
-  test("webhooks callout uses the canonical automation and ai section id", async ({ page }) => {
-    await page.goto("/settings#integrations-settings")
-    await waitForSettingsShell(page)
+  test("the desktop directory can collapse and reopen", async ({ page }) => {
+    await openSettings(page)
+    const toggle = page.getByRole("button", { name: "Sections" })
+    const directory = page.getByRole("navigation", { name: "Sections" })
+    await expect(toggle).toHaveAttribute("aria-expanded", "true")
+    await toggle.click()
+    await expect(toggle).toHaveAttribute("aria-expanded", "false")
+    await expect(directory).toBeHidden()
+    await expect(page.getByRole("heading", { name: "Personal", exact: true })).toBeVisible()
+    await toggle.press("Enter")
+    await expect(toggle).toHaveAttribute("aria-expanded", "true")
+    await expect(directory.getByRole("link")).toHaveCount(7)
+  })
 
+  test("search opens the destination integration and focuses its control", async ({ page }) => {
+    await openSettings(page)
+    await page.keyboard.press("/")
+    const input = page.locator("#search-hub-input")
+    await expect(input).toBeFocused()
+    await input.fill("Calendar Sync")
+    await page.locator("#search-hub-results").getByRole("option", { name: /Calendar Sync/i }).first().click()
+    await expect(page).toHaveURL(/#integration-calendar$/)
+    const toggle = page.locator('[aria-controls="integration-calendar-body"]')
+    await expect(toggle).toHaveAttribute("aria-expanded", "true")
+    await expect(toggle).toBeFocused()
+    await toggle.press("Space")
+    await expect(toggle).toHaveAttribute("aria-expanded", "false")
+    await expect(page.locator("#integration-calendar-body")).toHaveAttribute("inert", "")
+    await page.keyboard.press("Tab")
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest("#integration-calendar-body")))).toBe(false)
+  })
+
+  test("mobile sections are usable with the keyboard at 320px", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await openSettings(page, "#danger-zone-settings")
+    const picker = page.getByRole("button", { name: "Sections", exact: false })
+    await page.evaluate(() => window.scrollTo(0, 240))
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+    await expect(picker).toBeInViewport()
+    await picker.focus()
+    await picker.press("Enter")
+    const directory = page.getByRole("navigation", { name: "Sections" })
+    await expect(directory.getByRole("link")).toHaveCount(7)
+    await page.keyboard.press("Tab")
+    await expect(page.getByRole("button", { name: "Search settings" })).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(directory.getByRole("link", { name: "Personal" })).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(picker).toBeFocused()
+    await expect(directory).toBeHidden()
+    await picker.press("Enter")
+    await directory.getByRole("link", { name: "App & PWA" }).press("Enter")
+    await expect(page.getByRole("heading", { name: "App & PWA", exact: true })).toBeFocused()
+    await expect(picker).toBeInViewport()
+  })
+
+  test("Webhooks links to Automation & AI and App & PWA preserves Companion handoff", async ({ page }) => {
+    await openSettings(page, "#integrations-settings")
     await page.locator('[aria-controls="integration-webhooks-body"]').click()
-
-    const calloutLink = page.locator("#integration-webhooks-body .callout-link")
-    await expect(calloutLink).toHaveAttribute("href", "#automation-ai-settings")
-
-    await calloutLink.click()
-
+    await page.locator("#integration-webhooks-body .callout-link").click()
     await expect(page).toHaveURL(/#automation-ai-settings$/)
-    await expect(page.locator('[data-settings-nav="automation-ai-settings"]').first()).toHaveAttribute(
-      "aria-current",
-      "location",
-    )
-  })
-
-  test("app and pwa section exposes companion url handler and x-callback targets", async ({
-    page,
-  }) => {
-    await page.goto("/settings#app-pwa-settings")
-    await waitForSettingsShell(page)
-
-    await expect(page.locator("#app-pwa-settings")).toBeVisible()
-    await expect(page.locator('[data-companion-link="app-pwa-settings"]')).toHaveAttribute(
-      "href",
-      /homeassistant:\/\/navigate.*\/settings#app-pwa-settings/,
-    )
-    await expect(page.locator("[data-companion-xcallback-preview]")).toContainText(
-      "homeassistant://x-callback-url/navigate?path=",
-    )
-    await expect(page.locator("[data-companion-xcallback-preview]")).toContainText(
-      "%2Fsettings%23app-pwa-settings",
-    )
-  })
-
-  test("hash deep links keep the target section addressable", async ({ page }) => {
-    await page.goto("/settings#danger-zone-settings")
-    await waitForSettingsShell(page)
-
-    await expect(page).toHaveURL(/#danger-zone-settings$/)
-    await expect(page.locator("#danger-zone-settings")).toBeVisible()
-    await expect(page.locator("#reset-settings")).toBeVisible()
-  })
-
-  test("mobile nav works as a compact quick-jump surface", async ({ page }) => {
-    await page.setViewportSize({ width: 430, height: 932 })
-    await page.goto("/settings")
-    await waitForSettingsShell(page)
-
-    const mobileNavLink = page.locator(
-      '[data-settings-nav="app-pwa-settings"][data-settings-nav-variant="mobile"]',
-    )
-
-    await expect(mobileNavLink).toBeVisible()
-    const box = await mobileNavLink.boundingBox()
-    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
-
-    await mobileNavLink.click()
-
-    await expect(page).toHaveURL(/#app-pwa-settings$/)
-    await expect(page.locator("#app-pwa-settings")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Automation & AI", exact: true })).toBeFocused()
+    await page.locator('[data-settings-nav="app-pwa-settings"]').click()
+    await expect(page.locator('[data-companion-link="app-pwa-settings"]')).toHaveAttribute("href", /homeassistant:\/\/navigate.*\/settings#app-pwa-settings/)
+    await expect(page.locator("[data-companion-xcallback-preview]")).toContainText("%2Fsettings%23app-pwa-settings")
   })
 })

@@ -12,7 +12,8 @@
 interface MeithealWindowExtensions {
   // === Task UI ===
   /** Opens task detail panel/modal for the given task ID */
-  openTaskDetail?: (taskId: string) => void;
+  openTaskDetail?: (taskId: string, commentTarget?: string | null, search?: import("../lib/task-detail-handoff").SearchDetailHandoff) => void;
+  openPinnedTaskDetail?: (taskId: string, reconcile: () => void) => void;
   /** Opens the new task creation modal */
   openNewTaskModal?: () => void;
 
@@ -20,25 +21,11 @@ interface MeithealWindowExtensions {
   /** Expands an integration settings card by its DOM ID */
   expandIntegrationCard?: (cardId: string) => void;
   /** Opens the AskAssist HA modal */
-  openAskHaModal?: () => void;
+  openAskHaModal?: (prompt?: string) => void;
   /** Confirm dialog utility registered by Layout.astro */
-  confirmDialog?: (options: {
-    title: string;
-    message: string;
-    confirmText?: string;
-    cancelText?: string;
-    variant?: "danger" | "warning" | "default";
-  }) => Promise<boolean>;
-  /** Prompt dialog utility registered by Layout.astro */
-  promptDialog?: (options: {
-    title?: string;
-    message?: string;
-    placeholder?: string;
-    defaultValue?: string;
-    confirmText?: string;
-    cancelText?: string;
-    required?: boolean;
-  }) => Promise<string | null>;
+  confirmDialog?: typeof import("../lib/confirm-dialog").confirmDialog;
+  /** Prompt dialog utility registered by prompt-dialog.ts */
+  promptDialog?: typeof import("../lib/prompt-dialog").promptDialog;
 
   // === App State ===
   /** Currently active board ID for filtering */
@@ -54,17 +41,11 @@ interface MeithealWindowExtensions {
     [key: string]: unknown;
   };
   /** I18n translation map */
-  mI18n?: Map<string, string>;
-
-  // === Checklists ===
-  /** Current checklist items for task detail view */
-  __currentChecklists?: Array<{ id: string; text: string; done: boolean }>;
-  /** Re-renders checklist UI after state change */
-  refreshChecklistsVisuals?: () => void;
+  mI18n?: { locale: import("../lib/locale").Locale; get: (key: string, locale?: import("../lib/locale").Locale) => string };
 
   // === Strategic Lens ===
   /** Attaches strategic lens evaluator for a task (registered by StrategicEvaluator.astro) */
-  attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>) => void;
+  attachStrategicLens?: (taskId: string, taskType: string, frameworkPayloadStr: string, cachedSettings: Record<string, unknown>, session?: import("../lib/strategic-evaluator-controller").StrategicLensSession) => void;
 
   // === Gamification ===
   /** Triggers confetti animation (registered by Confetti.astro) */
@@ -88,9 +69,7 @@ interface MeithealWindowExtensions {
   /** Opens the search hub modal, optionally pre-filling and/or pre-scoping */
   openSearchHub?: (options?: string | { prefill?: string; scope?: string }) => void;
   /** Closes the search hub modal */
-  closeSearchHub?: () => void;
   /** Guard to prevent duplicate keyboard listeners for search hub */
-  __searchHubKeyboardBound?: boolean;
 
   // === Intervals / Singleton Guards ===
   /** Health check interval ID (prevents accumulation across navigations) */

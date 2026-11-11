@@ -1,3 +1,4 @@
+import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
 /**
  * Calendar Sync API — Manual Sync Trigger & Status
  *
@@ -18,6 +19,7 @@ import {
   stopCalendarSync,
   getCalendarSyncStatus,
   syncFromHA,
+  syncCalDAVEvents,
 } from "@domains/calendar/calendar-bridge";
 import { logApiError } from "../../../../lib/api-logger";
 
@@ -88,7 +90,8 @@ export const POST: APIRoute = async ({ request }) => {
             resolvedEntities = [entityId];
           }
 
-          if (resolvedEntities.length === 0) {
+          const includeCalDAV = !entityId && getCalendarSyncStatus().caldavActive
+          if (resolvedEntities.length === 0 && !includeCalDAV) {
             return new Response(
               JSON.stringify({ ok: false, error: "No calendar entities configured. Go to Settings → Integrations → Calendar to select calendars." }),
               { status: 400, headers: { "Content-Type": "application/json" } },
@@ -97,28 +100,17 @@ export const POST: APIRoute = async ({ request }) => {
 
           // Sync each resolved entity individually — bypasses activeSyncs check
           // so manual sync works even if background sync wasn't auto-started
-          const results = await Promise.allSettled(
-            resolvedEntities.map((eid) => syncFromHA(eid)),
-          );
-
-          const aggregated = { created: 0, updated: 0, total: 0 };
-          for (const r of results) {
-            if (r.status === "fulfilled") {
-              aggregated.created += r.value.created;
-              aggregated.updated += r.value.updated;
-              aggregated.total += r.value.total;
-            }
+          const pending = resolvedEntities.map((eid) => syncFromHA(eid))
+          if (includeCalDAV) {
+            resolvedEntities.push("caldav")
+            pending.push(syncCalDAVEvents())
           }
+          const results = await Promise.allSettled(pending);
 
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              message: `Calendar sync complete: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${resolvedEntities.length} calendar(s)`,
-              ...aggregated,
-              entities: resolvedEntities,
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          );
+          const outcome = calendarSyncResult(resolvedEntities, results)
+          return new Response(JSON.stringify(outcome), {
+            status: outcome.ok ? 200 : 502, headers: { "Content-Type": "application/json" },
+          })
         } catch (err) {
           return new Response(
             JSON.stringify({ ok: false, error: `Sync failed: ${err}` }),

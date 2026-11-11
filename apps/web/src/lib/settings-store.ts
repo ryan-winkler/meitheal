@@ -1,6 +1,8 @@
+import { pageLifecycle } from "@lib/page-lifecycle"
+
 export interface SettingsStore {
   load(): Promise<Record<string, unknown>>
-  saveSetting(key: string, value: unknown): Promise<void>
+  saveSetting(key: string, value: unknown, name?: string): Promise<void>
   invalidate(): void
 }
 
@@ -8,7 +10,7 @@ let cachedSettings: Record<string, unknown> | null = null
 let pendingLoad: Promise<Record<string, unknown>> | null = null
 
 async function fetchAllSettings(): Promise<Record<string, unknown>> {
-  const response = await fetch((window.__ingress_path || "") + "/api/settings")
+  const response = await fetch("/api/settings", { cache: "no-store", signal: pageLifecycle.signal })
   if (!response.ok) {
     throw new Error(`Settings bootstrap failed: ${response.status}`)
   }
@@ -31,20 +33,21 @@ export function createSettingsStore(): SettingsStore {
       return pendingLoad
     },
 
-    async saveSetting(key: string, value: unknown): Promise<void> {
-      const response = await fetch((window.__ingress_path || "") + "/api/settings", {
+    async saveSetting(key: string, value: unknown, name?: string): Promise<void> {
+      const response = await fetch("/api/settings", {
+        signal: pageLifecycle.signal,
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key, value }),
+        body: JSON.stringify({ key, value, name }),
       })
 
       if (!response.ok) {
         throw new Error(`Settings save failed: ${response.status}`)
       }
 
-      cachedSettings = {
-        ...(cachedSettings ?? {}),
-        [key]: value,
+      if (cachedSettings) {
+        cachedSettings = name === undefined ? { ...cachedSettings, [key]: value } :
+          { ...cachedSettings, [key]: value, custom_theme_name: name, theme: value ? "custom" : "dark" }
       }
     },
 

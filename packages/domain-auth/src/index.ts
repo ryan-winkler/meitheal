@@ -22,34 +22,6 @@ export {
   toPublicToken,
 } from "./agent-tokens"
 
-export interface WebAuthnConfig {
-  rpId: string;
-  rpName: string;
-  expectedOrigin: string;
-}
-
-export function createWebAuthnMock(config: WebAuthnConfig) {
-  return {
-    generateRegistrationOptions(username: string) {
-      return {
-        rp: { name: config.rpName, id: config.rpId },
-        user: { id: "mock-user-id", name: username, displayName: username },
-        challenge: "mock-challenge",
-        pubKeyCredParams: [{ type: "public-key" as const, alg: -7 }]
-      };
-    },
-    verifyRegistrationResponse(response: Record<string, unknown>) {
-      return { verified: true, credential: { id: response.id, publicKey: "mock-pk" } };
-    },
-    generateAuthenticationOptions() {
-      return { challenge: "mock-challenge", rpId: config.rpId };
-    },
-    verifyAuthenticationResponse(response: Record<string, unknown>) {
-      return { verified: true, expectedOrigin: config.expectedOrigin, credentialId: response.id };
-    }
-  };
-}
-
 // ── License Key Verification ──
 
 import { createPublicKey, verify } from "node:crypto"
@@ -165,4 +137,4 @@ export function verifyLicenseKeyWithPublicKey(
   }
 }
 
-export { resolveAgentRouteScope } from "./agent-route-policy"
+export { isTaskReactionRoute, resolveAgentRouteScope } from "./agent-route-policy"

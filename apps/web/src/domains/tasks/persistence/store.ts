@@ -1,11 +1,23 @@
-import { mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path";
 import type { Client } from "@libsql/client"
 import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
-import { openDatabase } from "../../../../scripts/database-client.mjs"
+import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../../../scripts/database-client.mjs"
+import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
+import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
+import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
+import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_task_drafts.mjs"
+import { applyCommentMentionsMigration } from "../../../../drizzle/migrations/0007_comment_mentions.mjs"
+import { applyTaskInactivityMigration } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
+import { applyTaskStallMigration } from "../../../../drizzle/migrations/0008_task_stall.mjs"
+import {
+  installTaskActivityTriggers, taskWriteTriggerMetadata, validateExistingTaskWriteTriggers,
+} from "../../../../drizzle/migrations/task-activity-schema.mjs"
+import { reconcileTaskSchemaPrerequisites } from "../../../../drizzle/migrations/task-schema-prerequisites.mjs"
+import { STATUS } from "../../../lib/status-config"
 
 export interface PersistedTask {
   id: string;
@@ -27,7 +39,9 @@ export interface PersistedTaskResponse {
 
 let clientSingleton: Client | null = null;
 let dbSingleton: LibSQLDatabase | null = null
-let ensured = false;
+let schemaInitialization: Promise<void> | undefined
+let remoteSchemaCheck: Promise<void> | undefined
+let startupBackupAttempted = false
 
 /** Latest DB integrity check result — exposed via /api/health */
 let dbIntegrityOk = true
@@ -56,47 +70,6 @@ function ensureFileDbDirectory(dbUrl: string): void {
   }
 }
 
-/**
- * Auto-backup DB on cold start (PRA-25).
- * Copies the DB file to a backups/ subdirectory with FIFO rotation (max 5).
- * Skips backup if DB doesn't exist yet (fresh install).
- */
-const MAX_BACKUPS = 5
-function autoBackupDb(dbUrl: string): void {
-  const dbPath = resolveDbPath(dbUrl)
-  if (!dbPath || !existsSync(dbPath)) return
-
-  const backupDir = path.join(path.dirname(dbPath), "backups")
-  mkdirSync(backupDir, { recursive: true })
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const backupPath = path.join(backupDir, `meitheal-${timestamp}.db`)
-
-  try {
-    copyFileSync(dbPath, backupPath)
-    // eslint-disable-next-line no-console
-    console.log(`[meitheal] DB backup created: ${backupPath} (${statSync(backupPath).size} bytes)`)
-  } catch {
-    // eslint-disable-next-line no-console
-    console.error(`[meitheal] DB backup failed — continuing without backup`)
-    return
-  }
-
-  // FIFO rotation — keep max 5 backups
-  try {
-    const backups = readdirSync(backupDir)
-      .filter(f => f.startsWith("meitheal-") && f.endsWith(".db"))
-      .map(f => ({ name: f, time: statSync(path.join(backupDir, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time)
-
-    for (const old of backups.slice(MAX_BACKUPS)) {
-      unlinkSync(path.join(backupDir, old.name))
-    }
-  } catch {
-    // Non-critical — cleanup failure shouldn't block startup
-  }
-}
-
 function getClient(): Client {
   if (clientSingleton) {
     return clientSingleton;
@@ -121,6 +94,17 @@ export function getDb() {
 /** Low-level libSQL client — use for raw SQL when Drizzle isn't needed. */
 export function getPersistenceClient(): Client {
   return getClient();
+}
+
+/** Local admission is synchronous. Remote clients check the same marker before use. */
+export function ensureDatabaseSchemaSupported(): void | Promise<void> {
+  const client = getClient()
+  if (client.protocol === "file") return
+  remoteSchemaCheck ??= assertSupportedDatabaseSchema(client).catch(error => {
+    remoteSchemaCheck = undefined
+    throw error
+  })
+  return remoteSchemaCheck
 }
 
 function toTask(row: Record<string, unknown>): PersistedTask {
@@ -164,17 +148,25 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
 
 /**
  * Idempotent schema bootstrap — creates all tables, indexes, and default data.
- * Safe to call on every request; short-circuits after first successful run.
+ * Concurrent requests share one initialization and later calls reuse its result.
  */
-export async function ensureSchema(): Promise<void> {
-  if (ensured) {
-    return;
+export function ensureSchema(): Promise<void> {
+  schemaInitialization ??= initializeSchema().catch(error => {
+    schemaInitialization = undefined
+    throw error
+  })
+  return schemaInitialization
+}
+
+async function initializeSchema(): Promise<void> {
+  const client = getClient()
+  await assertSupportedDatabaseSchema(client)
+
+  if (!startupBackupAttempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
+    // A schema retry may follow partial writes. Keep the original pre-migration snapshot.
+    startupBackupAttempted = true
+    await autoBackupDb(client)
   }
-
-  const client = getClient();
-
-  // Auto-backup before any migrations (PRA-25)
-  autoBackupDb(resolveDbUrl())
 
   // WAL mode: enables concurrent reads during writes — critical for addon
   // context where SSR page loads and background syncs can overlap.
@@ -210,6 +202,8 @@ export async function ensureSchema(): Promise<void> {
       updated_at INTEGER NOT NULL
     )
   `);
+
+  await reconcileTaskSchemaPrerequisites(client)
 
   // Keep the original table names so existing labels and references retain their IDs.
   await client.execute(`
@@ -305,9 +299,6 @@ export async function ensureSchema(): Promise<void> {
   }
 
   // Phase 6: UI columns
-  if (!(await hasColumn(client, "tasks", "priority"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 3");
-  }
   if (!(await hasColumn(client, "tasks", "due_date"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT");
   }
@@ -321,39 +312,6 @@ export async function ensureSchema(): Promise<void> {
   }
   if (!(await hasColumn(client, "tasks", "time_tracked"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN time_tracked INTEGER NOT NULL DEFAULT 0");
-  }
-
-  // Phase 15: Areas for DDD domain separation
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS areas (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      icon TEXT NOT NULL DEFAULT '📋',
-      color TEXT NOT NULL DEFAULT '#6366F1',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  if (!(await hasColumn(client, "areas", "name")) && (await hasColumn(client, "areas", "title"))) {
-    await client.execute("ALTER TABLE areas RENAME COLUMN title TO name");
-  }
-
-  // Auto-create default area if none exist
-  const areaCount = await client.execute("SELECT COUNT(*) as cnt FROM areas");
-  if (Number(areaCount.rows[0]?.cnt ?? 0) === 0) {
-    const now = Date.now();
-    await client.execute({
-      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: ["default", "Default", "📋", "#6366F1", 0, now, now],
-    });
-  }
-
-  // Add area_id to tasks
-  if (!(await hasColumn(client, "tasks", "area_id"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN area_id TEXT NOT NULL DEFAULT 'default'");
-    await client.execute("UPDATE tasks SET area_id = 'default' WHERE area_id = 'default'");
   }
 
   // Custom fields JSON storage per task
@@ -377,7 +335,6 @@ export async function ensureSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "is_favorite"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
   }
-
   // Phase 20: Agile hierarchy — epic/story/task type
   if (!(await hasColumn(client, "tasks", "task_type"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'task'");
@@ -418,84 +375,31 @@ export async function ensureSchema(): Promise<void> {
   if (!(await hasColumn(client, "task_activity_log", "correlation_id"))) {
     await client.execute("ALTER TABLE task_activity_log ADD COLUMN correlation_id TEXT")
   }
+  if (!(await hasColumn(client, "task_activity_log", "feed_action"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_action TEXT")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "feed_person_key"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_person_key TEXT")
+  }
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_event_type_idx ON task_activity_log(event_type)")
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_actor_type_idx ON task_activity_log(actor_type)")
 
-  // Phase 18: Comments table
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS comments (
+  // Reactions belong to either a task or a comment on that same task.
+  await client.batch([
+    `CREATE TABLE IF NOT EXISTS task_reactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      content TEXT NOT NULL,
-      author TEXT NOT NULL DEFAULT 'user',
-      owner_key TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    )
-  `);
-  // Existing display names cannot establish ownership, so legacy comments keep a NULL key.
-  if (!await hasColumn(client, "comments", "owner_key")) {
-    try {
-      await client.execute("ALTER TABLE comments ADD COLUMN owner_key TEXT")
-    } catch (error) {
-      if (!await hasColumn(client, "comments", "owner_key")) throw error
-    }
-  }
-  // Composite index for timeline UNION query performance
-  await client.execute("CREATE INDEX IF NOT EXISTS comments_task_created_idx ON comments(task_id, created_at DESC)");
-
-  // Kanban swim lanes — server-persisted lane configuration
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS kanban_lanes (
-      id TEXT PRIMARY KEY,
-      key TEXT NOT NULL UNIQUE,
-      label TEXT NOT NULL,
-      icon TEXT NOT NULL DEFAULT '📌',
-      position INTEGER NOT NULL DEFAULT 0,
-      wip_limit INTEGER NOT NULL DEFAULT 0,
-      includes TEXT NOT NULL DEFAULT '[]',
-      built_in INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  // Seed default lanes if none exist
-  const laneCount = await client.execute("SELECT COUNT(*) as cnt FROM kanban_lanes");
-  if (Number(laneCount.rows[0]?.cnt ?? 0) === 0) {
-    const now = Date.now();
-    const defaultLanes = [
-      { id: "lane-backlog", key: "backlog", label: "Backlog", icon: "📥", position: 0, includes: '["backlog"]', builtIn: 1 },
-      { id: "lane-pending", key: "pending", label: "Todo", icon: "📋", position: 1, includes: '["pending","todo"]', builtIn: 1 },
-      { id: "lane-active", key: "active", label: "In Progress", icon: "⚡", position: 2, includes: '["active","in_progress"]', builtIn: 1 },
-      { id: "lane-complete", key: "complete", label: "Done", icon: "✅", position: 3, includes: '["complete","done"]', builtIn: 1 },
-    ];
-    for (const lane of defaultLanes) {
-      await client.execute({
-        sql: "INSERT INTO kanban_lanes (id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
-        args: [lane.id, lane.key, lane.label, lane.icon, lane.position, lane.includes, lane.builtIn, now, now],
-      });
-    }
-  }
-
-  await client.execute("CREATE INDEX IF NOT EXISTS kanban_lanes_position_idx ON kanban_lanes(position)");
-
-  // Migration: relabel built-in lanes Pending→Todo, Active→In Progress, Complete→Done
-  await client.execute("UPDATE kanban_lanes SET label = 'Todo' WHERE key = 'pending' AND built_in = 1 AND label = 'Pending'");
-  await client.execute("UPDATE kanban_lanes SET label = 'In Progress' WHERE key = 'active' AND built_in = 1 AND label = 'Active'");
-  await client.execute("UPDATE kanban_lanes SET label = 'Done' WHERE key = 'complete' AND built_in = 1 AND label = 'Complete'");
-
-  // Migration: add Backlog lane if not present (existing DBs that already seeded 3 lanes)
-  const backlogExists = await client.execute({ sql: "SELECT id FROM kanban_lanes WHERE key = 'backlog' LIMIT 1", args: [] });
-  if (backlogExists.rows.length === 0) {
-    const now = Date.now();
-    // Shift existing lanes up by 1 to make room at position 0
-    await client.execute("UPDATE kanban_lanes SET position = position + 1");
-    await client.execute({
-      sql: "INSERT INTO kanban_lanes (id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, ?, 1, ?, ?)",
-      args: ["lane-backlog", "backlog", "Backlog", "📥", '["backlog"]', now, now],
-    });
-  }
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      comment_id INTEGER CHECK (comment_id > 0),
+      owner_key TEXT NOT NULL,
+      content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 16),
+      author TEXT NOT NULL,
+      FOREIGN KEY (comment_id, task_id) REFERENCES comments(id, task_id) ON DELETE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS task_reactions_owner_content_idx
+      ON task_reactions(task_id, COALESCE(comment_id, 0), owner_key, content)`,
+    "CREATE INDEX IF NOT EXISTS task_reactions_task_page_idx ON task_reactions(task_id, comment_id, id)",
+    "CREATE INDEX IF NOT EXISTS task_reactions_comment_idx ON task_reactions(comment_id, task_id) WHERE comment_id IS NOT NULL",
+  ], "write")
 
   // Phase 31: Recurring tasks — iCal RRULE format (e.g. "FREQ=WEEKLY;BYDAY=MO")
   if (!(await hasColumn(client, "tasks", "recurrence_rule"))) {
@@ -575,37 +479,12 @@ export async function ensureSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks(status)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_priority_idx ON tasks(priority)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks(parent_id)");
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_area_id_idx ON tasks(area_id)");
-  // Human-readable ticket IDs — auto-incrementing ticket_number
-  if (!(await hasColumn(client, "tasks", "ticket_number"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN ticket_number INTEGER");
-    // Backfill existing tasks with sequential numbers based on insertion order (rowid)
-    await client.execute("UPDATE tasks SET ticket_number = rowid WHERE ticket_number IS NULL");
-  }
-
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_task_type_idx ON tasks(task_type)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_created_at_idx ON tasks(created_at)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_due_date_idx ON tasks(due_date)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_updated_at_idx ON tasks(updated_at)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_is_favorite_idx ON tasks(is_favorite)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_reminder_at_idx ON tasks(reminder_at)");
-  await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_ticket_number_idx ON tasks(ticket_number)");
-  await client.execute("CREATE INDEX IF NOT EXISTS comments_task_id_idx ON comments(task_id)");
-
-  // Assignments & Users domain — assigned_to column on tasks
-  if (!(await hasColumn(client, "tasks", "assigned_to"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN assigned_to TEXT");
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_assigned_to_idx ON tasks(assigned_to)");
-
-  // Kanban position — for within-lane card reordering
-  if (!(await hasColumn(client, "tasks", "kanban_position"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN kanban_position INTEGER");
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_kanban_position_idx ON tasks(status, kanban_position)");
-
-  // Composite index for kanban board queries — filters by both area_id and status
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_board_status_idx ON tasks(area_id, status)");
 
   // Custom (non-HA) users — for families sharing one HA instance
   await client.execute(`
@@ -618,14 +497,6 @@ export async function ensureSchema(): Promise<void> {
     )
   `);
 
-  // App-level settings (key/value store for defaults like default_assignee)
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
   // Jira-style task linking — relationship types beyond parent/children
   await client.execute(`
     CREATE TABLE IF NOT EXISTS task_links (
@@ -641,12 +512,6 @@ export async function ensureSchema(): Promise<void> {
   `);
   await client.execute("CREATE INDEX IF NOT EXISTS task_links_source_idx ON task_links(source_task_id)");
   await client.execute("CREATE INDEX IF NOT EXISTS task_links_target_idx ON task_links(target_task_id)");
-
-  // UX unification: normalize legacy status values → canonical 4 (backlog/pending/active/complete)
-  // Idempotent: only updates rows that still have legacy values
-  await client.execute("UPDATE tasks SET status = 'pending' WHERE status = 'todo'");
-  await client.execute("UPDATE tasks SET status = 'active' WHERE status = 'in_progress'");
-  await client.execute("UPDATE tasks SET status = 'complete' WHERE status = 'done'");
 
   // Strategic Lenses pivot: Task Context Rules — per-type/per-tag guardrails
   await client.execute(`
@@ -693,44 +558,6 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
-  // ─── Phase 04.1a: Human-Agent DDD Core — New Hierarchy Tables ───
-
-
-  // Goals: aggregate root — outcomes you're pursuing
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS goals (
-      id TEXT PRIMARY KEY,
-      area_id TEXT REFERENCES areas(id) ON DELETE SET NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
-      target_date TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  await client.execute("CREATE INDEX IF NOT EXISTS goals_area_id_idx ON goals(area_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS goals_status_idx ON goals(status)")
-
-  // Projects: aggregate root — time-bounded container of tasks toward a goal
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
-      icon TEXT NOT NULL DEFAULT '📋',
-      color TEXT NOT NULL DEFAULT '#6366F1',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
-  await client.execute("CREATE INDEX IF NOT EXISTS projects_goal_id_idx ON projects(goal_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS projects_status_idx ON projects(status)")
-  await client.execute("CREATE INDEX IF NOT EXISTS projects_goal_status_idx ON projects(goal_id, status)")
-
   // Task: task_kind — behavioral classification (replaces task_type hierarchy role)
   if (!(await hasColumn(client, "tasks", "task_kind"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'standard_action'")
@@ -738,13 +565,6 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("UPDATE tasks SET task_kind = 'standard_action' WHERE task_type IN ('task', 'epic', 'story')")
   }
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_task_kind_idx ON tasks(task_kind)")
-
-  // Task: project_id — links task to a project (nullable, progressive disclosure)
-  if (!(await hasColumn(client, "tasks", "project_id"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_project_id_idx ON tasks(project_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_project_status_idx ON tasks(project_id, status)")
 
   // Domain events: entity_type — discriminator for goal/project/task events
   if (!(await hasColumn(client, "domain_events", "entity_type"))) {
@@ -809,42 +629,12 @@ export async function ensureSchema(): Promise<void> {
 
   // ─── Phase 05.1: Schema & Architecture Hardening (PRA-23/24/25/27/30) ───
 
-  // Goal metrics (PRA-27): structured progress tracking
-  if (!(await hasColumn(client, "goals", "metric_type"))) {
-    await client.execute("ALTER TABLE goals ADD COLUMN metric_type TEXT")
-  }
-  if (!(await hasColumn(client, "goals", "metric_target"))) {
-    await client.execute("ALTER TABLE goals ADD COLUMN metric_target REAL")
-  }
-  if (!(await hasColumn(client, "goals", "metric_current"))) {
-    await client.execute("ALTER TABLE goals ADD COLUMN metric_current REAL NOT NULL DEFAULT 0")
-  }
-
   // Streak freezes (PRA-30): forgivable missed routines
   if (!(await hasColumn(client, "task_templates", "streak_freezes_used"))) {
     await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freezes_used INTEGER NOT NULL DEFAULT 0")
   }
   if (!(await hasColumn(client, "task_templates", "streak_freeze_limit"))) {
     await client.execute("ALTER TABLE task_templates ADD COLUMN streak_freeze_limit INTEGER NOT NULL DEFAULT 3")
-  }
-
-  // WIP limits (PRA-07): per-area work-in-progress cap for ADHD focus
-  // 0 = unlimited (default), positive integer = max active tasks per column
-  if (!(await hasColumn(client, "areas", "wip_limit"))) {
-    await client.execute("ALTER TABLE areas ADD COLUMN wip_limit INTEGER NOT NULL DEFAULT 0")
-  }
-
-  // Area metadata (PRA-14): energy budget + review cadence for ADHD planning
-  // energy_budget: weekly hours cap for this area (0 = unlimited)
-  // review_cadence: days between reviews (0 = no scheduled review)
-  if (!(await hasColumn(client, "areas", "energy_budget"))) {
-    await client.execute("ALTER TABLE areas ADD COLUMN energy_budget REAL NOT NULL DEFAULT 0")
-  }
-  if (!(await hasColumn(client, "areas", "review_cadence"))) {
-    await client.execute("ALTER TABLE areas ADD COLUMN review_cadence INTEGER NOT NULL DEFAULT 0")
-  }
-  if (!(await hasColumn(client, "areas", "last_reviewed_at"))) {
-    await client.execute("ALTER TABLE areas ADD COLUMN last_reviewed_at INTEGER")
   }
 
   // PRA-13: Time-blocking columns for calendar-driven focus sessions
@@ -910,43 +700,6 @@ export async function ensureSchema(): Promise<void> {
     await client.execute("ALTER TABLE tasks ADD COLUMN blocked_by TEXT DEFAULT NULL")
   }
 
-  // ─── Phase 15: Hierarchy Architecture Overhaul ───
-
-  // Projects: is_default flag — protects the "Every Day" project from deletion/rename
-  if (!(await hasColumn(client, "projects", "is_default"))) {
-    await client.execute("ALTER TABLE projects ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0")
-  }
-
-  // Ensure "Every Day" default project exists (auto-created, undeletable)
-  const defaultProjectExists = await client.execute(
-    "SELECT id FROM projects WHERE is_default = 1 LIMIT 1"
-  )
-  if (defaultProjectExists.rows.length === 0) {
-    const now = Date.now()
-    await client.execute({
-      sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, is_default, created_at, updated_at)
-            VALUES (?, NULL, 'Every Day', 'Your daily tasks and quick captures', 'active', '☀️', '#F59E0B', -1, 1, ?, ?)`,
-      args: ["every-day", now, now],
-    })
-  }
-
-  // Phase 15.2: Direct area_id on projects — sidebar groups projects by area directly
-  if (!(await hasColumn(client, "projects", "area_id"))) {
-    await client.execute("ALTER TABLE projects ADD COLUMN area_id TEXT REFERENCES areas(id) ON DELETE SET NULL")
-    // Backfill: derive area_id from goal→area relationship
-    await client.execute(`UPDATE projects SET area_id = (
-      SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id
-    ) WHERE goal_id IS NOT NULL AND area_id IS NULL`)
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS projects_area_id_idx ON projects(area_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS projects_area_status_idx ON projects(area_id, status)")
-
-  // Tasks: goal_id — direct goal→task linking (optional, can also inherit from project)
-  if (!(await hasColumn(client, "tasks", "goal_id"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN goal_id TEXT")
-  }
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_goal_id_idx ON tasks(goal_id)")
-
   // Routine Templates: separate from task_templates — owns scheduling + streak logic
   await client.execute(`
     CREATE TABLE IF NOT EXISTS routine_templates (
@@ -981,21 +734,35 @@ export async function ensureSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  // Schema version tracking (PRA-23): set version after all migrations complete
-  const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
-  const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 10
-  if (storedVersion < targetVersion) {
-    await client.execute({
+  const targetVersion = DATABASE_SCHEMA_VERSION
+  const migration = await client.transaction("write")
+  try {
+    await assertSupportedDatabaseSchema(migration)
+    validateExistingTaskWriteTriggers(await migration.execute(taskWriteTriggerMetadata))
+    await migration.batch([
+      "UPDATE tasks SET status = 'pending' WHERE status = 'todo'",
+      "UPDATE tasks SET status = 'active' WHERE status = 'in_progress'",
+      "UPDATE tasks SET status = 'complete' WHERE status = 'done'",
+    ])
+    await applyTaskDeferralMigration(migration)
+    await applyTaskPinsMigration(migration)
+    await applyTaskDraftsMigration(migration)
+    await applyCommentMentionsMigration(migration)
+    await applyTaskInactivityMigration(migration)
+    await applyTaskStallMigration(migration)
+    await installTaskActivityTriggers(migration)
+    // Publish the schema version atomically with the last migration.
+    await migration.execute({
       sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      args: [String(targetVersion), Date.now()],
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            WHERE CAST(app_settings.value AS INTEGER) < ?`,
+      args: [String(targetVersion), Date.now(), targetVersion],
     })
+    await migration.commit()
+  } finally {
+    migration.close()
   }
   currentSchemaVersion = targetVersion
-
-  ensured = true;
-
 }
 
 export async function findByIdempotencyKey(idempotencyKey: string): Promise<PersistedTaskResponse | null> {
@@ -1077,20 +844,21 @@ export async function findTaskById(taskId: string): Promise<PersistedTask | null
   return toTask(taskRow);
 }
 
-export async function persistInitialPlan(plan: CreateTaskPlan): Promise<void> {
+export async function persistInitialPlan(plan: CreateTaskPlan, description: string | null): Promise<void> {
   const now = Date.now();
 
   await getClient().batch([
     {
       sql: `
         INSERT INTO tasks(
-          id, title, status, framework_payload, calendar_sync_state,
+          id, title, description, status, framework_payload, calendar_sync_state,
           ticket_number, idempotency_key, request_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
       `,
       args: [
         plan.aggregate.task.id,
         plan.aggregate.task.title,
+        description,
         plan.aggregate.task.status,
         JSON.stringify(plan.aggregate.task.frameworkPayload),
         plan.aggregate.calendarSyncState,
@@ -1346,5 +1114,7 @@ export async function persistManualCalendarConfirmation(params: {
 export function resetPersistenceForTests(): void {
   clientSingleton = null;
   dbSingleton = null;
-  ensured = false;
+  schemaInitialization = undefined
+  remoteSchemaCheck = undefined
+  startupBackupAttempted = false
 }

@@ -9,57 +9,25 @@
  *      and merges built-in configs with user overrides stored in framework_configs table.
  */
 import type { APIRoute } from "astro"
-import { readFileSync, readdirSync } from "node:fs"
-import { resolve, dirname, basename } from "node:path"
-import { fileURLToPath } from "node:url"
-import { parse as parseYaml } from "yaml"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
+import { validateSafeId } from "@lib/sanitize-id"
+import { listBuiltInFrameworks } from "@domains/strategy/framework-catalog"
+import { readFrameworkImport } from "@domains/strategy/framework-import"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
 import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } from "@domains/strategy/custom-framework-repository"
-import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
-import { validateSafeId } from "@lib/sanitize-id"
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
-
-/** Discover all built-in framework IDs from YAML files on disk */
-function getBuiltInFrameworkIds(): string[] {
-  try {
-    return readdirSync(FRAMEWORKS_DIR)
-      .filter((f) => f.endsWith(".yaml"))
-      .map((f) => basename(f, ".yaml"))
-  } catch {
-    return []
-  }
-}
-
-/** Load a framework YAML file by ID, returning raw parsed object */
-function loadFrameworkYaml(id: string): Record<string, unknown> {
-  // Guard: reject IDs with path traversal sequences
-  if (validateSafeId(id)) {
-    return { name: id.toUpperCase(), archetype: "formula", fields: [], badge_thresholds: [] }
-  }
-  try {
-    const content = readFileSync(resolve(FRAMEWORKS_DIR, `${id}.yaml`), "utf8")
-    return parseYaml(content) as Record<string, unknown>
-  } catch {
-    // Fallback: return minimal metadata if YAML is missing
-    return { name: id.toUpperCase(), archetype: "formula", fields: [], badge_thresholds: [] }
-  }
-}
 
 export const GET: APIRoute = async () => {
   try {
     // Load built-in frameworks from YAML
-    const builtInIds = getBuiltInFrameworkIds()
+    const builtIns = await listBuiltInFrameworks()
     const overrides = await getAllOverrides()
     const overrideMap = new Map(overrides.map((o) => [o.frameworkId, o.overrides]))
 
-    const builtInFrameworks: FrameworkConfig[] = builtInIds.map((id) => {
-      const raw = loadFrameworkYaml(id)
-      const base = parseFrameworkConfig(id, raw)
-      const merged = mergeFrameworkConfig(base, overrideMap.get(id) ?? null)
+    const builtInFrameworks: FrameworkConfig[] = builtIns.map((base) => {
+      const merged = mergeFrameworkConfig(base, overrideMap.get(base.id) ?? null)
       return { ...merged, source: "built-in" as const }
     })
 
@@ -82,9 +50,23 @@ export const GET: APIRoute = async () => {
   }
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
-    const body = await request.json() as Partial<FrameworkConfig>
+    const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+    let body: Partial<FrameworkConfig>
+    if (media === "application/yaml") {
+      const imported = await readFrameworkImport(request)
+      if (!imported.ok) {
+        return new Response(JSON.stringify({ ok: false, errorCode: imported.errorCode, message: imported.message }), {
+          status: imported.status, headers: { "Content-Type": "application/json" },
+        })
+      }
+      body = imported.config
+    } else {
+      body = await request.json() as Partial<FrameworkConfig>
+    }
 
     // Validate the submitted config
     const errors = validateFrameworkConfig(body)
@@ -94,9 +76,15 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 400, headers: { "Content-Type": "application/json" } },
       )
     }
+    const idError = validateSafeId(body.id, "framework_id")
+    if (idError) {
+      return new Response(JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idError }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
+    }
 
     // Check ID collision with built-in frameworks
-    const builtInIds = getBuiltInFrameworkIds()
+    const builtInIds = (await listBuiltInFrameworks()).map(framework => framework.id)
     if (builtInIds.includes(body.id!)) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "ID_CONFLICT", message: "Framework ID conflicts with a built-in framework" }),

@@ -716,7 +716,7 @@ const tabs = [
   // --- Settings: Delete ---
   const deleteBtn = document.getElementById("delete-area-btn");
   deleteBtn?.addEventListener("click", async () => {
-    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-area-name")?.value || "this area"}"? Goals and projects will become uncategorised.`);
+    const confirmed = await window.confirmDialog?.({ message: `Delete "${document.getElementById("edit-area-name")?.value || "this area"}"? Goals and projects will become uncategorised.` });
     if (!confirmed) return;
 
     deleteBtn.disabled = true;

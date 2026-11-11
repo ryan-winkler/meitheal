@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { LaneRepository } from "@domains/tasks/persistence/lane-repository"
 import { stripHtml } from "../../../lib/strip-html"
@@ -50,9 +51,10 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
   try {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (hasBoardSelection(body)) return unavailableBoardResponse()
     await ensureSchema()
     const repo = new LaneRepository(getPersistenceClient())
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const rawLabel = typeof body.label === "string" ? body.label.trim() : ""
     const label = stripHtml(rawLabel)

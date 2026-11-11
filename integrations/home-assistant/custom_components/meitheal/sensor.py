@@ -224,8 +224,12 @@ class MeithealCompletedTodaySensor(
         """Return count of tasks completed today."""
         if not self.coordinator.data:
             return None
-        # Count done tasks — coordinator refreshes every 30s
-        return sum(1 for t in self.coordinator.data.tasks if t.status == "done")
+        return self.coordinator.data.completed_today
+
+    @property
+    def available(self) -> bool:
+        """Daily counts require authoritative optional statistics."""
+        return super().available and self.coordinator.data.completed_today is not None
 
 
 class MeithealStreakSensor(
@@ -252,11 +256,17 @@ class MeithealStreakSensor(
         return self.coordinator.data.streak
 
     @property
+    def available(self) -> bool:
+        """Failed or disabled statistics are unavailable, not zero."""
+        return super().available and self.coordinator.data.streak is not None
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose gamification details."""
         if not self.coordinator.data:
             return None
         return {
             "total_points": self.coordinator.data.total_points,
+            "gamification_error": self.coordinator.data.gamification_error,
         }
 

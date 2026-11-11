@@ -8,5 +8,5 @@
     "type": "bearer",
     "requiredScope": "mcp:execute"
   },
-  "discovery": "Use tools/list with your token to discover available tools."
+  "discovery": "Use the installed App's /.well-known/mcp.json for current availability, supported protocol versions, and the ingress endpoint."
 }

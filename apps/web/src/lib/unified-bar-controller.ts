@@ -57,7 +57,7 @@ export function initUnifiedBarTitleSwitcher({
     const activeItem =
       dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item.is-active") ??
       dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item")
-    activeItem?.focus()
+    activeItem?.focus({ preventScroll: true })
   })
 
   dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item").forEach((item) => {
@@ -79,7 +79,7 @@ export function initUnifiedBarTitleSwitcher({
     if (keyboardEvent.key === "Escape") {
       keyboardEvent.preventDefault()
       closeDropdown()
-      btn.focus()
+      btn.focus({ preventScroll: true })
       return
     }
 
@@ -90,7 +90,7 @@ export function initUnifiedBarTitleSwitcher({
     keyboardEvent.preventDefault()
     const direction = keyboardEvent.key === "ArrowDown" ? 1 : -1
     const nextIndex = (currentIndex + direction + items.length) % items.length
-    items[nextIndex]?.focus()
+    items[nextIndex]?.focus({ preventScroll: true })
   })
 
   pageLifecycle.on(document, "click", (event) => {

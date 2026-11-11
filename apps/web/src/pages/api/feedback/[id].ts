@@ -1,17 +1,14 @@
 import type { APIRoute } from "astro"
 import { z } from "zod"
-import { feedbackProblem, readFeedbackJson, withFeedback } from "@lib/feedback-api"
+import { feedbackProblem, withFeedback } from "@lib/feedback-api"
 
 const reviewBody = z.strictObject({
   state: z.enum(["in_progress", "resolved", "declined"]),
   disposition: z.string().optional(),
 })
 
-export const PATCH: APIRoute = context => withFeedback(context, "admin", 200, async (queue, actor) => {
-  const input = await readFeedbackJson(context.request)
-  if ("error" in input) return input.error
-
-  const parsed = reviewBody.safeParse(input.body)
+export const PATCH: APIRoute = context => withFeedback(context, "admin", 200, async (queue, actor, body) => {
+  const parsed = reviewBody.safeParse(body)
   if (!parsed.success) return feedbackProblem(400, "Choose a valid review state and provide any required disposition.")
 
   const { state, disposition } = parsed.data

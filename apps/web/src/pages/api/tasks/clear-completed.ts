@@ -12,14 +12,17 @@
  * Currently it soft-deletes by marking status='complete' tasks as hidden.
  */
 import type { APIRoute } from "astro"
+import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
-export const POST: APIRoute = async () => {
+export const POST: APIRoute = async ({ request }) => {
   try {
+    const boardSelection = await rejectBoardSelectionInJson(request)
+    if (boardSelection) return boardSelection
     await ensureSchema()
     const client = getPersistenceClient()
     const todayStr = new Date().toISOString().split("T")[0] ?? ""

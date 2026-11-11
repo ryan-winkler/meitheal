@@ -1,17 +1,23 @@
 // layout-body-controller.ts — Extracted from Layout.astro module <script> block
 // Handles: sidebar badge hydration, sync notifications, route cleanup,
 // and ingress state persistence.
+import { TASK_COUNTS_CHANGED } from "./deferral-client"
+import { initIngressNavigation } from "./ingress-navigation"
+import { pageLifecycle } from "./page-lifecycle"
+
+pageLifecycle.onPageLoad(initIngressNavigation)
 
 // ───── Sidebar Badge Hydration ─────
 // SSR renders the badge with server-side count, but it can be stale or 0
 // if the DB wasn't ready during SSR. This hydrates it client-side.
 async function refreshSidebarBadge() {
+  const badge = document.getElementById("nav-count-tasks")
+  if (!badge) return
   try {
-    const res = await fetch("/api/tasks?limit=1&offset=0")
+    const res = await fetch("/api/tasks?status=active&deferred=0&limit=1")
     if (!res.ok) return
     const data = await res.json()
-    const badge = document.getElementById("nav-count-tasks")
-    if (badge && typeof data.total === "number") {
+    if (badge.isConnected && typeof data.total === "number") {
       badge.textContent = String(data.total)
     }
   } catch {
@@ -19,6 +25,9 @@ async function refreshSidebarBadge() {
   }
 }
 refreshSidebarBadge()
+pageLifecycle.onPageLoad(signal => {
+  window.addEventListener(TASK_COUNTS_CHANGED, () => { void refreshSidebarBadge() }, { signal })
+})
 
 // Re-hydrate badge when tasks change (listen for custom events from task operations)
 // ⚠️ Intentionally permanent: this module loads once at app level and must persist

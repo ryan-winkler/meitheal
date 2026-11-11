@@ -8,6 +8,8 @@
 export {
   listLabels,
   createLabel,
+  normalizeLabelTitle,
+  taskLabelInsert,
   updateLabel,
   deleteLabel,
   getLabelColorMap,
@@ -20,3 +22,14 @@ export {
   resolveAllLabelColors,
   resetColorCache,
 } from "./label-color-resolver"
+
+export {
+  UnusedLabelRepository,
+  type CleanupLabel,
+  type CleanupPreview,
+  type CleanupRemoval,
+  type CleanupSelection,
+} from "./unused-labels"
+
+export { LabelMutationRepository, LabelMutationError } from "./label-mutation"
+export { labelNameKey, isWellFormedLabelName } from "./label-name"

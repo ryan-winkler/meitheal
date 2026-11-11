@@ -98,6 +98,10 @@ const staticConfigJson = serializeForScript(staticConfig)
             id="search-hub-input"
             class="search-hub-input"
             type="search"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="search-hub-results"
+            aria-expanded="false"
             placeholder={t("topbar.search_placeholder", locale)}
             aria-label="Search tasks, views, settings, and actions"
             autocomplete="off"
@@ -150,7 +154,8 @@ const staticConfigJson = serializeForScript(staticConfig)
         </div>
       </div>
 
-      <div id="search-hub-results" class="search-hub-results" aria-live="polite"></div>
+      <div id="search-hub-results" class="search-hub-results" role="listbox" aria-label="Search results"></div>
+      <div id="search-hub-status"></div>
     </div>
   </div>
 </div>

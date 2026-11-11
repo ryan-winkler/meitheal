@@ -1,13 +1,22 @@
 import { createClientLogger } from "@lib/client-logger"
 import { buildIngressPagePath } from "@lib/page-shell-links"
 import { waitForFn } from "@lib/wait-for-fn"
+import { taskDetailPath } from "@lib/task-page-url"
 
 const log = createClientLogger("tasks", "detail-handoff")
 
-export function buildTaskPermalink(taskId: string): string {
-  const url = new URL(buildIngressPagePath("/tasks"), window.location.origin)
-  url.searchParams.set("open", taskId)
-  return url.href
+export type SearchDetailDismissal = "dismiss" | "discard" | "history"
+
+export interface SearchDetailHandoff {
+  onDismiss(reason: SearchDetailDismissal): void
+}
+
+export function buildTaskPath(taskId: string, commentId?: number): string {
+  return taskDetailPath(taskId, commentId)
+}
+
+export function buildTaskPermalink(taskId: string, commentId?: number): string {
+  return new URL(buildIngressPagePath(buildTaskPath(taskId, commentId)), window.location.origin).href
 }
 
 export function getLegacyTaskId(hash: string): string | null {
@@ -20,12 +29,17 @@ export function getLegacyTaskId(hash: string): string | null {
   }
 }
 
-export function openTaskDetailHandoff(taskId: string): void {
+export function openTaskDetailHandoff(taskId: string, search?: SearchDetailHandoff): void {
   const normalizedTaskId = String(taskId).trim()
   if (!normalizedTaskId) return
 
   if (typeof window.openTaskDetail === "function") {
-    window.openTaskDetail(normalizedTaskId)
+    window.openTaskDetail(normalizedTaskId, undefined, search)
+    return
+  }
+
+  if (search) {
+    window.location.assign(buildTaskPermalink(normalizedTaskId))
     return
   }
 

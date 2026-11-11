@@ -1,12 +1,42 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
 import http from "node:http"
-import { runWithIngressTransport } from "./ingress-transport.mjs"
+import { boardRouteSelection } from "./board-route-selection.mjs"
+import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
 // Astro's clientAddress can describe the client, so neither establishes this.
 const SUPERVISOR_ADDRESS = "172.30.32.2"
 const supervisorToken = process.env.SUPERVISOR_TOKEN
 const configuredPath = process.env.INGRESS_PATH
+const databaseExportPath = "/api/export/database.sqlite"
+const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity", "/api/comment-people", "/api/mention-inbox", "/mention-inbox"])
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
+const pinApiPath = "/api/task-pins"
+const draftApiPath = "/api/task-drafts"
+const inactivityApiPath = "/api/task-inactivity"
+const labelCleanupPath = "/api/labels/cleanup"
+const inactivityPagePath = "/inactivity"
+const pinnedPagePath = "/pinned"
+
+// Astro can decode escapes and redirect trailing separators before middleware.
+function privateRoutePath(pathname) {
+  const trimmed = pathname.replace(/\/+$/, "")
+  if (!/[%\\]|\/\./.test(trimmed)) return trimmed
+
+  let decoded = pathname
+  for (let i = 0; i < 10 && decoded.includes("%"); i++) {
+    try {
+      const next = decodeURI(decoded).replace(/%2f/gi, "/")
+      if (next === decoded) break
+      decoded = next
+    } catch {
+      return undefined
+    }
+  }
+  if (!decoded.startsWith("/")) return undefined
+  const resolved = new URL("http://localhost" + decoded.replace(/[\\/]+/g, "/")).pathname
+  return resolved.replace(/\/+$/, "")
+}
 
 async function supervisorProtectsIdentityHeaders() {
   if (!supervisorToken) return false
@@ -47,15 +77,56 @@ const server = http.createServer((req, res) => {
 
   // Normalize only the path. Preserve the query string exactly.
   let sseSocket
+  let waitForDatabaseDownloadDrain
+  const waitForDrain = signal => waitForDownloadDrain(res, signal)
+  const waitForHtmlDrain = fromSupervisor ? waitForDrain : undefined
   if (req.url) {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
     const normalizedPath = path.replace(/\/+/g, "/")
-    req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
+    const canonical = privateRoutePath(normalizedPath)
+    const isPins = canonical === pinApiPath || canonical === pinnedPagePath
+    const isOnlineRead = onlineReadPaths.has(canonical)
+    const isDraft = canonical === draftApiPath
+    const isInactivity = canonical === inactivityApiPath || canonical === inactivityPagePath
+    const isLabelCleanup = canonical === labelCleanupPath
+    if (isLabelCleanup && (path !== canonical || query !== -1)) {
+      res.writeHead(path !== canonical ? 404 : 400, {
+        "cache-control": "private, no-store",
+        "content-type": "application/json",
+      }).end(JSON.stringify({ ok: false, errorCode: "invalid", detail: "Use the canonical label cleanup path without query parameters." }))
+      return
+    }
+    const hasTaskHistoryPath = taskHistoryPath.test(path)
+    const isTaskHistoryAlias = !hasTaskHistoryPath && taskHistoryPath.test(canonical ?? "")
+    if (isTaskHistoryAlias || ((isPins || isOnlineRead || isDraft || isInactivity || canonical === databaseExportPath) && path !== canonical)) {
+      res.writeHead(404, { "cache-control": "private, no-store" }).end()
+      return
+    }
+    if (isPins || isOnlineRead || isDraft || isInactivity || isLabelCleanup || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
+    if ((canonical === pinApiPath || isDraft || canonical === inactivityApiPath) && query !== -1) {
+      res.writeHead(400).end()
+      return
+    }
+    const search = query === -1 ? "" : req.url.slice(query)
+    // Keep scoped aliases inside ingress and let the normal middleware authorize them.
+    let routedPath = normalizedPath
+    if (search && canonical && boardRouteSelection(canonical, new URLSearchParams(search))) {
+      const parsedPath = new URL("http://localhost" + normalizedPath).pathname
+      if (parsedPath.endsWith("/")) routedPath = parsedPath.slice(0, -1)
+    }
+    req.url = routedPath + search
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
+    if (req.method === "POST" && normalizedPath === "/api/export/database.sqlite") {
+      waitForDatabaseDownloadDrain = waitForDrain
+      res.setHeader("cache-control", "no-store")
+      // For a trusted HTTP LAN form, Astro cannot compare the public Origin
+      // with its internal URL. This route verifies a signed, user-bound form.
+      if (fromSupervisor && req.headers["sec-fetch-site"] === undefined) delete req.headers.origin
+    }
   }
 
-  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket }, () => handler(req, res))
+  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket, waitForDatabaseDownloadDrain, waitForHtmlDrain }, () => handler(req, res))
 })
 
 server.listen(port, host, () => {

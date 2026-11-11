@@ -78,7 +78,7 @@ function evaluateCondition(condition: FilterCondition, data: Record<string, any>
 /**
  * Parses element dataset into a record suitable for condition evaluation
  */
-export function extractDataFromElement(el: HTMLElement): Record<string, any> {
+export function extractDataFromElement(el: Pick<HTMLElement, "dataset">): Record<string, any> {
   const data: Record<string, any> = { ...el.dataset }
   // Special parsing for explicit typed fields
   if (data.labels) {

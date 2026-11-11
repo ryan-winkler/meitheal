@@ -26,8 +26,9 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const projectId = Astro.params.id;
+const projectsPath = `${Astro.locals.ingressPath || ""}/projects`
 if (!projectId) {
-  return Astro.redirect("/projects");
+  return Astro.redirect(projectsPath);
 }
 
 let project: Record<string, unknown> | null = null;
@@ -45,7 +46,7 @@ try {
   project = await repo.findProjectById(projectId) as Record<string, unknown> | null;
 
   if (!project) {
-    return Astro.redirect("/projects");
+    return Astro.redirect(projectsPath);
   }
 
   if (project.goal_id) {
@@ -58,7 +59,7 @@ try {
   tasks = await taskRepo.findByProjectId(projectId);
   goals = await repo.findAllGoals({});
 } catch {
-  return Astro.redirect("/projects");
+  return Astro.redirect(projectsPath);
 }
 
 const projTitle = String(project?.title ?? "Project");
@@ -199,6 +200,7 @@ const tabs = [
                 />
                 {ticketKey && <span class="task-ticket-key">{ticketKey}</span>}
                 <span class={`task-title-text ${isDone ? "done" : ""}`}>{String(task.title)}</span>
+                {task.deferred_at != null && <span class="task-ticket-key">{t("deferral.title", locale)}</span>}
                 <BotBadge owner={String(task.owner ?? "")} handoffState={String(task.handoff_state ?? "")} />
               </div>
               <div class="task-item-right">
@@ -208,7 +210,7 @@ const tabs = [
                 <StatusBadge status={status} />
                 {task.due_date && (
                   <span class="task-due-date">
-                    {formatRegionalDate(new Date(String(task.due_date)), { format: dateFormat, timezone })}
+                    {formatRegionalDate(String(task.due_date), { format: dateFormat, timezone })}
                   </span>
                 )}
               </div>
@@ -229,9 +231,8 @@ const tabs = [
       <div class="fields-placeholder-icon">🏷️</div>
       <h3 class="fields-placeholder-title">Custom Fields</h3>
       <p class="fields-placeholder-desc">
-        Configure custom fields for tasks in this project. Custom fields allow you to add structured metadata like estimates, categories, or priorities specific to this project.
+        Project-specific custom field configuration is unavailable. You can add supported custom field values when creating a task.
       </p>
-      <p class="fields-placeholder-coming">Coming soon in Phase 15.</p>
     </div>
   </section>
 
@@ -458,7 +459,6 @@ const tabs = [
   .project-task-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
   .project-task-item:only-child { border-radius: var(--radius-md); }
   .project-task-item:hover { background: var(--bg-hover); }
-  .project-task-item.task-done { opacity: 0.6; }
 
   .task-item-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
   .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -637,7 +637,7 @@ const tabs = [
   }
 </style>
 
-<script define:vars={{ projectId }}>
+<script define:vars={{ projectId, projectsPath }}>
   // --- Tab switching ---
   const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
   const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
@@ -781,7 +781,7 @@ const tabs = [
   // --- Settings: Delete ---
   const deleteProjectBtn = document.getElementById("delete-proj-btn");
   deleteProjectBtn?.addEventListener("click", async () => {
-    const confirmed = await window.confirmDialog?.(`Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.`);
+    const confirmed = await window.confirmDialog?.({ message: `Delete "${document.getElementById("edit-proj-title")?.value || "this project"}"? Tasks will become unassigned.` });
     if (!confirmed) return;
 
     deleteProjectBtn.disabled = true;
@@ -790,7 +790,7 @@ const tabs = [
     try {
       const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
       if (res.ok) {
-        window.location.href = "/projects";
+        window.location.href = projectsPath;
       } else {
         const data = await res.json().catch(() => ({}));
         window.showToast?.(data.error || "Failed to delete", "error");

@@ -25,12 +25,13 @@ trigger:
 condition:
   - condition: template
     value_template: >-
-      {{ trigger.event.data.action is defined and
-         trigger.event.data.action.startswith('MEITHEAL_COMPLETE_') }}
+      {{ action_id is string and
+         action_id.startswith('MEITHEAL_COMPLETE_') and task_id != '' }}
 
 variables:
+  action_id: "{{ trigger.event.data.get('action') }}"
   task_id: >-
-    {{ trigger.event.data.action | replace('MEITHEAL_COMPLETE_', '') }}
+    {{ action_id | replace('MEITHEAL_COMPLETE_', '', 1) | trim if action_id is string else '' }}
 
 action:
   - service: meitheal.complete_task
@@ -48,4 +49,4 @@ action:
       timeout: 5
 
 mode: queued
-max_queued: 3
+max: 3

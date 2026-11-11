@@ -77,7 +77,7 @@ export const POST: APIRoute = async ({ params, request }) => {
         if (typeof body.isNonNegotiable === "boolean") updates.isNonNegotiable = body.isNonNegotiable
         if (typeof body.position === "number") updates.position = body.position
 
-        const updated = await updatePrinciple(principleId, updates)
+        const updated = await updatePrinciple(principleId, updates, pillarId)
 
         if (!updated) return apiError("Principle not found or no changes", 404)
         return apiJson({ ok: true })
@@ -87,7 +87,7 @@ export const POST: APIRoute = async ({ params, request }) => {
         const principleId = String(body.principleId || "")
         if (!principleId) return apiError("principleId is required", 400)
 
-        const deleted = await deletePrinciple(principleId)
+        const deleted = await deletePrinciple(principleId, pillarId)
         if (!deleted) return apiError("Principle not found", 404)
         return apiJson({ ok: true })
       }

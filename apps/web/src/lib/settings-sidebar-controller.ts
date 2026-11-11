@@ -8,13 +8,13 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { saveSetting, showSettingsSaveError, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
 import { escapeHtml } from "@lib/safe-html"
 
 // ───── Constants ─────
 
-const DEFAULT_SIDEBAR = ["dashboard", "today", "upcoming", "tasks", "progress", "planning"]
+const DEFAULT_SIDEBAR = ["dashboard", "today", "upcoming", "tasks", "activity", "mentionInbox", "progress", "planning", "areas"]
 
 const SIDEBAR_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -25,6 +25,15 @@ const SIDEBAR_LABELS: Record<string, string> = {
   calendar: "Calendar",
   progress: "Progress & Growth",
   planning: "Planning",
+  areas: "Areas",
+  activity: "Recent activity",
+  mentionInbox: "Mentions",
+}
+
+function customLinkId(): string {
+  const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    byte => byte.toString(16).padStart(2, "0")).join("")
+  return `custom-${id}`
 }
 
 // ───── Init ─────
@@ -60,7 +69,7 @@ export function initSidebarSettings(): void {
       const href = (row.querySelector(".custom-item-href") as HTMLInputElement).value
       if (label || href) {
         finalCustomItems.push({
-          id: `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          id: (row as HTMLElement).dataset.customId || customLinkId(),
           label: label || "Link",
           href: href || "/",
           icon: "link",
@@ -75,29 +84,24 @@ export function initSidebarSettings(): void {
     await saveSetting("sidebar_config", config)
     showToast("settings.sidebar_saved")
     settingsStore.invalidate()
-    // Dispatch event so Layout can reactively update sidebar without full reload
-    window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-    }, { loadingText: "Saving…" }))
+    window.location.reload()
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // Reset sidebar to defaults
   const resetSidebarBtn = document.getElementById("reset-sidebar")
   if (resetSidebarBtn) {
-    pageLifecycle.on(resetSidebarBtn, "click", async () => {
+    pageLifecycle.on(resetSidebarBtn, "click", withAsyncButton(resetSidebarBtn as HTMLButtonElement, async () => {
     const confirmed = await confirmDialog({
       message: "Reset sidebar to default configuration? Custom links and reordering will be lost.",
       variant: "warning",
     })
     if (!confirmed) return
-    await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=sidebar_config",
-      { method: "DELETE", signal: pageLifecycle.signal },
-    ).catch(() => {})
     await saveSetting("sidebar_config", null)
     showToast("Sidebar reset to defaults")
     settingsStore.invalidate()
-    window.dispatchEvent(new CustomEvent("meitheal:sidebar-config-changed"))
-    })
+    window.location.reload()
+    }, { onError: showSettingsSaveError }))
   }
 
   // Add custom link
@@ -117,6 +121,7 @@ export function initSidebarSettings(): void {
 /** Restore sidebar configuration from loaded settings object */
 export function restoreSidebarSettings(settings: Record<string, unknown>): void {
   try {
+    const signal = pageLifecycle.signal
     let sidebarConfig: Record<string, unknown> = {}
     try {
       const raw = settings.sidebar_config
@@ -166,15 +171,37 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         row.className = "sidebar-config-row"
         row.draggable = true
         row.dataset.index = String(index)
-        row.style.cssText =
-          "display: flex; gap: 8px; align-items: center; background: var(--bg-secondary); padding: 8px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 4px;"
-
         row.innerHTML = `
-          <div class="drag-handle" title="Drag to reorder" style="cursor: grab; color: var(--text-muted); padding: 4px 8px; user-select: none; border-radius: 4px; transition: color 0.15s, background 0.15s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--text-primary)'; this.style.background='var(--bg-hover)'" onmouseout="this.style.color='var(--text-muted)'; this.style.background='transparent'">☰</div>
-          <input type="checkbox" class="sidebar-visible-cb" data-key="${escapeHtml(key)}" aria-label="Show ${escapeHtml(defaultLabel)} in sidebar" ${isVisible ? "checked" : ""} />
-          <span style="min-width: 100px; font-weight: 500;">${escapeHtml(defaultLabel)}</span>
-          <input type="text" class="form-input sidebar-label-input" data-key="${escapeHtml(key)}" aria-label="Custom label for ${escapeHtml(defaultLabel)}" value="${escapeHtml(labelStr)}" placeholder="Custom Label" style="flex: 1; max-width: 240px;" />
+          <span class="drag-handle" title="Drag to reorder" aria-hidden="true">☰</span>
+          <label class="sidebar-config-row__visibility">
+            <input type="checkbox" class="sidebar-visible-cb" data-key="${escapeHtml(key)}" aria-label="Show ${escapeHtml(defaultLabel)} in sidebar" ${isVisible ? "checked" : ""} />
+            <span>${escapeHtml(defaultLabel)}</span>
+          </label>
+          <input type="text" class="form-input sidebar-label-input" data-key="${escapeHtml(key)}" aria-label="Custom label for ${escapeHtml(defaultLabel)}" value="${escapeHtml(labelStr)}" placeholder="Custom label" />
+          <div class="sidebar-config-row__moves">
+            <button type="button" class="btn btn-ghost sidebar-order-up" aria-label="Move ${escapeHtml(defaultLabel)} up" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="btn btn-ghost sidebar-order-down" aria-label="Move ${escapeHtml(defaultLabel)} down" ${index === orderItems.length - 1 ? "disabled" : ""}>↓</button>
+          </div>
         `
+
+        row.querySelector<HTMLInputElement>(".sidebar-visible-cb")?.addEventListener("change", event => {
+          sidebarConfig[key] = (event.currentTarget as HTMLInputElement).checked
+        }, { signal })
+        row.querySelector<HTMLInputElement>(".sidebar-label-input")?.addEventListener("input", event => {
+          const labels = sidebarConfig.labels as Record<string, string> | undefined
+          sidebarConfig.labels = { ...labels, [key]: (event.currentTarget as HTMLInputElement).value }
+        }, { signal })
+
+        for (const [selector, direction] of [[".sidebar-order-up", -1], [".sidebar-order-down", 1]] as const) {
+          row.querySelector<HTMLButtonElement>(selector)?.addEventListener("click", () => {
+            const target = index + direction
+            if (target < 0 || target >= orderItems.length) return
+            orderItems.splice(index, 1)
+            orderItems.splice(target, 0, key)
+            renderSidebarList()
+            list.querySelector<HTMLElement>(`[data-index="${target}"] ${selector}`)?.focus()
+          }, { signal })
+        }
 
         // Drag events
         row.addEventListener("dragstart", (e) => {
@@ -184,13 +211,13 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
           e.dataTransfer!.effectAllowed = "move"
           e.dataTransfer!.setData("text/plain", String(index))
           e.dataTransfer!.setDragImage(dragGhost, 0, 0)
-        })
+        }, { signal })
 
         row.addEventListener("dragend", () => {
           row.style.opacity = "1"
           row.style.background = "var(--bg-secondary)"
           clearDropIndicators(list)
-        })
+        }, { signal })
 
         row.addEventListener("dragover", (e) => {
           e.preventDefault()
@@ -206,14 +233,14 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
             row.style.borderBottomColor = "var(--accent)"
             row.style.borderBottomWidth = "3px"
           }
-        })
+        }, { signal })
 
         row.addEventListener("dragleave", () => {
           row.style.borderTopColor = "var(--border)"
           row.style.borderBottomColor = "var(--border)"
           row.style.borderTopWidth = "1px"
           row.style.borderBottomWidth = "1px"
-        })
+        }, { signal })
 
         row.addEventListener("drop", (e) => {
           e.preventDefault()
@@ -231,7 +258,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
           if (movedItem) orderItems.splice(targetIndex, 0, movedItem)
           clearDropIndicators(list)
           renderSidebarList()
-        })
+        }, { signal })
 
         // Touch drag support
         let touchStartY = 0
@@ -245,7 +272,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
           touchStartY = t0.clientY
           touchDragging = false
           row.style.opacity = "0.3"
-        }, { passive: true })
+        }, { passive: true, signal })
 
         row.addEventListener("touchmove", (e) => {
           if (dragSrcIndex !== index) return
@@ -264,7 +291,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
             targetRow.style.borderTopColor = "var(--accent)"
             targetRow.style.borderTopWidth = "3px"
           }
-        }, { passive: false })
+        }, { passive: false, signal })
 
         row.addEventListener("touchend", (e) => {
           if (dragSrcIndex !== index) return
@@ -291,7 +318,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
           }
           dragSrcIndex = null
           touchDragging = false
-        }, { passive: true })
+        }, { passive: true, signal })
 
         list.appendChild(row)
       })
@@ -301,13 +328,19 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       customList.replaceChildren()
       customItems.forEach((item, index) => {
         const row = document.createElement("div")
-        row.style.cssText =
-          "display: flex; gap: 8px; align-items: center; background: var(--bg-secondary); padding: 8px; border-radius: 4px; border: 1px solid var(--border);"
+        row.className = "sidebar-custom-link"
+        row.dataset.customId = item.id
         row.innerHTML = `
-          <input type="text" class="form-input custom-item-label" placeholder="Label" value="${escapeHtml(item.label)}" style="flex: 1;" />
-          <input type="text" class="form-input custom-item-href" placeholder="URL (e.g. /notes)" value="${escapeHtml(item.href)}" style="flex: 2;" />
-          <button type="button" class="btn-icon text-danger remove-custom-link" data-index="${index}" style="font-size: 16px;">×</button>
+          <input type="text" class="form-input custom-item-label" aria-label="Custom link label" placeholder="Label" value="${escapeHtml(item.label)}" />
+          <input type="text" class="form-input custom-item-href" aria-label="Custom link URL" placeholder="URL (e.g. /notes)" value="${escapeHtml(item.href)}" />
+          <button type="button" class="btn btn-ghost text-danger remove-custom-link" aria-label="Remove custom link ${escapeHtml(item.label)}" data-index="${index}">×</button>
         `
+        row.querySelector<HTMLInputElement>(".custom-item-label")?.addEventListener("input", event => {
+          item.label = (event.currentTarget as HTMLInputElement).value
+        }, { signal })
+        row.querySelector<HTMLInputElement>(".custom-item-href")?.addEventListener("input", event => {
+          item.href = (event.currentTarget as HTMLInputElement).value
+        }, { signal })
         customList.appendChild(row)
       })
 
@@ -316,24 +349,15 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
           const idx = Number((e.currentTarget as HTMLElement).dataset.index)
           customItems.splice(idx, 1)
           renderSidebarList()
-        })
+        }, { signal })
       })
     }
 
     // Wire up "Add Custom Link" button locally
     pageLifecycle.on(window, "meitheal:sidebar-add-custom-link", () => {
-      customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
+      customItems.push({ id: customLinkId(), label: "New Link", href: "/", icon: "link" })
       renderSidebarList()
     })
-
-    // Also bind directly to the button in case the event approach isn't needed
-    const addBtnRestore = document.getElementById("add-custom-link-btn")
-    if (addBtnRestore) {
-      pageLifecycle.on(addBtnRestore, "click", () => {
-        customItems.push({ id: `custom-${Date.now()}`, label: "New Link", href: "/", icon: "link" })
-        renderSidebarList()
-      })
-    }
 
     renderSidebarList()
   } catch (e) {

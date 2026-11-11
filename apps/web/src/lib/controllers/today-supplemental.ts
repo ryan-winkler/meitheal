@@ -157,7 +157,7 @@ export function renderEffortIndicators(container: HTMLElement): void {
     chip.title = `Effort: ${label}`
     chip.style.cssText = `
       font-size: 10px; padding: 1px 6px; border-radius: 8px;
-      background: ${color}; display: inline-flex; align-items: center;
+      background: ${color}; color: var(--text-secondary); display: inline-flex; align-items: center;
       gap: 2px; white-space: nowrap; margin-left: 4px;
     `
     chip.textContent = `${emoji} ${label}`

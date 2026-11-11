@@ -19,7 +19,7 @@ import {
 
 // --- Lock Management ---
 
-const DEFAULT_LOCK_TTL_MS = 5 * 60 * 1000 // 5 minutes
+export const HANDOFF_CLAIM_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 export type ClaimResult =
   | { ok: true; lockExpiresAt: number }
@@ -55,7 +55,7 @@ export function validateClaim(
 
   return {
     ok: true,
-    lockExpiresAt: now + DEFAULT_LOCK_TTL_MS,
+    lockExpiresAt: now + HANDOFF_CLAIM_TTL_MS,
   }
 }
 
@@ -162,7 +162,7 @@ export function getExpiredLockClause(now: number = Date.now()): {
   args: (string | number)[]
 } {
   return {
-    sql: "UPDATE tasks SET handoff_state = 'idle', lock_holder = NULL, lock_expires_at = NULL, agent_scratchpad = NULL WHERE lock_expires_at IS NOT NULL AND lock_expires_at < ? AND handoff_state IN ('claimed', 'proposed')",
+    sql: "UPDATE tasks SET handoff_state = 'idle', lock_holder = NULL, lock_expires_at = NULL, proposal_json = NULL, proposal_hash = NULL, agent_scratchpad = NULL WHERE lock_expires_at IS NOT NULL AND lock_expires_at < ? AND handoff_state IN ('claimed', 'proposed')",
     args: [now],
   }
 }

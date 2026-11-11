@@ -6,13 +6,14 @@ description: "Set up Meitheal in the Home Assistant companion app."
 
 # Companion App Setup
 
-Meitheal integrates with the Home Assistant Companion App on Android and iOS for shortcuts, haptic notifications, deep-links, and voice control.
+Open Meitheal in the Home Assistant Companion app on Android or iOS. Add shortcuts or set up notifications and voice controls for the jobs you use regularly.
 
 ## Prerequisites
 
-- Meitheal addon installed and running
-- Meitheal integration set up (Settings → Devices & Services → Meitheal)
-- HA Companion App installed ([Android](https://play.google.com/store/apps/details?id=io.homeassistant.companion.android) / [iOS](https://apps.apple.com/app/home-assistant/id1099568401))
+- Meitheal Canary installed and running in Home Assistant
+- The Companion app signed in to that Home Assistant instance ([Android](https://play.google.com/store/apps/details?id=io.homeassistant.companion.android) / [iOS](https://apps.apple.com/app/home-assistant/id1099568401))
+
+Open Meitheal from the Home Assistant sidebar. Set up the [optional Core integration](kcs/home-assistant-marketplace.md) for Meitheal sensors, voice actions, and scripts that call Meitheal services.
 
 ## URL Handler and X-Callback-URL
 
@@ -61,18 +62,14 @@ Add a quick settings tile for common actions:
 
 ### Actionable Notifications
 
-Import the bundled blueprints for task notifications with action buttons:
+Set up the optional Core integration so Home Assistant can call `meitheal.complete_task`. Import both blueprints to send the notification and handle its **Complete** action.
 
 1. **Settings → Automations → Blueprints → Import Blueprint**
-2. Enter URL: `https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_task_notification.yaml`
-3. Configure your device and notification preferences
-4. Save and enable
+2. Import [Task Notification with Actions](https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_task_notification.yaml) and [Complete Task from Notification](https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml).
+3. Create an automation from each blueprint. Choose the same notification device, then set the task event and ingress path in the sender.
+4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 
-Notifications will include:
-- 📋 **View Task** — opens Meitheal in the companion app
-- ✅ **Complete** — marks the task done directly from notification
-- 📊 **Dashboard** — opens the Meitheal dashboard
-- Haptic feedback (vibration pattern)
+Notifications for events with a task ID include **View task** and **Complete**. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
 
 ### Widgets
 
@@ -115,7 +112,7 @@ Add the companion actions to your configuration:
 # In configuration.yaml
 homeassistant:
   packages:
-    meitheal_companion: !include_dir_merge_named integrations/home-assistant/
+    meitheal_companion: !include packages/meitheal_companion.yaml
 ```
 
 Or copy `companion_actions.yaml` to your HA config directory:

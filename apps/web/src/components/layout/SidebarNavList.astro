@@ -24,7 +24,7 @@ function isExternal(href: string): boolean {
 }
 ---
 
-<ul class="nav-list flex flex-col gap-1 list-none m-0 p-0 w-full">
+<ul class="nav-list nav-overflow__primary flex flex-col gap-1 list-none m-0 p-0 w-full" data-nav-overflow-primary>
   {
     navItems.map((item) => {
       const external = isExternal(item.href);
@@ -36,7 +36,8 @@ function isExternal(href: string): boolean {
             data-page={item.key}
             title={item.label}
             data-tooltip={item.label}
-            data-astro-prefetch={external ? undefined : "viewport"}
+            data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" ? "false" : external ? undefined : "viewport"}
+            aria-current={item.isActive ? "page" : undefined}
             aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
             {...(external
               ? { target: "_blank", rel: "noopener noreferrer" }
@@ -84,28 +85,28 @@ function isExternal(href: string): boolean {
 </style>
 
 <script>
-  // Active nav link — reusable for View Transitions
+  // The sidebar can persist across Astro swaps; update the original links in either list.
+  const runtime = window as unknown as { __meithealSidebarActive?: AbortController }
+  runtime.__meithealSidebarActive?.abort()
+  const controller = new AbortController()
+  runtime.__meithealSidebarActive = controller
   function updateActiveNavLink() {
-    const rawPath = window.location.pathname;
-    const ip = window.__ingress_path || "";
-    const currentPath =
-      ip && rawPath.startsWith(ip) ? rawPath.slice(ip.length) || "/" : rawPath;
-    document.querySelectorAll(".sidebar .nav-link").forEach((link) => {
-      // Skip external links — they never get "active" state
-      if (link.classList.contains("nav-link--external")) return;
-      link.classList.remove("active");
-      const href = link.getAttribute("href") || "";
-      if (
-        href === currentPath ||
-        (href !== "/" && currentPath.startsWith(href + "/")) ||
-        (currentPath === "/" && link.getAttribute("data-page") === "dashboard")
-      ) {
-        link.classList.add("active");
-      }
-    });
+    const ip = window.__ingress_path || ""
+    const stripIngress = (path: string) => ip && (path === ip || path.startsWith(ip + "/")) ? path.slice(ip.length) || "/" : path
+    const currentPath = stripIngress(location.pathname).replace(/\/$/, "") || "/"
+    document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach(link => {
+      if (link.classList.contains("nav-link--external")) return
+      const target = new URL(link.getAttribute("href") || "/", location.href)
+      const href = stripIngress(target.pathname).replace(/\/$/, "") || "/"
+      const active = (href === currentPath && (!target.hash || target.hash === location.hash))
+        || (href !== "/" && currentPath.startsWith(href + "/"))
+        || (link.dataset.page === "tasks" && currentPath.startsWith("/tickets/"))
+      link.classList.toggle("active", active)
+      if (active) link.setAttribute("aria-current", "page")
+      else link.removeAttribute("aria-current")
+    })
   }
-  updateActiveNavLink();
-
-  // Re-run after View Transitions swap
-  document.addEventListener("astro:after-swap", updateActiveNavLink);
+  updateActiveNavLink()
+  document.addEventListener("astro:after-swap", updateActiveNavLink, { signal: controller.signal })
+  window.addEventListener("hashchange", updateActiveNavLink, { signal: controller.signal })
 </script>

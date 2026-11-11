@@ -31,8 +31,9 @@ import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../l
 
 export interface Props {
   locale: Locale
+  label?: string
 }
-const { locale } = Astro.props
+const { locale, label } = Astro.props
 
 interface AreaRow { id: string; name: string; icon: string; color: string; position: number }
 interface ProjectRow { id: string; title: string; area_id: string | null; icon: string; color: string; status: string }
@@ -82,7 +83,7 @@ const rawPath = Astro.url.pathname
 const currentPath = rawPath.replace(/\/$/, "") || "/"
 const hasContent = projects.length > 0 || areas.length > 0
 const visibleAreas = areas
-const areasLabel = t("sidebar.areas_header", locale) || "Areas"
+const areasLabel = label || t("sidebar.areas_header", locale) || "Areas"
 
 // Task kinds for per-project add
 const taskKinds = [
@@ -96,18 +97,11 @@ const taskKinds = [
 
 {hasContent && (
   <div class="stree" id="project-nav" role="navigation" aria-label="Area navigation">
-    <div class="stree__header">
-      <span class="stree__label">{areasLabel}</span>
-      <a
-        href="/areas"
-        data-astro-prefetch="viewport"
-        class="stree__manage-link"
-        title="Manage areas & projects"
-        aria-label="Manage areas & projects"
-      >
-        <Icon name="settings" size={12} />
-      </a>
-    </div>
+    <details id="sidebar-areas-group" open>
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel}>
+      <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true">▾</span><span class="stree__label">{areasLabel}</span></span>
+    </summary>
+    <div id="project-nav-content">
 
     {/* ── Pinned ── */}
     <div class="stree__pinned" id="project-nav-pinned" hidden>
@@ -208,6 +202,17 @@ const taskKinds = [
         <span>{t("sidebar.new_area", locale)}</span>
       </button>
     </div>
+    </div>
+    </details>
+    <a
+      href="/areas"
+      data-astro-prefetch="viewport"
+      class="stree__manage-link"
+      title="Manage areas & projects"
+      aria-label="Manage areas & projects"
+    >
+      <Icon name="settings" size={12} />
+    </a>
   </div>
 )}
 
@@ -302,10 +307,14 @@ const taskKinds = [
      ══════════════════════════════════════════════ */
 
   .stree {
+    --stree-block-padding: 0.625rem;
+    --stree-inline-padding: 0.5rem;
+    --stree-header-height: 32px;
+    --stree-manage-size: 24px;
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 0.625rem 0.5rem;
+    padding: var(--stree-block-padding) var(--stree-inline-padding);
     background: rgba(var(--bg-primary-rgb), 0.4);
     border-radius: var(--radius-md, 10px);
     border: 1px solid rgba(var(--border-rgb), 0.35);
@@ -328,9 +337,21 @@ const taskKinds = [
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 4px 6px;
+    padding: 0 4px;
+    padding-inline-end: calc(var(--stree-manage-size) + 6px);
+    min-height: max(var(--stree-header-height), var(--stree-manage-size));
+    cursor: pointer;
+    list-style: none;
   }
+  .stree__header::-webkit-details-marker { display: none; }
+  .stree__group-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .stree__group-chevron { color: var(--text-secondary); flex: none; }
+  #sidebar-areas-group:not([open]) .stree__group-chevron { transform: rotate(-90deg); }
   .stree__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.6rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
@@ -338,16 +359,19 @@ const taskKinds = [
     color: var(--text-secondary);
   }
   .stree__manage-link {
-    color: var(--text-muted);
-    opacity: 0.4;
-    transition: opacity 150ms, color 150ms;
-    display: flex;
-    align-items: center;
+    position: absolute;
+    inset-inline-end: var(--stree-inline-padding);
+    inset-block-start: calc(var(--stree-block-padding) + (max(var(--stree-header-height), var(--stree-manage-size)) - var(--stree-manage-size)) / 2);
+    inline-size: var(--stree-manage-size);
+    block-size: var(--stree-manage-size);
+    color: var(--text-secondary);
+    transition: color 150ms, background 150ms;
+    display: grid;
+    place-items: center;
     text-decoration: none;
-    padding: 2px;
     border-radius: var(--radius-sm, 4px);
   }
-  .stree__manage-link:hover { opacity: 1; color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
+  .stree__manage-link:hover { color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 
   /* ── Section labels ── */
   .stree__section-label {
@@ -620,7 +644,6 @@ const taskKinds = [
   .stree__empty-hint {
     font-size: 11px;
     color: var(--text-muted);
-    opacity: 0.4;
     font-style: italic;
     padding: 4px 6px 4px 28px;
     display: block;
@@ -863,6 +886,7 @@ const taskKinds = [
   .stree__popover-save:active { transform: scale(0.97); }
 
   /* ── P2-13: Custom focus rings ── */
+  .stree__header:focus-visible,
   .stree__area-toggle:focus-visible,
   .stree__project-link:focus-visible,
   .stree__action-btn:focus-visible,
@@ -878,6 +902,9 @@ const taskKinds = [
   }
 
   @media (max-width: 768px), (pointer: coarse) {
+    .stree { --stree-manage-size: 44px; }
+
+    .stree__header,
     .stree__area-toggle,
     .stree__project-link {
       min-height: 44px;
@@ -892,8 +919,7 @@ const taskKinds = [
       display: none;
     }
 
-    .stree__action-btn,
-    .stree__manage-link {
+    .stree__action-btn {
       min-width: 44px;
       min-height: 44px;
       padding: 0;
@@ -911,9 +937,15 @@ const taskKinds = [
 </style>
 
 <script>
+  import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
   import { DropdownController } from "../../lib/dropdown-controller"
   import { escapeHtml, sanitizeCssColor } from "../../lib/safe-html"
   import { showToast } from "../../lib/toast"
+  import { TASK_COUNTS_CHANGED } from "../../lib/deferral-client"
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { initSidebarAreasDisclosure } from "../../lib/sidebar-areas-disclosure"
+
+  pageLifecycle.onPageLoad(initSidebarAreasDisclosure)
 
   // ── Sidebar Hierarchy Tree — interactions ──
   ;(function initSidebarTree() {
@@ -1568,21 +1600,19 @@ const taskKinds = [
     })
 
     // ── 10. Project task counts (batched, non-blocking) ──
-    async function updateProjectTaskCount(projectId: string) {
+    async function updateProjectTaskCount(projectId: string, signal?: AbortSignal) {
+      const badge = nav.querySelector<HTMLSpanElement>(`[data-project-task-count="${CSS.escape(projectId)}"]`)
+      if (!badge) return
       try {
-        const res = await fetch(`/api/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`)
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?task_counts=1`, { signal: signal ?? null })
         if (!res.ok) return
         const data = await res.json()
-        const tasks = Array.isArray(data.tasks) ? data.tasks : []
-        const openCount = tasks.filter((t: { status?: string }) => t.status !== "complete").length
-        const badge = document.querySelector<HTMLSpanElement>(`[data-project-task-count="${projectId}"]`)
-        if (badge) {
-          badge.textContent = String(openCount)
+        const counts = data?.task_counts
+        if (badge.isConnected && typeof counts?.active_open === "number") {
+          badge.textContent = String(counts.active_open)
           badge.dataset.loaded = "true"
           // P3-18: Completion celebration — pulse when all tasks done
-          if (openCount === 0 && tasks.length > 0) {
-            badge.classList.add("stree__count--done")
-          }
+          badge.classList.toggle("stree__count--done", counts.total > 0 && counts.complete === counts.total)
         }
       } catch { /* non-critical: task count fetch failed silently */ }
     }
@@ -1593,6 +1623,12 @@ const taskKinds = [
       const projectId = badge.dataset.projectTaskCount
       if (projectId) setTimeout(() => updateProjectTaskCount(projectId), i * 50)
     })
+    pageLifecycle.onPageLoad(signal => {
+      window.addEventListener(TASK_COUNTS_CHANGED, event => {
+        const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
+        for (const id of ids) void updateProjectTaskCount(id, signal)
+      }, { signal })
+    })
 
     // ── 11. Quick-capture shortcut (N key) ──
     document.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -1600,7 +1636,7 @@ const taskKinds = [
       const tag = (e.target as HTMLElement).tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
       if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (e.key !== "n" && e.key !== "N") return
+      if ((e.key !== "n" && e.key !== "N") || !singleKeyShortcutsEnabled()) return
 
       e.preventDefault()
       // Find the active project or first visible project

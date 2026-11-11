@@ -4,12 +4,17 @@ import { resolveIngressContext } from "@domains/auth/ingress";
 import { getIngressTransport } from "../scripts/ingress-transport.mjs";
 import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureSchema } from "@domains/tasks/persistence/store";
+import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
 import { initHAIntegrations } from "@domains/ha";
+import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
 import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
+import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
+import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
+import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
+import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -135,65 +140,124 @@ function applyRateLimitHeaders(response: Response, remaining: number, resetAt: n
   response.headers.set("RateLimit-Policy", `${limit};w=${windowSec}`)
 }
 
-/**
- * Rewrite absolute paths in HTML responses when behind HA ingress.
- * The ingress proxy maps /{ingressPath}/* → http://addon:port/*
- * but if the HTML contains absolute paths like href="/tasks" or src="/_astro/page.js",
- * the browser resolves them against the HA root, bypassing ingress → 404.
- *
- * This rewrites ALL href="/...", src="/...", and action="/..." attributes
- * to include the ingress path prefix.
- */
-async function rewriteIngressPaths(response: Response, ingressPath: string): Promise<Response> {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  // NOTE: CSS url() paths are rewritten at BUILD TIME by the
-  // fontsource-relative-paths Vite plugin in astro.config.mjs.
-  // No runtime CSS rewriting needed.
-
-  if (!contentType.includes("text/html")) return response;
-
-  // Guard: skip rewriting excessively large responses (>5MB) to prevent OOM.
-  // Normal pages are <500KB; anything larger is likely a data export or error.
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > 5 * 1024 * 1024) return response;
-
-  const html = await response.text();
-
-  // Double-check size after reading (content-length may be absent/wrong)
-  if (html.length > 5 * 1024 * 1024) {
-    return new Response(html, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
-  }
-
-  // Inject runtime ingress path for client-side JS (must come before any scripts)
-  const ingressScript = `<script>window.__ingress_path="${ingressPath}";</script>`;
-
-  // Rewrite absolute paths in HTML attributes: href="/...", src="/...", action="/..."
-  // Matches: href="/path", src="/path", action="/path" (with double or single quotes)
-  // Does NOT match: href="//cdn.example.com" (protocol-relative), href="http://..." (absolute URL)
-  const rewritten = html
-    .replace("<head>", `<head>${ingressScript}`)
-    .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`);
-
-  return new Response(rewritten, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
+function isPinRoute(path: string) {
+  return path === "/api/task-pins" || path === "/pinned"
 }
 
-export const onRequest: MiddlewareHandler = async ({ request, locals }, next) => {
+const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity"])
+const mentionPaths = new Set(["/api/comment-people", "/api/mention-inbox", "/mention-inbox"])
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
+const draftPath = "/api/task-drafts"
+const inactivityApiPath = "/api/task-inactivity"
+const inactivityPagePath = "/inactivity"
+const labelCleanupPath = "/api/labels/cleanup"
+const commentPaths = new Set(["/api/tasks/[id]/comments", "/api/tasks/[id]/comments/[commentId]"])
+const reactionPaths = new Set([
+  "/api/tasks/reaction-counts",
+  "/api/tasks/[id]/reactions",
+  "/api/tasks/[id]/reactions/[reactionId]",
+  "/api/tasks/[id]/comments/[commentId]/reactions",
+  "/api/tasks/[id]/comments/[commentId]/reactions/[reactionId]",
+])
+
+export const onRequest: MiddlewareHandler = async (context, next) => {
+  const { request, routePattern, url } = context
+  const requestUrl = new URL(request.url)
+  const requestPath = requestUrl.pathname
+  const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
+  const onlineReadRoute = onlineReadPaths.has(routePattern) || onlineReadPaths.has(url.pathname)
+  const mentionRoute = mentionPaths.has(routePattern) || mentionPaths.has(url.pathname)
+  const draftRoute = routePattern === draftPath || url.pathname === draftPath
+  const inactivityApi = routePattern === inactivityApiPath || url.pathname === inactivityApiPath
+  const inactivityPage = routePattern === inactivityPagePath || url.pathname === inactivityPagePath
+  const labelCleanup = routePattern === labelCleanupPath || url.pathname === labelCleanupPath
+  const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
+  const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
+  const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
+  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
+  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute) {
+    return handleRequest(context, next, requestUrl)
+  }
+  if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
+    return new Response(null, { status: requestPath !== draftPath ? 404 : 400, headers: { "cache-control": "private, no-store" } })
+  }
+  if (labelCleanup && (requestPath !== labelCleanupPath || requestUrl.search)) {
+    return Response.json({ ok: false, errorCode: "invalid", detail: "Use the canonical label cleanup path without query parameters." }, {
+      status: requestPath !== labelCleanupPath ? 404 : 400, headers: { "cache-control": "private, no-store" },
+    })
+  }
+  if ((inactivityApi && requestPath !== inactivityApiPath) || (inactivityPage && requestPath !== inactivityPagePath)) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
+  }
+  if (inactivityApi && requestUrl.search) {
+    return new Response(null, { status: 400, headers: { "cache-control": "private, no-store" } })
+  }
+  // Astro matches decoded paths, while the agent guard checks the original request path.
+  if (((onlineReadPaths.has(routePattern) || mentionPaths.has(routePattern)) && requestPath !== routePattern) ||
+      (taskHistoryRoute && !hasTaskHistoryPath) ||
+      (isPinRoute(routePattern) && routePattern !== url.pathname)) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
+  }
+  let response: Response
+  try {
+    response = await handleRequest(context, next, requestUrl, privateTaskRoute)
+  } catch (error) {
+    if (!labelCleanup) throw error
+    return Response.json({ ok: false, errorCode: "unavailable", detail: "Could not verify label cleanup. Try again." }, {
+      status: 503, headers: { "cache-control": "private, no-store" },
+    })
+  }
+  if (labelCleanup && response.status >= 400) {
+    const codes: Record<number, string> = {
+      400: "invalid", 401: "denied", 403: "denied", 405: "method", 413: "tooLarge", 415: "media",
+      429: "busy", 499: "cancelled", 503: "unavailable",
+    }
+    let errorCode = codes[response.status] ?? "unavailable"
+    if (response.status === 409) {
+      const payload = await response.clone().json().catch(() => null)
+      if (payload?.errorCode === "stale" || payload?.errorCode === "blocked") errorCode = payload.errorCode
+    }
+    const headers = new Headers(response.headers)
+    headers.set("cache-control", "private, no-store")
+    headers.set("content-type", "application/json")
+    headers.delete("content-length")
+    return Response.json({ ok: false, errorCode, detail: "Review unused labels again with a current administrator session." }, {
+      status: response.status, headers,
+    })
+  }
+  if (!participantRoute || !response.headers.has("cache-control")) {
+    const commentSuccess = commentPaths.has(routePattern) && response.ok
+    response.headers.set("cache-control", commentSuccess ? "no-store" : "private, no-store")
+  }
+  return response
+}
+
+async function handleRequest({ request, locals, routePattern }: Parameters<MiddlewareHandler>[0],
+  next: Parameters<MiddlewareHandler>[1], url: URL, privatePersonalRoute = false) {
   const startTime = Date.now();
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const commentRoute = commentPaths.has(routePattern)
+  const participantRoute = commentRoute || reactionPaths.has(routePattern)
+  const privateLog = privatePersonalRoute || participantRoute
+  const logPath = participantRoute ? routePattern : url.pathname
+  const requestId = (privateLog ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
+  locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
   const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
   const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
-  const url = new URL(request.url);
+  const databaseExportPath = "/api/export/database.sqlite"
+  // Older workers bypass caching only for the canonical export path.
+  if (routePattern === databaseExportPath && url.pathname !== databaseExportPath) {
+    return apiProblem({
+      status: 404,
+      detail: "Database download not found.",
+      extraHeaders: { "cache-control": "private, no-store" },
+    })
+  }
+  // Astro can route a decoded API namespace that the raw-path scope checks would miss.
+  if (routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) {
+    return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
+  }
   const method = request.method.toUpperCase();
   const isHealthCheck = url.pathname === "/api/health" && (method === "GET" || method === "HEAD");
 
@@ -290,8 +354,6 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
     });
   }
 
-  // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  initHAIntegrations().catch(() => {});
   // Browser requests without verified transport still require same-origin proof.
   if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && url.pathname.startsWith("/api/")) {
     const origin = request.headers.get("origin");
@@ -305,13 +367,39 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
         domain: "security",
         component: "middleware",
         request_id: requestId,
-        message: `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
+        message: privatePersonalRoute ? "Private task origin check failed" :
+          participantRoute ? `Origin check failed for ${logPath}` :
+          `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
       });
       return new Response(
         JSON.stringify({ error: "CSRF origin mismatch" }),
         { status: 403, headers: { "content-type": "application/json" } }
       );
     }
+  }
+
+  const unavailableBoard = rejectBoardSelectionInUrl(url, routePattern, method)
+  if (unavailableBoard) return unavailableBoard
+
+  let databaseAvailable = true
+  try {
+    const schemaCheck = ensureDatabaseSchemaSupported()
+    if (schemaCheck) await schemaCheck
+  } catch {
+    if (!isHealthCheck) {
+      return apiProblem({
+        status: 503,
+        detail: "The database is unavailable. Check the Meitheal startup log or the health endpoint.",
+        extraHeaders: { "cache-control": "private, no-store" },
+      })
+    }
+    databaseAvailable = false
+  }
+
+  // Lazy-init only after accepting the caller. Do not block on the HA connection.
+  if (databaseAvailable) {
+    initHAIntegrations().catch(() => {})
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
   }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
@@ -323,7 +411,7 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
     locals.timezone = _settingsCache.timezone;
     locals.weekStart = _settingsCache.weekStart;
     locals.dateFormat = _settingsCache.dateFormat as DateFormat;
-  } else {
+  } else if (databaseAvailable) {
     try {
       await ensureSchema();
       const db = getPersistenceClient();
@@ -342,16 +430,32 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
 
   const principal = resolvedAgent ? `agent:${resolvedAgent.tokenId}` :
     hassUserId ? `ha:${hassUserId}` : undefined
-  const retryKey = await taskRetryKey(request, url, principal)
-  if (retryKey instanceof Response) return retryKey
-  locals.taskRetryKey = retryKey
+  const replayBodySignal = commentRoute && request.headers.has("idempotency-key") ? taskParticipantBodySignal(request) : undefined
+  // Recheck the rendered account before processing mention writes or returning a durable receipt.
+  const commentMentionWrite = commentRoute && (
+    (method === "POST" && request.headers.has(commentAttemptHeader)) ||
+    ((method === "POST" || method === "PATCH") && request.headers.has(commentMentionContextHeader))
+  )
+  const retryKey = privatePersonalRoute || commentMentionWrite ? undefined : await taskRetryKey(request, url, principal, replayBodySignal)
+  if (retryKey instanceof Response && !commentRoute) return retryKey
+  locals.taskRetryKey = typeof retryKey === "string" ? retryKey : undefined
 
   const securityHeaders = buildSecurityHeaders(behindIngress, import.meta.env.DEV);
-  let response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+  let response: Response
+  if (retryKey instanceof Response) {
+    response = retryKey
+  } else if (retryKey && commentRoute && !await hasCurrentTaskParticipant(locals, request.signal, true)) {
+    response = activeParticipantRequired()
+  } else {
+    response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+  }
 
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
-    response = await rewriteIngressPaths(response, ingressPath);
+    response = await rewriteIngressHtml(response, ingressPath, {
+      wait: transport?.waitForHtmlDrain,
+      signal: request.signal,
+    })
     // Echo ingress path as response header so client-side JS can read it
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);
@@ -383,17 +487,18 @@ export const onRequest: MiddlewareHandler = async ({ request, locals }, next) =>
         domain: "observability",
         component: "middleware",
         request_id: requestId,
-        trace_id: locals.traceId,
-        span_id: locals.spanId,
-        message: `${request.method} ${url.pathname} → ${response.status} (${elapsed}ms)`,
+        ...(!privateLog ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
+        message: `${request.method} ${logPath} → ${response.status} (${elapsed}ms)`,
         metadata: {
           method: request.method,
-          path: url.pathname,
+          path: logPath,
           status: response.status,
           latency_ms: elapsed,
-          automation_source: automationSource,
-          ...(agentId ? { agent_id: agentId } : {}),
-          ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+          ...(!privateLog ? {
+            automation_source: automationSource,
+            ...(agentId ? { agent_id: agentId } : {}),
+            ...(locals.hassUserId ? { ha_user_id: locals.hassUserId } : {}),
+          } : {}),
         },
       })
     } else if (elapsed > 1000) {

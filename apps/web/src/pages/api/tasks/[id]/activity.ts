@@ -26,17 +26,8 @@ export const GET: APIRoute = async ({ params, url }) => {
     const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit")) || 100), 500)
     const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
-    const activity = await repo.getActivityLog(params.id!, limit, offset)
-
-    // Get total count for complete pagination UX
-    const client = getPersistenceClient()
-    const countResult = await client.execute({
-      sql: "SELECT COUNT(*) as total FROM task_activity_log WHERE task_id = ?",
-      args: [params.id!],
-    })
-    const total = Number((countResult.rows[0] as Record<string, unknown>)?.total ?? 0)
-
-    return apiJson({ activity, total, limit, offset })
+    const history = await repo.getActivityLog(params.id!, limit, offset)
+    return apiJson({ ...history, limit, offset })
   } catch (err) {
     logger.log("error", {
       event: "api.activity.get.failed",

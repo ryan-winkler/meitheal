@@ -57,7 +57,7 @@ const presets = [
 ]
 ---
 
-<div id="rules-lenses-settings">
+<div id="settings-rules-panel">
   <!-- Preset Quick-Apply -->
   <SettingsPanelCard title={t("settings.rules_presets_title", locale)} subtitle={t("settings.rules_presets_subtitle", locale)}>
     <div class="rules-presets" id="rules-presets">
@@ -82,9 +82,9 @@ const presets = [
       <button class="btn btn-ghost btn-sm" id="rules-export-btn" type="button" title="Export rules and framework configs as JSON">
         {t("settings.rules_export", locale)}
       </button>
-      <label class="btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
+      <label class="settings-file-picker btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
         {t("settings.rules_import", locale)}
-        <input type="file" id="rules-import-input" accept=".json" hidden />
+        <input type="file" id="rules-import-input" accept=".json" />
       </label>
       <button class="btn btn-accent btn-sm" id="fw-create-btn" type="button" title="Create a custom evaluation framework">
         {t("settings.rules_create_framework", locale)}
@@ -141,7 +141,7 @@ const presets = [
                   <strong>{cap.label}</strong>
                   <small>{cap.description}</small>
                 </span>
-                <label class="toggle-label">
+                <span class="toggle-label">
                   <input
                     type="checkbox"
                     class="rules-ai-check"
@@ -149,7 +149,7 @@ const presets = [
                     data-capability={cap.key}
                   />
                   <span class="toggle-slider"></span>
-                </label>
+                </span>
               </label>
             ))}
           </div>

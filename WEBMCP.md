@@ -6,14 +6,14 @@ Meitheal exposes a scoped MCP endpoint for external clients. The optional Home A
 | --- | --- |
 | App MCP | Send JSON-RPC to `POST /api/mcp` with a Meitheal bearer token. Run `tools/list` to see which tools the token can call. |
 | Core LLM API | Install the Core integration, then select **Meitheal Tasks** in the Home Assistant conversation agent’s LLM API settings. |
-| A2A | The agent card and protocol endpoints are experimental. They provide discovery and response stubs. |
-| WebMCP | Browser-side registration remains experimental. |
+| A2A | The experimental agent card describes discovery. Message execution and task management are unavailable. |
+| WebMCP | Opt in to experimental read-only browser tools in Settings: search task titles and open a Tasks view. A compatible browser is required. |
 
 ## App MCP
 
 Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. For example, reading a task also requires `tasks:read`. Title-based completion requires `search:read` and `tasks:write`.
 
-Send an `Authorization: Bearer` header with `initialize`, `tools/list` and `tools/call`. The App serves discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller.
+Send an `Authorization: Bearer` header on each MCP request. Use `server/discover` with MCP 2026-07-28 or `initialize` with an older client, followed by `tools/list` and `tools/call`. The App serves live discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller. Saving the MCP toggle off disables discovery and tool calls.
 
 ## Home Assistant Core
 

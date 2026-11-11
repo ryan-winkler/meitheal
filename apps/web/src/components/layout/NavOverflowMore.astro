@@ -1,0 +1,26 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  id: string
+  list?: boolean
+  locale?: Locale
+}
+const { id, list = false, locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en" } = Astro.props
+const Menu = list ? "ul" : "div"
+---
+
+<details class="nav-overflow__more" data-nav-overflow-more hidden>
+  <summary class="nav-overflow__toggle" aria-controls={id}>
+    <span>{t("nav.more", locale)}</span>
+    <Icon name="chevron-down" size={14} />
+  </summary>
+  <Menu id={id} class="nav-overflow__menu" data-nav-overflow-menu
+    role={list ? undefined : "group"} aria-label={t(list ? "nav.more" : "nav.more_views", locale)} />
+</details>
+
+<script>
+  import "@lib/nav-overflow-controller"
+</script>

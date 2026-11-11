@@ -103,29 +103,15 @@ export async function recordTaskCompletion(points = 0): Promise<GamificationStat
     ? Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
     : 0
 
-  // Check if today already has a record
-  const todayResult = await client.execute({
-    sql: "SELECT completed_count, streak_count, points FROM gamification_stats WHERE date = ? LIMIT 1",
-    args: [today],
+  // Atomic increments avoid losing simultaneous completions from different callers.
+  await client.execute({
+    sql: `INSERT INTO gamification_stats(date, completed_count, streak_count, points)
+          VALUES(?, 1, ?, ?)
+          ON CONFLICT(date) DO UPDATE SET
+            completed_count = completed_count + 1,
+            points = points + excluded.points`,
+    args: [today, prevStreak > 0 ? prevStreak + 1 : 1, points],
   })
-
-  if (todayResult.rows.length > 0) {
-    // Update existing record
-    const row = todayResult.rows[0] as Record<string, unknown>
-    const newCount = Number(row.completed_count) + 1
-    const newPoints = Number(row.points) + points
-    await client.execute({
-      sql: "UPDATE gamification_stats SET completed_count = ?, points = ? WHERE date = ?",
-      args: [newCount, newPoints, today],
-    })
-  } else {
-    // New day — streak continues if yesterday had completions
-    const newStreak = prevStreak > 0 ? prevStreak + 1 : 1
-    await client.execute({
-      sql: "INSERT INTO gamification_stats(date, completed_count, streak_count, points) VALUES(?, 1, ?, ?)",
-      args: [today, newStreak, points],
-    })
-  }
 
   return getStats()
 }

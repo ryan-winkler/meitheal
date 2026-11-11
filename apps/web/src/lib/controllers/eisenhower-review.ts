@@ -53,7 +53,7 @@ let reviewStats = { promoted: 0, archived: 0, deleted: 0, skipped: 0 }
 // ── Public API ────────────────────────────────────────────────────────────
 
 export async function startReview(): Promise<void> {
-  const page = document.getElementById("eisenhower-page")
+  const page = document.getElementById("eisenhower-shell")
   if (!page) return
 
   reviewTasks = []

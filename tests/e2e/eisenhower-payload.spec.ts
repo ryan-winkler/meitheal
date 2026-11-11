@@ -16,7 +16,7 @@ const scoring = { rice: { reach: 9, confidence: 0.8 }, retained: { note: "Keep u
 for (const failure of ["unavailable", "network", "invalid-json", "array", "scalar", "missing", "wrong-task"] as const) {
   test(`triage preserves scoring and retry inputs when metadata is ${failure}`, async ({ page, request }) => {
     const created = await request.post("/api/tasks", { data: {
-      title: `Eisenhower metadata ${randomUUID()}`, status: "open", urgency: 0, importance: 0,
+      title: `Eisenhower metadata ${randomUUID()}`, status: "pending", urgency: 0, importance: 0,
       framework_payload: JSON.stringify(scoring),
     } })
     expect(created.status(), await created.text()).toBe(201)
@@ -55,26 +55,25 @@ for (const failure of ["unavailable", "network", "invalid-json", "array", "scala
       expect(JSON.parse(unchanged.framework_payload)).toEqual(scoring)
       expect(writes).toEqual([])
       await expect(page.locator("#triage-overlay")).toBeVisible()
-      await expect(page.locator("#toast-container .toast.error").first()).toBeVisible()
+      await expect(page.locator("#toast-container .toast.error")).toBeVisible()
       await expect(page.locator("#triage-urgency")).toHaveValue("4")
       await expect(page.locator("#triage-importance")).toHaveValue("5")
       await expect(page.locator("#triage-delay-impact")).toHaveValue("critical")
       await expect(page.locator('input[name="triage-interest"][value="engaging"]')).toBeChecked()
       rejectRead = false
-      const responsePromise = page.waitForResponse(response => response.url().endsWith(path) && response.request().method() === "PUT")
       await page.locator('[data-action="triage-save"]').click()
-      expect((await responsePromise).status()).toBe(200)
       await expect(page.locator("#triage-overlay")).toBeHidden()
       const saved = await (await request.get(path)).json()
+      const list = await (await request.get("/api/tasks")).json()
+      expect(list.tasks.find((row: { id: string }) => row.id === task.id)).toMatchObject({ urgency: 4, importance: 5 })
       expect(JSON.parse(saved.framework_payload)).toEqual({ ...scoring, delay_impact: "critical", interest_tag: "engaging" })
-      expect(writes.length).toBeGreaterThan(0)
-      for (const write of writes) expect(write).toMatchObject({ urgency: 4, importance: 5 })
+      expect(writes).toHaveLength(1)
     } finally { await removeFixtureTask(request, path) }
   })
 }
 
 test("triage adds metadata when the task has no existing framework values", async ({ page, request }) => {
-  const created = await request.post("/api/tasks", { data: { title: `Empty framework ${randomUUID()}`, status: "open", urgency: 0, importance: 0 } })
+  const created = await request.post("/api/tasks", { data: { title: `Empty framework ${randomUUID()}`, status: "pending", urgency: 0, importance: 0 } })
   expect(created.status()).toBe(201)
   const task = await created.json()
   const path = `/api/tasks/${task.id}`
@@ -95,9 +94,74 @@ test("triage adds metadata when the task has no existing framework values", asyn
   } finally { await removeFixtureTask(request, path) }
 })
 
+for (const action of ["promote", "archive", "delete"] as const) {
+  test(`review ${action} never replaces scoring when its optional metadata read fails`, async ({ page, request }) => {
+    const created = await request.post("/api/tasks", { data: {
+      title: `Review metadata ${randomUUID()}`, urgency: 1, importance: 1, framework_payload: JSON.stringify(scoring),
+    } })
+    expect(created.status()).toBe(201)
+    const task = await created.json()
+    const path = `/api/tasks/${task.id}`
+    let metadataReads = 0
+    let metadataWrites = 0
+    let primaryWrites = 0
+    try {
+      await page.route(`**${path}`, async route => {
+        const method = route.request().method()
+        if (method === "GET") { metadataReads++; return route.fulfill({ status: 503, json: { error: "Temporary metadata failure" } }) }
+        if (method === "PUT" && route.request().postDataJSON().framework_payload) metadataWrites++
+        else if (method === "PUT" || method === "DELETE") primaryWrites++
+        await route.continue()
+      })
+      await page.goto("/eisenhower")
+      await page.locator('[data-action="start-review"]').click()
+      await expect(page.locator("#review-task-name")).toContainText(task.title)
+      await page.locator(`[data-action="review-${action}"]`).click()
+      await expect(page.locator("#review-overlay")).toBeHidden()
+      expect(primaryWrites).toBe(1)
+      expect(metadataWrites).toBe(0)
+      expect(metadataReads).toBe(action === "delete" ? 0 : 1)
+      const response = await request.get(path)
+      if (action === "delete") expect(response.status()).toBe(404)
+      else {
+        const saved = await response.json()
+        expect(JSON.parse(saved.framework_payload)).toEqual(scoring)
+        if (action === "archive") expect(saved.status).toBe("complete")
+        else expect(saved).toMatchObject({ urgency: 5, importance: 1 })
+      }
+    } finally { await removeFixtureTask(request, path) }
+  })
+}
+
+test("review reports a rejected primary action without trying metadata or advancing", async ({ page, request }) => {
+  const created = await request.post("/api/tasks", { data: {
+    title: `Rejected review ${randomUUID()}`, urgency: 1, importance: 1, framework_payload: JSON.stringify(scoring),
+  } })
+  expect(created.status()).toBe(201)
+  const task = await created.json()
+  const path = `/api/tasks/${task.id}`
+  let reads = 0
+  let writes = 0
+  try {
+    await page.route(`**${path}`, async route => {
+      if (route.request().method() === "GET") reads++
+      if (route.request().method() === "PUT") { writes++; return route.fulfill({ status: 503, json: { error: "Rejected primary action" } }) }
+      await route.continue()
+    })
+    await page.goto("/eisenhower")
+    await page.locator('[data-action="start-review"]').click()
+    await page.locator('[data-action="review-promote"]').click()
+    await expect(page.locator("#toast-container .toast.error")).toBeVisible()
+    await expect(page.locator("#review-overlay")).toBeVisible()
+    expect(writes).toBe(1)
+    expect(reads).toBe(0)
+    expect(JSON.parse((await (await request.get(path)).json()).framework_payload)).toEqual(scoring)
+  } finally { await removeFixtureTask(request, path) }
+})
+
 test("closing triage while its metadata read is pending prevents a late save", async ({ page, request }) => {
   const created = await request.post("/api/tasks", { data: {
-    title: `Retired metadata ${randomUUID()}`, status: "open", urgency: 0, importance: 0,
+    title: `Retired metadata ${randomUUID()}`, status: "pending", urgency: 0, importance: 0,
     framework_payload: JSON.stringify(scoring),
   } })
   expect(created.status()).toBe(201)

@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError, apiJson } from "../../../../lib/api-response"
@@ -19,8 +20,11 @@ const logger = createLogger({
  * Competitive parity: Jira, Asana, Linear all have "Clone/Duplicate" actions.
  * Copies all fields except id, created_at, updated_at, and calendar_sync_state.
  */
-export const POST: APIRoute = async ({ params }) => {
+export const POST: APIRoute = async ({ params, request }) => {
     try {
+        const boardSelection = await rejectBoardSelectionInJson(request)
+        if (boardSelection) return boardSelection
+
         await ensureSchema()
         const repo = new TaskRepository(getPersistenceClient())
         const sourceId = params.id!
@@ -31,11 +35,10 @@ export const POST: APIRoute = async ({ params }) => {
             return apiError("Task not found", 404)
         }
 
-        const ticket_number = await repo.getNextTicketNumber()
         const newTitle = `${String(row.title)} (copy)`
         const newId = crypto.randomUUID()
 
-        await repo.createTask({
+        const ticket_number = await repo.createTask({
             id: newId,
             title: newTitle,
             description: row.description ? String(row.description) : "",
@@ -53,7 +56,6 @@ export const POST: APIRoute = async ({ params }) => {
             color: row.color ? String(row.color) : null,
             is_favorite: row.is_favorite ? Number(row.is_favorite) : 0,
             task_type: row.task_type ? String(row.task_type) : "task",
-            ticket_number,
             assigned_to: null,
         })
 

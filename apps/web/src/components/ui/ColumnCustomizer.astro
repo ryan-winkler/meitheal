@@ -54,147 +54,91 @@ const { class: className } = Astro.props
 </div>
 
 <script>
-  const COLUMN_PREFS_KEY = "meitheal-column-preferences"
+  import { loadTableFilterState } from "@lib/filter-state"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_COLUMN_PREFS_KEY } from "@lib/table-registry"
 
-  /** Column definitions — id must match the CSS class on <th> */
-  const ALL_COLUMNS = [
-    { id: "key", label: "Key", alwaysVisible: false, defaultVisible: true },
-    { id: "title", label: "Title", alwaysVisible: true, defaultVisible: true },
-    { id: "type", label: "Type", alwaysVisible: false, defaultVisible: true },
-    { id: "status", label: "Status", alwaysVisible: false, defaultVisible: true },
-    { id: "priority", label: "Priority", alwaysVisible: false, defaultVisible: true },
-    { id: "due-date", label: "Due Date", alwaysVisible: false, defaultVisible: true },
-    { id: "rice", label: "RICE", alwaysVisible: false, defaultVisible: true },
-    { id: "calendar", label: "Calendar", alwaysVisible: false, defaultVisible: true },
-    { id: "custom-fields", label: "Custom Fields", alwaysVisible: false, defaultVisible: true },
-    { id: "assigned", label: "Assigned", alwaysVisible: false, defaultVisible: true },
-    { id: "labels", label: "Labels", alwaysVisible: false, defaultVisible: true },
-  ]
+  pageLifecycle.onPageLoad(signal => {
+    const wrapper = document.querySelector<HTMLElement>(".column-customizer")
+    const toggle = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-toggle")
+    const panel = wrapper?.querySelector<HTMLElement>("#column-customizer-panel")
+    const list = wrapper?.querySelector<HTMLUListElement>("#column-customizer-list")
+    const closeBtn = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-close")
+    const resetBtn = wrapper?.querySelector<HTMLButtonElement>("#column-customizer-reset")
+    if (!wrapper || !toggle || !panel || !list || !closeBtn || !resetBtn || wrapper.dataset.initialized) return
+    wrapper.dataset.initialized = "true"
+    signal.addEventListener("abort", () => { delete wrapper.dataset.initialized }, { once: true })
 
-  function loadPrefs(): Record<string, boolean> {
-    try {
-      return JSON.parse(localStorage.getItem(COLUMN_PREFS_KEY) ?? "{}")
-    } catch {
-      return {}
+    function close(restoreFocus = false) {
+      toggle!.setAttribute("aria-expanded", "false")
+      if (typeof panel!.hidePopover === "function" && panel!.matches(":popover-open")) panel!.hidePopover()
+      panel!.removeAttribute("popover")
+      panel!.classList.add("hidden")
+      if (restoreFocus) toggle!.focus()
     }
-  }
 
-  function savePrefs(prefs: Record<string, boolean>) {
-    localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(prefs))
-  }
+    function updateColumns(visible: string[]) {
+      try {
+        localStorage.setItem(TABLE_COLUMN_PREFS_KEY, JSON.stringify(Object.fromEntries(
+          TABLE_COLUMNS.map(column => [column.id, visible.includes(column.id)]),
+        )))
+      } catch { /* storage unavailable */ }
+      document.dispatchEvent(new CustomEvent("meitheal:columns-change", { detail: { visible } }))
+    }
 
-  function getVisibleColumns(): string[] {
-    const prefs = loadPrefs()
-    return ALL_COLUMNS.filter(col => {
-      if (col.alwaysVisible) return true
-      return prefs[col.id] !== undefined ? prefs[col.id] : col.defaultVisible
-    }).map(c => c.id)
-  }
+    function render() {
+      const visible = loadTableFilterState().columns ?? loadTableColumnPreferences()
+      list!.replaceChildren(...TABLE_COLUMNS.map(column => {
+        const item = document.createElement("li")
+        item.className = "column-customizer__item"
+        const label = document.createElement("label")
+        label.className = "column-customizer__label"
+        const checkbox = document.createElement("input")
+        checkbox.type = "checkbox"
+        checkbox.dataset.colId = column.id
+        checkbox.checked = visible.includes(column.id)
+        checkbox.disabled = column.id === "title"
+        label.append(checkbox, column.label)
+        item.append(label)
+        return item
+      }))
+    }
 
-  function applyColumnVisibility(visible: string[]) {
-    const table = document.getElementById("task-table")
-    if (!table) return
-
-    ALL_COLUMNS.forEach(col => {
-      const isVisible = visible.includes(col.id)
-      // Hide/show all cells with the matching class
-      const cells = table.querySelectorAll(`.col-${col.id}`)
-      cells.forEach(cell => {
-        ;(cell as HTMLElement).style.display = isVisible ? "" : "none"
-      })
-    })
-
-    document.dispatchEvent(new CustomEvent("meitheal:columns-change", {
-      detail: { visible }
-    }))
-  }
-
-  function renderColumnList() {
-    const list = document.getElementById("column-customizer-list")
-    if (!list) return
-    list.innerHTML = ""
-
-    const prefs = loadPrefs()
-
-    ALL_COLUMNS.forEach(col => {
-      const li = document.createElement("li")
-      li.className = "column-customizer__item"
-
-      const label = document.createElement("label")
-      label.className = "column-customizer__label"
-
-      const checkbox = document.createElement("input")
-      checkbox.type = "checkbox"
-      checkbox.dataset.colId = col.id
-      checkbox.checked = col.alwaysVisible || (prefs[col.id] !== undefined ? Boolean(prefs[col.id]) : col.defaultVisible)
-      checkbox.disabled = col.alwaysVisible
-
-      const span = document.createElement("span")
-      span.textContent = col.label
-      if (col.alwaysVisible) {
-        span.classList.add("text-text-muted")
+    toggle.addEventListener("click", () => {
+      if (toggle.getAttribute("aria-expanded") === "true") {
+        close()
+        return
       }
-
-      checkbox.addEventListener("change", () => {
-        const currentPrefs = loadPrefs()
-        currentPrefs[col.id] = checkbox.checked
-        savePrefs(currentPrefs)
-        applyColumnVisibility(getVisibleColumns())
-      })
-
-      label.append(checkbox, span)
-      li.appendChild(label)
-      list.appendChild(li)
-    })
-  }
-
-  function initColumnCustomizer() {
-    const wrapper = document.querySelector(".column-customizer")
-    if (!wrapper || (wrapper as HTMLElement).dataset.initialized) return
-    ;(wrapper as HTMLElement).dataset.initialized = "true"
-
-    const toggle = document.getElementById("column-customizer-toggle")
-    const panel = document.getElementById("column-customizer-panel")
-    const closeBtn = document.getElementById("column-customizer-close")
-    const resetBtn = document.getElementById("column-customizer-reset")
-
-    toggle?.addEventListener("click", () => {
-      const expanded = toggle.getAttribute("aria-expanded") === "true"
-      toggle.setAttribute("aria-expanded", String(!expanded))
-      panel?.classList.toggle("hidden")
-      if (!expanded) renderColumnList()
-    })
-
-    closeBtn?.addEventListener("click", () => {
-      toggle?.setAttribute("aria-expanded", "false")
-      panel?.classList.add("hidden")
-    })
-
-    resetBtn?.addEventListener("click", () => {
-      localStorage.removeItem(COLUMN_PREFS_KEY)
-      renderColumnList()
-      applyColumnVisibility(getVisibleColumns())
-    })
-
-    // Click outside to close
-    document.addEventListener("click", (e) => {
-      if (!panel?.classList.contains("hidden") && toggle && panel) {
-        if (!panel.contains(e.target as Node) && !toggle.contains(e.target as Node)) {
-          toggle.setAttribute("aria-expanded", "false")
-          panel.classList.add("hidden")
-        }
+      render()
+      toggle.setAttribute("aria-expanded", "true")
+      panel.classList.remove("hidden")
+      if (matchMedia("(max-width: 540px)").matches && typeof panel.showPopover === "function") {
+        panel.setAttribute("popover", "manual")
+        panel.showPopover()
       }
-    })
-
-    // Apply saved preferences on load
-    applyColumnVisibility(getVisibleColumns())
-  }
-
-  document.addEventListener("DOMContentLoaded", initColumnCustomizer)
-  document.addEventListener("astro:page-load", initColumnCustomizer)
+    }, { signal })
+    closeBtn.addEventListener("click", () => close(true), { signal })
+    list.addEventListener("change", () => {
+      const visible = [...list.querySelectorAll<HTMLInputElement>("input:checked")].map(input => input.dataset.colId ?? "")
+      updateColumns(visible)
+    }, { signal })
+    resetBtn.addEventListener("click", () => {
+      updateColumns(TABLE_COLUMNS.map(column => column.id))
+      render()
+    }, { signal })
+    wrapper.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || panel.classList.contains("hidden")) return
+      event.preventDefault()
+      event.stopPropagation()
+      close(true)
+    }, { signal })
+    document.addEventListener("click", event => {
+      if (!wrapper.contains(event.target as Node)) close()
+    }, { signal })
+  })
 </script>
 
-<style>
+<style is:global>
   .column-customizer {
     position: relative;
     display: inline-flex;
@@ -321,5 +265,15 @@ const { class: className } = Astro.props
   .column-customizer__footer .btn:hover {
     color: var(--text-primary);
     text-decoration: underline;
+  }
+  @media (max-width: 540px) {
+    .column-customizer__panel {
+      position: fixed;
+      inset: auto 12px calc(64px + env(safe-area-inset-bottom)) 12px;
+      width: auto;
+      margin: 0;
+      max-height: calc(100dvh - 96px);
+      box-sizing: border-box;
+    }
   }
 </style>

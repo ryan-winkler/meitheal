@@ -11,17 +11,22 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { formatRegionalDate } from "../lib/date";
+import { calendarDaysFromToday, formatRegionalDate } from "../lib/date";
 import { formatTicketKey } from "../lib/ticket-key";
+import { buildTaskPath } from "../lib/task-detail-handoff"
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
+import { TaskInactivityRepository } from "@domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
+import { readTableFilterParams } from "../lib/filter-state"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
 import AreaSelector from "../components/layout/AreaSelector.astro";
@@ -47,8 +52,10 @@ const heading = renderedView === "kanban" ? t("kanban.title", locale)
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
 currentUrl.pathname = "/tasks"
-if (currentUrl.searchParams.has("boardRefresh")) {
+if (currentUrl.searchParams.has("boardRefresh") ||
+    (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
+  currentUrl.searchParams.delete("tableRefresh")
   Astro.response.headers.set("cache-control", "no-store")
 }
 
@@ -91,10 +98,43 @@ let columns: {
   wipLimit: number;
   id: string;
 }[] = [];
+let workflowColumnsUnavailable = false
 try {
-  if (renderedView === "kanban") columns = await repo.getKanbanLanes();
+  if (renderedView === "kanban" || renderedView === "table") columns = await repo.getKanbanLanes()
 } catch {
-  /* fallback to defaults */
+  workflowColumnsUnavailable = true
+}
+
+if (renderedView === "table" && workflowColumnsUnavailable) {
+  Astro.response.headers.set("Cache-Control", "no-store")
+}
+
+// Keep the last applied results when a requested workflow lookup fails during a refresh.
+if (renderedView === "table" && workflowColumnsUnavailable &&
+    Astro.url.searchParams.has("tableRefresh") && readTableFilterParams(Astro.url.searchParams).laneIds?.length) {
+  return new Response("Workflow columns could not load.", { status: 503, headers: { "Cache-Control": "no-store" } })
+}
+
+let tableTasks: TaskViewItem[] = []
+let tableCreationTimezone: string | undefined
+let tableReadFailed = false
+if (renderedView === "table") {
+  const filters = readTableFilterParams(Astro.url.searchParams)
+  try {
+    tableTasks = (await getTasksForView({ requireAvailable: true })).tasks
+    if (filters.createdFrom || filters.createdThrough) {
+      const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
+      if (typeof timezone === "string") tableCreationTimezone = timezone
+    }
+  } catch {
+    const headers = { "Cache-Control": "no-store" }
+    if (Astro.url.searchParams.has("tableRefresh")) {
+      return new Response(t("table.refresh_failed", locale), { status: 503, headers })
+    }
+    tableReadFailed = true
+    Astro.response.status = 503
+    Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
+  }
 }
 
 // Fallback if no lanes in DB
@@ -169,6 +209,8 @@ const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
 const kanbanPages = renderedView === "kanban"
   ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams).catch(() => null)
   : null
+const inactivityEnabled = renderedView === "kanban" &&
+  await new TaskInactivityRepository(db).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
@@ -223,6 +265,13 @@ try {
     />
     <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="toolbar" aria-label="Kanban view actions">
+      <a href="/deferred" class="kanban-toolbar-btn" data-astro-prefetch="false">
+        {t("deferral.title", locale)}
+      </a>
+      <a href={kanbanFilters.area ? `/inactivity?area=${encodeURIComponent(kanbanFilters.area)}` : "/inactivity"}
+        class="kanban-toolbar-btn" data-inactivity-link data-astro-prefetch="false">
+        {t("inactivity.title", locale)}
+      </a>
       <button
         type="button"
         class="kanban-toolbar-btn"
@@ -352,8 +401,13 @@ try {
     id="kanban-board"
     class="kanban-board"
     data-available={String(Boolean(kanbanPages))}
+    data-inactivity-enabled={String(inactivityEnabled)}
+    data-inactivity-ready={t("inactivity.ready", locale)}
+    data-inactivity-upcoming={t("inactivity.upcoming", locale)}
+    data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
     data-backlog-mode={backlogMode}
+    data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
   >
     {
@@ -435,8 +489,10 @@ try {
               {/* Flat (non-grouped) card rendering */}
               {colTasks.map((task) => {
                 const p = Number(task.priority ?? 3);
+                const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
+                const promoted = Number(task.is_promoted) === 1
                 const fp =
                   typeof task.framework_payload === "string"
                     ? JSON.parse(String(task.framework_payload))
@@ -457,12 +513,18 @@ try {
                   : null;
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
+                // Compare date-only due dates as calendar days in the user's timezone.
+                const dueDays = task.due_date
+                  ? calendarDaysFromToday(String(task.due_date), timezone || "Europe/Dublin")
+                  : null;
                 const dueStatus = dueDate
-                  ? dueDate < today
-                    ? "overdue"
-                    : dueDate.toDateString() === new Date().toDateString()
-                      ? "today"
-                      : "upcoming"
+                  ? dueDays !== null
+                    ? dueDays < 0 ? "overdue" : dueDays === 0 ? "today" : "upcoming"
+                    : dueDate < today
+                      ? "overdue"
+                      : dueDate.toDateString() === new Date().toDateString()
+                        ? "today"
+                        : "upcoming"
                   : null;
                 return (
                   <div
@@ -476,7 +538,10 @@ try {
                         : ""
                     }
                     data-priority={String(p)}
+                    data-promoted={String(promoted)}
                     data-status={String(task.status)}
+                    data-deferral-version={task.task_version}
+                    data-deferral-revision={task.deferral_revision ?? ""}
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
                     data-area={String(task.area_id ?? "default")}
@@ -488,15 +553,16 @@ try {
                   >
                     <div class="kanban-card-header">
                       <div class="kanban-card-title">
-                        <button
-                          type="button"
+                        <a
+                          href={buildTaskPath(String(task.id))}
+                          data-task-detail-link={String(task.id)}
                           class="card-open-btn"
                           data-id={String(task.id)}
-                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}`}
+                          aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}${promoted ? `, ${t("kanban.promoted", locale)}` : ""}`}
                         >
                           <TaskTypeIcon type={tt} size={16} class="kanban-type-icon" />
-                          <span class="kanban-ticket-key">{formatTicketKey(Number(task.ticket_number))}</span>
-                        </button>
+                          <span class="kanban-ticket-key">{ticketKey}</span>
+                        </a>
                         <span
                           class="kanban-title-text"
                           dir="auto"
@@ -514,6 +580,7 @@ try {
                           ★
                         </span>
                       )}
+                      <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden></span>
                       <button
                         type="button"
                         class="card-action-btn card-more-btn"
@@ -526,6 +593,7 @@ try {
                         ⋯
                       </button>
                     </div>
+                    {promoted && <span class="kanban-promoted" aria-hidden="true">↑ {t("kanban.promoted", locale)}</span>}
                     {/* Attachment Placeholder */}
                     <img
                       class="kanban-attachment hidden"
@@ -540,6 +608,7 @@ try {
                         {String(task.description).length > 80 ? "…" : ""}
                       </div>
                     )}
+                    <div data-inactivity-slot></div>
                     <div class="kanban-card-meta">
                       <span
                         class={`priority-label ${priorityClasses[p] ?? "priority-medium"}`}
@@ -555,8 +624,9 @@ try {
                             : dueStatus === "today"
                               ? "🟡"
                               : "📅"}{" "}
-                          {formatRegionalDate(dueDate, {
+                          {formatRegionalDate(String(task.due_date), {
                             format: dateFormat,
+                            timezone,
                           })}
                         </span>
                       ) : null}
@@ -818,7 +888,13 @@ try {
 
   </div><!-- /tasks-view-kanban -->
   </>}
-  {renderedView === "table" && <TasksTableView />}
+  {renderedView === "table" && <TasksTableView
+    tasks={tableTasks}
+    creationTimezone={tableCreationTimezone}
+    tableReadFailed={tableReadFailed}
+    workflowColumns={workflowColumnsUnavailable ? [] : columns}
+    workflowColumnsUnavailable={workflowColumnsUnavailable}
+  />}
   {renderedView === "calendar" && <TasksCalendarView />}
   {renderedView === "timeline" && <TasksTimelineView />}
 
@@ -1093,13 +1169,26 @@ try {
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
+  [data-inactivity-slot]:empty { display: none; }
+  [data-inactivity-slot]:not(:empty) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .125rem .5rem;
+  }
+  :global(.kanban-inactivity-cue) {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs, .75rem);
+    overflow-wrap: anywhere;
+  }
   .kanban-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
+    border-inline-start: 3px solid var(--card-accent, var(--border));
     border-radius: var(--radius-md);
     padding: 12px;
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
     gap: 8px;
     box-shadow: var(--shadow-sm);
     cursor: grab;
@@ -1147,15 +1236,7 @@ try {
     outline-offset: 2px;
     box-shadow: 0 0 0 4px rgba(var(--accent-rgb, 99, 102, 241), 0.15);
   }
-  .kanban-card::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: 0;
-    inset-block-start: 0;
-    inset-block-end: 0;
-    width: 4px;
-    background-color: var(--card-accent, var(--accent));
-  }
+
   .kanban-card:active {
     cursor: grabbing;
     transform: scale(0.98);
@@ -1214,7 +1295,8 @@ try {
   }
   .priority-label {
     font-size: 11px;
-    color: var(--prio-color, var(--text-muted));
+    color: var(--text-primary);
+    color: color-mix(in srgb, var(--prio-color, var(--text-primary)) 60%, var(--text-primary));
     font-weight: 500;
   }
   /* Semantic metadata classes */
@@ -1332,28 +1414,19 @@ try {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin-top: 8px;
-    padding-top: 8px;
     border-top: 1px solid var(--border);
+    padding-block-start: 8px;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 150ms;
-    background: color-mix(in srgb, var(--bg-card) 85%, transparent);
-    backdrop-filter: blur(4px);
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    margin: 8px -12px -12px;
-    padding: 8px 12px;
   }
   .kanban-card:hover .kanban-card-actions,
   .kanban-card:focus-within .kanban-card-actions {
     opacity: 1;
+    pointer-events: auto;
   }
-  @media (max-width: 768px), (hover: none) {
+  @media (max-width: 768px), (hover: none), (pointer: coarse) {
     .kanban-card-actions {
-      position: static;
-      margin: 4px 0 0;
-      padding: 8px 0 0;
-      background: transparent;
-      backdrop-filter: none;
       opacity: 1;
       pointer-events: auto;
     }
@@ -1425,19 +1498,22 @@ try {
   }
 
   /* Quick action popovers */
-  .quick-action-popover {
+  :global(.quick-action-popover) {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     min-width: 160px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
     padding: 4px;
     animation: popover-in 150ms ease-out;
     transition:
       opacity 150ms ease,
       transform 150ms ease;
   }
-  .quick-action-popover.popover-exiting {
+  :global(.quick-action-popover.popover-exiting) {
     opacity: 0;
     transform: translateY(-4px);
     pointer-events: none;
@@ -1461,7 +1537,7 @@ try {
       opacity: 0.4;
     }
   }
-  .popover-title {
+  :global(.popover-title) {
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
@@ -1469,7 +1545,7 @@ try {
     letter-spacing: 0.5px;
     padding: 6px 8px 4px;
   }
-  .popover-item {
+  :global(.popover-item) {
     display: block;
     width: 100%;
     text-align: left;
@@ -1482,25 +1558,25 @@ try {
     border-radius: var(--radius-sm);
     transition: background 100ms;
   }
-  .popover-item:hover {
+  :global(.popover-item:hover) {
     background: var(--bg-hover);
   }
-  .popover-item.active {
+  :global(.popover-item.active) {
     background: rgba(99, 102, 241, 0.15);
     color: #818cf8;
     font-weight: 600;
   }
 
   /* Color swatch grid */
-  .color-swatch-grid {
+  :global(.color-swatch-grid) {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
     padding: 8px;
   }
-  .color-swatch {
-    width: 28px;
-    height: 28px;
+  :global(.color-swatch) {
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     border: 2px solid transparent;
     cursor: pointer;
@@ -1510,22 +1586,22 @@ try {
       box-shadow 100ms;
     position: relative;
   }
-  .color-swatch:hover {
+  :global(.color-swatch:hover) {
     transform: scale(1.15);
     border-color: var(--text-muted);
     box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
   }
-  .color-swatch:focus-visible {
+  :global(.color-swatch:focus-visible) {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .color-swatch.swatch-active {
+  :global(.color-swatch.swatch-active) {
     border-color: var(--text-primary);
     box-shadow:
       0 0 0 2px var(--bg-card),
       0 0 0 4px var(--text-primary);
   }
-  .color-swatch.swatch-active::after {
+  :global(.color-swatch.swatch-active::after) {
     content: "✓";
     position: absolute;
     inset: 0;
@@ -1537,13 +1613,13 @@ try {
     font-weight: 700;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   }
-  .clear-color-btn {
+  :global(.clear-color-btn) {
     border-top: 1px solid var(--border);
     margin-top: 2px;
     color: var(--text-muted);
     font-size: 12px;
   }
-  .popover-item:focus-visible {
+  :global(.popover-item:focus-visible) {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
@@ -1594,6 +1670,29 @@ try {
     color: var(--warning);
     font-size: 14px;
     flex-shrink: 0;
+  }
+  .kanban-promoted {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+  }
+  .kanban-reaction-count:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    padding: 2px 5px;
+    border-radius: 0.25rem;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+  }
+  .kanban-reaction-count::before {
+    content: "☺";
   }
 
   /* Progress bar */
@@ -1955,6 +2054,7 @@ try {
     .kanban-assignee-badge,
     .kanban-card-due,
     .kanban-card-header,
+    .kanban-card-actions,
     .kanban-inline-add {
       transition: none !important;
     }
@@ -2004,7 +2104,7 @@ try {
     font-weight: 600;
   }
   .kanban-card-due.due-today {
-    color: var(--warning);
+    color: var(--warning-text, var(--warning));
     font-weight: 600;
   }
   .kanban-card-due.due-upcoming {

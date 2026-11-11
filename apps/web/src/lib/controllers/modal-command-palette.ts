@@ -9,17 +9,17 @@ import { createFocusTrap } from "@lib/focus-trap"
 
 export interface CommandPaletteDeps {
   openTaskDetail: (id: string) => void
-  closeTD: () => void
   __signal: AbortSignal
 }
 
 /**
  * Initialise the command palette (Ctrl+K) overlay.
  */
-export function initCommandPalette({ openTaskDetail, closeTD, __signal }: CommandPaletteDeps): void {
+export function initCommandPalette({ openTaskDetail, __signal }: CommandPaletteDeps): void {
   const cpOverlay = document.getElementById(
     "command-palette-overlay",
   ) as HTMLDivElement
+  if (!cpOverlay) return
   const cpSearch = document.getElementById(
     "cp-search",
   ) as HTMLInputElement
@@ -58,14 +58,15 @@ export function initCommandPalette({ openTaskDetail, closeTD, __signal }: Comman
   document.addEventListener(
     "keydown",
     (e) => {
+      if (e.defaultPrevented || tdOverlay?.classList.contains("active")) return
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault()
         if (cpOverlay?.classList.contains("hidden")) openCP()
         else closeCP()
       }
-      if (e.key === "Escape") {
-        if (tdOverlay?.classList.contains("active")) closeTD()
-        if (!cpOverlay?.classList.contains("hidden")) closeCP()
+      if (e.key === "Escape" && !cpOverlay.classList.contains("hidden")) {
+        e.preventDefault()
+        closeCP()
       }
     },
     { signal: __signal },

@@ -61,16 +61,38 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
     return None
 
 
-class MeithealAddTaskHandler(intent.IntentHandler):
+class _MeithealAdminIntent(intent.IntentHandler):
+    """Check the Core caller before using the shared integration credential."""
+
+    platforms = set()
+
+    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+        """Require a current active administrator for Meitheal's custom intents."""
+        user_id = intent_obj.context.user_id
+        user = await intent_obj.hass.auth.async_get_user(user_id) if user_id else None
+        if user is None or not user.is_active or not user.is_admin:
+            raise intent.IntentHandleError(
+                "This Meitheal request requires an active Home Assistant administrator."
+            )
+        return await self._async_handle_admin(intent_obj)
+
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
+        raise NotImplementedError
+
+
+class MeithealAddTaskHandler(_MeithealAdminIntent):
     """Handle 'add X to my tasks' intent."""
 
     intent_type = INTENT_ADD_TASK
     slot_schema = {
         vol.Required("item"): str,
     }
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Create a task from voice command."""
         hass = intent_obj.hass
         item = intent_obj.slots["item"]["value"]
@@ -93,16 +115,17 @@ class MeithealAddTaskHandler(intent.IntentHandler):
             return response
 
 
-class MeithealDoneTaskHandler(intent.IntentHandler):
+class MeithealDoneTaskHandler(_MeithealAdminIntent):
     """Handle 'mark X done' / 'done with X' intent."""
 
     intent_type = INTENT_DONE_TASK
     slot_schema = {
         vol.Required("item"): str,
     }
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Complete a task from voice command."""
         hass = intent_obj.hass
         item = intent_obj.slots["item"]["value"]
@@ -121,17 +144,18 @@ class MeithealDoneTaskHandler(intent.IntentHandler):
         except Exception as err:
             _LOGGER.error("Failed to complete task via intent: %s", err)
             response = intent_obj.create_response()
-            response.async_set_speech(f"Sorry, I couldn't find a task called '{item}'.")
+            response.async_set_speech(f"Sorry, I couldn't complete that task. {err}")
             return response
 
 
-class MeithealShowTasksHandler(intent.IntentHandler):
+class MeithealShowTasksHandler(_MeithealAdminIntent):
     """Handle 'show my tasks' / 'what's on my list' intent."""
 
     intent_type = INTENT_SHOW_TASKS
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """List active tasks."""
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
@@ -159,13 +183,14 @@ class MeithealShowTasksHandler(intent.IntentHandler):
         return response
 
 
-class MeithealOverdueHandler(intent.IntentHandler):
+class MeithealOverdueHandler(_MeithealAdminIntent):
     """Handle 'what's overdue' / 'what's late' intent."""
 
     intent_type = INTENT_OVERDUE
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """List overdue tasks."""
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
@@ -192,13 +217,14 @@ class MeithealOverdueHandler(intent.IntentHandler):
         return response
 
 
-class MeithealTodayHandler(intent.IntentHandler):
+class MeithealTodayHandler(_MeithealAdminIntent):
     """Handle 'today's tasks' / 'what's due today' intent."""
 
     intent_type = INTENT_TODAY
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """List today's tasks."""
         from datetime import datetime, timezone
 
@@ -244,13 +270,14 @@ class MeithealTodayHandler(intent.IntentHandler):
         return response
 
 
-class MeithealSummaryHandler(intent.IntentHandler):
+class MeithealSummaryHandler(_MeithealAdminIntent):
     """Handle 'how many tasks' / 'task count' intent."""
 
     intent_type = INTENT_SUMMARY
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Return task summary counts."""
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
@@ -279,16 +306,17 @@ INTENT_DELETE_TASK = "MeithealDeleteTask"
 INTENT_BRIEFING = "MeithealBriefing"
 
 
-class MeithealDeleteTaskHandler(intent.IntentHandler):
+class MeithealDeleteTaskHandler(_MeithealAdminIntent):
     """Handle 'delete X' / 'remove X from my list' intent."""
 
     intent_type = INTENT_DELETE_TASK
     slot_schema = {
         vol.Required("item"): str,
     }
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Delete a task from voice command."""
         hass = intent_obj.hass
         item = intent_obj.slots["item"]["value"]
@@ -299,20 +327,8 @@ class MeithealDeleteTaskHandler(intent.IntentHandler):
             response.async_set_speech("Sorry, Meitheal is not available right now.")
             return response
 
-        # Find by title
-        task_id = None
-        if coordinator.data:
-            for task in coordinator.data.tasks:
-                if task.title.lower() == item.lower():
-                    task_id = task.id
-                    break
-
-        if not task_id:
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Sorry, I couldn't find a task called '{item}'.")
-            return response
-
         try:
+            task_id = coordinator.resolve_task_title(item)
             await coordinator.async_delete_task(task_id)
             response = intent_obj.create_response()
             response.async_set_speech(f"Deleted '{item}' from your tasks.")
@@ -324,13 +340,14 @@ class MeithealDeleteTaskHandler(intent.IntentHandler):
             return response
 
 
-class MeithealBriefingHandler(intent.IntentHandler):
+class MeithealBriefingHandler(_MeithealAdminIntent):
     """Handle 'good morning' / 'brief me' / 'start my day' intent."""
 
     intent_type = INTENT_BRIEFING
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Provide a daily briefing via voice."""
         from datetime import datetime, timezone
 
@@ -386,7 +403,7 @@ class MeithealBriefingHandler(intent.IntentHandler):
 # Need vol for slot_schema — imported at top of file
 
 
-class MeithealAddTaskPromptHandler(intent.IntentHandler):
+class MeithealAddTaskPromptHandler(_MeithealAdminIntent):
     """Handle bare 'add a task' / 'create a task' — no item slot.
 
     Responds asking what task to add, since user didn't specify one.
@@ -395,9 +412,10 @@ class MeithealAddTaskPromptHandler(intent.IntentHandler):
     """
 
     intent_type = INTENT_ADD_TASK_PROMPT
-    platforms = set()
 
-    async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
+    async def _async_handle_admin(
+        self, intent_obj: intent.Intent
+    ) -> intent.IntentResponse:
         """Prompt user for task name."""
         response = intent_obj.create_response()
         response.async_set_speech(

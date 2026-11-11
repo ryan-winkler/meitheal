@@ -5,6 +5,8 @@
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { showToast } from "@lib/toast"
+import { isDeferralTerminalStatus } from "@domains/tasks/persistence/task-deferral-status"
+import { allowsDeferral, notifyTaskCountsChanged, readDeferralGuard, writeDeferral } from "@lib/deferral-client"
 
 export function initContextMenu(
   board: HTMLElement,
@@ -21,6 +23,44 @@ export function initContextMenu(
   document.body.append(menu)
 
   let trigger: HTMLButtonElement | null = null
+  const pendingPromotions = new Set<string>()
+  let deferralBusy = false
+  const workers = navigator.serviceWorker
+  let workerCheck = allowsDeferral()
+
+  workers?.addEventListener("controllerchange", () => {
+    closeMenu(true)
+    workerCheck = allowsDeferral()
+  }, { signal })
+
+  async function deferCard(card: HTMLElement, id: string, trigger: HTMLButtonElement) {
+    const guard = readDeferralGuard(Number(card.dataset.deferralVersion), card.dataset.deferralRevision || null)
+    if (!guard || deferralBusy || card.dataset.deferralStale) return
+    const next = (card.nextElementSibling ?? card.previousElementSibling) as HTMLElement | null
+    const lane = card.closest<HTMLElement>(".kanban-column")?.dataset.status
+    const focus = { lane, taskId: next?.dataset.id }
+    deferralBusy = true
+    card.setAttribute("aria-busy", "true")
+    try {
+      if (!await allowsDeferral() || signal.aborted || !card.isConnected) return
+      const result = await writeDeferral(id, true, guard, signal)
+      if (result.kind === "saved") notifyTaskCountsChanged(card.dataset.areaId)
+      if (signal.aborted || !card.isConnected) return
+      if (result.kind === "saved") {
+        showToast("deferral.deferred")
+        await refreshBoard(focus)
+      } else if (result.kind === "changed" || result.kind === "uncertain") {
+        card.dataset.deferralStale = "true"
+        board.dispatchEvent(new CustomEvent("kanban:deferral-retry", { bubbles: true, detail: { lane, taskId: id } }))
+      } else {
+        showToast("deferral.failed", "error")
+        trigger.focus()
+      }
+    } finally {
+      deferralBusy = false
+      if (card.isConnected) card.removeAttribute("aria-busy")
+    }
+  }
 
   function closeMenu(restoreFocus = false) {
     const previous = trigger
@@ -59,6 +99,7 @@ export function initContextMenu(
       run()
     }, { signal })
     menu.append(button)
+    return button
   }
 
   board.addEventListener("click", (event) => {
@@ -78,18 +119,47 @@ export function initContextMenu(
     menu.setAttribute("aria-label", btn.title)
     menu.replaceChildren()
 
+    const current = card.closest<HTMLElement>(".kanban-column")
+    const promoted = card.dataset.promoted === "true"
+    if (!pendingPromotions.has(id)) {
+      const action = promoted
+        ? window.mI18n?.get("kanban.demote_card") ?? "Remove promotion"
+        : window.mI18n?.get("kanban.promote_card") ?? "Promote to top"
+      addAction(action, async () => {
+        pendingPromotions.add(id)
+        try {
+          const response = await fetch(buildTaskApiUrl(id), {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ is_promoted: !promoted }),
+            signal,
+          })
+          if (!response.ok) throw new Error("Promotion rejected")
+          if (signal.aborted) return
+          showToast(promoted
+            ? window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"
+            : window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+          const lane = current?.dataset.status
+          await refreshBoard(lane ? { taskId: id, lane, firstPage: !promoted } : { taskId: id })
+        } catch {
+          if (!signal.aborted) showToast(window.mI18n?.get("kanban.promotion_failed") ?? "Couldn’t save the promotion. Try again.", "error")
+        } finally {
+          pendingPromotions.delete(id)
+        }
+      })
+    }
+
     const label = document.createElement("p")
     label.className = "ctx-heading"
     label.textContent = window.mI18n?.get("kanban.move_to") ?? "Move to"
     menu.append(label)
-    const current = card.closest(".kanban-column")
     for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
       if (lane === current) continue
       const title = lane.querySelector(".kanban-column-title")?.textContent?.trim()
       if (title) addAction(title, () => { void moveTask(card, lane) })
     }
 
-    addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
+    const deleteAction = addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
       const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete" })
       if (!confirmed) return
       try {
@@ -105,6 +175,14 @@ export function initContextMenu(
       }
       showToast("Failed to delete task", "error")
     }, true)
+    if (card.dataset.deferralVersion && !card.dataset.deferralStale && !isDeferralTerminalStatus(card.dataset.status ?? "")) {
+      void workerCheck.then(allowed => {
+        if (!allowed || signal.aborted || trigger !== btn || !card.isConnected || deleteAction.parentElement !== menu) return
+        const action = addAction(window.mI18n?.get("deferral.defer") ?? "Defer", () => { void deferCard(card, id, btn) })
+        menu.insertBefore(action, deleteAction)
+        positionMenu()
+      })
+    }
 
     menu.hidden = false
     menu.style.maxHeight = ""
