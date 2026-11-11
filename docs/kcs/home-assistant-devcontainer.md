@@ -17,13 +17,19 @@ Use a disposable development host for changes to ingress, Supervisor integration
 5. Stage the `meitheal-hub-canary` manifest and shared AppArmor profile in the local App directory. Keep slug `meitheal_canary` and image family `meitheal-canary-{arch}`. In the staged copy, set the image registry to the disposable registry and keep `version` aligned with the tested tag. Supervisor pulls the configured image during installation. Keep one installed Meitheal App; back up and retire any older fixture before installing its replacement.
 6. Run `ha store reload`. Install the local App and open its web UI from Home Assistant. Record the exact image digest, App and Home Assistant versions, ingress roles tested, and AppArmor state.
 
-The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage local App files in `/mnt/supervisor/apps/local/meitheal-hub-canary`. Older versions use `/mnt/supervisor/addons/local/meitheal-hub-canary`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+The checked-in configuration installs Node 26 and pnpm 10.8.0 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
+
+The stack uses Home Assistant’s official `6-apps` devcontainer and beta Supervisor channel, matching the upstream App development template. This launcher shares the host runtime socket directory with Supervisor; the legacy `2-addons` launcher fails to start current Core builds because `/run/supervisor/core` is missing. Rebuild older environments through the editor to update the base image.
+
+Setup checks Grocy at its public root URL. The authenticated Grocy API requires a separate key and is not a readiness probe.
+
+The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage only the candidate manifest, profile and support files in `/mnt/supervisor/apps/local/meitheal-hub-canary`. Keep the candidate outside the workspace. This monorepo intentionally omits upstream `devcontainer_bootstrap`, which would bind the complete source tree into the local App store and introduce duplicate stable/Canary manifests. Supervisor itself migrates legacy `addons` data before staging; do not create an `apps` directory before that migration. Older versions use `/mnt/supervisor/addons/local/meitheal-hub-canary`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
 
 The privileged development container masks `getty@tty1.service`, `getty@.service` and `serial-getty@.service` before starting init, so a guest login prompt cannot claim a host console. Preserve the checked-in command when overriding startup. It uses the real `/usr/bin/systemctl --root=/` before init and exits if masking fails; a PATH-resolved systemctl shim may require systemd to be running already.
 
 ## Local configuration and recovery
 
-The Compose file supplies the development ports and service defaults. Copy [.env.example](../../.devcontainer/.env.example) to `.devcontainer/.env` if you need to set them explicitly, including to reuse the `meitheal-dev` project name. Keep any environment-specific credentials in the ignored local file.
+The Compose file supplies the development ports and service defaults. Copy [.env.example](../../.devcontainer/.env.example) to `.devcontainer/.env` if you need to set them explicitly, including to reuse the `meitheal-dev` project name. Keep any environment-specific credentials in the ignored local file. Current supervised Core defaults to port 80, so Compose forwards `HA_UI_PORT` to `HA_CORE_PORT=80`. For an existing Core configuration that still listens on 8123, set `HA_CORE_PORT=8123` before recreating its outer container. Check `ha core info` rather than assuming the port.
 
 | Service | Default local URL |
 | --- | --- |
@@ -32,7 +38,7 @@ The Compose file supplies the development ports and service defaults. Copy [.env
 | Grocy | `http://localhost:9192/` |
 | Node-RED | `http://localhost:1880/` |
 
-Run the helper from the repository root. Check ownership before stopping a stack that may be shared.
+Run the helper from the repository root. Its `up` command starts the existing editor-generated container and does not replace its image; `restart` also retains existing images. A fresh environment uses `devcontainer up` when the Dev Containers CLI is installed. Otherwise, open the checked-in configuration in the editor first. Rebuild through the editor when Features change. Check ownership before stopping a stack that may be shared.
 
 ```sh
 ./scripts/devcontainer-up.sh status
@@ -54,3 +60,5 @@ Open a large board's Table view and switch to Calendar or Timeline. Meitheal sco
 The older Core coordinator calls native task routes without credentials. Direct sibling calls are denied by the new ingress boundary. Verify a credential-backed Core integration path before promoting the App if that integration is required.
 
 For publishing and canary promotion, see the [release runbook](releasing.md).
+
+Recovery matches the workspace before resolving generated editor project names. In Distrobox it checks both `/home` and `/var/home` label aliases, deduplicates the same container, and fails closed if multiple distinct editors match. An engine-listing error never starts a replacement.
