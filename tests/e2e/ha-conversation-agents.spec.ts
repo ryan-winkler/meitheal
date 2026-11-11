@@ -71,20 +71,28 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
       if (url === "/tasks") {
         await expect.poll(() => page.evaluate(() => typeof window.openAskHaModal)).toBe("function")
         await openAsk(page)
+      } else {
+        // Initial agent discovery may settle while the Settings panels are still inert.
+        await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       }
       const refresh = page.locator(refreshId)
       await expect(refresh).toHaveAttribute("aria-busy", "false")
+      await refresh.focus()
+      await expect(refresh).toBeFocused()
       held = true
       const previousReads = reads
-      await refresh.focus()
-      await refresh.press("Enter")
-      await expect(refresh).toHaveAttribute("aria-busy", "true")
-      await expect.poll(() => reads).toBe(previousReads + 1)
-      await expect(refresh).toBeFocused()
-      await refresh.press("Enter")
-      expect(reads).toBe(previousReads + 1)
-      held = false
-      release?.()
+      try {
+        await page.keyboard.press("Enter")
+        await expect(refresh).toHaveAttribute("aria-busy", "true")
+        await expect.poll(() => reads).toBe(previousReads + 1)
+        await expect(refresh).toBeFocused()
+        await page.keyboard.press("Enter")
+        expect(reads).toBe(previousReads + 1)
+      } finally {
+        held = false
+        release?.()
+        release = undefined
+      }
       await expect(refresh).toHaveAttribute("aria-busy", "false")
       await expect(refresh).toBeFocused()
     }

@@ -154,7 +154,12 @@ entries in this response. No provider list or language filter is applied. A
 configured integration without a loaded conversation agent is not runnable and
 will not appear until Home Assistant loads it.
 
-Both pickers refresh when opened and offer **Refresh agents**. Keyboard focus stays on Refresh while discovery runs; repeated activation is ignored. Refresh and discovery status use the selected language. Proxy failures with HTML or empty responses show a stable discovery error instead of a JSON parser exception. Discovery bypasses
+Both pickers refresh when opened and offer **Refresh agents**. Settings controls
+become available after saved preferences load, even if initial agent discovery
+has already finished. Once the refresh button has keyboard focus, it keeps focus
+during discovery and ignores repeat activation. Refresh and discovery status use
+the selected language. Proxy failures with HTML or empty responses show a stable
+discovery error instead of a JSON parser exception. Discovery bypasses
 browser caching. A saved agent ID stays selected if the agent is removed or HA
 cannot be reached; it is never silently replaced by the default. An unavailable
 agent is labelled in the picker. Ask Home Assistant prevents sending to an agent
