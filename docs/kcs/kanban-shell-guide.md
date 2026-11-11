@@ -38,6 +38,8 @@ Open a task and select **Task reactions**, or use **Comment reactions** beside a
 
 A card's reaction count covers the task itself. Open the task to see who reacted or to read reactions on its comments.
 
+The board remains usable when reaction counts are unavailable. A denied request clears the displayed count until it can be read again.
+
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.

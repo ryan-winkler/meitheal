@@ -24,8 +24,9 @@ export function initKanbanReactionCounts(board: HTMLElement, signal: AbortSignal
       let counts: Record<string, number> = {}
       if (response.ok) {
         counts = (await response.json()).counts
-      } else if (response.status !== 401 && response.status !== 403) {
-        return
+      } else {
+        void response.body?.cancel().catch(() => {})
+        if (response.status !== 401 && response.status !== 403) return
       }
       if (request.aborted || !board.isConnected) return
       for (const id of batch) {
