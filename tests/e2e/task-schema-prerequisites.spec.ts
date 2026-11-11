@@ -85,7 +85,7 @@ const sharedColumns = {
   areas: ["id", "name", "wip_limit", "energy_budget", "review_cadence", "last_reviewed_at"],
   goals: ["id", "area_id", "metric_type", "metric_target", "metric_current"],
   projects: ["id", "goal_id", "area_id", "is_default"],
-  tasks: ["id", "area_id", "goal_id", "project_id", "kanban_position", "ticket_number"],
+  tasks: ["id", "area_id", "goal_id", "project_id", "priority", "is_promoted", "kanban_position", "ticket_number"],
   kanban_lanes: ["id", "key", "label", "position", "wip_limit", "includes", "built_in"],
   app_settings: ["key", "value", "updated_at"],
   comments: ["id", "task_id", "content", "author", "owner_key", "created_at"],
@@ -146,6 +146,10 @@ test("fresh CLI prepares writable hierarchy, policy and comments before runtime"
       ["backlog", "Backlog", 0], ["pending", "Todo", 1], ["active", "In Progress", 2], ["complete", "Done", 3],
     ])
     seedHierarchy(database)
+    const ordering = database.prepare("SELECT priority, is_promoted FROM tasks WHERE id = 'fixture-task'")
+    expect(ordering.get()).toEqual({ priority: 3, is_promoted: 0 })
+    expect(() => database.exec("UPDATE tasks SET is_promoted = 2 WHERE id = 'fixture-task'"))
+      .toThrow(/CHECK constraint failed/i)
     expect(savedHierarchy(database)).toEqual(expectedHierarchy)
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
     expect(() => database.exec(`INSERT INTO goals (id, area_id, title, created_at, updated_at)
@@ -171,6 +175,7 @@ for (const first of ["CLI", "runtime"] as const) {
     await start[first](databasePath)
     const before = withDatabase(databasePath, database => {
       seedHierarchy(database)
+      database.exec("UPDATE tasks SET priority = 1, is_promoted = 1 WHERE id = 'fixture-task'")
       return sharedShape(database)
     })
     await start[second](databasePath)
@@ -178,6 +183,8 @@ for (const first of ["CLI", "runtime"] as const) {
     withDatabase(databasePath, database => {
       expect(sharedShape(database)).toEqual(before)
       expect(savedHierarchy(database)).toEqual(expectedHierarchy)
+      expect(database.prepare("SELECT priority, is_promoted FROM tasks WHERE id = 'fixture-task'").get())
+        .toEqual({ priority: 1, is_promoted: 1 })
       expect(runtimeMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
       expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
     })

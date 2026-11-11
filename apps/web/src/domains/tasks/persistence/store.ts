@@ -299,9 +299,6 @@ async function initializeSchema(): Promise<void> {
   }
 
   // Phase 6: UI columns
-  if (!(await hasColumn(client, "tasks", "priority"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 3");
-  }
   if (!(await hasColumn(client, "tasks", "due_date"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT");
   }
@@ -338,10 +335,6 @@ async function initializeSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "is_favorite"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
   }
-  if (!(await hasColumn(client, "tasks", "is_promoted"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN is_promoted INTEGER NOT NULL DEFAULT 0 CHECK (is_promoted IN (0, 1))")
-  }
-
   // Phase 20: Agile hierarchy — epic/story/task type
   if (!(await hasColumn(client, "tasks", "task_type"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'task'");

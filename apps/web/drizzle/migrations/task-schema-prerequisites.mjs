@@ -81,6 +81,8 @@ const addedColumns = {
     assigned_to: "TEXT",
     goal_id: "TEXT",
     project_id: "TEXT",
+    priority: "INTEGER NOT NULL DEFAULT 3",
+    is_promoted: "INTEGER NOT NULL DEFAULT 0 CHECK (is_promoted IN (0, 1))",
     kanban_position: "INTEGER",
     ticket_number: "INTEGER",
   },
