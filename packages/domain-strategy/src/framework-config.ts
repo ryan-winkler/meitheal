@@ -1,3 +1,5 @@
+import { isFrameworkFormulaSupported } from "./framework-formula"
+
 /**
  * Framework Configuration — manages YAML defaults + user overrides
  *
@@ -22,6 +24,7 @@ export interface FrameworkFieldOption {
 export interface FrameworkField {
   key: string
   label: string
+  description?: string | undefined
   type: "number" | "select"
   uiType: "slider" | "radio" | "select"
   weight: number
@@ -91,6 +94,7 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
     ? (raw.fields as Record<string, unknown>[]).map((f) => ({
         key: String(f.key ?? ""),
         label: String(f.label ?? ""),
+        ...(typeof f.description === "string" ? { description: f.description } : {}),
         type: String(f.type ?? "number") as FrameworkField["type"],
         uiType: String(f.ui_type ?? "slider") as FrameworkField["uiType"],
         weight: Number(f.weight ?? 1),
@@ -193,6 +197,10 @@ export function validateFrameworkConfig(
   } else {
     const keys = new Set<string>()
     for (const field of config.fields) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) {
+        errors.push("Each field must be an object")
+        continue
+      }
       if (!field.key || typeof field.key !== "string") {
         errors.push("Each field must have a non-empty key")
       } else if (keys.has(field.key)) {
@@ -200,12 +208,23 @@ export function validateFrameworkConfig(
       } else {
         keys.add(field.key)
       }
+      for (const bound of ["min", "max"] as const) {
+        if (field[bound] !== undefined && (typeof field[bound] !== "number" || !Number.isFinite(field[bound]))) {
+          errors.push(`Field "${field.key}" ${bound} must be a finite number`)
+        }
+      }
+      if (typeof field.min === "number" && typeof field.max === "number" && field.min > field.max) errors.push(`Field "${field.key}" min must not exceed max`)
       if (!field.label) errors.push(`Field "${field.key}" must have a label`)
     }
   }
 
   if (config.archetype === "formula" && !config.formula) {
     errors.push("Formula archetypes require a formula expression")
+  }
+
+  const fieldKeys = Array.isArray(config.fields) ? config.fields.flatMap(field => typeof field?.key === "string" ? [field.key] : []) : []
+  if (config.formula && (typeof config.formula !== "string" || !isFrameworkFormulaSupported(config.formula, fieldKeys))) {
+    errors.push("Formula must use declared fields, numbers, parentheses and + - * / operators")
   }
 
   if (!Array.isArray(config.badgeThresholds)) {
@@ -234,6 +253,7 @@ export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, un
     fields: config.fields.map((f) => ({
       key: f.key,
       label: f.label,
+      ...(f.description !== undefined ? { description: f.description } : {}),
       type: f.type,
       ui_type: f.uiType,
       weight: f.weight,

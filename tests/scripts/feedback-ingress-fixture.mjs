@@ -12,10 +12,11 @@ const heldBodies = new AsyncLocalStorage()
 if (activeMemberFixture) {
   // Only the marked fixture requests are observed. Wait for the real parser to
   // ask for another chunk, rather than just acknowledging HTTP arrival.
+  // Match the parser module, since production minification renames its function.
   const originalRead = ReadableStreamDefaultReader.prototype.read
   ReadableStreamDefaultReader.prototype.read = function (...args) {
     const held = heldBodies.getStore()
-    if (held && !held.acknowledged && new Error().stack?.includes("at readWithinLimit")) {
+    if (held && !held.acknowledged && new Error().stack?.split("\n").some(frame => /\/bounded-body(?:[_-][^/\s:]+)?\.(?:mjs|ts):/.test(frame))) {
       if (held.reader === this) {
         held.acknowledged = true
         process.send({ participantBodyStarted: true })

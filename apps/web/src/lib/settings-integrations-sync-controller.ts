@@ -485,8 +485,11 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
     const data = (await res.json()) as { ok: boolean; entities?: { entity_id: string; friendly_name: string; state: string; sync: { active: boolean; direction: string; lastSyncAt: number | null; itemCount: number } | null }[] }
     const entities = data.entities ?? []
     let savedEnabled: string[] = []
-    if (settings.todo_entities) savedEnabled = Array.isArray(settings.todo_entities) ? settings.todo_entities : [String(settings.todo_entities)]
-    else if (settings.todo_entity) savedEnabled = [String(settings.todo_entity)]
+    let configured: unknown = settings.todo_entities ?? settings.todo_entity
+    if (typeof configured === "string") {
+      try { configured = JSON.parse(configured) } catch { /* legacy single entity ID */ }
+    }
+    savedEnabled = (Array.isArray(configured) ? configured : [configured]).filter((value): value is string => typeof value === "string" && value.length > 0)
 
     if (entities.length > 0 && autoInfo && autoEntities) {
       autoInfo.style.display = "block"
@@ -500,7 +503,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
         if (noEntities) noEntities.style.display = "flex"
       } else {
         if (noEntities) noEntities.style.display = "none"
-        const autoSelect = settings.todo_entities == null && settings.todo_entity == null
+        const autoSelect = configured == null
         entitiesContainer.innerHTML = entities.map((e) => {
           const isEnabled = autoSelect ? e === entities[0] : savedEnabled.includes(e.entity_id)
           const stateLabel = e.sync?.active ? `${e.state} · syncing${e.sync.itemCount ? ` · ${e.sync.itemCount} items` : ""}` : e.state
@@ -517,7 +520,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
             if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change", { bubbles: true })) }
           })
         })
-        if (autoSelect && enabledCb && !enabledCb.checked) {
+        if (autoSelect && settings.todo_sync_enabled !== false && settings.todo_sync_enabled !== "false" && enabledCb && !enabledCb.checked) {
           enabledCb.checked = true
           if (enabledLabel) enabledLabel.textContent = "On — syncing with HA"
         }

@@ -85,42 +85,6 @@ test("Today and Dashboard label shared favorites separately from personal pins",
   }
 })
 
-test("Today validates stored provider links before opening them", async ({ page, request, baseURL }) => {
-  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
-  const headers = { origin: new URL(baseURL!).origin, "Content-Type": "application/json" }
-  const due_date = new Date().toISOString().slice(0, 10)
-  const created = await request.post("/api/tasks", { headers, data: { title: "Provider link fixture", due_date } })
-  expect(created.status(), await created.text()).toBe(201)
-  const { id } = await created.json()
-
-  try {
-    await page.addInitScript(() => {
-      localStorage.setItem("meitheal-ai-provider", "custom")
-      localStorage.setItem("meitheal-ai-custom-url", "javascript:void(0)")
-      window.open = (url, target, features) => {
-        document.documentElement.dataset.aiHandoff = JSON.stringify([String(url), target, features])
-        return null
-      }
-    })
-    await page.goto("/today")
-    const row = page.locator(`#section-today .tli[data-id="${id}"]`)
-    const ask = row.getByRole("button", { name: "Ask AI" })
-    await row.hover()
-    await ask.click()
-    await expect(page.getByText("Enter an HTTP or HTTPS URL without a username or password.")).toBeVisible()
-    expect(await page.locator("html").getAttribute("data-ai-handoff")).toBeNull()
-
-    await page.evaluate(() => localStorage.setItem("meitheal-ai-custom-url", "https://assistant.example/chat"))
-    await ask.click()
-    await expect(page.locator("html")).toHaveAttribute("data-ai-handoff", JSON.stringify([
-      "https://assistant.example/chat", "_blank", "noopener,noreferrer",
-    ]))
-  } finally {
-    const removed = await request.delete(`/api/tasks/${id}`, { headers })
-    expect(removed.status(), await removed.text()).toBe(204)
-  }
-})
-
 test.describe("Today Page — Structure & Sections", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
@@ -211,16 +175,27 @@ test.describe("Today Page — Wave 1: Feature Parity", () => {
   })
 
   // G05: Keyboard navigation
-  test("G05: keyboard navigation — j/k keys move focus", async ({ page }) => {
-    const tasks = page.locator(".tli")
-    const count = await tasks.count()
-    if (count < 2) {
-      test.skip(true, "Need 2+ tasks to test keyboard nav")
-      return
+  test("G05: keyboard navigation — j/k keys move focus", async ({ page, request }) => {
+    const ids: string[] = []
+    try {
+      for (const title of ["Keyboard fixture one", "Keyboard fixture two"]) {
+        const created = await request.post("/api/tasks", { data: { title, due_date: new Date().toISOString().slice(0, 10) } })
+        expect(created.status()).toBe(201)
+        ids.push((await created.json()).id)
+      }
+      await page.reload()
+      const tasks = page.locator(".tli")
+      await expect(tasks.filter({ hasText: "Keyboard fixture" })).toHaveCount(2)
+      await page.locator("body").click({ position: { x: 2, y: 2 } })
+      await page.keyboard.press("j")
+      await expect(tasks.first()).toHaveClass(/tli--focused/)
+      await page.keyboard.press("j")
+      await expect(tasks.nth(1)).toHaveClass(/tli--focused/)
+      await page.keyboard.press("k")
+      await expect(tasks.first()).toHaveClass(/tli--focused/)
+    } finally {
+      for (const id of ids) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
     }
-    await page.keyboard.press("j")
-    await page.waitForTimeout(100)
-    await expect(tasks.first()).toHaveClass(/tli--focused/)
   })
 
   // G06: Filter bar

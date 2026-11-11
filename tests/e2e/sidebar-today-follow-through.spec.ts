@@ -4,15 +4,17 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.describe("Sidebar and Today follow-through", () => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
 
-  let sidebarConfig: unknown
-  const createdTaskIds: string[] = []
+  let originalSidebar: unknown
+  let createdIds: string[] = []
   test.beforeEach(async ({ request }) => {
-    sidebarConfig = (await (await request.get("/api/settings")).json()).sidebar_config
+    originalSidebar = (await (await request.get("/api/settings?key=sidebar_config")).json()).value ?? null
+    createdIds = []
   })
   test.afterEach(async ({ request }) => {
-    expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
-    for (const id of createdTaskIds.splice(0)) {
-      expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    try {
+      for (const id of createdIds) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    } finally {
+      expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: originalSidebar } })).status()).toBe(200)
     }
   })
 
@@ -57,7 +59,7 @@ test.describe("Sidebar and Today follow-through", () => {
     const now = new Date().toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", { headers, data: { title: "Due-today follow-through", due_date: now } })
     expect(created.status(), await created.text()).toBe(201)
-    createdTaskIds.push((await created.json()).id)
+    createdIds.push((await created.json()).id)
     await page.goto("/")
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
@@ -65,9 +67,10 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.locator("#today-overview .page-hero")).toHaveCount(0)
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
     await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
-    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(0)
     await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
     await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
+    await expect(page.locator("#connection-status")).toHaveAttribute("title", "Meitheal ready")
+    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("title", "Meitheal ready")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })
@@ -81,10 +84,10 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect.poll(async () => {
       const response = await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)
       const data = await response.json()
-      return data.tasks?.[0]?.title
+      const captured = data.tasks?.find((task: { title: string }) => task.title === title)
+      if (captured?.id && !createdIds.includes(captured.id)) createdIds.push(captured.id)
+      return captured?.title
     }).toBe(title)
-    const capture = await (await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)).json()
-    createdTaskIds.push(capture.tasks[0].id)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
     await page.locator("#today-bar-switcher-btn").click()
@@ -93,4 +96,24 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page).toHaveURL(/#today-work$/)
     await expect(page.locator("#section-today")).toBeVisible()
   })
+})
+
+test("Today uses the chosen language and one workspace date for its label and datetime", async ({ page, request, context, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
+  const previous = (await (await request.get("/api/settings?key=timezone")).json()).value ?? null
+  const timezone = new Date().getUTCHours() < 10 ? "Pacific/Honolulu" : "Pacific/Kiritimati"
+  try {
+    expect((await request.put("/api/settings", { data: { key: "timezone", value: timezone } })).status()).toBe(200)
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
+    await page.goto("/today")
+    const date = new Date()
+    const label = new Intl.DateTimeFormat("ga-IE", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(date)
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: timezone }).formatToParts(date).map(part => [part.type, part.value]))
+    const key = `${parts.year}-${parts.month}-${parts.day}`
+    expect(key).not.toBe(date.toISOString().slice(0, 10))
+    await expect(page.locator(".today-summary__date time")).toHaveText(label)
+    await expect(page.locator(".today-summary__date time")).toHaveAttribute("datetime", key)
+  } finally {
+    expect((await request.put("/api/settings", { data: { key: "timezone", value: previous } })).status()).toBe(200)
+  }
 })

@@ -74,6 +74,12 @@ test.describe("framework import API and Settings", () => {
     expect(listed.status()).toBe(200)
     const builtIns = (await listed.json()).data.filter((item: { source: string }) => item.source === "built-in")
     expect(builtIns.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining(["rice", "ice", "eisenhower"]))
+    const ice = builtIns.find((item: { id: string }) => item.id === "ice")
+    expect(ice.description).toContain("Impact × Confidence × Ease")
+    const eisenhower = (await (await request.get("/api/frameworks/eisenhower")).json()).data
+    expect(eisenhower.fields.find((field: { key: string }) => field.key === "urgency").description).toBe("How time-sensitive is this task?")
+    expect(await (await request.get("/api/frameworks/eisenhower/export")).text()).toContain("How time-sensitive is this task?")
+    expect(await (await request.get("/api/frameworks/ice/export")).text()).toContain("Impact × Confidence × Ease")
     const path = "/api/frameworks/rice"
     const original = (await (await request.get(path)).json()).data
     expect(original.source).toBe("built-in")
@@ -104,6 +110,7 @@ test.describe("framework import API and Settings", () => {
   test("YAML shares JSON validation, collision checks and persistence; JSON clients keep their exact shape", async ({ request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin, "content-type": "application/yaml; charset=utf-8" }
     const json = { ...imported, id: "json-framework-import-compatibility", name: "JSON client", source: "user", fields: [
+      ...imported.fields,
       { key: "choice", label: "Choice", type: "select", uiType: "select", weight: 3, helpText: "Keep options", options: [{ value: "one", label: "One" }] },
     ] }
     const createdIds: string[] = []
@@ -197,4 +204,20 @@ test.describe("framework import API and Settings", () => {
       await rm(work, { recursive: true, force: true })
     }
   })
+})
+
+
+test("built-in field descriptions survive a YAML export and re-import", async ({ request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable App server")
+  const exported = await request.get("/api/frameworks/eisenhower/export")
+  expect(exported.status()).toBe(200)
+  const yaml = (await exported.text()).replace(/^name:.*$/m, "name: Roundtrip Eisenhower description")
+  const imported = await request.post("/api/frameworks", { headers: { "content-type": "application/yaml" }, data: yaml })
+  expect(imported.status(), await imported.text()).toBe(201)
+  const config = (await imported.json()).data
+  try {
+    const stored = (await (await request.get(`/api/frameworks/${config.id}`)).json()).data
+    expect(stored.fields.find((field: { key: string }) => field.key === "urgency").description).toBe("How time-sensitive is this task?")
+    expect(await (await request.get(`/api/frameworks/${config.id}/export`)).text()).toContain("How time-sensitive is this task?")
+  } finally { expect((await request.delete(`/api/frameworks/${config.id}`, { data: {} })).status()).toBe(200) }
 })

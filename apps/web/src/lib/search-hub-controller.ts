@@ -93,7 +93,7 @@ function createEmptyState(message: string): HTMLElement {
   const empty = document.createElement("div")
   empty.className = "search-hub-empty"
   const announcement = document.createElement("span")
-  announcement.setAttribute("role", "status")
+  announcement.setAttribute("aria-hidden", "true")
   announcement.textContent = message
   empty.appendChild(announcement)
   return empty
@@ -194,6 +194,7 @@ pageLifecycle.onPageLoad((signal) => {
   const input = document.getElementById("search-hub-input") as HTMLInputElement | null
   const results = document.getElementById("search-hub-results") as HTMLDivElement | null
   const status = document.getElementById("search-hub-status")
+  const announcement = document.getElementById("search-hub-announcement")
   const closeButton = document.getElementById("search-hub-close") as HTMLButtonElement | null
   const scopeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".search-hub-scope"))
   const taskOptions = document.getElementById("search-task-options") as HTMLDivElement | null
@@ -205,7 +206,7 @@ pageLifecycle.onPageLoad((signal) => {
   // The SearchHub modal must initialize even without a launcher input.
   // Pages using custom-header slot (e.g. settings) don't render TopNavigation,
   // so #global-search doesn't exist — but window.openSearchHub must still work.
-  if (!overlay || !panel || !input || !results || !status || !closeButton || overlay.dataset.searchController === "ready") {
+  if (!overlay || !panel || !input || !results || !status || !announcement || !closeButton || overlay.dataset.searchController === "ready") {
     return
   }
   overlay.dataset.searchController = "ready"
@@ -216,6 +217,7 @@ pageLifecycle.onPageLoad((signal) => {
   const inputEl = input
   const resultsEl = results
   const statusEl = status
+  const announcementEl = announcement
   const closeButtonEl = closeButton
 
   const focusTrap = createFocusTrap(panelEl)
@@ -267,6 +269,15 @@ pageLifecycle.onPageLoad((signal) => {
     }
   }
 
+  let announcementVersion = 0
+  function announce(message: string): void {
+    const version = ++announcementVersion
+    announcementEl.textContent = ""
+    requestAnimationFrame(() => {
+      if (!signal.aborted && isOpen && version === announcementVersion) announcementEl.textContent = message
+    })
+  }
+
   function invalidateResults(): void {
     if (searchTimer) clearTimeout(searchTimer)
     searchTimer = null
@@ -275,6 +286,7 @@ pageLifecycle.onPageLoad((signal) => {
     renderedItems = []
     resultsEl.replaceChildren()
     statusEl.replaceChildren()
+    announce("")
     setSelectedIndex(-1)
   }
 
@@ -347,11 +359,13 @@ pageLifecycle.onPageLoad((signal) => {
   function renderSections(sections: SearchResultSection[], exactFirst = false, restoredTaskId?: string): void {
     resultsEl.replaceChildren()
     statusEl.replaceChildren()
+    announce("")
     renderedItems = []
 
     if (sections.length === 0 || sections.every((section) => section.items.length === 0)) {
       setSelectedIndex(-1)
       statusEl.appendChild(createEmptyState("No matching results yet"))
+      announce("No matching results yet")
       return
     }
 
@@ -424,6 +438,7 @@ pageLifecycle.onPageLoad((signal) => {
       state.appendChild(button)
     }
     statusEl.replaceChildren(state)
+    announce(message)
   }
 
   async function refreshResults(): Promise<void> {

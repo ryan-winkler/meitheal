@@ -2,6 +2,7 @@ import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { parseAiHandoffUrl } from "../../lib/ai-handoff-url"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
 import { canManageSystemSettings, isSecretSetting, isSystemSetting, requireSystemSettingsAdmin, REDACTED_SETTING_VALUE } from "../../lib/settings-security"
 
@@ -35,9 +36,14 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
     const admin = canManageSystemSettings(request, locals)
     const key = url.searchParams.get("key")
     if (key) {
-      if (!admin && isSystemSetting(key)) return requireSystemSettingsAdmin(request, locals)!
-      const values = await repo.getByKeys([key])
+      // Household AI actions may read the provider and an explicitly reviewed destination.
+      const handoffSetting = !locals.agentToken && locals.behindIngress && Boolean(locals.hassUserId) && (key === "ai-provider" || key === "ai-custom-url")
+      if (!admin && isSystemSetting(key) && !handoffSetting) return requireSystemSettingsAdmin(request, locals)!
+      const values = await repo.getByKeys(key === "ai-custom-url" ? [key, "ai-custom-url-approved"] : [key])
       const value = Object.hasOwn(values, key) ? values[key] : null
+      if (!admin && key === "ai-custom-url" && (typeof value !== "string" || !value || values["ai-custom-url-approved"] !== value)) {
+        return apiProblem({ status: 403, title: "URL review required", detail: "Ask an administrator to review and share this custom AI URL in Settings.", extraHeaders: { "Cache-Control": "no-store" } })
+      }
       if (isSecretSetting(key)) {
         return settingsJson({ key, value: value ? REDACTED_SETTING_VALUE : null, configured: Boolean(value) })
       }
@@ -93,6 +99,12 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     if (isSystemSetting(key)) {
       const denied = requireSystemSettingsAdmin(request, locals)
       if (denied) return denied
+    }
+    if (key === "ai-custom-url-approved" && body.value != null) {
+      const current = (await repo.getByKeys(["ai-custom-url"]))["ai-custom-url"]
+      if (typeof body.value !== "string" || body.value !== current || !parseAiHandoffUrl(body.value)) {
+        return apiProblem({ status: 400, detail: "Review the current valid custom AI URL before sharing it." })
+      }
     }
     if (secret && body.value === REDACTED_SETTING_VALUE) {
       const configured = Boolean((await repo.getByKeys([key]))[key])

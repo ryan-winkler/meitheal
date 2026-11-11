@@ -11,7 +11,10 @@
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
+import { showToast } from "@lib/toast"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
+import { confirmDialog } from "@lib/confirm-dialog"
+import { t } from "../../i18n/client"
 
 const log = createClientLogger("ai", "context");
 
@@ -129,55 +132,78 @@ async function callAssist(
   };
 }
 
-/**
- * Fall back to clipboard + external provider when HA is unavailable.
- */
-async function fallbackToClipboard(prompt: string): Promise<void> {
-  // Copy to clipboard
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(prompt);
-    } catch {
-      /* clipboard denied */
-    }
-  }
+type AiProvider = "chatgpt" | "claude" | "gemini" | "ollama" | "ha_llm" | "custom"
+type AiHandoffTarget = { provider: "ha_llm" } | { provider: Exclude<AiProvider, "ha_llm">; url: URL }
 
-  // Open external provider
-  let provider = "chatgpt";
+/** Resolve the authoritative saved provider before either UI opens a destination. */
+export async function resolveAiHandoffTarget(signal?: AbortSignal): Promise<AiHandoffTarget | null> {
+  if (signal?.aborted) return null
+  let provider: AiProvider = "chatgpt"
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ai-provider"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value) provider = data.value;
+    const response = await fetch("/api/settings?key=ai-provider", { signal: signal ?? null, cache: "no-store" })
+    if (!response.ok) throw new Error("Provider settings unavailable")
+    const data: unknown = await response.json()
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid provider setting")
+    const value = (data as Record<string, unknown>).value
+    if (value != null && value !== "") {
+      if (typeof value !== "string" || !["chatgpt", "claude", "gemini", "ollama", "ha_llm", "custom"].includes(value)) throw new Error("Invalid provider setting")
+      provider = value as AiProvider
     }
   } catch {
-    /* default */
+    if (!signal?.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
+    return null
   }
+  if (signal?.aborted) return null
+  if (provider === "ha_llm") return { provider }
 
-  let targetUrl = "https://chatgpt.com/";
-  if (provider === "claude") targetUrl = "https://claude.ai/new";
-  else if (provider === "gemini") targetUrl = "https://gemini.google.com/";
+  let targetUrl = "https://chatgpt.com/"
+  if (provider === "claude") targetUrl = "https://claude.ai/new"
+  else if (provider === "gemini") targetUrl = "https://gemini.google.com/"
   else if (provider === "ollama" || provider === "custom") {
+    let configured: unknown
     try {
-      const resUrl = await fetch(
-        (window.__ingress_path || "") + "/api/settings?key=ai-custom-url"
-      );
-      if (resUrl.ok) {
-        const d = await resUrl.json();
-        if (d?.value) {
-          const url = parseAiHandoffUrl(d.value)
-          if (!url) return
-          targetUrl = url.href
-        }
+      const response = await fetch("/api/settings?key=ai-custom-url", { signal: signal ?? null, cache: "no-store" })
+      if (response.status === 403) {
+        if (!signal?.aborted) showToast("settings.ai_handoff_url_review_required", "error")
+        return null
       }
+      if (!response.ok) throw new Error("Provider settings unavailable")
+      configured = (await response.json())?.value
     } catch {
-      /* use default */
+      if (!signal?.aborted) showToast("settings.ai_handoff_url_unavailable", "error")
+      return null
     }
+    const url = parseAiHandoffUrl(configured)
+    if (!url) {
+      if (!signal?.aborted) showToast("settings.ai_handoff_url_invalid", "error")
+      return null
+    }
+    targetUrl = url.href
   }
+  return signal?.aborted ? null : { provider, url: new URL(targetUrl) }
+}
 
-  window.open(targetUrl, "_blank", "noopener,noreferrer")
+/** Keep external navigation on a fresh native link gesture after settings resolve. */
+export async function offerAiHandoff(url: URL, signal?: AbortSignal): Promise<void> {
+  const locale = window.mI18n?.locale === "ga" ? "ga" : "en"
+  await confirmDialog({
+    title: t("settings.ai_handoff_open", locale),
+    message: t("settings.ai_handoff_review", locale, { host: url.host }),
+    confirmText: t("settings.ai_handoff_open", locale),
+    confirmUrl: url,
+    cancelText: t("common.cancel", locale),
+    ...(signal ? { signal } : {}),
+  })
+}
+
+/** Fall back to clipboard and the saved external provider when Assist is unavailable. */
+async function fallbackToClipboard(prompt: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(prompt) } catch { /* clipboard denied */ }
+  }
+  const target = await resolveAiHandoffTarget()
+  if (target?.provider === "ha_llm") showToast("settings.ai_handoff_ha_unavailable", "error")
+  else if (target) await offerAiHandoff(target.url)
 }
 
 /**

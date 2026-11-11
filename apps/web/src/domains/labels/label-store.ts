@@ -26,7 +26,7 @@ export async function listLabels(): Promise<Label[]> {
 }
 
 export function normalizeLabelTitle(title: string): string {
-  return stripHtml(title.trim()).slice(0, 100)
+  return stripHtml(title).trim().slice(0, 100).trim()
 }
 
 /** Add an explicitly created label only if the task write in this batch won. */

@@ -47,9 +47,7 @@ function renderField(field: Field, value: unknown, frameworkId: string): string 
       `<option value="${escapeHtml(String(option.value))}" ${String(val) === String(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`
   } else if (field.type === "number") {
     const min = frameworkId === "rice" && field.key === "effort" ? 0.01 : field.min
-    const bounds = [["min", min], ["max", field.max]].flatMap(([name, bound]) =>
-      typeof bound === "number" && Number.isFinite(bound) ? [`${name}="${bound}"`] : []).join(" ")
-    control = `<input type="number" ${attrs} required step="any" ${bounds} value="${escapeHtml(String(val))}" />`
+    control = `<input type="number" ${attrs} required step="any" ${min === undefined ? "" : `min="${escapeHtml(String(min))}"`} ${field.max === undefined ? "" : `max="${escapeHtml(String(field.max))}"`} value="${escapeHtml(String(val))}" />`
   } else {
     control = `<input type="text" ${attrs} value="${escapeHtml(String(val))}" />`
   }
@@ -98,17 +96,11 @@ pageLifecycle.onPageLoad(signal => {
     return values
   }
 
-  function unsupportedFormula(selected: Framework): boolean {
-    return selected.id !== "rice" && !!selected.data.formula
-      && !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))
-  }
-  const formulaError = "This framework has an unsupported formula. Edit its formula in Settings before scoring."
-
   function preview() {
     const selected = framework()
     if (!selected) return
-    if (unsupportedFormula(selected)) {
-      output!.textContent = formulaError
+    if (selected.data.formula && !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))) {
+      output!.textContent = "This framework formula is unsupported. Edit the framework formula before saving."
       return
     }
     const score = scoreFields(selected, readFields())
@@ -131,6 +123,7 @@ pageLifecycle.onPageLoad(signal => {
     const requestSignal = AbortSignal.any([signal, lifetime.signal, ...(session ? [session.signal] : [])])
     taskSignal = requestSignal
     saveEvaluation = session?.save
+    ask.disabled = false
     taskId = id
     payload = parsePayload(raw)
     if (!payload.rice) {
@@ -189,16 +182,12 @@ pageLifecycle.onPageLoad(signal => {
   form.addEventListener("submit", async event => {
     event.preventDefault()
     const selected = framework()
-    if (!selected || !taskId) return
-    if (unsupportedFormula(selected)) {
-      status.textContent = formulaError
-      return
-    }
-    if (!form.reportValidity()) return
+    if (!selected || !taskId || !form.reportValidity()) return
     const values = readFields()
     const score = scoreFields(selected, values)
     if (selected.data.formula && score === null) {
-      status.textContent = "Enter valid estimates before saving."
+      status.textContent = !isFrameworkFormulaSupported(selected.data.formula, selected.data.fields.map(field => field.key))
+        ? "This framework formula is unsupported. Edit the framework formula before saving." : "Enter valid estimates before saving."
       return
     }
     const id = taskId
@@ -213,8 +202,8 @@ pageLifecycle.onPageLoad(signal => {
       const latest = parsePayload(task.framework_payload)
       latest[selected.id] = { ...asFrameworkPayload(latest[selected.id]), ...values, ...(score === null ? {} : { score }), _evaluatedAt: new Date().toISOString() }
       const encoded = JSON.stringify(latest)
-      const updatedAt = task.task_version
-      if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new Error("Missing task version")
+      const updatedAt = Number(task.task_version ?? task.updated_at)
+      if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new Error("The ticket version is unavailable")
       const saved = saveEvaluation ? await saveEvaluation(encoded, updatedAt)
         : (await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
           method: "PUT", headers: { "content-type": "application/json" }, signal: requestSignal,
@@ -238,6 +227,8 @@ pageLifecycle.onPageLoad(signal => {
     const selected = framework()
     if (!selected || !taskId) return
     const requestSignal = taskSignal
+    const selectedId = selected.id
+    payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
     ask.disabled = true
     status.textContent = "Asking Assist to suggest scores…"
     try {
@@ -247,8 +238,9 @@ pageLifecycle.onPageLoad(signal => {
       const values = result.scores[selected.id]
       if (values) {
         if (renderedFrameworkId) payload[renderedFrameworkId] = { ...asFrameworkPayload(payload[renderedFrameworkId]), ...readFields() }
-        payload[selected.id] = { ...asFrameworkPayload(payload[selected.id]), ...values }
-        if (select.value === selected.id) render()
+        payload[selectedId] = { ...asFrameworkPayload(payload[selectedId]), ...Object.fromEntries(Object.entries(asFrameworkPayload(values)).filter(([key, value]) =>
+          selected.data.fields.some(field => field.key === key) && (typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))))) }
+        if (select.value === selectedId) render()
       }
       status.textContent = result.justification
     } catch {

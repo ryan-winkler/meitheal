@@ -16,6 +16,14 @@ import { stringify } from "yaml"
 const OUTPUT = resolve(dirname(new URL(import.meta.url).pathname), "../public/openapi.yaml")
 const JSON_OUTPUT = resolve(dirname(OUTPUT), ".well-known/jsondoc.json")
 
+const taskCommentProperties = {
+  id: { type: "integer" },
+  task_id: { type: "string" },
+  content: { type: "string" },
+  author: { type: "string", description: "Display author recorded when the comment was added." },
+  created_at: { type: "string", description: "SQLite UTC timestamp." },
+}
+
 // ─── Reusable Schema Components ───────────────────────────────────────────────
 
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
@@ -76,25 +84,15 @@ const schemas = {
   TaskComment: {
     type: "object",
     required: ["id", "task_id", "content", "author", "created_at"],
-    properties: {
-      id: { type: "integer" },
-      task_id: { type: "string" },
-      content: { type: "string" },
-      author: { type: "string", description: "Display author recorded when the comment was added." },
-      created_at: { type: "string", description: "SQLite UTC timestamp." },
-    },
+    properties: taskCommentProperties,
   },
   TaskCommentListItem: {
-    allOf: [
-      { $ref: "#/components/schemas/TaskComment" },
-      {
-        type: "object",
-        required: ["can_manage"],
-        properties: {
-          can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
-        },
-      },
-    ],
+    type: "object",
+    required: ["id", "task_id", "content", "author", "created_at", "can_manage"],
+    properties: {
+      ...taskCommentProperties,
+      can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
+    },
   },
   FeedbackSubmission: {
     type: "object",
@@ -1301,7 +1299,18 @@ const paths = {
 
   // ── Settings ──
   "/api/settings": {
-    get: { operationId: "getSettings", tags: ["Settings"], summary: "Get all application settings", description: "Returns a flat key-value map. System settings require administrator access and credential values are masked.", responses: { 200: jsonContent({ type: "object", additionalProperties: true }, "Settings map") } },
+    get: {
+      operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",
+      description: "Without key, returns a flat settings map. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Verified household ingress sessions may individually read ai-provider. Reading ai-custom-url also requires administrator approval of that exact URL through ai-custom-url-approved; legacy URLs remain private until reviewed. Standalone system reads and all system writes remain administrator-only.",
+      parameters: [{ name: "key", in: "query", required: false, description: "Read one setting instead of the settings map", schema: { type: "string", minLength: 1 } }],
+      responses: {
+        200: jsonContent({ anyOf: [
+          { type: "object", additionalProperties: true, description: "Flat settings map when key is absent" },
+          { type: "object", required: ["key", "value"], properties: { key: { type: "string" }, value: {}, configured: { type: "boolean", description: "Present for masked credential settings" } }, additionalProperties: false, description: "Single setting when key is supplied; value is null when unset" },
+        ] }, "Settings map or single setting"),
+        403: { description: "Administrator access or explicit custom URL review required" },
+      },
+    },
     put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. Changing system settings requires administrator access.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {} }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
   },
 

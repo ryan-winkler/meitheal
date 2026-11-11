@@ -182,3 +182,5 @@ Use the Home Assistant devcontainer to check the ingress page, Companion URL con
 Ticket links retain the background view when changing board pages or using keyboard view shortcuts. Closing a legacy ticket link returns to its source page. Direct ticket URLs select Tasks in the mobile tab bar. On local HTTP, drawer and custom-link IDs use the browser's available cryptographic random source. Project deletion keeps the Home Assistant ingress path.
 
 Today formats its visible and machine-readable dates in the workspace timezone, using the selected language. Evening dismissal and snoozing use the browser's local calendar date; blocked browser storage does not stop the review controls.
+
+Regional preferences decode persisted JSON and apply on the next page after a successful Settings save. Invalid stored time zones fall back to Europe/Dublin. Saved To-do selections support JSON arrays and legacy single entity IDs. Invalid custom AI URLs explain how to correct Automation & AI settings without opening a provider window.

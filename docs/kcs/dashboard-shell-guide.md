@@ -74,7 +74,7 @@ The pronunciation, Areas heading, and New Area button use the theme’s secondar
 
 The **No projects** hint uses the theme’s muted text color at full opacity. Indentation and italic text distinguish it from project links.
 
-The dashboard’s 300 ms page-entry fade can lower text contrast while it runs. The full dashboard accessibility scan uses normal motion and checks the rendered page after the fade and font loading complete.
+The dashboard uses translate-only entry motion at full opacity. The accessibility scan uses normal motion and waits for font loading before checking contrast.
 
 Completed cards use a status label and a struck-through title. Their area names and other text retain full opacity. Area colors still tint the labels, while the theme controls the text color.
 

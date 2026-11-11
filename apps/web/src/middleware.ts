@@ -364,9 +364,18 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
       const db = getPersistenceClient();
       const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
       for (const row of res.rows) {
-        if (row.key === "timezone" && typeof row.value === "string") locals.timezone = row.value;
-        if (row.key === "week_start" && typeof row.value === "string") locals.weekStart = row.value;
-        if (row.key === "date_format" && typeof row.value === "string") locals.dateFormat = row.value as DateFormat;
+        let value: unknown = row.value
+        if (typeof value === "string") {
+          try { value = JSON.parse(value) } catch { /* legacy plain-text settings */ }
+        }
+        if (row.key === "timezone" && typeof value === "string") {
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: value })
+            locals.timezone = value
+          } catch { /* retain the default for invalid stored zones */ }
+        }
+        if (row.key === "week_start" && (value === "monday" || value === "sunday" || value === "saturday")) locals.weekStart = value
+        if (row.key === "date_format" && typeof value === "string" && ["relative", "absolute-iso", "absolute-eu", "absolute-us"].includes(value)) locals.dateFormat = value as DateFormat
       }
       _settingsCache = { timezone: locals.timezone, weekStart: locals.weekStart, dateFormat: locals.dateFormat };
       _settingsCacheExpiry = now + SETTINGS_CACHE_TTL_MS;
@@ -395,6 +404,12 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     response = activeParticipantRequired()
   } else {
     response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+  }
+
+  // Regional preferences must apply on the next page after a successful save.
+  if (url.pathname === "/api/settings" && (method === "PUT" || method === "DELETE") && response.ok) {
+    _settingsCache = null
+    _settingsCacheExpiry = 0
   }
 
   // Rewrite HTML paths when behind HA ingress

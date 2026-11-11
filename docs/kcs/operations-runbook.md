@@ -78,6 +78,7 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking a Today task still opens the shared task detail surface.
+6. With single-key shortcuts enabled, two tasks visible, and focus on a blank page area, press `j`, `j`, then `k`. The highlighted row moves down and back up without leaving Today. The global `k` shortcut still opens Tasks on other pages.
 
 ### Check page entry contrast
 
@@ -359,3 +360,35 @@ When another session saves a checklist, Meitheal merges compatible edits by item
 Ticket drawers retain the background queue URL in history state. Match an in-flight decision against that background URL so opening a ticket does not discard its acknowledgement. Returning to Triage revalidates the queue; accepted decisions must not reappear as available actions. The Triage browser suite covers a held acknowledgement, closing the ticket, and changing the queue location.
 
 Ticket drawers keep their canonical URL while editing. On standalone pages, Layout registers the drawer history guard before Astro ClientRouter so Back and Forward restore the existing drawer and queue rather than replacing the page. The guard only handles history entries owned by the currently mounted drawer. Home Assistant ingress retains its native navigation path. If Triage receives a decision acknowledgement while a ticket is open, its background route remains the comparison target; the saved status stays visible after closing the drawer.
+
+### Held-body revocation fixture in production builds
+
+The ingress fixture observes the bounded body-parser module when it waits for the next request chunk. Production builds minify function names, so the fixture matches the parser module filename rather than a function name in the stack. Keep the same held-body, revocation, replay and disconnect assertions when checking a minified release image.
+
+### Framework evaluation validation
+
+Framework creation accepts finite numeric bounds and formulas using declared fields, numbers, parentheses and the four arithmetic operators. Unsupported stored formulas display an explicit framework error; edit the definition before scoring. Framework field bounds render as text attributes, including records retained from older versions. Evaluation saves use the normalized task version and retain estimates after a conflict. Assist suggestions preserve fields they do not replace and do not redraw a different framework selected during the request.
+
+The OpenAPI comment-list schema includes comment fields and `can_manage` in one object so schema validation accepts actual API responses.
+
+Keep CommonJS dependencies such as `sanitize-html` and `yaml` external in the Astro dev server; bundle them only in the production server build. Forcing them through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
+
+Assist scoring ignores undeclared fields and non-primitive suggestions. Malformed framework field arrays return validation errors. Regional preferences retain Saturday week starts and validate saved date formats. Custom/Ollama handoff never substitutes another provider when its URL is missing or unavailable; recovery messages follow the chosen language.
+
+Built-in catalog and field descriptions survive packaged discovery and YAML export. The Settings link exposes the current readiness tooltip while retaining its full click target. Switching tickets resets an aborted Assist action. Both Supervisor build metadata files use the same Proprietary image license label as the Dockerfile.
+
+Search keeps one persistent live announcement region; retry controls remain outside it. Task table controls use the shared table stylesheet, including dynamically created rows. Label names are trimmed after HTML stripping so task creation and the labels API share a stable normalized name. CI action revisions are pinned to verified release commits.
+
+To-do discovery preserves an explicitly disabled sync setting. AI handoff stops when provider settings cannot be read or are invalid; only a successful unset preference defaults to ChatGPT.
+
+When Home Assistant-only AI is selected, an unavailable Assist connection reports that state and never opens an external provider.
+
+Today and task-detail AI handoffs use the same authoritative server preference and URL validation. Today opens the HA Assist dialog for HA-only preferences, including with absent or stale browser preferences. Framework YAML re-import preserves field descriptions.
+
+AI handoff reads expose only the saved provider and approved custom destination to household sessions. Other system settings and all system-setting writes remain administrator-only. After resolving an external destination, Today and task detail show an Open provider link with its host. This native click preserves browser activation after slow reads and uses `noopener noreferrer`. HA-only still opens Assist directly.
+
+The two handoff-setting read exceptions require a verified Home Assistant ingress identity. Unauthenticated standalone callers, including forged ingress headers, retain the administrator restriction. `GET /api/settings?key=...` returns `{ key, value }` (plus `configured` for masked credentials); omitting `key` returns the flat settings map.
+
+An approved custom AI URL is a household-visible destination, not a credential store. Keep secrets and access tokens out of its path and query; administrators should review existing saved URLs. Settings explains this beside the URL input. Invalid dialog destinations cancel cleanly before mounting.
+
+Existing custom AI URLs stay administrator-only after upgrade. To enable household handoff, review the URL, select **Share this reviewed URL with household members**, and save AI Settings. The approval is bound to the exact URL in `ai-custom-url-approved`; missing approval defaults to pending review. Editing the URL clears the checkbox, and a different saved URL cannot inherit approval. Unchecking and saving revokes sharing. Built-in providers and HA-only policy remain available without URL approval.

@@ -141,10 +141,50 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
   }
 })
 
+coreTest("household members read only AI handoff destinations and cannot change system settings", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const member = { cookie: "feedback-fixture=member", origin }
+  try {
+    for (const [key, value] of [["ai-provider", "custom"], ["ai-custom-url", "https://assistant.example/chat"], ["ha_api_key", "private-fixture"]]) {
+      expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key, value } })).status()).toBe(200)
+    }
+    const custom = prefix + "/api/settings?key=ai-custom-url"
+    const approval = (value: string | null, headers = admin) => api.put(prefix + "/api/settings", { headers, data: { key: "ai-custom-url-approved", value } })
+    const pending = await api.get(custom, { headers: member })
+    expect(pending.status()).toBe(403)
+    expect(await pending.text()).not.toContain("https://assistant.example/chat")
+    expect((await approval("https://other.example/")).status()).toBe(400)
+    expect((await approval("https://assistant.example/chat", member)).status()).toBe(403)
+    expect((await approval("https://assistant.example/chat")).status()).toBe(200)
+    for (const key of ["ai-provider", "ai-custom-url"]) {
+      const read = await api.get(prefix + "/api/settings?key=" + key, { headers: member })
+      expect(read.status()).toBe(200)
+      expect((await read.json()).value).toBe(key === "ai-provider" ? "custom" : "https://assistant.example/chat")
+      expect((await api.put(prefix + "/api/settings", { headers: member, data: { key, value: "blocked" } })).status()).toBe(403)
+    }
+    expect((await api.get(prefix + "/api/settings?key=ha_api_key", { headers: member })).status()).toBe(403)
+    const all = await (await api.get(prefix + "/api/settings", { headers: member })).json()
+    expect(all).not.toHaveProperty("ha_api_key")
+    expect(all).not.toHaveProperty("ai-provider")
+    expect(all).not.toHaveProperty("ai-custom-url-approved")
+    expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key: "ai-custom-url", value: "https://assistant.example/changed" } })).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(403)
+    expect((await approval("https://assistant.example/changed")).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(200)
+    expect((await approval(null)).status()).toBe(200)
+    expect((await api.get(custom, { headers: member })).status()).toBe(403)
+  } finally { await api.dispose() }
+})
+
 coreTest("Today lets a verified administrator review an Assist prompt before sending", async ({ page }) => {
   await page.context().setExtraHTTPHeaders({})
   await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
-  await page.addInitScript(() => localStorage.setItem("meitheal-ai-provider", "ha_llm"))
+  const preference = await page.request.put(origin + prefix + "/api/settings", {
+    headers: { origin },
+    data: { key: "ai-provider", value: "ha_llm" },
+  })
+  expect(preference.status(), await preference.text()).toBe(200)
   const title = "Review this synthetic task"
   const created = await page.request.post(origin + prefix + "/api/tasks", {
     headers: { origin },
