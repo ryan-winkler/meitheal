@@ -10,7 +10,7 @@ Home Assistant installs the Meitheal Core integration from a separate integratio
 
 ## Stage a release candidate
 
-1. Qualify the App and Core integration from the same pinned source checkout. Record `git rev-parse HEAD`, use Node 22 and pnpm 10.8.0, run `pnpm install --frozen-lockfile`, then `pnpm --filter @meitheal/web build` at the repository root. Keep Node on PATH. From `integrations/home-assistant`, use Python 3.14 and separate environments: install `requirements-test.txt` for Core 2026.11.1 and `requirements-test-2026.10.txt` for Core 2026.10.4. Run `MEITHEAL_REQUIRE_APP_PROTOCOL=1 python -m pytest -q` in each environment. Do not reuse a build from another commit or checkout. CI performs the frozen workspace install and App build in each Core matrix job before pytest; it uses the same required mode.
+1. Qualify the App and Core integration from the same pinned source checkout. Record `git rev-parse HEAD`, use Node 22 and pnpm 10.34.9, run `pnpm install --frozen-lockfile`, then `pnpm --filter @meitheal/web build` at the repository root. Keep Node on PATH. From `integrations/home-assistant`, use Python 3.14 and separate environments: install `requirements-test.txt` for Core 2026.11.1 and `requirements-test-2026.10.txt` for Core 2026.10.4. Run `MEITHEAL_REQUIRE_APP_PROTOCOL=1 python -m pytest -q` in each environment. Do not reuse a build from another commit or checkout. CI performs the frozen workspace install and App build in each Core matrix job before pytest; it uses the same required mode.
 2. Stage an integration archive from the tested source commit. Choose a new output path and supply the integration repository's GitHub owner and name.
 
    ```sh

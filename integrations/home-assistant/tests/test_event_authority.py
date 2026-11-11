@@ -44,7 +44,7 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
         missing.append("Node on PATH")
     if missing:
         reason = ("App/Core protocol prerequisites missing: " + ", ".join(missing)
-                  + ". Use Node 22/pnpm 10.8.0, install the frozen workspace and build "
+                  + ". Use Node 22/pnpm 10.34.9, install the frozen workspace and build "
                     "with pnpm --filter @meitheal/web build from the tested checkout.")
         required = any(os.environ.get(key, "").lower() in ("1", "true")
                        for key in ("CI", "MEITHEAL_REQUIRE_APP_PROTOCOL"))

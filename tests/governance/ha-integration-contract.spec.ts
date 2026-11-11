@@ -226,7 +226,7 @@ test("both Core CI profiles build this checkout before required App/native proto
     { core: "2026.10.4", requirements: "requirements-test-2026.10.txt" },
     { core: "2026.11.1", requirements: "requirements-test.txt" },
   ])
-  const pnpm = core.steps.findIndex(step => step.uses === "pnpm/action-setup@v6" && step.with?.version === "10.8.0")
+  const pnpm = core.steps.findIndex(step => step.uses === "pnpm/action-setup@v6" && step.with?.version === "10.34.9")
   const node = core.steps.findIndex(step => step.uses === "actions/setup-node@v7" && String(step.with?.["node-version"]) === "22")
   const install = core.steps.findIndex(step => step.run?.trim() === "pnpm install --frozen-lockfile")
   const build = core.steps.findIndex(step => step.run?.trim() === "pnpm --filter @meitheal/web build")

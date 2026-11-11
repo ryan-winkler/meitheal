@@ -22,7 +22,7 @@ log "Installing pnpm dependencies..."
 if command -v pnpm &>/dev/null; then
   pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
 else
-  npm install -g pnpm@10.8.0
+  npm install -g pnpm@10.34.9
   pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
 fi
 log "Dependencies installed."
