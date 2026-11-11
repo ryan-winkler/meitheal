@@ -104,3 +104,5 @@ The form keeps the title. Check the area selection and destination lane. If you 
 ## Card colors
 
 Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.
+
+In the color picker, use the arrow keys to choose a swatch and Enter to save. Focus returns to the card’s **More actions** button during the save and after the board refreshes.

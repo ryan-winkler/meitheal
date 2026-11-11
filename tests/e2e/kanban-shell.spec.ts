@@ -61,23 +61,44 @@ test.describe("Tasks Shell (Kanban)", () => {
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let release: (() => void) | undefined
+    const writes: unknown[] = []
     try {
       await page.reload()
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
       const more = card.locator(".card-more-btn")
       await page.route(`**/api/tasks/${id}`, async route => {
-        if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+        if (route.request().method() === "PUT") {
+          writes.push(route.request().postDataJSON())
+          await new Promise<void>(resolve => { release = resolve })
+        }
         await route.continue()
       })
       await card.hover()
-      await card.locator(".card-color-btn").click()
-      await page.getByRole("radio", { name: "Set color: Blue", exact: true }).press("Enter")
+      await card.locator(".card-color-btn").evaluate(trigger => {
+        if (!(trigger instanceof HTMLButtonElement)) throw new Error("Expected the card color button")
+        const callbacks: FrameRequestCallback[] = []
+        const requestFrame = window.requestAnimationFrame
+        // Focus a swatch before the opening frame runs.
+        window.requestAnimationFrame = callback => callbacks.push(callback)
+        try {
+          trigger.focus()
+          trigger.click()
+        } finally {
+          window.requestAnimationFrame = requestFrame
+        }
+        const blue = document.querySelector<HTMLElement>('.quick-action-popover [aria-label="Set color: Blue"]')
+        if (!blue) throw new Error("Expected the Blue swatch")
+        blue.focus()
+        for (const callback of callbacks) callback(performance.now())
+      })
+      await page.keyboard.press("Enter")
       await expect(card.locator(".card-color-btn")).toBeDisabled()
       await expect(more).toBeFocused()
       await expect.poll(() => Boolean(release)).toBe(true)
       release?.()
       await expect(card.locator(".card-color-btn")).toHaveAttribute("data-color", "#3b82f6")
+      expect(writes).toEqual([{ color: "#3b82f6" }])
       await expect(more).toBeFocused()
     } finally {
       release?.()
