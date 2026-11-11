@@ -111,9 +111,9 @@ function updateBatchBar(container: HTMLElement, lm: ListenerManager): void {
   if (batchCompleteBtn) lm.on(batchCompleteBtn, "click", async () => {
     const ids = Array.from(batchSelected)
     try {
-      await Promise.all(ids.map(id => taskApi.updateTask(id, { status: "complete" })))
+      const completed = await Promise.all(ids.map(id => taskApi.updateTask(id, { status: "complete" })))
       showToast("common.task_completed")
-      ids.forEach(_id => onTaskCompleted())
+      completed.forEach(result => onTaskCompleted(result))
       setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-batch-complete" } })), 500)
     } catch { showToast("common.failed", "error") }
   })

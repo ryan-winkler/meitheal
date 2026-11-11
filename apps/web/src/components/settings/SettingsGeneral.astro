@@ -213,9 +213,11 @@ const { locale } = Astro.props
         <div
           id="backlog-mode-help"
           class="settings-hint"
+          data-mode-visible={t("triage.setting_visible", locale)}
+          data-mode-hidden={t("triage.setting_hidden", locale)}
+          data-mode-disabled={t("triage.setting_disabled", locale)}
         >
-          Backlog lane is shown on the Kanban board. Tasks can be placed in
-          Backlog.
+          {t("triage.setting_visible", locale)}
         </div>
       </div>
 
@@ -402,8 +404,38 @@ const { locale } = Astro.props
 
 
 <script is:inline>
-  (function () {
+  (function (initNotifications) {
     var bp = window.__ingress_path || "";
+
+    let usersRead = 0
+
+    async function readUsersJson(path) {
+      try {
+        const response = await fetch(bp + path)
+        return response.ok ? await response.json() : null
+      } catch {
+        return null
+      }
+    }
+
+    async function refreshUsers() {
+      const read = ++usersRead
+      const merged = await readUsersJson("/api/users")
+      const users = Array.isArray(merged?.users) ? merged.users : null
+      const [defaultAssignee, customUsers] = await Promise.all([
+        merged && Object.hasOwn(merged, "default_assignee")
+          ? merged.default_assignee
+          : readUsersJson("/api/users/default").then(data => data?.default_assignee),
+        users
+          ? users.filter(user => user.source === "custom")
+          : readUsersJson("/api/users/custom").then(data => data?.users ?? []),
+      ])
+
+      // A successful mutation may start a newer read while an older one is pending.
+      if (read !== usersRead) return
+      renderPeople?.(users ?? customUsers, defaultAssignee, customUsers, users === null)
+      renderNotificationUsers?.(users ?? customUsers)
+    }
 
     /** Create a styled element without innerHTML */
     function makeEl(tag, styles, text) {
@@ -431,106 +463,70 @@ const { locale } = Astro.props
       var customList = document.getElementById("custom-users-list");
       if (!select) return;
 
-      Promise.all([
-        fetch(bp + "/api/users").then(function (r) {
-          return r.ok ? r.json() : { users: [] };
-        }),
-        fetch(bp + "/api/users/default")
-          .then(function (r) {
-            return r.ok ? r.json() : {};
-          })
-          .catch(function () {
-            return {};
-          }),
-        fetch(bp + "/api/users/custom")
-          .then(function (r) {
-            return r.ok ? r.json() : { users: [] };
-          })
-          .catch(function () {
-            return { users: [] };
-          }),
-      ])
-        .then(function (results) {
-          var allUsers = results[0].users || [];
-          var defaultData = results[1];
-          var customUsers = results[2].users || [];
+      function render(allUsers, defaultAssignee, customUsers, mergedUnavailable) {
+        // Populate default-assignee dropdown (safe: option textContent)
+        select.innerHTML = "";
+        var noneOpt = document.createElement("option");
+        noneOpt.value = "";
+        noneOpt.textContent = "None (unassigned)";
+        select.appendChild(noneOpt);
 
-          // Populate default-assignee dropdown (safe: option textContent)
-          select.innerHTML = "";
-          var noneOpt = document.createElement("option");
-          noneOpt.value = "";
-          noneOpt.textContent = "None (unassigned)";
-          select.appendChild(noneOpt);
+        allUsers.forEach(function (u) {
+          var opt = document.createElement("option");
+          opt.value = u.id;
+          opt.textContent =
+            (u.display_name || u.name || u.id) +
+            (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+          select.appendChild(opt);
+        });
+        if (defaultAssignee) {
+          select.value = defaultAssignee;
+        }
 
-          allUsers.forEach(function (u) {
-            var opt = document.createElement("option");
-            opt.value = u.id;
-            opt.textContent =
-              (u.display_name || u.name || u.id) +
-              (u.source === "ha" ? " (HA)" : " (Custom)");
-            select.appendChild(opt);
-          });
-          if (defaultData.default_assignee) {
-            select.value = defaultData.default_assignee;
-          }
-
-          // Discovered (HA) users list — safe DOM only
-          var haUsers = allUsers.filter(function (u) {
-            return u.source === "home_assistant";
-          });
-          if (discoveredList) {
-            discoveredList.innerHTML = "";
-            if (haUsers.length === 0) {
-              discoveredList.appendChild(
-                makeEl(
-                  "span",
-                  "color: var(--text-muted); font-size: 12px; font-style: italic;",
-                  "No HA users found (standalone mode?)",
-                ),
-              );
-            } else {
-              haUsers.forEach(function (u) {
-                var row = makeEl(
-                  "div",
-                  "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
-                );
-                row.appendChild(
-                  makeAvatar(u.display_name || u.name, "var(--accent)"),
-                );
-                row.appendChild(
-                  makeEl(
-                    "span",
-                    "font-size: 13px; font-weight: 500;",
-                    u.display_name || u.name || u.id,
-                  ),
-                );
-                row.appendChild(
-                  makeEl(
-                    "span",
-                    "font-size: 11px; color: var(--text-muted); font-family: monospace;",
-                    u.id,
-                  ),
-                );
-                discoveredList.appendChild(row);
-              });
-            }
-          }
-
-          renderCustomUsers(customUsers);
-        })
-        .catch(function (err) {
-          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Users load error:", err);
-          if (discoveredList) {
-            discoveredList.innerHTML = "";
+        // Discovered (HA) users list — safe DOM only
+        var haUsers = allUsers.filter(function (u) {
+          return u.source === "home_assistant";
+        });
+        if (discoveredList) {
+          discoveredList.innerHTML = "";
+          if (haUsers.length === 0) {
             discoveredList.appendChild(
               makeEl(
                 "span",
-                "color: var(--danger); font-size: 12px;",
-                "Failed to load users",
+                "color: var(--text-muted); font-size: 12px; font-style: italic;",
+                mergedUnavailable ? "Could not load Home Assistant users" : "No HA users found (standalone mode?)",
               ),
             );
+          } else {
+            haUsers.forEach(function (u) {
+              var row = makeEl(
+                "div",
+                "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
+              );
+              row.appendChild(
+                makeAvatar(u.display_name || u.name, "var(--accent)"),
+              );
+              row.appendChild(
+                makeEl(
+                  "span",
+                  "font-size: 13px; font-weight: 500;",
+                  u.display_name || u.name || u.id,
+                ),
+              );
+              row.appendChild(
+                makeEl(
+                  "span",
+                  "font-size: 11px; color: var(--text-muted); font-family: monospace;",
+                  u.id,
+                ),
+              );
+              discoveredList.appendChild(row);
+            });
           }
-        });
+        }
+
+        renderCustomUsers(customUsers);
+      }
 
       function renderCustomUsers(users) {
         if (!customList) return;
@@ -576,8 +572,9 @@ const { locale } = Astro.props
             fetch(bp + "/api/users/custom?id=" + encodeURIComponent(u.id), {
               method: "DELETE",
             })
-              .then(function () {
-                initUsersCard();
+              .then(function (response) {
+                if (!response.ok) throw new Error("Delete custom user failed: " + response.status)
+                return refreshUsers()
               })
               .catch(function (err) {
                 ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Delete custom user error:", err);
@@ -599,7 +596,8 @@ const { locale } = Astro.props
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ user_id: val || null }),
           })
-            .then(function () {
+            .then(function (response) {
+              if (!response.ok) throw new Error("Save default assignee failed: " + response.status)
               if (typeof window.showToast === "function")
                 window.showToast("Default assignee saved");
             })
@@ -626,123 +624,20 @@ const { locale } = Astro.props
             .then(function (res) {
               if (res.ok) {
                 input.value = "";
-                initUsersCard();
+                return refreshUsers()
               }
             })
             .catch(function (err) {
               ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Add custom user error:", err);
             });
         });
+      return render
     }
 
-    initUsersCard();
-  })();
-</script>
-
-<script is:inline>
-  (function () {
-    var bp = window.__ingress_path || "";
-    var select = document.getElementById("backlog-mode-select");
-    var saveBtn = document.getElementById("save-backlog-mode");
-    var helpDiv = document.getElementById("backlog-mode-help");
-    if (!select) return;
-
-    var helpTexts = {
-      visible:
-        "Backlog lane is shown on the Kanban board. Tasks can be placed in Backlog.",
-      hidden:
-        "Backlog lane is hidden from the Kanban board. Backlog tasks are only visible in Table view.",
-      disabled:
-        "Backlog is fully disabled. The status option is removed from all dropdowns. Use Todo for everything.",
-    };
-
-    function updateHelp() {
-      if (helpDiv) helpDiv.textContent = helpTexts[select.value] || "";
-    }
-    select.addEventListener("change", updateHelp);
-
-    // Load current value
-    fetch(bp + "/api/settings?key=backlog_mode")
-      .then(function (r) {
-        return r.ok ? r.json() : {};
-      })
-      .then(function (data) {
-        if (data.value !== null && data.value !== undefined) {
-          select.value = String(data.value);
-          updateHelp();
-        }
-        // Expose globally for other components
-        window.__backlog_mode = select.value;
-      })
-      .catch(function () {
-        /* use default */
-      });
-
-    // Save
-    saveBtn?.addEventListener("click", function () {
-      var val = select.value;
-      fetch(bp + "/api/settings", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: "backlog_mode", value: val }),
-      })
-        .then(function () {
-          window.__backlog_mode = val;
-          if (typeof window.showToast === "function")
-            window.showToast("Backlog mode saved — reload Kanban to apply");
-        })
-        .catch(function (err) {
-          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save backlog mode error:", err);
-        });
-    });
-  })();
-</script>
-
-<script is:inline>
-  (function () {
-    var bp = window.__ingress_path || "";
-    var select = document.getElementById("completed-retention-select");
-    var saveBtn = document.getElementById("save-completed-retention");
-    if (!select) return;
-
-    // Load current value
-    fetch(bp + "/api/settings?key=completed_auto_hide_days")
-      .then(function (r) {
-        return r.ok ? r.json() : {};
-      })
-      .then(function (data) {
-        if (data.value !== null && data.value !== undefined) {
-          select.value = String(data.value);
-        }
-      })
-      .catch(function () {
-        /* use default */
-      });
-
-    // Save
-    saveBtn?.addEventListener("click", function () {
-      var val = Number(select.value);
-      fetch(bp + "/api/settings", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: "completed_auto_hide_days", value: val }),
-      })
-        .then(function () {
-          if (typeof window.showToast === "function")
-            window.showToast(
-              "Retention setting saved — reload Kanban to apply",
-            );
-        })
-        .catch(function (err) {
-          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save retention error:", err);
-        });
-    });
-  })();
-</script>
-
-<script is:inline>
-  (function () {
-    var bp = window.__ingress_path || "";
+    const renderPeople = initUsersCard()
+    const renderNotificationUsers = initNotifications(bp)
+    void refreshUsers()
+  })(function initNotifications(bp) {
     var globalToggle = document.getElementById("notif-global-toggle");
     var sidebarCb = document.getElementById("notif-channel-sidebar");
     var mobileCb = document.getElementById("notif-channel-mobile");
@@ -860,26 +755,7 @@ const { locale } = Astro.props
         });
     }
 
-    // Load saved prefs + users in parallel
-    Promise.all([
-      fetch(bp + "/api/settings?key=notification_preferences")
-        .then(function (r) {
-          return r.ok ? r.json() : {};
-        })
-        .catch(function () {
-          return {};
-        }),
-      fetch(bp + "/api/users")
-        .then(function (r) {
-          return r.ok ? r.json() : { users: [] };
-        })
-        .catch(function () {
-          return { users: [] };
-        }),
-    ]).then(function (results) {
-      var savedPrefs = results[0];
-      var usersData = results[1];
-
+    function restorePrefs(savedPrefs) {
       if (savedPrefs.value && typeof savedPrefs.value === "object") {
         prefs = savedPrefs.value;
       }
@@ -900,8 +776,18 @@ const { locale } = Astro.props
 
       // Discover mobile targets and restore saved selections
       discoverMobileTargets(prefs.mobile_targets || []);
+    }
 
-      var users = usersData.users || [];
+    const prefsReady = fetch(bp + "/api/settings?key=notification_preferences")
+      .then(response => response.ok ? response.json() : {})
+      .catch(() => ({}))
+      .then(restorePrefs)
+
+    function renderUsers(users) {
+      const current = new Map(Array.from(
+        userTogglesContainer.querySelectorAll("input[data-user-id]"),
+        input => [input.dataset.userId, input.checked],
+      ))
       var disabledSet = new Set(prefs.disabled_users || []);
 
       // Render per-user toggles
@@ -951,7 +837,7 @@ const { locale } = Astro.props
 
         var checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.checked = !disabledSet.has(u.id);
+        checkbox.checked = current.get(u.id) ?? !disabledSet.has(u.id);
         checkbox.dataset.userId = u.id;
 
         var slider = document.createElement("span");
@@ -963,7 +849,7 @@ const { locale } = Astro.props
 
         userTogglesContainer.appendChild(row);
       });
-    });
+    }
 
     // Save with loading state (F10)
     saveBtn?.addEventListener("click", function () {
@@ -1013,7 +899,8 @@ const { locale } = Astro.props
           value: payload,
         }),
       })
-        .then(function () {
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
           saveBtn.textContent = "✓ Saved";
           if (typeof window.showToast === "function")
             window.showToast("Notification preferences saved");
@@ -1031,6 +918,109 @@ const { locale } = Astro.props
             saveBtn.disabled = false;
             saveBtn.style.opacity = "1";
           }, 2000);
+        });
+    });
+    return users => prefsReady.then(() => renderUsers(users))
+  });
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("backlog-mode-select");
+    var saveBtn = document.getElementById("save-backlog-mode");
+    var helpDiv = document.getElementById("backlog-mode-help");
+    if (!select) return;
+
+    var helpTexts = {
+      visible: helpDiv?.dataset.modeVisible,
+      hidden: helpDiv?.dataset.modeHidden,
+      disabled: helpDiv?.dataset.modeDisabled,
+    }
+
+    function updateHelp() {
+      if (helpDiv) helpDiv.textContent = helpTexts[select.value] || "";
+    }
+    select.addEventListener("change", updateHelp);
+
+    // Load current value
+    fetch(bp + "/api/settings?key=backlog_mode")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+          updateHelp();
+        }
+        // Expose globally for other components
+        window.__backlog_mode = select.value;
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    // Save
+    saveBtn?.addEventListener("click", function () {
+      var val = select.value;
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "backlog_mode", value: val }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
+          window.__backlog_mode = val;
+          if (typeof window.showToast === "function")
+            window.showToast("Backlog mode saved — reload Kanban to apply");
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save backlog mode error:", err);
+          window.showToast?.("settings.save_error", "error");
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("completed-retention-select");
+    var saveBtn = document.getElementById("save-completed-retention");
+    if (!select) return;
+
+    // Load current value
+    fetch(bp + "/api/settings?key=completed_auto_hide_days")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+        }
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    // Save
+    saveBtn?.addEventListener("click", function () {
+      var val = Number(select.value);
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "completed_auto_hide_days", value: val }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
+          if (typeof window.showToast === "function")
+            window.showToast(
+              "Retention setting saved — reload Kanban to apply",
+            );
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "general") : console).error("Save retention error:", err);
+          window.showToast?.("settings.save_error", "error");
         });
     });
   })();
@@ -1134,3 +1124,96 @@ const { locale } = Astro.props
   })();
 </script>
 
+
+<style>
+  :global(.sidebar-config-row) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-config-row .drag-handle) {
+    grid-row: span 2;
+    padding: 0.5rem;
+    cursor: grab;
+    color: var(--text-secondary);
+    user-select: none;
+  }
+
+  :global(.sidebar-config-row__visibility) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.sidebar-config-row__moves) {
+    display: flex;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  :global(.sidebar-config-row__moves .btn),
+  :global(.sidebar-custom-link .btn) {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0.5rem;
+  }
+
+  :global(.sidebar-config-row .sidebar-label-input) {
+    grid-column: 2;
+    min-width: 0;
+    width: 100%;
+  }
+
+  :global(.sidebar-custom-link) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-custom-link .form-input) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(.sidebar-custom-link .custom-item-href) {
+    grid-column: 1;
+  }
+
+  :global(.sidebar-custom-link .remove-custom-link) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  @media (max-width: 480px) {
+    :global(.sidebar-config-row) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    :global(.sidebar-config-row .drag-handle) {
+      display: none;
+    }
+
+    :global(.sidebar-config-row__moves) {
+      grid-column: 2;
+    }
+
+    :global(.sidebar-config-row .sidebar-label-input) {
+      grid-column: 1;
+    }
+  }
+</style>

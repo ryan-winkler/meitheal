@@ -28,6 +28,64 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page.locator("#search-hub-input")).toBeFocused()
   })
 
+  test("card names include the key and only the newest quick action accepts input", async ({ page, request, baseURL }) => {
+    const title = "Check kitchen tap"
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title, priority: 2 } })
+    expect(created.status()).toBe(201)
+    const { id, ticket_key: key } = await created.json()
+    try {
+      await page.reload()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      await expect(card.getByRole("link", { name: `Task: ${title}, Priority: High, ${key}` })).toBeVisible()
+      const menus = await card.getByRole("button", { name: `Assign user to: ${title}` }).evaluate(trigger => {
+        if (!(trigger instanceof HTMLButtonElement)) throw new Error("Expected the card assignment button")
+        trigger.click()
+        trigger.click()
+        return Array.from(document.querySelectorAll<HTMLElement>(".quick-action-popover"), menu => ({
+          inert: menu.inert,
+          hidden: menu.getAttribute("aria-hidden"),
+        }))
+      })
+      expect(menus).toEqual([{ inert: true, hidden: "true" }, { inert: false, hidden: null }])
+      await expect(page.getByRole("dialog", { name: "Assign User" })).toHaveCount(1)
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
+  test("color saves keep focus on the card during the request and after refresh", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title: "Color focus regression", priority: 2 } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    let release: (() => void) | undefined
+    try {
+      await page.reload()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      const more = card.locator(".card-more-btn")
+      await page.route(`**/api/tasks/${id}`, async route => {
+        if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+        await route.continue()
+      })
+      await card.hover()
+      await card.locator(".card-color-btn").click()
+      await page.getByRole("radio", { name: "Set color: Blue", exact: true }).press("Enter")
+      await expect(card.locator(".card-color-btn")).toBeDisabled()
+      await expect(more).toBeFocused()
+      await expect.poll(() => Boolean(release)).toBe(true)
+      release?.()
+      await expect(card.locator(".card-color-btn")).toHaveAttribute("data-color", "#3b82f6")
+      await expect(more).toBeFocused()
+    } finally {
+      release?.()
+      await page.unroute(`**/api/tasks/${id}`)
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("manage lanes opens the lane management panel", async ({ page }) => {
     const panel = page.locator("#lane-mgmt")
 
@@ -119,19 +177,56 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
-  test("seeded task cards remain readable with reduced motion", async ({ page, request, baseURL }) => {
-    const title = "Kanban reduced motion fixture"
+  test("quick actions stay below card details on narrow screens and reveal on desktop", async ({ page, request, baseURL }) => {
+    const title = "Kanban fixture with a long household task title that wraps onto multiple lines"
     const headers = { origin: new URL(baseURL!).origin }
-    const response = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
+    const response = await request.post("/api/tasks", {
+      headers,
+      data: { title, status: "active", description: "Inspect the spare parts and note any replacements." },
+    })
     expect(response.status()).toBe(201)
     const { id } = await response.json()
     try {
+      await page.setViewportSize({ width: 320, height: 844 })
       await page.emulateMedia({ reducedMotion: "reduce" })
       await page.reload()
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      const actions = card.locator(".kanban-card-actions")
+      const hasRoom = () => card.evaluate(element => {
+        const bounds = element.getBoundingClientRect()
+        const titleBounds = element.querySelector(".kanban-title-text")!.getBoundingClientRect()
+        const description = element.querySelector(".kanban-card-desc")!.getBoundingClientRect()
+        const row = element.querySelector(".kanban-card-actions")!
+        const rowBounds = row.getBoundingClientRect()
+        return titleBounds.bottom <= rowBounds.top && description.bottom <= rowBounds.top &&
+          rowBounds.bottom <= bounds.bottom && [...row.querySelectorAll("button")].every(button => {
+            const box = button.getBoundingClientRect()
+            return box.left >= bounds.left && box.right <= bounds.right && box.bottom <= bounds.bottom
+          })
+      })
       await expect(card).toBeVisible()
       await expect(card).toHaveCSS("opacity", "1")
-      await expect(card).toContainText(title)
+      await expect(card.locator(".kanban-title-text")).toHaveText(title)
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
+      await expect(actions).toHaveCSS("transition-duration", "0s")
+      await expect.poll(hasRoom).toBe(true)
+
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.mouse.move(0, 0)
+      await expect(actions).toHaveCSS("opacity", "0")
+      await expect(actions).toHaveCSS("pointer-events", "none")
+      await card.locator(".card-open-btn").focus()
+      await page.keyboard.press("Tab")
+      const more = card.getByRole("button", { name: `Task actions for ${title}` })
+      await expect(more).toBeFocused()
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
+      await expect.poll(hasRoom).toBe(true)
+      await more.blur()
+      await expect(actions).toHaveCSS("opacity", "0")
+      await card.hover()
+      await expect(actions).toHaveCSS("opacity", "1")
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }
@@ -177,7 +272,7 @@ test.describe("Kanban card workflows", () => {
     try {
       await page.goto(`/tasks?area=${areaId}#kanban`)
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-      const open = card.getByRole("button", { name: /^Task: Inspect kitchen smoke alarm,/ })
+      const open = card.getByRole("link", { name: /^Task: Inspect kitchen smoke alarm,/ })
       await open.press("Enter")
       const detail = page.getByRole("dialog", { name: "Task detail: Inspect kitchen smoke alarm" })
       await expect(detail).toBeVisible()
@@ -259,7 +354,7 @@ test.describe("Kanban card workflows", () => {
       ])
       expect(response.status()).toBe(201)
       const saved = lane.locator(`.kanban-card[data-area="${areaId}"]`)
-        .getByRole("button", { name: /^Task: Rinse the boiler filter,/ })
+        .getByRole("link", { name: /^Task: Rinse the boiler filter,/ })
       await expect(saved).toBeVisible()
       savedId = (await saved.getAttribute("data-id")) ?? undefined
       expect(savedId).toBeTruthy()

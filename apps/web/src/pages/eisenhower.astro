@@ -31,7 +31,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const { tasks } = await getTasksForView()
-const openTasks = tasks.filter((t) => !t.is_done)
+const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────
 const q1: TaskViewItem[] = [] // Do First  — urgent + important

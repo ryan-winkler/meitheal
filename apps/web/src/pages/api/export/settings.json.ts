@@ -20,10 +20,11 @@ export const GET: APIRoute = async ({ locals }) => {
         const rows = await repo.getAll()
 
         // Convert array of rows into a key-value object, excluding secrets
-        const settingsObject: Record<string, string> = Object.create(null)
+        const settingsObject: Record<string, unknown> = Object.create(null)
         for (const row of rows) {
             if (row.key && row.value !== null && !isSecretSetting(row.key as string)) {
-                settingsObject[row.key as string] = row.value as string
+                try { settingsObject[row.key as string] = JSON.parse(String(row.value)) }
+                catch { settingsObject[row.key as string] = row.value }
             }
         }
 
@@ -33,6 +34,7 @@ export const GET: APIRoute = async ({ locals }) => {
 
         const exportPayload = {
             _version: 2,
+            _settingsEncoding: "json-values",
             _exportedAt: new Date().toISOString(),
             settings: settingsObject,
             rules,

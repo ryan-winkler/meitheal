@@ -57,6 +57,8 @@ The habits shell does not have its own local search implementation. It always ha
 2. Follow the quick links into Today, Kanban, Table, or Upcoming.
 3. Remember that completing a habit still creates or completes a real task in the shared task model.
 
+When you choose Gaeilge in Settings, the last completion label and date use Irish. The date stays on the stored routine day after a completion or reload, even when your browser is in a different time zone.
+
 ## Troubleshooting
 
 ### The shell tabs do not move the page

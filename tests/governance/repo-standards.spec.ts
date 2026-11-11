@@ -8,7 +8,6 @@ const addonRoot = join(repoRoot, "meitheal-hub");
 const requiredFiles = [
   "README.md",
   "AGENTS.md",
-  "AI_POLICY.md",
   "WEBMCP.md",
   "SECURITY.md",
   "CONTRIBUTING.md",

@@ -1,5 +1,6 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controller"
+import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
@@ -51,6 +52,7 @@ interface TimelineTask {
   area_id: string | null
   project_id: string | null
   assigned_to: string | null
+  deferred_at: number | null
   is_overdue: boolean
 }
 
@@ -1124,6 +1126,12 @@ function renderGantt(
     name.textContent = bar.name
     name.title = bar.name
     row.appendChild(name)
+    if (bar.original.deferred_at != null) {
+      const badge = document.createElement("span")
+      badge.style.cssText = "flex:none;margin-inline:6px;color:var(--text-secondary);font-size:11px"
+      badge.textContent = window.mI18n?.get("deferral.title") ?? "Deferred"
+      row.appendChild(badge)
+    }
 
     // Dynamic field cells based on visibleFields
     for (const fieldId of visibleFields) {
@@ -2098,6 +2106,7 @@ function renderGantt(
     // Don't capture when user is typing in an input
     const tag = (e.target as HTMLElement).tagName
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+    if (isDisabledCharacterShortcut(e.key)) return
 
     switch (e.key) {
       case "t":

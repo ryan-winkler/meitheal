@@ -10,7 +10,7 @@ Registers Meitheal as a first-class HA integration with:
 - meitheal.sync_todo: Service to trigger manual sync
 - meitheal.search_tasks: Service to search tasks by keyword
 - meitheal.get_overdue_tasks: Service to retrieve overdue tasks
-- LLM API: Meitheal Tasks — 21 tools for Assist/conversation agents
+- Optional read-only task lookup for Home Assistant LLM agents
 
 """
 
@@ -48,12 +48,11 @@ from .const import (
 )
 from .coordinator import MeithealCoordinator
 
-# LLM API is optional — requires HA 2026.3+ with homeassistant.helpers.llm
+# The optional native LLM registry requires Core's admin-aware API.
 try:
     from .llm_api import async_register_llm_api
-    _HAS_LLM_API = True
 except ImportError:
-    _HAS_LLM_API = False
+    async_register_llm_api = None
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +60,10 @@ CREATE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("title"): cv.string,
         vol.Optional("description"): cv.string,
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("due_date"): cv.string,
+        vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
     }
 )
 
@@ -75,6 +78,8 @@ SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
         vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+        vol.Optional("include_completed", default=False): cv.boolean,
     }
 )
 
@@ -135,6 +140,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
+                priority=call.data.get("priority"),
+                due_date=call.data.get("due_date"),
+                urgency=call.data.get("urgency"),
+                importance=call.data.get("importance"),
             )
         except Exception as err:
             raise HomeAssistantError(
@@ -243,39 +252,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register LLM API — makes Meitheal tasks available to all HA conversation agents
-    # Requires HA 2026.3+ with homeassistant.helpers.llm
-    if _HAS_LLM_API:
+    if async_register_llm_api is not None:
         try:
-            unreg_llm = async_register_llm_api(hass, entry.entry_id)
-            entry.async_on_unload(unreg_llm)
-            _LOGGER.info(
-                "Meitheal LLM API registered — select 'Meitheal Tasks' in your "
-                "conversation agent settings (Settings → Voice Assistants → "
-                "[Agent] → Configure → LLM APIs) to enable voice control"
-            )
-        except Exception:
-            _LOGGER.warning("Could not register Meitheal LLM API — feature disabled")
-    else:
-        _LOGGER.info("Meitheal LLM API not available (requires HA 2026.3+)")
-
-    # Auto-expose Meitheal entities to Assist voice assistants
-    # This makes the todo entity visible to the built-in Assist API
-    # so voice commands like "add X to Meitheal tasks" work immediately.
-    try:
-        from homeassistant.components.homeassistant.exposed_entities import (
-            async_expose_entity,
-        )
-
-        # Expose todo entity to all conversation agents
-        entity_id = f"todo.meitheal_tasks"
-        async_expose_entity(hass, "conversation", entity_id, True)
-        _LOGGER.debug("Auto-exposed %s to Assist", entity_id)
-    except (ImportError, Exception):
-        _LOGGER.debug(
-            "Could not auto-expose entities to Assist — "
-            "manually expose via Settings → Voice Assistants → Expose"
-        )
+            if unregister_llm := async_register_llm_api(hass, entry):
+                entry.async_on_unload(unregister_llm)
+        except HomeAssistantError:
+            _LOGGER.warning("Could not register Meitheal's read-only LLM API")
 
     # Register custom intents — accent-friendly voice commands that work
     # WITHOUT an LLM. Uses HA's built-in sentence matching engine.

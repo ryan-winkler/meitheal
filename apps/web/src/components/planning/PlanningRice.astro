@@ -1,0 +1,207 @@
+---
+import type { TaskRepository, TaskRow } from "@domains/tasks/persistence/task-repository"
+import { isDoneStatus } from "@lib/status-config"
+import type { TaskViewItem } from "@lib/task-queries"
+import { formatTicketKey } from "@lib/ticket-key"
+import type { Locale } from "@lib/locale"
+import { t } from "../../i18n/translations"
+import RiceScoreEditor from "./RiceScoreEditor.astro"
+
+interface Props {
+  tasks: TaskViewItem[]
+  locale: Locale
+  taskRepo?: TaskRepository | undefined
+}
+
+const { tasks, locale, taskRepo } = Astro.props
+const query = Astro.url.searchParams
+const ranked: TaskViewItem[] = []
+const unscored: TaskViewItem[] = []
+let scoreTotal = 0
+for (const task of tasks) {
+  if (task.is_done || task.deferred_at !== null) continue
+  if (task.rice === null) unscored.push(task)
+  else {
+    ranked.push(task)
+    scoreTotal += task.rice
+  }
+}
+
+ranked.sort((a, b) => b.rice! - a.rice! || a.priority - b.priority)
+
+const selectedId = query.get("score")
+const focusId = query.get("riceFocus")
+const saved = query.get("riceSaved") === "1" && tasks.some(task => task.id === focusId)
+if (selectedId || focusId) Astro.response.headers.set("cache-control", "private, no-store")
+let selected: TaskRow | undefined
+if (selectedId && taskRepo && tasks.some(task => task.id === selectedId && !task.is_done && task.deferred_at === null)) {
+  try {
+    const task = await taskRepo.findById(selectedId)
+    if (task && !isDoneStatus(task.status) && task.deferred_at == null && typeof task.task_version === "number") selected = task
+  } catch {
+    // The selection can be retried without hiding the score lists.
+  }
+}
+
+function href(overrides: Record<string, string | null>): string {
+  const params = new URLSearchParams(query)
+  params.delete("open")
+  params.delete("score")
+  params.delete("riceFocus")
+  params.delete("riceSaved")
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === null) params.delete(key)
+    else params.set(key, value)
+  }
+  return `/planning${params.size ? `?${params}` : ""}#rice`
+}
+
+const size = 12
+const groups = [
+  { key: "ranked", rows: ranked, pageKey: "ricePage" },
+  { key: "unscored", rows: unscored, pageKey: "unscoredPage" },
+].map(group => {
+  const requested = Number(query.get(group.pageKey))
+  const lastPage = Math.max(1, Math.ceil(group.rows.length / size))
+  const page = Number.isSafeInteger(requested) ? Math.max(1, Math.min(lastPage, requested)) : 1
+  return { ...group, page, lastPage, items: group.rows.slice((page - 1) * size, page * size) }
+})
+---
+
+<div class="planning-rice" aria-labelledby="planning-rice-heading">
+  <h2 id="planning-rice-heading" tabindex="-1">{t("planning_rice.title", locale)}</h2>
+  <p>{t("planning_rice.description", locale)}</p>
+  <p>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: ranked.length ? String(Math.round(scoreTotal / ranked.length)) : "—" })}</p>
+
+  {saved && <p role="status">{t("planning_rice.saved", locale)}</p>}
+  {selected && <RiceScoreEditor task={selected} closeHref={href({ riceFocus: selected.id })} savedHref={href({ riceFocus: selected.id, riceSaved: "1" })} {locale} />}
+  {selectedId && !selected && <p role="status">{t("planning_rice.unavailable", locale)}</p>}
+
+  {groups.map(({ key, rows, pageKey, page, lastPage, items }) => (
+    <section class="rice-group" aria-labelledby={`planning-rice-${key}`}>
+      <h3 id={`planning-rice-${key}`}>{t(`planning_rice.${key}`, locale)}</h3>
+      {items.length ? (
+        <ul class="rice-list" data-rice-list={key}>
+          {items.map(task => (
+            <li class="rice-row" data-rice-task={task.id}>
+              <div>
+                <span class="rice-key">{formatTicketKey(task.ticket_number ?? 0)}</span>
+                <p>{task.title}</p>
+              </div>
+              {task.rice !== null && <span data-rice-score>{task.rice}</span>}
+              <a href={href({ score: task.id })} class="btn btn-outline" data-astro-prefetch="false">
+                {t("planning_rice.edit", locale)}<span class="sr-only"> {task.title}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : <p>{t(`planning_rice.empty_${key}`, locale)}</p>}
+      {lastPage > 1 && (
+        <nav class="rice-pages" aria-label={t(`planning_rice.${key}`, locale)}>
+          <span>{(page - 1) * size + 1}–{Math.min(page * size, rows.length)} / {rows.length}</span>
+          {page > 1 && <a href={href({ [pageKey]: page === 2 ? null : String(page - 1) })} class="btn btn-outline" data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
+          {page < lastPage && <a href={href({ [pageKey]: String(page + 1) })} class="btn btn-outline" data-astro-prefetch="false">{t("triage.next", locale)}</a>}
+        </nav>
+      )}
+    </section>
+  ))}
+</div>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(signal => {
+    const url = new URL(location.href)
+    const id = url.searchParams.get("riceFocus")
+    const section = document.getElementById("planning-section-rice")
+    const heading = document.getElementById("planning-rice-heading")
+    if (!id || url.hash !== "#rice" || !section || !heading) return
+
+    const restoreFocus = () => {
+      if (signal.aborted || !section.isConnected || location.href !== url.href) return true
+      if (section.hidden) return false
+      const link = section.querySelector<HTMLElement>(`[data-rice-task="${CSS.escape(id)}"] a`)
+      const target = link ?? heading
+      target.focus()
+      if (document.activeElement !== target) return false
+
+      url.searchParams.delete("riceFocus")
+      url.searchParams.delete("riceSaved")
+      history.replaceState(history.state, "", url)
+      return true
+    }
+
+    if (restoreFocus()) return
+    // Native navigation can initialize this module before the parent shell reveals RICE.
+    const observer = new MutationObserver(() => {
+      if (restoreFocus()) stop()
+    })
+    const stop = () => {
+      observer.disconnect()
+      signal.removeEventListener("abort", stop)
+    }
+    observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+    signal.addEventListener("abort", stop, { once: true })
+  })
+</script>
+
+<style>
+  .planning-rice {
+    max-width: 66rem;
+    margin-inline: auto;
+    padding: clamp(1rem, 3vw, 2.5rem);
+  }
+
+  .planning-rice > p, .rice-key {
+    color: var(--text-secondary);
+  }
+
+  .rice-group {
+    margin-block: 1.5rem;
+  }
+
+  .rice-list {
+    display: grid;
+    gap: .5rem;
+    list-style: none;
+    padding: 0;
+  }
+
+  .rice-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    padding: .75rem;
+    overflow-wrap: anywhere;
+  }
+
+  .rice-row > div {
+    min-width: 0;
+    flex: 1 1 12rem;
+  }
+
+  .rice-row p {
+    margin: 0;
+  }
+
+  .rice-row [data-rice-score] {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  .rice-row a, .rice-pages a {
+    min-height: 2.75rem;
+  }
+
+  .rice-pages {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-block: .75rem;
+  }
+</style>

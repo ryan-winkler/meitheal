@@ -2,7 +2,7 @@ import type { APIRoute } from "astro"
 import { ensureSchema } from "@domains/tasks/persistence/store"
 import { searchMeithealCatalog } from "@domains/search/search-service"
 import type { SearchQueryOptions, SearchScope, SearchSort, TaskSearchField } from "@domains/search/search-types"
-import { apiError, apiJson } from "../../lib/api-response"
+import { apiError, apiJson, apiProblem } from "../../lib/api-response"
 import { logApiError } from "../../lib/api-logger"
 
 const DEFAULT_FIELDS: TaskSearchField[] = [
@@ -34,13 +34,23 @@ function parseTaskFields(value: string | null): TaskSearchField[] {
 }
 
 export const GET: APIRoute = async ({ url }) => {
+  const rawLimit = url.searchParams.get("limit")
+  const parsedLimit = Number(rawLimit ?? 8)
+  if ((rawLimit !== null && !/^[0-9]+$/.test(rawLimit)) || !Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
+    return apiProblem({
+      status: 400,
+      detail: "The search limit must be a positive decimal integer.",
+      invalidParams: [{ name: "query.limit", reason: "Use a decimal integer from 1 to 9007199254740991." }],
+    })
+  }
+
   try {
     await ensureSchema()
 
     const rawScope = (url.searchParams.get("scope") ?? "all") as SearchScope
     const rawSort = (url.searchParams.get("sort") ?? "relevance") as SearchSort
     const priority = url.searchParams.get("priority")
-    const limit = Math.min(12, Math.max(1, Number(url.searchParams.get("limit") ?? 8)))
+    const limit = Math.min(12, parsedLimit)
 
     const options: SearchQueryOptions = {
       query: url.searchParams.get("q")?.trim() ?? "",

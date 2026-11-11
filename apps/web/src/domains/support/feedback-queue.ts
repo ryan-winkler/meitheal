@@ -9,6 +9,12 @@ const STATES = ["open", ...REVIEW_STATES] as const
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SCOPE_ID = /^[0-9A-Za-z:_-]{1,128}$/
 const VERSION = /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:[-+][0-9a-z][0-9a-z.-]{0,31})?$/i
+const CANARY_VERSION = /^[0-9a-f]{12}$/
+
+function isFeedbackVersion(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 50 && !/\s/u.test(value)
+    && (VERSION.test(value) || CANARY_VERSION.test(value))
+}
 
 export const MAX_FEEDBACK_MESSAGE_BYTES = 4 * 1024
 export const MAX_FEEDBACK_DISPOSITION_BYTES = 1024
@@ -88,7 +94,7 @@ function parseSubmission(input: unknown): { submissionId: string, content: Feedb
   const { submissionId, category, message, appVersion, routeFamily, ...extra } = input as Record<string, unknown>
   if (Object.keys(extra).length || !isReportId(submissionId)
     || !isAllowed(CATEGORIES, category)
-    || (appVersion !== undefined && (typeof appVersion !== "string" || !VERSION.test(appVersion)))
+    || (appVersion !== undefined && !isFeedbackVersion(appVersion))
     || (routeFamily !== undefined && !isAllowed(ROUTE_FAMILIES, routeFamily))) return null
   const text = plainText(message, MAX_FEEDBACK_MESSAGE_BYTES)
   if (!text) return null

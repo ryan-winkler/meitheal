@@ -15,9 +15,13 @@ const {
 ---
 
 <details id={id} class="settings-disclosure" open={open}>
-  <summary class="settings-disclosure__summary">{title}</summary>
+  <summary class="settings-disclosure__summary">
+    <span>
+      {title}
+      {subtitle && <small>{subtitle}</small>}
+    </span>
+  </summary>
   <div class="settings-disclosure__body">
-    {subtitle && <p>{subtitle}</p>}
     <slot />
   </div>
 </details>
@@ -38,12 +42,21 @@ const {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 14px;
+    min-block-size: 44px;
+    padding: 12px 16px;
     list-style: none;
     cursor: pointer;
     color: var(--text-primary);
     font-size: 14px;
     font-weight: 600;
+  }
+
+  .settings-disclosure__summary small {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 400;
   }
 
   .settings-disclosure__summary::-webkit-details-marker {
@@ -62,7 +75,7 @@ const {
   }
 
   .settings-disclosure__body {
-    padding: 0 14px 14px;
+    padding: 0 16px 16px;
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 1.65;

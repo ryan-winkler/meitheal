@@ -20,6 +20,24 @@ Use **All Areas** above the board to select a specific area. The card and lane c
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
 - You can also drag the card. On touch, hold the card body briefly before moving it. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
 
+The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
+
+Quick actions sit below the task details and wrap within the card. They stay visible on narrow screens and touch devices. On desktop, hover over the card or move keyboard focus into it to reveal them.
+
+Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
+
+### Promote a card
+
+Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted only** to filter the board, and bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
+
+Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority and favorite setting intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
+
+### React to a task or comment
+
+Open a task and select **Task reactions**, or use **Comment reactions** beside a comment. With a verified Home Assistant identity, you can add an emoji or up to 16 characters of text and remove your own reactions. If saving fails, your draft remains available to retry. Choose **Older reactions** to see earlier entries.
+
+A card's reaction count covers the task itself. Open the task to see who reacted or to read reactions on its comments.
+
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.
@@ -41,17 +59,21 @@ Open **Overdue** from Dashboard to filter tasks across every Kanban page. The bo
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
+Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light.
+
 ### Switch task views and keep the current query
 
 1. Apply the Kanban filters you need.
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
-3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it.
+3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
 On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
 
 On narrow screens the task type filters use two rows. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
 
 ### Filter and group Timeline
+
+Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views.
 
@@ -78,3 +100,7 @@ The form keeps the title. Check the area selection and destination lane. If you 
 
 1. Confirm `#lane-mgmt` drops the `hidden` class after clicking `Manage Lanes`.
 2. If the button responds but the panel stays hidden, capture the browser console and the current filter state.
+
+## Card colors
+
+Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.

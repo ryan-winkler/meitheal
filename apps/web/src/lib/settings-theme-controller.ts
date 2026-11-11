@@ -4,14 +4,20 @@
  * Handles theme selection, custom theme import/export/delete,
  * locale, timezone, week start, and date format preferences.
  */
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { DEFAULT_ACCENT } from "@lib/design-tokens"
+import { applyPersonalAccent } from "@lib/accent-colors"
 import { showToast } from "@lib/toast"
 import {
   setTheme as importedSetTheme,
   applyCustomTheme as importedApplyCustomTheme,
 } from "@lib/theme-watcher"
+import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
+import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+import { settingsStore } from "@lib/settings-store"
 import type { ThemeMode } from "@lib/theme-watcher"
-import { saveSetting, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { saveSetting, saveSettings, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
 
 // ───── UI helpers ─────
 
@@ -40,7 +46,115 @@ function updateCustomThemeDisplay(filename: string | null): void {
 
 // ───── Init ─────
 
+const ACCENT_KEY = "meitheal-accent-color"
+
+function initAccentSettings(): void {
+  const swatches = document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
+  const picker = document.querySelector<HTMLInputElement>("#accent-color-custom")
+  const reset = document.getElementById("accent-reset")
+  const root = document.documentElement
+
+  function updateSelection(color: string): void {
+    const normalized = color.toLowerCase()
+    for (const swatch of swatches) {
+      const selected = swatch.dataset.color?.toLowerCase() === normalized
+      swatch.classList.toggle("active", selected)
+      swatch.setAttribute("aria-pressed", String(selected))
+    }
+    if (picker) picker.value = normalized
+  }
+
+  function setAccent(color: string): void {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return
+    applyPersonalAccent(root, color)
+    localStorage.setItem(ACCENT_KEY, color)
+    updateSelection(color)
+  }
+
+  const stored = localStorage.getItem(ACCENT_KEY)
+  updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : DEFAULT_ACCENT)
+  for (const swatch of swatches) {
+    pageLifecycle.on(swatch, "click", () => setAccent(swatch.dataset.color ?? ""))
+  }
+  if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
+  if (reset) {
+    pageLifecycle.on(reset, "click", () => {
+      applyPersonalAccent(root, null)
+      localStorage.removeItem(ACCENT_KEY)
+      updateSelection(DEFAULT_ACCENT)
+    })
+  }
+}
+
+function initAppearanceSettings(): void {
+  const form = document.querySelector<HTMLFormElement>("#appearance-preferences-form")
+  const status = document.getElementById("appearance-save-status")
+  if (!form || !status) return
+
+  const root = document.documentElement
+  const fields = Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => ({
+    name,
+    attribute: appearanceAttribute(name),
+    select: form.elements.namedItem(name) as HTMLSelectElement,
+    ...preference,
+  }))
+
+  for (const field of fields) field.select.value = root.getAttribute(field.attribute) ?? field.defaultValue
+  pageLifecycle.on(form, "change", () => { status.textContent = "" })
+  pageLifecycle.on(form, "reset", event => {
+    event.preventDefault()
+    for (const field of fields) field.select.value = field.defaultValue
+    status.textContent = status.dataset.reset ?? ""
+  })
+  pageLifecycle.on(form, "submit", event => {
+    event.preventDefault()
+    const selected = fields.map(field => ({
+      ...field,
+      value: field.options.includes(field.select.value) ? field.select.value : field.defaultValue,
+    }))
+    let previous: Record<string, unknown> = {}
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
+    } catch { /* A valid save replaces malformed stored preferences. */ }
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({
+        ...previous,
+        ...Object.fromEntries(selected.map(({ name, value }) => [name, value])),
+      }))
+    } catch {
+      status.textContent = status.dataset.error ?? ""
+      return
+    }
+    applyAppearancePreferences(Object.fromEntries(selected.map(({ name, value }) => [name, value])) as AppearancePreferences)
+    status.textContent = status.dataset.saved ?? ""
+  })
+}
+
 export function initThemeSettings(): void {
+  const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")
+  if (singleKeys) {
+    singleKeys.checked = singleKeyShortcutsEnabled()
+    pageLifecycle.on(singleKeys, "change", () => {
+      try {
+        setSingleKeyShortcuts(singleKeys.checked)
+      } catch {
+        singleKeys.checked = singleKeyShortcutsEnabled()
+        showToast(window.mI18n?.get("settings.shortcut_preference_error") ?? "Could not save keyboard preferences on this device.", "error")
+        return
+      }
+      attachShortcutTooltips(document.body)
+    })
+    window.addEventListener("storage", (event) => {
+      if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
+        singleKeys.checked = singleKeyShortcutsEnabled()
+      }
+    }, { signal: pageLifecycle.signal })
+  }
+
+  initAccentSettings()
+  initAppearanceSettings()
+
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
   if (themeSelect) {
@@ -48,25 +162,42 @@ export function initThemeSettings(): void {
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
-  // Theme selector — instant apply + persist via theme-watcher
-  const themeSelectEl = document.getElementById("theme-select")
-  if (themeSelectEl) {
-    pageLifecycle.on(themeSelectEl, "change", async (e) => {
-    const theme = (e.target as HTMLSelectElement).value as ThemeMode
-    importedSetTheme(theme)
-    await saveSetting("theme", theme)
-    showCustomThemeSection(theme === "custom")
-    showToast(
-      theme === "dark"
-        ? "Theme: Dark"
-        : theme === "light"
-          ? "Theme: Light"
-          : theme === "auto"
-            ? "Theme: Auto (System)"
-            : "Theme: Custom",
-    )
+  function bindPreference(id: string, key: string, apply: (value: string) => void): void {
+    const select = document.getElementById(id) as HTMLSelectElement | null
+    if (!select) return
+
+    pageLifecycle.on(select, "change", async () => {
+      const value = select.value
+      select.disabled = true
+      select.setAttribute("aria-busy", "true")
+      try {
+        await saveSetting(key, value)
+        apply(value)
+        showToast("common.updated")
+      } catch (error) {
+        const settings = await settingsStore.load().catch(() => null)
+        if (settings) restoreThemeSettings(settings)
+        showSettingsSaveError(error)
+      } finally {
+        select.disabled = false
+        select.removeAttribute("aria-busy")
+      }
     })
   }
+
+  bindPreference("theme-select", "theme", (theme) => {
+    importedSetTheme(theme as ThemeMode)
+    showCustomThemeSection(theme === "custom")
+  })
+  bindPreference("locale-select", "locale", (locale) => {
+    localStorage.setItem("meitheal-locale", locale)
+    document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
+    window.dispatchEvent(new CustomEvent("meitheal:locale-changed", { detail: { locale } }))
+    window.location.reload()
+  })
+  bindPreference("timezone-select", "timezone", (value) => localStorage.setItem("meitheal-timezone", value))
+  bindPreference("week-start-select", "week_start", (value) => localStorage.setItem("meitheal-week-start", value))
+  bindPreference("date-format-select", "date_format", (value) => localStorage.setItem("meitheal-date-format", value))
 
   // Custom theme file import handler
   const customThemeInput = document.getElementById("custom-theme-input")
@@ -96,19 +227,16 @@ export function initThemeSettings(): void {
     try {
       const rawCSS = await file.text()
       const cleanCSS = sanitizeCSS(rawCSS)
+      await saveSettings({ custom_theme_css: cleanCSS, custom_theme_name: file.name, theme: "custom" })
       localStorage.setItem("meitheal-custom-theme-css", cleanCSS)
       importedSetTheme("custom")
       importedApplyCustomTheme(cleanCSS)
-      await saveSetting("custom_theme_css", cleanCSS)
-      await saveSetting("custom_theme_name", file.name)
-      await saveSetting("theme", "custom")
       updateCustomThemeDisplay(file.name)
       const themeEl = document.getElementById("theme-select") as HTMLSelectElement
       if (themeEl) themeEl.value = "custom"
       showToast(`Theme imported: ${file.name}`)
     } catch (err) {
-      log.error("Failed to import custom theme", err)
-      showToast("Failed to import theme", "error")
+      showSettingsSaveError(err)
     }
 
     ;(e.target as HTMLInputElement).value = ""
@@ -126,16 +254,15 @@ export function initThemeSettings(): void {
     })
     if (!ok) return
 
-    localStorage.removeItem("meitheal-custom-theme-css")
-    importedApplyCustomTheme(null)
-    importedSetTheme("dark")
-    const themeEl = document.getElementById("theme-select") as HTMLSelectElement
-    if (themeEl) themeEl.value = "dark"
-    await saveSetting("theme", "dark")
-    await saveSetting("custom_theme_css", "")
-    await saveSetting("custom_theme_name", "")
-    updateCustomThemeDisplay(null)
-    showToast("Custom theme removed — reverted to Dark")
+    try {
+      await saveSettings({ theme: "dark", custom_theme_css: "", custom_theme_name: "" })
+      localStorage.removeItem("meitheal-custom-theme-css")
+      importedApplyCustomTheme(null)
+      restoreThemeSettings({ theme: "dark" })
+      showToast("Custom theme removed. Dark mode is active.")
+    } catch (error) {
+      showSettingsSaveError(error)
+    }
     })
   }
 
@@ -156,57 +283,6 @@ export function initThemeSettings(): void {
     })
   }
 
-  // Language selector — persist to API, cookie, localStorage
-  const localeSelect = document.getElementById("locale-select")
-  if (localeSelect) {
-    pageLifecycle.on(localeSelect, "change", async (e) => {
-    const locale = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-locale", locale)
-    document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
-    try {
-      await saveSetting("locale", locale)
-    } catch {
-      /* ignore API errors */
-    }
-    window.dispatchEvent(new CustomEvent("meitheal:locale-changed", { detail: { locale } }))
-    showToast(locale === "ga" ? "Teanga athraithe go Gaeilge" : "Language changed to English")
-    // Full reload required — SSR translations are server-rendered and need a fresh page
-    setTimeout(() => window.location.reload(), 800)
-    })
-  }
-
-  // Timezone selector
-  const tzSelect = document.getElementById("timezone-select")
-  if (tzSelect) {
-    pageLifecycle.on(tzSelect, "change", async (e) => {
-    const tz = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-timezone", tz)
-    await saveSetting("timezone", tz)
-    showToast("common.updated")
-    })
-  }
-
-  // Week start selector
-  const wsSelect = document.getElementById("week-start-select")
-  if (wsSelect) {
-    pageLifecycle.on(wsSelect, "change", async (e) => {
-    const ws = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-week-start", ws)
-    await saveSetting("week_start", ws)
-    showToast("common.updated")
-    })
-  }
-
-  // Date format selector
-  const dfSelect = document.getElementById("date-format-select")
-  if (dfSelect) {
-    pageLifecycle.on(dfSelect, "change", async (e) => {
-    const df = (e.target as HTMLSelectElement).value
-    localStorage.setItem("meitheal-date-format", df)
-    await saveSetting("date_format", df)
-    showToast("common.updated")
-    })
-  }
 }
 
 // ───── Restore ─────
@@ -223,9 +299,7 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
       importedApplyCustomTheme(String(settings.custom_theme_css))
     }
     showCustomThemeSection(String(savedTheme) === "custom")
-    if (settings.custom_theme_name) {
-      updateCustomThemeDisplay(String(settings.custom_theme_name))
-    }
+    updateCustomThemeDisplay(settings.custom_theme_name ? String(settings.custom_theme_name) : null)
   } catch (e) {
     log.error("Theme restore error", e)
   }

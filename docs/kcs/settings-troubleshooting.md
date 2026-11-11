@@ -6,20 +6,35 @@ description: "Find settings and diagnose navigation problems."
 
 # Settings Shell Troubleshooting
 
-## What Changed
+## Find and open settings
 
-Settings now uses a grouped shell instead of hidden tabs. The top-level groups are:
+The desktop directory and the **Sections** button on narrow screens open the same seven sections. The selected section appears beside the directory or below the header. Section links keep their hash when bookmarked or opened within Home Assistant. Browser Back and Forward return to previously opened sections.
 
-- Personal
-- Workflow
-- Integrations
-- Automation & AI
-- App & PWA
-- Danger Zone
+Use **Search settings** or press `/` outside an input to open the Settings scope in the shared search. Use the arrow keys and Enter to open a result. A field result takes keyboard focus and opens any integration panel that contains it. Press Escape to close search or the section directory.
 
-All navigation is hash-based so it stays inside Home Assistant ingress, companion webviews, and the PWA scope.
+On a long Settings page, use **Scroll to top** to return to the header and keep the selected section.
+
+### Open integration settings with the keyboard
+
+In **Settings → Integrations**, Tab to an integration and press Enter or Space to open its settings. Tab then reaches the separate help button and the open panel's controls. Collapsed controls stay out of the tab order. Saved settings can open their panel automatically on load. If an integration appears configured but its settings are unavailable, reload and check whether the card button reports the expanded state.
 
 Save notifications use the selected theme's text and card colors. A colored edge distinguishes the result, and the message stays readable from the moment it appears.
+
+## Configure the sidebar
+
+In **Workflow → Sidebar Configuration**, Areas has the same visibility and label controls as the page links. Use **Move up** and **Move down**, or drag the handle on a wide screen, to position the Areas tree. Reordering preserves the labels and custom links you are editing. Each area retains its project collapse control.
+
+Choose **Save Sidebar Config** to save and reload the current Settings section with the updated sidebar. **Reset to Default** restores the default items and ordering after confirmation. Personal Pinned navigation remains available beside Tasks.
+
+The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Integrations → Home Assistant**.
+
+## Check Home Assistant
+
+Open **Settings → Integrations → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.
+
+- **Access denied** means Home Assistant rejected the App’s credentials. Check its Core API access and retry.
+- **Disconnected** means there is no live connection. Check the Meitheal App logs in Home Assistant and retry.
+- **Check failed** means Meitheal could not read the connection state. Retry to get the latest state.
 
 ## Administrator access
 
@@ -27,26 +42,16 @@ Manage integration credentials, outbound integration tests, Node-RED deployment,
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
 
-## Common Jobs
+## Recover from an error
 
-### Find a setting quickly
+- If Settings cannot load, choose **Try again**. The controls are paused until Meitheal can read the stored values.
+- If a Personal preference fails to save, its control returns to the last known value. Check the connection or your permissions and try the change again.
+- If a save reports that some changes were saved, its form keeps your entries. Retry the save to finish, or reload Settings to see the stored values. For Calendar and To-do, the save also checks whether the sync service accepted the request.
+- The accent picker is a browser preference. Reset in Personal to use the default accent again.
 
-1. Open `Settings`.
-2. Open search in the top bar. The search dialog starts with the Settings scope selected.
-3. Enter a setting name and choose a result. Use the arrow keys and Enter to open it from the keyboard.
-4. Press Escape to close search and return focus to the launcher.
+### A household member is missing
 
-The search now prefers direct field hits such as `Theme` over broad section matches.
-
-### Move between sections
-
-On desktop, use the quick navigation in the top bar. Open the Settings title picker to reach every section, including links that do not fit in the bar. Use the arrow keys and Enter to choose a section. Press Escape to return focus to the title, or scroll the page to close the picker.
-
-On mobile, use the horizontal quick-jump strip near the top. Tap the target section card to jump there without leaving Settings. The visible links are available with Tab, and the current destination is announced as the current location.
-
-### Open integration settings with the keyboard
-
-In **Settings → Integrations**, Tab to an integration and press Enter or Space to open its settings. Tab then reaches the separate help button and the open panel's controls. Collapsed controls stay out of the tab order. Saved settings can open their panel automatically on load. If an integration appears configured but its settings are unavailable, reload and check whether the card button reports the expanded state.
+**Workflow** uses the same user list for **Users & Assignment** and notification overrides. Adding or removing a custom user refreshes both lists. If Home Assistant users could not load, custom users and their preferences are still available when the local database responds. Check the Home Assistant connection under **Integrations**, then reopen Settings.
 
 ### Reopen Settings in Home Assistant Companion
 
@@ -58,7 +63,7 @@ These actions preserve the ingress-safe route and reopen the exact Settings sect
 
 ### Webhooks sends me to the wrong place
 
-The Webhooks explainer in Integrations should now route to `Automation & AI`, not a dead tab id. If it does not:
+The Webhooks callout in Integrations opens **Automation & AI**. If it does not:
 
 1. Refresh the page once.
 2. Re-open `Settings → Integrations`.
@@ -72,7 +77,17 @@ If the URL does not change to `#automation-ai-settings`, capture the browser con
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light** or **Dark** to choose a Meitheal palette. **Auto** follows the light or dark appearance of a same-origin Home Assistant panel when it can read it, then uses the corresponding Meitheal palette. A direct ingress page and a panel with an unavailable appearance follow the device preference. Use **Custom** to import your own Meitheal colors.
+Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. Use **Custom** to import your own Meitheal colors.
+
+An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
+
+Open **Personal → Customize appearance** to choose all ten layout preferences: navigation layout, navigation color, typeface (including Comic), neutral palette, corner roundness, content width, page headers, navigation edges, panel style, and sidebar behavior. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** stages the original choices; save to apply them. Theme, custom CSS, accent, language, and regional settings keep their existing controls and storage.
+
+Top navigation replaces the desktop sidebar with horizontal destination lists and one **More** disclosure for destinations that do not fit. Crowded Tasks view links use the same disclosure. The current destination stays visible when it fits. The links retain their URLs, so opening them in a new tab and Home Assistant ingress navigation continue to work. Use arrow keys or Home/End to move through the open disclosure; Escape closes it and returns focus to More. Resizing keeps the focused link reachable, including opening More if that link moves into it. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
+
+Sidebar behavior applies to desktop sidebar navigation. **Remember last state** uses the existing collapse toggle preference. **Start expanded** and **Start folded** set the state each time a page opens; the toggle remains available. **Expand on hover or focus** temporarily opens the rail for pointer or keyboard navigation without moving the page content. These choices do not change per-Area or whole-Areas-group disclosures.
+
+If an appearance save reports a browser storage error, the current appearance and your edited choices stay intact. Retry after allowing site storage. Invalid or old stored choice values use defaults; valid saved and unrelated fields are retained when saving. Appearance preferences are local under `meitheal-appearance`; the remembered sidebar state stays under `meitheal_sidebar_collapsed`. They do not add or rename `/api/settings` fields.
 
 If the theme still resets:
 
@@ -92,6 +107,12 @@ Recommended paths:
 - Nabu Casa
 - DuckDNS + Let's Encrypt
 - Reverse proxy with TLS
+
+### Check browser and installed app notifications
+
+Open **Settings → App & PWA → Troubleshooting** and choose **Send a test notification**. Allow notifications if prompted. Check this device’s notification center and open the test notification to return to **App & PWA**.
+
+If permission is blocked, allow notifications in the browser’s site settings and try again. If the test cannot send, reload the HTTPS app to give its service worker time to start. Home Assistant Companion alert recipients are configured under **Settings → Workflow → Notifications**.
 
 ### Delete old completed tasks
 
@@ -117,8 +138,65 @@ See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language refer
 
 ## HEART Acceptance Lens
 
-- Happiness: the summary cards should make system state understandable at a glance.
-- Engagement: shell nav should remove the need to hunt through tabs.
-- Adoption: companion and PWA actions should be discoverable in `App & PWA`.
-- Retention: theme and settings state should survive reloads and hash deep-links.
-- Task Success: all cross-links should land on real section ids.
+- Happiness. Status and save feedback appear beside the controls and after each action.
+- Engagement. All sections are reachable from the desktop directory or the narrow-screen Sections button.
+- Adoption. companion and PWA actions should be discoverable in `App & PWA`.
+- Retention. theme and settings state should survive reloads and hash deep-links.
+- Task success. all cross-links should land on real section ids.
+
+## Home Assistant conversation agents
+
+Settings → Automation & AI and Ask Home Assistant require a currently verified
+Home Assistant administrator. They discover agents from Home
+Assistant's `conversation/agent/list` WebSocket command. HA includes loaded
+`conversation.*` entities and agents registered through integration config
+entries in this response. No provider list or language filter is applied. A
+configured integration without a loaded conversation agent is not runnable and
+will not appear until Home Assistant loads it.
+
+Both pickers refresh when opened and offer **Refresh agents**. Keyboard focus stays on Refresh while discovery runs; repeated activation is ignored. Refresh and discovery status use the selected language. Proxy failures with HTML or empty responses show a stable discovery error instead of a JSON parser exception. Discovery bypasses
+browser caching. A saved agent ID stays selected if the agent is removed or HA
+cannot be reached; it is never silently replaced by the default. An unavailable
+agent is labelled in the picker. Ask Home Assistant prevents sending to an agent
+confirmed missing by a successful discovery. Select an available agent, or fix
+its integration in HA and refresh. A failed discovery displays a retry message
+while preserving the last selection. This failure is separate from the app's
+own connection to its server. The compact app status beside Settings remains reachable through its accessible description. Operator logs distinguish static `invalid_agent_payload` and `websocket_request_failed` reasons without recording the HA payload.
+
+Ask Home Assistant keeps its chat and HA conversation ID when closed and
+reopened on the same page. Changing the selected agent starts a new conversation.
+The Settings default is persistent; the most recent Ask selection is stored for
+the browser session. Saving a new Settings default clears that session override.
+
+For native qualification, open the managed Canary through HA ingress, confirm
+all loaded agents match HA's Assist picker, add or reload an agent in HA, and
+refresh both Meitheal pickers. Test a multi-turn exchange, close/reopen, then
+change agents. An isolated browser fixture checks the picker behavior but does
+not establish Supervisor permissions or HA integration health.
+
+Upstream contract: [HA conversation WebSocket implementation](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/http.py)
+and [registered-agent manager](https://github.com/home-assistant/core/blob/master/homeassistant/components/conversation/agent_manager.py).
+
+## Verify a Settings change
+
+For rejected rule saves, framework overrides or Settings imports, see [Recovering rules and framework settings](settings-configuration-recovery.md). Validation and write failures preserve the previous configuration; resolve the reported input or storage error before retrying.
+
+Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
+
+The Auto/HA contrast cases in `task-theme-contrast.spec.ts` load the real theme bridge through Vite in a synthetic same-origin frontend frame. Run that spec against the Astro dev server; a production server does not expose `/src` modules. The frame checks frontend theme selection, not Supervisor authentication. Keep separate production coverage for Dark/Light controls, saved accents, tags and the Dashboard. Run production browser specs with a fresh fixture per spec, as `test:ci` does, so their shared request volume does not exhaust the unchanged rate limit. Settings' Agent handoff card describes the current administrator review flow and links to Review.
+
+Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
+
+## Navigation and daily review
+
+Ticket links retain the background view when changing board pages or using keyboard view shortcuts. Closing a legacy ticket link returns to its source page. Direct ticket URLs select Tasks in the mobile tab bar. On local HTTP, drawer and custom-link IDs use the browser's available cryptographic random source. Project deletion keeps the Home Assistant ingress path.
+
+Today formats its visible and machine-readable dates in the workspace timezone, using the selected language. Evening dismissal and snoozing use the browser's local calendar date; blocked browser storage does not stop the review controls.
+
+## Home Assistant connection changes
+
+The App uses the Supervisor connection when available. Standalone installations use a complete saved URL/token pair, then an environment pair. Saving changed credentials replaces the authenticated WebSocket and entity subscription; incomplete saved pairs do not mix credentials with environment settings. Connection status never includes tokens. If setup began before Home Assistant was configured, retry after saving the pair.
+
+Calendar sync distinguishes an empty successful response from a missing or failed response. A partial or skipped manual sync reports failure with per-calendar outcomes, so existing tasks are not presented as a successful empty import. Use a disposable calendar to check empty success, disconnected failure and partial failure after changing connection settings. Assist uses the current selected agent; an explicit empty selection uses built-in Assist.
+
+Credential changes during initial authentication retire the pending attempt; it cannot publish an old connection after a newer configuration takes over. Removing or rejecting credentials clears the previous entity snapshot immediately. Registered application listeners remain available for the next successful connection. A populated-cache rotation check covers these cases separately from the ordinary empty-snapshot connection check.

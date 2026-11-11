@@ -83,31 +83,13 @@
 /* Focus management */
 /* ===== Focus Management (Wave 12) ===== */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
 /* Remove outline for mouse users */
 :focus:not(:focus-visible) {
   outline: none;
-}
-
-/* Smooth page transitions */
-/* ===== Smooth Page Transitions (Wave 13) ===== */
-.content-area {
-  animation: page-enter 300ms ease;
-}
-
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* Skeleton shimmer enhancement */

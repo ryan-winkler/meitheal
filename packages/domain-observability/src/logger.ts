@@ -1,3 +1,5 @@
+import { enqueueLokiLog } from "./loki-sink"
+
 export type LogLevel = "debug" | "info" | "warn" | "error"
 
 /**
@@ -123,26 +125,38 @@ function redact(value: string, patterns: RegExp[]): string {
 }
 
 export function createLogger(config: LoggerConfig) {
-  const auditEnabled = config.auditEnabled ?? (process.env.MEITHEAL_AUDIT_LOGS !== "false")
+  const envLevel = process.env.MEITHEAL_LOG_LEVEL as LogLevel | undefined
+  const minLevel = envLevel && Object.hasOwn(severity, envLevel) ? envLevel : config.minLevel
+  const auditOption = process.env.MEITHEAL_AUDIT_ENABLED ?? process.env.MEITHEAL_AUDIT_LOGS
+  const auditEnabled = auditOption === "false" ? false : config.auditEnabled ?? true
+  const categories = process.env.MEITHEAL_LOG_CATEGORIES?.split(",").map(value => value.trim()).filter(Boolean) ?? config.enabledCategories
+  const redactionPatterns = [...defaultRedactionPatterns, ...config.redactPatterns]
 
   function emit(level: LogLevel, partial: Omit<LogEvent, "ts" | "level">): void {
-    if (!shouldLog(level, config.minLevel)) {
+    if (!shouldLog(level, minLevel)) {
       return
     }
-    if (config.enabledCategories.length > 0 && !config.enabledCategories.includes(partial.domain)) {
+    if (partial.domain === "audit" && !auditEnabled) return
+    if (partial.domain !== "audit" && categories.length > 0 && !categories.includes(partial.domain)) {
       return
     }
 
-    const message = redact(partial.message, config.redactPatterns)
+    const timestamp = Date.now()
+    const message = redact(partial.message, redactionPatterns)
     const event: LogEvent = {
-      ts: new Date().toISOString(),
+      ts: new Date(timestamp).toISOString(),
       level,
       ...partial,
       message
     }
 
     // Keep output as a single JSON object per line for Loki parsing.
-    process.stdout.write(`${JSON.stringify({ service: config.service, env: config.env, ...event })}\n`)
+    const line = JSON.stringify({ service: config.service, env: config.env, ...event }, (key, value) => {
+      if (/token|password|secret|authorization|api[_-]?key/i.test(key)) return "[REDACTED]"
+      return typeof value === "string" ? redact(value, redactionPatterns) : value
+    })
+    process.stdout.write(`${line}\n`)
+    enqueueLokiLog(line, redact(config.service, redactionPatterns), redact(config.env, redactionPatterns), timestamp)
   }
 
   return {
@@ -204,7 +218,7 @@ export function createLogger(config: LoggerConfig) {
 }
 
 /** Valid actor types — use for API input validation */
-export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm"] as const
+export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm", "agent"] as const
 export const VALID_ACTOR_TYPE_SET: ReadonlySet<string> = new Set(VALID_ACTOR_TYPES)
 
 /** Valid event types — use for API input validation */
@@ -216,6 +230,7 @@ export const VALID_EVENT_TYPES: readonly TimelineEventType[] = [
 export const VALID_EVENT_TYPE_SET: ReadonlySet<string> = new Set(VALID_EVENT_TYPES)
 
 export const defaultRedactionPatterns: RegExp[] = [
+  /\b(?:password|secret|api[_-]?key|(?:access[_-]?)?token)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
   /(bearer\s+)[a-z0-9\-._~+/]+=*/gi,
   /(authorization:\s*)[^\s]+/gi,
   /(hassio_token=)[^&\s]+/gi,

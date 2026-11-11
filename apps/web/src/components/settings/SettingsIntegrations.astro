@@ -17,27 +17,16 @@ const { locale } = Astro.props
 
 <div class="settings-shell-panel">
   <div class="integrations-layout">
-    <div class="integrations-header">
-      <div>
-        <h2 class="integrations-title">
-          {t("settings.integrations_title", locale)}
-        </h2>
-        <p class="integrations-subtitle">
-          {t("settings.integrations_subtitle", locale)}
-        </p>
-      </div>
-    </div>
-
     <SettingsCallout title={t("settings.integrations_recommended_title", locale)} icon="🔌">
       {t("settings.integrations_recommended_desc", locale)}
     </SettingsCallout>
 
-    <IntegrationHA />
-    <IntegrationCalendar />
-    <IntegrationTodo />
-    <IntegrationGrocy />
-    <IntegrationN8n />
-    <IntegrationWebhooks />
+    <IntegrationHA locale={locale} />
+    <IntegrationCalendar locale={locale} />
+    <IntegrationTodo locale={locale} />
+    <IntegrationGrocy locale={locale} />
+    <IntegrationN8n locale={locale} />
+    <IntegrationWebhooks locale={locale} />
   </div>
 
   <!-- ═══════ Integration Explainer Dialog ═══════ -->
@@ -62,30 +51,15 @@ const { locale } = Astro.props
 <style is:global>
   /* ═══════ Integrations Layout ═══════ */
   .integrations-layout {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
-  .integrations-header {
-    margin-bottom: 8px;
-  }
-
-  .integrations-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0;
-  }
-
-  .integrations-subtitle {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin: 4px 0 0;
-  }
-
   /* ═══════ Integration Card ═══════ */
   .integration-card {
+    min-width: 0;
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
@@ -104,7 +78,10 @@ const { locale } = Astro.props
   }
 
   .integration-card__heading > .info-btn {
-    margin-inline: 0 14px;
+    flex: 0 0 44px;
+    width: 44px;
+    min-height: 44px;
+    margin-inline-end: 4px;
   }
 
   .integration-card__header {
@@ -153,6 +130,8 @@ const { locale } = Astro.props
   }
 
   .integration-card__title-info {
+    min-width: 0;
+    overflow-wrap: anywhere;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -188,21 +167,28 @@ const { locale } = Astro.props
     transform: rotate(90deg);
   }
 
-  /* ═══════ Card Body ═══════ */
-  .integration-card__body {
-    max-height: 0;
-    overflow: hidden;
-    transition:
-      max-height 250ms ease,
-      padding 250ms ease;
-    padding: 0 18px;
+  @media (max-width: 480px) {
+    .integration-card__header {
+      flex-wrap: wrap;
+      padding: 10px;
+    }
+
+    .integration-card__header-right {
+      flex: 1 1 100%;
+      justify-content: space-between;
+      padding-inline-start: 34px;
+    }
   }
 
-  .integration-card__body:not([inert]) {
-    max-height: 1200px;
+  /* ═══════ Card Body ═══════ */
+  .integration-card__body {
+    min-width: 0;
     padding: 16px 18px;
     border-top: 1px solid var(--border);
-    overflow-y: auto;
+  }
+
+  .integration-card__body[inert] {
+    display: none;
   }
 
   .integration-card__config {
@@ -214,6 +200,7 @@ const { locale } = Astro.props
   .integration-card__actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
     align-items: center;
     padding-top: 4px;
   }
@@ -249,7 +236,7 @@ const { locale } = Astro.props
   }
 
   .integration-callout strong {
-    color: var(--accent);
+    color: var(--accent-text);
   }
 
   .integration-callout__detail {
@@ -356,9 +343,8 @@ const { locale } = Astro.props
   }
 
   .cal-toggle-card__state {
-    font-size: 10px;
-    color: var(--text-muted);
-    opacity: 0.8;
+    font-size: 11px;
+    color: var(--text-secondary);
   }
 
   /* Calendar entities header — title + bulk actions */
@@ -366,6 +352,8 @@ const { locale } = Astro.props
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: 4px;
   }
   .cal-count-badge {
@@ -380,7 +368,12 @@ const { locale } = Astro.props
   }
   .cal-bulk-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
+  }
+  .cal-bulk-actions .btn-xs {
+    min-height: 44px !important;
+    font-size: 0.8125rem !important;
   }
   .btn-xs {
     font-size: 11px !important;
@@ -444,7 +437,7 @@ const { locale } = Astro.props
     .integration-card__header {
       padding: 12px 14px;
     }
-    .integration-card__body:not([inert]) {
+    .integration-card__body {
       padding: 12px 14px;
     }
     .integration-card__desc {
@@ -613,18 +606,6 @@ const { locale } = Astro.props
     color: var(--text-primary);
   }
 
-  .ha-test-result {
-    font-size: 13px;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    margin-top: 8px;
-  }
-
-  .ha-test-result small {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
   .ha-advanced-section {
     margin-top: 12px;
     border-top: 1px solid var(--border);
@@ -677,16 +658,13 @@ const { locale } = Astro.props
   }
 
   .callout-link {
-    color: var(--accent);
+    color: var(--accent-text);
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
     font-weight: 600;
   }
 
-  .callout-link:hover {
-    opacity: 0.8;
-  }
 
   /* ═══════ CalDAV Section ═══════ */
   .caldav-section {
@@ -747,7 +725,7 @@ const { locale } = Astro.props
 
   .mode-tab--active {
     background: var(--accent-light);
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
     box-shadow: inset 0 -2px 0 var(--accent);
   }
@@ -829,72 +807,10 @@ const { locale } = Astro.props
 
 <script>
   import { createClientLogger } from "@lib/client-logger"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { refreshHAConnection } from "@lib/settings-integrations-ha-controller"
 
   const log = createClientLogger("settings", "integrations")
-
-  /**
-   * HA Connection Status Detection
-   *
-   * Auto-detects HA connection on page load. Updates status indicator,
-   * info panel, and badge. Auto-expands the HA card when connected.
-   *
-   * Bounded context: integrations / ha-connection
-   */
-  async function initHAConnectionStatus() {
-    const indicator = document.getElementById("ha-indicator");
-    const modeLabel = document.getElementById("ha-mode-label");
-    const detailLabel = document.getElementById("ha-detail-label");
-    const badge = document.getElementById("ha-connection-badge");
-    const infoPanel = document.getElementById("ha-info-panel");
-    if (!indicator || !modeLabel || !badge) return;
-    if (indicator.dataset.haInit) return;
-    indicator.dataset.haInit = "true";
-
-    try {
-      const res = await fetch(
-        (window.__ingress_path || "") + "/api/ha/connection",
-      );
-      const data = (await res.json()) as Record<string, unknown>;
-
-      if (data.connected) {
-        indicator.className =
-          "ha-status-indicator ha-status-indicator--connected";
-        modeLabel!.textContent = `✓ Connected as HA Addon`;
-        if (detailLabel) detailLabel.textContent = `HA ${data.version}`;
-        badge!.textContent = "Connected";
-        badge!.className = "badge badge-active";
-
-        if (infoPanel) {
-          infoPanel.style.display = "block";
-          const setVal = (id: string, val: unknown) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = String(val ?? "—");
-          };
-          setVal("ha-info-version", data.version);
-          setVal("ha-info-location", data.location_name);
-          setVal("ha-info-timezone", data.time_zone);
-          setVal("ha-info-mode", data.mode);
-        }
-
-        // Auto-expand HA card when connected
-        if (window.expandIntegrationCard) {
-          window.expandIntegrationCard("integration-ha-body");
-        }
-      } else {
-        indicator.className = "ha-status-indicator";
-        modeLabel!.textContent = "Not connected";
-        if (detailLabel)
-          detailLabel.textContent = String(data.mode ?? "Standalone");
-        badge!.textContent = "Disconnected";
-        badge!.className = "badge badge-pending";
-      }
-    } catch {
-      indicator.className = "ha-status-indicator";
-      modeLabel!.textContent = "Connection check failed";
-      badge!.textContent = "Error";
-      badge!.className = "badge badge-error";
-    }
-  }
   /**
    * Integration Explainer Dialog
    *
@@ -906,7 +822,7 @@ const { locale } = Astro.props
       title: "🏠 Home Assistant",
       body: `<p>Meitheal connects to Home Assistant via <strong>WebSocket</strong>, allowing it to consume and provide data automatically.</p>
              <p>When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token.</p>
-             <p>For standalone installs, enter your HA URL and a Long-Lived Access Token in the Advanced section.</p>`,
+             <p>The connection test checks the Supervisor connection. The Advanced section stores standalone settings separately.</p>`,
     },
     calendar: {
       title: "📅 Calendar Sync",
@@ -975,47 +891,6 @@ const { locale } = Astro.props
     dialog.addEventListener("click", (e) => {
       if (e.target === dialog) dialog.close();
     });
-  }
-  /**
-   * n8n / Node-RED Mode Toggle
-   *
-   * Switches between HA Addon (auto) and Standalone modes.
-   */
-  function initN8nModeToggle() {
-    const autoBtn = document.getElementById("n8n-mode-auto");
-    const standaloneBtn = document.getElementById("n8n-mode-standalone");
-    const autoContent = document.getElementById("n8n-auto-content");
-    const standaloneContent = document.getElementById("n8n-standalone-content");
-    if (!autoBtn || !standaloneBtn || !autoContent || !standaloneContent)
-      return;
-    if (autoBtn.dataset.modeInit) return;
-    autoBtn.dataset.modeInit = "true";
-
-    function setMode(mode: string) {
-      if (mode === "auto") {
-        autoBtn!.classList.add("mode-tab--active");
-        standaloneBtn!.classList.remove("mode-tab--active");
-        autoContent!.style.display = "";
-        standaloneContent!.style.display = "none";
-      } else {
-        standaloneBtn!.classList.add("mode-tab--active");
-        autoBtn!.classList.remove("mode-tab--active");
-        autoContent!.style.display = "none";
-        standaloneContent!.style.display = "";
-      }
-      try {
-        localStorage.setItem("meitheal:n8n-mode", mode);
-      } catch { /* non-fatal */ }
-    }
-
-    // Restore persisted mode
-    try {
-      const saved = localStorage.getItem("meitheal:n8n-mode");
-      if (saved === "standalone") setMode("standalone");
-    } catch { /* non-fatal */ }
-
-    autoBtn.addEventListener("click", () => setMode("auto"));
-    standaloneBtn.addEventListener("click", () => setMode("standalone"));
   }
   /**
    * Calendar Entity Dropdown Population
@@ -1228,10 +1103,9 @@ const { locale } = Astro.props
     }
   }
   initExplainerDialog();
-  initN8nModeToggle();
 
   function bootIntegrationsDiagnostics() {
-    initHAConnectionStatus();
+    void refreshHAConnection(true);
     initCalendarDropdown();
     initGrocyAutoDetect();
     initNodeRedAutoDetect();
@@ -1251,5 +1125,6 @@ const { locale } = Astro.props
     );
 
     observer.observe(integrationsSection);
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true });
   }
 </script>

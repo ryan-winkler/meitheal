@@ -7,15 +7,20 @@
  * Bounded context: lib (shared UI utility)
  */
 
+import { mountDialogOverlay } from "./dialog-overlay"
+
 export interface ConfirmOptions {
   title?: string;
   message: string;
+  details?: readonly string[];
   confirmText?: string;
   cancelText?: string;
   variant?: "danger" | "warning" | "default";
+  signal?: AbortSignal;
 }
 
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
+  if (options.signal?.aborted) return Promise.resolve(false);
   return new Promise((resolve) => {
     // Remove any existing confirm dialog
     document.getElementById("meitheal-confirm-overlay")?.remove();
@@ -53,51 +58,84 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓";
 
     dialog.innerHTML = `
-      <div style="text-align: center; margin-bottom: 16px; font-size: 32px;">${icon}</div>
+      <div data-confirm-icon style="text-align: center; margin-bottom: 16px; font-size: 32px;"></div>
       <h3 id="confirm-title" style="
         margin: 0 0 8px; font-size: 16px; font-weight: 600;
         color: var(--text-primary, #f1f5f9); text-align: center;
-      ">${options.title ?? "Confirm"}</h3>
+      "></h3>
       <p id="confirm-message" style="
         margin: 0 0 24px; font-size: 14px; line-height: 1.5;
         color: var(--text-secondary, #94a3b8); text-align: center;
-      ">${options.message}</p>
+      "></p>
+      <ul id="confirm-details" hidden style="
+        margin: 0 0 24px; padding-inline-start: 20px; max-block-size: 40vh;
+        overflow: auto; overflow-wrap: anywhere; color: var(--text-secondary, #94a3b8);
+      "></ul>
       <div style="display: flex; gap: 12px; justify-content: center;">
         <button type="button" id="confirm-cancel" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
           background: transparent; border: 1px solid var(--border, #334155);
           color: var(--text-secondary, #94a3b8);
           transition: background 0.15s, border-color 0.15s;
-        ">${options.cancelText ?? "Cancel"}</button>
+        "></button>
         <button type="button" id="confirm-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: ${accentColor}; border: 1px solid ${accentColor};
+          background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
           color: #fff; font-weight: 500;
           transition: opacity 0.15s;
-        ">${options.confirmText ?? "Confirm"}</button>
+        "></button>
       </div>
     `;
 
+    // Dialog options are plain text, including values read back from DOM labels.
+    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
+    dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
+    dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
+    const details = dialog.querySelector<HTMLElement>("#confirm-details")!
+    for (const text of options.details ?? []) {
+      const item = document.createElement("li")
+      item.textContent = text
+      details.appendChild(item)
+    }
+    if (details.childElementCount) {
+      details.hidden = false
+      overlay.setAttribute("aria-describedby", "confirm-message confirm-details")
+    }
+    const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
+    const okBtn = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    cancelBtn.textContent = options.cancelText ?? "Cancel"
+    okBtn.textContent = options.confirmText ?? "Confirm"
+    okBtn.style.background = accentColor
+    okBtn.style.borderColor = accentColor
+
     overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
+
 
     // Save previously focused element for restoration
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    mountDialogOverlay(overlay)
 
     // Focus the cancel button by default (safer)
-    const cancelBtn = dialog.querySelector("#confirm-cancel") as HTMLButtonElement;
-    const okBtn = dialog.querySelector("#confirm-ok") as HTMLButtonElement;
     cancelBtn?.focus();
 
-    function cleanup(result: boolean) {
-      overlay.style.opacity = "0";
-      document.removeEventListener("keydown", onKey, true);
-      setTimeout(() => {
-        overlay.remove();
-        // Restore focus to the element that was focused before the dialog
-        previouslyFocused?.focus();
-      }, 100);
-      resolve(result);
+    let settled = false
+    const abort = () => cleanup(false, true)
+    function cleanup(result: boolean, immediate = false) {
+      function remove() {
+        document.removeEventListener("keydown", onKey, true)
+        options.signal?.removeEventListener("abort", abort)
+        overlay.remove()
+        if (!options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
+      }
+      if (settled) {
+        if (immediate) remove()
+        return
+      }
+      settled = true
+      overlay.style.opacity = "0"
+      if (immediate) remove()
+      else setTimeout(remove, 100)
+      resolve(result)
     }
 
     cancelBtn?.addEventListener("click", () => cleanup(false));
@@ -105,17 +143,27 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) cleanup(false);
     });
+    // Let the buttons handle native activation while keeping app shortcuts outside.
+    overlay.addEventListener(
+      "keydown",
+      (event) => event.stopPropagation(),
+      options.signal ? { signal: options.signal } : undefined,
+    );
 
-    // Keyboard: Enter confirms, Escape cancels, Tab traps focus
+    // Escape cancels and Tab keeps focus in the dialog.
     const focusable = [cancelBtn, okBtn].filter(Boolean);
     function onKey(e: KeyboardEvent) {
+      if (settled) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         cleanup(false);
-      } else if (e.key === "Enter" && document.activeElement === okBtn) {
-        e.preventDefault();
-        cleanup(true);
       } else if (e.key === "Tab" && focusable.length > 0) {
         // Focus trap — cycle between cancel and confirm
         const idx = focusable.indexOf(document.activeElement as HTMLButtonElement);
@@ -129,6 +177,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       }
     }
     document.addEventListener("keydown", onKey, true);
+    options.signal?.addEventListener("abort", abort, { once: true });
   });
 }
 

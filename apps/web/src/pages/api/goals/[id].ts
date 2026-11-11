@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { isValidGoalProgress } from "@meitheal/domain-tasks"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
@@ -34,6 +35,10 @@ export const PUT: APIRoute = async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const updates: Parameters<typeof repo.updateGoal>[1] = {}
+    if ("progress" in body) {
+      if (!isValidGoalProgress(body.progress)) return apiError("progress must be a number from 0 to 100", 400)
+      updates.progress = body.progress
+    }
     if (typeof body.title === "string") {
       const title = stripHtml(body.title.trim())
       if (!title || title.length > 200) return apiError("Title must be 1-200 characters", 400)

@@ -1,7 +1,9 @@
 import type { APIContext } from "astro"
 import { FeedbackQueue, type FeedbackResult, type VerifiedFeedbackActor } from "@domains/support/feedback-queue"
-import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { verifyCurrentHAAdministrator, verifyCurrentHAParticipant } from "@domains/ha/current-admin"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { apiProblem } from "./api-response"
+import { readWithinLimit } from "./bounded-body"
 import { verifiedIngressUser } from "./verified-ingress-user"
 
 const noStore = { "cache-control": "no-store" }
@@ -20,41 +22,42 @@ function feedbackActor(locals: App.Locals): VerifiedFeedbackActor | null {
 }
 
 export function feedbackProblem(status: number, detail: string): Response {
-  return apiProblem({ status, detail, extraHeaders: noStore })
+  return apiProblem({ status, detail, extraHeaders: noStore,
+    ...(status === 408 ? { title: "Request Timeout" } : {}),
+    ...(status === 499 ? { title: "Request Cancelled" } : {}),
+  })
+}
+
+function cancelBody(request: Request): void {
+  if (request.body && !request.body.locked) void request.body.cancel().catch(() => {})
 }
 
 export async function readFeedbackJson(request: Request): Promise<{ body: unknown } | { error: Response }> {
+  if (request.signal.aborted) {
+    cancelBody(request)
+    return { error: feedbackProblem(499, "The feedback request was cancelled.") }
+  }
   const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
   if (contentType !== "application/json") {
+    cancelBody(request)
     return { error: feedbackProblem(415, "Send feedback as application/json.") }
   }
-
   const length = request.headers.get("content-length")
   const tooLarge = () => ({ error: feedbackProblem(413, "The request exceeds 8 KiB. Shorten the text and try again.") })
-  if (length !== null && Number(length) > maxBodyBytes) return tooLarge()
-
-  const reader = request.body?.getReader()
-  if (!reader) return { error: feedbackProblem(400, "Send a JSON request body.") }
-
-  const bytes = new Uint8Array(maxBodyBytes)
-  let offset = 0
+  if (length !== null && Number(length) > maxBodyBytes) {
+    cancelBody(request)
+    return tooLarge()
+  }
+  const deadline = AbortSignal.timeout(5_000)
+  const signal = AbortSignal.any([request.signal, deadline])
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value.byteLength > bytes.length - offset) {
-        void reader.cancel().catch(() => {})
-        return tooLarge()
-      }
-      bytes.set(value, offset)
-      offset += value.byteLength
-    }
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, offset))
-    return { body: JSON.parse(text) as unknown }
+    const bytes = await readWithinLimit(request.body, maxBodyBytes, signal)
+    if (bytes === null) return tooLarge()
+    return { body: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown }
   } catch {
+    if (request.signal.aborted) return { error: feedbackProblem(499, "The feedback request was cancelled.") }
+    if (deadline.aborted) return { error: feedbackProblem(408, "Feedback took too long to arrive. Keep the form open and retry.") }
     return { error: feedbackProblem(400, "Send a valid UTF-8 JSON request body.") }
-  } finally {
-    reader.releaseLock()
   }
 }
 
@@ -70,7 +73,7 @@ export async function withFeedback<T>(
   { request, locals }: APIContext,
   access: "member" | "admin",
   successStatus: 200 | 201 | 204,
-  operation: (queue: FeedbackQueue, actor: VerifiedFeedbackActor) => Promise<FeedbackResult<T> | Response>,
+  operation: (queue: FeedbackQueue, actor: VerifiedFeedbackActor, body: unknown) => Promise<FeedbackResult<T> | Response>,
 ): Promise<Response> {
   const actor = feedbackActor(locals)
   const fetchSite = request.headers.get("sec-fetch-site")
@@ -81,11 +84,28 @@ export async function withFeedback<T>(
     && (fetchSite === null || fetchSite === "same-origin")
   if (!actor || (access === "admin" && actor.role !== "admin")
     || (request.method !== "GET" && !browserMutation)) {
+    cancelBody(request)
     return feedbackProblem(...feedbackErrors.forbidden)
   }
 
   try {
-    const result = await operation(new FeedbackQueue(getPersistenceClient()), actor)
+    let body: unknown
+    if (request.method === "POST" || request.method === "PATCH") {
+      const input = await readFeedbackJson(request)
+      if ("error" in input) return input.error
+      body = input.body
+    }
+    if (request.signal.aborted) return feedbackProblem(499, "The feedback request was cancelled.")
+    await ensureSchema()
+    const authority = await (access === "admin" ? verifyCurrentHAAdministrator : verifyCurrentHAParticipant)(
+      actor.actorId, request.signal,
+    )
+    if (request.signal.aborted) return feedbackProblem(499, "The feedback request was cancelled.")
+    if (authority === "unavailable") {
+      return feedbackProblem(503, "Home Assistant could not verify your current access. Check the Core connection and retry.")
+    }
+    if (authority !== "allowed") return feedbackProblem(...feedbackErrors.forbidden)
+    const result = await operation(new FeedbackQueue(getPersistenceClient()), actor, body)
     if (result instanceof Response) return result
     if (!result.ok) {
       const [status, detail] = feedbackErrors[result.errorCode]

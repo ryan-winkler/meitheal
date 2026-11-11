@@ -13,12 +13,31 @@
  *   const created = await repo.createTask({ id: '...', title: 'New', ... });
  */
 
-import type { Client } from "@libsql/client";
-import type { InValue } from "@libsql/client";
+import type { Client, InStatement, InValue } from "@libsql/client"
 import { getStatusDef, normalizeStatus, STATUS } from "../../../lib/status-config";
 import { logApiError } from "../../../lib/api-logger";
+import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
+import { parseTicketKey } from "../../../lib/ticket-key"
+import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
+import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
+import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
+import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
+import { openTaskDependencies } from "./task-dependencies"
 
 const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
+const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
+
+export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "status" | "priority" | "deferred_at"> & {
+  score: number
+  id_hit?: number
+  exact_id?: number
+  title_at?: number
+  description_hit?: number
+  labels_hit?: number
+  custom_fields_hit?: number
+  comments_hit?: number
+  excerpt?: string | null
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +64,9 @@ export interface TaskRow {
   request_id: string
   created_at: number
   updated_at: number
+  task_version?: number
+  deferred_at: number | null
+  deferral_revision: string | null
   // ── Phase 2 additions ──
   priority: number
   due_date: string | null
@@ -58,6 +80,7 @@ export interface TaskRow {
   progress: number
   color: string | null
   is_favorite: number
+  is_promoted: number
   task_type: string
   summary: string | null
   // ── Phase 3 (recurrence, checklists, NFC) ──
@@ -65,7 +88,7 @@ export interface TaskRow {
   recurrence_anchor: string
   rotation_mode: string | null
   nfc_tag_id: string | null
-  checklists: string
+  checklists: string | null
   reminder_at: string | null
   source_template_id: string | null
   ticket_number: number | null
@@ -104,6 +127,39 @@ function sanitizeRows(rows: TaskRow[]): TaskRow[] {
     const { agent_scratchpad: _, ...rest } = row
     return rest as unknown as TaskRow
   })
+}
+
+function cloneRecurringChecklist(checklists: string | null): string {
+  if (!checklists) return "[]"
+  let input: unknown
+  try {
+    input = JSON.parse(checklists)
+  } catch {
+    return "[]"
+  }
+  if (!Array.isArray(input)) return "[]"
+
+  const steps: Array<{ text: string; id?: string }> = []
+  for (const row of input) {
+    if (typeof row === "string") {
+      steps.push({ text: row })
+    } else if (row && typeof row.text === "string") {
+      const id = typeof row.id === "string" && row.id.trim() ? row.id : undefined
+      steps.push(id ? { text: row.text, id } : { text: row.text })
+    }
+  }
+  const reserved = new Set(steps.map(step => step.id))
+  const assigned = new Set<string>()
+  return JSON.stringify(steps.map(({ text, id }) => {
+    if (!id || assigned.has(id)) {
+      do {
+        id = crypto.randomUUID()
+      } while (reserved.has(id))
+      reserved.add(id)
+    }
+    assigned.add(id)
+    return { id, text, done: false }
+  }))
 }
 
 /** Status count for dashboard statistics */
@@ -148,7 +204,7 @@ export interface KanbanLane {
 }
 
 /** Narrow projection used to filter and count all eligible cards before pagination. */
-export type KanbanIndexRow = Pick<TaskRow, "id" | "status" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to"> &
+export type KanbanIndexRow = Pick<TaskRow, "id" | "status" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" | "is_promoted"> &
   Partial<Pick<TaskRow, "title" | "labels">> & { overdue?: number }
 
 /** Setting key-value pair */
@@ -158,6 +214,15 @@ export interface SettingRow {
 }
 
 // ── Repository ─────────────────────────────────────────────────────────────
+
+type TaskBlocker = Pick<TaskRow, "id" | "title" | "status" | "ticket_number">
+type DeferralState = Pick<TaskRow, "id" | "status" | "deferred_at" | "deferral_revision" | "updated_at">
+
+type DeferralResult =
+  | { ok: true; task: DeferralState }
+  | { ok: false; errorCode: "unavailable" | "terminal" | "ineligible" }
+  | { ok: false; errorCode: "conflict"; task: DeferralState }
+  | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
 
 /**
  * Centralized repository for task-related database queries.
@@ -169,6 +234,55 @@ export interface SettingRow {
  * - Each method maps 1:1 to a query previously inline in a page file.
  * - Stateless: client injected via constructor (follows existing store pattern).
  */
+export type TaskCreationData = {
+  id: string; title: string; description: string; status: string;
+  priority: number; due_date: string | null; labels: string;
+  framework_payload: string; parent_id: string | null;
+  area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
+  end_date: string | null; progress: number; color: string | null;
+  is_favorite: number; task_type: string; task_kind?: string;
+  assigned_to: string | null; checklists?: string | null;
+  recurrence_rule?: string | null;
+  urgency?: number; importance?: number;
+  effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
+}
+
+/** Use one statement for an ordinary insert or a conditional insert in a write batch. */
+export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
+  idempotencyKey = crypto.randomUUID(),
+  requestId = crypto.randomUUID(),
+  guard,
+}: {
+  idempotencyKey?: string
+  requestId?: string
+  guard?: { sql: string; args: InValue[] }
+} = {}): InStatement {
+  return {
+    sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
+                             framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
+                             area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
+                             task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
+                             urgency, importance, effort_minutes, effort_type, blocked_by,
+                             idempotency_key, request_id, created_at, updated_at)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ${guard ? `WHERE ${guard.sql}` : ""}
+          RETURNING ticket_number`,
+    args: [
+      data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
+      data.due_date, data.labels, data.framework_payload,
+      STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
+      data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
+      data.task_type, data.task_kind ?? "standard_action", data.assigned_to,
+      data.checklists ?? "[]", data.recurrence_rule ?? null,
+      data.urgency ?? 0, data.importance ?? 0,
+      data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
+      idempotencyKey, requestId, createdAt, createdAt,
+      ...(guard?.args ?? []),
+    ] as InValue[],
+  }
+}
+
 export class TaskRepository {
   constructor(private readonly client: Client) {}
 
@@ -177,7 +291,7 @@ export class TaskRepository {
   /** Recent tasks for dashboard hero section */
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at
+      `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
        FROM tasks ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as unknown as TaskRow[];
@@ -186,7 +300,7 @@ export class TaskRepository {
   /** Tasks belonging to a specific project, ordered by priority */
   async findByProjectId(projectId: string): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at
+      sql: `SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at, deferred_at
             FROM tasks WHERE project_id = ?
             ORDER BY priority ASC, created_at DESC`,
       args: [projectId],
@@ -198,7 +312,7 @@ export class TaskRepository {
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, is_favorite
-            FROM tasks WHERE is_favorite = 1 AND status != ?
+            FROM tasks WHERE is_favorite = 1 AND status != ? AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
@@ -209,7 +323,7 @@ export class TaskRepository {
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
-            FROM tasks WHERE status NOT IN (?)
+            FROM tasks WHERE status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -220,17 +334,18 @@ export class TaskRepository {
   /** Count tasks grouped by status for dashboard stats */
   async getStatusCounts(): Promise<DashboardStats> {
     const result = await this.client.execute(
-      "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status",
+      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks GROUP BY status",
     );
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
       const r = row as Record<string, unknown>;
       const s = String(r.status);
       const c = Number(r.cnt);
+      const open = Number(r.open_count)
       stats.total += c;
-      if (s === STATUS.ACTIVE) stats.active += c;
+      if (s === STATUS.ACTIVE) stats.active += open
       if (s === STATUS.COMPLETE) stats.completed += c;
-      else stats.open += c;
+      else stats.open += open
     }
     return stats;
   }
@@ -239,7 +354,7 @@ export class TaskRepository {
   async getOverdueCount(): Promise<number> {
     const result = await this.client.execute({
       sql: `SELECT COUNT(*) as cnt FROM tasks
-            WHERE ${OVERDUE_TASK_PREDICATE}`,
+            WHERE ${OVERDUE_TASK_PREDICATE} AND deferred_at IS NULL`,
       args: [new Date().toISOString(), STATUS.COMPLETE],
     });
     return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
@@ -264,21 +379,32 @@ export class TaskRepository {
 
   // ── Kanban (kanban.astro) ───────────────────────────────────────────
 
+  async withKanbanRead<T>(read: (reader: Pick<Client, "execute">) => Promise<T>): Promise<T> {
+    const snapshot = await this.client.transaction("read")
+    try {
+      return await read(snapshot)
+    } finally {
+      snapshot.close()
+    }
+  }
+
   /** Ordered, narrow scan for lane counts and matching before loading card details. */
   async getKanbanIndex(
     statuses: string[],
     cutoff: number,
     { matchText, matchOverdue }: { matchText: boolean; matchOverdue: boolean },
+    reader: Pick<Client, "execute">,
   ): Promise<KanbanIndexRow[]> {
     if (!statuses.length) return []
-    const result = await this.client.execute({
-      sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to
+    const result = await reader.execute({
+      sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${matchOverdue ? `, (${OVERDUE_TASK_PREDICATE}) AS overdue` : ""}
             FROM tasks
             WHERE status IN (SELECT value FROM json_each(?))
+              AND deferred_at IS NULL
               AND (? = 0 OR lower(status) != 'complete' OR updated_at >= ?)
-            ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
+            ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
       args: [
         ...(matchOverdue ? [new Date().toISOString(), STATUS.COMPLETE] : []),
         JSON.stringify(statuses), cutoff, cutoff,
@@ -288,18 +414,22 @@ export class TaskRepository {
   }
 
   /** Load full cards and their indexed counts only for the rendered pages. */
-  async getKanbanCards(ids: string[], cutoff: number): Promise<TaskRow[]> {
+  async getKanbanCards(ids: string[], cutoff: number, reader: Pick<Client, "execute">): Promise<TaskRow[]> {
     if (!ids.length) return []
-    const result = await this.client.execute({
+    const result = await reader.execute({
       sql: `SELECT task.id, task.title, task.description, task.status, task.priority, task.due_date,
                    task.labels, task.framework_payload, task.calendar_sync_state, task.area_id,
-                   task.custom_fields, task.progress, task.color, task.is_favorite, task.task_type,
+                   task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
                    task.task_kind, task.project_id, task.owner, task.handoff_state, task.ticket_number,
                    task.assigned_to, task.recurrence_rule, task.checklists,
+                   task.urgency, task.importance, task.eisenhower_override,
+                   task.effort_minutes, task.effort_type, task.blocked_by, task.nfc_tag_id, task.kanban_position,
+                   task.deferred_at, task.deferral_revision, ${taskTimestampMs("task.updated_at")} AS task_version,
                    (SELECT COUNT(*) FROM comments WHERE task_id = task.id) AS comment_count,
                    (SELECT COUNT(*) FROM tasks AS child WHERE child.parent_id = task.id
                       AND (? = 0 OR lower(child.status) != 'complete' OR child.updated_at >= ?)) AS child_count
-            FROM json_each(?) AS wanted JOIN tasks AS task ON task.id = wanted.value`,
+            FROM json_each(?) AS wanted JOIN tasks AS task ON task.id = wanted.value
+            WHERE task.deferred_at IS NULL`,
       args: [cutoff, cutoff, JSON.stringify(ids)],
     })
     return result.rows as unknown as TaskRow[]
@@ -393,7 +523,7 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.client.execute(
-      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id
+      `SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id, deferred_at
        FROM tasks ORDER BY start_date ASC NULLS LAST, created_at DESC`,
     );
     return result.rows as unknown as TaskRow[];
@@ -407,6 +537,7 @@ export class TaskRepository {
       sql: `SELECT * FROM tasks
             WHERE due_date IS NOT NULL AND due_date < ?
               AND status NOT IN (?)
+              AND deferred_at IS NULL
             ORDER BY due_date ASC`,
       args: [todayStr, STATUS.COMPLETE],
     });
@@ -417,7 +548,7 @@ export class TaskRepository {
   async getTasksDueOn(dateStr: string): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date = ? AND status NOT IN (?)
+            WHERE due_date = ? AND status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority DESC, created_at ASC`,
       args: [dateStr, STATUS.COMPLETE],
     });
@@ -428,7 +559,7 @@ export class TaskRepository {
   async getUnscheduledTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date IS NULL AND status NOT IN (?)
+            WHERE due_date IS NULL AND status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority DESC, created_at DESC
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -451,6 +582,7 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
             WHERE status NOT IN (?)
+              AND deferred_at IS NULL
               AND (
                 (due_date > ? AND due_date <= ? AND priority <= 2)
                 OR (due_date IS NULL AND priority <= 2)
@@ -483,6 +615,7 @@ export class TaskRepository {
       sql: `SELECT * FROM tasks
             WHERE due_date >= ? AND due_date <= ?
               AND status NOT IN (?)
+              AND deferred_at IS NULL
             ORDER BY due_date ASC, priority DESC, created_at ASC`,
       args: [startDate, endDate, STATUS.COMPLETE],
     });
@@ -501,7 +634,8 @@ export class TaskRepository {
       parsedTicketNum = parseInt(idOrKey.slice(4), 10);
     }
     const result = await this.client.execute({
-      sql: "SELECT id, updated_at FROM tasks WHERE id = ? OR ticket_number = ? LIMIT 1",
+      sql: `SELECT id, ${taskTimestampMs("updated_at")} AS updated_at FROM tasks
+            WHERE id = ? OR ticket_number = ? LIMIT 1`,
       args: [idOrKey, parsedTicketNum],
     });
     if (result.rows.length === 0) return null;
@@ -519,9 +653,12 @@ export class TaskRepository {
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
                    t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
                    t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
-                   t.is_favorite, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
+                   t.is_favorite, t.is_promoted, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
-                   t.recurrence_rule, t.created_at, t.updated_at,
+                   t.urgency, t.importance, t.eisenhower_override,
+                   t.effort_minutes, t.effort_type, t.blocked_by, t.nfc_tag_id, t.kanban_position,
+                   t.recurrence_rule, t.created_at, t.updated_at, t.deferred_at, t.deferral_revision,
+                   ${taskTimestampMs("t.updated_at")} AS task_version,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
             FROM tasks t
             LEFT JOIN tasks p ON t.parent_id = p.id
@@ -549,6 +686,81 @@ export class TaskRepository {
     return result.rows as unknown as TaskRow[];
   }
 
+  async findBacklogPage(requestedPage: number): Promise<{
+    page: number;
+    total: number;
+    tasks: Array<Pick<TaskRow, "id" | "title" | "description" | "ticket_number" | "due_date"> & { updated_at: number }>;
+  }> {
+    const pageSize = 25
+    const page = Number.isSafeInteger(requestedPage) ? requestedPage : 1
+    const result = await this.client.execute({
+      sql: `WITH totals AS (
+              SELECT COUNT(*) AS total FROM tasks WHERE status = ? AND deferred_at IS NULL
+            ), bounds AS (
+              SELECT total, MAX(1, MIN(?, CAST((total + ? - 1) / ? AS INTEGER))) AS page FROM totals
+            ), items AS (
+              SELECT id, title, description, ticket_number, due_date,
+                     ${taskTimestampMs("created_at")} AS created_ms,
+                     ${taskTimestampMs("updated_at")} AS updated_at
+              FROM tasks WHERE status = ? AND deferred_at IS NULL
+              ORDER BY created_ms ASC, id ASC
+              LIMIT ? OFFSET (SELECT (page - 1) * ? FROM bounds)
+            )
+            SELECT bounds.total, bounds.page, items.*
+            FROM bounds LEFT JOIN items ON TRUE
+            ORDER BY items.created_ms ASC, items.id ASC`,
+      args: [STATUS.BACKLOG, page, pageSize, pageSize, STATUS.BACKLOG, pageSize, pageSize],
+    })
+    return {
+      page: Number(result.rows[0]?.page ?? 1),
+      total: Number(result.rows[0]?.total ?? 0),
+      tasks: result.rows.flatMap(row => row.id == null ? [] : [{
+        id: String(row.id),
+        title: String(row.title),
+        description: row.description == null ? null : String(row.description),
+        ticket_number: row.ticket_number == null ? null : Number(row.ticket_number),
+        due_date: row.due_date == null ? null : String(row.due_date),
+        updated_at: Number(row.updated_at),
+      }]),
+    }
+  }
+
+  /** List tasks with optional filters, pagination, and sorting. */
+  async findDeferredPage(requestedPage: number): Promise<{
+    page: number
+    total: number
+    tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>
+  }> {
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+    const { rows } = await this.client.execute({
+      sql: `WITH totals AS (
+              SELECT COUNT(*) AS total FROM tasks WHERE deferred_at IS NOT NULL
+            ), bounds AS (
+              SELECT total, MAX(1, MIN(?, (total + 24) / 25)) AS page FROM totals
+            ), items AS (
+              SELECT id, title, project_id, status, ticket_number, deferred_at, deferral_revision,
+                     ${taskTimestampMs("updated_at")} AS updated_at,
+                     COALESCE((SELECT actor = '${inactivityRuleActor}' AND actor_type = 'system'
+                      FROM task_activity_log WHERE task_id = tasks.id AND field = 'deferred_at'
+                        AND new_value = CAST(tasks.deferred_at AS TEXT) ORDER BY id DESC LIMIT 1), 0) AS automatic
+              FROM tasks WHERE deferred_at IS NOT NULL
+              ORDER BY deferred_at DESC, id ASC
+              LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
+            )
+            SELECT bounds.total, bounds.page, items.*
+            FROM bounds LEFT JOIN items ON TRUE
+            ORDER BY items.deferred_at DESC, items.id ASC`,
+      args: [page],
+    })
+    return {
+      page: Number(rows[0]?.page ?? 1),
+      total: Number(rows[0]?.total ?? 0),
+      tasks: rows.filter(row => row.id !== null).map(row => ({
+        ...row, automatic: Number(row.automatic) === 1,
+      })) as unknown as Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>,
+    }
+  }
+
   /** List tasks with optional filters, pagination, and sorting. */
   async findAll(opts: {
     status?: string;
@@ -562,12 +774,13 @@ export class TaskRepository {
     assignedTo?: string;
     label?: string;
     favorite?: boolean;
+    deferred?: boolean
     sort?: string;
     order?: "ASC" | "DESC";
     limit?: number;
     offset?: number;
   }): Promise<{ tasks: TaskRow[]; total: number }> {
-    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date"];
+    const validSorts = ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"];
     const sortCol = validSorts.includes(opts.sort ?? "") ? opts.sort! : "created_at";
     const order = opts.order ?? "DESC";
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
@@ -596,6 +809,7 @@ export class TaskRepository {
     if (opts.assignedTo) { conditions.push("assigned_to = ?"); args.push(opts.assignedTo); }
     if (opts.label) { conditions.push("EXISTS (SELECT 1 FROM json_each(tasks.labels) WHERE json_each.value = ?)"); args.push(opts.label); }
     if (opts.favorite) { conditions.push("is_favorite = 1"); }
+    if (opts.deferred !== undefined) conditions.push(opts.deferred ? "deferred_at IS NOT NULL" : "deferred_at IS NULL")
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
@@ -603,131 +817,139 @@ export class TaskRepository {
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                              ticket_number, assigned_to, created_at, updated_at
+                              ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
+                              urgency, importance, eisenhower_override,
+                              effort_minutes, effort_type, blocked_by, nfc_tag_id, kanban_position,
+                              ${taskTimestampMs("updated_at")} AS task_version
                        FROM tasks${where}
-                       ORDER BY ${sortCol} ${order} LIMIT ${limit} OFFSET ${offset}`;
+                       ORDER BY ${sortCol} ${order} NULLS LAST, id ASC LIMIT ${limit} OFFSET ${offset}`;
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
-    const [result, countResult] = await Promise.all([
-      this.client.execute({ sql: selectSql, args }),
-      this.client.execute({ sql: countSql, args }),
-    ]);
+    const [result, countResult] = await this.client.batch([
+      { sql: selectSql, args },
+      { sql: countSql, args },
+    ], "read")
 
-    const total = Number((countResult.rows[0] as Record<string, unknown>)?.cnt ?? 0);
-    return { tasks: result.rows as unknown as TaskRow[], total };
+    const total = Number(countResult?.rows[0]?.cnt ?? 0)
+    return { tasks: (result?.rows ?? []) as unknown as TaskRow[], total }
   }
 
   /** Advanced catalog search used by the universal search hub and HA search bridges. */
   async searchCatalog(opts: {
-    query?: string;
-    status?: string;
-    priority?: number;
-    assignedTo?: string;
-    includeCompleted?: boolean;
-    includeArchived?: boolean;
-    fields?: readonly string[];
-    sort?: "relevance" | "updated";
-    limit?: number;
-  }): Promise<TaskRow[]> {
-    const query = (opts.query ?? "").trim().toLowerCase();
-    const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"]).map((field) => field.toLowerCase()));
-    const limit = Math.min(50, Math.max(1, opts.limit ?? 12));
-    const rawLimit = Math.min(150, limit * 3);
+    query?: string
+    status?: string
+    priority?: number
+    assignedTo?: string
+    includeCompleted?: boolean
+    includeArchived?: boolean
+    fields?: readonly string[]
+    sort?: "relevance" | "updated"
+    limit?: number
+  }): Promise<TaskCatalogRow[]> {
+    const query = (opts.query ?? "").trim().toLowerCase()
+    const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"])
+      .map(field => field.toLowerCase()))
+    const limit = Math.min(50, Math.max(1, opts.limit ?? 12))
+    const conditions: string[] = []
+    const args: InValue[] = []
 
-    const conditions: string[] = [];
-    const args: InValue[] = [];
-
-    const excludedStatuses: string[] = [];
-    if (opts.includeCompleted !== true) excludedStatuses.push(STATUS.COMPLETE);
-    if (opts.includeArchived !== true) excludedStatuses.push("archived");
-    if (excludedStatuses.length === 1) {
-      conditions.push("tasks.status != ?");
-      args.push(excludedStatuses[0]!);
-    } else if (excludedStatuses.length > 1) {
-      conditions.push(`tasks.status NOT IN (${excludedStatuses.map(() => "?").join(", ")})`);
-      args.push(...excludedStatuses);
+    const excludedStatuses: string[] = []
+    if (opts.includeCompleted !== true) excludedStatuses.push(STATUS.COMPLETE)
+    if (opts.includeArchived !== true) excludedStatuses.push("archived")
+    if (excludedStatuses.length > 0) {
+      conditions.push(`tasks.status NOT IN (${excludedStatuses.map(() => "?").join(", ")})`)
+      args.push(...excludedStatuses)
     }
-
     if (opts.status) {
-      conditions.push("tasks.status = ?");
-      args.push(normalizeStatus(opts.status));
+      conditions.push("tasks.status = ?")
+      args.push(normalizeStatus(opts.status))
     }
-
     if (opts.priority != null) {
-      conditions.push("tasks.priority = ?");
-      args.push(opts.priority);
+      conditions.push("tasks.priority = ?")
+      args.push(opts.priority)
     }
-
     if (opts.assignedTo) {
-      conditions.push("tasks.assigned_to = ?");
-      args.push(opts.assignedTo);
+      conditions.push("tasks.assigned_to = ?")
+      args.push(opts.assignedTo)
     }
 
-    if (query) {
-      const fieldClauses: string[] = [];
-
-      if (fields.has("id")) {
-        fieldClauses.push("LOWER(tasks.id) LIKE ?");
-        fieldClauses.push("LOWER(COALESCE('mth-' || CAST(tasks.ticket_number AS TEXT), '')) LIKE ?");
-        fieldClauses.push("CAST(COALESCE(tasks.ticket_number, '') AS TEXT) LIKE ?");
-        args.push(`%${query}%`, `%${query}%`, `%${query}%`);
-      }
-      if (fields.has("title")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.title, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("description")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.description, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("labels")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.labels, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("custom_fields")) {
-        fieldClauses.push("LOWER(COALESCE(tasks.custom_fields, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-      if (fields.has("comments")) {
-        fieldClauses.push("LOWER(COALESCE(comment_index.comment_blob, '')) LIKE ?");
-        args.push(`%${query}%`);
-      }
-
-      if (fieldClauses.length > 0) {
-        conditions.push(`(${fieldClauses.join(" OR ")})`);
-      }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+    const projection = "tasks.id, tasks.ticket_number, tasks.title, tasks.status, tasks.priority, tasks.deferred_at"
+    const updatedAt = taskTimestampMs("tasks.updated_at")
+    if (!query) {
+      const result = await this.client.execute({
+        sql: `SELECT ${projection}, 0 AS score
+              FROM tasks ${where}
+              ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
+              LIMIT ?`,
+        args: [...args, limit],
+      })
+      return result.rows as unknown as TaskCatalogRow[]
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const orderBy = opts.sort === "updated"
-      ? "tasks.updated_at DESC, tasks.priority ASC"
-      : "tasks.updated_at DESC";
+    const parsedTicket = parseTicketKey(query) ?? (/^[0-9]+$/.test(query) ? Number(query) : 0)
+    const ticket = Number.isSafeInteger(parsedTicket) && parsedTicket > 0 ? parsedTicket : null
+    const selected = (field: string, sql: string) => fields.has(field) ? sql : "0"
+    // INSTR treats percent, underscore and backslash literally. The needle and
+    // the stored field keep their existing JavaScript/SQLite case behavior.
+    const position = (column: string) => `instr(lower(coalesce(${column}, '')), needle.value)`
+    const commentMatch = `c.task_id = tasks.id AND ${position("c.content")} > 0`
+    const snippet = (column: string) => {
+      const start = `max(${position(column)} - 32, 1)`
+      return `(CASE WHEN ${start} > 1 THEN '...' ELSE '' END) ||
+              substr(${column}, ${start}, 174) ||
+              (CASE WHEN length(${column}) >= ${start} + 174 THEN '...' ELSE '' END)`
+    }
+    const snippets = [
+      fields.has("description") ? `WHEN page.description_hit THEN ${snippet("tasks.description")}` : "",
+      fields.has("comments") ? `WHEN page.comments_hit THEN (
+        SELECT ${snippet("c.content")} FROM comments c
+        WHERE ${commentMatch} ORDER BY c.created_at DESC, c.id DESC LIMIT 1
+      )` : "",
+      fields.has("custom_fields") ? `WHEN page.custom_fields_hit THEN ${snippet("tasks.custom_fields")}` : "",
+      fields.has("labels") ? `WHEN page.labels_hit THEN ${snippet("tasks.labels")}` : "",
+    ].filter(Boolean)
+    const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
+    const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
     const result = await this.client.execute({
-      sql: `SELECT tasks.id, tasks.ticket_number, tasks.title, tasks.description, tasks.status,
-                   tasks.priority, tasks.labels, tasks.custom_fields, tasks.area_id, tasks.task_type,
-                   tasks.assigned_to, tasks.updated_at, tasks.created_at, tasks.due_date,
-                   comment_index.comment_blob
-            FROM tasks
-            LEFT JOIN (
-              SELECT task_id, GROUP_CONCAT(content, ' || ') AS comment_blob
-              FROM comments
-              GROUP BY task_id
-            ) AS comment_index
-              ON comment_index.task_id = tasks.id
-            ${where}
-            ORDER BY ${orderBy}
-            LIMIT ${rawLimit}`,
-      args,
-    });
+      sql: `WITH needle(value, ticket) AS (VALUES (?, ?)),
+            hits AS MATERIALIZED (
+              SELECT tasks.id, tasks.priority, ${updatedAt} AS updated_at_ms,
+                ${selected("id", `lower(tasks.id) = needle.value OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
+                ${selected("id", `${position("tasks.id")} > 0 OR
+                  ${position("'mth-' || cast(tasks.ticket_number AS TEXT)")} > 0 OR
+                  ${position("cast(tasks.ticket_number AS TEXT)")} > 0`)} AS id_hit,
+                ${selected("title", "lower(tasks.title) = needle.value")} AS exact_title,
+                ${selected("title", position("tasks.title"))} AS title_at,
+                ${selected("description", `${position("tasks.description")} > 0`)} AS description_hit,
+                ${selected("labels", `${position("tasks.labels")} > 0`)} AS labels_hit,
+                ${selected("custom_fields", `${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
+                ${selected("comments", `EXISTS (SELECT 1 FROM comments c WHERE ${commentMatch})`)} AS comments_hit,
+                (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
+              FROM tasks CROSS JOIN needle ${where}
+            ),
+            page AS (
+              SELECT hits.*,
+                CASE WHEN exact_id THEN ${EXACT_TASK_IDENTIFIER_SCORE}
+                     WHEN exact_title THEN 3000
+                     WHEN title_at = 1 THEN 2000
+                     ELSE 1000 END
+                + (title_at > 0) * 60 + description_hit * 25 + labels_hit * 18
+                + custom_fields_hit * 15 + comments_hit * 12 + open_boost AS score
+              FROM hits
+              WHERE exact_id OR id_hit OR title_at > 0 OR description_hit OR labels_hit OR custom_fields_hit OR comments_hit
+              ORDER BY ${orderBy}updated_at_ms DESC, priority ASC, id ASC
+              LIMIT ?
+            )
+            SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
+              page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
+            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`,
+      args: [query, ticket, ...args, limit],
+    })
 
-    return result.rows as unknown as TaskRow[];
-  }
-
-  /** Get the next sequential ticket number for MTH-N key assignment */
-  async getNextTicketNumber(): Promise<number> {
-    const result = await this.client.execute("SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks");
-    return Number((result.rows[0] as Record<string, unknown>)?.next_num ?? 1);
+    return result.rows as unknown as TaskCatalogRow[]
   }
 
   /** Look up the default assignee from app_settings (nullable) */
@@ -755,49 +977,37 @@ export class TaskRepository {
 
   /**
    * Insert a new task. Caller is responsible for validation and ID generation.
-   * @returns The inserted row ID.
+   * @returns The ticket number allocated by the insert.
    */
-  async createTask(data: {
-    id: string; title: string; description: string; status: string;
-    priority: number; due_date: string | null; labels: string;
-    framework_payload: string; parent_id: string | null;
-    area_id: string; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
-    end_date: string | null; progress: number; color: string | null;
-    is_favorite: number; task_type: string; task_kind?: string; ticket_number: number;
-    assigned_to: string | null; checklists?: string | null;
-    recurrence_rule?: string | null;
-    urgency?: number; importance?: number;
-    effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
-  }): Promise<string> {
-    const now = Date.now();
-    await this.client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
-                               area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
-                               task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
-                               urgency, importance, effort_minutes, effort_type, blocked_by,
-                               idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
-        data.due_date, data.labels, data.framework_payload,
-        STATUS.PENDING, data.parent_id, data.project_id ?? null, data.goal_id ?? null, data.area_id, data.custom_fields,
-        data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
-        data.task_type, data.task_kind ?? "standard_action", data.ticket_number, data.assigned_to,
-        data.checklists ?? "[]", data.recurrence_rule ?? null,
-        data.urgency ?? 0, data.importance ?? 0,
-        data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
-        crypto.randomUUID(), crypto.randomUUID(), now, now,
-      ] as InValue[],
-    });
-    return data.id;
+  async createTask(data: TaskCreationData, createdAt = Date.now()): Promise<number> {
+    const result = await this.client.execute(taskInsertStatement(data, createdAt))
+    return Number(result.rows[0]!.ticket_number)
   }
 
-  /** Apply a partial update, checking open dependencies atomically for activation. */
-  async updateTask(id: string, fields: Record<string, InValue>): Promise<
-    { ok: true; task: TaskRow }
+  /** Resolve a physical tag without silently choosing duplicate assignments. */
+  async findByNfcTag(tagId: string): Promise<Array<{ id: string; title: string; status: string }>> {
+    const result = await this.client.execute({
+      sql: "SELECT id, title, status FROM tasks WHERE nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2",
+      args: [tagId],
+    })
+    return result.rows as unknown as Array<{ id: string; title: string; status: string }>
+  }
+
+  /** Apply a partial update with atomic dependency, version and checklist guards. */
+  async updateTask(
+    id: string,
+    fields: Record<string, InValue>,
+    { version, expectedChecklists, activity }: {
+      version?: { updatedAt: number; expectedStatus?: "backlog" }
+      expectedChecklists?: string | null
+      activity?: RecentTaskActor
+    } = {},
+  ): Promise<
+    { ok: true; task: TaskRow; previousStatus?: string }
     | { ok: false; errorCode: "unavailable" }
-    | { ok: false; errorCode: "blocked"; blockers: Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[] }
+    | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
+    | { ok: false; errorCode: "conflict"; updatedAt: number }
+    | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
   > {
     const updates: string[] = []
     const args: InValue[] = []
@@ -808,8 +1018,11 @@ export class TaskRepository {
     }
     if (updates.length === 0) return { ok: false, errorCode: "unavailable" }
 
-    updates.push("updated_at = ?")
-    args.push(Date.now(), id)
+    const storedVersion = taskTimestampMs("updated_at")
+    updates.push(`updated_at = ${nextTaskTimestampMs("updated_at")}`)
+    const now = Date.now()
+    args.push(now)
+    const whereArgs: InValue[] = [id]
 
     // Legacy task databases do not have a project foreign key. Check the
     // destination in the write so project deletion cannot race reassignment.
@@ -817,51 +1030,186 @@ export class TaskRepository {
     const destinationExists = typeof projectId === "string"
       ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ?)"
       : ""
-    if (typeof projectId === "string") args.push(projectId)
+    if (typeof projectId === "string") whereArgs.push(projectId)
+    const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
+    if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
 
-    // Outbound "blocked_by" and inbound "blocks" describe the same dependency.
-    const dependencies = fields.status === STATUS.ACTIVE ? {
-      sql: `SELECT t.id, t.title, t.status, t.ticket_number
-            FROM (
-              SELECT target_task_id AS blocker_id FROM task_links
-              WHERE source_task_id = ? AND link_type = 'blocked_by'
-              UNION
-              SELECT source_task_id AS blocker_id FROM task_links
-              WHERE target_task_id = ? AND link_type = 'blocks'
-            ) AS dependency
-            JOIN tasks t ON t.id = dependency.blocker_id
-            WHERE t.status NOT IN (?, 'archived')`,
-      args: [id, id, STATUS.COMPLETE],
-    } : null
+    const predicates: string[] = []
+    if (version) {
+      predicates.push(`${storedVersion} < 9007199254740991`, `${storedVersion} ${version.expectedStatus ? "=" : "<="} ?`)
+      whereArgs.push(version.updatedAt)
+      if (version.expectedStatus) {
+        predicates.push("tasks.status = ?", "tasks.deferred_at IS NULL")
+        whereArgs.push(version.expectedStatus)
+      }
+    }
+
+    const dependencies = fields.status === STATUS.ACTIVE ? openTaskDependencies(id) : null
+    if (dependencies) whereArgs.push(...dependencies.args)
+    const where = `WHERE id = ?${destinationExists}${checklistMatches}
+      ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
+      ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}`
     const update = {
-      sql: `UPDATE tasks SET ${updates.join(", ")} WHERE id = ?${destinationExists}
-              ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}
+      sql: `UPDATE tasks SET ${updates.join(", ")} ${where}
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
                       parent_id, time_tracked, start_date, end_date, progress, color,
-                      is_favorite, task_type, task_kind, project_id, owner, handoff_state,
-                      ticket_number, assigned_to, checklists, urgency, importance,
+                      is_favorite, is_promoted, task_type, task_kind, project_id, owner, handoff_state,
+                      ticket_number, assigned_to, checklists, urgency, importance, nfc_tag_id,
                       eisenhower_override, created_at, updated_at`,
-      args: dependencies ? [...args, ...dependencies.args] : args,
+      args: [...args, ...whereArgs],
     }
 
-    // Keep the diagnostic rows and guarded write in the same SQLite transaction.
-    const [open, result] = dependencies
-      ? await this.client.batch([
-        { ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` },
-        update,
-      ], "write")
-      : [undefined, await this.client.execute(update)]
-    if (open?.rows.length) {
+    const diagnostics = []
+    if (version) {
+      diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
+    }
+    if (expectedChecklists !== undefined) {
+      diagnostics.push({
+        sql: "SELECT checklists FROM tasks WHERE id = ? AND checklists IS NOT ?",
+        args: [id, expectedChecklists],
+      })
+    }
+    if (dependencies) {
+      diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
+    }
+
+    // A status transition and its prior state share the same writer transaction.
+    // Callers must use this snapshot for once-only completion side effects.
+    const statusIndex = diagnostics.length
+    if (typeof fields.status === "string") diagnostics.push({ sql: "SELECT status FROM tasks WHERE id = ?", args: [id] })
+
+    // Capture the old state and commit the event and update in the same writer batch.
+    const eventId = activity ? crypto.randomUUID() : null
+    const statements: InStatement[] = [...diagnostics]
+    if (activity && eventId) statements.push(taskChangedActivity(fields, where, whereArgs, activity, now, eventId))
+    const writeIndex = statements.length
+    statements.push(update)
+    if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
+    const results = statements.length > 1
+      ? await this.client.batch(statements, "write")
+      : [await this.client.execute(update)]
+    const row = results[writeIndex]?.rows[0]
+    if (row) return { ok: true, task: row as unknown as TaskRow,
+      ...(typeof fields.status === "string" ? { previousStatus: String(results[statusIndex]?.rows[0]?.status ?? "") } : {}),
+    }
+
+    if (version) {
+      const current = results[0]?.rows[0]
+      if (!current) return { ok: false, errorCode: "unavailable" }
+      const updatedAt = Number(current.updated_at)
+      const changed = version.expectedStatus
+        ? updatedAt !== version.updatedAt || current.status !== version.expectedStatus || current.deferred_at !== null
+        : updatedAt > version.updatedAt
+      if (changed || updatedAt === Number.MAX_SAFE_INTEGER) {
+        return { ok: false, errorCode: "conflict", updatedAt }
+      }
+    }
+    const changedChecklist = expectedChecklists === undefined
+      ? undefined
+      : results[version ? 1 : 0]?.rows[0]?.checklists
+    if (typeof changedChecklist === "string" || changedChecklist === null) {
+      return { ok: false, errorCode: "checklist_conflict", checklists: changedChecklist }
+    }
+    const blockers = dependencies ? results[statusIndex - 1]?.rows : undefined
+    if (blockers?.length) {
       return {
         ok: false,
         errorCode: "blocked",
-        blockers: open.rows as unknown as Pick<TaskRow, "id" | "title" | "status" | "ticket_number">[],
+        blockers: blockers as unknown as TaskBlocker[],
       }
     }
-    return result.rows[0]
-      ? { ok: true, task: result.rows[0] as unknown as TaskRow }
-      : { ok: false, errorCode: "unavailable" }
+    return { ok: false, errorCode: "unavailable" }
+  }
+
+  /** Move open work in or out of deferral without changing its workflow clock. */
+  async setDeferral(
+    id: string,
+    deferred: boolean,
+    guard: { updatedAt: number; revision: string | null; inactivityNow?: number },
+    actor: { id: string; type: "agent" | "human" | "system"; requestId: string },
+  ): Promise<DeferralResult> {
+    const now = guard.inactivityNow ?? Date.now()
+    const marker = deferred ? now : null
+    const version = taskTimestampMs("updated_at")
+    const columns = `id, status, deferred_at, deferral_revision, ${version} AS updated_at`
+    if (deferred && guard.inactivityNow !== undefined) {
+      const eligibility = inactivityWriteGuard(now)
+      const transaction = await this.client.transaction("write")
+      try {
+        const [changed, audit, verified] = await transaction.batch([
+          {
+            sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))
+              WHERE id = ? AND ${version} = ? AND deferral_revision IS ? AND (${eligibility.sql})
+              RETURNING ${columns}`,
+            args: [now, id, guard.updatedAt, guard.revision, ...eligibility.args],
+          },
+          {
+            sql: `INSERT INTO task_activity_log
+                (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+              SELECT id, 'deferred_at', NULL, CAST(deferred_at AS TEXT), ?, 'system', 'field_change', ?, ?, ?
+              FROM tasks WHERE changes() = 1 AND id = ? AND deferred_at = ?`,
+            args: [inactivityRuleActor, "Automatically deferred after inactivity", actor.requestId, now, id, now],
+          },
+          {
+            sql: `SELECT 1 FROM task_activity_log WHERE id = last_insert_rowid() AND task_id = ?
+              AND field = 'deferred_at' AND old_value IS NULL AND new_value = ?
+              AND actor = ? AND actor_type = 'system' AND event_type = 'field_change'
+              AND correlation_id = ? AND created_at = ?`,
+            args: [id, String(now), inactivityRuleActor, actor.requestId, now],
+          },
+        ])
+        const task = changed?.rows[0] as unknown as DeferralState | undefined
+        if (!task && audit?.rowsAffected === 0) return { ok: false, errorCode: "ineligible" }
+        if (!task || audit?.rowsAffected !== 1 || verified?.rows.length !== 1) {
+          throw new Error("Automatic deferral requires one matching audit row")
+        }
+        await transaction.commit()
+        return { ok: true, task }
+      } finally {
+        if (!transaction.closed) await transaction.rollback()
+      }
+    }
+    const dependencies = openTaskDependencies(id)
+    const activeStates = [STATUS.ACTIVE, ...(getStatusDef(STATUS.ACTIVE)?.aliases ?? [])]
+    const activePredicate = `lower(status) IN (${activeStates.map(() => "?").join(", ")})`
+    const eligible = `id = ? AND ${version} = ? AND deferral_revision IS ?
+      AND lower(status) NOT IN ${deferralTerminalStatusesSql}
+      AND deferred_at IS ${deferred ? "" : "NOT "}NULL
+      ${deferred ? "" : `AND (NOT (${activePredicate}) OR NOT EXISTS (${dependencies.sql}))`}`
+    const args = [id, guard.updatedAt, guard.revision, ...(deferred ? [] : [...activeStates, ...dependencies.args])]
+    const [diagnostic, audit, changed, blockers] = await this.client.batch([
+      { sql: `SELECT ${columns} FROM tasks WHERE id = ?`, args: [id] },
+      {
+        sql: `INSERT INTO task_activity_log
+                (task_id, field, old_value, new_value, actor, actor_type, event_type, correlation_id, created_at)
+              SELECT id, 'deferred_at', CAST(deferred_at AS TEXT), ?, ?, ?, 'field_change', ?, ?
+              FROM tasks WHERE ${eligible}`,
+        args: [marker === null ? null : String(marker), actor.id, actor.type, actor.requestId, now, ...args],
+      },
+      {
+        sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))
+              WHERE changes() = 1 AND ${eligible} RETURNING ${columns}`,
+        args: [marker, ...args],
+      },
+      ...(!deferred ? [{ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` }] : []),
+    ], "write")
+    const row = changed?.rows[0] as unknown as DeferralState | undefined
+    if (row && audit?.rowsAffected === 1) return { ok: true, task: row }
+
+    const current = diagnostic?.rows[0] as unknown as DeferralState | undefined
+    if (!current) return { ok: false, errorCode: "unavailable" }
+    if (current.updated_at !== guard.updatedAt || current.deferral_revision !== guard.revision) {
+      return { ok: false, errorCode: "conflict", task: current }
+    }
+    if (isDeferralTerminalStatus(current.status)) {
+      return { ok: false, errorCode: "terminal" }
+    }
+    if ((current.deferred_at !== null) === deferred) return { ok: true, task: current }
+    if (!deferred && normalizeStatus(current.status) === STATUS.ACTIVE && blockers?.rows.length) {
+      return { ok: false, errorCode: "blocked", blockers: blockers.rows as unknown as TaskBlocker[] }
+    }
+    throw new Error("Task deferral write did not match its transaction snapshot")
   }
 
   /** Fetch old field values for activity log diffing before an update */
@@ -870,7 +1218,7 @@ export class TaskRepository {
       sql: `SELECT title, description, status, priority, due_date, labels,
                    framework_payload, area_id, custom_fields, parent_id,
                    task_type, task_kind, project_id, owner, handoff_state,
-                   start_date, end_date, progress, color, is_favorite, assigned_to,
+                   start_date, end_date, progress, color, is_favorite, is_promoted, assigned_to,
                    urgency, importance, eisenhower_override
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
@@ -1004,7 +1352,7 @@ export class TaskRepository {
   async getRecurrenceData(id: string): Promise<TaskRow | null> {
     const result = await this.client.execute({
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels,
-                   area_id, parent_id, task_type, assigned_to, checklists, custom_fields
+                   area_id, project_id, parent_id, task_type, assigned_to, checklists, custom_fields
             FROM tasks WHERE id = ? LIMIT 1`,
       args: [id],
     });
@@ -1021,26 +1369,19 @@ export class TaskRepository {
     recurrenceRule: string,
   ): Promise<{ id: string; ticketNumber: number }> {
     const newId = crypto.randomUUID();
-    const ticketNumber = await this.getNextTicketNumber();
     const now = Date.now();
 
-    // Reset checklists — uncheck all items for new occurrence
-    let freshChecklists: string | null = null;
-    if (sourceTask.checklists && typeof sourceTask.checklists === "string") {
-      try {
-        const items = JSON.parse(String(sourceTask.checklists));
-        if (Array.isArray(items)) {
-          freshChecklists = JSON.stringify(items.map((i: { text: string }) => ({ text: i.text, done: false })));
-        }
-      } catch { /* keep null */ }
-    }
-
-     await this.client.execute({
+    // Resolve the project in the insert so legacy references and concurrent
+    // project deletion cannot create a dangling reference.
+    const result = await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
-                               recurrence_rule, recurrence_anchor, area_id, parent_id, task_type, assigned_to,
+                               recurrence_rule, recurrence_anchor, area_id, project_id, parent_id, task_type, assigned_to,
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?,
+                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+            RETURNING ticket_number`,
       args: [
         newId,
         sourceTask.title ? String(sourceTask.title) : "Recurring task",
@@ -1052,17 +1393,17 @@ export class TaskRepository {
         recurrenceRule,
         sourceTask.recurrence_anchor ? String(sourceTask.recurrence_anchor) : "due_date",
         sourceTask.area_id ? String(sourceTask.area_id) : "default",
+        sourceTask.project_id ?? null,
         sourceTask.parent_id ? String(sourceTask.parent_id) : null,
         sourceTask.task_type ? String(sourceTask.task_type) : "task",
         sourceTask.assigned_to ? String(sourceTask.assigned_to) : null,
-        freshChecklists,
+        cloneRecurringChecklist(sourceTask.checklists),
         sourceTask.custom_fields ? String(sourceTask.custom_fields) : "{}",
-        ticketNumber,
         crypto.randomUUID(), crypto.randomUUID(), now, now,
       ] as InValue[],
     });
 
-    return { id: newId, ticketNumber };
+    return { id: newId, ticketNumber: Number(result.rows[0]!.ticket_number) }
   }
 
   /** Count open tasks (non-complete) — used for iOS badge count */
@@ -1101,19 +1442,47 @@ export class TaskRepository {
     return result.rowsAffected;
   }
 
-  /** Batch update kanban positions */
-  async reorderTasks(updates: Array<{ id: string; position: number }>): Promise<void> {
-    const stmts = updates.map(u => ({
-      sql: "UPDATE tasks SET kanban_position = ?, updated_at = ? WHERE id = ?",
-      args: [u.position, Date.now(), u.id] as InValue[],
-    }));
-    await this.client.batch(stmts);
+  /** Reorder submitted tasks across their existing slots in the shared order. */
+  async reorderTasks(ids: string[]): Promise<boolean> {
+    if (ids.length === 0) return false
+    const result = await this.client.execute({
+      sql: `WITH requested AS MATERIALIZED (
+              SELECT value AS id, key AS ordinal FROM json_each(?)
+            ), allowed AS MATERIALIZED (
+              SELECT COUNT(*) AS total FROM requested
+              JOIN tasks ON tasks.id = requested.id AND tasks.deferred_at IS NULL
+              HAVING total = (SELECT COUNT(*) FROM requested)
+                 AND total = COUNT(DISTINCT requested.id)
+            ), ordered AS MATERIALIZED (
+              SELECT id, ROW_NUMBER() OVER (
+                ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC
+              ) - 1 AS position
+              FROM tasks WHERE EXISTS (SELECT 1 FROM allowed)
+            ), slots AS MATERIALIZED (
+              SELECT position, ROW_NUMBER() OVER (ORDER BY position) - 1 AS ordinal
+              FROM ordered WHERE id IN (SELECT id FROM requested)
+            ), ranks AS MATERIALIZED (
+              SELECT ordered.id, COALESCE(slots.position, ordered.position) AS position,
+                     requested.id IS NOT NULL AS submitted
+              FROM ordered
+              LEFT JOIN requested ON requested.id = ordered.id
+              LEFT JOIN slots ON slots.ordinal = requested.ordinal
+            )
+            UPDATE tasks SET kanban_position = ranks.position,
+              deferral_revision = CASE WHEN ranks.submitted AND ${taskTimestampMs("tasks.updated_at")} = 9007199254740991
+                THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
+              updated_at = CASE WHEN ranks.submitted THEN ${nextTaskTimestampMs("tasks.updated_at")} ELSE updated_at END
+            FROM ranks WHERE tasks.id = ranks.id
+              AND (ranks.submitted OR tasks.kanban_position IS NOT ranks.position)`,
+      args: [JSON.stringify(ids), Date.now()],
+    })
+    return result.rowsAffected > 0
   }
 
   /** Place a card in the shared order while preserving every other card's relative order. */
   async reorderKanbanCard(input: { id: string; anchorId: string; lane: string; before: boolean }): Promise<boolean> {
-    // Lane membership is checked before ranking the full board. A shared order
-    // keeps overlapping lanes and area filters consistent with each other.
+    // Lane membership and promotion group are checked before ranking the full
+    // board. The underlying order is shared across lanes, filters and groups.
     // Leave the unranked suffix alone; it still sorts by the same tie-breaks.
     const result = await this.client.execute({
       sql: `WITH requested(moved_id, anchor_id, lane, after_anchor) AS (VALUES (?, ?, ?, ?)),
@@ -1121,12 +1490,13 @@ export class TaskRepository {
               SELECT requested.*
               FROM requested
               WHERE (
-                SELECT COUNT(*) FROM tasks
+                SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM tasks
                 WHERE id IN (requested.moved_id, requested.anchor_id)
+                  AND deferred_at IS NULL
                   AND status IN (
                     SELECT value FROM json_each((SELECT includes FROM kanban_lanes WHERE key = requested.lane))
                   )
-              ) = 2
+              )
             ),
             ordered AS MATERIALIZED (
               SELECT id, kanban_position, ROW_NUMBER() OVER (
@@ -1156,7 +1526,9 @@ export class TaskRepository {
               WHERE from_position != to_position OR ordered.id = moved_id
             )
             UPDATE tasks
-            SET kanban_position = updated_order.position
+            SET kanban_position = updated_order.position,
+                inactivity_touched_at = CASE WHEN tasks.id = (SELECT moved_id FROM move WHERE from_position != to_position)
+                  THEN MAX(COALESCE(inactivity_touched_at, 0), ?) ELSE inactivity_touched_at END
             FROM updated_order
             WHERE tasks.id = updated_order.id
               AND (
@@ -1166,7 +1538,7 @@ export class TaskRepository {
                   WHERE prior_position IS NOT NULL OR id = (SELECT moved_id FROM move)
                 ))
               )`,
-      args: [input.id, input.anchorId, input.lane, input.before ? 0 : 1],
+      args: [input.id, input.anchorId, input.lane, input.before ? 0 : 1, Date.now()],
     })
     return result.rowsAffected > 0
   }
@@ -1217,21 +1589,23 @@ export class TaskRepository {
   // ── Comment Methods ─────────────────────────────────────────────────
 
   /** List comments for a task, ordered by creation time ascending */
-  async getComments(taskId: string) {
+  async getComments(taskId: string, ownerKey: string | null) {
     const result = await this.client.execute({
-      sql: "SELECT id, task_id, content, author, created_at FROM comments WHERE task_id = ? ORDER BY created_at ASC, id ASC",
-      args: [taskId] as InValue[],
-    });
-    return result.rows;
+      sql: `SELECT id, task_id, content, author, created_at,
+                   CASE WHEN owner_key = ? THEN 1 ELSE 0 END AS can_manage
+            FROM comments WHERE task_id = ? ORDER BY created_at ASC, id ASC`,
+      args: [ownerKey, taskId],
+    })
+    return result.rows.map(row => ({ ...row, content: String(row.content), can_manage: Number(row.can_manage) === 1 }))
   }
 
   /** Insert and return this comment while the parent task exists. */
-  async addComment(taskId: string, content: string, author: string, ownerKey: string | null) {
+  async addComment(taskId: string, content: string, author: string, ownerKey: string | null, verifiedHuman = false) {
     const inserted = await this.client.execute({
-      sql: `INSERT INTO comments (task_id, content, author, owner_key)
-            SELECT id, ?, ?, ? FROM tasks WHERE id = ?
+      sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
+            SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ?
             RETURNING id, task_id, content, author, created_at`,
-      args: [content, author, ownerKey, taskId],
+      args: [content, author, ownerKey, verifiedHuman ? 1 : 0, taskId],
     })
     return inserted.rows[0]
   }
@@ -1240,16 +1614,6 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: "SELECT id, task_id, content, author, created_at FROM comments WHERE task_id = ? AND id = ?",
       args: [taskId, commentId],
-    })
-    return result.rows[0]
-  }
-
-  async updateComment(taskId: string, commentId: number, ownerKey: string, content: string) {
-    const result = await this.client.execute({
-      sql: `UPDATE comments SET content = ?
-            WHERE task_id = ? AND id = ? AND owner_key = ?
-            RETURNING id, task_id, content, author, created_at`,
-      args: [content, taskId, commentId, ownerKey],
     })
     return result.rows[0]
   }
@@ -1266,15 +1630,21 @@ export class TaskRepository {
 
   /** Fetch paginated activity log for a task */
   async getActivityLog(taskId: string, limit: number, offset: number) {
-    const result = await this.client.execute({
-      sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
-            FROM task_activity_log
-            WHERE task_id = ?
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?`,
-      args: [taskId, limit, offset],
-    });
-    return result.rows;
+    const where = `WHERE task_id = ? AND ${taskHistoryPredicate}`
+    const [events, count] = await this.client.batch([
+      {
+        sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+              FROM task_activity_log ${where}
+              ORDER BY created_at DESC
+              LIMIT ? OFFSET ?`,
+        args: [taskId, limit, offset],
+      },
+      {
+        sql: `SELECT COUNT(*) AS total FROM task_activity_log ${where}`,
+        args: [taskId],
+      },
+    ], "read")
+    return { activity: events?.rows ?? [], total: Number(count?.rows[0]?.total ?? 0) }
   }
 
   /**
@@ -1291,7 +1661,7 @@ export class TaskRepository {
     const limit = Math.min(200, Math.max(1, opts?.limit ?? 50))
     const offset = Math.max(0, opts?.offset ?? 0)
 
-    const conditions: string[] = ["task_id = ?"]
+    const conditions = ["task_id = ?", taskHistoryPredicate]
     const args: InValue[] = [taskId]
 
     if (opts?.event_type) {

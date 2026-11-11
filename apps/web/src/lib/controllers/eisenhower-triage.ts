@@ -11,6 +11,7 @@
 
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
+import { normalizeStatus, OPEN_STATUSES } from "@lib/status-config"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -40,14 +41,13 @@ export function quadrantPreview(urgency: number, importance: number): string {
 /** Open the triage overlay by fetching unclassified tasks */
 export async function startTriage(): Promise<void> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/tasks?status=open"
-    )
+    const res = await fetch("/api/tasks?deferred=0")
     if (!res.ok) { showToast("common.failed_update", "error"); return }
     const data = await res.json()
     const raw = Array.isArray(data) ? data : (data.tasks ?? [])
     triageTasks = raw
       .filter((t: Record<string, unknown>) =>
+        OPEN_STATUSES.has(normalizeStatus(String(t.status ?? ""))) &&
         (t.urgency === 0 || t.urgency == null) &&
         (t.importance === 0 || t.importance == null)
       )
@@ -109,26 +109,23 @@ export async function triageSave(): Promise<void> {
   if (effortTypeRadio?.value) payload.effort_type = effortTypeRadio.value
 
   const delayVal = (document.getElementById("triage-delay-impact") as HTMLSelectElement)?.value
-  if (delayVal && delayVal !== "none") {
-    const existingFP = await getExistingFrameworkPayload(task.id)
-    existingFP.delay_impact = delayVal
-    payload.framework_payload = JSON.stringify(existingFP)
-  }
-
-  const interestRadio = document.querySelector<HTMLInputElement>('input[name="triage-interest"]:checked')
-  if (interestRadio?.value) {
-    const existingFP = typeof payload.framework_payload === "string"
-      ? JSON.parse(payload.framework_payload as string)
-      : await getExistingFrameworkPayload(task.id)
-    existingFP.interest_tag = interestRadio.value
-    payload.framework_payload = JSON.stringify(existingFP)
-  }
+  const interestVal = document.querySelector<HTMLInputElement>('input[name="triage-interest"]:checked')?.value
+  const isCurrentTask = () => triageTasks[triageIndex] === task &&
+    document.getElementById("triage-overlay")?.classList.contains("triage-overlay--hidden") === false
 
   try {
+    if ((delayVal && delayVal !== "none") || interestVal) {
+      const existingFP = await getExistingFrameworkPayload(task.id)
+      if (!isCurrentTask()) return
+      if (delayVal && delayVal !== "none") existingFP.delay_impact = delayVal
+      if (interestVal) existingFP.interest_tag = interestVal
+      payload.framework_payload = JSON.stringify(existingFP)
+    }
+    if (!isCurrentTask()) return
     await taskApi.updateTask(task.id, payload)
-    triageNext()
+    if (isCurrentTask()) triageNext()
   } catch {
-    showToast("common.failed_update", "error")
+    if (isCurrentTask()) showToast("common.failed_update", "error")
   }
 }
 
@@ -209,17 +206,17 @@ function updateTriagePreview(): void {
   if (preview) preview.textContent = quadrantPreview(u, i)
 }
 
-/** Helper: fetch existing framework_payload for a task to merge into */
+/** Read known framework values before replacing their serialized payload. */
 export async function getExistingFrameworkPayload(taskId: string): Promise<Record<string, unknown>> {
-  try {
-    const res = await fetch((window.__ingress_path || "") + `/api/tasks/${taskId}`)
-    if (!res.ok) return {}
-    const data = await res.json()
-    const fp = data.framework_payload
-    if (typeof fp === "string") return JSON.parse(fp)
-    if (typeof fp === "object" && fp !== null) return fp
-    return {}
-  } catch {
-    return {}
+  const data: unknown = await taskApi.getTask(taskId)
+  if (!data || typeof data !== "object" || Array.isArray(data) || (data as Record<string, unknown>).id !== taskId) {
+    throw new Error("Invalid task metadata response")
   }
+  const fp = (data as Record<string, unknown>).framework_payload
+  if (fp === null) return {}
+  const parsed: unknown = typeof fp === "string" ? JSON.parse(fp) : fp
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid task framework values")
+  }
+  return { ...parsed as Record<string, unknown> }
 }

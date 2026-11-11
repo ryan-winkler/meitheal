@@ -4,6 +4,11 @@ import type { APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
 import { apiJson, apiError, apiProblem } from "../../lib/api-response"
+import { readWithinLimit } from "@lib/bounded-body"
+import { resolveMcpSchema } from "@lib/mcp-schema"
+import { isDoneStatus } from "@lib/status-config"
+import { checkMcpAvailability } from "@lib/mcp-availability"
+import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
@@ -50,12 +55,22 @@ type CustomToolHandler = (
 
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
+  "reviewTaskProposal", "acceptTaskProposal", // Human-only proposal decisions
+  "createRule", "replaceRules", "updateRule", "deleteRule", "restoreRuleDefaults",
+  "createFramework", "updateFramework", "deleteFramework", // Human administrator settings mutations
+  "useLabelCleanup",
+  "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
+  "taskInactivity",
   "mcpEndpoint",       // Self-reference
   "healthPing",        // HEAD-only liveness
   "subscribeSSE",      // SSE streaming, not callable
   "exportDatabase",    // Large binary download
   "exportSettings",    // File downloads
   "importSettings",    // File upload
+  "setTaskDeferral",   // Requires the exact current workflow and deferral versions
+  "readTaskPins", "verifyTaskPinContext", "setTaskPin", // Verified Home Assistant browser only
+  "findCommentPeople", "useMentionInbox",
+  "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */
@@ -144,7 +159,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       if (op.parameters) {
         for (const param of op.parameters) {
           if (param.in === "header") continue // Skip headers
-          const paramSchema = param.schema ?? { type: "string" }
+          const paramSchema = resolveMcpSchema(param.schema ?? { type: "string" }, spec)
           properties[param.name] = {
             ...paramSchema,
             description: param.description ?? `${param.name} parameter`,
@@ -158,7 +173,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       // Extract request body properties
       const hasBody = method === "post" || method === "put" || method === "patch"
       if (hasBody && op.requestBody?.content?.["application/json"]?.schema) {
-        const bodySchema = op.requestBody.content["application/json"].schema
+        const bodySchema = resolveMcpSchema(op.requestBody.content["application/json"].schema, spec)
         if (bodySchema.properties) {
           for (const [propName, propSchema] of Object.entries(bodySchema.properties as Record<string, Record<string, unknown>>)) {
             properties[propName] = propSchema
@@ -170,6 +185,8 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
           }
         }
       }
+
+      if (toolName === "searchTasks") properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
 
       tools.push({
         name: toolName,
@@ -232,11 +249,11 @@ customHandlers.set("completeTask", async (args, requestApi) => {
       method: "PUT",
       body: JSON.stringify({ status: "complete" }),
     })
-    return { status: "completed", ...(await res.json().catch(() => ({}))) }
+    return acknowledgedCompletion(res, String(args.id))
   }
   if (args.title) {
     const searchRes = await requestApi(`/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
-    const data = (await searchRes.json().catch(() => ({ sections: [] }))) as {
+    const data = (await checkedJson(searchRes)) as {
       sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
     }
     const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -249,8 +266,7 @@ customHandlers.set("completeTask", async (args, requestApi) => {
         method: "PUT",
         body: JSON.stringify({ status: "complete" }),
       })
-      await response.body?.cancel()
-      return { status: "completed", id: taskId, title: match.title }
+      return acknowledgedCompletion(response, String(taskId))
     }
     return { status: "not_found", title: args.title }
   }
@@ -260,14 +276,17 @@ customHandlers.set("completeTask", async (args, requestApi) => {
 // searchTasks: reshape search response for cleaner AI consumption
 customHandlers.set("searchTasks", async (args, requestApi) => {
   const params = new URLSearchParams()
-  if (args.query) params.set("q", String(args.query))
-  if (args.status) params.set("status", String(args.status))
-  if (args.priority) params.set("priority", String(args.priority))
-  if (args.assigned_to) params.set("assigned_to", String(args.assigned_to))
-  if (args.include_completed) params.set("include_completed", "1")
+  const query = args.q ?? args.query
+  if (query !== undefined) params.set("q", String(query))
+  for (const key of ["status", "priority", "assigned_to", "limit", "sort", "task_fields"]) {
+    if (args[key] !== undefined) params.set(key, String(args[key]))
+  }
+  for (const key of ["include_completed", "include_archived"]) {
+    if (args[key] === true) params.set(key, "1")
+  }
   params.set("scope", "tasks")
   const res = await requestApi(`/api/search?${params}`)
-  const data = (await res.json().catch(() => ({ sections: [] }))) as {
+  const data = (await checkedJson(res)) as {
     sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
   }
   const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -350,13 +369,77 @@ async function executeTool(
   }
 
   const res = await requestApi(fullUrl, fetchOpts)
-  const data = await res.json().catch(() => ({}))
-  return { status: res.status, ...data }
+  return { ...await checkedJson(res), status: res.status }
+}
+
+async function acknowledgedCompletion(response: Response, expectedId: string): Promise<Record<string, unknown>> {
+  const task = await checkedJson(response)
+  const exactId = task.id === expectedId
+  const exactTicket = /^MTH-\d+$/i.test(expectedId) && typeof task.ticket_key === "string" &&
+    task.ticket_key.toUpperCase() === expectedId.toUpperCase()
+  if (typeof task.id !== "string" || !task.id || (!exactId && !exactTicket) ||
+    typeof task.status !== "string" || !isDoneStatus(task.status)) {
+    throw new Error("Task completion returned an invalid acknowledgement")
+  }
+  return { ...task, status: "completed" }
+}
+
+async function checkedJson(response: Response): Promise<Record<string, unknown>> {
+  if (!response.ok) throw new Error(`Operation failed (HTTP ${response.status})`)
+  if (response.status === 204 || response.status === 205) return { ok: true }
+  let data: unknown
+  try { data = await response.json() } catch { throw new Error("Operation returned invalid JSON") }
+  if (!isRecord(data)) throw new Error("Operation returned an invalid response")
+  if (data.ok === false || data.success === false || data.error) throw new Error("Operation was rejected")
+  return data
 }
 
 // ─── JSON-RPC 2.0 Handler ────────────────────────────────────────────────────
 
-export const POST: APIRoute = async ({ request, locals }) => {
+const MAX_REQUEST_BYTES = 1024 * 1024
+const VERSION_META = "io.modelcontextprotocol/protocolVersion"
+const CAPABILITIES_META = "io.modelcontextprotocol/clientCapabilities"
+const CAPABILITIES = { tools: { listChanged: false } }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function matchesOrigin(request: Request, behindIngress: boolean): boolean {
+  const header = request.headers.get("origin")
+  if (header === null) return true
+  const origin = URL.parse(header)
+  if (!origin || origin.origin !== header || !["http:", "https:"].includes(origin.protocol)) return false
+
+  const requestUrl = new URL(request.url)
+  if (behindIngress) {
+    const forwarded = request.headers.get("x-forwarded-proto")
+    const protocol = forwarded === "https" || forwarded === "http" ? `${forwarded}:` : requestUrl.protocol
+    return origin.protocol === protocol && origin.host === request.headers.get("host")?.toLowerCase()
+  }
+  // Do not trust arbitrary Host values for direct traffic. Native clients omit Origin.
+  const configured = URL.parse(process.env.SITE_URL ?? "")?.origin
+  if (header === configured) return true
+  return ["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname) &&
+    origin.protocol === requestUrl.protocol && origin.host === request.headers.get("host")?.toLowerCase()
+}
+
+function requestName(header: string | null): string | null {
+  const encoded = header?.match(/^=\?base64\?([A-Za-z0-9+/]+={0,2})\?=$/)?.[1]
+  if (!encoded) return header
+  const bytes = Buffer.from(encoded, "base64")
+  return bytes.toString("base64") === encoded ? bytes.toString("utf8") : null
+}
+
+function mcpJson(data: unknown, status = 200): Response {
+  const response = apiJson(data, status)
+  response.headers.set("Cache-Control", "no-store")
+  return response
+}
+
+type RequestId = string | number | null
+
+async function checkMcpTransport(request: Request, locals: App.Locals) {
   const authorization = request.headers.get("authorization")
   const agent = locals.agentToken
   if (!agent || !authorization) {
@@ -366,39 +449,99 @@ export const POST: APIRoute = async ({ request, locals }) => {
       extraHeaders: { "WWW-Authenticate": "Bearer" },
     })
   }
+  if (!hasScope(agent.scopes, "mcp:execute")) return apiError("MCP requires the mcp:execute scope.", 403)
+  if (!matchesOrigin(request, locals.behindIngress)) return apiError("MCP Origin is not allowed.", 403)
+  const unavailable = await checkMcpAvailability()
+  if (unavailable) return unavailable
+  return { agent, authorization }
+}
+
+/** Legacy clients may probe for a standalone SSE stream. This endpoint sends JSON replies. */
+export const GET: APIRoute = async ({ request, locals }) => {
+  const access = await checkMcpTransport(request, locals)
+  if (access instanceof Response) return access
+  return new Response(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } })
+}
+export const HEAD = GET
+
+export const POST: APIRoute = async ({ request, locals }) => {
+  const access = await checkMcpTransport(request, locals)
+  if (access instanceof Response) return access
+  const { agent, authorization } = access
+
+  const tooLarge = () => apiProblem({
+    status: 413, detail: "MCP requests may be at most 1 MiB.",
+    extraHeaders: { "Cache-Control": "no-store", Connection: "close" },
+  })
+  if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) return tooLarge()
+  const rpcError = (id: RequestId, code: number, message: string, status = 200, data?: Record<string, unknown>) =>
+    mcpJson({ jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } }, status)
+
+  let body: unknown
+  try {
+    const bytes = await readWithinLimit(request.body, MAX_REQUEST_BYTES, request.signal)
+    if (!bytes) return tooLarge()
+    body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+  } catch {
+    return rpcError(null, -32700, "Parse error", 400)
+  }
+
+  if (!isRecord(body)) return rpcError(null, -32600, "Invalid JSON-RPC request", 400)
+  const { method, id: reqId = "1", params = {} } = body
+  if (typeof reqId !== "string" && typeof reqId !== "number" && reqId !== null) {
+    return rpcError(null, -32600, "Invalid JSON-RPC request ID", 400)
+  }
+  if (!isRecord(params)) return rpcError(reqId, -32602, "Expected a params object", 400)
+  const version = request.headers.get("mcp-protocol-version")
+  if (version !== null && !MCP_SUPPORTED_VERSIONS.includes(version)) {
+    return rpcError(reqId, -32022, "Unsupported protocol version", 400, { requested: version, supported: MCP_SUPPORTED_VERSIONS })
+  }
+
+  const meta = isRecord(params._meta) ? params._meta : {}
+  const modern = version === MCP_PROTOCOL_VERSION || meta[VERSION_META] !== undefined || method === "server/discover"
+  if (modern) {
+    if (body.jsonrpc !== "2.0" || !Object.hasOwn(body, "id") || reqId === null || typeof method !== "string") {
+      return rpcError(null, -32600, "Invalid JSON-RPC request", 400)
+    }
+    if (version !== MCP_PROTOCOL_VERSION || meta[VERSION_META] !== version || request.headers.get("mcp-method") !== method) {
+      return rpcError(reqId, -32020, "MCP version and method headers must match the request body", 400)
+    }
+    if (!isRecord(meta[CAPABILITIES_META])) {
+      return rpcError(reqId, -32602, "Expected MCP client capabilities", 400)
+    }
+    if (method === "tools/call" && requestName(request.headers.get("mcp-name")) !== params.name) {
+      return rpcError(reqId, -32020, "Mcp-Name must match the requested tool name", 400)
+    }
+  } else if (!Object.hasOwn(body, "id") && (method === "notifications/initialized" || method === "notifications/cancelled")) {
+    return new Response(null, { status: 202, headers: { "Cache-Control": "no-store" } })
+  }
+
+  const serverInfo = { name: "meitheal", version: process.env.MEITHEAL_VERSION || "0.3.0" }
+  const result = (value: Record<string, unknown>) => mcpJson({
+    jsonrpc: "2.0",
+    id: reqId,
+    result: modern ? {
+      ...value,
+      resultType: "complete",
+      _meta: { "io.modelcontextprotocol/serverInfo": serverInfo },
+    } : value,
+  })
 
   try {
-    const body = await request.json().catch(() => null)
-
-    if (!body || typeof body !== "object") {
-      return apiJson(
-        { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } },
-        400
-      )
-    }
-
-    const { method, id: reqId = "1", params = {} } = body as {
-      method?: string
-      id?: string
-      params?: Record<string, unknown>
-    }
-
     // Initialize handshake
-    if (method === "initialize") {
-      return apiJson({
-        jsonrpc: "2.0",
-        id: reqId,
-        result: {
-          protocolVersion: "2025-03-26",
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: {
-            name: "meitheal",
-            version: "0.3.0",
-            generatedFrom: "openapi",
-          },
-        },
+    if (!modern && method === "initialize") {
+      const requested = params.protocolVersion
+      const protocolVersion = MCP_SUPPORTED_VERSIONS.slice(1).find(version => version === requested) ?? MCP_LEGACY_VERSION
+      return result({
+        protocolVersion,
+        capabilities: CAPABILITIES,
+        serverInfo: { ...serverInfo, generatedFrom: "openapi" },
       })
     }
+    if (modern && method === "server/discover") {
+      return result({ supportedVersions: MCP_SUPPORTED_VERSIONS, capabilities: CAPABILITIES, ttlMs: 0, cacheScope: "private" })
+    }
+    if (method === "ping") return result({})
 
     // List tools — dynamically from OpenAPI + custom handlers
     if (method === "tools/list") {
@@ -420,54 +563,40 @@ export const POST: APIRoute = async ({ request, locals }) => {
         }
       }
 
-      return apiJson({
-        jsonrpc: "2.0",
-        id: reqId,
-        result: { tools: [...tools.filter(tool => allowed(tool.name)), ...customOnlyTools] },
+      return result({
+        tools: [...tools.filter(tool => allowed(tool.name)), ...customOnlyTools],
+        ...(modern ? { ttlMs: 0, cacheScope: "private" } : {}),
       })
     }
 
     // Execute tool
     if (method === "tools/call") {
-      const toolName = (params as { name?: string }).name ?? ""
-      const args = (params as { arguments?: Record<string, unknown> }).arguments ?? {}
+      const toolName = typeof params.name === "string" ? params.name : ""
+      const args = params.arguments ?? {}
+      if (!toolName || !isRecord(args)) return rpcError(reqId, -32602, "Expected a tool name and arguments object")
 
       try {
         const scope = toolScope(toolName, loadOpenAPISpec().routes.get(toolName))
-        if (!scope || !hasScope(agent.scopes, scope)) throw new Error("Tool is unavailable to this token")
-        const result = await executeTool(toolName, args, authorization)
-        const isError = "error" in result
-
-        return apiJson({
-          jsonrpc: "2.0",
-          id: reqId,
-          result: {
-            content: [{ type: "text", text: JSON.stringify(result) }],
-            isError,
-          },
+        if (!scope || !hasScope(agent.scopes, scope)) {
+          return rpcError(reqId, modern ? -32602 : -32603, "Tool is unavailable to this token")
+        }
+        const output = await executeTool(toolName, args, authorization)
+        return result({
+          content: [{ type: "text", text: JSON.stringify(output) }],
+          ...(modern ? { structuredContent: output } : {}),
+          isError: "error" in output || (modern && (output.status === "not_found" || output.status === "error")),
         })
       } catch (toolError) {
-        // Return JSON-RPC error format — never raw 500
-        return apiJson({
-          jsonrpc: "2.0",
-          id: reqId,
-          error: {
-            code: -32603,
-            message: toolError instanceof Error ? toolError.message : "Tool execution failed",
-          },
-        })
+        const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}$/.test(toolError.message)
+          ? toolError.message : "Tool execution failed"
+        if (modern) return result({ content: [{ type: "text", text: message }], isError: true })
+        return rpcError(reqId, -32603, message)
       }
     }
 
-    return apiJson(
-      { jsonrpc: "2.0", id: reqId, error: { code: -32601, message: `Unknown method: ${method}` } },
-      400
-    )
-  } catch (error) {
-    return apiError(
-      error instanceof Error ? error.message : "MCP server error",
-      500
-    )
+    return rpcError(reqId, -32601, "Method not found", modern ? 404 : 400)
+  } catch {
+    return rpcError(reqId, -32603, "MCP server error", 500)
   }
 }
 

@@ -10,37 +10,14 @@
  *      Custom frameworks can be fully deleted.
  */
 import type { APIRoute } from "astro"
-import { readFileSync, existsSync } from "node:fs"
-import { resolve, dirname } from "node:path"
-import { fileURLToPath } from "node:url"
-import { parse as parseYaml } from "yaml"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
+import { getBuiltInFramework } from "@domains/strategy/framework-catalog"
 import { getOverrides, saveOverrides, resetOverrides } from "@domains/strategy/framework-repository"
 import { getCustomFramework, updateCustomFramework, deleteCustomFramework } from "@domains/strategy/custom-framework-repository"
-import { parseFrameworkConfig, mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
-import type { FrameworkConfig, FrameworkOverrides } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, validateFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
 import { validateSafeId } from "@lib/sanitize-id"
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const FRAMEWORKS_DIR = resolve(__dirname, "../../../content/frameworks")
-
-/** Check if a framework ID is a built-in (has a YAML file) */
-function isBuiltIn(id: string): boolean {
-  return existsSync(resolve(FRAMEWORKS_DIR, `${id}.yaml`))
-}
-
-/** Load built-in framework from YAML */
-function loadBuiltInFramework(id: string): FrameworkConfig | null {
-  const yamlPath = resolve(FRAMEWORKS_DIR, `${id}.yaml`)
-  if (!existsSync(yamlPath)) return null
-  try {
-    const content = readFileSync(yamlPath, "utf8")
-    const raw = parseYaml(content) as Record<string, unknown>
-    return parseFrameworkConfig(id, raw)
-  } catch {
-    return null
-  }
-}
 
 export const GET: APIRoute = async ({ params }) => {
   try {
@@ -54,7 +31,7 @@ export const GET: APIRoute = async ({ params }) => {
     }
 
     // Try built-in first
-    const builtIn = loadBuiltInFramework(frameworkId!)
+    const builtIn = await getBuiltInFramework(frameworkId!)
     if (builtIn) {
       const overrideRecord = await getOverrides(frameworkId!)
       const config = mergeFrameworkConfig(builtIn, overrideRecord?.overrides ?? null)
@@ -86,7 +63,9 @@ export const GET: APIRoute = async ({ params }) => {
   }
 }
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = async ({ params, request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const frameworkId = params.id
     const idErr = validateSafeId(frameworkId, "framework_id")
@@ -97,9 +76,13 @@ export const PUT: APIRoute = async ({ params, request }) => {
       )
     }
 
-    if (isBuiltIn(frameworkId!)) {
-      // Built-in: save as overrides
-      const body = (await request.json()) as FrameworkOverrides
+    const base = await getBuiltInFramework(frameworkId!)
+    if (base) {
+      const body = await request.json()
+      const errors = validateFrameworkOverrides(body, base.fields.map((field) => field.key))
+      if (errors) return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors, message: errors.join(". ") }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
       const record = await saveOverrides(frameworkId!, body)
       return new Response(JSON.stringify({ ok: true, data: record }), {
         status: 200,
@@ -140,7 +123,9 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 }
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = async ({ params, request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const frameworkId = params.id
     const idErr = validateSafeId(frameworkId, "framework_id")
@@ -151,7 +136,7 @@ export const DELETE: APIRoute = async ({ params }) => {
       )
     }
 
-    if (isBuiltIn(frameworkId!)) {
+    if (await getBuiltInFramework(frameworkId!)) {
       // Built-in: reset overrides to YAML defaults
       const deleted = await resetOverrides(frameworkId!)
       return new Response(JSON.stringify({ ok: true, wasReset: deleted, source: "built-in" }), {

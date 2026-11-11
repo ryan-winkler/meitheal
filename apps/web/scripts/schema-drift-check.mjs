@@ -3,7 +3,14 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createClient } from "@libsql/client";
+import { openDatabase } from "./database-client.mjs"
+import { validateTaskDeferralSchema } from "../drizzle/migrations/0004_task_deferral.mjs"
+import { validateTaskPinsSchema } from "../drizzle/migrations/0005_task_pins.mjs"
+import { validateTaskDraftsSchema } from "../drizzle/migrations/0006_task_drafts.mjs"
+import { validateCommentMentionsSchema } from "../drizzle/migrations/0007_comment_mentions.mjs"
+
+import { validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
+import { validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
 
 const execFileAsync = promisify(execFile);
 
@@ -17,7 +24,10 @@ const expectedSchema = {
     "idempotency_key",
     "request_id",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "deferred_at",
+    "deferral_revision",
+    "inactivity_touched_at", "last_activity_spike_at"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
@@ -59,10 +69,16 @@ async function main() {
     }
   });
 
-  const client = createClient({ url: dbUrl });
+  const client = openDatabase(dbUrl)
   const failures = [];
 
   try {
+    await validateTaskDeferralSchema(client)
+    await validateTaskPinsSchema(client)
+    await validateTaskDraftsSchema(client)
+    await validateCommentMentionsSchema(client)
+    await validateTaskInactivitySchema(client)
+    await validateTaskStallSchema(client)
     for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
       const tableResult = await client.execute({
         sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",

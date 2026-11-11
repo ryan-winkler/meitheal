@@ -1,7 +1,9 @@
 ---
+import Icon from "../../ui/Icon.astro"
+
 interface Props {
   integration: string
-  icon: string
+  icon: "home" | "calendar" | "tasks" | "cart" | "automation" | "bell"
   title: string
   description: string
   helpLabel: string
@@ -18,7 +20,7 @@ const { integration, icon, title, description, helpLabel } = Astro.props
     aria-controls={`integration-${integration}-body`}
   >
     <span class="integration-card__title-row">
-      <span class="integration-card__icon" aria-hidden="true">{icon}</span>
+      <span class="integration-card__icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
       <span class="integration-card__title-info">
         <strong>{title}</strong>
         <span class="integration-card__desc">{description}</span>
@@ -29,5 +31,5 @@ const { integration, icon, title, description, helpLabel } = Astro.props
       <span class="integration-card__chevron" aria-hidden="true">▸</span>
     </span>
   </button>
-  <button type="button" class="info-btn" data-explainer={integration} aria-label={helpLabel}>ℹ️</button>
+  <button type="button" class="info-btn" data-explainer={integration} aria-label={helpLabel}><Icon name="info" size={16} /></button>
 </div>

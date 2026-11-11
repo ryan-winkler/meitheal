@@ -7,9 +7,8 @@
  * Push notification handler for task reminders.
  * skipWaiting requires client message (FR-308).
  *
- * Ingress-aware: When running behind HA Supervisor ingress, the
- * registration script sends SET_INGRESS_PATH with the permanent
- * ingress prefix. All precache and fetch routing respects this.
+ * Ingress-aware: The registration scope supplies the Home Assistant path
+ * before install runs, so precache and fetch routing stay inside ingress.
  *
  * @kcs Ingress token is permanent per-installation (HA issue #6605).
  */
@@ -54,11 +53,9 @@ const EVICTION_POLICY = {
   // precache: no eviction policy — cleaned entirely on version bump
 };
 
-/**
- * HA ingress path prefix, set via SET_INGRESS_PATH message
- * from the registration script. Empty string when running standalone.
- */
-let ingressPath = "";
+// Standalone registration has no Home Assistant ingress prefix.
+const scopePath = new URL(self.registration.scope).pathname.replace(/\/+$/, "")
+const ingressPath = /^\/api\/hassio_ingress\/[A-Za-z0-9_-]+$/.test(scopePath) ? scopePath : ""
 
 // Static assets to precache (app shell + key pages).
 // Paths are relative to root — ingressPath is prepended at install time.
@@ -68,15 +65,12 @@ const PRECACHE_PATHS = [
   "/today",
   "/upcoming",
   "/tasks",
-  "/table",
-  "/calendar",
+  "/planning",
   "/settings",
   "/gamification",
   "/habits",
-  "/projects",
   "/goals",
   "/eisenhower",
-  "/timeline",
   "/manifest.webmanifest",
   "/icon-192.png",
 ];
@@ -87,6 +81,17 @@ const PRECACHE_PATHS = [
  */
 function getPrecacheUrls() {
   return PRECACHE_PATHS.map((p) => `${ingressPath}${p}`);
+}
+
+function hasNoStore(response) {
+  return response.headers.get("cache-control")?.split(",").some(directive =>
+    directive.trim().toLowerCase() === "no-store"
+  );
+}
+
+async function matchCacheable(request, cacheName) {
+  const response = await caches.match(request, { cacheName });
+  return response && !hasNoStore(response) ? response : undefined;
 }
 
 // --- Cache Eviction ---
@@ -165,7 +170,7 @@ function maybeEvict() {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     // Fetch build-time version from astro.config.mjs-generated file
-    fetch(`${ingressPath}/version.json`)
+    fetch(`${ingressPath}/version.json`, { redirect: "error" })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.version && data.version !== CACHE_VERSION) {
@@ -179,22 +184,94 @@ self.addEventListener("install", (event) => {
         // Precache each URL individually — one 404 shouldn't break the whole install
         const urls = getPrecacheUrls();
         return Promise.allSettled(
-          urls.map((url) =>
-            cache.add(url).catch(() => {
+          urls.map(async (url) => {
+            try {
+              const request = new Request(url, { redirect: "error" });
+              const response = await fetch(request);
+              if (response.ok && !hasNoStore(response)) await cache.put(request, response);
+            } catch {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
-            })
-          )
+            }
+          })
         );
       })
   );
 });
 
+function appRoutePath(pathname) {
+  return pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "").replace(/\/$/, "") || "/"
+}
+
+const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
+const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
+
+function privateResourcePath(url) {
+  const privatePath = pathname => {
+    const path = appRoutePath(pathname)
+    if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+        path === "/pinned" || path === "/activity" || path === "/api/search" ||
+        path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
+        path === "/api/saved-filters" || path === "/api/task-drafts" ||
+        path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||
+        taskHistoryPath.test(path) ||
+        /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
+  }
+
+  if (url.origin !== self.location.origin) return
+
+  let pathname = url.pathname
+  const directPath = privatePath(pathname)
+  if (directPath) return directPath
+  if (!pathname.includes("%") && !pathname.includes("//")) return
+
+  // Old cache entries can contain spellings that reach a private route after normalization.
+  for (let i = 0; i < 10 && pathname.includes("%"); i++) {
+    try {
+      const decoded = decodeURI(pathname).replace(/%2f/gi, "/")
+      if (decoded === pathname) break
+      pathname = decoded
+    } catch {
+      break
+    }
+  }
+  const normalized = new URL(url.origin + pathname.replace(/[\\/]+/g, "/")).pathname
+  return privatePath(normalized)
+}
+
+function isNetworkOnlyPage(path, params) {
+  return path === "/triage" || path === "/deferred" || path === "/review" ||
+    path === "/.well-known/mcp.json" ||
+    path === "/.well-known/agent.json" || path === "/.well-known/agent-card.json" || path.startsWith("/api/a2a/") ||
+    (/^\/api\/tasks\/[^/]+$/.test(path) && params.has("deferralRead")) ||
+    (path === "/tasks" && (params.has("boardRefresh") || (params.get("view") === "table" && params.has("tableRefresh")))) ||
+    (path === "/today" && params.has("unscheduledPage"))
+}
+
+async function purgeSensitiveCacheEntries() {
+  const names = (await caches.keys()).filter(name => meithealCacheName.test(name))
+  await Promise.all(names.map(async name => {
+    const cache = await caches.open(name)
+    const requests = await cache.keys()
+    await Promise.all(requests.filter(request => {
+      const url = new URL(request.url)
+      return privateResourcePath(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+    }).map(request => cache.delete(request, { ignoreVary: true })))
+  }))
+}
+
+let sensitivePurge
+function ensureSensitiveCachePurge() {
+  sensitivePurge ??= purgeSensitiveCacheEntries().catch(error => {
+    sensitivePurge = undefined
+    throw error
+  })
+  return sensitivePurge
+}
+
 // --- Activate ---
 
 self.addEventListener("activate", (event) => {
-  // Delete all caches that don't belong to the current version.
-  // This covers: old precache, old static/api/nav, and any
-  // orphaned caches from previous ingress tokens or versions.
+  // Delete older Meitheal caches and preserve other software on this origin.
   const currentCacheNames = new Set(Object.values(CACHES));
   event.waitUntil(
     caches
@@ -202,10 +279,11 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => !currentCacheNames.has(key))
+            .filter(key => meithealCacheName.test(key) && !currentCacheNames.has(key))
             .map((key) => caches.delete(key))
         )
       )
+      .then(() => ensureSensitiveCachePurge())
       .then(() => evictAllCaches())
       .then(() => self.clients.claim())
   );
@@ -233,10 +311,20 @@ self.addEventListener("fetch", (event) => {
 
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
-  if (/^\/api\/(?:feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  const privatePath = privateResourcePath(url)
+  if (privatePath && taskHistoryPath.test(privatePath)) {
+    event.respondWith(fetch(event.request, { cache: "no-store" })
+      .catch(() => offlineApiResponse({ "cache-control": "private, no-store" })))
+    return
+  }
+  if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
 
-  // Live Kanban pages and counts must never reuse a cached board after a write.
-  if (apiPath === "/tasks" && url.searchParams.has("boardRefresh")) return;
+  const pagePath = appRoutePath(url.pathname)
+  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
+  if (pagePath === "/planning") {
+    event.respondWith(navigationHandler(event.request))
+    return
+  }
 
   // API routes: network-first with cache fallback
   if (routePath.startsWith("/api/")) {
@@ -260,16 +348,16 @@ self.addEventListener("fetch", (event) => {
  */
 async function cacheFirst(request) {
   // Check precache (app shell) first
-  const precached = await caches.match(request, { cacheName: CACHES.precache });
+  const precached = await matchCacheable(request, CACHES.precache);
   if (precached) return precached;
 
   // Check runtime static cache
-  const cached = await caches.match(request, { cacheName: CACHES.static });
+  const cached = await matchCacheable(request, CACHES.static);
   if (cached) return cached;
 
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(CACHES.static);
       cache.put(request, response.clone());
     }
@@ -286,19 +374,23 @@ async function cacheFirst(request) {
 async function networkFirst(request, cacheName) {
   try {
     const response = await fetch(request);
-    if (response.ok && !response.headers.get("cache-control")?.includes("no-store")) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
-    const cached = await caches.match(request);
+    const cached = await matchCacheable(request, cacheName);
     if (cached) return cached;
-    return new Response(JSON.stringify({ error: "offline" }), {
-      status: 503,
-      headers: { "content-type": "application/json" },
-    });
+    return offlineApiResponse()
   }
+}
+
+function offlineApiResponse(headers = {}) {
+  return new Response(JSON.stringify({ error: "offline" }), {
+    status: 503,
+    headers: { "content-type": "application/json", ...headers },
+  })
 }
 
 /**
@@ -307,22 +399,22 @@ async function networkFirst(request, cacheName) {
 async function navigationHandler(request) {
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && !hasNoStore(response)) {
       const cache = await caches.open(CACHES.nav);
       cache.put(request, response.clone());
     }
     return response;
   } catch {
     // Try navigation cache
-    const cached = await caches.match(request, { cacheName: CACHES.nav });
+    const cached = await matchCacheable(request, CACHES.nav);
     if (cached) return cached;
 
     // Try precache (app shell pages)
-    const precached = await caches.match(request, { cacheName: CACHES.precache });
+    const precached = await matchCacheable(request, CACHES.precache);
     if (precached) return precached;
 
     // Offline fallback page
-    const offlinePage = await caches.match(`${ingressPath}/offline`, { cacheName: CACHES.precache });
+    const offlinePage = await matchCacheable(`${ingressPath}/offline`, CACHES.precache);
     if (offlinePage) return offlinePage;
 
     return new Response("Offline", { status: 503 });
@@ -343,7 +435,19 @@ self.addEventListener("sync", (event) => {
   }
 });
 
-// --- Push Notifications ---
+// --- System notifications ---
+
+function notificationTarget(path) {
+  const scope = new URL(self.registration.scope)
+  if (typeof path === "string") {
+    try {
+      const target = new URL(path, scope)
+      if (target.origin === scope.origin && !target.username && !target.password &&
+          target.pathname.startsWith(scope.pathname)) return target
+    } catch { /* Open this installation's root if the target is invalid. */ }
+  }
+  return scope
+}
 
 self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {
@@ -352,32 +456,28 @@ self.addEventListener("push", (event) => {
     url: "/",
   };
 
+  const icon = new URL("icon-192.png", self.registration.scope).href
+  const target = notificationTarget(typeof data.url === "string" ? data.url.replace(/^\/+/, "") : "")
   event.waitUntil(
     self.registration.showNotification(data.title || "Meitheal", {
       body: data.body || "",
-      icon: `${ingressPath}/icon-192.png`,
-      badge: `${ingressPath}/icon-192.png`,
+      icon,
+      badge: icon,
       tag: data.tag || "meitheal-push",
-      data: { url: `${ingressPath}${data.url || "/"}` },
+      data: { url: target.href },
       requireInteraction: data.requireInteraction || false,
     })
   );
 });
 
-// --- Notification Click ---
-
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || `${ingressPath}/`;
+  const url = notificationTarget(event.notification.data?.url).href
 
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes(url) && "focus" in client) {
-          return client.focus();
-        }
-      }
-      return self.clients.openWindow(url);
+      const current = clients.find(client => client.url === url && "focus" in client)
+      return current ? current.focus() : self.clients.openWindow(url)
     })
   );
 });
@@ -385,15 +485,22 @@ self.addEventListener("notificationclick", (event) => {
 // --- Message Handler ---
 
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
+  if (["TASK_PINS_IMPLEMENTED", "MEITHEAL_SEARCH_WAITING_CAPABLE",
+    "MEITHEAL_PRESETS_WAITING_CAPABLE", "TASK_DRAFTS_IMPLEMENTED"].includes(event.data?.type)) {
+    event.ports[0]?.postMessage(true)
   }
 
-  // Ingress path configuration — sent by sw-register.ts after registration.
-  // The path is permanent per-installation, so this only needs to happen once
-  // per SW lifecycle. Subsequent restarts reuse the value from the client.
-  if (event.data && event.data.type === "SET_INGRESS_PATH") {
-    ingressPath = event.data.path || "";
+  if (["TRIAGE_NETWORK_ONLY", "DEFERRED_NETWORK_ONLY", "TASK_PINS_NETWORK_ONLY",
+    "MEITHEAL_SEARCH_NETWORK_ONLY", "MEITHEAL_PRESETS_NETWORK_ONLY", "TASK_DRAFTS_NETWORK_ONLY", "COMMENT_MENTIONS_NETWORK_ONLY"].includes(event.data?.type) && event.ports[0]) {
+    const port = event.ports[0]
+    event.waitUntil(ensureSensitiveCachePurge().then(
+      () => port.postMessage(true),
+      () => port.postMessage(false),
+    ))
+  }
+
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
   }
 
   // Version query — used by Settings UI to display SW version

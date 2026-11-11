@@ -20,6 +20,7 @@ import {
   type TodoItem,
 } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { applyInboundTodoUpdate } from "./todo-inbound-update"
 import {
   haStatusToMeitheal,
   meithealStatusToHA,
@@ -56,9 +57,36 @@ interface TodoSyncState {
   unsub: (() => void) | null;
   lastSyncAt: number | null;
   itemCount: number;
+  inboundSequence: number
+  latestInboundSnapshot: number
 }
 
 const activeSyncs: Map<string, TodoSyncState> = new Map();
+const inboundMerges = new Map<string, Promise<void>>()
+
+function enqueueInboundSnapshot(state: TodoSyncState, sequence: number, items: HATodoItem[]): Promise<boolean> {
+  const { entityId } = state.config
+  const current = () => activeSyncs.get(entityId) === state && sequence >= state.latestInboundSnapshot
+  if (!current()) return Promise.resolve(false)
+  state.latestInboundSnapshot = sequence
+
+  // The queue is per entity, so replacing a subscription cannot overlap an
+  // already-running write from the previous subscription.
+  const merge = (inboundMerges.get(entityId) ?? Promise.resolve()).then(async () => {
+    if (!current()) return false
+    if (items.length) await mergeHATodoItems(entityId, items)
+    if (!current()) return false
+    state.itemCount = items.length
+    state.lastSyncAt = Date.now()
+    return true
+  })
+  const settled = merge.then(() => {}, () => {})
+  inboundMerges.set(entityId, settled)
+  void settled.then(() => {
+    if (inboundMerges.get(entityId) === settled) inboundMerges.delete(entityId)
+  })
+  return merge
+}
 
 // Cached persistence refs — avoids repeated dynamic imports in hot sync path
 let _storeModule: typeof import("@domains/tasks/persistence/store") | null = null;
@@ -123,21 +151,24 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): void 
       unsub: null,
       lastSyncAt: null,
       itemCount: 0,
+      inboundSequence: 0,
+      latestInboundSnapshot: 0,
     };
     activeSyncs.set(config.entityId, state);
 
     // Subscribe to real-time updates via WebSocket
     if (config.syncDirection !== "outbound") {
-      subscribeTodoItems(config.entityId, async (items: TodoItem[]) => {
+      subscribeTodoItems(config.entityId, (items: TodoItem[]) => {
         logger.log("info", {
           event: "todo.sync.ws_update", domain: "todo", component: "todo-bridge",
           request_id: SYS_REQ,
           message: `Real-time update: ${items.length} items from ${config.entityId}`,
         });
-        state.itemCount = items.length;
-        await mergeHATodoItems(config.entityId, items as HATodoItem[]);
+        // The merge logs failures. Keep a callback rejection out of the WS client.
+        void enqueueInboundSnapshot(state, ++state.inboundSequence, items as HATodoItem[]).catch(() => {})
       }).then((unsub: () => void) => {
-        state.unsub = unsub;
+        if (activeSyncs.get(config.entityId) === state) state.unsub = unsub
+        else unsub()
       }).catch((err: unknown) => {
         logger.log("error", {
           event: "todo.sync.subscribe_failed", domain: "todo", component: "todo-bridge",
@@ -175,6 +206,7 @@ export async function syncTodoFromHA(entityId?: string): Promise<{ synced: numbe
     const { config } = state;
 
     try {
+      const sequence = ++state.inboundSequence
       const items = await getTodoItems(config.entityId);
       if (items.length === 0) {
         logger.log("debug", {
@@ -183,11 +215,9 @@ export async function syncTodoFromHA(entityId?: string): Promise<{ synced: numbe
         });
         continue;
       }
-      totals.synced += items.length;
-
-      await mergeHATodoItems(config.entityId, items as HATodoItem[]);
-      state.lastSyncAt = Date.now();
-      state.itemCount = items.length;
+      if (await enqueueInboundSnapshot(state, sequence, items as HATodoItem[])) {
+        totals.synced += items.length
+      }
     } catch (err) {
       totals.errors++;
       logger.log("error", {
@@ -216,16 +246,12 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
       "SELECT id FROM tasks WHERE ticket_number IS NULL ORDER BY created_at ASC",
     );
     if (orphans.rows.length > 0) {
-      const baseResult = await client.execute(
-        "SELECT COALESCE(MAX(ticket_number), 0) AS max_num FROM tasks",
-      );
-      let nextNum = Number((baseResult.rows[0] as Record<string, unknown>)?.max_num ?? 0) + 1;
       for (const row of orphans.rows) {
         await client.execute({
-          sql: "UPDATE tasks SET ticket_number = ? WHERE id = ?",
-          args: [nextNum, row.id as string],
-        });
-        nextNum++;
+          sql: `UPDATE tasks SET ticket_number = (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks)
+                WHERE id = ? AND ticket_number IS NULL`,
+          args: [row.id as string],
+        })
       }
       logger.log("info", {
         event: "todo.sync.backfill_tickets", domain: "todo", component: "todo-bridge",
@@ -236,7 +262,8 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
     for (const item of items) {
       const uid = item.uid ?? `ha-todo-${entityId}-${item.summary}`;
-      const meithealStatus = haStatusToMeitheal(item.status ?? "needs_action");
+      const haStatus = item.status ?? "needs_action"
+      const meithealStatus = haStatusToMeitheal(haStatus);
 
       // ── Loop prevention: skip items that Meitheal pushed outbound ──
       // If we see our own attribution text, this item came from us via pushTaskToTodoList.
@@ -251,7 +278,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
       // Check if we already track this todo item (primary key: entity + uid)
       const existing = await client.execute({
-        sql: "SELECT task_id FROM todo_sync_confirmations WHERE ha_entity_id = ? AND ha_todo_uid = ?",
+        sql: "SELECT confirmation_id, task_id FROM todo_sync_confirmations WHERE ha_entity_id = ? AND ha_todo_uid = ?",
         args: [entityId, uid],
       });
 
@@ -284,60 +311,21 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
       }
 
       if (existing.rows.length > 0) {
-        // Non-destructive update: only sync from HA if task hasn't been
-        // locally modified since last sync (preserves user edits)
-        const taskId = existing.rows[0]!.task_id as string;
-        const nowMs = Date.now();
-
-        // Check if user edited the task locally since last sync
-        const taskRow = await client.execute({
-          sql: "SELECT updated_at FROM tasks WHERE id = ?",
-          args: [taskId],
-        });
-        const syncRow = await client.execute({
-          sql: "SELECT updated_at FROM todo_sync_confirmations WHERE ha_entity_id = ? AND ha_todo_uid = ?",
-          args: [entityId, uid],
-        });
-
-        const taskUpdatedAt = (taskRow.rows[0]?.updated_at as number) ?? 0;
-        const lastSyncAt = (syncRow.rows[0]?.updated_at as number) ?? 0;
-
-        if (taskUpdatedAt > lastSyncAt) {
-          // Task was locally modified — skip HA overwrite to preserve user edits
-          skipped++;
-          continue;
-        }
-
-        await client.execute({
-          sql: `UPDATE tasks SET
-            title = ?,
-            status = ?,
-            due_date = ?,
-            description = COALESCE(?, description),
-            updated_at = ?
-          WHERE id = ?`,
-          args: [
-            cleanTitle,
-            meithealStatus,
-            item.due ?? null,
-            stripMeithealAttribution(item.description),
-            nowMs,
-            taskId,
-          ],
-        });
-
-        // Update sync confirmation timestamp
-        await client.execute({
-          sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE ha_entity_id = ? AND ha_todo_uid = ?",
-          args: [
-            JSON.stringify({ summary: item.summary, status: item.status, due: item.due }),
-            nowMs,
-            entityId,
-            uid,
-          ],
-        });
-
-        updated++;
+        const link = existing.rows[0]!
+        const applied = await applyInboundTodoUpdate(client, {
+          confirmationId: String(link.confirmation_id),
+          taskId: String(link.task_id),
+          entityId,
+          uid,
+          title: cleanTitle,
+          status: meithealStatus,
+          openEcho: haStatus === "needs_action",
+          due: item.due ?? null,
+          description: stripMeithealAttribution(item.description),
+          payload: JSON.stringify({ summary: item.summary, status: item.status, due: item.due }),
+        })
+        if (applied) updated++
+        else skipped++
       } else {
         // Create new task from todo item
         const taskId = crypto.randomUUID();
@@ -346,21 +334,14 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
         const syncLabel = `synced from ${entityId}`;
 
-        // Assign next sequential ticket_number for clean MTH-N display key
-        const nextNumResult = await client.execute(
-          "SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks",
-        );
-        const ticketNumber = Number(
-          (nextNumResult.rows[0] as Record<string, unknown>)?.next_num ?? 1,
-        );
-
         await client.execute({
           sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
                   labels, framework_payload, calendar_sync_state, area_id,
                   custom_fields, task_type, task_kind, ticket_number, idempotency_key, request_id,
                   created_at, updated_at)
                 VALUES (?, ?, ?, ?, 3, ?, ?, '{}', 'synced', 'default',
-                  '{}', 'task', 'standard_action', ?, ?, ?, ?, ?)`,
+                  '{}', 'task', 'standard_action', (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
+                  ?, ?, ?, ?)`,
           args: [
             taskId,
             cleanTitle,
@@ -368,7 +349,6 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
             meithealStatus,
             item.due ?? null,
             JSON.stringify([syncLabel]),
-            ticketNumber,
             `todo-sync-${uid}`,
             reqId,
             nowMs,
@@ -409,6 +389,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
       event: "todo.sync.merge_failed", domain: "todo", component: "todo-bridge",
       request_id: SYS_REQ, message: `Failed to merge todo items from ${entityId}: ${err}`,
     });
+    throw err
   }
 }
 

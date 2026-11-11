@@ -1,3 +1,5 @@
-pytest-homeassistant==2026.11.0
-# Match the Supervisor client required by the 2026.11.0 hassio integration.
+pytest-homeassistant==2026.11.1
+# Supervisor client exercised by the Core integration enrollment tests.
 aiohasupervisor==0.10.0
+# Parser used by both supported Core conversation manifests.
+hassil==3.12.1

@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarNavList from "./SidebarNavList.astro";
+import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
@@ -46,10 +47,17 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
+  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "today", matchExact: true },
+  activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "today", matchExact: true },
   progress: {
     href: "/progress",
     i18nKey: "nav.progress",
     icon: "trophy",
+  },
+  areas: {
+    href: "/planning#spaces",
+    i18nKey: "sidebar.areas_header",
+    icon: "folder",
   },
   planning: {
     href: "/planning",
@@ -64,8 +72,11 @@ const DEFAULT_ORDER: NavKey[] = [
   "today",
   "upcoming",
   "tasks",
+  "activity",
+  "mentionInbox",
   "progress",
   "planning",
+  "areas",
 ];
 
 interface CustomNavItem {
@@ -94,6 +105,7 @@ let sidebarConfig: SidebarConfig = {
   tasks: true,
   progress: true,
   planning: true,
+  areas: true,
 };
 
 /** Feature flags — hide gamification/habits if disabled */
@@ -142,7 +154,7 @@ try {
 /** Inject custom items into NAV_ITEMS before processing */
 if (Array.isArray(sidebarConfig.customItems)) {
   sidebarConfig.customItems.forEach((c) => {
-    if (c.id && c.href) {
+    if (c.id && c.id !== "system-pinned" && c.href) {
       NAV_ITEMS[c.id] = {
         href: c.href,
         i18nKey: "",
@@ -179,7 +191,8 @@ const navItems = order
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if (key === "tasks" && !hierarchyEnabled) return false
+    if ((key === "tasks" || key === "areas") && !hierarchyEnabled) return false
+    if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
   .map((key) => {
@@ -190,6 +203,17 @@ const navItems = order
       : currentPath.startsWith(def.href);
     return { key, label, isActive, ...def };
   });
+const tasksIndex = navItems.findIndex(item => item.key === "tasks")
+const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
+navItems.splice(pinIndex, 0, {
+  key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
+  icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
+})
+
+const areaPosition = navItems.findIndex(item => item.key === "areas")
+const areaLabel = labels.areas || t("sidebar.areas_header", locale)
+const primaryItems = areaPosition < 0 ? navItems : navItems.slice(0, areaPosition)
+const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 ---
 
 <nav
@@ -258,9 +282,18 @@ const navItems = order
     </div>
   </div>
 
-  <div class="sidebar-scroll">
-    <SidebarNavList navItems={navItems} taskCounts={taskCounts} />
-    {hierarchyEnabled && <SidebarHierarchyTree locale={locale} />}
+  <div class="sidebar-scroll" data-nav-overflow="sidebar">
+    {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
+    {areaPosition >= 0 && (
+      <div id="sidebar-hierarchy-panel">
+        <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
+          <span class="nav-icon"><Icon name="folder" /></span>
+        </a>
+        <SidebarHierarchyTree locale={locale} label={areaLabel} />
+      </div>
+    )}
+    {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
+    <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
   </div>
 
   {gamificationEnabled && (
@@ -290,10 +323,25 @@ const navItems = order
     overflow: hidden;
   }
 
+  .sidebar-compact-areas {
+    display: none;
+  }
+
+  @media (min-width: 769px) {
+    :global(body.sidebar-collapsed) .sidebar-compact-areas {
+      display: flex;
+    }
+
+    :global(body.sidebar-collapsed) #sidebar-hierarchy-panel :global(#project-nav) {
+      display: none;
+    }
+  }
+
   .sidebar-scroll {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
     min-height: 0;
     padding-top: 8px;
     scrollbar-width: none; /* Hide scrollbar Firefox */
@@ -450,16 +498,10 @@ const navItems = order
 
     .sidebar.open {
       transform: translateX(0);
+      z-index: 200;
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
     }
 
-    .sidebar.open::after {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: -1;
-    }
   }
 
   .sidebar-gamification-wrapper {

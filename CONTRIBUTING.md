@@ -70,4 +70,4 @@ Before a pull request can be merged, follow the CLA prompt on the pull request. 
 
 GitHub must associate each commit with its author’s account. If you open the pull request, include a commit under your own GitHub identity. Keep each pull request within 250 commits so the check covers the full contribution. Comment `recheck` to refresh the CLA status after a failed check.
 
-Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. Follow the [automation policy](AI_POLICY.md) when you use automated tools. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).
+Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. If you use automated tools, verify the change, check the source and license of any reused material, and test the result from the user’s perspective. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).

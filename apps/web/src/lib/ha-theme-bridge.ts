@@ -29,6 +29,14 @@ export function initHAThemeBridge(): void {
   const parent = window.parent
   if (!document.body.classList.contains("ha-ingress") || parent === window) return
 
+  let parentRoot: HTMLElement
+  try {
+    if (parent.location.origin !== window.location.origin) return
+    parentRoot = parent.document.documentElement
+  } catch {
+    return
+  }
+
   const root = document.documentElement
   function syncAppearance(): void {
     let appearance: Appearance | undefined
@@ -45,8 +53,21 @@ export function initHAThemeBridge(): void {
     if (root.dataset.theme === "auto") applyTheme()
   }
 
-  syncAppearance()
   const signal = pageLifecycle.signal
+  const observer = new MutationObserver(syncAppearance)
+  const disconnect = () => observer.disconnect()
+  function observe(): void {
+    observer.observe(parentRoot, { attributes: true })
+    syncAppearance()
+  }
+
+  observe()
+  signal.addEventListener("abort", disconnect, { once: true })
+  // The Home Assistant parent survives native iframe navigation.
+  window.addEventListener("pagehide", disconnect, { signal })
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) observe()
+  }, { signal })
   document.addEventListener("settheme", syncAppearance, { signal })
   window.addEventListener("message", event => {
     if (event.source !== parent || event.origin !== window.location.origin) return

@@ -22,7 +22,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
 import { t } from "../i18n/translations"
-import type { Locale } from "../lib/locale"
+import { formatCalendarDay } from "@lib/calendar-day"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { HABITS_SECTIONS } from "../lib/habits-registry"
 import { serializeForScript } from "../lib/safe-html"
@@ -32,11 +32,11 @@ interface HabitViewModel extends RoutineWithStats {
   priority: number
 }
 
-const locale = (Astro.cookies.get("meitheal-locale")?.value ?? "en") as Locale
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 
 const isEnabled = await isFeatureEnabled("habits")
 if (!isEnabled) {
-  return Astro.redirect("/")
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/`)
 }
 
 let habits: HabitViewModel[] = []
@@ -80,15 +80,8 @@ function priorityLabel(priority: number): string {
 }
 
 function formatLastCompletedDate(value: string | null): string {
-  if (!value) return "Never completed"
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return `Last done ${value}`
-
-  return `Last done ${new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", {
-    month: "short",
-    day: "numeric",
-  }).format(date)}`
+  if (!value) return t("habits.never_completed", locale)
+  return t("habits.last_done", locale, { date: formatCalendarDay(value, locale) ?? value })
 }
 
 try {

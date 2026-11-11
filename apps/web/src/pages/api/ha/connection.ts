@@ -12,50 +12,38 @@ import type { APIRoute } from "astro";
 import { getHAConnection, getHAConnectionStatus, getHAConfig } from "@domains/ha";
 import { logApiError } from "../../../lib/api-logger";
 
-export const GET: APIRoute = async () => {
-  try {
-    // Ensure the HA connection is attempted before checking status.
-    // getHAConnectionStatus() only reads the in-memory singleton;
-    // without this call it would always report "disconnected" if no
-    // other code path has triggered getHAConnection() yet.
-    await getHAConnection();
+const headers = { "Cache-Control": "no-store" }
 
-    const status = getHAConnectionStatus();
-    const mode = process.env.SUPERVISOR_TOKEN ? "ha-addon" : "standalone";
+export const GET: APIRoute = async () => {
+  const mode = process.env.SUPERVISOR_TOKEN ? "ha-addon" : "standalone"
+  if (mode === "standalone") {
+    return Response.json({ connected: false, mode, message: "No Supervisor connection in standalone mode" }, { headers })
+  }
+
+  try {
+    // The passive snapshot is only accurate after the shared connection has had a chance to start.
+    await getHAConnection()
+    const config = getHAConnectionStatus().connected ? await getHAConfig() : null
+    const status = getHAConnectionStatus()
 
     if (!status.connected) {
-      return new Response(JSON.stringify({
+      return Response.json({
         connected: false,
         mode,
-        message: status.lastError ?? "HA not reachable",
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+        message: status.lastError ?? "Home Assistant is unreachable through Supervisor",
+      }, { headers })
     }
 
-    const config = await getHAConfig().catch(() => null);
-
-    return new Response(JSON.stringify({
+    return Response.json({
       connected: true,
       version: config?.version ?? status.haVersion ?? "unknown",
       mode,
       components: config?.components ?? [],
       location_name: config?.location_name ?? "",
       time_zone: config?.time_zone ?? "",
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    }, { headers })
   } catch (err) {
-    logApiError("ha-connection", "Connection test failed", err);
-    return new Response(JSON.stringify({
-      connected: false,
-      mode: "unknown",
-      message: "Internal server error",
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    logApiError("ha-connection", "Connection test failed", err)
+    return Response.json({ connected: false, mode: "unknown", message: "Internal server error" }, { status: 500, headers })
   }
-};
+}

@@ -1,10 +1,10 @@
 # Meitheal Canary
 
-Meitheal Canary is an experimental add-on for testing changes. Use sample tasks on a test installation. Keep daily household tasks in Meitheal Stable.
+Meitheal Canary is the App for testing current changes. Use sample tasks on a test installation. Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) before you start.
 
 ## Test a build
 
-1. Add the [Meitheal add-on repository](https://github.com/Coolock-Village/meitheal-ha-addon) in Home Assistant.
+1. Add the [Meitheal add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) in Home Assistant.
 2. Search for **Meitheal Canary** in the store.
 3. When the image is available, select **Install**.
 4. Select **Start**.
@@ -13,10 +13,10 @@ Meitheal Canary is an experimental add-on for testing changes. Use sample tasks 
 7. Refresh the page.
 8. Check that the task is still there.
 
-## Keep stable data separate
+## Back up your Canary
 
-Stable and Canary have separate add-on identities and data folders. Treat a channel change as a separate installation. Before you uninstall either add-on, make a backup that includes it.
+Before uninstalling Meitheal Canary or moving it to another repository, make a Home Assistant backup that includes the App.
 
 ## Report what you found
 
-Include the Canary version shown in the store. Describe the steps you took, what you expected, and what happened. Remove private data from logs and screenshots. [Report an issue](https://github.com/Coolock-Village/meitheal-ha-addon/issues).
+Include the Canary version shown in the store. Describe the steps you took, what you expected, and what happened. Remove private data from logs and screenshots. [Report an issue](https://github.com/ryan-winkler/meitheal-ha-addon/issues).

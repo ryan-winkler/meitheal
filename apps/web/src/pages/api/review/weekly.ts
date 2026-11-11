@@ -146,12 +146,12 @@ export const GET: APIRoute = async () => {
       }
 
       // Carried forward (not done, due before this week)
-      if (!task.is_done && task.due_date && task.due_date < weekAgoStr) {
+      if (!task.is_done && task.deferred_at === null && task.due_date && task.due_date < weekAgoStr) {
         carriedForward++
       }
 
       // Currently overdue (not done, due before today)
-      if (!task.is_done && task.due_date && task.due_date < todayStr) {
+      if (!task.is_done && task.deferred_at === null && task.due_date && task.due_date < todayStr) {
         overdue++
       }
     }

@@ -4,7 +4,7 @@ import Confetti from "../components/gamification/Confetti.astro";
 import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { ClientRouter } from "astro:transitions";
-import { clientTranslationJson, t } from "../i18n/translations";
+import { alternateClientTranslationJson, clientTranslationJson, t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
 import Sidebar from "../components/layout/Sidebar.astro";
 import SearchHub from "../components/layout/SearchHub.astro";
@@ -15,6 +15,8 @@ import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
 import JsonLd from "../components/seo/JsonLd.astro";
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
+import { applyPersonalAccent } from "../lib/accent-colors"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 import outfit600Woff2 from '@fontsource/outfit/files/outfit-latin-600-normal.woff2?url';
@@ -43,6 +45,8 @@ export interface Props {
   description?: string;
   hideSearchHub?: boolean;
   hideGlobalSearch?: boolean;
+  suppressTaskUrlOpen?: boolean;
+  privatePageShell?: boolean;
   /** Optional JSON-LD schema for page-level structured data */
   jsonLd?: Record<string, unknown>;
 }
@@ -52,26 +56,29 @@ const {
   description = "The cooperative task and life engine for your home.",
   hideSearchHub = false,
   hideGlobalSearch = false,
+  suppressTaskUrlOpen = false,
+  privatePageShell = false,
   jsonLd,
 } = Astro.props;
 
 // OA-607: Sidebar task count badges (SSR)
 let taskCounts = { total: 0, active: 0, pending: 0 };
-try {
+if (!privatePageShell) try {
   const { ensureSchema, getPersistenceClient } =
     await import("@domains/tasks/persistence/store");
   await ensureSchema();
   const client = getPersistenceClient();
   const result = await client.execute(
-    "SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status",
+    "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks GROUP BY status",
   );
   for (const row of result.rows) {
     const r = row as Record<string, unknown>;
     const s = String(r.status);
     const c = Number(r.cnt);
+    const open = Number(r.open_count)
     taskCounts.total += c;
-    if (s === "active") taskCounts.active += c;
-    if (s === "pending" || s === "backlog") taskCounts.pending += c;
+    if (s === "active") taskCounts.active += open
+    if (s === "pending" || s === "backlog") taskCounts.pending += open
   }
 } catch {
   /* DB not available */
@@ -160,8 +167,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             var ingressResponse = ip && resultUrl && resultUrl.origin === location.origin
               && resultUrl.pathname.startsWith(ip + "/");
             var appResponse = response.headers.has("x-ingress-path")
-              || response.headers.get("content-type")?.startsWith("application/problem+json");
-            if (response.status === 403 && ingressResponse && !appResponse) {
+              || /\bjson\b/i.test(response.headers.get("content-type") || "");
+            var privateTaskResponse = ingressResponse &&
+              [ip + "/api/task-pins", ip + "/api/task-drafts", ip + "/api/task-inactivity"].includes(resultUrl.pathname);
+            var participantResponse = ingressResponse &&
+              /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/
+                .test(resultUrl.pathname.slice(ip.length));
+            if (response.status === 403 && ingressResponse && !appResponse && !privateTaskResponse && !participantResponse) {
               var reloadKey = "meitheal-ingress-reload";
               var lastReload = sessionStorage.getItem(reloadKey);
               var now = Date.now();
@@ -181,25 +193,27 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
                 }, 800);
               }
             }
-            // Conflict detection (Persona #14): show toast on 409
             if (response.status === 409) {
-              var tc = document.querySelector(".toast-container");
-              if (tc) {
-                var toast = document.createElement("div");
-                toast.className = "toast warning";
-                toast.textContent =
-                  "⚠ Task was modified by another session. Refresh to see latest.";
-                toast.setAttribute("role", "alert");
-                tc.appendChild(toast);
-                setTimeout(function () {
-                  toast.remove();
-                }, 6000);
+              var headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+              if (headers.get("X-Meitheal-Local-Conflict") !== "1") {
+                response.clone().json().then(function (body) {
+                  if (body?.errorCode !== "TASK_VERSION_CONFLICT") return
+                  var message = window.mI18n?.get("common.task_version_conflict") ??
+                    "This task changed in another session. Reload to see the latest version."
+                  var container = document.querySelector(".toast-container")
+                  if (container) {
+                    var toast = document.createElement("div")
+                    toast.className = "toast warning"
+                    toast.textContent = message
+                    toast.setAttribute("role", "alert")
+                    container.appendChild(toast)
+                    setTimeout(function () { toast.remove() }, 6000)
+                  } else {
+                    var live = document.getElementById("sync-announcer")
+                    if (live) live.textContent = message
+                  }
+                }).catch(function () {})
               }
-              // Announce for screen readers via aria-live
-              var live = document.getElementById("sync-announcer");
-              if (live)
-                live.textContent =
-                  "Conflict detected: task was modified elsewhere.";
             }
             return response;
           });
@@ -245,52 +259,53 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Theme init — runs before paint to prevent flash -->
-    <script is:inline>
+    <!-- Restore appearance before a full load or an Astro document swap. -->
+    <script is:inline set:html={`window.__meithealApplyAccent = ${applyPersonalAccent.toString()};`} />
+    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY }}>
       (function () {
-        var t = localStorage.getItem("meitheal-theme") || "dark";
-        // Always set data-theme explicitly for all states (including dark)
-        // Previous code relied on :root fallthrough for dark, which caused
-        // theme inconsistency when components used [data-theme="dark"] selector
-        if (t === "custom") {
-          document.documentElement.setAttribute("data-theme", "dark");
-          var css = localStorage.getItem("meitheal-custom-theme-css");
-          if (css) {
-            var s = document.createElement("style");
-            s.id = "meitheal-custom-theme";
-            s.textContent = css;
-            document.head.appendChild(s);
+        function restoreAppearance(doc) {
+          function stored(key) {
+            try { return localStorage.getItem(key); } catch { return null; }
           }
-        } else {
-          document.documentElement.setAttribute("data-theme", t);
+          var theme = stored("meitheal-theme");
+          var root = doc.documentElement;
+          root.dataset.theme = ["light", "auto"].includes(theme) ? theme : "dark";
+          var appearance;
+          try {
+            appearance = JSON.parse(stored(APPEARANCE_STORAGE_KEY) ?? "{}");
+          } catch { /* Invalid browser preferences fall back to their defaults. */ }
+          for (var [name, preference] of Object.entries(APPEARANCE_PREFERENCES)) {
+            var value = appearance?.[name];
+            root.setAttribute("data-appearance-" + name.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); }), preference.options.includes(value) ? value : preference.defaultValue);
+          }
+          if (doc.body) {
+            var desktopSidebar = innerWidth > 768 && root.dataset.appearanceNavigation !== "navbar";
+            var sidebarMode = root.dataset.appearanceSidebar;
+            var collapsed = desktopSidebar && (["folded", "hover"].includes(sidebarMode)
+              || (sidebarMode === "remember" && stored("meitheal_sidebar_collapsed") === "true"));
+            doc.body.classList.toggle("sidebar-collapsed", collapsed);
+          }
+          var accent = stored("meitheal-accent-color");
+          window.__meithealApplyAccent(root, accent);
+          var css = theme === "custom" && stored("meitheal-custom-theme-css");
+          if (css) {
+            var style = doc.getElementById("meitheal-custom-theme");
+            if (!style) {
+              style = doc.createElement("style");
+              style.id = "meitheal-custom-theme";
+              doc.head.appendChild(style);
+            }
+            style.textContent = css;
+          }
         }
-      })();
-    </script>
 
-    <!-- User accent color: restore from localStorage before paint -->
-    <script is:inline>
-      (function () {
-        var accent = localStorage.getItem("meitheal-accent-color");
-        if (!accent) return;
-        var root = document.documentElement.style;
-        root.setProperty("--accent", accent);
-        // P3-3: Set fallback values first (for WebViews without color-mix support)
-        root.setProperty("--accent-hover", accent);
-        root.setProperty("--accent-light", accent);
-        // Compute hover (darken 10%) — overrides fallback on supporting browsers
-        try {
-          root.setProperty(
-            "--accent-hover",
-            "color-mix(in srgb, " + accent + " 85%, #000)",
-          );
-          root.setProperty(
-            "--accent-light",
-            "color-mix(in srgb, " + accent + " 12%, transparent)",
-          );
-        } catch (e) {
-          // Older WebViews — fallback values already set above
-        }
-        root.setProperty("--border-focus", accent);
+        restoreAppearance(document);
+        window.__meithealAppearanceEvents?.abort();
+        var events = new AbortController();
+        window.__meithealAppearanceEvents = events;
+        document.addEventListener("astro:before-swap", function (event) {
+          restoreAppearance(event.newDocument);
+        }, { signal: events.signal });
       })();
     </script>
 
@@ -340,7 +355,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={Astro.url.href} />
+    {!privatePageShell && <meta property="og:url" content={Astro.url.href} />}
     <link
       rel="manifest"
       href="/manifest.webmanifest"
@@ -360,8 +375,23 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <link rel="preload" href={outfit700Woff2} as="font" type="font/woff2" crossorigin="anonymous" />
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
+    {!behindIngress && <script is:inline>
+      // Register before ClientRouter: drawer history belongs to the current DOM.
+      if (!window.__meithealTicketHistoryGuard) {
+        window.__meithealTicketHistoryGuard = true
+        const lifetime = new AbortController()
+        window.addEventListener("popstate", event => {
+          const session = document.getElementById("task-detail-overlay")?.dataset.ticketHistorySession
+          const state = history.state
+          if (session && (state?.ticketBackground === session || state?.ticketDrawer?.session === session)) {
+            event.stopImmediatePropagation()
+            window.dispatchEvent(new Event("meitheal:ticket-history"))
+          }
+        }, { signal: lifetime.signal })
+      }
+    </script>}
     {!behindIngress && <ClientRouter fallback="swap" />}
-    <JsonLd schema={jsonLd ?? {
+    {!privatePageShell && <JsonLd schema={jsonLd ?? {
       "@type": "SoftwareApplication",
       name: "Meitheal",
       description,
@@ -373,25 +403,31 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         target: `${Astro.url.origin}/api/search?q={query}`,
         "query-input": "required name=query",
       },
-    }} />
+    }} />}
     <!-- Send only the current locale and keep client translation available during parsing. -->
     <script type="application/json" id="meitheal-client-translations" set:html={clientTranslationJson[locale]} />
+    <script type="application/json" id="meitheal-alternate-translations" set:html={alternateClientTranslationJson[locale]} />
     <script
       is:inline
       define:vars={{ locale, timezone, weekStart, dateFormat }}
     >
       const dict = JSON.parse(document.getElementById("meitheal-client-translations").textContent);
+      const alternate = JSON.parse(document.getElementById("meitheal-alternate-translations").textContent);
       window.mSettings = { timezone, weekStart, dateFormat };
       window.mI18n = {
         locale,
-        get: function (key) {
+        get: function (key, language = locale) {
+          if (language !== locale) return typeof alternate[key] === "string" ? alternate[key] : key;
+          if (typeof dict[key] === "string") return dict[key];
           const parts = key.split(".");
           let val = dict;
           for (const p of parts) {
-            if (!val || typeof val !== "object") return key;
+            if (!val || typeof val !== "object") break;
             val = val[p];
           }
-          return typeof val === "string" ? val : key;
+          if (typeof val === "string") return val;
+          const legacy = key.startsWith("settings.") ? dict[locale]?.[key] : undefined;
+          return typeof legacy === "string" ? legacy : key;
         },
       };
     </script>
@@ -425,10 +461,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         if (window.__ingress_path && document.body) {
           document.body.classList.add("ha-ingress");
         }
-        // Restore sidebar collapsed state from localStorage
-        if (localStorage.getItem("meitheal_sidebar_collapsed") === "true") {
-          document.body.classList.add("sidebar-collapsed");
+        var appearance = document.documentElement.dataset;
+        var desktopSidebar = innerWidth > 768 && appearance.appearanceNavigation !== "navbar";
+        var collapsed = desktopSidebar && ["folded", "hover"].includes(appearance.appearanceSidebar);
+        if (desktopSidebar && appearance.appearanceSidebar === "remember") {
+          try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true"; } catch {}
         }
+        document.body.classList.toggle("sidebar-collapsed", collapsed);
       })();
     </script>
     <!-- Ingress URL sync: DISABLED — removed to prevent potential HA panel routing interference -->
@@ -436,14 +475,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <a href="#main-content" class="skip-to-content"
       >{t("nav.skip_to_content", locale)}</a
     >
-    <div transition:persist="sidebar">
+    {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
       <Sidebar locale={locale} taskCounts={taskCounts} />
-    </div>
+    </div>}
 
-    <div class="main-content">
+    <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>
       {Astro.slots.has('custom-header') ? (
         <slot name="custom-header" />
-      ) : (
+      ) : !privatePageShell && (
         <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch}>
           <Fragment slot="page-title"><slot name="page-title" /></Fragment>
           <Fragment slot="actions"><slot name="actions" /></Fragment>
@@ -496,7 +535,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           // Match page name from path
           var page = path.replace(/^\//, "").split("/")[0] || "dashboard";
           if (page === "" || page === "index") page = "dashboard";
-          if (page === "kanban" || page === "table" || page === "timeline") page = "tasks";
+          if (page === "kanban" || page === "table" || page === "timeline" || page === "tickets") page = "tasks";
           if (page === "tasks" && document.querySelector('[data-task-view="calendar"]')) page = "calendar";
           var items = bar.querySelectorAll(".mobile-tab-bar__item");
           for (var i = 0; i < items.length; i++) {
@@ -522,42 +561,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Sidebar toggle logic: click + keyboard shortcut -->
-    <script is:inline>
-      (function () {
-        var btn = document.getElementById("sidebar-toggle-btn");
-        function toggleSidebar() {
-          var collapsed = document.body.classList.toggle("sidebar-collapsed");
-          localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed));
-          // Rotate chevron: points left when expanded (to collapse), right when collapsed (to expand)
-          if (btn) {
-            btn.querySelector("svg").style.transform = collapsed
-              ? "rotate(180deg)"
-              : "";
-          }
-        }
-        // Initialise chevron rotation on load
-        if (btn && document.body.classList.contains("sidebar-collapsed")) {
-          btn.querySelector("svg").style.transform = "rotate(180deg)";
-        }
-        // Click handler
-        if (btn) btn.addEventListener("click", toggleSidebar);
-        // Keyboard shortcut: Ctrl+B / Cmd+B
-        document.addEventListener("keydown", function (e) {
-          if ((e.ctrlKey || e.metaKey) && e.key === "b") {
-            // Don't hijack Ctrl+B (bold) when user is editing text
-            var tag = (e.target || {}).tagName || "";
-            var editable = (e.target || {}).contentEditable === "true";
-            if (["INPUT", "TEXTAREA", "SELECT"].indexOf(tag) !== -1 || editable) return;
-            e.preventDefault();
-            toggleSidebar();
-          }
-        });
-      })();
-    </script>
-
     <!-- Toast notifications are handled by the shared showToast() system (see @lib/toast) -->
 
+    <script>
+      import "@lib/mobile-sidebar-controller"
+    </script>
     <script>
       import "@lib/layout-controller";
       import { initHAThemeBridge } from "@lib/ha-theme-bridge";
@@ -568,15 +576,18 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <script>
       import "@lib/search-hub-controller";
+      import "@lib/webmcp-controller";
     </script>
 
     <script>
       import "@lib/layout-body-controller";
     </script>
 
-    <NewTaskModal />
-    <TaskDetailModal />
-    <AskAssistModal />
+    {!privatePageShell && <>
+      <NewTaskModal />
+      <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
+      <AskAssistModal />
+    </>}
     {!hideSearchHub && <SearchHub locale={locale} />}
     <!-- Sync status announcer for screen readers (Persona #25) -->
     <div
@@ -594,7 +605,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       import "@lib/layout-pwa-controller";
     </script>
     {showConfetti && <Confetti />}
-    <PomodoroTimer enabled={showPomodoro} />
+    {!privatePageShell && <PomodoroTimer enabled={showPomodoro} />}
     <script define:vars={{ featureFlagsJson }}>
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>

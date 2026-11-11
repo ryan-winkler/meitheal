@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { z } from "zod"
-import { feedbackProblem, readFeedbackJson, withFeedback } from "@lib/feedback-api"
+import { feedbackProblem, withFeedback } from "@lib/feedback-api"
 
 const listQuery = z.object({
   state: z.enum(["open", "in_progress", "resolved", "declined"]).optional(),
@@ -21,7 +21,6 @@ export const GET: APIRoute = context => withFeedback(context, "admin", 200, asyn
   })
 })
 
-export const POST: APIRoute = context => withFeedback(context, "member", 201, async (queue, actor) => {
-  const input = await readFeedbackJson(context.request)
-  return "error" in input ? input.error : queue.submit(actor, input.body)
-})
+export const POST: APIRoute = context => withFeedback(context, "member", 201, (queue, actor, body) =>
+  queue.submit(actor, body),
+)

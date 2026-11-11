@@ -17,16 +17,18 @@ interface Props {
   selected?: string[]
   name?: string
   id?: string
+  deferCreate?: boolean
 }
 
 const {
   selected = [],
   name = "labels",
   id = "label-picker",
+  deferCreate = false,
 } = Astro.props
 ---
 
-<div class="label-picker" id={id} data-name={name}>
+<div class="label-picker" id={id} data-name={name} data-defer-create={deferCreate ? "true" : undefined}>
   {/* Selected labels */}
   <div class="label-badges" id={`${id}-selected`}>
     {selected.map((label) => (
@@ -70,25 +72,29 @@ const {
 
 <script>
   import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { stripHtml } from "@lib/strip-html"
   /**
    * LabelPicker client-side controller
    * Fetches labels from /api/labels, renders typeahead, handles add/remove
    */
   type LabelData = { id: number; title: string; hex_color: string }
 
-  document.querySelectorAll<HTMLElement>(".label-picker").forEach((picker) => {
+  pageLifecycle.onPageLoad(signal => document.querySelectorAll<HTMLElement>(".label-picker").forEach((picker) => {
     const inputEl = picker.querySelector<HTMLInputElement>(".label-picker__input")!
     const dropdownEl = picker.querySelector<HTMLElement>(".label-picker__dropdown")!
     const selectedEl = picker.querySelector<HTMLElement>("[id$='-selected']")!
     const hiddenEl = picker.querySelector<HTMLInputElement>("[id$='-value']")!
 
+    const deferred = picker.dataset.deferCreate === "true"
+    let newLabels = new Set<string>()
     let allLabels: LabelData[] = []
     let selectedLabels: string[] = JSON.parse(hiddenEl.value || "[]")
 
     // Fetch available labels
     async function loadLabels() {
       try {
-        const res = await fetch("/api/labels")
+        const res = await fetch("/api/labels", { signal })
         if (res.ok) {
           const data = await res.json()
           allLabels = Array.isArray(data) ? data : data.labels || []
@@ -96,10 +102,10 @@ const {
       } catch { /* offline fallback — use empty */ }
     }
 
-    function updateHidden() {
+    function updateHidden(notify = true) {
       hiddenEl.value = JSON.stringify(selectedLabels)
-      // Dispatch change event for form integration
-      hiddenEl.dispatchEvent(new Event("change", { bubbles: true }))
+      if (deferred) hiddenEl.dataset.newLabels = JSON.stringify([...newLabels])
+      if (notify) hiddenEl.dispatchEvent(new Event("change", { bubbles: true }))
     }
 
     function renderSelected() {
@@ -120,14 +126,16 @@ const {
           e.stopPropagation()
           const name = btn.dataset.remove!
           selectedLabels = selectedLabels.filter((l) => l !== name)
+          newLabels.delete(name)
           renderSelected()
           updateHidden()
-        })
+        }, { signal })
       })
     }
 
     function renderDropdown(query: string) {
       const q = query.toLowerCase().trim()
+      const newName = deferred ? stripHtml(q).trim().slice(0, 100) : q
       const filtered = allLabels.filter(
         (l) => l.title.toLowerCase().includes(q) && !selectedLabels.includes(l.title),
       )
@@ -144,15 +152,15 @@ const {
         .join("")
 
       // Show "create" option if query doesn't match existing
-      if (q && !allLabels.some((l) => l.title.toLowerCase() === q) && !selectedLabels.includes(q)) {
+      if (newName && !allLabels.some((l) => l.title.toLowerCase() === newName) && !selectedLabels.includes(newName)) {
         html += `
-          <div class="label-picker__option label-picker__option--create" data-create="${escapeHtml(q)}">
-            + Create "${escapeHtml(q)}"
+          <div class="label-picker__option label-picker__option--create" data-create="${escapeHtml(newName)}">
+            + Create "${escapeHtml(newName)}"
           </div>
         `
       }
 
-      dropdownEl.innerHTML = html || '<div class="label-picker__option" style="opacity:0.5">No labels found</div>'
+      dropdownEl.innerHTML = html || '<div class="label-picker__option">No labels found</div>'
       dropdownEl.classList.add("label-picker__dropdown--open")
 
       // Bind option clicks
@@ -163,57 +171,77 @@ const {
           updateHidden()
           inputEl.value = ""
           dropdownEl.classList.remove("label-picker__dropdown--open")
-        })
+        }, { signal })
       })
 
       dropdownEl.querySelectorAll<HTMLElement>("[data-create]").forEach((opt) => {
         opt.addEventListener("click", async () => {
           const name = opt.dataset.create!
           selectedLabels.push(name)
+          if (deferred) newLabels.add(name)
           renderSelected()
           updateHidden()
           inputEl.value = ""
           dropdownEl.classList.remove("label-picker__dropdown--open")
 
-          // Create label in background
+          if (deferred) return
           try {
             await fetch("/api/labels", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ title: name }),
+              signal,
             })
           } catch { /* non-fatal */ }
-        })
+        }, { signal })
       })
     }
+
+    picker.addEventListener("meitheal:set-draft-labels", (event) => {
+      if (!deferred) return
+      const state = (event as CustomEvent<{ labels: string[]; newLabels: string[] }>).detail
+      selectedLabels = [...state.labels]
+      newLabels = new Set(state.newLabels)
+      inputEl.value = ""
+      dropdownEl.replaceChildren()
+      dropdownEl.classList.remove("label-picker__dropdown--open")
+      renderSelected()
+      updateHidden(false)
+    }, { signal })
 
     // Event handlers
     inputEl.addEventListener("focus", async () => {
       if (allLabels.length === 0) await loadLabels()
-      renderDropdown(inputEl.value)
-    })
+      if (!signal.aborted && document.activeElement === inputEl) renderDropdown(inputEl.value)
+    }, { signal })
 
     inputEl.addEventListener("input", () => {
       renderDropdown(inputEl.value)
-    })
+    }, { signal })
 
     // Close on outside click
     document.addEventListener("click", (e) => {
       if (!picker.contains(e.target as Node)) {
         dropdownEl.classList.remove("label-picker__dropdown--open")
       }
-    })
+    }, { signal })
 
     // Keyboard navigation
     inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         dropdownEl.classList.remove("label-picker__dropdown--open")
       }
+      if (deferred && e.key === "Enter" && !e.isComposing && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && inputEl.value.trim()) {
+        const exact = Array.from(dropdownEl.querySelectorAll<HTMLElement>("[data-title]"))
+          .find(option => option.dataset.title?.toLowerCase() === inputEl.value.trim().toLowerCase())
+        const option = exact ?? dropdownEl.querySelector<HTMLElement>("[data-create]")
+        if (option) { e.preventDefault(); option.click() }
+      }
       if (e.key === "Backspace" && !inputEl.value && selectedLabels.length > 0) {
-        selectedLabels.pop()
+        newLabels.delete(selectedLabels.pop()!)
         renderSelected()
         updateHidden()
       }
-    })
-  })
+    }, { signal })
+  }))
 </script>

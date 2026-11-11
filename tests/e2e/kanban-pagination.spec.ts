@@ -73,11 +73,14 @@ test.describe("Tasks view loading and Kanban pages", () => {
       const lane = page.locator('.kanban-column[data-status="pending"]')
       const cards = lane.locator(".kanban-card")
       const range = lane.locator("[data-kanban-range]")
-      const oldest = page.getByRole("button", { name: new RegExp(`^Task: ${title(0)},`) })
+      const oldest = page.getByRole("link", { name: new RegExp(`^Task: ${title(0)},`) })
       await expect(cards).toHaveCount(25)
       await expect(lane.locator(".kanban-count")).toHaveText("28")
       await expect(range).toHaveText("1–25 of 28")
       await expect(oldest).toHaveCount(0)
+      await expect.poll(() => cards.evaluateAll(elements => elements.every(card =>
+        card.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom,
+      ))).toBe(true)
 
       await page.goto("/")
       const overdueLink = page.locator("#stat-overdue")

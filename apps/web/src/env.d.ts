@@ -29,7 +29,6 @@ interface Window {
 
   // ── Search ──
   /** Guard: search hub keyboard listener bound */
-  __searchHubKeyboardBound?: boolean
 
   // ── Area / Filter ──
   /** Currently active board ID */
@@ -46,8 +45,6 @@ interface Window {
   __prefillTaskDate?: string
   /** Cached users list for assignee dropdowns */
   __meitheal_users?: Array<{ id: string; name: string }>
-  /** Current task checklists (detail modal) */
-  __currentChecklists?: unknown[]
 
   // ── Pomodoro ──
   /** Start a pomodoro timer for a task */
@@ -78,6 +75,7 @@ declare namespace App {
     behindIngress: boolean;
     hassUserId: string | undefined;
     hassIsAdmin: boolean;
+    requestId: string
     timezone: string;
     weekStart: string;
     dateFormat: import("./lib/date").DateFormat;

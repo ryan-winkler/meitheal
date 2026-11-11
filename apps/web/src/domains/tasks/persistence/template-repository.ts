@@ -288,12 +288,6 @@ export class TemplateRepository {
     const taskId = crypto.randomUUID()
     const now = Date.now()
 
-    // Get next ticket number
-    const nextNumResult = await this.client.execute(
-      "SELECT COALESCE(MAX(ticket_number), 0) + 1 AS next_num FROM tasks"
-    )
-    const ticketNumber = Number((nextNumResult.rows[0] as Record<string, unknown>)?.next_num ?? 1)
-
     // Reset checklists (all unchecked for new day)
     let checklists = "[]"
     try {
@@ -315,7 +309,8 @@ export class TemplateRepository {
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, task_kind,
             due_date, checklists, custom_fields, area_id, source_template_id, ticket_number,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?, ?, '{}', 'pending', ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
+                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), '{}', 'pending', ?, ?, ?, ?)`,
       args: [
         taskId,
         String(template.title ?? tmpl.name ?? "Routine"),
@@ -329,7 +324,6 @@ export class TemplateRepository {
         JSON.stringify(template.custom_fields ?? {}),
         String(template.area_id ?? "default"),
         templateId,
-        ticketNumber,
         crypto.randomUUID(),
         crypto.randomUUID(),
         now,

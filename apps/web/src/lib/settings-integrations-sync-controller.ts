@@ -9,14 +9,23 @@ import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { PartialSettingsSave, saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+
+async function applySyncConfiguration(path: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: pageLifecycle.signal,
+    })
+    if (!response.ok) throw new Error(`Sync configuration failed: ${response.status}`)
+  } catch (cause) {
+    throw new PartialSettingsSave("Settings saved before sync configuration failed", { cause })
+  }
+}
 
 export function initCalendarTodoSettings(): void {
-  // Calendar hydration runs on init
-  hydrateCalendarStatus()
-  // Todo hydration runs on init
-  hydrateTodoStatus()
-
   // ───── Calendar manual add ─────
   const calManualBtn = document.getElementById("cal-add-manual")
   if (calManualBtn) {
@@ -45,7 +54,10 @@ export function initCalendarTodoSettings(): void {
     const dirSelect = card.querySelector<HTMLSelectElement>(".cal-direction-select")
     if (dirSelect) { dirSelect.dataset.entityDir = entityId; dirSelect.setAttribute("aria-label", `Sync direction for ${entityId}`) }
     const entityToggle = card.querySelector<HTMLInputElement>(".cal-entity-toggle")
-    if (entityToggle) entityToggle.value = entityId
+    if (entityToggle) {
+      entityToggle.value = entityId
+      entityToggle.setAttribute("aria-label", `Sync ${entityId}`)
+    }
     card.querySelector<HTMLInputElement>(".cal-entity-toggle")?.addEventListener("change", function () {
       card.classList.toggle("cal-toggle-card--active", this.checked)
       updateCalCountBadge()
@@ -109,26 +121,24 @@ export function initCalendarTodoSettings(): void {
     const caldavPassword = (document.getElementById("caldav-password") as HTMLInputElement).value
     const writeBack = (document.getElementById("cal-write-back") as HTMLInputElement)?.checked ?? false
     const intervalMs = Number((document.getElementById("cal-sync-interval") as HTMLSelectElement)?.value ?? "300000")
-    await saveSetting("calendar_entities", enabledEntities)
-    await saveSetting("calendar_entity", enabledEntities[0] ?? "")
-    await saveSetting("calendar_sync_enabled", enabledEntities.length > 0 ? "true" : "false")
-    await saveSetting("calendar_write_back", writeBack)
-    await saveSetting("calendar_sync_interval_ms", String(intervalMs))
-    await saveSetting("calendar_sync_mode", globalMode)
-    await saveSetting("calendar_sync_modes", syncModes)
+    await saveSettings({
+      calendar_entities: enabledEntities,
+      calendar_entity: enabledEntities[0] ?? "",
+      calendar_write_back: writeBack,
+      calendar_sync_interval_ms: String(intervalMs),
+      calendar_sync_mode: globalMode,
+      calendar_sync_modes: syncModes,
+      ...(caldavUrl && !caldavUsername && !caldavPassword ? { caldav_url: caldavUrl } : {}),
+      calendar_sync_enabled: enabledEntities.length > 0 ? "true" : "false",
+    })
     if (caldavUrl && caldavUsername && caldavPassword) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword }), signal: pageLifecycle.signal }) }
-      catch (err) { log.error("Failed to save CalDAV credentials", err) }
-    } else if (caldavUrl && !caldavUsername && !caldavPassword) {
-      await saveSetting("caldav_url", caldavUrl)
+      await applySyncConfiguration("/api/integrations/calendar/caldav-credentials", {
+        action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword,
+      })
     }
-    if (enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
-    } else {
-      try { await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
-    }
+    await applySyncConfiguration("/api/integrations/calendar/sync", enabledEntities.length > 0
+      ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }
+      : { action: "disable" })
     const statusEl = document.getElementById("cal-status")
     if (statusEl) {
       statusEl.textContent = enabledEntities.length > 0 ? `${enabledEntities.length} syncing` : "Disabled"
@@ -136,7 +146,7 @@ export function initCalendarTodoSettings(): void {
     }
     showToast("settings.calendar_saved")
     updateCalCountBadge()
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // ───── Calendar Sync Now ─────
@@ -208,7 +218,10 @@ export function initCalendarTodoSettings(): void {
     const todoEntity = card.querySelector<HTMLElement>(".cal-toggle-card__entity")
     if (todoEntity) todoEntity.textContent = entityId
     const todoToggle = card.querySelector<HTMLInputElement>(".todo-entity-toggle")
-    if (todoToggle) todoToggle.value = entityId
+    if (todoToggle) {
+      todoToggle.value = entityId
+      todoToggle.setAttribute("aria-label", `Sync ${entityId}`)
+    }
     card.querySelector<HTMLInputElement>(".todo-entity-toggle")?.addEventListener("change", function () {
       card.classList.toggle("cal-toggle-card--active", this.checked)
       updateTodoCount()
@@ -243,24 +256,22 @@ export function initCalendarTodoSettings(): void {
     const enabledEntities = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
     const direction = (document.getElementById("todo-sync-direction") as HTMLSelectElement).value
     if (enabled && enabledEntities.length === 0) { showToast("Enable at least one todo list, or disable sync", "error"); return }
-    await saveSetting("todo_sync_enabled", enabled)
-    await saveSetting("todo_entities", enabledEntities)
-    await saveSetting("todo_entity", enabledEntities[0] || "")
-    await saveSetting("todo_sync_direction", direction)
-    if (enabled && enabledEntities.length > 0) {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
-    } else {
-      try { await fetch((window.__ingress_path || "") + "/api/todo/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disable" }), signal: pageLifecycle.signal }) }
-      catch { /* logged server-side */ }
-    }
+    await saveSettings({
+      todo_entities: enabledEntities,
+      todo_entity: enabledEntities[0] || "",
+      todo_sync_direction: direction,
+      todo_sync_enabled: enabled,
+    })
+    await applySyncConfiguration("/api/todo/sync", enabled && enabledEntities.length > 0
+      ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }
+      : { action: "disable" })
     const statusEl = document.getElementById("todo-status")
     if (statusEl) {
       statusEl.textContent = enabled ? `${enabledEntities.length} syncing` : "Disabled"
       statusEl.className = enabled ? "badge badge-active" : "badge badge-pending"
     }
     showToast("settings.todo_saved")
-    }, { loadingText: "Saving…" }))
+    }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   const syncTodoBtn = document.getElementById("sync-todo") as HTMLButtonElement
@@ -301,7 +312,7 @@ function updateCalCountBadge() {
   const enabled = Array.from(toggles).filter((t) => t.checked).length
   if (badge) {
     badge.textContent = `${enabled} of ${total} enabled`
-    badge.style.color = enabled > 0 ? "var(--accent)" : "var(--text-muted)"
+    badge.style.color = enabled > 0 ? "var(--accent-text)" : "var(--text-muted)"
     badge.style.borderColor = enabled > 0 ? "color-mix(in srgb, var(--accent) 30%, transparent)" : "var(--border)"
   }
 }
@@ -317,7 +328,7 @@ function updateTodoCount() {
 (window as unknown as Record<string, unknown>).__updateTodoCount = updateTodoCount
 
 // ───── Calendar hydration (complete function) ─────
-async function hydrateCalendarStatus() {
+async function hydrateCalendarStatus(s: Record<string, unknown>) {
   const statusEl = document.getElementById("cal-status")
   const autoInfo = document.getElementById("cal-auto-info")
   const autoEntity = document.getElementById("cal-auto-entity")
@@ -363,15 +374,11 @@ async function hydrateCalendarStatus() {
       let savedEntities: string[] = []
       let savedSyncModes: Record<string, string> = {}
       let savedGlobalMode = "bidirectional"
-      try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-        const s = (await settingsRes.json()) as Record<string, unknown>
-        const raw = s.calendar_entities ?? s.calendar_entity ?? s.cal_entity
-        if (Array.isArray(raw)) savedEntities = raw as string[]
-        else if (typeof raw === "string") { try { const parsed = JSON.parse(raw); savedEntities = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [] } catch { savedEntities = raw ? [raw] : [] } }
-        if (s.calendar_sync_modes) { try { const parsed = typeof s.calendar_sync_modes === "string" ? JSON.parse(s.calendar_sync_modes as string) : s.calendar_sync_modes; if (parsed && typeof parsed === "object") savedSyncModes = parsed as Record<string, string> } catch { /* invalid */ } }
-        if (typeof s.calendar_sync_mode === "string") savedGlobalMode = s.calendar_sync_mode
-      } catch { /* ignore */ }
+      const raw = s.calendar_entities ?? s.calendar_entity ?? s.cal_entity
+      if (Array.isArray(raw)) savedEntities = raw as string[]
+      else if (typeof raw === "string") { try { const parsed = JSON.parse(raw); savedEntities = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [] } catch { savedEntities = raw ? [raw] : [] } }
+      if (s.calendar_sync_modes) { try { const parsed = typeof s.calendar_sync_modes === "string" ? JSON.parse(s.calendar_sync_modes as string) : s.calendar_sync_modes; if (parsed && typeof parsed === "object") savedSyncModes = parsed as Record<string, string> } catch { /* invalid */ } }
+      if (typeof s.calendar_sync_mode === "string") savedGlobalMode = s.calendar_sync_mode
 
       const dirSelect = document.getElementById("cal-sync-direction") as HTMLSelectElement | null
       if (dirSelect && savedGlobalMode) dirSelect.value = savedGlobalMode
@@ -380,7 +387,7 @@ async function hydrateCalendarStatus() {
         const isEnabled = savedEntities.includes(c.entity_id)
         const stateLabel = c.state === "off" ? "no active event" : c.state
         const entityMode = savedSyncModes[c.entity_id] ?? savedGlobalMode
-        return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(c.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(c.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(c.entity_id)}</span><div class="cal-toggle-card__direction"${!isEnabled ? ' style="display:none"' : ""}><select class="cal-direction-select" data-entity-dir="${escapeHtml(c.entity_id)}" aria-label="Sync direction for ${escapeHtml(c.friendly_name)}"><option value="bidirectional"${entityMode === "bidirectional" ? " selected" : ""}>↔ Bidirectional</option><option value="import"${entityMode === "import" ? " selected" : ""}>↓ Import only</option><option value="export"${entityMode === "export" ? " selected" : ""}>↑ Export only</option></select></div><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="cal-entity-toggle" value="${escapeHtml(c.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
+        return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(c.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(c.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(c.entity_id)}</span><div class="cal-toggle-card__direction"${!isEnabled ? ' style="display:none"' : ""}><select class="cal-direction-select" data-entity-dir="${escapeHtml(c.entity_id)}" aria-label="Sync direction for ${escapeHtml(c.friendly_name)}"><option value="bidirectional"${entityMode === "bidirectional" ? " selected" : ""}>↔ Bidirectional</option><option value="import"${entityMode === "import" ? " selected" : ""}>↓ Import only</option><option value="export"${entityMode === "export" ? " selected" : ""}>↑ Export only</option></select></div><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="cal-entity-toggle" aria-label="Sync ${escapeHtml(c.friendly_name)}" value="${escapeHtml(c.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
       }).join("")
 
       // Wire toggle cards
@@ -462,7 +469,7 @@ async function hydrateCalendarStatus() {
 }
 
 // ───── Todo hydration ─────
-async function hydrateTodoStatus() {
+async function hydrateTodoStatus(settings: Record<string, unknown>) {
   const statusEl = document.getElementById("todo-status")
   const autoInfo = document.getElementById("todo-auto-info")
   const autoEntities = document.getElementById("todo-auto-entities")
@@ -478,12 +485,8 @@ async function hydrateTodoStatus() {
     const data = (await res.json()) as { ok: boolean; entities?: { entity_id: string; friendly_name: string; state: string; sync: { active: boolean; direction: string; lastSyncAt: number | null; itemCount: number } | null }[] }
     const entities = data.entities ?? []
     let savedEnabled: string[] = []
-    try {
-      const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-      const settings = await settingsRes.json()
-      if (settings.todo_entities) savedEnabled = Array.isArray(settings.todo_entities) ? settings.todo_entities : [settings.todo_entities]
-      else if (settings.todo_entity) savedEnabled = [settings.todo_entity]
-    } catch { /* use defaults */ }
+    if (settings.todo_entities) savedEnabled = Array.isArray(settings.todo_entities) ? settings.todo_entities : [String(settings.todo_entities)]
+    else if (settings.todo_entity) savedEnabled = [String(settings.todo_entity)]
 
     if (entities.length > 0 && autoInfo && autoEntities) {
       autoInfo.style.display = "block"
@@ -497,11 +500,11 @@ async function hydrateTodoStatus() {
         if (noEntities) noEntities.style.display = "flex"
       } else {
         if (noEntities) noEntities.style.display = "none"
-        const autoSelect = savedEnabled.length === 0 && entities.length > 0
+        const autoSelect = settings.todo_entities == null && settings.todo_entity == null
         entitiesContainer.innerHTML = entities.map((e) => {
           const isEnabled = autoSelect ? e === entities[0] : savedEnabled.includes(e.entity_id)
           const stateLabel = e.sync?.active ? `${e.state} · syncing${e.sync.itemCount ? ` · ${e.sync.itemCount} items` : ""}` : e.state
-          return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(e.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(e.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(e.entity_id)}</span><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="todo-entity-toggle" value="${escapeHtml(e.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
+          return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(e.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(e.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(e.entity_id)}</span><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="todo-entity-toggle" aria-label="Sync ${escapeHtml(e.friendly_name)}" value="${escapeHtml(e.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
         }).join("")
 
         entitiesContainer.querySelectorAll<HTMLInputElement>(".todo-entity-toggle").forEach((cb) => {
@@ -568,7 +571,7 @@ export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
     if (todoManual) todoManual.value = String(s.todo_entity)
   }
   if (s.todo_sync_direction) (document.getElementById("todo-sync-direction") as HTMLSelectElement).value = String(s.todo_sync_direction)
-  if (s.todo_sync_enabled) {
+  if (s.todo_sync_enabled === true || s.todo_sync_enabled === "true") {
     (document.getElementById("todo-enabled") as HTMLInputElement).checked = true
     const label = document.getElementById("todo-enabled-label")
     if (label) label.textContent = "On — syncing with HA"
@@ -576,4 +579,7 @@ export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
     if (el) { el.textContent = "Active"; el.className = "badge badge-active" }
     window.expandIntegrationCard?.("integration-todo-body")
   }
+  void hydrateCalendarStatus(s)
+  void hydrateTodoStatus(s)
+
 }

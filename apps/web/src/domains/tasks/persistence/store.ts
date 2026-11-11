@@ -1,4 +1,4 @@
-import { mkdirSync, copyFileSync, readdirSync, statSync, unlinkSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path";
 import type { Client } from "@libsql/client"
@@ -6,6 +6,17 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
 import { openDatabase } from "../../../../scripts/database-client.mjs"
+import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
+import { applyTaskDeferralMigration } from "../../../../drizzle/migrations/0004_task_deferral.mjs"
+import { applyTaskPinsMigration } from "../../../../drizzle/migrations/0005_task_pins.mjs"
+import { applyTaskDraftsMigration } from "../../../../drizzle/migrations/0006_task_drafts.mjs"
+import { applyCommentMentionsMigration } from "../../../../drizzle/migrations/0007_comment_mentions.mjs"
+import { applyTaskInactivityMigration, installTaskInactivityTriggers } from "../../../../drizzle/migrations/0007_task_inactivity.mjs"
+
+import { applyTaskStallMigration, installTaskStallTriggers } from "../../../../drizzle/migrations/0008_task_stall.mjs"
+import { STATUS } from "../../../lib/status-config"
+import { acceptedStatusSql, inactivityDaysSql, openStatuses } from "./task-inactivity-query"
+import { taskTimestampMs } from "./task-timestamp"
 
 export interface PersistedTask {
   id: string;
@@ -27,7 +38,8 @@ export interface PersistedTaskResponse {
 
 let clientSingleton: Client | null = null;
 let dbSingleton: LibSQLDatabase | null = null
-let ensured = false;
+let schemaInitialization: Promise<void> | undefined
+let startupBackupAttempted = false
 
 /** Latest DB integrity check result — exposed via /api/health */
 let dbIntegrityOk = true
@@ -53,47 +65,6 @@ function ensureFileDbDirectory(dbUrl: string): void {
   const absolutePath = resolveDbPath(dbUrl)
   if (absolutePath) {
     mkdirSync(path.dirname(absolutePath), { recursive: true })
-  }
-}
-
-/**
- * Auto-backup DB on cold start (PRA-25).
- * Copies the DB file to a backups/ subdirectory with FIFO rotation (max 5).
- * Skips backup if DB doesn't exist yet (fresh install).
- */
-const MAX_BACKUPS = 5
-function autoBackupDb(dbUrl: string): void {
-  const dbPath = resolveDbPath(dbUrl)
-  if (!dbPath || !existsSync(dbPath)) return
-
-  const backupDir = path.join(path.dirname(dbPath), "backups")
-  mkdirSync(backupDir, { recursive: true })
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const backupPath = path.join(backupDir, `meitheal-${timestamp}.db`)
-
-  try {
-    copyFileSync(dbPath, backupPath)
-    // eslint-disable-next-line no-console
-    console.log(`[meitheal] DB backup created: ${backupPath} (${statSync(backupPath).size} bytes)`)
-  } catch {
-    // eslint-disable-next-line no-console
-    console.error(`[meitheal] DB backup failed — continuing without backup`)
-    return
-  }
-
-  // FIFO rotation — keep max 5 backups
-  try {
-    const backups = readdirSync(backupDir)
-      .filter(f => f.startsWith("meitheal-") && f.endsWith(".db"))
-      .map(f => ({ name: f, time: statSync(path.join(backupDir, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time)
-
-    for (const old of backups.slice(MAX_BACKUPS)) {
-      unlinkSync(path.join(backupDir, old.name))
-    }
-  } catch {
-    // Non-critical — cleanup failure shouldn't block startup
   }
 }
 
@@ -164,17 +135,24 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
 
 /**
  * Idempotent schema bootstrap — creates all tables, indexes, and default data.
- * Safe to call on every request; short-circuits after first successful run.
+ * Concurrent requests share one initialization and later calls reuse its result.
  */
-export async function ensureSchema(): Promise<void> {
-  if (ensured) {
-    return;
+export function ensureSchema(): Promise<void> {
+  schemaInitialization ??= initializeSchema().catch(error => {
+    schemaInitialization = undefined
+    throw error
+  })
+  return schemaInitialization
+}
+
+async function initializeSchema(): Promise<void> {
+  const client = getClient()
+
+  if (!startupBackupAttempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
+    // A schema retry may follow partial writes. Keep the original pre-migration snapshot.
+    startupBackupAttempted = true
+    await autoBackupDb(client)
   }
-
-  const client = getClient();
-
-  // Auto-backup before any migrations (PRA-25)
-  autoBackupDb(resolveDbUrl())
 
   // WAL mode: enables concurrent reads during writes — critical for addon
   // context where SSR page loads and background syncs can overlap.
@@ -377,6 +355,9 @@ export async function ensureSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "is_favorite"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
   }
+  if (!(await hasColumn(client, "tasks", "is_promoted"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN is_promoted INTEGER NOT NULL DEFAULT 0 CHECK (is_promoted IN (0, 1))")
+  }
 
   // Phase 20: Agile hierarchy — epic/story/task type
   if (!(await hasColumn(client, "tasks", "task_type"))) {
@@ -418,6 +399,12 @@ export async function ensureSchema(): Promise<void> {
   if (!(await hasColumn(client, "task_activity_log", "correlation_id"))) {
     await client.execute("ALTER TABLE task_activity_log ADD COLUMN correlation_id TEXT")
   }
+  if (!(await hasColumn(client, "task_activity_log", "feed_action"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_action TEXT")
+  }
+  if (!(await hasColumn(client, "task_activity_log", "feed_person_key"))) {
+    await client.execute("ALTER TABLE task_activity_log ADD COLUMN feed_person_key TEXT")
+  }
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_event_type_idx ON task_activity_log(event_type)")
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_actor_type_idx ON task_activity_log(actor_type)")
 
@@ -443,6 +430,24 @@ export async function ensureSchema(): Promise<void> {
   }
   // Composite index for timeline UNION query performance
   await client.execute("CREATE INDEX IF NOT EXISTS comments_task_created_idx ON comments(task_id, created_at DESC)");
+
+  // Reactions belong to either a task or a comment on that same task.
+  await client.batch([
+    "CREATE UNIQUE INDEX IF NOT EXISTS comments_id_task_idx ON comments(id, task_id)",
+    `CREATE TABLE IF NOT EXISTS task_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      comment_id INTEGER CHECK (comment_id > 0),
+      owner_key TEXT NOT NULL,
+      content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 16),
+      author TEXT NOT NULL,
+      FOREIGN KEY (comment_id, task_id) REFERENCES comments(id, task_id) ON DELETE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS task_reactions_owner_content_idx
+      ON task_reactions(task_id, COALESCE(comment_id, 0), owner_key, content)`,
+    "CREATE INDEX IF NOT EXISTS task_reactions_task_page_idx ON task_reactions(task_id, comment_id, id)",
+    "CREATE INDEX IF NOT EXISTS task_reactions_comment_idx ON task_reactions(comment_id, task_id) WHERE comment_id IS NOT NULL",
+  ], "write")
 
   // Kanban swim lanes — server-persisted lane configuration
   await client.execute(`
@@ -981,21 +986,35 @@ export async function ensureSchema(): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  // Schema version tracking (PRA-23): set version after all migrations complete
-  const versionRow = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1")
-  const storedVersion = versionRow.rows.length > 0 ? Number(versionRow.rows[0]?.value ?? 0) : 0
-  const targetVersion = 10
-  if (storedVersion < targetVersion) {
-    await client.execute({
-      sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      args: [String(targetVersion), Date.now()],
+  const targetVersion = 18
+  const migration = await client.transaction("write")
+  try {
+    await applyTaskDeferralMigration(migration)
+    await applyTaskPinsMigration(migration)
+    await applyTaskDraftsMigration(migration)
+    await applyCommentMentionsMigration(migration)
+    await applyTaskInactivityMigration(migration)
+    await installTaskInactivityTriggers(migration)
+    await applyTaskStallMigration(migration)
+    await installTaskStallTriggers(migration, {
+      newTaskDays: inactivityDaysSql(false, "NEW.area_id"),
+      storedTaskDays: inactivityDaysSql(),
+      openStatuses,
+      completeStatuses: acceptedStatusSql(STATUS.COMPLETE),
+      commentClock: taskTimestampMs("comment.created_at"),
     })
+    // Publish the schema version atomically with the last migration.
+    await migration.execute({
+      sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            WHERE CAST(app_settings.value AS INTEGER) < ?`,
+      args: [String(targetVersion), Date.now(), targetVersion],
+    })
+    await migration.commit()
+  } finally {
+    migration.close()
   }
   currentSchemaVersion = targetVersion
-
-  ensured = true;
-
 }
 
 export async function findByIdempotencyKey(idempotencyKey: string): Promise<PersistedTaskResponse | null> {
@@ -1077,20 +1096,21 @@ export async function findTaskById(taskId: string): Promise<PersistedTask | null
   return toTask(taskRow);
 }
 
-export async function persistInitialPlan(plan: CreateTaskPlan): Promise<void> {
+export async function persistInitialPlan(plan: CreateTaskPlan, description: string | null): Promise<void> {
   const now = Date.now();
 
   await getClient().batch([
     {
       sql: `
         INSERT INTO tasks(
-          id, title, status, framework_payload, calendar_sync_state,
+          id, title, description, status, framework_payload, calendar_sync_state,
           ticket_number, idempotency_key, request_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
       `,
       args: [
         plan.aggregate.task.id,
         plan.aggregate.task.title,
+        description,
         plan.aggregate.task.status,
         JSON.stringify(plan.aggregate.task.frameworkPayload),
         plan.aggregate.calendarSyncState,
@@ -1346,5 +1366,6 @@ export async function persistManualCalendarConfirmation(params: {
 export function resetPersistenceForTests(): void {
   clientSingleton = null;
   dbSingleton = null;
-  ensured = false;
+  schemaInitialization = undefined
+  startupBackupAttempted = false
 }

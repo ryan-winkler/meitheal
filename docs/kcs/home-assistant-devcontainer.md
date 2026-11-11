@@ -13,8 +13,8 @@ Use a disposable development host for changes to ingress, Supervisor integration
 1. Install devcontainer support in a compatible editor such as VS Code and open the repository.
 2. Choose **Reopen in Container** using the checked-in [devcontainer configuration](../../.devcontainer/devcontainer.json).
 3. In the container, run the **Start Home Assistant** editor task or run `supervisor_run`.
-4. Build the candidate with Docker Buildx from the workspace root, using the architecture and base image in `meitheal-hub/build.json`. Push it to a registry reachable by the disposable Supervisor.
-5. Stage the App manifest and AppArmor profile in the local App directory. In the staged copy, set `image` to the test registry’s image template and keep `version` aligned with the tested tag. Supervisor pulls a configured registry image during installation.
+4. Build the Canary candidate with the shared `meitheal-hub/Dockerfile`, using the architecture and base image in `meitheal-hub-canary/build.json`. Push it to a registry reachable by the disposable Supervisor.
+5. Stage the `meitheal-hub-canary` manifest and shared AppArmor profile in the local App directory. Keep slug `meitheal_canary` and image family `meitheal-canary-{arch}`. In the staged copy, set the image registry to the disposable registry and keep `version` aligned with the tested tag. Supervisor pulls the configured image during installation. Keep one installed Meitheal App; back up and retire any older fixture before installing its replacement.
 6. Run `ha store reload`. Install the local App and open its web UI from Home Assistant. Record the exact image digest, App and Home Assistant versions, ingress roles tested, and AppArmor state.
 
 The checked-in configuration installs Node 26 and pnpm 10.8.0 through the official Dev Containers Node feature before running the repository setup script. If an older container reports `npm: command not found`, rebuild it from this configuration; starting its existing container does not apply newly added Features.
@@ -23,7 +23,9 @@ The stack uses Home Assistant’s official `6-apps` devcontainer and beta Superv
 
 Setup checks Grocy at its public root URL. The authenticated Grocy API requires a separate key and is not a readiness probe.
 
-The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage only the candidate manifest, profile and support files in `/mnt/supervisor/apps/local/meitheal-candidate`. Keep the candidate outside the workspace. This monorepo intentionally omits upstream `devcontainer_bootstrap`, which would bind the complete source tree into the local App store and introduce duplicate stable/Canary manifests. Supervisor itself migrates legacy `addons` data before staging; do not create an `apps` directory before that migration. Older versions use `/mnt/supervisor/addons/local/meitheal`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versions, stage only the candidate manifest, profile and support files in `/mnt/supervisor/apps/local/meitheal-hub-canary`. Keep the candidate outside the workspace. This monorepo intentionally omits upstream `devcontainer_bootstrap`, which would bind the complete source tree into the local App store and introduce duplicate stable/Canary manifests. Supervisor itself migrates legacy `addons` data before staging; do not create an `apps` directory before that migration. Older versions use `/mnt/supervisor/addons/local/meitheal-hub-canary`. Stage the files after Supervisor starts so its data-directory migration can run. The nested Docker and containerd stores use separate volumes so the inner engine can mount image layers.
+
+The privileged development container masks `getty@tty1.service`, `getty@.service` and `serial-getty@.service` before starting init, so a guest login prompt cannot claim a host console. Preserve the checked-in command when overriding startup. It uses the real `/usr/bin/systemctl --root=/` before init and exits if masking fails; a PATH-resolved systemctl shim may require systemd to be running already.
 
 ## Local configuration and recovery
 
@@ -52,6 +54,8 @@ The App wrapper accepts ingress only from the Supervisor's documented TCP peer, 
 With the App running, test the UI through Supervisor ingress as a regular user and as an administrator. Confirm both can load tasks and that only the administrator can manage API tokens. Check that links and the web manifest stay in the ingress scope. From a separate test container, send requests directly to the App with forged ingress and identity headers. Protected routes must return an authorization error, while the health check remains reachable. Native loopback calls stay local to the App container.
 
 Open Tasks from a fresh browser session and inspect its network requests. JavaScript loaded by the board and its preloads should use the App's ingress path. A request to a bare `/_astro/` path goes to Home Assistant Core. The Vite build resolves script preloads relative to their importing script, so the same chunks also work in a standalone installation. [Vite build options](https://v8.vite.dev/config/build-options#build-modulepreload).
+
+Open a large board's Table view and switch to Calendar or Timeline. Meitheal scopes links, forms and assets to ingress and streams oversized HTML. The check should still pass when the Table response exceeds 5 MiB. A request to the Home Assistant root or unscoped task links usually indicates a failed ingress rewrite. Check that a slow client limits queued socket data and that disconnecting cancels the upstream HTML stream.
 
 The older Core coordinator calls native task routes without credentials. Direct sibling calls are denied by the new ingress boundary. Verify a credential-backed Core integration path before promoting the App if that integration is required.
 

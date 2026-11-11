@@ -1,13 +1,10 @@
 /**
- * A2A (Agent-to-Agent) Protocol Handler
+ * Experimental A2A (Agent-to-Agent) discovery and protocol data types.
  *
- * Implements the HTTP+JSON/REST binding of the A2A Protocol RC v1.0.
- * Handles agent discovery (Agent Card), message routing, and task lifecycle.
+ * The installed App serves a discovery card while message execution is unavailable.
  * See: https://a2a-protocol.org/latest/specification/
  *
  * Domain: integration-core
- * KCS: All A2A interactions are logged and emit domain events.
- *       Skill definitions are maintained here; tool schemas come from tool-registry.ts.
  */
 
 import { getToolsByTag } from "./tool-registry"
@@ -293,22 +290,12 @@ export const HA_SKILLS: A2AAgentSkill[] = [
 ];
 
 /**
- * Build the Meitheal Agent Card from current configuration.
- * Skills are dynamically included based on active integrations.
+ * Describe experimental discovery without advertising executable A2A skills.
  */
-export function buildAgentCard(options: {
-  basePath: string;
-  haConfigured: boolean;
-}): A2AAgentCard {
-  const skills = [...MEITHEAL_SKILLS];
-  if (options.haConfigured) {
-    skills.push(...HA_SKILLS);
-  }
-
+export function buildAgentCard(options: { basePath: string }): A2AAgentCard {
   return {
     name: "Meitheal",
-    description:
-      "Experimental Meitheal agent discovery. Skills list recognised message intents. The endpoints return sample responses.",
+    description: "Experimental Meitheal agent discovery. A2A message execution is unavailable.",
     url: options.basePath || "/",
     supportedInterfaces: [],
     provider: {
@@ -323,9 +310,9 @@ export function buildAgentCard(options: {
       extendedAgentCard: false,
       securityScheme: "bearer",
     },
-    defaultInputModes: ["application/json", "text/plain"],
-    defaultOutputModes: ["application/json"],
-    skills,
+    defaultInputModes: [],
+    defaultOutputModes: [],
+    skills: [],
   };
 }
 

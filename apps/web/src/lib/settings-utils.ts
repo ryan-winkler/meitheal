@@ -5,18 +5,53 @@
  * reusable save/load and CSS sanitization helpers.
  */
 import { createClientLogger } from "@lib/client-logger"
+import { showToast } from "@lib/toast"
 import { settingsStore } from "@lib/settings-store"
 
 export const log = createClientLogger("settings")
 
 // ───── Settings API helpers ─────
 
-/** Save a single setting to the API via settingsStore */
-export async function saveSetting(key: string, value: unknown): Promise<void> {
+export function saveSetting(key: string, value: unknown): Promise<void> {
+  return settingsStore.saveSetting(key, value)
+}
+
+export class PartialSettingsSave extends Error {}
+
+/** Use the existing single-key API in order and stop on the first rejection. */
+export async function saveSettings(changes: Record<string, unknown>): Promise<void> {
+  let saved = false
   try {
-    await settingsStore.saveSetting(key, value)
-  } catch {
-    /* ignore */
+    for (const [key, value] of Object.entries(changes)) {
+      await saveSetting(key, value)
+      saved = true
+    }
+  } catch (cause) {
+    if (saved) throw new PartialSettingsSave("Some settings were saved", { cause })
+    throw cause
+  }
+}
+
+export function showSettingsSaveError(error: unknown): void {
+  if (error instanceof DOMException && error.name === "AbortError") return
+  log.warn("Settings action failed", error)
+  showToast(error instanceof PartialSettingsSave ? "settings.save_partial" : "settings.save_error", "error")
+}
+
+/** Keep failed settings actions editable and restore their original button. */
+export function settingsAction(handler: (event: Event) => unknown): (event: Event) => Promise<void> {
+  return async event => {
+    const button = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null
+    if (button?.disabled) return
+    const label = button?.innerHTML
+    if (button) button.disabled = true
+    try { await handler(event) } catch (error) { showSettingsSaveError(error) }
+    finally {
+      if (button) {
+        button.disabled = false
+        if (label !== undefined) button.innerHTML = label
+      }
+    }
   }
 }
 

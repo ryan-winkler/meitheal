@@ -118,24 +118,35 @@ test.describe("Service Worker Registration Contracts", () => {
 })
 
 test.describe("PWA Manifest — Dynamic Endpoint", () => {
-  test("manifest base fields are correct", () => {
-    // Contract test for the dynamic manifest structure
-    const manifest = {
-      name: "Meitheal",
-      short_name: "Meitheal",
-      display: "standalone",
-      scope: "/",
-      start_url: "/",
-      icons: [
-        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      ],
+  test("manifest icons resolve to shipped PNGs at their declared sizes", async () => {
+    const fixtures = [
+      { path: "/icon-192.png", size: 192, purpose: "any" },
+      { path: "/icon-512.png", size: 512, purpose: "any" },
+      { path: "/icon-maskable-512.png", size: 512, purpose: "maskable" },
+    ]
+    for (const ingressPath of ["", "/api/hassio_ingress/synthetic-test-ingress"]) {
+      const response = await getManifest({ locals: { ingressPath } } as Parameters<typeof getManifest>[0])
+      const manifest = await response.json()
+      expect(manifest).toMatchObject({
+        name: "Meitheal",
+        short_name: "Meitheal",
+        display: "standalone",
+        scope: ingressPath + "/",
+        start_url: ingressPath + "/",
+        icons: fixtures.map(({ path, size, purpose }) => ({
+          src: ingressPath + path,
+          sizes: `${size}x${size}`,
+          type: "image/png",
+          purpose,
+        })),
+      })
     }
 
-    expect(manifest.name).toBe("Meitheal")
-    expect(manifest.display).toBe("standalone")
-    expect(manifest.start_url).toBe("/")
-    expect(manifest.icons.length).toBeGreaterThanOrEqual(2)
+    for (const { path, size } of fixtures) {
+      const image = await readFile(new URL("../../apps/web/public" + path, import.meta.url))
+      expect(image.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a")
+      expect([image.readUInt32BE(16), image.readUInt32BE(20)]).toEqual([size, size])
+    }
   })
 
   test("manifest screenshots resolve to shipped PNGs with matching dimensions", async () => {

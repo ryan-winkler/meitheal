@@ -13,6 +13,7 @@
   },
   "packageManager": "pnpm@10.8.0",
   "scripts": {
+    "build:image": "bash scripts/build-image.sh",
     "check": "pnpm -r --if-present check",
     "test": "pnpm -r --if-present test",
     "lint": "pnpm -r --if-present lint"

@@ -8,6 +8,7 @@
  */
 
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { formatCalendarDay } from "@lib/calendar-day"
 
 export interface HabitChecklistItem {
   text: string
@@ -35,15 +36,10 @@ function formatCadence(cadence: HabitData["cadence"]): string {
 }
 
 function formatLastCompletedDate(value: string | null): string {
-  if (!value) return "Never completed"
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return `Last done ${value}`
-
-  return `Last done ${new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date)}`
+  const i18n = window.mI18n
+  if (!value) return i18n?.get("habits.never_completed") ?? "Never completed"
+  const date = formatCalendarDay(value, document.documentElement.lang === "ga" ? "ga" : undefined) ?? value
+  return (i18n?.get("habits.last_done") ?? "Last done {date}").replace("{date}", () => date)
 }
 
 function priorityLabel(priority: number): string {

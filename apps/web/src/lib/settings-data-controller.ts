@@ -6,12 +6,37 @@
  */
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
 import { confirmDialog } from "@lib/confirm-dialog"
-import { buildIngressPagePath } from "@lib/page-shell-links"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
+import { exportFilename } from "@lib/export-filename"
 import { showToast } from "@lib/toast"
+import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
 import { saveSetting, log } from "@lib/settings-utils"
+
+type CustomField = { name: string; type: string; options?: string[] }
+let pendingCustomFields = Promise.resolve()
+
+function parseCustomFields(value: unknown): CustomField[] {
+  if (value == null) return []
+  const fields = typeof value === "string" ? JSON.parse(value) : value
+  if (!Array.isArray(fields)) throw new Error("Invalid custom fields")
+  return fields as CustomField[]
+}
+
+function updateCustomFields(update: (fields: CustomField[]) => CustomField[]): Promise<void> {
+  const signal = pageLifecycle.signal
+  const save = pendingCustomFields.then(async () => {
+    const response = await fetch("/api/settings", { cache: "no-store", signal })
+    if (!response.ok) throw new Error(`Custom fields could not load: ${response.status}`)
+    const settings = await response.json()
+    signal.throwIfAborted()
+    const fields = update(parseCustomFields(settings.custom_fields))
+    await saveSetting("custom_fields", JSON.stringify(fields))
+  })
+  pendingCustomFields = save.catch(() => {})
+  return save
+}
 
 export function initDataSettings(): void {
   // JSON export
@@ -29,23 +54,46 @@ export function initDataSettings(): void {
     })
   }
 
+  const exportSettings = document.getElementById("export-settings-btn")
+  if (exportSettings) pageLifecycle.on(exportSettings, "click", async event => {
+    event.preventDefault()
+    if (exportSettings.getAttribute("aria-busy") === "true") return
+    exportSettings.setAttribute("aria-busy", "true")
+    const signal = pageLifecycle.signal
+    try {
+      await flushRulesSave()
+      await withConfigurationMutation(async () => {
+        const response = await fetch("/api/export/settings.json", { signal, cache: "no-store" })
+        const payload = await response.json()
+        if (!response.ok || !payload || payload._version !== 2 || !Array.isArray(payload.rules) || !Array.isArray(payload.frameworkOverrides)) throw new Error("Settings export failed")
+        const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }))
+        const link = document.createElement("a")
+        link.href = url
+        link.download = exportFilename("Settings", "json")
+        document.body.append(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+      })
+      showToast("settings.export_success")
+    } catch { showToast("settings.export_failed", "error") }
+    finally { exportSettings.removeAttribute("aria-busy") }
+  })
+
   // Raw DB download with confirmation dialog
   const exportDbBtn = document.getElementById("export-db-btn")
-  if (exportDbBtn) {
+  const exportDbForm = document.querySelector<HTMLFormElement>("#export-db-form")
+  if (exportDbBtn && exportDbForm) {
     pageLifecycle.on(exportDbBtn, "click", async () => {
-    const confirmed = await confirmDialog({
-      message: "This database file contains private household data and local feedback. Store it privately.",
-      title: "Download Database",
-      confirmText: "Download",
-      variant: "warning",
-    })
-    if (!confirmed) return
-    const a = document.createElement("a")
-    a.href = buildIngressPagePath("/api/export/database.sqlite")
-    a.download = ""
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+      const signal = pageLifecycle.signal
+      const confirmed = await confirmDialog({
+        message: "This database file contains private household data and local feedback. Store it privately.",
+        title: "Download Database",
+        confirmText: "Download",
+        variant: "warning",
+        signal,
+      })
+      if (confirmed && !signal.aborted) exportDbForm.submit()
     })
   }
 
@@ -56,11 +104,14 @@ export function initDataSettings(): void {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
+      const signal = pageLifecycle.signal
       try {
+        if (file.size > 204800) throw new Error("Settings import exceeds 200 KiB")
         const text = await file.text()
         const payload = JSON.parse(text)
+        await withRulesReplacement(async () => {
         const response = await fetch(
-          (window.__ingress_path || "") + "/api/import/settings",
+          "/api/import/settings",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -68,16 +119,18 @@ export function initDataSettings(): void {
             signal: pageLifecycle.signal,
           },
         )
-        if (!response.ok) {
-          throw new Error(await response.text())
+        const result = await response.json()
+        if (!response.ok || result.success !== true) {
+          throw new Error(result.error || "Settings import failed")
         }
         showToast("settings.import_success")
         settingsStore.invalidate()
         // Full reload required — imported settings replace everything (theme, locale, integrations)
         setTimeout(() => {
-          if (pageLifecycle.signal.aborted) return
+          if (signal.aborted) return
           window.location.reload()
         }, 1500)
+        })
       } catch (error) {
         log.error("Failed to import settings", error)
         showToast("settings.import_failed", "error")
@@ -111,13 +164,16 @@ export function initDataSettings(): void {
 
     const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
     const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
-    typeSelect?.addEventListener("change", () => {
+    pageLifecycle.on(typeSelect, "change", () => {
       optionsInput.style.display = typeSelect.value === "select" ? "block" : "none"
     })
 
     row.querySelector("input")?.focus()
 
-    row.querySelector(".custom-field-save")?.addEventListener("click", async function () {
+    const saveButton = row.querySelector<HTMLButtonElement>(".custom-field-save")
+    if (!saveButton) return
+    pageLifecycle.on(saveButton, "click", async () => {
+      if (saveButton.disabled) return
       const nameInput = row.querySelector("input") as HTMLInputElement
       const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
       const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
@@ -137,18 +193,9 @@ export function initDataSettings(): void {
           .filter((v, i, a) => a.indexOf(v) === i)
       }
 
+      saveButton.disabled = true
       try {
-        const settingsRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-        const settings = settingsRes.ok ? await settingsRes.json() : {}
-        const existing = settings.custom_fields ? JSON.parse(settings.custom_fields) : []
-        existing.push(fieldDef)
-
-        await fetch((window.__ingress_path || "") + "/api/settings", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(existing) }),
-          signal: pageLifecycle.signal,
-        })
+        await updateCustomFields((fields) => [...fields, fieldDef])
 
         nameInput.disabled = true
         typeSelect.disabled = true
@@ -161,6 +208,7 @@ export function initDataSettings(): void {
         }
         showToast("settings.custom_field_saved")
       } catch {
+        saveButton.disabled = false
         showToast("settings.failed_save_field", "error")
       }
     })
@@ -176,7 +224,7 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
   // Restore custom fields
   try {
     if (settings.custom_fields) {
-      const fields = JSON.parse(settings.custom_fields as string) as { name: string; type: string }[]
+      const fields = parseCustomFields(settings.custom_fields)
       const list = document.getElementById("custom-fields-list")
       if (list && fields.length > 0) {
         for (const field of fields) {
@@ -190,22 +238,16 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
             <span style="color: var(--text-muted); font-size: 12px;">Saved</span>
             <button type="button" class="btn btn-ghost" style="padding: 4px 8px; color: var(--danger);" title="Remove field definition (data on existing tasks is preserved)">×</button>
           `
-          row.querySelector("button")?.addEventListener("click", async () => {
+          const remove = row.querySelector("button")
+          if (remove) pageLifecycle.on(remove, "click", async () => {
+            remove.disabled = true
             try {
-              const curRes = await fetch((window.__ingress_path || "") + "/api/settings", { signal: pageLifecycle.signal })
-              const curSettings = curRes.ok ? await curRes.json() : {}
-              const curFields = curSettings.custom_fields ? JSON.parse(curSettings.custom_fields) : []
-              const updated = curFields.filter((f: { name: string }) => f.name !== field.name)
-              await fetch((window.__ingress_path || "") + "/api/settings", {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ key: "custom_fields", value: JSON.stringify(updated) }),
-                signal: pageLifecycle.signal,
-              })
+              await updateCustomFields((fields) => fields.filter((item) => item.name !== field.name))
               row.remove()
               showToast("settings.field_removed")
             } catch {
               showToast("common.failed_delete", "error")
+              remove.disabled = false
             }
           })
           list.appendChild(row)

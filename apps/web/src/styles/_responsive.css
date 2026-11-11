@@ -26,7 +26,13 @@
     position: fixed;
     width: 100%;
     height: 100%;
-    /* P0-2: Block all touch gestures when sidebar overlay is open */
+  }
+  body.sidebar-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    background: rgb(0 0 0 / 50%);
     touch-action: none;
   }
   /* Mobile: sidebar off-screen but rendered (not display:none) */
@@ -49,15 +55,6 @@
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
-    /* Mobile: dark overlay behind open sidebar — full-screen, under sidebar z-index */
-    .sidebar.open::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: -1;
-  }
-
   .main-content {
     width: 100%;
   }
@@ -76,13 +73,6 @@
   .kanban-column {
     min-width: 100%;
     max-width: 100%;
-  }
-
-  /* Mobile: kanban card actions always visible (no hover on touch) */
-  .kanban-card-actions {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: translateY(0) !important;
   }
 
   /* Mobile: empty state compact */
@@ -504,13 +494,6 @@
     min-height: 44px;
     font-size: 16px;
   }
-/* P2-5: On touch devices, show kanban card actions always (no hover) */
-.kanban-card-actions {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  transform: translateY(0) !important;
-}
-
 /* P3-2: Prevent accidental nav clicks while scrolling sidebar */
 .sidebar-scroll {
   touch-action: pan-y;

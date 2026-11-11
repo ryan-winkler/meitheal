@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import { createRequire } from "node:module"
 import * as path from "node:path"
 import { test, expect } from "@playwright/test"
 
@@ -213,4 +214,27 @@ test.describe("Home Assistant runtime package contract", () => {
     expect(metadata.homeassistant).toBe("2026.10.4")
     expect(fileExists("brand/icon.png")).toBe(true)
   })
+})
+
+
+test("both Core CI profiles build this checkout before required App/native protocol tests", () => {
+  const { parse } = createRequire(new URL("../../apps/web/package.json", import.meta.url))("yaml")
+  const workflow = parse(fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
+  type Step = { uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> }
+  const core = workflow.jobs["ha-core"] as { steps: Step[]; strategy: { matrix: { include: unknown[] } } }
+  expect(core.strategy.matrix.include).toEqual([
+    { core: "2026.10.4", requirements: "requirements-test-2026.10.txt" },
+    { core: "2026.11.1", requirements: "requirements-test.txt" },
+  ])
+  const pnpm = core.steps.findIndex(step => step.uses === "pnpm/action-setup@v6" && step.with?.version === "10.8.0")
+  const node = core.steps.findIndex(step => step.uses === "actions/setup-node@v7" && String(step.with?.["node-version"]) === "22")
+  const install = core.steps.findIndex(step => step.run?.trim() === "pnpm install --frozen-lockfile")
+  const build = core.steps.findIndex(step => step.run?.trim() === "pnpm --filter @meitheal/web build")
+  const native = core.steps.findIndex(step => step.run?.includes("python -m pytest"))
+  expect(pnpm).toBeGreaterThan(-1)
+  expect(node).toBeGreaterThan(pnpm)
+  expect(install).toBeGreaterThan(node)
+  expect(build).toBeGreaterThan(install)
+  expect(native).toBeGreaterThan(build)
+  expect(core.steps[native]!.env?.MEITHEAL_REQUIRE_APP_PROTOCOL).toBe("1")
 })

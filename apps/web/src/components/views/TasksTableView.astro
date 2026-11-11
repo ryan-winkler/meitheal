@@ -12,9 +12,11 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import { formatRegionalDate } from "../../lib/date";
 import { formatTicketKey } from "../../lib/ticket-key";
+import { buildTaskPath } from "../../lib/task-detail-handoff"
 import { getTasksForView } from "../../lib/task-queries";
-import { STATUS_CONFIG } from "../../lib/status-config";
-import { TABLE_SECTIONS } from "../../lib/table-registry";
+import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
+import { readTableFilterParams } from "../../lib/filter-state"
+import { getTablePage } from "../../lib/table-page"
 
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -22,7 +24,19 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const { timezone, dateFormat } = Astro.locals;
 
-const { tasks, counts } = await getTasksForView();
+const { tasks } = await getTasksForView()
+const params = new URLSearchParams(Astro.url.search)
+const filters = readTableFilterParams(params)
+const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(tasks, filters, params.get("tp"))
+
+function tableLink(next: number, open?: string) {
+  const query = new URLSearchParams(params)
+  for (const key of ["tableRefresh", "open", "comment", "tp"]) query.delete(key)
+  query.set("view", "table")
+  if (next > 1) query.set("tp", String(next))
+  if (open) query.set("open", open)
+  return `/tasks?${query}#table`
+}
 
 const priorityClasses: Record<number, string> = {
   1: "priority-critical",
@@ -32,123 +46,81 @@ const priorityClasses: Record<number, string> = {
   5: "priority-minimal",
 };
 
-// --- Subtask Hierarchy: Build tree and flatten with depth ---
-type TaskWithDepth = (typeof tasks)[number] & { depth: number; hasChildren: boolean; childIds: string[] };
-
-function buildTreeRows(allTasks: typeof tasks): TaskWithDepth[] {
-  // Index by id
-  const byId = new Map(allTasks.map(t => [t.id, t]));
-  // Build children map
-  const childrenMap = new Map<string, typeof tasks>();
-  for (const t of allTasks) {
-    if (t.parent_id && byId.has(String(t.parent_id))) {
-      const pid = String(t.parent_id);
-      if (!childrenMap.has(pid)) childrenMap.set(pid, []);
-      childrenMap.get(pid)!.push(t);
-    }
-  }
-  // Flatten tree with DFS
-  const result: TaskWithDepth[] = [];
-  const visited = new Set<string>();
-  function walk(task: (typeof tasks)[number], depth: number) {
-    if (visited.has(task.id)) return;
-    visited.add(task.id);
-    const kids = childrenMap.get(task.id) ?? [];
-    result.push({
-      ...task,
-      depth,
-      hasChildren: kids.length > 0,
-      childIds: kids.map(c => c.id),
-    });
-    for (const child of kids) walk(child, depth + 1);
-  }
-  // Start with root tasks (no parent or parent not in set)
-  for (const t of allTasks) {
-    if (!t.parent_id || !byId.has(String(t.parent_id))) {
-      walk(t, 0);
-    }
-  }
-  // Add any orphans not visited (circular refs etc.)
-  for (const t of allTasks) {
-    if (!visited.has(t.id)) {
-      result.push({ ...t, depth: 0, hasChildren: false, childIds: [] });
-    }
-  }
-  return result;
-}
-
-const treeRows = buildTreeRows(tasks);
-const tableSignal =
-  counts.total === 0
-    ? "No tasks are available in the table view right now"
-    : `${counts.total} tasks in view, ${counts.active} currently active`
 ---
 
 <div id="tasks-view-table" class="tasks-view-container" data-task-view="table">
-  <div id="table-shell" class="page-shell">
+  <div id="table-shell" class="page-shell" data-table-filters={JSON.stringify(filters)}>
     <!-- Signal bar -->
     <SignalBar>
       <span id="task-summary">
-        <strong>{counts.total}</strong> tasks · <strong>{counts.active}</strong> active
-        {counts.overdue > 0 && (
+        <strong>{stats.total.count}</strong> tasks · <strong>{active}</strong> active
+        {overdue > 0 && (
           <Fragment>
-            · <span class="summary-overdue">{counts.overdue} overdue</span>
+            · <span class="summary-overdue">{overdue} overdue</span>
           </Fragment>
         )}
       </span>
     </SignalBar>
 
-    {
-      tasks.length === 0 && (
-        <EmptyState
-          title={t("table.no_tasks", locale)}
-          description={t("table.no_tasks", locale)}
-          actionText={t("tasks.new_task", locale)}
-          actionEvent="meitheal:new-task"
-        />
-      )
-    }
+    <div class="table-filter-bar">
+      <FilterToolbar view="table" showSearch showGroupBy />
+      <div class="table-filter-actions">
+        <SavedFilterPresets />
+        <ColumnCustomizer />
+      </div>
+    </div>
 
-    {
-      tasks.length > 0 && (
-        <>
-          <!-- Filter toolbar (always visible, matches Kanban) -->
-          <div class="table-filter-bar">
-            <FilterToolbar
-              view="table"
-              showSearch
-              showGroupBy
-              showStatusFilter
-              showPriorityFilter
-              showRICEFilter
-              showUserFilter
-            />
-          </div>
-          <table class="data-table" id="task-table">
+    <nav id="table-pagination" class="table-pagination" aria-label={t("table.task_pages", locale)} hidden={pageCount === 1}>
+      <span id="table-page-range">{offset + 1}–{offset + rows.length} {t("table.matching_tasks_of", locale)} {stats.total.count} {t("table.matching_tasks", locale)}</span>
+      <div class="table-pagination__links">
+        {page > 1 && <a class="btn" data-table-page-link aria-describedby="table-page-range" href={tableLink(page - 1)} rel="prev">{t("table.previous_page", locale)}</a>}
+        {page < pageCount && <a class="btn" data-table-page-link aria-describedby="table-page-range" href={tableLink(page + 1)} rel="next">{t("table.next_page", locale)}</a>}
+      </div>
+    </nav>
+
+    <div id="table-empty" hidden={tasks.length > 0}>
+      <EmptyState
+        title={t("table.no_tasks", locale)}
+        description={t("table.no_tasks", locale)}
+        actionText={t("tasks.new_task", locale)}
+        actionEvent="meitheal:new-task"
+      />
+    </div>
+
+    <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0" hidden={tasks.length === 0}>
+          <table class="data-table" id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}>
             <thead>
               <tr>
                 <th scope="col" class="col-checkbox">
                   <input
                     type="checkbox"
                     id="select-all"
-                    aria-label="Select all tasks"
+                    aria-label="Select all visible tasks on this page"
                   />
                 </th>
                 <th scope="col" class="sortable col-key" data-col="key">
-                  {t("table.col_key", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_key", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
-                <th scope="col" class="sortable col-title" data-col="title">
-                  {t("table.col_title", locale)}
-                  <span class="sort-indicator" />
+                <th id="table-title-header" scope="col" class="sortable col-title" data-col="title">
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_title", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th scope="col" class="sortable col-type" data-col="type">
-                  {t("table.col_type", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_type", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th scope="col" class="sortable col-status" data-col="status">
-                  {t("table.col_status", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_status", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th
                   scope="col"
@@ -156,16 +128,20 @@ const tableSignal =
                   data-col="priority"
                   data-numeric="true"
                 >
-                  {t("table.col_priority", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_priority", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th
                   scope="col"
                   class="sortable col-due-date"
                   data-col="due_date"
                 >
-                  {t("table.col_due_date", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_due_date", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th
                   scope="col"
@@ -173,8 +149,10 @@ const tableSignal =
                   data-col="rice"
                   data-numeric="true"
                 >
-                  {t("table.col_rice", locale)}
-                  <span class="sort-indicator" />
+                  <button type="button" class="table-sort-control">
+                    {t("table.col_rice", locale)}
+                    <span class="sort-indicator" />
+                  </button>
                 </th>
                 <th
                   scope="col"
@@ -198,40 +176,33 @@ const tableSignal =
               </tr>
             </thead>
             <tbody>
-              {treeRows.map((task) => {
+              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage }) => {
                 const cfEntries = Object.entries(task.custom_fields).filter(
                   ([, v]) => v !== null && v !== undefined && v !== "",
                 );
-                const searchText = [
-                  task.title,
-                  task.description ?? "",
-                  ...task.labels,
-                ]
-                  .join(" ")
-                  .toLowerCase();
                 const ticketKey = formatTicketKey(task.ticket_number ?? 0) ?? `#${task.id.slice(0, 8)}`
                 return (
                   <tr
                     data-id={task.id}
                     data-rice={task.rice !== null ? String(task.rice) : ""}
                     data-area={task.area_id}
+                    data-project-id={task.project_id ?? ""}
                     data-status={task.status}
+                    data-due-date={task.due_date ?? ""}
                     data-priority={String(task.priority)}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={JSON.stringify(task.labels ?? [])}
                     data-title={task.title.toLowerCase()}
-                    data-search={searchText}
                     data-task-type={task.task_type}
                     data-task-kind={task.task_kind ?? "standard_action"}
-                    data-depth={String(task.depth)}
-                    data-parent-id={task.parent_id ? String(task.parent_id) : ""}
-                    data-has-children={task.hasChildren ? "true" : ""}
-                    data-child-ids={task.childIds.join(",")}
+                    data-depth={String(depth)}
+                    data-parent-id={parentId ?? ""}
+                    data-has-children={hasChildren ? "true" : ""}
                     data-overdue={task.is_overdue ? "true" : "false"}
-                    class={`table-row ${task.is_done ? "row-done" : ""} ${task.depth > 0 ? "subtask-row" : ""}`}
-                    style={task.depth > 0 ? `--subtask-depth: ${task.depth}` : undefined}
+                    class={`table-row ${task.is_done ? "row-done" : ""} ${depth > 0 ? "subtask-row" : ""}`}
+                    style={depth > 0 ? `--subtask-depth: ${depth}` : undefined}
                   >
-                    <td>
+                    <td class="col-checkbox">
                       <input
                         type="checkbox"
                         class="row-check"
@@ -239,19 +210,20 @@ const tableSignal =
                         aria-label={`Select task: ${task.title}`}
                       />
                     </td>
-                    <td>
-                      <button
-                        type="button"
+                    <td class="col-key">
+                      <a
+                        href={buildTaskPath(task.id)}
+                        data-task-detail-link={task.id}
                         class="ticket-key-badge"
                         data-open-table-task
                         aria-label={`${ticketKey} — ${task.title}`}
                       >
                         {ticketKey}
-                      </button>
+                      </a>
                     </td>
-                    <td>
-                      <div class="task-title-cell" style={task.depth > 0 ? `padding-left: ${task.depth * 20}px` : undefined}>
-                        {task.hasChildren && (
+                    <td class="col-title">
+                      <div class="task-title-cell" style={depth > 0 ? `padding-left: ${depth * 20}px` : undefined}>
+                        {hasChildren && (
                           <button
                             type="button"
                             class="subtree-toggle"
@@ -260,7 +232,7 @@ const tableSignal =
                             aria-expanded="true"
                           >▾</button>
                         )}
-                        {task.depth > 0 && !task.hasChildren && (
+                        {depth > 0 && !hasChildren && (
                           <span class="subtree-indent-marker">↳</span>
                         )}
                         <span
@@ -268,40 +240,48 @@ const tableSignal =
                           contenteditable="true"
                           spellcheck="false"
                           role="textbox"
+                          aria-label={t("table.col_title", locale)}
                           data-field="title"
                           data-id={task.id}
                           data-original={task.title}
                         >
                           {task.title}
                         </span>
+                        {task.deferred_at !== null && <span class="table-deferred-badge" data-table-deferred>{t("deferral.title", locale)}</span>}
                       </div>
+                      {parentOutsidePage && (
+                        <a class="table-parent-link" href={tableLink(page, parentOutsidePage.id)} data-open-table-parent={parentOutsidePage.id}>
+                          {t("table.subtask_of", locale)} {parentOutsidePage.title}
+                        </a>
+                      )}
                       {task.description && (
-                        <div class="cell-description" style={task.depth > 0 ? `margin-left: ${task.depth * 20}px` : undefined}>
+                        <div class="cell-description" style={depth > 0 ? `margin-left: ${depth * 20}px` : undefined}>
                           {task.description.slice(0, 60)}
                         </div>
                       )}
                     </td>
-                    <td class="cell-center">
-                      <TaskTypeIcon type={task.task_type} />
+                    <td class="col-type cell-center">
+                      <TaskTypeIcon type={task.task_type} role="img" />
                     </td>
-                    <td>
+                    <td class="col-status">
                       <select
                         class="inline-select"
                         data-field="status"
                         data-id={task.id}
                         aria-label={`Status for ${task.title}`}
                       >
+                        {!CANONICAL_STATUSES.includes(task.status) && <option value={task.status} selected>{task.status}</option>}
                         {STATUS_CONFIG.map((s) => (
                           <option
                             value={s.canonical}
-                            selected={task.status === s.canonical || (s.canonical === "complete" && task.is_done)}
+                            selected={task.status === s.canonical}
                           >
                             {t(s.i18nKey as any, locale)}
                           </option>
                         ))}
                       </select>
                     </td>
-                    <td>
+                    <td class="col-priority">
                       <select
                         class={`inline-select ${priorityClasses[task.priority] ?? ""}`}
                         data-field="priority"
@@ -346,7 +326,7 @@ const tableSignal =
                       </select>
                     </td>
                     <td
-                      class={`text-sm td-due ${task.is_overdue ? "overdue-date" : ""}`}
+                      class={`col-due-date text-sm td-due ${task.is_overdue ? "overdue-date" : ""}`}
                     >
                       {task.due_date
                         ? formatRegionalDate(task.due_date, {
@@ -360,7 +340,7 @@ const tableSignal =
                         </span>
                       )}
                     </td>
-                    <td class="cell-center">
+                    <td class="col-rice cell-center">
                       {task.rice !== null ? (
                         <FrameworkBadge score={task.rice} framework="RICE" />
                       ) : (
@@ -406,7 +386,7 @@ const tableSignal =
                     <td class="col-labels">
                       <LabelBadges labels={task.labels as unknown as string} compact max={3} />
                     </td>
-                    <td class="cell-center">
+                    <td class="col-actions cell-center">
                       <button
                         type="button"
                         class="task-action-btn danger delete-row"
@@ -420,17 +400,21 @@ const tableSignal =
                   </tr>
                 );
               })}
-              {/* P4 T14: No-results row — shown when all rows filtered out */}
-              <tr class="no-results-row" style="display: none;">
+              <tr class="no-results-row" hidden={rows.length !== 0}>
                 <td colspan="13" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
                   {t("table.no_results", locale)}
                 </td>
               </tr>
             </tbody>
           </table>
-        </>
-      )
-    }
+    </div>
+
+    <div id="table-refresh-status" class="table-refresh-status" role="status" hidden
+      data-table-updated={t("table.matching_tasks", locale)}
+      data-table-failure={t("table.refresh_failed", locale)}>
+      <span data-table-refresh-message></span>
+      <button type="button" class="btn" data-table-retry hidden>{t("table.retry_page", locale)}</button>
+    </div>
   </div>
 
   <div class="bulk-bar" id="bulk-bar">
@@ -477,6 +461,42 @@ const tableSignal =
 </div>
 
 <style>
+  .table-pagination, .table-pagination__links, .table-refresh-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2, 8px);
+  }
+
+  .table-pagination, .table-refresh-status {
+    padding-block: var(--space-2, 8px);
+  }
+
+  .table-pagination a {
+    color: var(--accent-text);
+  }
+
+  .table-pagination a:focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+  }
+
+  .table-pagination[hidden], .table-refresh-status[hidden], .table-container[hidden], tr[hidden] {
+    display: none;
+  }
+
+  .table-parent-link {
+    display: block;
+    width: fit-content;
+    font-size: var(--text-xs, 0.75rem);
+  }
+
+
+  .table-deferred-badge {
+    color: var(--text-secondary);
+    font-size: .75rem;
+    flex: 0 0 auto;
+  }
   /* Signal bar CSS now in SignalBar.astro */
   .table-filter-bar {
     display: flex;
@@ -489,6 +509,26 @@ const tableSignal =
     border-radius: var(--radius-md);
     padding: 8px 12px;
   }
+  #task-table.hide-col-key .col-key,
+  #task-table.hide-col-type .col-type,
+  #task-table.hide-col-status .col-status,
+  #task-table.hide-col-priority .col-priority,
+  #task-table.hide-col-due-date .col-due-date,
+  #task-table.hide-col-rice .col-rice,
+  #task-table.hide-col-calendar .col-calendar,
+  #task-table.hide-col-custom-fields .col-custom-fields,
+  #task-table.hide-col-assigned .col-assigned,
+  #task-table.hide-col-labels .col-labels {
+    display: none;
+  }
+
+  .table-filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2, 8px);
+  }
+
 
   /* Subtask hierarchy styles (Phase 1: SUB-01) */
   .task-title-cell {
@@ -563,11 +603,6 @@ const tableSignal =
     display: flex;
     gap: 8px;
     align-items: center;
-  }
-  .table-container {
-    overflow-x: auto;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
   }
   .table-row {
     cursor: pointer;
@@ -728,6 +763,15 @@ const tableSignal =
     cursor: pointer;
     user-select: none;
   }
+  .table-sort-control {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: inherit;
+    font: inherit;
+    padding: 0;
+    text-align: inherit;
+  }
   .sortable:hover {
     background: var(--bg-hover);
   }
@@ -735,15 +779,6 @@ const tableSignal =
     font-size: 10px;
     color: var(--accent);
     margin-left: 2px;
-  }
-  /* P4 T15: Scroll shadow — visual cue for horizontal overflow */
-  .table-container.has-scroll {
-    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
-  }
-  .table-container.has-scroll:hover {
-    mask-image: none;
-    -webkit-mask-image: none;
   }
   /* P3 T12: Disabled state for bulk bar during operations */
   .bulk-bar button:disabled,

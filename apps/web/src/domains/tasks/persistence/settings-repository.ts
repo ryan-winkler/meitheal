@@ -12,7 +12,7 @@ import type { InValue } from "@libsql/client"
 import { STATUS } from "../../../lib/status-config"
 
 export class SettingsRepository {
-  constructor(private client: Client) {}
+  constructor(private client: Pick<Client, "execute" | "batch">) {}
 
   // ── Settings KV Store ──────────────────────────────────────────────
 

@@ -11,6 +11,7 @@
 
 import { getTask, type OfflineTask } from "../offline/offline-store";
 import { createClientLogger } from "@lib/client-logger";
+import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 
 const log = createClientLogger("ai", "context");
 
@@ -36,17 +37,20 @@ export interface AIResult {
  */
 async function getAgentId(): Promise<string | undefined> {
   try {
-    const res = await fetch(
-      (window.__ingress_path || "") + "/api/settings?key=ha-agent-id"
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.value && typeof data.value === "string") return data.value;
+    const res = await fetch("/api/settings?key=ha-assist-agent")
+    if (!res.ok) return undefined
+    const data = await res.json()
+    // Empty is an intentional selection of built-in Assist, not a missing key.
+    if (data?.value !== null && data?.value !== undefined) {
+      return typeof data.value === "string" && data.value ? data.value : undefined
     }
-  } catch {
-    /* use default */
-  }
-  return undefined;
+    const legacy = await fetch("/api/settings?key=ha-agent-id")
+    if (legacy.ok) {
+      const old = await legacy.json()
+      if (typeof old?.value === "string" && old.value) return old.value
+    }
+  } catch { /* use HA's default */ }
+  return undefined
 }
 
 /**
@@ -165,14 +169,18 @@ async function fallbackToClipboard(prompt: string): Promise<void> {
       );
       if (resUrl.ok) {
         const d = await resUrl.json();
-        if (d?.value) targetUrl = d.value;
+        if (d?.value) {
+          const url = parseAiHandoffUrl(d.value)
+          if (!url) return
+          targetUrl = url.href
+        }
       }
     } catch {
       /* use default */
     }
   }
 
-  window.open(targetUrl, "_blank");
+  window.open(targetUrl, "_blank", "noopener,noreferrer")
 }
 
 /**
@@ -368,11 +376,11 @@ export async function autoScoreTask(
     fields: Array<{
       key: string;
       label: string;
-      help_text?: string;
-      description?: string;
-      min?: number;
-      max?: number;
-      options?: Array<{ label: string; value: string | number }>;
+      help_text?: string | undefined
+      description?: string | undefined
+      min?: number | undefined
+      max?: number | undefined
+      options?: Array<{ label: string; value: string | number }> | undefined
     }>;
   }>
 ): Promise<{

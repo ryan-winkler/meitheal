@@ -17,6 +17,8 @@ import InlineHelper from "../components/ui/InlineHelper.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
+import TriageIntake from "../components/planning/TriageIntake.astro"
+import PlanningRice from "../components/planning/PlanningRice.astro"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -27,7 +29,7 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
-const { tasks, counts } = await getTasksForView()
+const { tasks } = await getTasksForView()
 
 // Derive Eisenhower quadrant counts
 let q1 = 0, q2 = 0, q3 = 0, q4 = 0
@@ -41,16 +43,8 @@ for (const task of tasks) {
   }
 }
 
-// Unscored tasks (for triage)
-const unscoredCount = tasks.filter(t => !t.is_done && t.rice === null).length
-
-// RICE-scored tasks
-const riceScoredCount = tasks.filter(t => !t.is_done && t.rice !== null).length
-const avgRice = riceScoredCount > 0
-  ? Math.round(tasks.filter(t => !t.is_done && t.rice !== null).reduce((sum, t) => sum + (t.rice ?? 0), 0) / riceScoredCount)
-  : 0
-
 // ─── Spaces data: Areas & Projects ─────────────────────────────────
+let taskRepo: TaskRepository | undefined
 let areas: any[] = []
 let projects: any[] = []
 let goalCountByArea = new Map<string, number>()
@@ -61,7 +55,7 @@ try {
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new HierarchyRepository(client)
-  const taskRepo = new TaskRepository(client)
+  taskRepo = new TaskRepository(client)
 
   areas = await repo.findAllAreas()
   const goals = await repo.findAllGoals({})
@@ -212,30 +206,12 @@ const visibleAreas = areas.filter((a: any) =>
 
     {/* ─── Triage ─── */}
     <section data-parent-section="triage" id="planning-section-triage" hidden>
-      <SectionHubCard
-        href="/triage"
-        icon="📥"
-        title="Triage"
-        description="Classify incoming tasks quickly — review unscored and uncategorised work that needs attention."
-        comingSoon={true}
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{unscoredCount}</span><span class="stat-label">Needs Scoring</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{counts.pending}</span><span class="stat-label">Pending</span></div>
-      </SectionHubCard>
+      <TriageIntake {locale} />
     </section>
 
     {/* ─── RICE ─── */}
     <section data-parent-section="rice" id="planning-section-rice" hidden>
-      <SectionHubCard
-        href="/rice"
-        icon="📊"
-        title="RICE Scoring"
-        description="Reach × Impact × Confidence ÷ Effort — data-driven prioritisation for your task backlog."
-        comingSoon={true}
-      >
-        <div slot="stats" class="stat-card"><span class="stat-value">{riceScoredCount}</span><span class="stat-label">Scored Tasks</span></div>
-        <div slot="stats" class="stat-card"><span class="stat-value">{avgRice}</span><span class="stat-label">Avg RICE</span></div>
-      </SectionHubCard>
+      <PlanningRice {tasks} {locale} {taskRepo} />
     </section>
 
   </ParentPageShell>

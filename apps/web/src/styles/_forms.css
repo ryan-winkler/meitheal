@@ -36,13 +36,9 @@
 
 .form-input::placeholder {
   @apply text-text-muted;
-  transition: opacity 0.15s ease;
-  }
-  
-  /* B3: Hide placeholder on focus for cleaner typing experience */
-  .form-input:focus::placeholder {
-    opacity: 0.4;
-  }
+  /* Keep guidance readable while typing; entered text replaces it naturally. */
+  opacity: 1;
+}
   
   /* B3: Textarea auto-resize (modern browsers) */
   textarea.form-input {

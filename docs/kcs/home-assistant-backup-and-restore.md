@@ -16,6 +16,20 @@ A Meitheal-only backup covers the selected app. Home Assistant Core settings, se
 
 Task and Settings downloads are portable exports. The Settings export includes eligible preferences, shortcuts, layouts, rules and framework overrides. Enter credentials separately when moving the exported settings to a fresh installation.
 
+The **Download database** action under **Settings → App & PWA** is available to verified Home Assistant administrators. It copies a consistent snapshot of the local SQLite database, including writes already committed in the WAL. It needs enough free space for one temporary copy on the database volume. Only one download can prepare or read that copy at a time. Retry after the first finishes or is cancelled. If the app loses power during a copy, a private `.meitheal-export-*` folder may remain beside the database. With Meitheal stopped, remove the incomplete temporary folder before retrying.
+
+Confirm the download in Settings. The browser submits a native form and saves the streamed attachment. If the app has restarted or Settings has been open for more than 15 minutes, refresh Settings before retrying. The form is tied to the signed-in administrator and direct links to the download endpoint return a method error.
+
+Keep the download private. Use the Supervisor backup to recover the complete app, including its options and other files in `/data`. For a remote database, use its host's backup tools. [SQLite online backup](https://www.sqlite.org/backup.html)
+
+The download needs an online connection to Home Assistant Core. Meitheal checks the administrator’s current account before creating a snapshot. If Core cannot verify access, wait for it to reconnect and retry. If an edited download URL fails, open it again from **Settings → App & PWA**. Reload Meitheal and activate the app update on browsers that used an older build to remove old cached export URLs.
+
+## Automatic startup database snapshots
+
+For an existing nonempty local SQLite database, the migration runner saves a consistent snapshot before applying SQL changes. If you start the web server directly, its first schema initialization takes the snapshot instead. The packaged launchers coordinate so each successful startup makes one backup attempt.
+
+The snapshot includes committed WAL data. Meitheal publishes the completed file as `backups/meitheal-<timestamp>.db` beside the database and keeps the five newest named snapshots. If it cannot complete a snapshot, it logs the failure and continues startup. Fresh, in-memory and remote databases skip this local backup. Use a verified Supervisor backup for the complete App recovery point.
+
 ## Create a backup
 
 1. Open **Settings → System → Backups → Backup now → Manual backup** in Home Assistant.
@@ -42,6 +56,27 @@ Restore only the matching Meitheal app from the selected Home Assistant backup. 
 4. In the disposable Home Assistant devcontainer, run `PRAGMA integrity_check` on a restored copy of `/data/meitheal.db`. Require `ok` and verify the migration and app logs.
 
 If the restored app cannot start, preserve the backup and check Supervisor and app logs. Verify that the old image can be retrieved and the backup contains the selected app. If database integrity fails, keep the restored app stopped and use the last verified backup.
+
+## Move data between Store repositories
+
+A different repository URL creates a different internal App ID and data volume. A matching-App Supervisor restore is not a database import into that new ID. Settings JSON also omits tasks and protected credentials; there is no in-app SQLite import endpoint. This one-time transfer requires an operator with access to the App's local volume.
+
+Rehearse the complete transition in a disposable Supervisor before changing the installed Canary. Isolate outbound network access before starting restored data or applying old App options: saved integration and logging endpoints can be contacted during startup or a health request. Limit the rehearsal browser to fixture services as well. Preserve stored values and verify isolation with a disposable control endpoint, without probing real saved URLs.
+
+1. Keep the old App's complete backup, recovery material and exact image available. Select the complete database to retain. Work on a copy with its WAL and shared-memory files; use SQLite's backup API to produce a consistent standalone database. Require integrity and foreign-key checks, and privately record the original tasks and setting values. Keep the immutable source recovery files. [SQLite backup API](https://www.sqlite.org/backup.html)
+2. Install only the new Canary. In the isolated rehearsal, start it with empty data and default options, and record its exact image and actual `/data` mount while its container exists. Then stop it through Supervisor. Installation alone does not create the container, and Supervisor stop normally removes it; inspect the mount before stopping. Confirm the App is stopped and no lifecycle job is still running. [Supervisor lifecycle](https://github.com/home-assistant/supervisor/blob/2026.10.5/supervisor/docker/app.py)
+3. Through the recorded mount, retain any target database, WAL and shared-memory files together and move them away from the active database names. Keep the new `options.json` under Supervisor control. Place the normalized database in a temporary file on the same local volume, verify its checksum, set owner and group to the packaged service account (`10001:10001`) with mode `0600`, and rename it to `meitheal.db`. Never leave an old target WAL beside a replacement database.
+4. Compare archived App-option names and types with the new manifest. Apply the complete intended compatible configuration through **Settings → Apps → Meitheal Canary → Configuration** or Supervisor's options API; record incompatible options for an explicit decision. Database settings and Supervisor App options are separate. Do not copy the old `options.json`, because Supervisor validates and regenerates it at startup. [Supervisor options API](https://github.com/home-assistant/supervisor/blob/2026.10.5/supervisor/api/apps.py#L315-L357)
+5. Start the exact candidate and check migrations, database integrity and foreign keys. With a fresh administrator ingress session, compare decoded `GET /api/settings` values and the original tasks with the selected source. Verify the Settings controls, including notification preferences, and repeat after restarting the App. Account for documented schema conversions when comparing data.
+6. Verify any separately managed Core integration's endpoint, authenticated actions and saved ingress links. Rehearse recovery with the matching prior App and data while that recovery path is still available. Keep network isolation throughout the rehearsal.
+
+After the qualified Green transition passes the same acceptance, create and verify a backup matching the new App ID. Remove obsolete discovery entries only when no installed App depends on them. Retain the selected source checkpoint until the new recovery point is proven. This procedure does not replace the physical Green performance or installation gates.
+
+## Verify the draft storage migration
+
+For an upgrade from schema 14, take an App-only checkpoint and use a disposable copy to verify schema 15. Confirm SQLite integrity and read a known ordinary task after the app starts. Run `node scripts/migrate.mjs --check` from `apps/web` with the fixture database URL to verify the draft tables and receipt index. Keep the original checkpoint available for a rollback to the previous App. When checking post-upgrade task creation, verify concurrently created and duplicated tasks each return a distinct ticket number that matches the task details.
+
+When draft capture is enabled, make a second App-only checkpoint with a saved draft from each of two temporary members. Save a later test draft change and restore the checkpoint. Confirm each member sees only their earlier draft and the later change is absent. Check both the App version and database integrity before testing ingress. A private draft and its publication receipt are part of the App database, so apply the same custody rules as for the full database download.
 
 ## Tier 2 acceptance
 

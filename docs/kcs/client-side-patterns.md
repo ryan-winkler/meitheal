@@ -53,11 +53,19 @@ if (form) {
 }
 ```
 
+Eisenhower keeps one window-scoped controller owner for the current page and lifecycle signal. Repeated `astro:page-load` events reuse that owner. Replacing the owner aborts its listeners, including the delegated triage and weekly review listeners. The page signal also retires that owner on navigation. Keep drag, capture, focus, tabs and action handlers on the same owned signal.
+
+Weekly review uses the current `eisenhower-shell` task list and its button in the separate `eisenhower-bar`. Both action surfaces share the same listener lifetime. Triage filters non-deferred task responses through the canonical open-status definitions before selecting unclassified tasks.
+
+If one Q4 or weekly review action sends multiple task updates, run `e2e/eisenhower-lifecycle.spec.ts` against a disposable Astro instance. It repeats page-load setup and checks one canonical completion request per click; weekly review still records its separate review metadata update.
+
 ## Shared navigation and theme checks
+
+Page-shell section labels use `--accent-text` on populated and empty pages. Run `e2e/theme-accent-focus.spec.ts` to check those labels with a surface-matching custom accent in Light and Dark, and to verify keyboard focus after navigation.
 
 The sidebar area button controls the project list named by its `aria-controls` attribute. Keep the action buttons alongside the disclosure. Update `aria-expanded` and the list's `inert` state together so collapsed project links stay out of keyboard navigation. Sidebar area actions are delegated to the persisted navigation. Dispose that listener on hot reload so Astro page swaps can keep using the existing navigation element.
 
-Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available through **Settings → Personal → Keyboard Shortcuts** and the `?` key.
+Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available through **Settings → Personal → Keyboard Shortcuts**. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
 
 Run `pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` against a disposable Meitheal instance. The check samples desktop and mobile in light and dark themes. It exercises Dashboard, Tasks, and the Settings navigation, rule labels, integration badges, and protocol links. The keyboard check creates and removes a synthetic sidebar area and project.
 
@@ -122,3 +130,18 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 | `window.__ntDatePickers` | Date picker instances |
 | `window.openNewTaskModal` | Modal open function |
 | `window.openTaskDetail` | Detail modal open function |
+
+## Embedded navigation and generated controls
+
+Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. Direct ingress tabs keep their normal page URL.
+
+Controls appended by client code outside an Astro component need global CSS selectors. Check generated menus with real pointer and keyboard input near the viewport edge. Moving focus into a menu should keep its options reachable.
+## Confirmation and prompt text
+
+`confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.
+
+The shared static templates retain the existing dialog appearance, variant icons and colors, focus traps, Escape/backdrop cancellation and AbortSignal handling. Prompts still select the initial value, trim submitted input, enforce required/custom validation and display validation errors as text. Empty optional messages remain absent. Call the window confirmation alias with an options object, for example `window.confirmDialog?.({ message: "Remove this area?" })`.
+
+For regressions, use a disposable App server and run `pnpm --filter @meitheal/tests test e2e/dialog-text-security.spec.ts`. Check all text options with angle brackets, literal entities, quotes and Unicode; check prompt default values and placeholders containing attribute-shaped text. The dialog must show the exact characters without creating images, SVG, scripts or event-handler attributes. Verify normal confirm/cancel, prompt validation and trimming, keyboard focus, cancellation and abort. The task permalink, saved-filter, Settings, Today and Table browser suites cover the surrounding callers.
+
+This prevents stored task/lane names and DOM-derived labels from being interpreted as markup when a dialog opens. Keep escaping at other HTML template boundaries, such as lane and Pillar list markup; remove it only when a value is passed directly to these text-only dialog options.

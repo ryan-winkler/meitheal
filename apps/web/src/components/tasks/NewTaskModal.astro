@@ -7,213 +7,66 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 ---
 
-<div
-  id="new-task-overlay"
-  class="modal-overlay z-200"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="new-task-title"
->
-  <div class="modal-content max-w-2xl w-full bg-bg-primary/95 backdrop-blur-xl shadow-2xl border border-border-dim/50 rounded-2xl max-h-[90vh] flex flex-col">
-    <div
-      class="modal-header nt-modal-header flex items-center justify-between px-6 pt-5 pb-3"
-    >
-      <div class="flex gap-1" id="nt-kind-tabs">
-        <button type="button" class="nt-kind-pill active" data-kind="standard_action">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-          {t("task_modal.kind_task", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="shopping_item">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
-          {t("task_modal.kind_shopping_list", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="checklist">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-          {t("task_modal.kind_checklist", locale)}
-        </button>
-        <button type="button" class="nt-kind-pill" data-kind="calendar_event">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-          {t("task_modal.kind_event", locale)}
-        </button>
-      </div>
-      <button
-        type="button"
-        class="btn-icon text-xl text-text-muted hover:text-text-primary"
-        id="close-new-task-modal"
-        aria-label="Close">✕</button
-      >
-    </div>
-
-    <form id="new-task-form" class="px-6 space-y-5 overflow-y-auto flex-1 min-h-0"
+<div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+  <div class="modal-content nt-modal">
+    <header class="nt-header">
+      <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">×</button>
+    </header>
+    <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
       data-toast-error={t("task_modal.toast_error", locale)}
       data-toast-unexpected={t("task_modal.toast_unexpected", locale)}
+      data-save-failed={t("task_modal.form_save_failed", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
-      
-      <div class="form-group mt-3">
-        <textarea
-          class="bg-transparent border-none outline-none focus:ring-0 text-xl font-semibold p-0 placeholder:text-text-muted/40 w-full resize-none overflow-hidden leading-snug"
-          id="new-task-title-input"
-          name="title"
+      <fieldset class="nt-group">
+        <legend>{t("task_modal.type_label", locale)}</legend>
+        <div class="nt-kind-grid" id="nt-kind-tabs">
+          <button type="button" class="nt-kind-pill active" data-kind="standard_action" aria-pressed="true">{t("task_modal.kind_task", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="shopping_item" aria-pressed="false">{t("task_modal.kind_shopping_list", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="checklist" aria-pressed="false">{t("task_modal.kind_checklist", locale)}</button>
+          <button type="button" class="nt-kind-pill" data-kind="calendar_event" aria-pressed="false">{t("task_modal.kind_event", locale)}</button>
+        </div>
+      </fieldset>
+      <div class="nt-field">
+        <label for="new-task-title-input">{t("tasks.title_label", locale)} <span class="nt-hint">({t("task_modal.required_label", locale)})</span></label>
+        <textarea rows="1" class="form-input" id="new-task-title-input" name="title" maxlength="500" required autofocus
           placeholder={t("task_modal.title_placeholder", locale)}
           data-placeholder-task={t("task_modal.title_placeholder", locale)}
           data-placeholder-shopping={t("task_modal.title_placeholder_shopping", locale)}
           data-placeholder-checklist={t("task_modal.title_placeholder_checklist", locale)}
-          data-placeholder-event={t("task_modal.title_placeholder_event", locale)}
-          required
-          autofocus
-          rows="1"
-          style="height: 1.8em; max-height: 120px; field-sizing: content;"
-        ></textarea>
-        <textarea
-          class="bg-transparent border-none outline-none focus:ring-0 text-sm w-full p-0 mt-1 resize-none overflow-hidden placeholder:text-text-muted/40"
-          id="new-task-desc-input"
-          name="description"
-          rows="1"
-          placeholder={t("task_modal.description_placeholder", locale)}
-
-        ></textarea>
+          data-placeholder-event={t("task_modal.title_placeholder_event", locale)}></textarea>
       </div>
-
-      <!-- STATUS & PRIORITY -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_status_priority", locale)}</div>
-        <div class="flex flex-wrap items-center gap-3">
-          <input type="hidden" id="new-task-status" name="status" value="pending" />
-          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><circle cx="12" cy="12" r="10"/></svg>
-              <span>{t("task_modal.status_todo", locale)}</span>
-            </button>
-          </div>
-
-          <!-- Priority (GlassDropdown) -->
-          <input type="hidden" id="new-task-priority" name="priority" value="3" />
-          <div class="glass-dropdown" id="nt-priority-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-priority-label">{t("task_modal.priority_normal", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
-            </div>
-            <div class="glass-dropdown__content" role="menu" aria-orientation="vertical">
-              <div class="glass-dropdown__label">{t("task_modal.section_status_priority", locale).split("&")[1]?.trim() || "PRIORITY"}</div>
-              <button type="button" class="glass-dropdown__item" data-value="1" role="menuitem">{t("task_modal.priority_urgent", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="2" role="menuitem">{t("task_modal.priority_high", locale)}</button>
-              <button type="button" class="glass-dropdown__item is-active" data-value="3" role="menuitem">{t("task_modal.priority_normal", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="4" role="menuitem">{t("task_modal.priority_low", locale)}</button>
-            </div>
-          </div>
-        </div>
+      <div class="nt-field">
+        <label for="new-task-desc-input">{t("tasks.description", locale)}</label>
+        <textarea class="form-input" id="new-task-desc-input" name="description" rows="2" maxlength="10000"
+          placeholder={t("task_modal.description_placeholder", locale)}></textarea>
       </div>
-
-      <!-- ASSIGNMENT -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_assignment", locale)}</div>
-        <div class="nt-assignment-row flex flex-wrap items-center gap-2">
-          <!-- Assignee -->
-          <select class="filter-toolbar__select" id="new-task-assigned-to">
-            <option value="">{t("task_modal.unassigned", locale)}</option>
-          </select>
-
-          <!-- Goal -->
-          <select class="filter-toolbar__select" id="new-task-goal" name="goal_id">
-            <option value="">{t("task_modal.goal_none", locale)}</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- SCHEDULING & TAGS -->
-      <div>
-        <div class="nt-section-label">{t("task_modal.section_scheduling", locale) || "SCHEDULING"}</div>
-        <div class="flex flex-wrap items-center gap-3">
-          <!-- Recurrence (GlassDropdown) -->
-          <input type="hidden" id="new-task-recurrence" name="recurrence_rule" value="" />
-          <div class="glass-dropdown" id="nt-recurrence-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-recurrence-label">{t("task_modal.recurrence_none", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
+      <div id="nt-contextual-fields" class="nt-context hidden">
+        <fieldset id="nt-contextual-checklist" class="nt-group hidden">
+          <legend>{t("task_modal.checklist_items", locale)}</legend>
+          <div class="nt-field">
+            <label for="nt-checklist-builder-input">{t("task_modal.checklist_input", locale)}</label>
+            <div class="nt-entry-group">
+              <textarea id="nt-checklist-builder-input" rows="2" class="form-input" aria-describedby="nt-checklist-hint"></textarea>
+              <button type="button" class="btn btn-secondary" id="nt-add-sub-item-btn">{t("task_modal.add_sub_item", locale)}</button>
             </div>
-            <div class="glass-dropdown__content" role="menu" aria-orientation="vertical">
-              <div class="glass-dropdown__label">{t("task_modal.section_recurrence", locale) || "RECURRENCE"}</div>
-              <button type="button" class="glass-dropdown__item is-active" data-value="" role="menuitem">{t("task_modal.recurrence_none", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=DAILY" role="menuitem">{t("task_modal.recurrence_daily", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=WEEKLY" role="menuitem">{t("task_modal.recurrence_weekly", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" role="menuitem">{t("task_modal.recurrence_weekday", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=MONTHLY" role="menuitem">{t("task_modal.recurrence_monthly", locale)}</button>
-              <button type="button" class="glass-dropdown__item" data-value="FREQ=YEARLY" role="menuitem">{t("task_modal.recurrence_yearly", locale)}</button>
-            </div>
+            <p class="nt-hint" id="nt-checklist-hint">{t("task_modal.checklist_input_hint", locale)}</p>
           </div>
-
-          <!-- Tags (GlassDropdown) -->
-          <div class="glass-dropdown nt-tags-dropdown" id="nt-tags-dropdown" data-initialized="false">
-            <div class="glass-dropdown__trigger">
-              <button type="button" class="filter-pill" aria-haspopup="true" aria-expanded="false">
-                <span id="nt-tags-label">{t("task_modal.tags_label", locale)}</span>
-                <span class="filter-pill__chevron">▾</span>
-              </button>
+          <ol id="nt-checklist-items-container" class="ticket-item-list" role="list"></ol>
+          <p id="nt-checklist-count" class="sr-only" role="status" data-count-label={t("task_modal.items_count", locale)}></p>
+        </fieldset>
+        <fieldset id="nt-contextual-shopping" class="nt-group hidden">
+          <legend>{t("task_modal.shopping_items", locale)}</legend>
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="nt-shopping-qty">{t("task_modal.quantity_field", locale)}</label>
+              <input type="number" id="nt-shopping-qty" value="1" min="1" max="999" class="form-input" />
             </div>
-            <div class="glass-dropdown__content nt-tags-content" role="dialog" aria-label="Select tags">
-              <div class="glass-dropdown__label">{t("task_modal.select_tags", locale)}</div>
-              <LabelPicker id="new-task-label-picker" name="labels" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Contextual UI per Kind -->
-      <div id="nt-contextual-fields" class="hidden mb-4 p-3 bg-bg-input/20 border border-border-dim/50 rounded-xl space-y-3">
-        <!-- Due Date (Checklist / Task) -->
-        <div id="nt-ctx-due-row" class="form-group flex items-center gap-3">
-           <label class="text-xs font-semibold text-text-muted uppercase tracking-wider w-20">{t("task_modal.due_date_label", locale)}</label>
-           <input type="hidden" id="nt-contextual-due" name="due_date" value="" />
-           <div id="nt-due-date-picker" class="idp-mount flex-1"></div>
-        </div>
-
-        <!-- Sub-items (Checklist) -->
-        <div id="nt-contextual-checklist" class="hidden">
-           <div class="form-group flex flex-col gap-2">
-             <div class="flex items-center justify-between">
-               <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.sub_items_label", locale)}</label>
-               <button type="button" class="text-xs text-accent hover:text-accent/80 font-medium" id="nt-add-sub-item-btn">+ {t("task_modal.add_sub_item", locale)}</button>
-             </div>
-             <div id="nt-checklist-items-container" class="space-y-1"></div>
-             <input type="text" id="nt-checklist-builder-input" class="form-input bg-transparent border-none border-b border-border-dim rounded-none px-0 py-1 text-sm focus:ring-0 focus:border-accent w-full placeholder:text-text-muted/50" placeholder={t("task_modal.sub_item_placeholder", locale)} />
-           </div>
-        </div>
-
-        <!-- Shopping List Fields -->
-        <div id="nt-contextual-shopping" class="hidden space-y-3">
-          <!-- Shopping item builder input -->
-          <div class="flex items-center gap-2">
-            <input type="text" id="nt-shopping-item-input"
-              class="form-input flex-1 bg-transparent border-none border-b border-border-dim rounded-none px-0 py-1 text-sm focus:ring-0 focus:border-accent placeholder:text-text-muted/50"
-              placeholder={t("task_modal.shopping_item_placeholder", locale) || "Add an item (press Enter)"}
-            />
-            <button type="button" id="nt-add-shopping-item"
-              class="w-8 h-8 flex items-center justify-center bg-accent/20 text-accent rounded-lg hover:bg-accent/30 transition-colors shrink-0"
-              aria-label="Add item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-          </div>
-          <!-- Added items list -->
-          <div id="nt-shopping-items-list" class="space-y-1"></div>
-          <!-- Default quantity & category for new items -->
-          <div class="flex items-center gap-4">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.quantity_label", locale)}</label>
-              <div class="flex items-center gap-1">
-                <button type="button" class="w-8 h-8 flex items-center justify-center bg-bg-input/50 border border-border-dim rounded-lg text-text-primary hover:bg-border-dim/30 transition-colors" id="nt-qty-minus">−</button>
-                <input type="number" id="nt-shopping-qty" value="1" min="1" max="999" class="w-12 text-center bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 focus:ring-accent" />
-                <button type="button" class="w-8 h-8 flex items-center justify-center bg-bg-input/50 border border-border-dim rounded-lg text-text-primary hover:bg-border-dim/30 transition-colors" id="nt-qty-plus">+</button>
-              </div>
-            </div>
-            <div class="flex flex-col gap-1 flex-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.category_label", locale)}</label>
-              <select id="nt-shopping-category" class="form-select bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 px-3">
+            <div class="nt-field">
+              <label for="nt-shopping-category">{t("task_modal.category_field", locale)}</label>
+              <select id="nt-shopping-category" class="form-select">
                 <option value="">{t("task_modal.category_uncategorized", locale)}</option>
                 <option value="produce">{t("task_modal.category_produce", locale)}</option>
                 <option value="dairy">{t("task_modal.category_dairy", locale)}</option>
@@ -226,73 +79,94 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               </select>
             </div>
           </div>
+          <div class="nt-field">
+            <label for="nt-shopping-item-input">{t("task_modal.shopping_input", locale)}</label>
+            <div class="nt-entry-group">
+              <input type="text" id="nt-shopping-item-input" class="form-input" />
+              <button type="button" id="nt-add-shopping-item" class="btn btn-secondary">{t("task_modal.add_item", locale)}</button>
+            </div>
+          </div>
+          <ol id="nt-shopping-items-list" class="ticket-item-list" role="list"></ol>
+        </fieldset>
+        <fieldset id="nt-contextual-event" class="nt-group hidden">
+          <legend>{t("task_modal.event_schedule", locale)}</legend>
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="nt-event-start">{t("task_modal.start_field", locale)}</label>
+              <input type="datetime-local" id="nt-event-start" name="start_date" step="any" class="form-input" />
+            </div>
+            <div class="nt-field">
+              <label for="nt-event-end">{t("task_modal.end_field", locale)}</label>
+              <input type="datetime-local" id="nt-event-end" name="end_date" step="any" class="form-input" aria-describedby="nt-date-error" />
+              <p id="nt-date-error" class="nt-error" hidden>{t("task_modal.event_end_error", locale)}</p>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+      <fieldset class="nt-group">
+        <legend>{t("task_modal.details_group", locale)}</legend>
+        <div class="nt-field">
+          <input type="hidden" id="new-task-status" name="status" value="pending" />
+          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
+            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">{t("task_modal.status_todo", locale)}</button>
+          </div>
         </div>
-
-        <!-- Event Fields -->
-        <div id="nt-contextual-event" class="hidden space-y-3">
-          <div class="grid grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_start", locale)}</label>
-              <input type="hidden" id="nt-event-start" name="start_date" value="" />
-              <div id="nt-event-start-picker" class="idp-mount"></div>
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_end", locale)}</label>
-              <input type="hidden" id="nt-event-end" name="end_date" value="" />
-              <div id="nt-event-end-picker" class="idp-mount"></div>
-            </div>
+        <div class="nt-form-grid">
+          <div class="nt-field">
+            <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
+            <select id="new-task-priority" name="priority" class="form-select">
+              <option value="1">{t("task_modal.priority_urgent", locale)}</option>
+              <option value="2">{t("task_modal.priority_high", locale)}</option>
+              <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
+              <option value="4">{t("task_modal.priority_low", locale)}</option>
+              <option value="5">{t("tasks.priority_label", locale)} 5</option>
+            </select>
           </div>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              <span class="text-sm text-text-primary">{t("task_modal.event_all_day", locale)}</span>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="nt-event-all-day" class="sr-only peer" />
-              <div class="nt-toggle"></div>
-            </label>
+          <div id="nt-ctx-due-row" class="nt-field">
+            <label id="nt-due-label">{t("tasks.due_date", locale)}</label>
+            <input type="hidden" id="nt-contextual-due" name="due_date" />
+            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label"></div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_location_label", locale)}</label>
-            <div class="relative">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-              <input type="text" id="nt-event-location" class="form-input bg-bg-input/50 border-border-dim rounded-lg text-sm pl-9 pr-3 py-1.5 w-full" placeholder={t("task_modal.event_location", locale)} />
-            </div>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-semibold text-text-muted uppercase tracking-wider">{t("task_modal.event_calendar", locale)}</label>
-            <select id="nt-event-calendar" class="form-select bg-bg-input/50 border border-border-dim rounded-lg text-sm py-1.5 px-3">
-              <option value="">{t("task_modal.event_calendar_default", locale)}</option>
+          <div class="nt-field" id="nt-assignee-field">
+            <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
+            <select id="new-task-assigned-to" name="assigned_to" class="form-select">
+              <option value="">{t("task_modal.unassigned", locale)}</option>
             </select>
           </div>
         </div>
-      </div>
-
-      <!-- Mark as Routine -->
-      <div id="nt-routine-toggle" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+      </fieldset>
+      <details class="nt-options" id="nt-options">
+        <summary>{t("task_modal.more_options", locale)}</summary>
+        <div class="nt-options-content">
+          <div class="nt-form-grid">
+            <div class="nt-field">
+              <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
+              <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+            </div>
+            <div class="nt-field">
+              <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
+              <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
+                <option value="">{t("task_modal.recurrence_none", locale)}</option>
+                <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
+                <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
+                <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
+                <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
+                <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.mark_as_routine", locale)}</span>
-            <p class="text-xs text-text-muted">{t("task_modal.routine_description", locale)}</p>
+          <div class="nt-field">
+            <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
+            <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
           </div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-is-routine" class="sr-only peer" />
-          <div class="nt-toggle"></div>
-        </label>
-      </div>
-
       <!-- Custom Fields (collapsible) -->
-      <div id="nt-custom-fields" class="mb-3">
+      <div id="nt-custom-fields" class="nt-options-section">
         <div class="flex items-center justify-between p-2">
-          <button type="button" id="nt-custom-fields-toggle" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
+          <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
             {t("task_modal.custom_fields_label", locale)}
           </button>
-          <button type="button" id="nt-add-custom-field-btn" class="text-accent hover:text-accent/80 text-xs font-medium flex items-center gap-1">
+          <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             {t("task_modal.custom_field_add", locale)}
           </button>
@@ -300,7 +174,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
           <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="attachment">📎 {t("task_modal.custom_field_attachment", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url">🔗 {t("task_modal.custom_field_url", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text">📝 {t("task_modal.custom_field_text", locale)}</button>
             <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number">🔢 {t("task_modal.custom_field_number", locale)}</button>
@@ -310,45 +183,45 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         </div>
       </div>
 
-      <!-- AI Assist -->
-      <div id="nt-ai-assist" class="nt-feature-card flex items-center justify-between p-3 mb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center">
-            <span class="text-sm">🤖</span>
-          </div>
-          <div>
-            <span class="text-sm font-medium text-text-primary">{t("task_modal.ai_assign_to_agent", locale)}</span>
-            <p class="text-xs text-text-muted" id="nt-ai-description"
-              data-desc-task={t("task_modal.ai_task_description", locale)}
-              data-desc-shopping={t("task_modal.ai_shopping_description", locale)}
-              data-desc-checklist={t("task_modal.ai_checklist_description", locale)}
-              data-desc-event={t("task_modal.ai_event_description", locale)}
-            >{t("task_modal.ai_task_description", locale)}</p>
-          </div>
+          <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
+          <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
         </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" id="nt-ai-handoff" class="sr-only peer" />
-          <div class="nt-toggle"></div>
-        </label>
-      </div>
-
-      <!-- Tags panel moved inline to SCHEDULING section glass-dropdown -->
+      </details>
+      <p id="nt-capture-validation" class="nt-error" role="alert" hidden></p>
     </form>
+    <div id="nt-draft-panel" class="nt-draft-panel" hidden>
+      <p id="nt-draft-status" role="status" aria-live="polite"></p>
+      <div class="nt-draft-actions">
+        <button type="button" id="nt-draft-save" class="btn btn-ghost" hidden>{t("task_draft.save", locale)}</button>
+        <button type="button" id="nt-draft-resume" class="btn btn-ghost" hidden>{t("task_draft.resume", locale)}</button>
+        <button type="button" id="nt-draft-discard" class="btn btn-ghost" hidden>{t("task_draft.discard", locale)}</button>
+        <button type="button" id="nt-draft-recover" class="btn btn-ghost" hidden>{t("task_draft.check", locale)}</button>
+        <button type="button" id="nt-draft-retry" class="btn btn-ghost" hidden>{t("task_draft.retry", locale)}</button>
+        <button type="button" id="nt-draft-abandon" class="btn btn-ghost" hidden>{t("task_draft.keep", locale)}</button>
+        <button type="button" id="nt-draft-clear" class="btn btn-ghost" hidden>{t("task_draft.new_task", locale)}</button>
+        <button type="button" id="nt-draft-update" class="btn btn-ghost" hidden>{t("task_draft.activate", locale)}</button>
+        <button type="button" id="nt-draft-open-task" class="btn btn-ghost" hidden>{t("task_draft.open_task", locale)}</button>
+      </div>
+      <div id="nt-draft-confirm" class="nt-draft-confirm" hidden>
+        <p id="nt-draft-confirm-message"></p>
+        <button type="button" id="nt-draft-confirm-no" class="btn btn-ghost">{t("task_draft.keep_editing", locale)}</button>
+        <button type="button" id="nt-draft-confirm-yes" class="btn btn-ghost">{t("task_draft.confirm", locale)}</button>
+      </div>
+    </div>
 
     <!-- Pinned footer — outside scrollable form -->
     <div
-      class="modal-actions nt-footer px-6 py-4 flex items-center justify-between"
+      class="modal-actions nt-footer"
     >
       <button type="button" class="btn btn-ghost text-text-muted hover:text-text-primary text-sm font-semibold px-1 rounded-lg" id="cancel-new-task">{t("task_modal.btn_cancel", locale)}</button>
 
-      <div class="flex items-center gap-3">
-        <button type="button" class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-lg hover:bg-bg-hover" aria-label="Attach file">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-        </button>
+      <div class="nt-footer-actions">
+        <button type="button" id="nt-draft-toggle" class="btn btn-ghost text-sm"
+          aria-controls="nt-draft-panel" aria-expanded="false" hidden>{t("task_draft.draft", locale)}</button>
         <button
           type="submit"
           form="new-task-form"
-          class="bg-linear-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-white font-semibold rounded-lg px-5 py-2 shadow-lg shadow-accent/20 transition-[background,box-shadow] text-sm"
+          class="btn btn-primary"
           id="submit-new-task-btn"
           data-label-task={t("task_modal.btn_create_task", locale)}
           data-label-shopping={t("task_modal.btn_create_shopping_list", locale)}
@@ -360,53 +233,20 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     </div>
   </div>
 </div>
-
 <script>
   import { showToast } from "@lib/toast";
+  import { InlineDatePicker } from "../shared/InlineDatePicker"
+  import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
-  import { initGlassDropdowns } from "@lib/glass-dropdown";
-  import { InlineDatePicker } from "../shared/InlineDatePicker";
+  import { createFocusTrap } from "@lib/focus-trap"
+  import { privateIngressScope } from "@lib/network-only-worker"
+  import { taskDraftText } from "@lib/task-draft-copy"
+  import type { connectTaskDrafts } from "@lib/task-draft-controller"
+  import { getLegacyTaskId } from "@lib/task-detail-handoff"
+  import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
 
   const log = createClientLogger("tasks", "new-task-modal");
-
-  /**
-   * Reset a glass-dropdown-as-select to its default value.
-   * Clears is-active from all items, marks the default one, updates label + hidden input.
-   */
-  function resetGlassDropdown(dropdownId: string, labelId: string, hiddenInputId: string, defaultValue: string) {
-    const dropdown = document.getElementById(dropdownId);
-    const label = document.getElementById(labelId);
-    const hidden = document.getElementById(hiddenInputId) as HTMLInputElement | null;
-    if (!dropdown || !label || !hidden) return;
-    hidden.value = defaultValue;
-    dropdown.querySelectorAll(".glass-dropdown__item").forEach((item) => {
-      const el = item as HTMLElement;
-      const isDefault = el.dataset.value === defaultValue;
-      el.classList.toggle("is-active", isDefault);
-      if (isDefault) label.textContent = el.textContent?.trim() || "";
-    });
-  }
-
-  /**
-   * Wire a glass-dropdown to behave as a <select> replacement.
-   * On item click: update hidden input, update label, mark active item.
-   */
-  function initGlassDropdownSelect(dropdownId: string, labelId: string, hiddenInputId: string, sig?: AbortSignal) {
-    const dropdown = document.getElementById(dropdownId);
-    const label = document.getElementById(labelId);
-    const hidden = document.getElementById(hiddenInputId) as HTMLInputElement | null;
-    if (!dropdown || !label || !hidden) return;
-    dropdown.querySelectorAll(".glass-dropdown__item").forEach((item) => {
-      item.addEventListener("click", () => {
-        const el = item as HTMLElement;
-        hidden.value = el.dataset.value || "";
-        label.textContent = el.textContent?.trim() || "";
-        dropdown.querySelectorAll(".glass-dropdown__item").forEach(i => i.classList.remove("is-active"));
-        el.classList.add("is-active");
-      }, sig ? { signal: sig } : undefined);
-    });
-  }
 
   // Handle smart task extraction mapping
   const nextWeekday = (day: number) => {
@@ -418,6 +258,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
   pageLifecycle.onPageLoad((signal) => {
     const overlay = document.getElementById("new-task-overlay");
+    if (!overlay || overlay.dataset.newTaskController === "ready") return
+    overlay.dataset.newTaskController = "ready"
+    const focusTrap = createFocusTrap(overlay)
+    signal.addEventListener("abort", () => {
+      focusTrap.deactivate(false)
+      delete overlay.dataset.newTaskController
+    }, { once: true })
+
     const closeBtn = document.getElementById("close-new-task-modal");
     const cancelBtn = document.getElementById("cancel-new-task");
     const form = document.getElementById("new-task-form") as HTMLFormElement | null;
@@ -431,214 +279,237 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
-    const aiDesc = document.getElementById("nt-ai-description");
+    const pillsContainer = document.getElementById("nt-status-pills")
+    const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
+    const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
+    let captureOptionsRequest: AbortController | undefined
+    let lanesLoaded = false
+    let goalsLoaded = false
+    let submitting = false
+    let captureSession = 0
+    let preserveAssignee = false
+    let isHydrating = false
+    let draftPublicationNeedsRefresh = false
+    let drafts: ReturnType<typeof connectTaskDrafts> | undefined
+    let draftLoading = false
+    let editedWhileLoading = false
+    let retainedRoutine = false
+    let retainedEventDetails = { location: "", allDay: false, calendar: "" }
 
-    // ── Textarea auto-resize (replaces inline oninput handlers) ──
-    if (titleInput) {
-      titleInput.addEventListener("input", () => {
-        titleInput.style.height = "1.8em";
-        titleInput.style.height = Math.min(titleInput.scrollHeight, 120) + "px";
-      }, { signal });
+    function resizeTitle() {
+      if (!titleInput) return
+      titleInput.style.height = "auto"
+      titleInput.style.height = `${Math.min(titleInput.scrollHeight + 2, 120)}px`
     }
-    if (descInput) {
-      descInput.addEventListener("input", () => {
-        descInput.style.height = "";
-        descInput.style.height = descInput.scrollHeight + "px";
-      }, { signal });
+    titleInput?.addEventListener("input", resizeTitle, { signal })
+
+    pillsContainer?.addEventListener("click", event => {
+      const pill = (event.target as Element).closest<HTMLElement>("[data-status]")
+      if (pill?.dataset.status && !pill.hasAttribute("disabled")) { selectStatus(pill.dataset.status); markEdited() }
+    }, { signal })
+
+    function selectStatus(status: string) {
+      if (!statusInput) return
+      statusInput.value = status
+      pillsContainer?.querySelector("[data-unavailable]")?.remove()
+      if (pillsContainer && ![...pillsContainer.querySelectorAll<HTMLElement>("[data-status]")].some(pill => pill.dataset.status === status)) {
+        const missing = document.createElement("button")
+        missing.type = "button"
+        missing.disabled = true
+        missing.dataset.status = status
+        missing.dataset.unavailable = ""
+        missing.setAttribute("role", "radio")
+        missing.textContent = taskDraftText("lane_missing")
+        pillsContainer.append(missing)
+      }
+      pillsContainer?.querySelectorAll<HTMLElement>("[data-status]").forEach(pill => {
+        const selected = pill.dataset.status === status
+        pill.classList.toggle("active", selected)
+        pill.setAttribute("aria-checked", String(selected))
+      })
     }
 
     // Task Kind Tab Switching
     const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
     const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
 
-    kindTabs.forEach(tab => {
-      tab.addEventListener("click", () => {
-        // Deactivate all
-        kindTabs.forEach(t => {
-          t.classList.remove("active");
-        });
-        // Activate clicked
-        tab.classList.add("active");
-        
-        if (kindInput) kindInput.value = (tab as HTMLElement).dataset.kind || "standard_action";
-        
-        const kind = kindInput?.value || "standard_action";
-        
-        // Hide all contextual sub-sections first
-        checklistDiv?.classList.add("hidden");
-        shoppingDiv?.classList.add("hidden");
-        eventDiv?.classList.add("hidden");
-        dueRow?.classList.add("hidden");
-        
-        if (kind === "shopping_item") {
-          contextualDiv?.classList.remove("hidden");
-          shoppingDiv?.classList.remove("hidden");
-          if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderShopping || "Item name";
-          if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelShopping || "Create Shopping List";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descShopping || "";
-        } else if (kind === "checklist") {
-          contextualDiv?.classList.remove("hidden");
-          checklistDiv?.classList.remove("hidden");
-          dueRow?.classList.remove("hidden");
-          if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderChecklist || "Checklist name";
-          if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelChecklist || "Create Checklist";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descChecklist || "";
-        } else if (kind === "calendar_event") {
-          contextualDiv?.classList.remove("hidden");
-          eventDiv?.classList.remove("hidden");
-          if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderEvent || "Event name";
-          if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelEvent || "Create Event";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descEvent || "";
-        } else {
-          contextualDiv?.classList.add("hidden");
-          if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderTask || "Task name";
-          if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelTask || "Create Task";
-          if (aiDesc) aiDesc.textContent = aiDesc.dataset.descTask || "";
-        }
-        
-        // Focus title input right away
-        titleInput?.focus();
-      }, { signal });
-    });
-
-    // Checklist Item Builder
-    const builderInput = document.getElementById("nt-checklist-builder-input") as HTMLInputElement | null;
-    const itemsContainer = document.getElementById("nt-checklist-items-container");
-    const extractedChecklistItems: string[] = [];
-
-    (window as any)._removeNTCItem = (val: string) => {
-       const idx = extractedChecklistItems.indexOf(val);
-       if (idx > -1) extractedChecklistItems.splice(idx, 1);
-    };
-
-    if (builderInput) {
-      builderInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault(); // stop form submit
-          const val = builderInput.value.trim();
-          if (val) {
-            extractedChecklistItems.push(val);
-            const pill = document.createElement("div");
-            pill.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1 px-2 rounded group";
-            // Build DOM safely — no innerHTML with user input
-            const iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-            iconSvg.setAttribute("width", "14")
-            iconSvg.setAttribute("height", "14")
-            iconSvg.setAttribute("viewBox", "0 0 24 24")
-            iconSvg.setAttribute("fill", "none")
-            iconSvg.setAttribute("stroke", "currentColor")
-            iconSvg.setAttribute("stroke-width", "2")
-            iconSvg.classList.add("text-text-muted")
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-            circle.setAttribute("cx", "12")
-            circle.setAttribute("cy", "12")
-            circle.setAttribute("r", "10")
-            iconSvg.appendChild(circle)
-            pill.appendChild(iconSvg)
-            const labelSpan = document.createElement("span")
-            labelSpan.className = "flex-1"
-            labelSpan.textContent = val
-            pill.appendChild(labelSpan)
-            const removeBtn = document.createElement("button")
-            removeBtn.type = "button"
-            removeBtn.className = "text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-            removeBtn.textContent = "✕"
-            removeBtn.addEventListener("click", () => { pill.remove(); (window as any)._removeNTCItem(val) }, { signal })
-            pill.appendChild(removeBtn)
-            itemsContainer?.appendChild(pill);
-            builderInput.value = "";
-          }
-        }
-      }, { signal });
+    function createButtonLabel(kind = kindInput?.value) {
+      const labels = submitBtn?.dataset
+      if (kind === "shopping_item") return labels?.labelShopping || "Create Shopping List"
+      if (kind === "checklist") return labels?.labelChecklist || "Create Checklist"
+      if (kind === "calendar_event") return labels?.labelEvent || "Create Event"
+      return labels?.labelTask || "Create Task"
     }
 
-    // Shopping Qty +/- buttons
-    const qtyMinus = document.getElementById("nt-qty-minus");
-    const qtyPlus = document.getElementById("nt-qty-plus");
-    const qtyEl = document.getElementById("nt-shopping-qty") as HTMLInputElement;
-    qtyMinus?.addEventListener("click", () => {
-      if (qtyEl && parseInt(qtyEl.value) > 1) qtyEl.value = String(parseInt(qtyEl.value) - 1);
-    }, { signal });
-    qtyPlus?.addEventListener("click", () => {
-      if (qtyEl) qtyEl.value = String(parseInt(qtyEl.value) + 1);
-    }, { signal });
+    function selectKind(kind: string) {
+      if (kindInput) kindInput.value = kind
+      kindTabs.forEach(tab => {
+        const selected = (tab as HTMLElement).dataset.kind === kind
+        tab.classList.toggle("active", selected)
+        tab.setAttribute("aria-pressed", String(selected))
+      })
+      const shopping = kind === "shopping_item"
+      const checklist = kind === "checklist"
+      const event = kind === "calendar_event"
+      contextualDiv?.classList.toggle("hidden", !shopping && !checklist && !event)
+      checklistDiv?.classList.toggle("hidden", !checklist)
+      shoppingDiv?.classList.toggle("hidden", !shopping)
+      eventDiv?.classList.toggle("hidden", !event)
+      dueRow?.classList.toggle("hidden", event)
+      if (titleInput) {
+        const labels = titleInput.dataset
+        titleInput.placeholder = (shopping ? labels.placeholderShopping : checklist ? labels.placeholderChecklist
+          : event ? labels.placeholderEvent : labels.placeholderTask) || "Task name"
+      }
+    }
 
-    // Shopping List Item Builder
-    const shoppingItemInput = document.getElementById("nt-shopping-item-input") as HTMLInputElement | null;
-    const shoppingAddBtn = document.getElementById("nt-add-shopping-item");
-    const shoppingItemsList = document.getElementById("nt-shopping-items-list");
-    const shoppingListItems: Array<{ name: string; qty: number; category: string }> = [];
+    kindTabs.forEach(tab => tab.addEventListener("click", () => {
+      selectKind((tab as HTMLElement).dataset.kind || "standard_action")
+      markEdited()
+      renderCaptureSubmit()
+      titleInput?.focus()
+    }, { signal }))
+
+    const builderInput = document.querySelector<HTMLTextAreaElement>("#nt-checklist-builder-input")
+    const itemsContainer = document.getElementById("nt-checklist-items-container")
+    type CaptureChecklistItem = TaskDraftSnapshot["checklist"]["items"][number]
+    const checklistItems = new Map<HTMLElement, CaptureChecklistItem>()
+    let draft: { value: string; items: ReturnType<typeof createChecklistItem>[] } | undefined
+
+    function currentChecklistDraft() {
+      const value = builderInput?.value ?? ""
+      if (!draft || value !== draft.value) {
+        draft = { value, items: checklistLines(value).map(createChecklistItem) }
+      }
+      return draft.items
+    }
+
+    function updateChecklistCount() {
+      const count = document.getElementById("nt-checklist-count")
+      if (count) count.textContent = (count.dataset.countLabel || "{count} items").replace("{count}", String(checklistItems.size))
+    }
+
+    function appendChecklistItem(item: CaptureChecklistItem) {
+      const row = document.createElement("li")
+      row.className = "ticket-item-row"
+      const label = document.createElement("span")
+      label.className = "flex-1 min-w-0 break-words"
+      label.textContent = item.text
+      const remove = document.createElement("button")
+      remove.type = "button"
+      remove.className = "btn btn-ghost"
+      remove.textContent = "×"
+      remove.setAttribute("aria-label", `Remove ${item.text}`)
+      remove.addEventListener("click", () => {
+        checklistItems.delete(row)
+        row.remove()
+        updateChecklistCount()
+        markEdited()
+        builderInput?.focus()
+      }, { signal })
+      row.append(label, remove)
+      checklistItems.set(row, item)
+      itemsContainer?.append(row)
+      updateChecklistCount()
+    }
+
+    function stageChecklistItems() {
+      if (!builderInput || !itemsContainer) return
+      const staged = currentChecklistDraft()
+      if (staged.length === 0) return
+      staged.forEach(appendChecklistItem)
+      builderInput.value = ""
+      draft = undefined
+      markEdited()
+      builderInput.focus()
+    }
+
+    document.getElementById("nt-add-sub-item-btn")?.addEventListener("click", stageChecklistItems, { signal })
+    builderInput?.addEventListener("keydown", event => {
+      if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
+      event.preventDefault()
+      stageChecklistItems()
+    }, { signal })
+
+    const qtyEl = document.getElementById("nt-shopping-qty") as HTMLInputElement;
+
+    const shoppingItemInput = document.querySelector<HTMLInputElement>("#nt-shopping-item-input")
+    const shoppingItemsList = document.getElementById("nt-shopping-items-list")
+    const shoppingCategory = document.querySelector<HTMLSelectElement>("#nt-shopping-category")
+    type ShoppingItem = TaskDraftSnapshot["shopping"]["items"][number]
+    const shoppingListItems: ShoppingItem[] = []
+
+    function shoppingQuantity(): number | null {
+      const raw = qtyEl?.value ?? "1"
+      const qty = Number(raw)
+      return raw && Number.isInteger(qty) && qty >= 1 && qty <= 999 ? qty : null
+    }
+
+    function appendShoppingItem(item: ShoppingItem) {
+      const { name, qty, category } = item
+      shoppingListItems.push(item)
+      const pill = document.createElement("li")
+      pill.className = "ticket-item-row"
+      const label = document.createElement("span")
+      label.className = "flex-1 min-w-0 break-words"
+      const categoryLabel = Array.from(shoppingCategory?.options ?? []).find(option => option.value === category)?.textContent
+      const suffix = category ? ` · ${categoryLabel || category}` : ""
+      label.textContent = qty > 1 ? `${qty}× ${name}${suffix}` : `${name}${suffix}`
+
+      const remove = document.createElement("button")
+      remove.type = "button"
+      remove.className = "btn btn-ghost text-text-muted"
+      remove.textContent = "✕"
+      remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
+      remove.addEventListener("click", () => {
+        shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
+        pill.remove()
+        markEdited()
+        shoppingItemInput?.focus()
+      }, { signal })
+      pill.append(label, remove)
+      shoppingItemsList?.append(pill)
+    }
 
     function addShoppingItem() {
-      if (!shoppingItemInput || !shoppingItemsList) return;
-      const name = shoppingItemInput.value.trim();
-      if (!name) return;
-
-      const qty = parseInt(qtyEl?.value || "1", 10);
-      const catEl = document.getElementById("nt-shopping-category") as HTMLSelectElement | null;
-      const category = catEl?.value || "";
-
-      shoppingListItems.push({ name, qty, category });
-
-      // Build pill DOM
-      const pill = document.createElement("div");
-      pill.className = "flex items-center gap-2 text-sm bg-bg-input/30 py-1.5 px-3 rounded-lg group";
-
-      const label = document.createElement("span");
-      label.className = "flex-1";
-      const catLabel = category ? ` · ${catEl?.options[catEl.selectedIndex]?.textContent || category}` : "";
-      label.textContent = qty > 1 ? `${qty}× ${name}${catLabel}` : `${name}${catLabel}`;
-      pill.appendChild(label);
-
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs";
-      removeBtn.textContent = "✕";
-      const itemRef = { name, qty, category };
-      removeBtn.addEventListener("click", () => {
-        pill.remove();
-        const idx = shoppingListItems.findIndex(i => i.name === itemRef.name && i.qty === itemRef.qty);
-        if (idx > -1) shoppingListItems.splice(idx, 1);
-      }, { signal });
-      pill.appendChild(removeBtn);
-
-      shoppingItemsList.appendChild(pill);
-      shoppingItemInput.value = "";
-      shoppingItemInput.focus();
+      const name = shoppingItemInput?.value.trim()
+      if (!shoppingItemInput || !name) return
+      const qty = shoppingQuantity()
+      if (qty === null) { qtyEl?.reportValidity(); return }
+      appendShoppingItem({ name, qty, category: (shoppingCategory?.value ?? "") as ShoppingItem["category"] })
+      shoppingItemInput.value = ""
+      markEdited()
+      shoppingItemInput.focus()
     }
 
-    shoppingAddBtn?.addEventListener("click", addShoppingItem, { signal });
-    shoppingItemInput?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        addShoppingItem();
-      }
-    }, { signal });
-
-    // Expose shopping list items for form submission
-    (window as any).__ntShoppingItems = shoppingListItems;
+    document.getElementById("nt-add-shopping-item")?.addEventListener("click", addShoppingItem, { signal })
+    shoppingItemInput?.addEventListener("keydown", event => {
+      if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
+      event.preventDefault()
+      addShoppingItem()
+    }, { signal })
 
     // Custom Fields toggle
     const cfToggle = document.getElementById("nt-custom-fields-toggle");
     const cfContainer = document.getElementById("nt-custom-fields-container");
     cfToggle?.addEventListener("click", () => {
       cfContainer?.classList.toggle("hidden");
+      cfToggle?.setAttribute("aria-expanded", String(!cfContainer?.classList.contains("hidden")))
     }, { signal });
 
     // Add custom field btn → show dropdown
     const cfAddBtn = document.getElementById("nt-add-custom-field-btn");
     const cfDropdown = document.getElementById("nt-add-field-dropdown");
-    cfAddBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (cfDropdown) {
-        cfDropdown.classList.toggle("hidden");
-        if (!cfDropdown.classList.contains("hidden")) {
-          cfDropdown.style.display = "flex";
-        } else {
-          cfDropdown.style.display = "";
-        }
-      }
-    }, { signal });
+    cfAddBtn?.addEventListener("click", event => {
+      event.stopPropagation()
+      if (!cfDropdown) return
+      const wasClosed = cfDropdown.classList.contains("hidden") || cfContainer?.classList.contains("hidden")
+      cfContainer?.classList.remove("hidden")
+      cfDropdown.classList.toggle("hidden", !wasClosed)
+      cfDropdown.style.display = wasClosed ? "flex" : ""
+      cfToggle?.setAttribute("aria-expanded", "true")
+      cfAddBtn?.setAttribute("aria-expanded", String(wasClosed))
+    }, { signal })
 
     // Add field type buttons
     function createCustomFieldEntry(type: string): HTMLDivElement {
@@ -646,11 +517,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       entry.className = "nt-custom-field-entry flex items-center gap-2"
       entry.dataset.fieldType = type
 
+      const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
       const emojiMap: Record<string, string> = { url: "🔗", number: "🔢", date: "📅", attachment: "📎", text: "📝" }
 
       if (type === "checkbox") {
         const cb = document.createElement("input")
         cb.type = "checkbox"
+        cb.setAttribute("aria-label", fieldLabel)
         cb.className = "rounded border-border-dim bg-bg-input/50 focus:ring-accent"
         entry.appendChild(cb)
       } else {
@@ -664,6 +537,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const inputTypeMap: Record<string, string> = { url: "url", number: "number", date: "date", attachment: "file", checkbox: "text" }
       const placeholderMap: Record<string, string> = { url: "https://", number: "0", text: "Enter text...", checkbox: "Label" }
       input.type = inputTypeMap[type] || "text"
+      input.setAttribute("aria-label", fieldLabel)
       input.className = "form-input flex-1 bg-bg-input/50 border-border-dim rounded-lg text-sm px-3 py-1"
       if (placeholderMap[type]) input.placeholder = placeholderMap[type]
       entry.appendChild(input)
@@ -672,7 +546,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       removeBtn.type = "button"
       removeBtn.className = "text-text-muted hover:text-red-400 text-xs"
       removeBtn.textContent = "✕"
-      removeBtn.addEventListener("click", () => entry.remove(), { signal })
+      removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
+      removeBtn.setAttribute("aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
 
       return entry
@@ -684,64 +559,39 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         const cfList = document.getElementById("nt-custom-fields-list");
         if (!cfList) return;
         cfList.appendChild(createCustomFieldEntry(type));
-        // Auto-show container
-        cfContainer?.classList.remove("hidden");
+        markEdited()
+        cfDropdown?.classList.add("hidden")
+        if (cfDropdown) cfDropdown.style.display = ""
+        cfContainer?.classList.remove("hidden")
+        cfToggle?.setAttribute("aria-expanded", "true")
+        cfAddBtn?.setAttribute("aria-expanded", "false")
       }, { signal });
     });
     function closeNewTaskModal() {
-      if (!overlay || !overlay.classList.contains("active")) return;
-      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
+      captureOptionsRequest?.abort()
+      captureSession++
+      drafts?.close()
+      draftLoading = false
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      let finished = false
       const finishClose = () => {
-        overlay.classList.remove("active", "closing");
-        form?.reset();
-        
-        // Reset tabs
-        kindTabs.forEach(t => {
-          t.classList.remove("active");
-        });
-        if (kindTabs.length > 0) {
-          kindTabs[0]?.classList.add("active");
+        if (finished || signal.aborted) return
+        finished = true
+        overlay.classList.remove("active", "closing")
+        focusTrap.deactivate()
+        clearCapture()
+        if (draftPublicationNeedsRefresh) {
+          draftPublicationNeedsRefresh = false
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
-        if (kindInput) kindInput.value = "standard_action";
-
-        // Reset new contextual sections
-        shoppingDiv?.classList.add("hidden");
-        eventDiv?.classList.add("hidden");
-        dueRow?.classList.add("hidden");
-        const shoppingItemsEl = document.getElementById("nt-shopping-items-list");
-        if (shoppingItemsEl) shoppingItemsEl.replaceChildren();
-        shoppingListItems.length = 0;
-        const shoppingInput = document.getElementById("nt-shopping-item-input") as HTMLInputElement;
-        if (shoppingInput) shoppingInput.value = "";
-        const qtyInput = document.getElementById("nt-shopping-qty") as HTMLInputElement;
-        if (qtyInput) qtyInput.value = "1";
-        (document.getElementById("nt-shopping-category") as HTMLSelectElement).value = "";
-        (document.getElementById("nt-is-routine") as HTMLInputElement).checked = false;
-        (document.getElementById("nt-ai-handoff") as HTMLInputElement).checked = false;
-        document.getElementById("nt-custom-fields-container")?.classList.add("hidden");
-        const cfList = document.getElementById("nt-custom-fields-list");
-        if (cfList) cfList.replaceChildren();
-
-        // Reset CTA and placeholder using cached refs
-        if (titleInput) titleInput.placeholder = titleInput.dataset.placeholderTask || "Task name";
-        if (submitBtn) submitBtn.textContent = submitBtn.dataset.labelTask || "Create Task";
-
-        // Reset contextual fields
-        extractedChecklistItems.length = 0;
-        if (itemsContainer) itemsContainer.replaceChildren();
-        contextualDiv?.classList.add("hidden");
-        const contextualDue = document.getElementById("nt-contextual-due") as HTMLInputElement;
-        if (contextualDue) contextualDue.value = "";
-        // Reset InlineDatePickers
-        const pickers = (window as unknown as Record<string, unknown>).__ntDatePickers as InlineDatePicker[] | undefined;
-        if (pickers) pickers.forEach(p => p.setValue(null));
-      };
+      }
       if (reducedMotion) { finishClose(); return; }
       overlay.classList.add("closing");
       const content = overlay.querySelector(".modal-content");
       if (content) {
         const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
-        content.addEventListener("animationend", onEnd, { once: true });
+        content.addEventListener("animationend", onEnd, { once: true, signal });
         window.setTimeout(() => { content.removeEventListener("animationend", onEnd); finishClose(); }, 300);
       } else {
         finishClose();
@@ -755,240 +605,496 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }, { signal });
 
     document.addEventListener("keydown", (e) => {
-      if (overlay?.classList.contains("active")) {
+      if (overlay?.classList.contains("active") && !e.defaultPrevented && !e.isComposing) {
         if (e.key === "Escape") {
           e.preventDefault();
-          closeNewTaskModal();
+          if (!drafts?.dismissConfirmation()) closeNewTaskModal();
         } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
-          form?.requestSubmit();
+          if (canSubmitCapture() && !submitting) form?.requestSubmit(submitBtn ?? undefined);
         }
       }
     }, { signal });
 
     // Expose global open method
     window.openNewTaskModal = () => {
+      if (signal.aborted || overlay.classList.contains("active")) return
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
       document.getElementById("task-detail-overlay")?.classList.remove("active");
 
-      form?.reset();
-      overlay?.classList.add("active");
+      clearCapture()
+      const contextualDate = window.__prefillTaskDate
+      delete window.__prefillTaskDate
+      if (contextualDate) restoreDue(contextualDate)
+      preserveAssignee = false
+      captureSession++
+      overlay.classList.add("active")
 
-      // Reset title textarea height after form.reset()
-      const titleEl = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
-      if (titleEl) titleEl.style.height = "2.25em";
-
-      // Reset status pills to "pending" (To Do)
-      const statusInput = document.getElementById("new-task-status") as HTMLInputElement | null;
-      if (statusInput) statusInput.value = "pending";
-      document.querySelectorAll("#nt-status-pills .filter-toolbar__type-btn").forEach((p) => {
-        const isPending = (p as HTMLElement).dataset.status === "pending";
-        p.classList.toggle("active", isPending);
-        p.setAttribute("aria-checked", isPending ? "true" : "false");
-      });
-
-      // Reset priority glass-dropdown
-      resetGlassDropdown("nt-priority-dropdown", "nt-priority-label", "new-task-priority", "3");
-      // Reset recurrence glass-dropdown
-      resetGlassDropdown("nt-recurrence-dropdown", "nt-recurrence-label", "new-task-recurrence", "");
-      
-      // Load user list for assignment dropdown
-      loadAssigneeDropdown();
-      window.setTimeout(() => {
-        titleEl?.focus();
-      }, 50);
+      captureOptionsRequest = new AbortController()
+      const requestSignal = AbortSignal.any([signal, captureOptionsRequest.signal, AbortSignal.timeout(10_000)])
+      void loadAssigneeDropdown(requestSignal)
+      if (!lanesLoaded) void loadStatusPills(requestSignal)
+      if (!goalsLoaded) void loadGoals(requestSignal)
+      void loadDraftEditor(captureSession)
+      focusTrap.activate()
     };
 
     // Fetch users and populate the Assign To dropdown
-    async function loadAssigneeDropdown() {
-      const select = document.getElementById("new-task-assigned-to") as HTMLSelectElement | null;
-      const hint = document.getElementById("new-task-assignee-hint");
-      if (!select) return;
-
-      // Reset to just "Unassigned"
-      const unassignedLabel = select.options[0]?.textContent || "Unassigned";
-      select.replaceChildren();
-      const defaultOpt = document.createElement("option")
-      defaultOpt.value = ""
-      defaultOpt.textContent = unassignedLabel
-      select.appendChild(defaultOpt)
+    async function loadAssigneeDropdown(requestSignal: AbortSignal) {
+      const select = document.querySelector<HTMLSelectElement>("#new-task-assigned-to")
+      const hint = document.getElementById("new-task-assignee-hint")
+      if (!select) return
 
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/users", { signal });
-        if (!res.ok) return;
-        const data = await res.json();
-        const users = data.users || [];
+        const res = await fetch("/api/users", { signal: requestSignal })
+        if (!res.ok) return
+        const data = await res.json()
+        if (requestSignal.aborted) return
+        const users = data.users || []
+        const selected = select.value
+        const unassigned = select.options[0] ?? new Option("Unassigned", "")
+        select.replaceChildren(unassigned, ...users.map((user: { id: string; name: string; source: string }) =>
+          new Option(user.name + (user.source === "home_assistant" ? " (HA)" : ""), user.id)))
+        // Only the assignee field can hide; goals stay independently available.
+        if (select.parentElement) select.parentElement.style.display = users.length || selected ? "" : "none"
+        hint?.classList.toggle("hidden", users.length < 2)
+        const fallback = data.default_assignee || (users.length === 1 ? users[0].id : "")
+        if (preserveAssignee) selectSavedOption(select, selected, taskDraftText("assignee_missing"))
+        else select.value = fallback
 
-        if (users.length === 0) {
-          // No users discovered — hide dropdown, show link to settings
-          if (select.parentElement) select.parentElement.style.display = "none";
-          return;
-        }
-
-        if (select.parentElement) select.parentElement.style.display = "";
-        if (hint) {
-          if (users.length > 1) hint.classList.remove("hidden")
-          else hint.classList.add("hidden")
-        }
-
-        for (const user of users) {
-          const opt = document.createElement("option");
-          opt.value = user.id;
-          opt.textContent =
-            user.name + (user.source === "home_assistant" ? " (HA)" : "");
-          select.appendChild(opt);
-        }
-
-        // Auto-select default assignee if set
-        if (data.default_assignee) {
-          select.value = data.default_assignee;
-        }
-
-        // Single-user auto-select
-        if (users.length === 1 && !data.default_assignee) {
-          select.value = users[0].id;
-        }
-
-        // Store users for @mention matching
-        (window as any).__meitheal_users = users;
+        // Used only by the existing @mention parser.
+        ;(window as any).__meitheal_users = users
       } catch {
-        // Standalone/offline — leave just "Unassigned"
+        // Standalone/offline — keep the current options.
       }
     }
 
     // Swimlanes Loader → Status Pills
-    (async function loadStatusPills() {
-      const pillsContainer = document.getElementById("nt-status-pills");
-      const statusHiddenInput = document.getElementById("new-task-status") as HTMLInputElement | null;
-      if (!pillsContainer || !statusHiddenInput) return;
-
-      function activatePill(pill: HTMLElement) {
-        pillsContainer!.querySelectorAll(".filter-toolbar__type-btn").forEach((p) => {
-          p.classList.remove("active");
-          p.setAttribute("aria-checked", "false");
-        });
-        pill.classList.add("active");
-        pill.setAttribute("aria-checked", "true");
-        statusHiddenInput!.value = pill.dataset.status || "pending";
-      }
+    async function loadStatusPills(requestSignal: AbortSignal) {
+      if (!pillsContainer || !statusInput) return
 
       try {
         const [lanesRes, modeRes] = await Promise.all([
-          fetch((window.__ingress_path || "") + "/api/lanes", { signal }),
-          fetch((window.__ingress_path || "") + "/api/settings?key=backlog_mode", { signal })
-        ]);
-        
-        let backlogMode = "visible";
-        if (modeRes.ok) {
-           try {
-             const md = await modeRes.json();
-             backlogMode = md.value;
-           } catch { /* backlog mode JSON parse non-fatal — default visible */ }
+          fetch("/api/lanes", { signal: requestSignal }),
+          fetch("/api/settings?key=backlog_mode", { signal: requestSignal }),
+        ])
+        if (!lanesRes.ok) return
+        const { lanes } = await lanesRes.json()
+        const mode = modeRes.ok ? await modeRes.json().catch(() => null) : null
+        if (requestSignal.aborted || !Array.isArray(lanes)) return
+
+        const hideBacklog = mode?.value === "disabled" || mode?.value === "hidden"
+        const selected = statusInput.value
+        const focused = document.activeElement
+        const focusedStatus = focused instanceof HTMLElement && pillsContainer.contains(focused) ? focused.dataset.status : undefined
+        const options = document.createDocumentFragment()
+        let nextFocus: HTMLButtonElement | undefined
+        for (const lane of lanes) {
+          if (hideBacklog && lane.key === "backlog") continue
+          const pill = document.createElement("button")
+          pill.type = "button"
+          pill.className = "filter-toolbar__type-btn"
+          pill.dataset.status = lane.key
+          pill.setAttribute("role", "radio")
+          const icon = document.createElement("span")
+          icon.className = "nt-status-pill-icon"
+          icon.textContent = lane.icon
+          const label = document.createElement("span")
+          label.textContent = lane.label
+          pill.append(icon, label)
+          options.appendChild(pill)
+          if (lane.key === focusedStatus) nextFocus = pill
         }
-        
-        if (lanesRes.ok) {
-          const data = await lanesRes.json();
-          let lanes = data.lanes || [];
-          if (backlogMode === "disabled" || backlogMode === "hidden") {
-             lanes = lanes.filter((l: any) => l.key !== "backlog");
-          }
-          pillsContainer.replaceChildren();
-          for (const lane of lanes) {
-            const pill = document.createElement("button");
-            pill.type = "button";
-            pill.className = `filter-toolbar__type-btn${lane.key === "pending" ? " active" : ""}`;
-            pill.dataset.status = lane.key;
-            pill.setAttribute("role", "radio");
-            pill.setAttribute("aria-checked", lane.key === "pending" ? "true" : "false");
-            // Build DOM safely — lane data comes from API
-            const iconSpan = document.createElement("span")
-            iconSpan.className = "nt-status-pill-icon"
-            iconSpan.textContent = lane.icon
-            const labelSpan = document.createElement("span")
-            labelSpan.textContent = lane.label
-            pill.appendChild(iconSpan)
-            pill.appendChild(labelSpan)
-            pill.addEventListener("click", () => activatePill(pill), { signal });
-            pillsContainer.appendChild(pill);
-          }
-        }
+        if (!options.childElementCount) return
+        pillsContainer.replaceChildren(options)
+        selectStatus(selected)
+        nextFocus?.focus({ preventScroll: true })
+        lanesLoaded = mode !== null
       } catch {
-        // offline — keep the single fallback pill
-        pillsContainer.querySelector(".filter-toolbar__type-btn")?.addEventListener("click", (e) => {
-          activatePill(e.currentTarget as HTMLElement);
-        }, { signal });
+        // Keep the current options and retry on the next open.
       }
-    })();
-
-    // Initialize glassmorphic dropdowns (priority, recurrence)
-    initGlassDropdowns();
-    initGlassDropdownSelect("nt-priority-dropdown", "nt-priority-label", "new-task-priority", signal);
-    initGlassDropdownSelect("nt-recurrence-dropdown", "nt-recurrence-label", "new-task-recurrence", signal);
-
-    // Initialize InlineDatePicker instances
-    const datePickers: InlineDatePicker[] = [];
-    function mountDatePicker(containerId: string, hiddenId: string) {
-      const container = document.getElementById(containerId);
-      const hidden = document.getElementById(hiddenId) as HTMLInputElement | null;
-      if (!container || !hidden) return;
-      const picker = new InlineDatePicker(container, {
-        value: null,
-        onChange: (date) => { hidden.value = date.toISOString(); },
-        onClear: () => { hidden.value = ""; },
-        signal,
-      });
-      datePickers.push(picker);
     }
-    mountDatePicker("nt-due-date-picker", "nt-contextual-due");
-    mountDatePicker("nt-event-start-picker", "nt-event-start");
-    mountDatePicker("nt-event-end-picker", "nt-event-end");
 
-    // Graceful fallback — if InlineDatePicker fails to mount, inject native input
-    window.setTimeout(() => {
-      document.querySelectorAll(".idp-mount").forEach(mount => {
-        if (mount.children.length === 0) {
-          const hiddenId = mount.id.replace("-picker", "").replace("nt-", "nt-contextual-").replace("nt-contextual-event-start", "nt-event-start").replace("nt-contextual-event-end", "nt-event-end").replace("nt-contextual-due-date", "nt-contextual-due")
-          const hidden = mount.previousElementSibling as HTMLInputElement | null
-          if (!hidden) return
-          const fallback = document.createElement("input")
-          fallback.type = "datetime-local"
-          fallback.className = "form-input bg-bg-input/50 border-border-dim rounded-lg text-sm py-1.5 px-3 w-full"
-          fallback.addEventListener("change", () => { hidden.value = fallback.value ? new Date(fallback.value).toISOString() : "" })
-          mount.appendChild(fallback)
-          log.warn("InlineDatePicker fallback activated for", mount.id)
-        }
+    const dueInput = document.querySelector<HTMLInputElement>("#nt-contextual-due")
+    const dueMount = document.querySelector<HTMLElement>("#nt-due-date-picker")
+    const dueLabel = document.getElementById("nt-due-label")?.textContent ?? "Due date"
+    let duePicker: InlineDatePicker | undefined
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/
+
+    function displayedDate(raw: string): Date | null {
+      const date = raw ? new Date(dateOnly.test(raw) ? `${raw}T00:00:00` : raw) : null
+      return date && Number.isFinite(date.valueOf()) ? date : null
+    }
+
+    function syncDueControls(focus = false) {
+      const trigger = dueMount?.querySelector<HTMLElement>(".idp-trigger")
+      if (!trigger) return
+      const clear = trigger.querySelector<HTMLButtonElement>(".idp-clear-btn")
+      if (clear) dueMount?.append(clear)
+      dueMount?.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.type = "button" })
+      if (!(trigger instanceof HTMLButtonElement)) {
+        trigger.tabIndex = 0
+        trigger.setAttribute("role", "button")
+      }
+      trigger.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
+      trigger.setAttribute("aria-haspopup", "dialog")
+      if (focus) trigger.focus({ preventScroll: true })
+    }
+
+    function restoreDue(raw: string) {
+      if (dueInput) dueInput.value = raw
+      duePicker?.setValue(displayedDate(raw))
+      syncDueControls()
+    }
+
+    if (dueMount && dueInput) {
+      duePicker = new InlineDatePicker(dueMount, {
+        value: null,
+        formatFn: date => dateOnly.test(dueInput.value) ? date.toLocaleDateString() : date.toLocaleString(),
+        onChange(date) {
+          dueInput.value = date.toISOString()
+          markEdited()
+          queueMicrotask(() => syncDueControls(true))
+        },
+        onClear() {
+          dueInput.value = ""
+          markEdited()
+          queueMicrotask(() => syncDueControls(true))
+        },
+        signal,
       })
-    }, 2000);
+      syncDueControls()
+      // The shared picker portals to body. Keep this instance inside the modal's focus scope.
+      dueMount.addEventListener("click", () => {
+        const prior = new Set(document.querySelectorAll(".idp-panel"))
+        requestAnimationFrame(() => {
+          const panel = [...document.querySelectorAll<HTMLElement>(".idp-panel")].find(item => !prior.has(item))
+          if (!panel || signal.aborted) return
+          panel.classList.add("nt-due-date-panel")
+          panel.setAttribute("role", "dialog")
+          panel.setAttribute("aria-label", dueLabel)
+          overlay.append(panel)
+          const bounds = panel.getBoundingClientRect()
+          panel.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - bounds.width - 8))}px`
+          panel.style.top = `${Math.max(8, Math.min(bounds.top, innerHeight - bounds.height - 8))}px`
+          panel.style.bottom = ""
+          panel.addEventListener("keydown", event => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            duePicker?.setValue(displayedDate(dueInput.value))
+            syncDueControls(true)
+          }, { signal })
+          panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
+        })
+      }, { capture: true, signal })
+      dueMount.addEventListener("keydown", event => {
+        const target = event.target as HTMLElement
+        if (target.matches(".idp-trigger:not(button)") && ["Enter", " "].includes(event.key)) {
+          event.preventDefault()
+          target.click()
+        }
+      }, { signal })
+      signal.addEventListener("abort", () => duePicker?.destroy(), { once: true })
+    }
 
-    // Store pickers for reset
-    (window as unknown as Record<string, unknown>).__ntDatePickers = datePickers;
+    // Preserve saved ISO offsets and precision while native event controls show local wall time.
+    const eventDates = new Map<string, { raw: string; display: string }>()
+    function restoreEventDate(id: string, raw: string) {
+      const control = document.getElementById(id) as HTMLInputElement | null
+      if (!control) return
+      const date = displayedDate(raw)
+      control.value = date ? new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, -1) : ""
+      eventDates.set(id, { raw, display: control.value })
+    }
+    function eventDateValue(id: string): string {
+      const control = document.getElementById(id) as HTMLInputElement | null
+      const saved = eventDates.get(id)
+      if (saved && control?.value === saved.display) return saved.raw
+      return control?.value ? new Date(control.value).toISOString() : ""
+    }
+    function publicationDate(raw: string): string {
+      return dateOnly.test(raw) ? new Date(raw).toISOString() : raw
+    }
 
     // Goals Loader
-    (async function loadGoals() {
-      const goalSelect = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-      if (!goalSelect) return;
-
+    async function loadGoals(requestSignal: AbortSignal) {
+      if (!goalSelect) return
       try {
-        const res = await fetch((window.__ingress_path || "") + "/api/goals", { signal });
-        if (res.ok) {
-          const data = await res.json();
-          const goals = data.goals || data || [];
-          const noGoalLabel = goalSelect.options[0]?.textContent || "No goal";
-          goalSelect.replaceChildren();
-          const noGoalOpt = document.createElement("option")
-          noGoalOpt.value = ""
-          noGoalOpt.textContent = noGoalLabel
-          goalSelect.appendChild(noGoalOpt)
-          goals.forEach((g: any) => {
-            const opt = document.createElement("option");
-            opt.value = g.id;
-            opt.textContent = `🎯 ${g.title || g.name}`;
-            goalSelect.appendChild(opt);
-          });
+        const res = await fetch("/api/goals", { signal: requestSignal })
+        if (!res.ok) return
+        const data = await res.json()
+        const goals = data?.goals ?? data
+        if (requestSignal.aborted || !Array.isArray(goals)) return
+
+        const selected = goalSelect.value
+        const noGoal = goalSelect.options[0]
+        if (!noGoal) return
+        goalSelect.replaceChildren(noGoal, ...goals.map(goal => {
+          const option = document.createElement("option")
+          option.value = goal.id
+          option.textContent = `🎯 ${goal.title || goal.name}`
+          return option
+        }))
+        selectSavedOption(goalSelect, selected, taskDraftText("goal_missing"))
+        goalsLoaded = true
+      } catch (error) {
+        if (!requestSignal.aborted) log.warn("goals-fetch error", error)
+      }
+    }
+
+    type CaptureField = TaskDraftSnapshot["fields"][number]
+    type CaptureControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+
+    const input = (id: string) => overlay.querySelector<CaptureControl>("#" + id)
+    const value = (id: string) => input(id)?.value ?? ""
+    const checked = (id: string) => Boolean((input(id) as HTMLInputElement | null)?.checked)
+    const labelPicker = overlay.querySelector<HTMLElement>("#new-task-label-picker")
+    const labelValue = input("new-task-label-picker-value")
+    const customList = overlay.querySelector<HTMLElement>("#nt-custom-fields-list")
+    const assignee = overlay.querySelector<HTMLSelectElement>("#new-task-assigned-to")
+    const fieldError = overlay.querySelector<HTMLElement>("#nt-capture-validation")
+
+    function showFieldError(message = "") {
+      if (!fieldError) return
+      fieldError.textContent = message
+      fieldError.hidden = !message
+    }
+
+    function selectSavedOption(select: HTMLSelectElement | null, desired: string, unavailableLabel: string) {
+      if (!select) return
+      select.querySelector("[data-unavailable]")?.remove()
+      if (desired && !Array.from(select.options).some(option => option.value === desired)) {
+        const unavailable = new Option(unavailableLabel, desired)
+        unavailable.dataset.unavailable = ""
+        select.append(unavailable)
+        if (select.parentElement) select.parentElement.style.display = ""
+      }
+      select.value = desired
+    }
+
+    function captureFields(): CaptureField[] {
+      const fields: CaptureField[] = []
+      customList?.querySelectorAll<HTMLElement>(".nt-custom-field-entry").forEach(entry => {
+        const type = entry.dataset.fieldType
+        const field = entry.querySelector<HTMLInputElement>("input:not([type=checkbox])")
+        if (!field) return
+        if (type === "checkbox") fields.push({ type, label: field.value, checked: Boolean(entry.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked) })
+        else if (type === "url" || type === "text" || type === "number" || type === "date") fields.push({ type, value: field.value })
+      })
+      return fields
+    }
+
+    function captureSnapshot(): TaskDraftSnapshot {
+      return {
+        version: 1,
+        title: titleInput?.value ?? "",
+        description: descInput?.value ?? "",
+        taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
+        status: statusInput?.value || "pending",
+        priority: Number(value("new-task-priority")),
+        due: value("nt-contextual-due"),
+        labels: JSON.parse(labelValue?.value || "[]"),
+        newLabels: JSON.parse(labelValue?.dataset.newLabels || "[]"),
+        assignedTo: assignee?.value ?? "",
+        goal: goalSelect?.value ?? "",
+        recurrence: value("new-task-recurrence"),
+        isRoutine: retainedRoutine,
+        checklist: { items: [...checklistItems.values()], input: builderInput?.value ?? "" },
+        shopping: { items: [...shoppingListItems], input: shoppingItemInput?.value ?? "", quantity: qtyEl?.value ?? "1",
+          category: (shoppingCategory?.value ?? "") as ShoppingItem["category"] },
+        event: { start: eventDateValue("nt-event-start"), end: eventDateValue("nt-event-end"), ...retainedEventDetails },
+        fields: captureFields(),
+      }
+    }
+
+    function restoreCapture(snapshot: TaskDraftSnapshot) {
+      isHydrating = true
+      try {
+        form?.reset()
+        selectKind(snapshot.taskKind)
+        selectStatus(snapshot.status)
+        if (titleInput) {
+          titleInput.value = snapshot.title
+          resizeTitle()
         }
-      } catch (e) { log.warn("goals-fetch error", e) }
-    })();
+        if (descInput) {
+          descInput.value = snapshot.description
+        }
+
+        const priority = input("new-task-priority")
+        const recurrence = overlay?.querySelector<HTMLSelectElement>("#new-task-recurrence")
+        if (priority) priority.value = String(snapshot.priority)
+        recurrence?.querySelector("[data-saved-recurrence]")?.remove()
+        if (recurrence) {
+          if (snapshot.recurrence && ![...recurrence.options].some(option => option.value === snapshot.recurrence)) {
+            const saved = new Option(snapshot.recurrence, snapshot.recurrence)
+            saved.dataset.savedRecurrence = ""
+            recurrence.append(saved)
+          }
+          recurrence.value = snapshot.recurrence
+        }
+        selectSavedOption(assignee, snapshot.assignedTo, taskDraftText("assignee_missing"))
+        selectSavedOption(goalSelect, snapshot.goal, taskDraftText("goal_missing"))
+        preserveAssignee = true
+        labelPicker?.dispatchEvent(new CustomEvent("meitheal:set-draft-labels", {
+          detail: { labels: snapshot.labels, newLabels: snapshot.newLabels },
+        }))
+
+        restoreDue(snapshot.due)
+        restoreEventDate("nt-event-start", snapshot.event.start)
+        restoreEventDate("nt-event-end", snapshot.event.end)
+        // Preserve older private draft metadata without advertising unsupported creation controls.
+        retainedRoutine = snapshot.isRoutine
+        retainedEventDetails = { location: snapshot.event.location, allDay: snapshot.event.allDay, calendar: snapshot.event.calendar }
+        const location = input("nt-event-location")
+        if (location) location.value = snapshot.event.location
+        const calendar = input("nt-event-calendar")
+        if (calendar) calendar.value = snapshot.event.calendar
+        const allDay = input("nt-event-all-day") as HTMLInputElement | null
+        if (allDay) allDay.checked = snapshot.event.allDay
+
+        checklistItems.clear()
+        itemsContainer?.replaceChildren()
+        draft = undefined
+        snapshot.checklist.items.forEach(appendChecklistItem)
+        updateChecklistCount()
+        if (builderInput) builderInput.value = snapshot.checklist.input
+        shoppingListItems.length = 0
+        shoppingItemsList?.replaceChildren()
+        snapshot.shopping.items.forEach(appendShoppingItem)
+        if (shoppingItemInput) shoppingItemInput.value = snapshot.shopping.input
+        if (qtyEl) qtyEl.value = snapshot.shopping.quantity
+        if (shoppingCategory) shoppingCategory.value = snapshot.shopping.category
+
+        customList?.replaceChildren()
+        cfContainer?.classList.toggle("hidden", snapshot.fields.length === 0)
+        cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
+        cfAddBtn?.setAttribute("aria-expanded", "false")
+        const options = overlay?.querySelector<HTMLDetailsElement>("#nt-options")
+        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length)
+        cfDropdown?.classList.add("hidden")
+        if (cfDropdown) cfDropdown.style.display = ""
+        for (const field of snapshot.fields) {
+          const entry = createCustomFieldEntry(field.type)
+          const control = entry.querySelector<HTMLInputElement>("input:not([type=checkbox])")
+          if (control) control.value = field.type === "checkbox" ? field.label : field.value
+          const checkbox = entry.querySelector<HTMLInputElement>("input[type=checkbox]")
+          if (checkbox && field.type === "checkbox") checkbox.checked = field.checked
+          customList?.append(entry)
+        }
+        showFieldError()
+      } finally {
+        isHydrating = false
+      }
+    }
+
+    function clearCapture() {
+      restoreCapture({
+        version: 1, title: "", description: "", taskKind: "standard_action", status: "pending", priority: 3,
+        due: "", labels: [], newLabels: [], assignedTo: "", goal: "", recurrence: "", isRoutine: false,
+        checklist: { items: [], input: "" }, shopping: { items: [], input: "", quantity: "1", category: "" },
+        event: { start: "", end: "", location: "", allDay: false, calendar: "" }, fields: [],
+      })
+    }
+
+    function hasSelectedFiles() {
+      return [...(form?.querySelectorAll<HTMLInputElement>("input[type=file]") ?? [])].some(file => file.files?.length)
+    }
+
+    function showSubmit(bound: boolean, disabled: boolean) {
+      if (!submitBtn) return
+      submitBtn.disabled = disabled
+      submitBtn.formNoValidate = bound
+      submitBtn.textContent = bound ? taskDraftText("publish") : submitting ? submitBtn.dataset.labelCreating || "Creating…" : createButtonLabel()
+    }
+
+    function canSubmitCapture() {
+      return !draftLoading && (!drafts || drafts.canSubmit())
+    }
+
+    function renderCaptureSubmit() {
+      if (drafts) drafts.render()
+      else showSubmit(false, draftLoading || submitting)
+    }
+
+    const draftEditor = {
+      snapshot: captureSnapshot,
+      restore: restoreCapture,
+      clear: clearCapture,
+      selectedFiles: hasSelectedFiles,
+      ordinarySubmitting: () => submitting,
+      focusTitle: () => titleInput?.focus(),
+      stateChanged(bound, disabled, withdrawn) {
+        if (form) form.inert = withdrawn
+        const kindBar = overlay.querySelector<HTMLElement>("#nt-kind-tabs")
+        if (kindBar) kindBar.inert = withdrawn
+        showSubmit(bound, disabled)
+      },
+      taskPublished() {
+        draftPublicationNeedsRefresh = true
+      },
+      openTask(receipt) {
+        const nextLocation = new URL(window.location.href)
+        nextLocation.searchParams.set("open", receipt.taskId)
+        nextLocation.searchParams.delete("comment")
+        if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
+        history.replaceState(history.state, "", nextLocation)
+        draftPublicationNeedsRefresh = true
+        closeNewTaskModal()
+      },
+    } satisfies Parameters<typeof connectTaskDrafts>[1]
+
+    async function loadDraftEditor(session: number) {
+      editedWhileLoading = false
+      if (!privateIngressScope()) { renderCaptureSubmit(); return }
+      if (drafts) { drafts.open(); return }
+
+      draftLoading = true
+      let blocked = false
+      renderCaptureSubmit()
+      try {
+        const { connectTaskDrafts } = await import("@lib/task-draft-controller")
+        if (!overlay || signal.aborted || session !== captureSession) return
+        drafts = connectTaskDrafts(overlay, draftEditor, signal)
+        drafts.open()
+        if (editedWhileLoading) drafts.edited()
+      } catch {
+        // An older offline shell may not have this optional editor chunk yet.
+        try {
+          blocked = Boolean(sessionStorage.getItem("meitheal-draft-operation"))
+        } catch { /* Ordinary capture works without session storage. */ }
+      } finally {
+        if (session === captureSession && !signal.aborted) {
+          draftLoading = blocked
+          if (blocked) showFieldError(taskDraftText("reconnect"))
+          renderCaptureSubmit()
+        }
+      }
+    }
+
+    function markEdited() {
+      if (!isHydrating) {
+        showFieldError()
+        const dateError = document.getElementById("nt-date-error")
+        if (dateError) dateError.hidden = true
+        if (drafts) drafts.edited()
+        else editedWhileLoading = true
+      }
+    }
+
+    form?.addEventListener("input", event => {
+      if (event.target === assignee) preserveAssignee = true
+      if (!(event.target as HTMLElement).matches(".label-picker__input")) markEdited()
+    }, { signal })
+    form?.addEventListener("change", event => {
+      const target = event.target as HTMLElement
+      if (target.matches("input[type=hidden]")) markEdited()
+    }, { signal })
+    form?.addEventListener("invalid", event => {
+      if (event.target === qtyEl && kindInput?.value === "shopping_item") showFieldError(taskDraftText("quantity"))
+    }, { signal, capture: true })
 
     // Use event delegation on document.body to catch all create-task-btn clicks
     // without cloning DOM nodes (which breaks other scripts' references).
@@ -1000,30 +1106,39 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       }
     }, { signal });
 
-    // Form Submission — nuclear guard against HMR-accumulated duplicate handlers:
-    // Clone the form element to strip ALL previously registered listeners, then re-attach.
+    // Preserve the form so its child controls keep their lifecycle-bound handlers.
     if (form) {
-      const freshForm = form.cloneNode(true) as HTMLFormElement;
-      form.replaceWith(freshForm);
-      // Re-bind reference for the rest of this scope
-      const activeForm = freshForm;
-      activeForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        if ((window as any).__ntFormSubmitting) return;
-        (window as any).__ntFormSubmitting = true;
-
-        const titleInput = document.getElementById("new-task-title-input") as HTMLInputElement | null;
-        if (!titleInput) { (window as any).__ntFormSubmitting = false; return; }
-        
-        let title = titleInput.value.trim();
-        if (!title) { (window as any).__ntFormSubmitting = false; return; }
-
-        const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
-        const originalText = submitBtn?.textContent || "Create Task";
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.textContent = submitBtn.dataset.labelCreating || "Creating...";
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault()
+        if (submitting || !canSubmitCapture() || !titleInput) return
+        const bound = drafts?.isBound() ?? false
+        let title = titleInput.value.trim()
+        if (!title) { showFieldError(taskDraftText("title_required")); titleInput.focus(); return }
+        if (bound && hasSelectedFiles()) {
+          showFieldError(taskDraftText("file_publish"))
+          return
         }
+        if (bound && (pillsContainer?.querySelector("[data-unavailable].active") ||
+            assignee?.selectedOptions[0]?.hasAttribute("data-unavailable") ||
+            goalSelect?.selectedOptions[0]?.hasAttribute("data-unavailable"))) {
+          showFieldError(taskDraftText("reference_required"))
+          return
+        }
+        const start = eventDateValue("nt-event-start")
+        const end = eventDateValue("nt-event-end")
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && new Date(end) <= new Date(start)
+        const dateError = document.getElementById("nt-date-error")
+        if (dateError) dateError.hidden = !invalidDates
+        if (invalidDates) {
+          document.getElementById("nt-event-end")?.focus()
+          return
+        }
+        if (kindInput?.value === "shopping_item" && shoppingQuantity() === null) {
+          showFieldError(taskDraftText("quantity"))
+          qtyEl?.focus()
+          return
+        }
+        const session = captureSession
 
         try {
           const extractedLabels: string[] = [];
@@ -1066,7 +1181,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             }
           }
 
-          const labelPickerValue = document.getElementById("new-task-label-picker-value") as HTMLInputElement | null;
+          const labelPickerValue = labelValue
           let manualLabels: string[] = [];
           if (labelPickerValue && labelPickerValue.value) {
             try {
@@ -1077,6 +1192,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           }
 
           const allLabels = [...new Set([...manualLabels, ...extractedLabels])];
+          const newLabels: string[] = JSON.parse(labelValue?.dataset.newLabels || "[]")
           let finalTitle = title || titleInput.value.trim();
 
           // Extract @mentions for assignment
@@ -1099,22 +1215,20 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
           const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
-          const finalDue = explicitDue ? new Date(explicitDue).toISOString() : extractedDue;
-
-          const contextualChecklists = extractedChecklistItems.length > 0 ? JSON.stringify(extractedChecklistItems) : undefined;
+          const finalDue = explicitDue ? publicationDate(explicitDue) : extractedDue;
 
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
-          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLInputElement | null;
+          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
           const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLInputElement | null;
+          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
 
           const body: Record<string, unknown> = {
             title: finalTitle,
             description: descInputEl?.value.trim() || "",
             task_kind: kindInputEl?.value || "standard_action",
-            priority: parseInt(prioritySelectEl?.value || "3", 10),
+            priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
             due_date: finalDue,
@@ -1125,50 +1239,39 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           const recurrenceVal = recurrenceSelectEl?.value;
           if (recurrenceVal) body.recurrence_rule = recurrenceVal;
 
-          if (contextualChecklists) {
-            body.checklists = contextualChecklists;
+          if (body.task_kind === "checklist") {
+            body.checklists = JSON.stringify([...checklistItems.values(), ...currentChecklistDraft()])
           }
-
-          // Routine flag
-          const routineCheck = document.getElementById("nt-is-routine") as HTMLInputElement;
-          if (routineCheck?.checked) body.is_routine = true;
-
-          // AI Handoff
-          const aiCheck = document.getElementById("nt-ai-handoff") as HTMLInputElement;
-          if (aiCheck?.checked) body.handoff_state = "pending_agent";
 
           // Shopping list fields
           if (body.task_kind === "shopping_item") {
-            const qty = (document.getElementById("nt-shopping-qty") as HTMLInputElement)?.value || "1";
-            const cat = (document.getElementById("nt-shopping-category") as HTMLSelectElement)?.value;
-            // Include checklist-style shopping items
-            const items = (window as any).__ntShoppingItems || [];
+            const qty = shoppingQuantity() ?? 1
+            const cat = shoppingCategory?.value ?? ""
+            const items = [...shoppingListItems]
+            const queued = shoppingItemInput?.value.trim()
+            if (bound && queued) items.push({ name: queued, qty, category: cat as ShoppingItem["category"] })
             body.custom_fields = JSON.stringify({
-              quantity: parseInt(qty, 10),
+              quantity: qty,
               category: cat || "",
               items: items.length > 0 ? items : []
             });
             // Also store as checklists for display in detail view
             if (items.length > 0) {
-              body.checklists = JSON.stringify(items.map((i: { name: string }) => i.name));
+              body.checklists = JSON.stringify(items.map((i: { name: string }) => createChecklistItem(i.name)));
             }
           }
 
           // Event fields
           if (body.task_kind === "calendar_event") {
-            const startEl = document.getElementById("nt-event-start") as HTMLInputElement;
-            const endEl = document.getElementById("nt-event-end") as HTMLInputElement;
-            const locEl = document.getElementById("nt-event-location") as HTMLInputElement;
-            const allDay = (document.getElementById("nt-event-all-day") as HTMLInputElement)?.checked;
-            if (startEl?.value) body.start_date = new Date(startEl.value).toISOString();
-            if (endEl?.value) body.end_date = new Date(endEl.value).toISOString();
-            if (locEl?.value) body.location = locEl.value;
-            if (allDay) body.all_day = true;
+            const start = eventDateValue("nt-event-start")
+            const end = eventDateValue("nt-event-end")
+            if (start) body.start_date = publicationDate(start)
+            if (end) body.end_date = publicationDate(end)
           }
 
           // Custom fields
           const cfItems = document.querySelectorAll("#nt-custom-fields-list .nt-custom-field-entry");
-          if (cfItems.length > 0) {
+          if (!bound && cfItems.length > 0) {
             const cfData: Record<string, unknown>[] = [];
             cfItems.forEach(item => {
               const type = (item as HTMLElement).dataset.fieldType || "text";
@@ -1181,17 +1284,36 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             }
           }
 
-          const res = await fetch((window.__ingress_path || "") + "/api/tasks", {
+          if (bound) {
+            const fields = captureFields().filter(field => field.type === "checkbox" ? field.label || field.checked : field.value)
+            const custom = body.custom_fields ? JSON.parse(String(body.custom_fields)) : undefined
+            drafts?.publish({
+              ...body,
+              labels: allLabels,
+              newLabels,
+              catalogLabels: manualLabels.filter(name => !newLabels.includes(name)),
+              ...(body.checklists ? { checklists: JSON.parse(String(body.checklists)) } : {}),
+              ...(custom || fields.length ? { custom_fields: { ...custom, ...(fields.length ? { fields } : {}) } } : {}),
+            } as TaskDraftPublication)
+            return
+          }
+
+          if (newLabels.length) body.new_labels = newLabels
+          submitting = true
+          renderCaptureSubmit()
+          const res = await fetch("/api/tasks", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(body),
             signal
           });
 
+          if (session !== captureSession || signal.aborted) return
           if (res.ok) {
             // Parse created task for toast and auto-open
             let created: { id?: string; ticket_key?: string; task_kind?: string } = {};
             try { created = await res.json(); } catch { /* non-JSON response — use empty obj */ }
+            if (session !== captureSession || signal.aborted) return
 
             // Rich toast with clickable ticket key
             const { showTaskCreatedToast } = await import("../../lib/toast");
@@ -1202,84 +1324,57 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             );
 
             closeNewTaskModal();
+            if (created.id && created.task_kind !== "quick") {
+              const nextLocation = new URL(window.location.href)
+              nextLocation.searchParams.set("open", created.id)
+              nextLocation.searchParams.delete("comment")
+              if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
+              history.replaceState(history.state, "", nextLocation)
+            }
             document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
               detail: { action: "created" }
             }));
-            
-            // Auto-open detail modal for non-quick tasks
-            if (created.id && created.task_kind !== "quick") {
-              window.setTimeout(() => (window as any).openTaskDetail?.(created.id), 250);
-            }
-            
+
           } else {
             const err = await res.text();
+            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
             showToast(form.dataset.toastError || "Failed to create task", "error");
             log.error("Create task failed:", err);
-            if (submitBtn) {
-              submitBtn.disabled = false;
-              submitBtn.textContent = originalText;
-            }
           }
         } catch (e) {
-          log.error("Form submission error", e);
-          showToast(form.dataset.toastUnexpected || "Unexpected error creating task", "error");
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalText;
+          if (session !== captureSession || signal.aborted) return
+          if (bound) showFieldError(taskDraftText("invalid_values"))
+          else {
+            log.error("Form submission error", e)
+            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
+            showToast(form.dataset.toastUnexpected || "Unexpected error creating task", "error")
           }
         } finally {
-          (window as any).__ntFormSubmitting = false;
+          if (!bound) { submitting = false; renderCaptureSubmit() }
         }
       }, { signal });
     }
 
     // ── Memory cleanup on signal abort (page navigation) ──
     signal.addEventListener('abort', () => {
-      delete (window as any)._removeNTCItem;
-      delete (window as any).__ntShoppingItems;
       delete (window as any).__meitheal_users;
-      delete (window as any).__ntDatePickers;
       delete (window as any).openNewTaskModal;
-      delete (window as any).__ntFormSubmitting;
     });
   });
 </script>
 
 <style>
   @import "../../styles/inline-date-picker.css";
-  .nt-kind-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border-radius: 9999px;
-    border: 1px solid var(--border-dim);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-    white-space: nowrap;
+  #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) { opacity: 1; }
+  .nt-due-picker { min-height: 44px; }
+  .nt-due-picker :global(.idp-trigger) { min-width: 44px; min-height: 44px; color: var(--text-primary); opacity: 1; white-space: normal; }
+  .nt-due-picker :global(.idp-date-text) { white-space: normal; overflow-wrap: anywhere; }
+  .nt-due-picker :global(.idp-clear-btn) { display: inline; min-width: 44px; min-height: 44px; }
+  :global(.nt-due-date-panel) { width: min(420px, calc(100vw - 16px)); min-width: 0; max-height: calc(100dvh - 16px); overflow: auto; }
+  @media (max-width: 440px) {
+    :global(.nt-due-date-panel) { flex-direction: column; }
+    :global(.nt-due-date-panel .idp-quick-options) { flex-basis: auto; max-height: 140px; border-right: 0; border-bottom: 1px solid var(--border); }
+    :global(.nt-due-date-panel .idp-calendar) { min-width: 0; }
   }
-  .nt-kind-pill:hover {
-    background: color-mix(in srgb, var(--border-dim) 20%, transparent);
-    color: var(--text-primary);
-  }
-  .nt-kind-pill.active {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-  #new-task-form::-webkit-scrollbar {
-    width: 4px;
-  }
-  #new-task-form::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  #new-task-form::-webkit-scrollbar-thumb {
-    background: var(--border-dim);
-    border-radius: 4px;
-  }
+  .nt-draft-panel [hidden], .nt-footer [hidden] { display: none !important; }
 </style>

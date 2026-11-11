@@ -1,102 +1,91 @@
 import type { APIRoute } from "astro"
-import { updateLabel, deleteLabel } from "@domains/labels"
-import { stripHtml } from "../../../lib/strip-html"
-import { apiError, apiJson } from "../../../lib/api-response"
-import {
-  createLogger,
-  defaultRedactionPatterns,
-} from "@meitheal/domain-observability"
+import { z } from "zod"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { deleteLabel, isWellFormedLabelName, LabelMutationError, updateLabel } from "@domains/labels"
+import { ensureSchema } from "@domains/tasks"
+import { readWithinLimit } from "@lib/bounded-body"
+import { labelMutationContextFailure, labelMutationFailure as failure, labelMutationHeaders, requireLabelMutationAdministrator } from "@lib/label-mutation-access"
+import { stripHtml } from "@lib/strip-html"
 
-const logger = createLogger({
-  service: "meitheal-web",
-  env: process.env.NODE_ENV ?? "development",
-  minLevel: "info",
-  enabledCategories: ["tasks", "audit", "observability"],
-  redactPatterns: defaultRedactionPatterns,
-  auditEnabled: true,
-})
+const logger = createLogger({ service: "meitheal-web", env: process.env.NODE_ENV ?? "development", minLevel: "info",
+  enabledCategories: ["tasks", "audit", "observability"], redactPatterns: defaultRedactionPatterns, auditEnabled: true })
+const update = z.strictObject({ title: z.string().optional(), hex_color: z.string().regex(/^#?[0-9a-fA-F]{6}$/).optional() })
+  .refine(body => body.title !== undefined || body.hex_color !== undefined)
+const cancelled = () => failure(499, "cancelled", "The label change was cancelled.")
+const unavailable = () => failure(503, "unavailable", "Could not complete the label change. Review the current labels before trying again.")
 
-/**
- * Label CRUD API — individual label operations
- * PUT /api/labels/[id] — update label { title?, hex_color? }
- * DELETE /api/labels/[id] — delete label
- */
-
-export const PUT: APIRoute = async ({ params, request }) => {
-  const id = Number(params.id)
-  if (!Number.isFinite(id) || id <= 0) {
-    return apiError("Invalid label ID", 400)
+function problem(error: unknown, action: "put" | "delete") {
+  if (error instanceof LabelMutationError) {
+    return error.errorCode === "conflict"
+      ? failure(409, "conflict", "Another definition shares the old or new label name. Choose another name or remove a duplicate definition first.")
+      : failure(409, "blocked", "Stored label selections need attention before this change. Check the Labels runbook.")
   }
-
-  try {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >
-    const updates: { title?: string; hexColor?: string } = {}
-
-    if (typeof body.title === "string") {
-      const title = stripHtml(body.title.trim())
-      if (!title) return apiError("title cannot be empty", 400)
-      if (title.length > 100)
-        return apiError("title must be 100 characters or less", 400)
-      updates.title = title
-    }
-
-    if (typeof body.hex_color === "string") {
-      if (!/^#?[0-9a-fA-F]{6}$/.test(body.hex_color)) {
-        return apiError("hex_color must be a valid 6-digit hex color", 400)
-      }
-      updates.hexColor = body.hex_color
-    }
-
-    if (!updates.title && !updates.hexColor) {
-      return apiError("At least one of title or hex_color is required", 400)
-    }
-
-    const label = await updateLabel(id, updates)
-    if (!label) {
-      return apiError("Label not found", 404)
-    }
-
-    return apiJson({
-      id: label.id,
-      title: label.title,
-      hex_color: label.hexColor,
-    })
-  } catch (err) {
-    logger.log("error", {
-      event: "api.labels.put.failed",
-      domain: "tasks",
-      component: "labels-api",
-      request_id: crypto.randomUUID(),
-      message: `Failed to update label ${id}`,
-    })
-    return apiError("Failed to update label")
-  }
+  logger.log("error", { event: `api.labels.${action}.failed`, domain: "tasks", component: "labels-api",
+    request_id: crypto.randomUUID(), message: "Could not complete the shared label change" })
+  return unavailable()
 }
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const PUT: APIRoute = async ({ params, request, locals }) => {
+  const denied = labelMutationContextFailure(request, locals)
+  if (denied) return denied
   const id = Number(params.id)
-  if (!Number.isFinite(id) || id <= 0) {
-    return apiError("Invalid label ID", 400)
+  if (!Number.isSafeInteger(id) || id < 1) return failure(400, "invalid", "Use a positive safe integer label ID.")
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return failure(415, "media", "Send label changes as application/json.")
   }
-
+  const limit = 4 * 1024
+  if (Number(request.headers.get("content-length")) > limit) return failure(413, "tooLarge", "The label change must fit within 4 KiB.")
+  const reading = AbortSignal.any([request.signal, AbortSignal.timeout(5000)])
+  let parsed
   try {
-    const deleted = await deleteLabel(id)
-    if (!deleted) {
-      return apiError("Label not found", 404)
-    }
-
-    return apiJson({ ok: true, deleted: id })
-  } catch (err) {
-    logger.log("error", {
-      event: "api.labels.delete.failed",
-      domain: "tasks",
-      component: "labels-api",
-      request_id: crypto.randomUUID(),
-      message: `Failed to delete label ${id}`,
-    })
-    return apiError("Failed to delete label")
+    const body = await readWithinLimit(request.body, limit, reading)
+    if (!body) return failure(413, "tooLarge", "The label change must fit within 4 KiB.")
+    parsed = update.safeParse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)))
+  } catch {
+    if (request.signal.aborted) return cancelled()
+    if (reading.aborted) return unavailable()
+    return failure(400, "invalid", "Send a valid UTF-8 label change.")
   }
+  if (!parsed.success) return failure(400, "invalid", "Provide a label title, a six-digit hex_color, or both, without extra fields.")
+  const title = parsed.data.title === undefined ? undefined : stripHtml(parsed.data.title).trim()
+  if (title !== undefined && (!title || title.length > 100 || !isWellFormedLabelName(title))) {
+    return failure(400, "invalid", "Use a valid label title of 1 to 100 characters after removing HTML.")
+  }
+  try {
+    if (request.signal.aborted) return cancelled()
+    await ensureSchema()
+    if (request.signal.aborted) return cancelled()
+    const current = await requireLabelMutationAdministrator(request, locals)
+    if (current) return current
+    if (request.signal.aborted) return cancelled()
+    const label = await updateLabel(id, {
+      ...(title === undefined ? {} : { title }),
+      ...(parsed.data.hex_color === undefined ? {} : { hexColor: parsed.data.hex_color }),
+    })
+    if (!label) return failure(404, "missing", "The label is no longer available. Reload Labels.")
+    return Response.json({ id: label.id, title: label.title, hex_color: label.hexColor }, { headers: labelMutationHeaders })
+  } catch (error) { return problem(error, "put") }
+}
+
+export const DELETE: APIRoute = async ({ params, request, locals }) => {
+  const denied = labelMutationContextFailure(request, locals)
+  if (denied) return denied
+  const id = Number(params.id)
+  if (!Number.isSafeInteger(id) || id < 1) return failure(400, "invalid", "Use a positive safe integer label ID.")
+  if (request.body) {
+    try {
+      const body = await readWithinLimit(request.body, 0, AbortSignal.any([request.signal, AbortSignal.timeout(5000)]))
+      if (!body) return failure(400, "invalid", "Send label deletion without a request body.")
+    } catch { return request.signal.aborted ? cancelled() : unavailable() }
+  }
+  try {
+    if (request.signal.aborted) return cancelled()
+    await ensureSchema()
+    if (request.signal.aborted) return cancelled()
+    const current = await requireLabelMutationAdministrator(request, locals)
+    if (current) return current
+    if (request.signal.aborted) return cancelled()
+    if (!await deleteLabel(id)) return failure(404, "missing", "The label is no longer available. Reload Labels.")
+    return Response.json({ ok: true, deleted: id }, { headers: labelMutationHeaders })
+  } catch (error) { return problem(error, "delete") }
 }

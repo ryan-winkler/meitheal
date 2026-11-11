@@ -9,12 +9,20 @@
  * @see AreaSelector.astro
  */
 
+import { readTableFilterParams } from "./filter-state"
+
 const STORAGE_KEY = "meitheal-selected-area"
 
 interface AreaChangedDetail {
   areaId: string
   areaName: string
   areaIcon: string
+}
+
+export function getRememberedAreaId(): string {
+  const { areaId } = loadSavedArea()
+  const options = document.querySelectorAll<HTMLElement>("#area-selector-dropdown [data-area-id]")
+  return [...options].some(option => option.dataset.areaId === areaId) ? areaId : ""
 }
 
 export function getSelectedAreaId(): string {
@@ -42,17 +50,25 @@ export function initAreaSelector(signal: AbortSignal): void {
 
   // Restore saved area on init
   const params = new URLSearchParams(location.search)
-  if (params.has("area")) {
-    const requested = params.get("area") ?? ""
+  const table = Boolean(document.getElementById("table-shell"))
+  const requested = table ? readTableFilterParams(params).area : params.get("area") ?? undefined
+  if (requested !== undefined) {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
-    if (option) selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
+    if (option) {
+      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
+    } else if (table) {
+      selectArea(requested, "Unavailable Area", "🗂", false)
+    }
   } else {
     const saved = loadSavedArea()
     if (saved.areaId && Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .some(option => option.dataset.areaId === saved.areaId)) {
       selectArea(saved.areaId, saved.areaName, saved.areaIcon, false)
     }
+  }
+  if (table) {
+    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
   }
 
   // Toggle dropdown on trigger click
@@ -101,7 +117,7 @@ export function initAreaSelector(signal: AbortSignal): void {
 
     // Focus the currently selected option
     const selected = dropdown!.querySelector<HTMLElement>(".is-selected")
-    selected?.focus()
+    ;(selected ?? dropdown!.querySelector<HTMLElement>("[data-area-id]"))?.focus()
   }
 
   function closeDropdown(): void {
@@ -123,10 +139,10 @@ export function initAreaSelector(signal: AbortSignal): void {
     })
 
     // Save to localStorage
-    saveArea(areaId, areaName, areaIcon)
+    if (dispatch || !table) saveArea(areaId, areaName, areaIcon)
 
     // Sync all FilterToolbar area selects across views
-    syncFilterToolbarAreas(areaId)
+    if (!table) syncFilterToolbarAreas(areaId)
 
     // Dispatch global event
     if (dispatch) {

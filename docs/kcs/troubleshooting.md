@@ -8,6 +8,10 @@ description: "Diagnose common connection, search, and sync problems."
 
 ## Common Issues
 
+### Database temporarily unavailable
+
+The task list and completed-task cleanup return HTTP 503 when local storage is busy or unavailable. Their uncached `application/problem+json` response includes `retry_after` in seconds, matching the `Retry-After` header; the default is ten seconds. The existing `error` message remains available to clients. Wait for that interval, then reload the list or review the cleanup preview before confirming a deletion again.
+
 ### Universal Search Hub
 
 **Symptoms**: `Cmd/Ctrl+K` does nothing, the topbar launcher feels empty, or search is missing settings/views/actions results.
@@ -31,7 +35,7 @@ description: "Diagnose common connection, search, and sync problems."
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. Press `?` outside a text field to restore them. Press `Esc` to close the keyboard shortcuts dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard Shortcuts**, then press `Esc` to close the dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 
@@ -108,6 +112,16 @@ Dismissed helpers stay hidden on reload. Press `?` outside a text field to resto
 1. Check browser console for the specific 400 error message
 2. Most common: `title is required` — empty title field
 3. Verify API is healthy: `GET /api/health` should return 200
+
+### Task List Loses Eisenhower Scores
+
+**Symptoms**: A task has saved urgency and importance scores, but the task list reports zero scores, `not-now`, or no manual override.
+
+**Check**:
+
+1. Compare the same task in `GET /api/tasks` and `GET /api/tasks/:id`. The list must preserve stored `urgency`, `importance`, and `eisenhower_override`, including across pagination.
+2. The list derives `eisenhower_quadrant` from urgency and importance using a threshold of 3 for each axis. An unclassified task defaults to zero scores and `not-now`; manual placement is recorded separately in `eisenhower_override`.
+3. If detail has the correct scores but the list loses them, inspect the `TaskRepository.findAll` SELECT projection before changing task data. All three columns must be selected. Contributors can run `pnpm --filter @meitheal/tests test e2e/task-list-eisenhower.spec.ts` against a disposable SQLite database.
 
 ### Offline Page Showing When Online
 

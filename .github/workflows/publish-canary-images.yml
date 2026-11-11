@@ -1,17 +1,31 @@
-name: Build and publish canary images
+name: Smoke-test canary images
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: none
 
 jobs:
-  release:
+  image:
     if: github.repository == 'ryan-winkler/meitheal' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/publish-app.yml
-    with:
-      channel: canary
-    permissions:
-      contents: read
-      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and smoke-test the local image
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          CHANNEL: canary
+        run: bash scripts/build-app-release-image.sh build-only

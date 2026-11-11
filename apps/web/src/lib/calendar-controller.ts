@@ -283,11 +283,12 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     drawerTasks.innerHTML = tasks.map((task: Record<string, unknown>) => {
       const status = String(task.status ?? "")
       const definition = getStatusDef(status)
+      const deferredLabel = task.deferred_at != null ? ` · ${escapeHtml(window.mI18n?.get("deferral.title") ?? "Deferred")}` : ""
       return `<div class="day-drawer-item" data-task-id="${String(task.id)}" style="cursor:pointer">
         <span class="day-drawer-item-icon" aria-hidden="true">${definition?.icon ?? "⬜"}</span>
         <div class="day-drawer-item-content">
           <div class="day-drawer-item-title">${escapeHtml(String(task.title ?? "Untitled task"))}</div>
-          <div class="day-drawer-item-meta">${escapeHtml(definition?.label ?? status)}${task.priority ? ` • P${String(task.priority)}` : ""}</div>
+          <div class="day-drawer-item-meta">${escapeHtml(definition?.label ?? status)}${task.priority ? ` • P${String(task.priority)}` : ""}${deferredLabel}</div>
         </div>
       </div>`
     }).join("")

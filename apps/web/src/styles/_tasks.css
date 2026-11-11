@@ -312,10 +312,6 @@
       0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
-  .bento-card-done {
-    opacity: 0.55;
-  }
-
   .bento-card-stripe {
     width: 4px;
     flex-shrink: 0;

@@ -170,9 +170,9 @@
 
 /* Keyboard focus ring (accessibility) */
 .kanban-card:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
-  border-color: var(--accent);
+  border-color: var(--border-focus);
 }
 
 .kanban-column.drag-over {
@@ -249,15 +249,6 @@
   @apply flex items-center gap-2 text-xs;
   flex-wrap: wrap;
   row-gap: 4px;
-}
-
-.kanban-card-actions {
-  @apply absolute bottom-2 right-2 flex gap-1 opacity-0 pointer-events-none;
-  transition: opacity 0.15s ease;
-}
-
-.kanban-card:is(:hover, :focus-within) .kanban-card-actions {
-  @apply opacity-100 pointer-events-auto;
 }
 
 .card-action-btn {
@@ -477,7 +468,6 @@
 /* --- Accessibility: respect motion preferences --- */
 @media (prefers-reduced-motion: reduce) {
   .kanban-card,
-  .kanban-card-actions,
   .card-action-btn,
   .swimlane-cards,
   .swimlane-toggle,

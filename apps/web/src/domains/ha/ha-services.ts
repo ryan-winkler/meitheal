@@ -8,6 +8,8 @@
  */
 import { callService } from "home-assistant-js-websocket";
 import { getHAConnection } from "./ha-connection";
+import { readConversationAgents, type ConversationAgent } from "./conversation-agents";
+export type { ConversationAgent } from "./conversation-agents";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
 const logger = createLogger({
@@ -96,7 +98,7 @@ export async function listCalendarEvents(
   entityId: string, startDate: string, endDate: string,
 ): Promise<CalendarEvent[]> {
   const conn = await getHAConnection();
-  if (!conn) return [];
+  if (!conn) throw new Error("Home Assistant is not connected");
   try {
     const result = await conn.sendMessagePromise<Record<string, unknown>>({
       type: "call_service", domain: "calendar", service: "get_events",
@@ -107,15 +109,11 @@ export async function listCalendarEvents(
 
     // HA WebSocket call_service with return_response wraps data in a `response` key
     // Try both: result.response[entityId].events AND result[entityId].events
-    let events: CalendarEvent[] = [];
     const respObj = (result as { response?: Record<string, { events?: CalendarEvent[] }> });
-    if (respObj?.response?.[entityId]?.events) {
-      events = respObj.response[entityId].events!;
-    } else {
-      // Fallback: direct access (older HA versions or home-assistant-js-websocket unwrapping)
-      const direct = result as Record<string, { events?: CalendarEvent[] }>;
-      events = direct?.[entityId]?.events ?? [];
-    }
+    // Direct access supports older HA versions or websocket-library unwrapping.
+    const direct = result as Record<string, { events?: CalendarEvent[] }>;
+    const events = respObj?.response?.[entityId]?.events ?? direct?.[entityId]?.events
+    if (!Array.isArray(events)) throw new Error("Home Assistant returned no calendar event response")
 
     logger.log("debug", {
       event: "ha.calendar.list_events", domain: "ha", component: "ha-services",
@@ -128,7 +126,7 @@ export async function listCalendarEvents(
       event: "ha.calendar.list_events.failed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Failed to list calendar events: ${err}`,
     });
-    return [];
+    throw err;
   }
 }
 
@@ -532,13 +530,6 @@ export interface AssistResponse {
   responseType: "action_done" | "query_answer" | "error" | null;
 }
 
-/** HA conversation agent descriptor */
-export interface ConversationAgent {
-  id: string;
-  name: string;
-  supported_languages: string[] | "*";
-}
-
 /**
  * Send text to HA's conversation.process service.
  * Supports multi-turn via conversation_id and agent selection via agent_id.
@@ -568,21 +559,18 @@ export async function askAssist(
       };
       conversation_id?: string;
     };
-    const speechText = payload?.response?.speech?.plain?.speech ?? null;
-    const conversationId = payload?.conversation_id ?? null;
-    const responseType = (payload?.response?.response_type as AssistResponse["responseType"]) ?? null;
+    const speech = payload?.response?.speech?.plain?.speech
+    const speechText = typeof speech === "string" ? speech : null
+    const conversationId = typeof payload?.conversation_id === "string" ? payload.conversation_id : null
+    const type = payload?.response?.response_type
+    const responseType = type === "action_done" || type === "query_answer" || type === "error" ? type : null
 
-    logger.log("info", {
-      event: "ha.conversation.success", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ,
-      message: `Asked Assist: "${text}" → ${responseType ?? "unknown"} (conv: ${conversationId ?? "new"})`,
-    });
     return { speech: speechText, conversationId, responseType };
-  } catch (err) {
+  } catch {
     logger.log("error", {
       event: "ha.conversation.failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to ask assist: ${err}`,
-    });
+      request_id: SYS_REQ, message: "Home Assistant conversation request failed",
+    })
     return { speech: null, conversationId: null, responseType: null };
   }
 }
@@ -591,25 +579,28 @@ export async function askAssist(
  * List available HA conversation agents.
  * Uses the conversation/agent/list WebSocket command.
  */
-export async function listConversationAgents(): Promise<ConversationAgent[]> {
-  const conn = await getHAConnection();
-  if (!conn) return [];
+export async function listConversationAgents(): Promise<ConversationAgent[] | null> {
+  const conn = await getHAConnection()
+  if (!conn?.connected) return null
+  let failureReason = "websocket_request_failed"
   try {
-    const result = await conn.sendMessagePromise<{ agents?: ConversationAgent[] }>({
+    const result = await conn.sendMessagePromise<unknown>({
       type: "conversation/agent/list",
     });
-    const agents = result?.agents ?? [];
+    failureReason = "invalid_agent_payload"
+    const agents = readConversationAgents(result)
     logger.log("debug", {
       event: "ha.conversation.agents_listed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Found ${agents.length} conversation agent(s)`,
     });
     return agents;
-  } catch (err) {
+  } catch {
     logger.log("error", {
       event: "ha.conversation.agents_list_failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to list conversation agents: ${err}`,
-    });
-    return [];
+      request_id: SYS_REQ, message: "Home Assistant conversation agent list failed",
+      metadata: { reason: failureReason },
+    })
+    return null
   }
 }
 

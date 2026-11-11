@@ -39,9 +39,9 @@ export function setupFocusStack(
       const card = completeBtn.closest(".focus-card") as HTMLElement
 
       try {
-        await taskApi.updateTask(id, { status: "complete" })
+        const completed = await taskApi.updateTask(id, { status: "complete" })
         showToast("common.task_completed")
-        onTaskCompleted()
+        onTaskCompleted(completed)
 
         // Animate card out
         card?.classList.add("focus-card--completing")
@@ -90,7 +90,7 @@ export function setupFocusStack(
 
     // Click card body → open task detail
     const focusCard = target.closest(".focus-card") as HTMLElement | null
-    if (focusCard) {
+    if (focusCard && !e.defaultPrevented && !target.closest("a")) {
       const taskId = focusCard.dataset.id
       if (taskId) {
         openTaskDetailHandoff(taskId)

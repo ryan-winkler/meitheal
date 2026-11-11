@@ -17,7 +17,7 @@ const locale = Astro.props.locale || "en"
 <div class="integration-card" id="integration-n8n">
   <IntegrationCardHeader
     integration="n8n"
-    icon="⚙"
+    icon="automation"
     title={t("settings.n8n_title", locale)}
     description={t("settings.n8n_desc", locale)}
     helpLabel={t("settings.n8n_explainer", locale)}
@@ -36,15 +36,15 @@ const locale = Astro.props.locale || "en"
 
     <!-- Mode toggle: HA Addon vs Standalone -->
     <div class="n8n-mode-toggle mb-3">
-      <label class="form-label" style="margin-bottom: 2px;">{t("settings.n8n_mode_label", locale)}</label>
+      <div class="form-label" id="n8n-mode-label">{t("settings.n8n_mode_label", locale)}</div>
       <div class="settings-hint mb-2">
         {t("settings.n8n_mode_desc", locale)}
       </div>
-      <div class="mode-tabs">
-        <button type="button" class="mode-tab mode-tab--active" id="n8n-mode-auto" data-mode="auto">
+      <div class="mode-tabs" role="group" aria-labelledby="n8n-mode-label">
+        <button type="button" class="mode-tab mode-tab--active" id="n8n-mode-auto" aria-pressed="true" aria-controls="n8n-auto-content">
           {t("settings.n8n_mode_addon", locale)}
         </button>
-        <button type="button" class="mode-tab" id="n8n-mode-standalone" data-mode="standalone">
+        <button type="button" class="mode-tab" id="n8n-mode-standalone" aria-pressed="false" aria-controls="n8n-standalone-content">
           {t("settings.n8n_mode_standalone", locale)}
         </button>
       </div>

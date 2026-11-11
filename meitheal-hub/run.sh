@@ -8,16 +8,21 @@ export NODE_ENV="production"
 STARTUP_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "{\"event\":\"addon.startup\",\"version\":\"${MEITHEAL_VERSION}\",\"time\":\"${STARTUP_TS}\"}"
 
+export MEITHEAL_LOG_CATEGORIES="$(bashio::config 'log_categories | join(",")')"
 export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
 export LOKI_URL="$(bashio::config 'loki_url')"
 export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key' '')"
 
-# Ensure /data is writable by meitheal user.
-# HA Supervisor mounts a fresh volume here which may have root-only permissions.
+# Transfer App files in fresh and restored Supervisor volumes before dropping
+# privileges. Retry any remaining entries on the next start after a failure.
 mkdir -p /data
-chown -R meitheal:meitheal /data 2>/dev/null || true
+if ! find /data -xdev -path /data/options.json -prune -o \
+    \( ! -user meitheal -o ! -group meitheal \) -exec chown -h meitheal:meitheal {} +; then
+  echo "Could not prepare /data for the meitheal service account" >&2
+  exit 1
+fi
 
 export MEITHEAL_DB_URL="${MEITHEAL_DB_URL:-file:/data/meitheal.db}"
 
@@ -83,12 +88,13 @@ HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 if [ -f /opt/meitheal/apps/web/package.json ]; then
   (
     cd /opt/meitheal/apps/web
-    node scripts/migrate.mjs
-    exit_code=$?
-    if [ "${exit_code}" -ne 0 ]; then
+    export HOME=/data
+    s6-setuidgid meitheal node scripts/migrate.mjs || {
+      exit_code=$?
       echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
       exit "${exit_code}"
-    fi
+    }
+    export MEITHEAL_STARTUP_BACKUP_HANDLED=1
     if [ ! -f dist/server/entry.mjs ]; then
       echo "Missing Astro server entry at dist/server/entry.mjs"
       exit 1
@@ -97,9 +103,9 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
     # Use ingress-safe wrapper to normalize double slashes from HA Supervisor
     # before they reach Astro's routing layer (prevents 301 redirect loop).
     if [ -f scripts/serve.mjs ]; then
-      node scripts/serve.mjs
+      exec s6-setuidgid meitheal node scripts/serve.mjs
     else
-      node dist/server/entry.mjs
+      exec s6-setuidgid meitheal node dist/server/entry.mjs
     fi
   ) &
   WEB_PID=$!
@@ -123,13 +129,8 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   # The user supplies the scoped API token in the discovery form.
   # The Supervisor deduplicates these calls, so it's safe every boot.
   #
-  # After discovery, the custom component registers:
-  # - TodoListEntity (todo.meitheal_tasks) for built-in Assist intents
-  # - MeithealLLMAPI (20 tools) for advanced conversation agents
-  # - 3 sensors (active, overdue, total task counts)
-  # - 5 services (create, complete, sync, search, get_overdue)
-  #
-  # To enable voice/Assist: Settings → Voice Assistants → [Agent] → LLM APIs → select "Meitheal Tasks"
+  # The integration provides the to-do entity, task sensors and actions.
+  # Home Assistant controls whether the entity is exposed to Assist.
   if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     DISCOVERY_PAYLOAD="{\"service\":\"meitheal\",\"config\":{\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT}}}"
     DISC_SUCCESS=false
@@ -141,7 +142,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
         http://supervisor/discovery 2>/dev/null || true)
       if [ -n "${DISC_RESULT}" ]; then
         DISC_UUID=$(echo "${DISC_RESULT}" | grep -o '"uuid":"[^"]*"' | head -1 | sed 's/"uuid":"\(.*\)"/\1/' || true)
-        echo "{\"event\":\"discovery.registered\",\"uuid\":\"${DISC_UUID:-unknown}\",\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT},\"attempt\":${disc_attempt},\"note\":\"Select 'Meitheal Tasks' in Voice Assistant LLM APIs for Assist integration\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+        echo "{\"event\":\"discovery.registered\",\"uuid\":\"${DISC_UUID:-unknown}\",\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT},\"attempt\":${disc_attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
         DISC_SUCCESS=true
         break
       fi

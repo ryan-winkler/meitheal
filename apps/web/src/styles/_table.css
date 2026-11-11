@@ -23,38 +23,44 @@
 }
 
 /* --- Table view --- */
+#table-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .table-container {
-  @apply overflow-x-auto;
+  min-width: 0;
+  overflow-x: auto;
   position: relative;
 }
 
-/* Scroll shadow indicator for table overflow */
-.table-container::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 40px;
-  background: linear-gradient(
-    to left,
-    var(--bg-primary) 0%,
-    transparent 100%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 200ms;
+.table-container:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
 }
 
+/* A short edge shadow scrolls out of view as more columns come into view. */
 .table-container.has-scroll::after {
-  opacity: 1;
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 40px;
+  background: linear-gradient(to left, var(--bg-primary), transparent);
+  pointer-events: none;
+}
+
+.table-container .data-table thead th:first-child {
+  z-index: 4;
+}
+
+.table-container .data-table tbody tr:nth-child(even):not(:hover) td:first-child {
+  background: var(--bg-primary);
 }
 
 .data-table {
   @apply w-full border-collapse text-sm;
 }
 
-.data-table th {
+.data-table thead th {
   @apply text-left text-[11px] text-text-muted font-bold px-3 py-3 bg-bg-secondary/50 border-b border-border;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -105,6 +111,7 @@
 
 .editable-cell {
   @apply outline-none rounded px-1 py-0.5 transition-colors min-h-[1.5em] text-text-primary;
+  overflow-wrap: anywhere;
 }
 
 .editable-cell:focus {
@@ -114,6 +121,16 @@
 /* --- Table extras --- */
 .table-filter-bar {
   @apply flex gap-3 items-center flex-wrap px-4 py-3;
+}
+
+.table-filter-bar .filter-toolbar--table {
+  min-width: 0;
+  flex-wrap: wrap !important;
+}
+
+.filter-toolbar--table .filter-toolbar__type-toggles {
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .row-check {
@@ -148,17 +165,13 @@
   background: var(--bg-hover);
 }
 
-.data-table tbody tr.row-done {
-  opacity: 0.55;
-}
-
 .data-table tbody tr.row-done td {
   text-decoration: line-through;
 }
 
 /* Sticky first column */
 /* ===== Sticky First Column (Wave 9) ===== */
-.data-table th:first-child,
+.data-table thead th:first-child,
 .data-table td:first-child {
   position: sticky;
   left: 0;
@@ -215,13 +228,18 @@
   user-select: none;
 }
 
-.group-header-row td {
-  background: var(--bg-secondary) !important;
+.group-header-row th {
+  background: var(--bg-secondary);
   border-bottom: 2px solid var(--border);
-  padding: 8px 12px !important;
+  padding: 8px 12px;
+  text-align: left;
 }
 
-.group-header-cell {
+.group-header-content {
+  position: sticky;
+  left: 0;
+  width: fit-content;
+  max-width: min(26rem, calc(100vw - 48px));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -274,6 +292,8 @@
 
 .group-label {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -285,8 +305,8 @@
   min-width: 22px;
   height: 22px;
   border-radius: 11px;
-  background: var(--accent, #6366f1);
-  color: #fff;
+  background: var(--bg-input);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
   padding: 0 6px;
@@ -304,14 +324,13 @@
  * ============================================================================= */
 
 /* Sub-group rows are visually lighter and indented */
-tr.sub-group-header-row td {
+tr.sub-group-header-row th {
   background: var(--bg-primary);
 }
 
 .sub-group-header-cell {
   padding-left: 36px !important; /* Indented relative to primary group */
   font-size: 11px;
-  opacity: 0.85;
 }
 
 .sub-group-header-cell .group-toggle {
@@ -340,7 +359,7 @@ tr.sub-group-header-row td {
   height: 18px;
   border-radius: 9px;
   background: var(--bg-secondary);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 10px;
   padding: 0 5px;
 }
@@ -398,7 +417,7 @@ tr.sub-group-header-row td {
 }
 
 .grand-total-cell .summary-rice {
-  color: var(--accent, #6366f1);
+  color: var(--accent-text);
 }
 
 /* Collapsed group rows are hidden — !important needed to override table-row display */
@@ -427,7 +446,7 @@ tr.group-collapsed-row {
 }
 
 /* Color-coded group header borders (based on group-dot color) */
-.group-header-row td {
+.group-header-row th {
   border-left: 3px solid transparent;
 }
 

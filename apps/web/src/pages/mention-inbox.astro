@@ -1,0 +1,161 @@
+---
+import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
+import { mentionInboxContext } from "@lib/mention-inbox-context"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import Layout from "../layouts/Layout.astro"
+import { t } from "../i18n/translations"
+
+const user = verifiedIngressUser(Astro.locals)
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const headers = { "Cache-Control": "private, no-store" }
+if (!user || !await isCurrentActiveHAUser(user.id, { fresh: true, signal: Astro.request.signal })) {
+  return new Response(t("mention_inbox.denied", locale), { status: 403, headers })
+}
+Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
+---
+
+<Layout title={t("mention_inbox.title", locale)} suppressTaskUrlOpen>
+  <section class="mx-auto max-w-4xl p-4 sm:p-8" aria-labelledby="mention-inbox-heading" data-mention-inbox
+    data-context={mentionInboxContext(user.id)}
+    data-loading={t("mention_inbox.loading", locale)}
+    data-empty={t("mention_inbox.empty", locale)}
+    data-error={t("mention_inbox.error", locale)}
+    data-denied={t("mention_inbox.denied", locale)}
+    data-read={t("mention_inbox.read", locale)}
+    data-unread={t("mention_inbox.unread", locale)}
+    data-mark-read={t("mention_inbox.mark_read", locale)}
+    data-mark-unread={t("mention_inbox.mark_unread", locale)}>
+    <h1 id="mention-inbox-heading" class="mb-2 text-2xl font-semibold">{t("mention_inbox.title", locale)}</h1>
+    <p class="mb-4 text-text-secondary">{t("mention_inbox.description", locale)}</p>
+    <div class="mb-4 flex flex-wrap gap-2">
+      <button type="button" data-mention-refresh class="btn btn-secondary min-h-11">{t("mention_inbox.refresh", locale)}</button>
+      <button type="button" data-mention-mark-all class="btn btn-secondary min-h-11" disabled>{t("mention_inbox.mark_all", locale)}</button>
+    </div>
+    <p role="status" data-mention-status>{t("mention_inbox.loading", locale)}</p>
+    <ol class="mt-3 grid list-none gap-2 p-0" data-mention-list></ol>
+    <button type="button" data-mention-older class="btn btn-secondary mt-4 min-h-11" hidden>{t("mention_inbox.older", locale)}</button>
+  </section>
+</Layout>
+
+<script>
+  import { fetchCommentPrivate } from "@lib/comment-mention-client"
+  import { buildIngressPagePath } from "@lib/page-shell-links"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(signal => {
+    const section = document.querySelector<HTMLElement>("[data-mention-inbox]")
+    const list = section?.querySelector<HTMLOListElement>("[data-mention-list]")
+    const status = section?.querySelector<HTMLElement>("[data-mention-status]")
+    const refresh = section?.querySelector<HTMLButtonElement>("[data-mention-refresh]")
+    const all = section?.querySelector<HTMLButtonElement>("[data-mention-mark-all]")
+    const older = section?.querySelector<HTMLButtonElement>("[data-mention-older]")
+    if (!section || !list || !status || !refresh || !all || !older || section.dataset.initialized) return
+    section.dataset.initialized = "true"
+    const labels = section.dataset
+    type Item = { id: number, title: string, href: string, read: boolean, createdAt: number }
+    let before: number | null = null
+    let next: number | null = null
+    let current: AbortController | undefined
+
+    const clear = () => {
+      current?.abort()
+      current = undefined
+      list.replaceChildren()
+      status.textContent = ""
+      all.disabled = true
+      older.hidden = true
+    }
+
+    const request = (body: object, controller: AbortController) => fetchCommentPrivate("api/mention-inbox",
+      AbortSignal.any([controller.signal, signal, AbortSignal.timeout(7_000)]), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Meitheal-Mention-Context": labels.context ?? "" },
+        body: JSON.stringify(body),
+      })
+
+    function render(items: Item[], unread: number) {
+      const count = new Intl.NumberFormat(document.documentElement.lang).format(unread)
+      status!.textContent = items.length || unread ? `${labels.unread}: ${count}` : labels.empty ?? ""
+      all!.disabled = unread === 0
+      older!.hidden = next === null
+      list!.replaceChildren(...items.map(item => {
+        const row = document.createElement("li")
+        row.className = "rounded-md border border-border bg-bg-card p-3 break-words"
+        const link = document.createElement("a")
+        link.href = buildIngressPagePath(item.href)
+        link.textContent = item.title
+        link.className = "block font-semibold underline"
+        link.style.color = "var(--accent-text)"
+        link.dataset.astroPrefetch = "false"
+        const description = document.createElement("p")
+        description.className = "my-1 text-sm text-text-secondary"
+        description.textContent = `${item.read ? labels.read : labels.unread} · ${new Intl.DateTimeFormat(
+          document.documentElement.lang, { dateStyle: "medium", timeStyle: "short" }).format(item.createdAt)}`
+        const button = document.createElement("button")
+        button.type = "button"
+        button.className = "btn btn-secondary min-h-11"
+        button.dataset.notification = String(item.id)
+        button.dataset.read = String(item.read)
+        button.textContent = (item.read ? labels.markUnread : labels.markRead) ?? ""
+        button.setAttribute("aria-label", `${button.textContent}: ${item.title}`)
+        row.append(link, description, button)
+        return row
+      }))
+    }
+
+    function clearOffline() {
+      clear()
+      status!.textContent = labels.error ?? ""
+    }
+
+    async function load(mark?: { id: number | null, read: boolean }) {
+      if (!navigator.onLine) return clearOffline()
+      clear()
+      status!.textContent = labels.loading ?? ""
+      const pending = new AbortController()
+      current = pending
+      try {
+        if (mark) {
+          const written = await request({ action: "mark", ...mark }, pending)
+          if (!written.ok) throw written
+        }
+        const read = await request({ action: "list", before }, pending)
+        if (!read.ok) throw read
+        const data = await read.json() as { items: Item[], unread: number, next: number | null }
+        if (pending.signal.aborted || signal.aborted || current !== pending || !navigator.onLine) return
+        next = data.next
+        render(data.items, data.unread)
+        if (mark?.id !== null && mark?.id !== undefined) {
+          (list!.querySelector<HTMLButtonElement>(`[data-notification="${mark.id}"]`) ?? refresh)?.focus()
+        }
+      } catch (error) {
+        if (pending.signal.aborted || signal.aborted || current !== pending) return
+        status!.textContent = (error instanceof Response && [403, 409].includes(error.status) ? labels.denied : labels.error) ?? ""
+      } finally {
+        if (current === pending) current = undefined
+      }
+    }
+
+    refresh.addEventListener("click", () => { before = null; void load() }, { signal })
+    older.addEventListener("click", () => { before = next; refresh.focus(); void load() }, { signal })
+    all.addEventListener("click", () => { refresh.focus(); void load({ id: null, read: true }) }, { signal })
+    list.addEventListener("click", event => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-notification]") : null
+      if (button) void load({ id: Number(button.dataset.notification), read: button.dataset.read !== "true" })
+    }, { signal })
+    window.addEventListener("blur", clear, { signal })
+    const reloadVisible = () => { if (!document.hidden && !current) void load() }
+    window.addEventListener("focus", reloadVisible, { signal })
+    window.addEventListener("offline", clearOffline, { signal })
+    window.addEventListener("online", reloadVisible, { signal })
+    window.addEventListener("pagehide", clear, { signal })
+    window.addEventListener("pageshow", event => { if (event.persisted) reloadVisible() }, { signal })
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) clear()
+      else reloadVisible()
+    }, { signal })
+    navigator.serviceWorker?.addEventListener("controllerchange", () => { clear(); reloadVisible() }, { signal })
+    signal.addEventListener("abort", clear, { once: true })
+    void load()
+  })
+</script>

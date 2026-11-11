@@ -7,18 +7,12 @@
  * @kcs Framework extensibility — users can export and share framework definitions
  */
 import type { APIRoute } from "astro"
-import { readFileSync, existsSync } from "node:fs"
-import { resolve, dirname } from "node:path"
-import { fileURLToPath } from "node:url"
-import { parse as parseYaml } from "yaml"
+import { getBuiltInFramework } from "@domains/strategy/framework-catalog"
 import { getCustomFramework } from "@domains/strategy/custom-framework-repository"
-import { parseFrameworkConfig, frameworkConfigToRaw } from "@meitheal/domain-strategy"
+import { frameworkConfigToRaw } from "@meitheal/domain-strategy"
 import { stringify as stringifyYaml } from "yaml"
 import { logApiError } from "@lib/api-logger"
 import { validateSafeId } from "@lib/sanitize-id"
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const FRAMEWORKS_DIR = resolve(__dirname, "../../../../content/frameworks")
 
 export const GET: APIRoute = async ({ params }) => {
   try {
@@ -31,11 +25,10 @@ export const GET: APIRoute = async ({ params }) => {
       )
     }
 
-    // Try built-in first — serve the raw YAML file
-    const yamlPath = resolve(FRAMEWORKS_DIR, `${frameworkId}.yaml`)
-    if (existsSync(yamlPath)) {
-      const content = readFileSync(yamlPath, "utf8")
-      return new Response(content, {
+    // Export the immutable built-in definition, preserving the existing defaults contract.
+    const builtIn = await getBuiltInFramework(frameworkId!)
+    if (builtIn) {
+      return new Response(stringifyYaml(frameworkConfigToRaw(builtIn), { indent: 2 }), {
         status: 200,
         headers: {
           "Content-Type": "text/yaml; charset=utf-8",

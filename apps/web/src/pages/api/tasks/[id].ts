@@ -2,11 +2,11 @@ import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { sanitize } from "../../../lib/sanitize"
 import { formatTicketKey } from "../../../lib/ticket-key"
-import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
+import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
@@ -14,15 +14,31 @@ import type { TaskType } from "@meitheal/domain-tasks"
 
 /** GET /api/tasks/[id], PUT /api/tasks/[id], DELETE /api/tasks/[id] */
 
-export const GET: APIRoute = async ({ params }) => {
+function taskVersionConflict(serverVersion: number, clientVersion: number): Response {
+  return new Response(JSON.stringify({
+    error: "Conflict: task was modified since your last read",
+    errorCode: "TASK_VERSION_CONFLICT",
+    server_updated_at: serverVersion,
+    client_updated_at: clientVersion,
+  }), {
+    status: 409,
+    headers: { "content-type": "application/json" },
+  })
+}
+
+export const GET: APIRoute = async ({ params, url }) => {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
+  const headers = {
+    "content-type": "application/json",
+    ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
+  }
 
   const row = await repo.findById(params.id!)
   if (!row) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
-      headers: { "content-type": "application/json" },
+      headers,
     })
   }
 
@@ -31,17 +47,18 @@ export const GET: APIRoute = async ({ params }) => {
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
   const enriched = {
     ...row,
+    is_promoted: Boolean(row.is_promoted),
     ticket_key: formatTicketKey(ticketNum),
     parent_ticket_key: formatTicketKey(parentTicketNum),
   }
 
   return new Response(JSON.stringify(enriched), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers,
   })
 }
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = async ({ params, request, locals }) => {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -57,40 +74,52 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
   const resolvedId = resolved.id
 
-  // Optimistic locking: reject stale updates (Persona #7)
-  if (typeof body.updated_at === "number") {
-    const stored = Number(resolved.updated_at ?? 0)
-    if (body.updated_at < stored) {
-      return new Response(JSON.stringify({
-        error: "Conflict: task was modified since your last read",
-        server_updated_at: stored,
-        client_updated_at: body.updated_at,
-      }), {
-        status: 409,
-        headers: { "content-type": "application/json" },
-      })
-    }
+  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
+  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
+    return apiError("updated_at must be a non-negative safe integer", 400)
+  }
+
+  if (body.expected_status !== undefined && (
+    body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
+    (body.status !== STATUS.PENDING && body.status !== STATUS.ACTIVE)
+  )) {
+    return apiError("Backlog decisions require expected_status backlog, updated_at and status pending or active", 400)
+  }
+
+  const storedVersion = Number(resolved.updated_at)
+  if (clientVersion !== undefined && clientVersion < storedVersion) {
+    return taskVersionConflict(storedVersion, clientVersion)
+  }
+
+  if ("nfc_tag_id" in body && body.nfc_tag_id !== null &&
+      (typeof body.nfc_tag_id !== "string" || !body.nfc_tag_id.trim() || body.nfc_tag_id.trim().length > 255)) {
+    return apiError("nfc_tag_id must be null or 1-255 characters", 400)
   }
 
   // Input sanitization — same rules as POST
   const sanitized: Record<string, InValue> = {}
+  if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
-  if (typeof body.title === "string") {
-    const t = sanitize(body.title.trim())
-    if (!t) {
-      return new Response(JSON.stringify({ error: "title cannot be empty" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+  if (typeof body.title === "string" || typeof body.description === "string") {
+    const { sanitize } = await import("../../../lib/sanitize")
+    if (typeof body.title === "string") {
+      const t = sanitize(body.title.trim())
+      if (!t) {
+        return new Response(JSON.stringify({ error: "title cannot be empty" }), {
+          status: 400, headers: { "content-type": "application/json" },
+        })
+      }
+      if (t.length > 500) {
+        return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
+          status: 400, headers: { "content-type": "application/json" },
+        })
+      }
+      sanitized.title = t
     }
-    if (t.length > 500) {
-      return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+    if (typeof body.description === "string") {
+      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+      sanitized.description = sanitize(body.description)
     }
-    sanitized.title = t
-  }
-  if (typeof body.description === "string") {
-    sanitized.description = sanitize(body.description.slice(0, 10000))
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -167,6 +196,10 @@ export const PUT: APIRoute = async ({ params, request }) => {
   if (body.is_favorite !== undefined) {
     sanitized.is_favorite = body.is_favorite ? 1 : 0
   }
+  if (body.is_promoted !== undefined) {
+    if (typeof body.is_promoted !== "boolean") return apiError("is_promoted must be a boolean", 400)
+    sanitized.is_promoted = body.is_promoted ? 1 : 0
+  }
   if (typeof body.parent_id === "string" || body.parent_id === null) {
     sanitized.parent_id = body.parent_id
   }
@@ -208,7 +241,12 @@ export const PUT: APIRoute = async ({ params, request }) => {
     sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
       ? body.assigned_to.trim() : null
   }
-  // Phase 31: Checklists
+  // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
+  const expectedChecklists = body.expected_checklists
+  if (expectedChecklists !== undefined &&
+      ((expectedChecklists !== null && typeof expectedChecklists !== "string") || body.checklists === undefined)) {
+    return apiError("expected_checklists requires the prior checklist string or null and a replacement checklist", 400)
+  }
   if (body.checklists !== undefined) {
     if (typeof body.checklists !== "string") {
       return new Response(JSON.stringify({ error: "checklists must be a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
@@ -288,11 +326,30 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const oldTask = await repo.getFieldsForDiff(resolvedId)
 
   // Perform the update via repository
-  const update = await repo.updateTask(resolvedId, sanitized)
+  const version = clientVersion === undefined ? undefined : {
+    updatedAt: clientVersion,
+    ...(body.expected_status === STATUS.BACKLOG ? { expectedStatus: STATUS.BACKLOG } : {}),
+  }
+  const update = await repo.updateTask(resolvedId, sanitized, {
+    activity: resolveRecentActivityActor(locals),
+    ...(version ? { version } : {}),
+    ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
+  })
   if (!update.ok) {
+    if (update.errorCode === "conflict") {
+      return taskVersionConflict(update.updatedAt, clientVersion!)
+    }
+    if (update.errorCode === "checklist_conflict") {
+      return Response.json({
+        error: "The checklist changed since your last read",
+        code: "checklist_conflict",
+        checklists: update.checklists,
+      }, { status: 409, headers: { "cache-control": "no-store" } })
+    }
     if (update.errorCode === "blocked") {
       return new Response(JSON.stringify({
         error: "Cannot activate: task is blocked by open dependencies",
+        errorCode: "TASK_BLOCKED",
         blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
           id,
           title,
@@ -325,9 +382,18 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const taskPayload = { ...updatedRow, ticket_key: formatTicketKey(updTicketNum) }
+  const taskPayload: Record<string, unknown> = {
+    ...updatedRow,
+    is_promoted: Boolean(updatedRow.is_promoted),
+    ticket_key: formatTicketKey(updTicketNum),
+  }
 
-  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
+  const authority = await taskEventAuthorityHeaders([
+    "task.updated",
+    // The App also owns the decision not to re-emit an acknowledged completion.
+    ...(sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) ? ["task.completed"] : []),
+  ])
+  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
@@ -471,7 +537,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
   // Auto-dismiss all notifications when task is marked done/complete
   if (notifPrefs.enabled && sanitized.status !== undefined) {
-    if (isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+    if (isDoneStatus(String(sanitized.status)) && !isDoneStatus(update.previousStatus ?? "")) {
       dismissMobileNotification(`meitheal_urgent_${resolvedId}`)
       dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
       dismissMobileNotification(`meitheal_due_${resolvedId}`)
@@ -487,7 +553,21 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
   // Phase 1 + Phase 6: Recurrence auto-create — clone task with next due date on completion
   // Rolling recurrence: uses completion date (today) as base instead of original due date
-  if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+  if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(update.previousStatus ?? "")) {
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
+    try {
+      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
+      if (await isFeatureEnabled("gamification")) {
+        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
+        const stats = await recordTaskCompletion(xp)
+        const achievements = await checkAchievements(stats)
+        taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+      }
+    } catch {
+      // The task write succeeded. Optional statistics must not invent a failed mutation.
+      taskPayload.gamification = { error: "Task saved; completion statistics unavailable" }
+    }
     try {
       const recTask = await repo.getRecurrenceData(resolvedId)
       if (recTask?.recurrence_rule && typeof recTask.recurrence_rule === "string" && recTask.recurrence_rule.length > 0) {
@@ -542,7 +622,10 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
   return new Response(JSON.stringify(taskPayload), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...authority,
+    },
   })
 }
 
@@ -561,7 +644,8 @@ export const DELETE: APIRoute = async ({ params }) => {
   const resolvedId = resolved.id
   await repo.deleteTask(resolvedId)
 
-  dispatchTaskEvent("task.deleted", { id: resolvedId }).catch(() => {})
+  const authority = await taskEventAuthorityHeaders(["task.deleted"])
+  dispatchTaskEvent("task.deleted", { id: resolvedId }, undefined, undefined, undefined, authority).catch(() => {})
 
   // Clean up any associated calendar events (fire-and-forget)
   import("../../../domains/calendar/calendar-bridge").then(({ removeTaskCalendarEvent }) => {
@@ -573,7 +657,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     removeTaskFromTodoList(resolvedId).catch(() => {})
   }).catch(() => {})
 
-  return new Response(null, { status: 204 })
+  return new Response(null, { status: 204, headers: authority })
 }
 
 /** PATCH is an alias for PUT — some client-side callers use PATCH for partial updates */

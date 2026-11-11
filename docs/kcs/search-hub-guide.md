@@ -24,7 +24,9 @@ All three entry points open the same overlay.
 - `Tasks`: advanced task search with field controls
 - `Views`: navigation targets such as Kanban, Table, Calendar, and saved filters
 - `Settings`: section and field deep links powered by the shared settings registry
-- `Actions`: quick actions such as creating a task or opening Home Assistant Assist
+- `Actions`: quick actions such as creating a task or opening Home Assistant Assist. Assist uses the App’s Home Assistant connection and requires a currently active Home Assistant administrator. From Today, **Ask AI** can prefill the Assist prompt for review before you send it. Custom provider links in Settings must use HTTP or HTTPS and omit embedded credentials.
+
+A saved filter result opens the same Table view as applying the preset from **Presets**. It carries the Area, task kinds, labels, rules, grouping, sort and visible columns. Malformed legacy presets are omitted so the rest of Views remains available.
 
 ## Task Search Fields
 
@@ -43,9 +45,13 @@ Use the field toggles in the hub to narrow matching, then use:
 - `Archived` to include archived work
 - `Sort` to switch between relevance and recently updated
 
+Relevance puts an exact task ID or ticket such as `MTH-42` first in Tasks, followed by exact and prefix title matches. The selected fields determine which results match and which snippets appear. A Comments-only result shows a matching comment. Percent signs and underscores match literally. Clear the query to see recent tasks.
+
+Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later.
+
 ## Home Assistant Parity
 
-The Home Assistant custom component, LLM API tool, and MCP `searchTasks` tool now reuse the same upgraded task-search backend instead of maintaining a weaker local-only filter path.
+The Home Assistant integration and MCP `searchTasks` tool use the task-search backend. Core 2026.11 or later also offers **Meitheal Tasks (read only)** as an optional LLM API for an active Home Assistant administrator.
 
 That means search parity now covers:
 
@@ -59,3 +65,5 @@ That means search parity now covers:
 1. If the hub opens but task results look incomplete, check the selected task fields and the completed/archive toggles.
 2. If view or settings results are missing, switch to the matching scope instead of staying on `Tasks`.
 3. If a Home Assistant caller returns fewer results than the UI, confirm it is calling the current add-on version and not a stale cached endpoint.
+4. API clients should use the canonical `GET /api/search` path. Use the normal Home Assistant ingress prefix in a browser. Encoded aliases and trailing slashes return 404. Agent tokens need `search:read`. Search responses are marked private and no-store.
+5. If Search offers **Activate update**, activate it to allow fresh online results. If only **Retry** is available, retry after reconnecting or updating Meitheal. Task and Settings results require a connection.

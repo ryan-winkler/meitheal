@@ -4,12 +4,17 @@ set -euo pipefail
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
 case "${1:-}:$#" in
-  build:2|publish:4|stage:6) ;;
+  build:2|publish:6|stage:7) ;;
   *)
-    fail 'Usage: publish-canary-local.sh build ARCH | publish ARCH IMAGE_ID GHCR_USER | stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT'
+    fail 'Usage: publish-canary-local.sh build ARCH | publish ARCH IMAGE_ID GHCR_USER ARM64_IMAGE_ID GREEN_RECEIPT | stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT GREEN_RECEIPT'
     ;;
 esac
 
+# Resolve the operator's receipt path before switching to the source checkout.
+if [[ "$1" != build ]]; then
+  [[ -f "${!#}" && -r "${!#}" ]] || fail 'Expected a readable raw Green receipt file'
+  receipt="$(realpath -e -- "${!#}")"
+fi
 cd "$(git rev-parse --show-toplevel)"
 [[ -z "$(git status --porcelain)" ]] || fail 'Use a clean source checkout'
 revision="$(git rev-parse HEAD)"
@@ -31,10 +36,14 @@ image_metadata() {
     node scripts/app-release.mjs image canary "$1" "$version" "$revision"
 }
 
+if [[ "$1" != build ]]; then
+  python3 scripts/verify-canary-green.py "$receipt" "$5" "$version"
+fi
+
 scratch="$(mktemp -d)"
 cleanup() {
   rm -f -- "$scratch/publisher.json"
-  if [[ -d "$scratch/storage" ]]; then
+  if [[ -d "$scratch/public/storage" || -d "$scratch/publisher/storage" ]]; then
     podman unshare rm -rf -- "$scratch"
   else
     rm -rf -- "$scratch"
@@ -51,12 +60,30 @@ release_podman() {
     podman "$@"
 }
 isolated_podman() {
-  release_podman --root "$scratch/storage" --runroot "$scratch/run" --storage-driver=vfs "$@"
+  local store=$1
+  shift
+  mkdir -p "$scratch/$store"
+  release_podman --root "$scratch/$store/storage" --runroot "$scratch/$store/run" --storage-driver=vfs "$@"
 }
 repo_digest() {
-  local image=$1
-  isolated_podman image inspect --format '{{join .RepoDigests "\n"}}' "$image" |
+  local store=$1 image=$2
+  isolated_podman "$store" image inspect --format '{{join .RepoDigests "\n"}}' "$image" |
     awk -v repo="${image%:*}" 'index($0, repo "@") == 1 { print substr($0, length(repo) + 2) }'
+}
+
+# A separate empty store prevents authenticated or local pulls from hiding access failures.
+verify_public_pull() {
+  local metadata image platform
+  metadata="$(image_metadata "$1")"
+  image="$(jq -er .image <<< "$metadata")"
+  platform="$(jq -er .platform <<< "$metadata")"
+  printf '{"auths":{}}\n' > "$scratch/anonymous.json"
+  XDG_CONFIG_HOME="$scratch" DOCKER_CONFIG="$scratch" \
+    isolated_podman public pull --tls-verify=true --authfile "$scratch/anonymous.json" --policy always --platform "$platform" "$image"
+  [[ "$(repo_digest public "$image")" == "$2" ]] || fail "Unexpected published digest for $image"
+  isolated_podman public image inspect "$image" |
+    bash scripts/check-app-release-image.sh "$revision" "$1" "$platform" "$version" "$3" ||
+    fail "Unexpected image ID or release metadata for $image"
 }
 
 if [[ "$1" == stage ]]; then
@@ -70,22 +97,8 @@ if [[ "$1" == stage ]]; then
   app_main="$(gh api --hostname github.com repos/ryan-winkler/meitheal-ha-addon/git/ref/heads/main --jq .object.sha)"
   [[ "$(git -C "$destination" rev-parse HEAD)" == "$app_main" ]] || fail 'App checkout must match current main'
 
-  printf '{"auths":{}}\n' > "$scratch/anonymous.json"
-  # A fresh store forces a complete pull without using cached layers.
-  verify_pull() {
-    local metadata image platform
-    metadata="$(image_metadata "$1")"
-    image="$(jq -er .image <<< "$metadata")"
-    platform="$(jq -er .platform <<< "$metadata")"
-    XDG_CONFIG_HOME="$scratch" DOCKER_CONFIG="$scratch" \
-      isolated_podman pull --tls-verify=true --authfile "$scratch/anonymous.json" --policy always --platform "$platform" "$image"
-    [[ "$(repo_digest "$image")" == "$2" ]] || fail "Unexpected published digest for $image"
-    isolated_podman image inspect "$image" |
-      bash scripts/check-app-release-image.sh "$revision" "$1" "$platform" "$version" "$3" ||
-      fail "Unexpected image ID or release metadata for $image"
-  }
-  verify_pull amd64 "$2" "$3"
-  verify_pull aarch64 "$4" "$5"
+  verify_public_pull amd64 "$2" "$3"
+  verify_public_pull aarch64 "$4" "$5"
   require_current_main
   node scripts/app-release.mjs stage canary "$version" "$destination"
   printf 'Version: %s\nSource: %s\namd64: %s (%s)\naarch64: %s (%s)\n' "$version" "$revision" "$2" "$3" "$4" "$5"
@@ -107,7 +120,6 @@ if [[ "$1" == build ]]; then
     --label "org.opencontainers.image.source=https://github.com/ryan-winkler/meitheal" \
     --label "org.opencontainers.image.revision=$revision" \
     --label "org.opencontainers.image.version=$version" \
-    --label "org.opencontainers.image.licenses=LicenseRef-Meitheal-Source-Available-1.0" \
     --label "io.hass.version=$version" --label "io.hass.arch=$arch" \
     --tag "$local_image" "$scratch/source"
   image_id="$(cat "$scratch/image-id")"
@@ -121,14 +133,22 @@ fi
 require_current_main
 [[ "$3" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected the qualified local image ID'
 image_id="${3#sha256:}"
+if [[ "$arch" == aarch64 ]]; then
+  [[ "$3" == "$5" ]] || fail 'ARM64 publication must use the Green-qualified image'
+else
+  # Bind the Green-qualified sibling image to the same full source revision.
+  podman image inspect "${5#sha256:}" |
+    bash scripts/check-app-release-image.sh "$revision" aarch64 linux/arm64 "$version" "$5" ||
+    fail 'Local Green-qualified ARM64 image does not match the source revision'
+fi
 bash scripts/smoke-app-release-image.sh podman "$image_id" "$revision" "$arch" "$platform" "$version" "$3"
 
 release_podman login --tls-verify=true --authfile "$scratch/publisher.json" --username "$4" --password-stdin ghcr.io
-if isolated_podman manifest inspect --tls-verify=true --authfile "$scratch/publisher.json" "$image" > /dev/null 2> "$scratch/manifest-error"; then
-  existing_id="$(isolated_podman pull --tls-verify=true --quiet --authfile "$scratch/publisher.json" --platform "$platform" "$image")"
+if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scratch/publisher.json" "$image" > /dev/null 2> "$scratch/manifest-error"; then
+  existing_id="$(isolated_podman publisher pull --tls-verify=true --quiet --authfile "$scratch/publisher.json" --platform "$platform" "$image")"
   [[ "$existing_id" == "$image_id" ]] || fail 'Published version already points to a different image'
-  digest="$(repo_digest "$image")"
-elif grep -Eq ': manifest unknown$' "$scratch/manifest-error"; then
+  digest="$(repo_digest publisher "$image")"
+elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
   require_current_main
   release_podman push --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
   digest="$(cat "$scratch/digest")"
@@ -138,4 +158,5 @@ else
 fi
 
 [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected a single published digest'
+verify_public_pull "$arch" "$digest" "$3" >&2
 printf 'image=%s\ndigest=%s\n' "$image" "$digest"

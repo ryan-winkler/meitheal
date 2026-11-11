@@ -124,7 +124,12 @@ test.describe("Responsive Navigation", () => {
     const views = page.getByRole("navigation", { name: "Task views" })
     const kanban = views.getByRole("link", { name: "Kanban" })
     const table = views.getByRole("link", { name: "Table" })
-    await expect(views.getByRole("link")).toHaveCount(4)
+    // A narrow header may move native links into the closed More menu.
+    const allViews = views.locator("a[data-view-tab]")
+    await expect(allViews).toHaveCount(4)
+    for (const id of ["kanban", "table", "calendar", "timeline"]) {
+      await expect(views.locator(`a[data-view-tab="${id}"]`)).toHaveAttribute("href", new RegExp(`#${id}$`))
+    }
     await expect(views.locator('[aria-current="page"]')).toHaveCount(1)
     await expect(kanban).toHaveAttribute("aria-current", "page")
 
