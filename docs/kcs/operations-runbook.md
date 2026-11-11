@@ -22,6 +22,8 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 
 For matrix changes, run `e2e/eisenhower-shell.spec.ts` against a disposable Astro instance. Move the last task into an empty quadrant and check that the destination exposes a task list, the source shows its localized empty message, and the moved task link still takes keyboard focus. Check the empty message, Growth Zone label and drag hint in both themes.
 
+At mobile widths, the quadrant tabs show one panel. Use Left and Right to cycle through tabs, Home and End to reach either end, and Tab to enter the selected panel. At desktop widths the matrix shows all four quadrants until you turn on Focus mode. With JavaScript disabled the matrix keeps all quadrants available.
+
 ## Custom icon uploads
 
 The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
@@ -107,6 +109,8 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 ### Check page entry contrast
 
 Today and Settings keep text and controls at full opacity during their entry motion. When changing shared page or card styles, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` after building the web app. Check both routes with default motion and with reduced motion enabled. Verify readable content from the first frame and a visible outline when tabbing to controls.
+
+For shared task rows, check that Today and the Eisenhower matrix show all five priority labels at 4.5:1 contrast or higher in light and dark themes. The task type icon exposes a name in the row, and filter icons leave the adjacent button text as its name.
 
 ## Task Link Verification
 

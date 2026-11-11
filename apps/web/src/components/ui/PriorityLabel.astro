@@ -1,24 +1,32 @@
 ---
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
-import { PRIORITY_CONFIG, getPriorityColor } from "../../lib/priority-config";
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { PRIORITY_CONFIG, getPriorityColor } from "../../lib/priority-config"
 
 interface Props {
-  priority: number | string;
+  priority: number | string
 }
 
-const { priority } = Astro.props;
-const p = Number(priority) || 3;
+const { priority } = Astro.props
+const p = Number(priority) || 3
 
 // i18n — use shared config keys for localized labels
-const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
-const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
+const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
-const def = PRIORITY_CONFIG.find((d) => d.value === p);
-const label = def ? t(def.i18nKey, locale) : "Medium";
-const color = getPriorityColor(p);
+const def = PRIORITY_CONFIG.find((d) => d.value === p)
+const label = def ? t(def.i18nKey, locale) : "Medium"
+const color = getPriorityColor(p)
 ---
 
-<span style={`color: ${color}; font-weight: 500;`}>
+<span class="priority-label" style={`--priority-color: ${color}`}>
   {label}
 </span>
+
+<style>
+  .priority-label {
+    color: var(--text-primary);
+    color: color-mix(in srgb, var(--text-primary) 60%, var(--priority-color));
+    font-weight: 500;
+  }
+</style>

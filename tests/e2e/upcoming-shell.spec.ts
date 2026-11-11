@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -36,15 +37,142 @@ test.describe("Upcoming Shell", () => {
     await expect(page.locator("#new-task-title-input")).toBeFocused()
   })
 
-  test("clicking an upcoming task opens the shared task detail surface", async ({ page }) => {
-    const firstTask = page.locator(".task-item").first()
-    if (await firstTask.count() === 0) {
-      test.skip(true, "Need at least one upcoming task to verify detail handoff")
-      return
+  test("task detail and completion work independently across both date windows", async ({ page, request, baseURL, browser }) => {
+    const origin = new URL(baseURL!).origin
+    const headers = { origin }
+    const dayMs = 86_400_000
+    const now = Date.now()
+    const fixtures = [
+      { section: "#upcoming-next", title: "Upcoming controls soon", dueDate: new Date(now + dayMs) },
+      { section: "#upcoming-week", title: "Upcoming controls later", dueDate: new Date(now + 3 * dayMs) },
+    ] as const
+    const ids: string[] = []
+
+    try {
+      for (const { title, dueDate } of fixtures) {
+        const created = await request.post("/api/tasks", {
+          headers,
+          data: { title, due_date: dueDate.toISOString().slice(0, 10), status: "pending" },
+        })
+        expect(created.status(), await created.text()).toBe(201)
+        ids.push((await created.json()).id)
+      }
+
+      await page.reload()
+      await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+      const detail = page.locator("#task-detail-overlay")
+      for (const [index, { section, title }] of fixtures.entries()) {
+        const id = ids[index]!
+        const link = page.locator(section).getByRole("link", { name: title, exact: true })
+        const checkbox = page.locator(section).getByRole("checkbox", { name: `Complete ${title}` })
+        await expect(link).toHaveAttribute("href", `/tickets/${id}`)
+        await checkbox.focus()
+        await page.keyboard.press("Tab")
+        await expect(link).toBeFocused()
+        await expect(link).toHaveCSS("outline-style", "solid")
+        await page.keyboard.press("Enter")
+        await expect(detail).toHaveAttribute("data-open-task-id", id)
+        await expect(detail).toBeVisible()
+        await detail.getByRole("button", { name: "Close detail" }).click()
+        await expect(detail).toBeHidden()
+        await expect(link).toBeFocused()
+        await expect(page).toHaveURL(/\/upcoming$/)
+      }
+
+      const title = fixtures[0].title
+      const firstTaskId = ids[0]!
+      const checkbox = page.getByRole("checkbox", { name: `Complete ${title}` })
+      const row = page.locator(".task-item").filter({ has: checkbox })
+      const priority = row.getByTitle("Priority: Medium")
+      await priority.hover({ timeout: 5000 })
+      await priority.click()
+      await expect(detail).toHaveAttribute("data-open-task-id", firstTaskId)
+      await expect(detail).toBeVisible()
+      await detail.getByRole("button", { name: "Close detail" }).click()
+      await expect(detail).toBeHidden()
+
+      const dayCard = page.locator(".day-card--populated").filter({
+        has: page.locator(`a[data-task-detail-link="${firstTaskId}"]`),
+      })
+      const dayHeader = dayCard.getByRole("button").first()
+      await dayHeader.press("Space")
+      await expect(dayHeader).toHaveAttribute("aria-expanded", "false")
+      await expect(dayCard.locator(".task-list")).toHaveAttribute("inert", "")
+      await page.keyboard.press("Tab")
+      await expect.poll(() => dayCard.evaluate(card => card.contains(document.activeElement))).toBe(false)
+      await dayHeader.press("Space")
+      await expect(dayHeader).toHaveAttribute("aria-expanded", "true")
+
+      const noScript = await browser.newContext({ javaScriptEnabled: false, baseURL: origin })
+      try {
+        const noScriptPage = await noScript.newPage()
+        await noScriptPage.goto("/upcoming")
+        await noScriptPage.getByRole("link", { name: title, exact: true }).press("Enter", { timeout: 5000 })
+        await expect(noScriptPage).toHaveURL(`${origin}/tickets/${firstTaskId}`)
+      } finally {
+        await noScript.close()
+      }
+
+      const taskPath = `/api/tasks/${firstTaskId}`
+      await page.route(taskPath, route => route.fulfill({ status: 503, json: { error: "Fixture unavailable" } }))
+      await checkbox.click()
+      await expect(page.getByText("Failed to update", { exact: true })).toBeVisible()
+      await expect(checkbox).not.toBeChecked()
+      await expect(detail).toBeHidden()
+      await page.unroute(taskPath)
+
+      await checkbox.press("Space")
+      await expect(row).toHaveCount(0)
+      expect((await (await request.get(taskPath)).json()).status).toBe("complete")
+      await expect(detail).toBeHidden()
+      await expect(page).toHaveURL(/\/upcoming$/)
+    } finally {
+      for (const id of ids) {
+        await request.delete(`/api/tasks/${id}`, { headers })
+      }
     }
+  })
 
-    await firstTask.click()
+  test("task controls meet minimum target size with long titles in both themes", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const title = "Upcoming accessibility fixture " + "W".repeat(160)
+    const assignee = "custom_household-member"
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const created = await request.post("/api/tasks", {
+      headers,
+      data: { title, due_date: tomorrow, status: "pending", assigned_to: assignee },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
 
-    await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
+    try {
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+        await page.reload()
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        for (const width of [320, 1440]) {
+          await page.setViewportSize({ width, height: 860 })
+          const link = page.getByRole("link", { name: title, exact: true })
+          const checkbox = page.getByRole("checkbox", { name: `Complete ${title}` })
+          const avatar = page.getByRole("img", { name: `Assigned to ${assignee}` })
+          await avatar.hover({ timeout: 5000 })
+          const row = await page.locator(".task-item").filter({ has: link }).boundingBox()
+          if (!row) throw new Error("The Upcoming task row is outside the rendered layout")
+          expect(row.x).toBeGreaterThanOrEqual(0)
+          expect(row.x + row.width).toBeLessThanOrEqual(width)
+          for (const control of [link, checkbox]) {
+            const bounds = await control.boundingBox()
+            expect(bounds?.width).toBeGreaterThanOrEqual(24)
+            expect(bounds?.height).toBeGreaterThanOrEqual(24)
+          }
+          const { violations } = await new AxeBuilder({ page }).include(".task-item").withRules([
+            "nested-interactive", "label-content-name-mismatch", "target-size", "aria-prohibited-attr",
+          ]).analyze()
+          expect(violations.map(({ id, nodes }) => [id, nodes.map(({ target }) => target)]), `${width}px ${theme}`).toEqual([])
+        }
+      }
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
   })
 })

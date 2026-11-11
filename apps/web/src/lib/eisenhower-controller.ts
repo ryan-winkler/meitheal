@@ -210,6 +210,8 @@ function updateCounts(page: HTMLElement) {
     const count = q.querySelectorAll(".tli").length
     const badge = q.querySelector(".quadrant__count")
     if (badge) badge.textContent = String(count)
+    const tabCount = page.querySelector(`[aria-controls="${q.id}"] .mobile-tab__count`)
+    if (tabCount) tabCount.textContent = String(count)
 
     const zone = q.querySelector<HTMLElement>("[data-drop-zone]")
     if (!zone) continue
@@ -598,36 +600,66 @@ function setupFocusMode(page: HTMLElement, signal: AbortSignal) {
 // =============================================================================
 
 function setupMobileTabs(page: HTMLElement, signal: AbortSignal) {
-  const tabs = page.querySelectorAll<HTMLElement>("[data-tab-quadrant]")
-  const quadrants = page.querySelectorAll<HTMLElement>(".eisenhower__quadrant")
+  const tabs = Array.from(page.querySelectorAll<HTMLButtonElement>(".eisenhower__mobile-tabs [role=tab]"), tab => {
+    const panel = document.getElementById(tab.getAttribute("aria-controls") ?? "")
+    return panel ? { tab, panel } : null
+  })
+  if (tabs.length === 0 || !tabs.every(pair => pair !== null)) return
 
-  if (tabs.length === 0) return
-
-  // Activate first quadrant by default on mobile
-  const firstQuadrant = quadrants[0]
-  if (firstQuadrant) firstQuadrant.classList.add("quadrant--tab-active")
-
-  for (const tab of tabs) {
-    tab.addEventListener("click", () => {
-      const target = tab.dataset.tabQuadrant
-      if (!target) return
-
-      // Switch active tab
-      for (const t of tabs) {
-        t.classList.remove("mobile-tab--active")
-        t.setAttribute("aria-selected", "false")
+  const mobile = window.matchMedia("(max-width: 768px)")
+  const syncPanelRoles = () => {
+    tabs.forEach(({ tab, panel }) => {
+      if (mobile.matches) {
+        panel.setAttribute("role", "tabpanel")
+        panel.setAttribute("aria-labelledby", tab.id)
+        panel.tabIndex = 0
+      } else {
+        panel.removeAttribute("role")
+        panel.removeAttribute("aria-labelledby")
+        panel.removeAttribute("tabindex")
       }
-      tab.classList.add("mobile-tab--active")
-      tab.setAttribute("aria-selected", "true")
-
-      // Switch visible quadrant
-      for (const q of quadrants) {
-        q.classList.remove("quadrant--tab-active")
-      }
-      const targetQ = page.querySelector<HTMLElement>(`[data-quadrant="${target}"]`)
-      targetQ?.classList.add("quadrant--tab-active")
-    }, { signal })
+    })
   }
+  const select = (index: number) => {
+    tabs.forEach(({ tab, panel }, position) => {
+      const selected = position === index
+      tab.setAttribute("aria-selected", String(selected))
+      tab.tabIndex = selected ? 0 : -1
+      panel.classList.toggle("quadrant--tab-active", selected)
+    })
+  }
+
+  tabs.forEach(({ tab }, index) => {
+    tab.addEventListener("focus", () => select(index), { signal })
+    tab.addEventListener("click", () => select(index), { signal })
+    tab.addEventListener("keydown", event => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      let next: number
+      switch (event.key) {
+        case "ArrowLeft":
+          next = (index + tabs.length - 1) % tabs.length
+          break
+        case "ArrowRight":
+          next = (index + 1) % tabs.length
+          break
+        case "Home":
+          next = 0
+          break
+        case "End":
+          next = tabs.length - 1
+          break
+        default:
+          return
+      }
+      event.preventDefault()
+      tabs[next]?.tab.focus()
+    }, { signal })
+  })
+
+  select(Math.max(0, tabs.findIndex(({ tab }) => tab.getAttribute("aria-selected") === "true")))
+  syncPanelRoles()
+  mobile.addEventListener("change", syncPanelRoles, { signal })
+  page.setAttribute("data-quadrant-tabs-ready", "")
 }
 
 // =============================================================================

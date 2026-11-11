@@ -2,7 +2,6 @@ import { createClientLogger } from "@lib/client-logger"
 import { onTaskCompleted } from "@lib/gamification-hook"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { showToast } from "@lib/toast"
 import { taskApi } from "@lib/task-api-client"
 import { UPCOMING_SECTIONS } from "@lib/upcoming-registry"
@@ -21,7 +20,6 @@ export function initUpcomingPage(): void {
   })
 
   initTaskCheckboxes()
-  initTaskLinks()
   initAccordions()
 }
 
@@ -54,31 +52,6 @@ function initTaskCheckboxes(): void {
   })
 }
 
-function initTaskLinks(): void {
-  document.querySelectorAll<HTMLElement>(".task-item").forEach((item) => {
-    const openTask = () => {
-      const id = item.dataset.id
-      if (!id) return
-      openTaskDetailHandoff(id)
-    }
-
-    pageLifecycle.on(item, "click", (event) => {
-      if ((event.target as HTMLElement).tagName === "INPUT") return
-      openTask()
-    })
-
-    pageLifecycle.on(item, "keydown", (event) => {
-      const keyboardEvent = event as KeyboardEvent
-      if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
-        return
-      }
-
-      keyboardEvent.preventDefault()
-      openTask()
-    })
-  })
-}
-
 function initAccordions(): void {
   document.querySelectorAll<HTMLElement>(".day-header").forEach((header) => {
     const toggleAccordion = () => {
@@ -90,6 +63,7 @@ function initAccordions(): void {
       }
 
       list.classList.toggle("collapsed", isExpanded)
+      list.inert = isExpanded
     }
 
     pageLifecycle.on(header, "click", toggleAccordion)

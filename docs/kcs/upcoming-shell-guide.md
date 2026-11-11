@@ -35,9 +35,7 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 
 ### Hand work off to detail without leaving the shell context
 
-1. Click a task row in a day group.
-2. The shared task detail surface opens instead of routing to a page-local detail implementation.
-3. Use the shell tabs to move back to `Week Ahead` or `Flow` when needed.
+Select the task title or press Enter when the title link has focus. The shared detail panel opens over Upcoming. Closing it returns you to the same list and restores focus to the link after keyboard use. Press Space on the separate checkbox to complete the task. The title also works as a direct task link in a new tab or when scripts are unavailable.
 
 ## Troubleshooting
 
@@ -48,5 +46,5 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 
 ### Clicking a task opens the wrong route
 
-1. Confirm the browser stays on `/upcoming`.
-2. If the URL changes away from `/upcoming`, capture the browser console and note the task id that reproduced it.
+1. Open the title in the current tab and confirm the Upcoming list remains behind the task panel.
+2. Close the panel and confirm the URL returns to `/upcoming`. If the list does not return, capture the browser console and note the task id.
