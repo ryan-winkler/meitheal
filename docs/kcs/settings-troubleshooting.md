@@ -183,6 +183,8 @@ For rejected rule saves, framework overrides or Settings imports, see [Recoverin
 
 Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
 
+The Auto/HA contrast cases in `task-theme-contrast.spec.ts` load the real theme bridge through Vite in a synthetic same-origin frontend frame. Run that spec against the Astro dev server; a production server does not expose `/src` modules. The frame checks frontend theme selection, not Supervisor authentication. Keep separate production coverage for Dark/Light controls, saved accents, tags and the Dashboard. Run production browser specs with a fresh fixture per spec, as `test:ci` does, so their shared request volume does not exhaust the unchanged rate limit. Settings' Agent handoff card describes the current administrator review flow and links to Review.
+
 Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
 
 ## Navigation and daily review

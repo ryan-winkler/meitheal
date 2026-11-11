@@ -142,7 +142,7 @@ test.describe("Native navigation overflow", () => {
       expect((await (await request.get("/api/settings")).json()).sidebar_config.labels.areas).toBe(longLabel)
     } finally {
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })).ok()).toBe(true)
-      expect((await request.delete(`/api/areas/${id}`, { headers })).ok()).toBe(true)
+      expect((await request.delete(`/api/areas/${id}`, { headers, data: {} })).ok()).toBe(true)
     }
   })
 
