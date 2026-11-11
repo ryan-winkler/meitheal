@@ -110,7 +110,13 @@ test.describe("Dashboard contrast", () => {
       }, theme)
       await page.goto("/")
       await expect(page.locator(".dashboard-hero__title")).toBeVisible()
-      await page.evaluate(() => document.fonts.ready)
+      await page.evaluate(async () => {
+        await document.fonts.ready
+        // Read the settled paint after entrance fades, without waiting on looping effects.
+        const entranceAnimations = document.getAnimations().filter(animation =>
+          Number.isFinite(animation.effect?.getComputedTiming().endTime))
+        await Promise.allSettled(entranceAnimations.map(animation => animation.finished))
+      })
       const measurements = await paintedTextContrast(page)
       await testInfo.attach("contrast.json", { body: JSON.stringify(measurements, null, 2), contentType: "application/json" })
       await page.screenshot({ path: testInfo.outputPath(`dashboard-${theme}-${system}.png`), animations: "disabled" })
