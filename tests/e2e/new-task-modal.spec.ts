@@ -43,6 +43,30 @@ test.describe("New Task Modal", () => {
     await expect(page.locator("#cancel-new-task")).toBeVisible()
   })
 
+  test("inactive status labels remain fully opaque in Dark and Light", async ({ page }) => {
+    for (const theme of ["dark", "light"]) {
+      await page.goto("/settings#personal-settings")
+      await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+      const saved = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings"
+        && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
+      await page.locator("#theme-select").selectOption(theme)
+      expect((await saved).ok()).toBe(true)
+      await page.goto("/today")
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      await page.getByRole("button", { name: "New Task", exact: true }).click()
+      const statuses = page.getByRole("radiogroup", { name: "Task status", exact: true })
+      const active = statuses.locator('[data-status="active"]')
+      const pending = statuses.locator('[data-status="pending"]')
+      await expect(active).toHaveAttribute("aria-checked", "false")
+      await expect(active).toHaveCSS("opacity", "1")
+      await active.press("Enter")
+      await expect(active).toHaveAttribute("aria-checked", "true")
+      await expect(pending).toHaveAttribute("aria-checked", "false")
+      await expect(pending).toHaveCSS("opacity", "1")
+      await page.locator("#cancel-new-task").press("Enter")
+    }
+  })
+
   test("New Task modal closes on close button click", async ({ page }) => {
     await page.getByRole("button", { name: "New Task", exact: true }).click()
 
