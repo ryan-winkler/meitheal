@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test as base } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 interface TableTask {
   id: string
@@ -230,10 +230,13 @@ test.describe("Table Shell", () => {
     }
   })
 
-  test("a completed row exposes its title and type and remains editable by keyboard", async ({ page, tableTasks }) => {
+  test("a completed row stays editable by keyboard during a refresh and Escape discards its draft", async ({ page, request, tableTasks }) => {
     const [, task] = tableTasks
     await page.goto("/tasks?view=table")
     await expect(page.getByRole("navigation", { name: "Task views" })).toHaveAttribute("data-switcher-ready", "true")
+    const table = page.locator("#task-table")
+    await expect(page.locator("#table-shell")).toHaveAttribute("data-table-ready", "true")
+    await expect(table).not.toHaveAttribute("aria-busy", "true")
     const row = page.getByRole("row").filter({
       has: page.getByRole("link", { name: new RegExp(task.ticket_key) }),
     })
@@ -249,13 +252,41 @@ test.describe("Table Shell", () => {
     await expect(selection).not.toBeChecked()
 
     const renamed = `${task.title} renamed`
-    await title.fill(renamed)
-    await title.press("Tab")
-    await expect(title).toHaveAttribute("data-original", renamed)
-    await title.fill("Discard this edit")
-    await title.press("Escape")
-    await expect(title).toHaveText(renamed)
-    await page.reload()
-    await expect(title).toHaveText(renamed)
+    const draft = "Discard this edit"
+    const path = `/api/tasks/${task.id}`
+    const savedTitles: string[] = []
+    page.on("request", outbound => {
+      if (outbound.method() === "PATCH" && new URL(outbound.url()).pathname === path) {
+        savedTitles.push(outbound.postDataJSON().title)
+      }
+    })
+    const release = deferred<void>()
+    await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+      await release.promise
+      await route.continue()
+    }, { times: 1 })
+
+    try {
+      await title.fill(renamed)
+      await title.press("Tab")
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await expect(table).toHaveAttribute("aria-busy", "true")
+      await title.fill(draft)
+      await expect(title).toBeFocused()
+
+      release.resolve()
+      await expect(table).not.toHaveAttribute("aria-busy", "true")
+      await expect(title).toBeFocused()
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await expect(title).toHaveText(draft)
+      await title.press("Escape")
+      await expect(title).toHaveText(renamed)
+      await page.reload()
+      await expect(title).toHaveText(renamed)
+      expect((await (await request.get(path)).json()).title).toBe(renamed)
+      expect(savedTitles).toEqual([renamed])
+    } finally {
+      release.resolve()
+    }
   })
 })

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ChildProcess } from "node:child_process"
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type APIRequestContext, type Page, type PlaywrightWorkerArgs } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -87,6 +88,14 @@ test.describe("Review decisions through owned Home Assistant ingress", () => {
       const card = cardFor(page, accepted.id)
       await expect(card.locator("[data-current-value]")).toHaveText("Replace batteries")
       await expect(card.locator("[data-proposed-value]")).toHaveText("Replace upstairs smoke alarm batteries")
+      const comparison = card.getByRole("region", { name: "Proposal comparison for Replace batteries" })
+      await card.locator(".review-card__ticket").focus()
+      await page.keyboard.press("Tab")
+      await expect(comparison).toBeFocused()
+      await page.keyboard.press("ArrowRight")
+      await expect.poll(() => comparison.evaluate(region => region.scrollLeft)).toBeGreaterThan(0)
+      await page.keyboard.press("Shift+Tab")
+      await expect(card.locator(".review-card__ticket")).toBeFocused()
       await expect(card.locator("time")).toHaveAttribute("datetime", /T/)
       await expect(card.getByRole("link", { name: "Refresh proposal" })).toHaveAttribute("href", prefix + "/review")
       const accept = card.getByRole("button", { name: "Accept proposal", exact: true })
@@ -138,6 +147,21 @@ test.describe("Review decisions through owned Home Assistant ingress", () => {
       await expect(card.locator("[data-proposed-value]")).toHaveText("Agent title")
       await expect(card.getByRole("button", { name: "Accept proposal" })).toBeDisabled()
       await expect(card.getByRole("button", { name: "Reject proposal" })).toBeEnabled()
+      await page.setViewportSize({ width: 1440, height: 960 })
+      await page.emulateMedia({ reducedMotion: "reduce" })
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+        await page.reload()
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        const audit = await new AxeBuilder({ page }).withRules(["color-contrast"])
+          .include(".review-card__ticket")
+          .include(".review-card__agent")
+          .include(".diff-to")
+          .include(".review-stale")
+          .analyze()
+        expect(audit.violations, theme).toEqual([])
+        expect(audit.passes.find(({ id }) => id === "color-contrast")?.nodes ?? [], theme).toHaveLength(4)
+      }
       await card.getByRole("button", { name: "Reject proposal" }).click()
       await expect(card.locator("[data-review-status]")).toContainText("Proposal rejected")
       expect((await (await api.get(`${prefix}/api/tasks/${proposal.id}`)).json()).title).toBe("Household changed the task")

@@ -131,6 +131,7 @@ function init(signal: AbortSignal) {
   let requestNumber = 0
   let pending: AbortController | undefined
   let resetPageOnRetry = false
+  const replacedTitleEditors = new WeakSet<HTMLElement>()
 
   const renderRows = () => {
     const stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats
@@ -185,6 +186,10 @@ function init(signal: AbortSignal) {
       const control = ["[data-open-table-task]", ".row-check", ".editable-cell", "select[data-field=status]",
         "select[data-field=priority]", ".delete-row", ".subtree-toggle", "[data-open-table-parent]"]
         .find(selector => focused?.matches(selector))
+      const titleEditor = control === ".editable-cell" && focused instanceof HTMLElement ? focused : null
+      const titleDraft = titleEditor?.textContent
+      // Removing the focused editor can dispatch focusout before it is disconnected.
+      if (titleEditor) replacedTitleEditors.add(titleEditor)
       const pagerLink = focused?.closest<HTMLAnchorElement>("#table-pagination [data-table-page-link]")
       const group = focused?.closest<HTMLElement>(".group-header-row")
       const groupControl = [".group-toggle", ".group-select-all"].find(selector => focused?.matches(selector))
@@ -212,6 +217,9 @@ function init(signal: AbortSignal) {
           header.dataset.groupKey === group.dataset.groupKey && header.dataset.parentGroupKey === group.dataset.parentGroupKey)
         const target = (control && replacementRow && replacementRow.querySelector<HTMLElement>(control))
           || (groupControl && replacementGroup && replacementGroup.querySelector<HTMLElement>(groupControl))
+        if (target && titleEditor && titleDraft != null && titleDraft.trim() !== titleEditor.dataset.original) {
+          target.textContent = titleDraft
+        }
         ;(target || (container.hidden ? shell.querySelector<HTMLElement>("#table-search") : container))?.focus()
       }
     } catch {
@@ -231,7 +239,7 @@ function init(signal: AbortSignal) {
   setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
-  setupInlineEditing(table, signal, () => void refresh())
+  setupInlineEditing(table, signal, () => void refresh(), replacedTitleEditors)
   setupRowClicks(table, signal, () => void refresh())
   setupBulkActions({ signal, onTasksChanged: () => void refresh() })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
@@ -680,10 +688,10 @@ function toggleChildRows(parentId: string, show: boolean) {
 // Inline Editing
 // =============================================================================
 
-function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void) {
+function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>) {
   table.addEventListener("focusout", async event => {
     const cell = (event.target as Element).closest<HTMLElement>(".editable-cell")
-    if (!cell || !cell.isConnected) return
+    if (!cell || !cell.isConnected || replacedTitleEditors.has(cell)) return
     const title = cell.textContent?.trim() ?? ""
     const original = cell.dataset.original ?? ""
     if (!title || title === original) {

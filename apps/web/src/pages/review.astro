@@ -71,7 +71,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
             </div>
             <div class="review-card__summary"><strong>Summary:</strong> {p.summary}</div>
             {p.stale && <p class="review-stale">The task changed after this proposal was created. Acceptance is unavailable. Review the current values, then reject the proposal or refresh the queue.</p>}
-            <div class="review-card__diff">
+            <div class="review-card__diff" role="region" aria-label={`Proposal comparison for ${p.title}`} tabindex="0">
               <table class="diff-table">
                 <caption class="sr-only">Changes proposed by {p.agent} for {p.title}</caption>
                 <thead><tr><th scope="col">Field</th><th scope="col">When proposed</th><th scope="col">Current</th><th scope="col">Proposed</th></tr></thead>
@@ -161,7 +161,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
   .review-card__ticket {
     font-size: 12px;
     font-weight: 700;
-    color: var(--accent, #6366f1);
+    color: var(--accent-text);
     background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
     padding: 2px 8px;
     border-radius: 10px;
@@ -186,7 +186,8 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
 
   .review-card__agent {
     font-weight: 600;
-    color: var(--info, #60a5fa);
+    color: var(--text-primary);
+    color: color-mix(in srgb, var(--text-primary) 60%, var(--info));
   }
 
   .review-card__summary {
@@ -199,6 +200,10 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
   .review-card__diff {
     padding: 0;
     overflow-x: auto;
+  }
+  .review-card__diff:focus-visible {
+    outline-color: var(--accent-text);
+    outline-offset: -2px;
   }
 
   .diff-table {
@@ -230,7 +235,8 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
     color: var(--text-secondary);
   }
   .diff-to {
-    color: var(--success, #22c55e);
+    color: var(--text-primary);
+    color: color-mix(in srgb, var(--text-primary) 60%, var(--success));
     font-weight: 500;
   }
   .review-card__title-row { flex-wrap: wrap; }
@@ -238,7 +244,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
   .review-card__title, .review-card__summary, .diff-table :is(td, th) { overflow-wrap: anywhere; }
   .diff-table :is(td, th) { min-width: 7rem; white-space: pre-wrap; }
   .review-stale, .review-fingerprint, .review-card__actions, .review-card__status { margin: 12px 16px; }
-  .review-stale { color: var(--warning); }
+  .review-stale { color: var(--warning-text, var(--warning)); }
   .review-fingerprint code { overflow-wrap: anywhere; }
   .review-card__actions, [data-review-decision], .review-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .review-card__actions .btn { min-height: 44px; }

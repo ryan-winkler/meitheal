@@ -175,6 +175,8 @@ test.describe("Shopping theme contrast", () => {
     })
     const measurements: unknown[] = []
     const inspectAction = async (phase: string) => {
+      // The contrast sample composites ancestor opacity. Wait for the dialog's entry fade to finish.
+      await expect(page.locator("#new-task-overlay .modal-content")).toHaveCSS("opacity", "1")
       const result = (await sample(page)).measurements.find(item => item.name === "submit-new-task-btn")!
       measurements.push({ phase, ...result })
       expect(Number(result.contrast), phase).toBeGreaterThanOrEqual(4.5)

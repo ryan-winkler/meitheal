@@ -37,10 +37,12 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 
 ### Edit a title or select a row
 
-1. Focus the row's **Title** field and edit the text. Press **Tab** to leave the field and save, or **Escape** to discard the edit.
+1. Focus the row's **Title** field and edit the text. Press **Tab** or **Enter** to leave the field and save, or **Escape** to restore the last saved title.
 2. Select the row's checkbox. The bulk action bar shows how many rows are selected.
 
 The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
+
+When a table refresh keeps the edited row visible, the title draft and focus move to the refreshed field. The normal save and discard keys still apply.
 
 ## Table query contract
 
